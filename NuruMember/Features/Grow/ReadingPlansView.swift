@@ -17,59 +17,161 @@ final class ReadingPlansViewModel: ObservableObject {
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
         loading = false
     }
+
+    /// Active plan = first enrolled plan (the one in progress at the top of the list).
+    var activePlan: ReadingPlanRow? { plans.first { $0.enrolled } }
+    /// Everything browsable in the catalogue (the active plan also appears here as in the spec).
+    var browsePlans: [ReadingPlanRow] { plans }
 }
 
 struct ReadingPlansView: View {
     @StateObject private var vm = ReadingPlansViewModel()
 
     var body: some View {
-        ZStack {
-            Nuru.paper.ignoresSafeArea()
-            LoadStateView(loading: vm.loading && vm.plans.isEmpty,
-                          isEmpty: vm.plans.isEmpty, error: vm.error,
-                          emptyText: "No reading plans yet.", retry: { Task { await vm.load() } }) {
-                ScrollView {
-                    VStack(spacing: Nuru.S.md) {
-                        ForEach(vm.plans) { plan in
-                            NavigationLink(value: plan) { PlanRowCard(plan: plan) }.buttonStyle(.plain)
-                        }
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                header
+                LoadStateView(loading: vm.loading && vm.plans.isEmpty,
+                              isEmpty: vm.plans.isEmpty, error: vm.error,
+                              emptyText: "No reading plans yet.", retry: { Task { await vm.load() } }) {
+                    VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                        if let active = vm.activePlan { activeSection(active) }
+                        browseSection
                     }
-                    .padding(Nuru.S.screen)
+                    .padding(.horizontal, Nuru.S.screen)
+                    .padding(.top, Nuru.S.lg)
                     .padding(.bottom, Nuru.tabBarSpace)
                 }
-                .refreshable { await vm.load() }
             }
         }
-        .navigationTitle("Reading Plans")
-        .navigationBarTitleDisplayMode(.inline)
+        .background(Nuru.paper.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .refreshable { await vm.load() }
         .task { if vm.plans.isEmpty { await vm.load() } }
     }
-}
 
-private struct PlanRowCard: View {
-    let plan: ReadingPlanRow
-    var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                HStack {
-                    Text(plan.title).font(.nHeading).foregroundStyle(Nuru.ink)
-                    Spacer()
-                    if plan.enrolled {
-                        Text(plan.completedAt != nil ? "Done" : "Active")
-                            .font(.nMicro).foregroundStyle(Nuru.successText)
-                            .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
-                            .background(Nuru.successBg, in: Capsule())
+    // MARK: Navy header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("READ · REFLECT · APPLY")
+                .font(.inter(11, .semibold)).kerning(1.5)
+                .foregroundStyle(Nuru.gold)
+            Text("Plans")
+                .font(.fraunces(30, .semibold)).foregroundStyle(Nuru.onNavy)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Nuru.S.screen)
+        .padding(.top, 60)
+        .padding(.bottom, Nuru.S.lg)
+        .background(Nuru.navy)
+        .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+    }
+
+    // MARK: Active plan
+
+    @ViewBuilder
+    private func activeSection(_ plan: ReadingPlanRow) -> some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            sectionOverline("ACTIVE PLANS")
+            NavigationLink(value: plan) { activeCard(plan) }.buttonStyle(.plain)
+        }
+    }
+
+    private func activeCard(_ plan: ReadingPlanRow) -> some View {
+        let total = max(plan.dayCount, 1)
+        let doneDays = plan.completedDays?.count ?? 0
+        let currentDay = plan.currentDay ?? (doneDays + 1)
+        let progress = min(max(Double(doneDays) / Double(total), 0), 1)
+        return HStack(spacing: Nuru.S.base) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nuru.goldTint)
+                Icon(.bookMarked, size: 24, color: Nuru.gold)
+            }
+            .frame(width: 56, height: 56)
+            VStack(alignment: .leading, spacing: 6) {
+                Text(plan.title).font(.inter(16, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                Text("Day \(currentDay) of \(plan.dayCount)")
+                    .font(.nMicro).foregroundStyle(Nuru.faint)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Nuru.gold.opacity(0.18)).frame(height: 4)
+                        Capsule().fill(Nuru.gold).frame(width: max(4, geo.size.width * progress), height: 4)
                     }
                 }
-                if let subtitle = plan.subtitle ?? plan.description, !subtitle.isEmpty {
-                    Text(subtitle).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(2)
-                }
-                Text("\(plan.dayCount) days").font(.nMicro).foregroundStyle(Nuru.faint)
-                if plan.enrolled, let done = plan.completedDays?.count {
-                    ProgressView(value: plan.dayCount == 0 ? 0 : Double(done) / Double(plan.dayCount)).tint(Nuru.gold)
+                .frame(height: 4)
+                .padding(.top, 2)
+            }
+        }
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
+    // MARK: Browse plans
+
+    private var browseSection: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            sectionOverline("BROWSE PLANS")
+            VStack(spacing: Nuru.S.md) {
+                ForEach(vm.browsePlans) { plan in
+                    NavigationLink(value: plan) { browseCard(plan) }.buttonStyle(.plain)
                 }
             }
         }
+    }
+
+    private func browseCard(_ plan: ReadingPlanRow) -> some View {
+        HStack(spacing: Nuru.S.base) {
+            planThumbnail(plan)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(plan.dayCount) DAYS")
+                    .font(.inter(10, .semibold)).kerning(0.8)
+                    .foregroundStyle(Nuru.faint)
+                Text(plan.title).font(.inter(16, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                if let sub = plan.subtitle ?? plan.description, !sub.isEmpty {
+                    Text(sub).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
+    @ViewBuilder
+    private func planThumbnail(_ plan: ReadingPlanRow) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        if let url = plan.imageUrl.flatMap(URL.init) {
+            AsyncImage(url: url) { phase in
+                if let img = phase.image {
+                    img.resizable().scaledToFill()
+                } else {
+                    fallbackTile
+                }
+            }
+            .frame(width: 56, height: 56)
+            .clipShape(shape)
+        } else {
+            fallbackTile.frame(width: 56, height: 56).clipShape(shape)
+        }
+    }
+
+    private var fallbackTile: some View {
+        ZStack {
+            Nuru.goldTint
+            Icon(.book, size: 22, color: Nuru.gold)
+        }
+    }
+
+    private func sectionOverline(_ text: String) -> some View {
+        Text(text)
+            .font(.inter(11, .semibold)).kerning(1.2)
+            .foregroundStyle(Nuru.faint)
     }
 }
 
