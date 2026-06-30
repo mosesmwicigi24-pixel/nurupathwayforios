@@ -20,9 +20,10 @@ final class ChatInboxViewModel: ObservableObject {
 
 struct ChatView: View {
     @StateObject private var vm = ChatInboxViewModel()
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     header
@@ -33,7 +34,6 @@ struct ChatView: View {
                 }
             }
             .background(Nuru.paper.ignoresSafeArea())
-            .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }

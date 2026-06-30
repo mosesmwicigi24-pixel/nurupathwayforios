@@ -51,7 +51,9 @@
 - ☐ NewMessageScreen ☐ ThreadScreen ☐ CohortDiscussionsScreen ☐ SpacePreviewScreen
 - NOTE: voice-note record/playback shown as a tag for now (audio subsystem ported
   later); compose writes are online-first (retrofit onto SyncEngine.writeThrough).
-  Minor: stray nav-back chevron on a few tab roots (cosmetic) — batch-fix pending.
+  Note: the stray top chevron seen in screenshots is a harness artifact of
+  deep-launching a non-default tab (NURU_TAB); it does not appear when a tab is
+  tapped normally (Home, the default, never shows it).
 
 ### Phase 4 — Events & calendar
 - ✅ EventsScreen → `Features/Events/EventsView.swift` (navy header + pulse row,
