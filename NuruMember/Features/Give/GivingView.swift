@@ -6,6 +6,8 @@
 // Stripe SDK (client-side tokenisation, SAQ-A) and is flagged "soon".
 import SwiftUI
 
+enum GiveRoute: Hashable { case statement }
+
 private struct Fund: Identifiable {
     let code, label, tagline: String; let icon: Lucide; let tint, fg: UInt32
     var id: String { code }
@@ -30,7 +32,6 @@ private let methods: [PayMethod] = [
     PayMethod(key: "paypal", label: "PayPal", sub: "PayPal balance / linked", provider: "paypal"),
 ]
 
-private func ksh(_ n: Int) -> String { "KSh \(n.formatted(.number.grouping(.automatic)))" }
 private func feeFor(_ a: Int) -> Int {
     switch a {
     case ...100: return 0
@@ -102,6 +103,8 @@ struct GivingView: View {
             }
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
+            .navigationDestination(for: GiveRoute.self) { _ in GivingStatementView() }
         }
         .task { if vm.history.isEmpty { await vm.load() } }
         .sheet(isPresented: Binding(get: { ceremony != nil }, set: { if !$0 { ceremony = nil } })) {
@@ -233,21 +236,33 @@ struct GivingView: View {
 
     private var recentGiving: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            Text("Recent giving").font(.nHeading).foregroundStyle(Nuru.ink)
+            HStack {
+                Text("Recent giving").font(.nHeading).foregroundStyle(Nuru.ink)
+                Spacer()
+                if !vm.history.isEmpty {
+                    NavigationLink(value: GiveRoute.statement) {
+                        Text("Statement ›").font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
+                    }
+                }
+            }
             if vm.history.isEmpty {
                 Text("Your gifts will appear here.").font(.nCaption).foregroundStyle(Nuru.muted)
             } else {
                 ForEach(vm.history.prefix(5)) { g in
-                    HStack {
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(ksh(g.amountMinor / 100)).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
-                            Text(g.fund.capitalized).font(.nMicro).foregroundStyle(Nuru.faint)
+                    NavigationLink(value: g) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(ksh(g.amountMinor / 100)).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                                Text(g.fund.capitalized).font(.nMicro).foregroundStyle(Nuru.faint)
+                            }
+                            Spacer()
+                            Text(statusLabel(g.status)).font(.nMicro).foregroundStyle(statusColor(g.status))
+                                .padding(.horizontal, 8).padding(.vertical, 3).background(statusBg(g.status), in: Capsule())
+                            Icon(.chevronRight, size: 12, color: Nuru.ink300)
                         }
-                        Spacer()
-                        Text(statusLabel(g.status)).font(.nMicro).foregroundStyle(statusColor(g.status))
-                            .padding(.horizontal, 8).padding(.vertical, 3).background(statusBg(g.status), in: Capsule())
+                        .padding(.vertical, 6)
                     }
-                    .padding(.vertical, 6)
+                    .buttonStyle(.plain)
                     if g.id != vm.history.prefix(5).last?.id { Divider() }
                 }
             }

@@ -71,11 +71,18 @@
   amount + presets, frequency, methods, cover-fee, sticky CTA, recent giving,
   STK/success/failed ceremony) — exact. Mobile-money + PayPal wired; **Card path
   flagged "soon"** (needs Stripe SDK, client-side tokenisation, SAQ-A).
-- ☐ GivingReceiptScreen ☐ GivingStatementScreen ☐ recurring-schedule manager
+- ✅ GivingStatementScreen → `Features/Give/GivingStatementView.swift` (grouped-by-day,
+  settled total, status chips, tap → receipt)
+- ✅ GivingReceiptScreen → `Features/Give/GivingReceiptView.swift` (amount ceremony,
+  details, double-entry ledger trail)
+- ☐ recurring-schedule manager · Statement/Receipt not render-verified (0 seeded gifts)
 
 ### Phase 6 — Profile & growth
-- ☐ ProfileScreen (full) ☐ GiftsScreen ☐ MentorScreen ☐ WatchScreen
-- ☐ ResourcesLibraryScreen ☐ NuruAssistantScreen
+- ◑ ProfileScreen → `Features/Shell/RootView.swift` (identity + menu: Notifications,
+  Your Calling, Memory Verses, Resources, Sign out) — header done; full settings detail pending
+- ✅ GiftsScreen → `Features/Profile/GiftsView.swift` (top gifts, personas, serving
+  tracks; "Discover" CTA when no assessment — assessment flow deferred)
+- ☐ MentorScreen ☐ WatchScreen ☐ ResourcesLibraryScreen ☐ NuruAssistantScreen
 
 ## Verification log
 - 2026-06-30: `xcodebuild` Debug/iPhone 17 simulator → **BUILD SUCCEEDED**;

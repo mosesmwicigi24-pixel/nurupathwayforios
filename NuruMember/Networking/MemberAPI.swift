@@ -325,6 +325,16 @@ extension MemberAPI {
             as: GivingIntentResult.self)
     }
 
+    /// GET /giving/transactions/{id} — full gift detail incl. the ledger trail.
+    static func givingDetail(_ id: String) async throws -> GivingDetail {
+        try await APIClient.shared.get("giving/transactions/\(id)", as: GivingDetail.self)
+    }
+
+    /// GET /me/gifts — the member's spiritual-gifts profile.
+    static func myGifts() async throws -> MyGifts {
+        try await APIClient.shared.get("me/gifts", as: MyGifts.self)
+    }
+
     /// GET /giving/schedules — the member's recurring gifts.
     static func schedules() async throws -> [GivingSchedule] {
         try await APIClient.shared.get("giving/schedules", as: Envelope<GivingSchedule>.self).data

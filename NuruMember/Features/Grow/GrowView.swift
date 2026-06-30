@@ -30,7 +30,7 @@ extension View {
                 case .readingPlans:  ReadingPlansView()
                 case .prayerJournal: PrayerJournalView()
                 case .verseLibrary:  VerseLibraryView()
-                case .gifts:         PlaceholderScreen(title: "Your Calling", blurb: "Discover your spiritual gifts.", icon: .sparkles)
+                case .gifts:         GiftsView()
                 case .resources:     PlaceholderScreen(title: "Resources", blurb: "Books, audio and teaching.", icon: .bookOpen)
                 }
             }

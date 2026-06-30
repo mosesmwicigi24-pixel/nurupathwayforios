@@ -131,6 +131,7 @@ struct HomeView: View {
         case "prayerJournal": path.append(GrowDestination.prayerJournal)
         case "verseLibrary": path.append(GrowDestination.verseLibrary)
         case "prayerWall": path.append(CommunityRoute.prayerWall)
+        case "gifts": path.append(GrowDestination.gifts)
         case "notifications": path.append(AppRoute.notifications)
         default: break
         }

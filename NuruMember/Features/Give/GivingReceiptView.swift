@@ -1,0 +1,125 @@
+// Giving receipt — the native port of screens/GivingReceiptScreen.tsx. One gift's
+// full detail: the amount, fund, method, status, date, transaction reference, and
+// the double-entry ledger trail. Read-only over GET /giving/transactions/{id}.
+import SwiftUI
+
+@MainActor
+final class GivingReceiptViewModel: ObservableObject {
+    @Published var detail: GivingDetail?
+    @Published var loading = true
+    @Published var error: String?
+
+    let transactionId: String
+    init(transactionId: String) { self.transactionId = transactionId }
+
+    func load() async {
+        loading = true; error = nil
+        do { detail = try await MemberAPI.givingDetail(transactionId) }
+        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this receipt." }
+        loading = false
+    }
+}
+
+struct GivingReceiptView: View {
+    @StateObject private var vm: GivingReceiptViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    init(transactionId: String) { _vm = StateObject(wrappedValue: GivingReceiptViewModel(transactionId: transactionId)) }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            header
+            if vm.loading && vm.detail == nil {
+                Spacer(); ProgressView(); Spacer()
+            } else if let d = vm.detail {
+                content(d)
+            } else {
+                Spacer(); Text(vm.error ?? "Couldn't load this receipt.").font(.nBody).foregroundStyle(Nuru.muted); Spacer()
+            }
+        }
+        .background(Nuru.paper.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .task { if vm.detail == nil { await vm.load() } }
+    }
+
+    private var header: some View {
+        HStack(spacing: Nuru.S.md) {
+            Button { dismiss() } label: {
+                Icon(.arrowLeft, size: 18, color: .white).frame(width: 40, height: 40).background(Color.white.opacity(0.10), in: Circle())
+            }
+            Text("Receipt").font(.fraunces(20, .semibold)).foregroundStyle(.white)
+            Spacer()
+        }
+        .padding(.horizontal, Nuru.S.lg).padding(.top, 54).padding(.bottom, Nuru.S.lg)
+        .background(Nuru.navy)
+    }
+
+    private func content(_ d: GivingDetail) -> some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: Nuru.S.base) {
+                // Amount ceremony
+                VStack(spacing: Nuru.S.sm) {
+                    ZStack { Circle().fill(Nuru.successBg).frame(width: 64, height: 64); Icon(.badgeCheck, size: 30, color: Nuru.success) }
+                    Text(ksh(d.amountMinor / 100)).font(.fraunces(36, .bold)).foregroundStyle(Nuru.ink)
+                    Text("to \(d.fund.capitalized)").font(.nBody).foregroundStyle(Nuru.muted)
+                    statusChip(d.status)
+                }
+                .frame(maxWidth: .infinity).padding(Nuru.S.lg).receiptCard()
+
+                // Details
+                VStack(spacing: 0) {
+                    detailRow("Date", whenString(d.settledAt ?? d.createdAt))
+                    Divider()
+                    if let m = d.method { detailRow("Method", m.capitalized); Divider() }
+                    detailRow("Currency", d.currency.uppercased())
+                    if let ref = d.providerRef { Divider(); detailRow("Reference", ref) }
+                    Divider(); detailRow("Transaction", String(d.transactionId.prefix(8)) + "…")
+                }
+                .padding(.horizontal, Nuru.S.base).receiptCard()
+
+                // Ledger trail
+                if !d.ledger.isEmpty {
+                    VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                        Text("LEDGER").font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.gold)
+                        ForEach(d.ledger) { e in
+                            HStack {
+                                Text(e.side.uppercased()).font(.nMicro).foregroundStyle(e.side == "debit" ? Color(hex: 0x1B5FAE) : Nuru.success)
+                                    .frame(width: 56, alignment: .leading)
+                                Text(e.account).font(.nCaption).foregroundStyle(Nuru.ink)
+                                Spacer()
+                                Text(ksh(e.amountMinor / 100)).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                    .padding(Nuru.S.base).frame(maxWidth: .infinity, alignment: .leading).receiptCard()
+                }
+            }
+            .padding(Nuru.S.screen)
+            .padding(.bottom, Nuru.tabBarSpace)
+        }
+    }
+
+    private func detailRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label).font(.nCaption).foregroundStyle(Nuru.muted)
+            Spacer()
+            Text(value).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+        }
+        .padding(.vertical, Nuru.S.md)
+    }
+
+    private func whenString(_ iso: String) -> String {
+        guard let d = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return iso }
+        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy · h:mm a"; return f.string(from: d)
+    }
+}
+
+private extension View {
+    func receiptCard() -> some View {
+        background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
+    }
+}
