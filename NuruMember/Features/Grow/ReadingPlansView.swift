@@ -147,7 +147,7 @@ struct ReadingPlansView: View {
     private func planThumbnail(_ plan: ReadingPlanRow) -> some View {
         let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
         if let url = plan.imageUrl.flatMap(URL.init) {
-            AsyncImage(url: url) { phase in
+            CachedAsyncImage(url: url) { phase in
                 if let img = phase.image {
                     img.resizable().scaledToFill()
                 } else {

@@ -70,7 +70,7 @@ struct PrayerWallView: View {
     // Full-bleed hero: edge-to-edge image, controls + title overlaid.
     private var hero: some View {
         ZStack(alignment: .bottom) {
-            AsyncImage(url: URL(string: prayerHero)) { phase in
+            CachedAsyncImage(url: URL(string: prayerHero)) { phase in
                 (phase.image ?? Image(systemName: "photo")).resizable().scaledToFill()
             }
             .frame(maxWidth: .infinity).frame(height: 240).clipped()

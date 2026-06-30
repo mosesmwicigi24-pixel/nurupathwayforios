@@ -63,7 +63,7 @@ struct AnnouncementDetailView: View {
     private var hero: some View {
         ZStack(alignment: .topLeading) {
             if let url = vm.detail?.primaryImageUrl.flatMap(URL.init) {
-                AsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                CachedAsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
                     .frame(height: 260).frame(maxWidth: .infinity).clipped()
             } else {
                 Nuru.heroGradient.frame(height: 260)
@@ -105,7 +105,7 @@ struct AnnouncementDetailView: View {
             HStack(spacing: Nuru.S.sm) {
                 ForEach(images, id: \.self) { s in
                     if let url = URL(string: s) {
-                        AsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                        CachedAsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
                             .frame(width: 240, height: 150).clipped()
                             .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                     }

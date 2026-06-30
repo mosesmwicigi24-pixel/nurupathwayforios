@@ -368,7 +368,7 @@ private struct MessageBubble: View {
 
     @ViewBuilder private var imageContent: some View {
         if let url = m.attachmentUrl, let u = URL(string: url) {
-            AsyncImage(url: u) { phase in
+            CachedAsyncImage(url: u) { phase in
                 if let img = phase.image {
                     img.resizable().scaledToFill()
                 } else if phase.error != nil {

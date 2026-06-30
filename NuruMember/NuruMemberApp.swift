@@ -9,6 +9,7 @@ struct NuruMemberApp: App {
     @StateObject private var auth = AuthStore()
 
     init() {
+        configureNuruCaches()
         Nuru.registerFonts()
         Self.configureAppearance()
     }

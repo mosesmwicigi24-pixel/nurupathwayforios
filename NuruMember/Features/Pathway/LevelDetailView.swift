@@ -103,7 +103,7 @@ struct LevelDetailView: View {
             // Open-Bible photo if present, else the navy hero gradient.
             Nuru.heroGradient
                 .overlay(
-                    AsyncImage(url: heroImageURL) { phase in
+                    CachedAsyncImage(url: heroImageURL) { phase in
                         if let img = phase.image {
                             img.resizable().scaledToFill()
                         } else {

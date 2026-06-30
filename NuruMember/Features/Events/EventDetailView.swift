@@ -110,7 +110,7 @@ struct EventDetailView: View {
     @ViewBuilder
     private var heroImage: some View {
         if let url = imageUrl.flatMap(URL.init) {
-            AsyncImage(url: url) { p in
+            CachedAsyncImage(url: url) { p in
                 (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
             }
         } else {
