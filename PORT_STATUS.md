@@ -42,10 +42,14 @@
 - Hub: `Features/Grow/GrowView.swift`. NOTE: writes are online-first for now;
   retrofit onto `SyncEngine.writeThrough` in the offline-engine phase.
 
-### Phase 3 — Community
+### Phase 3 — Community (hosted in the "Community" tab)
+- ✅ PrayerWallScreen → `Features/Community/PrayerWallView.swift` (hero, sort, cards, compose) — exact port
+- ✅ PrayerWallDetailScreen → `Features/Community/PrayerWallDetailView.swift` (reactions, comments, composer) — exact port
+- Hub: `Features/Community/CommunityView.swift`
 - ☐ ChatScreen ☐ ChatThreadScreen ☐ NewMessageScreen ☐ ThreadScreen
-- ☐ CohortDiscussionsScreen ☐ PrayerWallScreen ☐ PrayerWallDetailScreen
-- ☐ SpacePreviewScreen
+- ☐ CohortDiscussionsScreen ☐ SpacePreviewScreen
+- NOTE: voice-note record/playback shown as a tag for now (audio subsystem ported
+  later); compose writes are online-first (retrofit onto SyncEngine.writeThrough).
 
 ### Phase 4 — Events & calendar
 - ☐ EventsScreen ☐ EventDetailScreen ☐ CalendarScreen

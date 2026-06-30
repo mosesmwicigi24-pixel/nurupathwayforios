@@ -17,8 +17,7 @@ struct RootView: View {
             GrowView()
                 .tabItem { Label("Grow", systemImage: "leaf.fill") }
 
-            ComingSoon(title: "Community", icon: "bubble.left.and.bubble.right.fill",
-                       blurb: "Chat, prayer wall and cohort discussions.")
+            CommunityView()
                 .tabItem { Label("Community", systemImage: "bubble.left.and.bubble.right.fill") }
 
             ProfileView()

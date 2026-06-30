@@ -213,6 +213,54 @@ extension MemberAPI {
     }
 }
 
+extension MemberAPI {
+    // MARK: Community — Prayer Wall (public, opt-in)
+
+    /// GET /prayer-wall?sort= — the congregation's shared prayer requests.
+    static func prayerWall(sort: String = "latest") async throws -> [PrayerWallPost] {
+        try await APIClient.shared.get("prayer-wall", query: ["sort": sort], as: Envelope<PrayerWallPost>.self).data
+    }
+
+    /// GET /prayer-wall/{id} — one request with its comments.
+    static func prayerWallGet(_ postId: String) async throws -> PrayerWallDetail {
+        try await APIClient.shared.get("prayer-wall/\(postId)", as: PrayerWallDetail.self)
+    }
+
+    /// POST /prayer-wall — share a new request.
+    static func createPrayerWallPost(title: String?, body: String) async throws {
+        struct Body: Encodable { let postId: String; let title: String?; let body: String; let clientMutationId: String }
+        _ = try await APIClient.shared.post("prayer-wall",
+            body: Body(postId: UUID().uuidString, title: title, body: body, clientMutationId: UUID().uuidString),
+            as: EmptyResponse.self)
+    }
+
+    /// POST /prayer-wall/{id}/reactions — toggle an emoji (🙏 = "pray").
+    @discardableResult
+    static func prayerWallReact(_ postId: String, emoji: String) async throws -> Bool {
+        struct Body: Encodable { let emoji: String }
+        struct Res: Decodable { let on: Bool }
+        return try await APIClient.shared.post("prayer-wall/\(postId)/reactions", body: Body(emoji: emoji), as: Res.self).on
+    }
+
+    /// POST /prayer-wall/{id}/comments — encourage the requester.
+    static func prayerWallComment(_ postId: String, body: String) async throws {
+        struct Body: Encodable { let commentId: String; let body: String; let clientMutationId: String }
+        _ = try await APIClient.shared.post("prayer-wall/\(postId)/comments",
+            body: Body(commentId: UUID().uuidString, body: body, clientMutationId: UUID().uuidString), as: EmptyResponse.self)
+    }
+
+    /// POST /prayer-wall/{id}/answered — author marks (un)answered.
+    static func prayerWallAnswered(_ postId: String, answered: Bool) async throws {
+        struct Body: Encodable { let answered: Bool }
+        _ = try await APIClient.shared.post("prayer-wall/\(postId)/answered", body: Body(answered: answered), as: EmptyResponse.self)
+    }
+
+    /// DELETE /prayer-wall/{id} — author removes their request from the wall.
+    static func deletePrayerWallPost(_ postId: String) async throws {
+        _ = try await APIClient.shared.delete("prayer-wall/\(postId)", as: EmptyResponse.self)
+    }
+}
+
 /// One submitted answer — `givenAnswer` is always a string per the wire contract
 /// (checkbox carries a JSON array of selected ids; scale carries the number).
 struct QuizAnswer: Encodable, Sendable {

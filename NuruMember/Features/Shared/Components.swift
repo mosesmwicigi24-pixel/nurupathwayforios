@@ -62,6 +62,61 @@ struct PButton: View {
     }
 }
 
+/// Circular avatar — the member's photo, or their initials on a tinted disc
+/// (the native port of components/Avatar.tsx).
+struct Avatar: View {
+    var url: String?
+    var name: String
+    var size: CGFloat = 36
+
+    var body: some View {
+        ZStack {
+            Circle().fill(Nuru.tintBlue)
+            if let url, let u = URL(string: url) {
+                AsyncImage(url: u) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() }
+                    else { initials }
+                }
+            } else {
+                initials
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+    }
+
+    private var initials: some View {
+        Text(Self.initials(name))
+            .font(.inter(size * 0.4, .semibold))
+            .foregroundStyle(Nuru.navyMid)
+    }
+
+    static func initials(_ name: String) -> String {
+        let parts = name.split(separator: " ").prefix(2)
+        let chars = parts.compactMap { $0.first }.map(String.init)
+        return chars.joined().uppercased()
+    }
+}
+
+/// Relative "time ago" label (m / h / date) — mirrors the RN `ago()` helper.
+func timeAgo(_ iso: String) -> String {
+    guard let date = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
+    let mins = max(0, Int(Date().timeIntervalSince(date) / 60))
+    if mins < 60 { return "\(mins)m" }
+    if mins < 1440 { return "\(mins / 60)h" }
+    let f = DateFormatter(); f.dateFormat = "MMM d"
+    return f.string(from: date)
+}
+
+extension ISO8601DateFormatter {
+    /// Tolerates fractional seconds (the API serialises timestamps with millis).
+    static let nuru: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return f
+    }()
+}
+
 /// A labelled text field styled to the design tokens.
 struct NuruField: View {
     var placeholder: String
