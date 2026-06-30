@@ -58,7 +58,7 @@ struct RootView: View {
             HomeView().tag(AppTab.home)
             PathwayView().tag(AppTab.pathway)
             PlansTab().tag(AppTab.plans)
-            placeholderTab("Events", "The church calendar and gatherings.", .calendarDays).tag(AppTab.events)
+            EventsView().tag(AppTab.events)
             placeholderTab("Chat", "Direct messages and spaces.", .messageCircle).tag(AppTab.chat)
             placeholderTab("Give", "Generosity, schedules and statements.", .handHeart).tag(AppTab.give)
             ProfileView().tag(AppTab.profile)

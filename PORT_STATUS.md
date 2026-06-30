@@ -52,8 +52,13 @@
   later); compose writes are online-first (retrofit onto SyncEngine.writeThrough).
 
 ### Phase 4 — Events & calendar
-- ☐ EventsScreen ☐ EventDetailScreen ☐ CalendarScreen
-- ☐ AnnouncementDetailScreen ☐ NotificationsScreen
+- ✅ EventsScreen → `Features/Events/EventsView.swift` (navy header + pulse row,
+  live/featured hero, week-window segments, photo event cards) — exact
+- ✅ EventDetailScreen → `Features/Events/EventDetailView.swift` (hero, RSVP
+  Going/Maybe/Can't-go, who's-going roster, description) — core ported
+- ☐ CalendarScreen ☐ AnnouncementDetailScreen ☐ NotificationsScreen
+- NOTE: hero + event cards not render-verified (dev DB has 0 seeded events);
+  empty state + header verified. Buzz-feed photo wall on detail deferred.
 
 ### Phase 5 — Giving (online-only, §5.6)
 - ☐ GivingScreen ☐ GivingReceiptScreen ☐ GivingStatementScreen

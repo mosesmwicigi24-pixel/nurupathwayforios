@@ -263,6 +263,35 @@ extension MemberAPI {
 }
 
 extension MemberAPI {
+    // MARK: Events & calendar
+
+    /// GET /calendar?from=&to= — occurrences in a date window.
+    static func calendar(from: String, to: String) async throws -> [CalendarOccurrence] {
+        try await APIClient.shared.get("calendar", query: ["from": from, "to": to], as: Envelope<CalendarOccurrence>.self).data
+    }
+
+    /// GET /home/featured-event — the admin-featured event (may be null).
+    static func featuredEvent() async throws -> FeaturedEvent? {
+        struct Env: Decodable { let data: FeaturedEvent? }
+        return try await APIClient.shared.get("home/featured-event", as: Env.self).data
+    }
+
+    /// GET /events/{id} — full event detail.
+    static func event(_ id: String) async throws -> EventDetail {
+        try await APIClient.shared.get("events/\(id)", as: EventDetail.self)
+    }
+
+    /// POST /events/{id}/rsvp — set the member's RSVP.
+    static func rsvp(_ eventId: String, status: String) async throws {
+        struct Body: Encodable { let status: String }
+        _ = try await APIClient.shared.post("events/\(eventId)/rsvp", body: Body(status: status), as: EmptyResponse.self)
+    }
+
+    /// GET /me/rsvps — the member's RSVPs.
+    static func myRsvps() async throws -> [MyRsvp] {
+        try await APIClient.shared.get("me/rsvps", as: Envelope<MyRsvp>.self).data
+    }
+
     // MARK: Community — Prayer Wall (public, opt-in)
 
     /// GET /prayer-wall?sort= — the congregation's shared prayer requests.
