@@ -1,0 +1,279 @@
+// URLSession-based API client for the native member app. The native counterpart
+// of packages/mobile/src/api/client.ts: it injects the gateway JWT (§1.3),
+// targets the versioned API surface (§3.1), and silently rotates the access
+// token once on a 401 via the stored refresh token.
+//
+// SINGLE-FLIGHT refresh (§5.3): the Home screen fires many requests at once, so
+// an expired access token produces a burst of simultaneous 401s. Refresh tokens
+// are one-time-use + rotated; reusing a burned token trips the backend's
+// reuse-detection and revokes the WHOLE family. So every concurrent 401 must
+// share ONE refresh — the first 401 spends the token, the rest await it.
+import Foundation
+
+enum APIError: LocalizedError {
+    case http(status: Int, code: String?, message: String)
+    case decoding(String)
+    case transport(String)
+    case offline
+    case unauthorized
+
+    var errorDescription: String? {
+        switch self {
+        case .http(_, _, let m): return m
+        case .decoding(let m): return "Couldn't read the server response. \(m)"
+        case .transport(let m): return m
+        case .offline: return "You appear to be offline."
+        case .unauthorized: return "Your session has expired. Please sign in again."
+        }
+    }
+
+    /// True when the request never reached a server answer (offline / unreachable),
+    /// as opposed to a 4xx/5xx the server actually returned. Mirrors
+    /// offlineWrite.ts `isNetworkError` — drives the write-through offline queue.
+    var isNetwork: Bool {
+        switch self {
+        case .offline, .transport: return true
+        default: return false
+        }
+    }
+}
+
+/// Backend error envelope: { "error": { "code", "message" } } or { "message" }.
+private struct ErrorEnvelope: Decodable {
+    struct Inner: Decodable { let code: String?; let message: String? }
+    let error: Inner?
+    let message: String?
+    var code: String? { error?.code }
+    var text: String? { error?.message ?? message }
+}
+
+actor APIClient {
+    static let shared = APIClient()
+
+    private let baseURL: URL
+    private let atKey = "nuru.member.at"
+    private let rtKey = "nuru.member.rt"
+
+    private var accessToken: String?
+    private var refreshToken: String?
+
+    /// In-flight refresh, shared by every concurrent 401 (single-flight).
+    private var refreshTask: Task<Bool, Never>?
+
+    /// Called when the refresh token itself is dead — the app returns to /login.
+    private var onSessionExpired: (@Sendable () -> Void)?
+
+    private let decoder: JSONDecoder = {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return d
+    }()
+    private let encoder: JSONEncoder = {
+        let e = JSONEncoder()
+        e.keyEncodingStrategy = .convertToSnakeCase
+        return e
+    }()
+
+    init() {
+        baseURL = Self.resolveBaseURL()
+        accessToken = Keychain.get(atKey)
+        refreshToken = Keychain.get(rtKey)
+    }
+
+    /// API base-URL resolution mirroring config.ts:
+    ///   1. NURU_API_URL env override (used by smoke-test scripts).
+    ///   2. Debug builds → the dev machine (simulator reaches it on localhost).
+    ///   3. Release builds → production over HTTPS.
+    private static func resolveBaseURL() -> URL {
+        let env = ProcessInfo.processInfo.environment
+        if let raw = env["NURU_API_URL"], let url = URL(string: raw.trimmingCharacters(in: .whitespaces)), !raw.isEmpty {
+            return url
+        }
+        #if DEBUG
+        return URL(string: "http://localhost:8080/v1")!
+        #else
+        return URL(string: "https://pathway.nuruplace.org/v1")!
+        #endif
+    }
+
+    // MARK: Session
+
+    var hasSession: Bool { accessToken != nil }
+
+    func setOnSessionExpired(_ fn: @escaping @Sendable () -> Void) { onSessionExpired = fn }
+
+    func setSession(access: String?, refresh: String?) {
+        accessToken = access
+        refreshToken = refresh
+        Keychain.set(access, for: atKey)
+        Keychain.set(refresh, for: rtKey)
+    }
+
+    func clearSession() { setSession(access: nil, refresh: nil) }
+
+    // MARK: Requests
+
+    func get<T: Decodable>(_ path: String, query: [String: String] = [:], as type: T.Type) async throws -> T {
+        try await send(path, method: "GET", query: query, body: Optional<Int>.none, as: T.self)
+    }
+
+    func post<B: Encodable, T: Decodable>(_ path: String, body: B, as type: T.Type) async throws -> T {
+        try await send(path, method: "POST", body: body, as: T.self)
+    }
+
+    func put<B: Encodable, T: Decodable>(_ path: String, body: B, as type: T.Type) async throws -> T {
+        try await send(path, method: "PUT", body: body, as: T.self)
+    }
+
+    func patch<B: Encodable, T: Decodable>(_ path: String, body: B, as type: T.Type) async throws -> T {
+        try await send(path, method: "PATCH", body: body, as: T.self)
+    }
+
+    func delete<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
+        try await send(path, method: "DELETE", body: Optional<Int>.none, as: T.self)
+    }
+
+    /// POST with no request body (action endpoints).
+    func postEmpty<T: Decodable>(_ path: String, as type: T.Type) async throws -> T {
+        try await send(path, method: "POST", body: Optional<Int>.none, as: T.self)
+    }
+
+    /// Raw JSON data for a path (used where the response shape is decoded by the caller).
+    func send<B: Encodable, T: Decodable>(
+        _ path: String, method: String, query: [String: String] = [:],
+        body: B?, as type: T.Type, isRetry: Bool = false
+    ) async throws -> T {
+        let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
+        var comps = URLComponents(url: baseURL.appendingPathComponent(trimmed), resolvingAgainstBaseURL: false)!
+        if !query.isEmpty {
+            comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
+        }
+        var req = URLRequest(url: comps.url!)
+        req.httpMethod = method
+        // 30s, not 15s: password endpoints run Argon2id, which can take several
+        // seconds on a small/cold server (mirrors client.ts).
+        req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token = accessToken { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        if let body {
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try encoder.encode(body)
+        }
+
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+                throw APIError.offline
+            }
+            throw APIError.transport(urlErr.localizedDescription)
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else {
+            throw APIError.transport("No HTTP response.")
+        }
+
+        if http.statusCode == 401, !isRetry, refreshToken != nil {
+            if await refreshSession() {
+                return try await send(path, method: method, query: query, body: body, as: T.self, isRetry: true)
+            } else {
+                onSessionExpired?()
+                throw APIError.unauthorized
+            }
+        }
+
+        guard (200..<300).contains(http.statusCode) else {
+            let env = try? decoder.decode(ErrorEnvelope.self, from: data)
+            let msg = env?.text ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
+            throw APIError.http(status: http.statusCode, code: env?.code, message: msg)
+        }
+
+        if T.self == EmptyResponse.self { return EmptyResponse() as! T }
+        do {
+            return try decoder.decode(T.self, from: data)
+        } catch {
+            throw APIError.decoding(String(describing: error))
+        }
+    }
+
+    // MARK: Login (single endpoint that may return a 2FA challenge)
+
+    /// POST /auth/login → either a full Session or a 2FA challenge.
+    func login(email: String, password: String) async throws -> LoginResult {
+        struct Body: Encodable { let email: String; let password: String }
+        let trimmed = "auth/login"
+        var req = URLRequest(url: baseURL.appendingPathComponent(trimmed))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try encoder.encode(Body(email: email, password: password))
+
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await URLSession.shared.data(for: req)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+                throw APIError.offline
+            }
+            throw APIError.transport(urlErr.localizedDescription)
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response.") }
+        guard (200..<300).contains(http.statusCode) else {
+            let env = try? decoder.decode(ErrorEnvelope.self, from: data)
+            throw APIError.http(status: http.statusCode, code: env?.code,
+                                message: env?.text ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode))
+        }
+        if let challenge = try? decoder.decode(MfaChallenge.self, from: data), challenge.mfaRequired {
+            return .mfaChallenge(challenge)
+        }
+        let session = try decoder.decode(Session.self, from: data)
+        setSession(access: session.accessToken, refresh: session.refreshToken)
+        return .session(session)
+    }
+
+    /// Second step of a 2FA login: exchange the challenge token + code for a session.
+    func completeMfa(mfaToken: String, code: String) async throws -> Session {
+        struct Body: Encodable { let mfaToken: String; let code: String }
+        let session = try await send("auth/login/mfa", method: "POST", body: Body(mfaToken: mfaToken, code: code), as: Session.self)
+        setSession(access: session.accessToken, refresh: session.refreshToken)
+        return session
+    }
+
+    // MARK: Refresh
+
+    /// Single-flight refresh: the first caller starts the rotation; concurrent
+    /// callers await the same Task and never spend a second (burned) token.
+    private func refreshSession() async -> Bool {
+        if let task = refreshTask { return await task.value }
+        let task = Task<Bool, Never> { [self] in await self.performRefresh() }
+        refreshTask = task
+        let ok = await task.value
+        refreshTask = nil
+        return ok
+    }
+
+    private func performRefresh() async -> Bool {
+        guard let rt = refreshToken else { return false }
+        struct Body: Encodable { let refreshToken: String }
+        var req = URLRequest(url: baseURL.appendingPathComponent("auth/token/refresh"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? encoder.encode(Body(refreshToken: rt))
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+              let session = try? decoder.decode(Session.self, from: data) else {
+            clearSession()
+            return false
+        }
+        setSession(access: session.accessToken, refresh: session.refreshToken)
+        return true
+    }
+}
+
+/// Sentinel for endpoints with no/ignored response body (204 actions).
+struct EmptyResponse: Decodable {}
