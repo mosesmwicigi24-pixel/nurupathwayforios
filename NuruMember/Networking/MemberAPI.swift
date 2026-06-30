@@ -292,6 +292,36 @@ extension MemberAPI {
         try await APIClient.shared.get("me/rsvps", as: Envelope<MyRsvp>.self).data
     }
 
+    // MARK: Giving (online-only, §5.6 — money is never queued)
+
+    /// GET /giving/history — the member's gift history.
+    static func givingHistory() async throws -> [GivingRecord] {
+        try await APIClient.shared.get("giving/history", as: Envelope<GivingRecord>.self).data
+    }
+
+    /// POST /giving/intents — create a real gift intent (server-authoritative).
+    static func giving(fund: String, amountMinor: Int, currency: String,
+                       method: String, phoneNumber: String? = nil) async throws -> GivingIntentResult {
+        struct Body: Encodable {
+            let fund: String; let amountMinor: Int; let currency: String
+            let method: String; let phoneNumber: String?; let idempotencyKey: String
+        }
+        return try await APIClient.shared.post("giving/intents",
+            body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
+                       method: method, phoneNumber: phoneNumber, idempotencyKey: UUID().uuidString),
+            as: GivingIntentResult.self)
+    }
+
+    /// GET /giving/schedules — the member's recurring gifts.
+    static func schedules() async throws -> [GivingSchedule] {
+        try await APIClient.shared.get("giving/schedules", as: Envelope<GivingSchedule>.self).data
+    }
+
+    /// POST /giving/schedules/{id}/cancel.
+    static func cancelSchedule(_ id: String) async throws {
+        _ = try await APIClient.shared.postEmpty("giving/schedules/\(id)/cancel", as: EmptyResponse.self)
+    }
+
     // MARK: Community — Prayer Wall (public, opt-in)
 
     /// GET /prayer-wall?sort= — the congregation's shared prayer requests.

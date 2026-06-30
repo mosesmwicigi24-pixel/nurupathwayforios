@@ -60,7 +60,7 @@ struct RootView: View {
             PlansTab().tag(AppTab.plans)
             EventsView().tag(AppTab.events)
             placeholderTab("Chat", "Direct messages and spaces.", .messageCircle).tag(AppTab.chat)
-            placeholderTab("Give", "Generosity, schedules and statements.", .handHeart).tag(AppTab.give)
+            GivingView().tag(AppTab.give)
             ProfileView().tag(AppTab.profile)
         }
         .toolbar(.hidden, for: .tabBar)

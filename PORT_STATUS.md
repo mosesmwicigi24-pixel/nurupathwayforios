@@ -61,7 +61,11 @@
   empty state + header verified. Buzz-feed photo wall on detail deferred.
 
 ### Phase 5 — Giving (online-only, §5.6)
-- ☐ GivingScreen ☐ GivingReceiptScreen ☐ GivingStatementScreen
+- ✅ GivingScreen → `Features/Give/GivingView.swift` (year pill, 5 funds, big
+  amount + presets, frequency, methods, cover-fee, sticky CTA, recent giving,
+  STK/success/failed ceremony) — exact. Mobile-money + PayPal wired; **Card path
+  flagged "soon"** (needs Stripe SDK, client-side tokenisation, SAQ-A).
+- ☐ GivingReceiptScreen ☐ GivingStatementScreen ☐ recurring-schedule manager
 
 ### Phase 6 — Profile & growth
 - ☐ ProfileScreen (full) ☐ GiftsScreen ☐ MentorScreen ☐ WatchScreen

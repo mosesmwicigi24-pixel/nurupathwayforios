@@ -32,6 +32,7 @@ enum Nuru {
     static let goldTint   = Color(hex: 0xFFF4C7)
     static let goldChipBg   = Color(hex: 0xFFF4DA)
     static let goldChipText = Color(hex: 0x7A5A14)
+    static let priorityBg   = Color(hex: 0xFFFAEC)   // selected-tile tint (giving funds)
 
     // MARK: Ink (text)
     static let ink     = Color(hex: 0x0B0B0C)   // primary text on light
