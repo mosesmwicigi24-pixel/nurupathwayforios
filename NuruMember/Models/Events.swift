@@ -34,6 +34,21 @@ struct CalendarOccurrence: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+/// GET /calendar/series — a followable event series (Events "Series you follow").
+struct EventSeries: Codable, Sendable, Identifiable {
+    let seriesId: String
+    let title: String
+    let category: String?
+    let cadence: String
+    let nextAt: String?
+    let nextOccurrenceId: String?
+    let nextEndAt: String?
+    let location: String?
+    let following: Bool
+    let newCount: Int
+    var id: String { seriesId }
+}
+
 /// GET /home/featured-event — the admin-featured event anchoring the hero.
 struct FeaturedEvent: Codable, Sendable {
     let seriesId: String
