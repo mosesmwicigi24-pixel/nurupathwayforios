@@ -14,9 +14,8 @@ struct RootView: View {
             PathwayView()
                 .tabItem { Label("Pathway", systemImage: "map.fill") }
 
-            ComingSoon(title: "Give", icon: "heart.fill",
-                       blurb: "Giving, schedules and statements (online-only, §5.6).")
-                .tabItem { Label("Give", systemImage: "heart.fill") }
+            GrowView()
+                .tabItem { Label("Grow", systemImage: "leaf.fill") }
 
             ComingSoon(title: "Community", icon: "bubble.left.and.bubble.right.fill",
                        blurb: "Chat, prayer wall and cohort discussions.")

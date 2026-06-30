@@ -31,9 +31,16 @@
 - ◑ LevelCompleteScreen (quiz result screen done; standalone level-complete ceremony pending)
 - Gating: ✅ `Features/Pathway/LevelGating.swift` (§1.9, server-authoritative)
 
-### Phase 2 — Daily rhythm & Word
-- ☐ DevotionalScreen ☐ MemoryVerseScreen ☐ ReadingPlansScreen
-- ☐ PlanDetailScreen ☐ PlanDayScreen ☐ VerseLibraryScreen ☐ PrayerJournalScreen
+### Phase 2 — Daily rhythm & Word (hosted in the new "Grow" tab)
+- ✅ DevotionalScreen → `Features/Grow/DevotionalView.swift` (+ save reflection → rhythm)
+- ✅ MemoryVerseScreen → `Features/Grow/MemoryVerseView.swift` (reveal + practice)
+- ✅ ReadingPlansScreen → `Features/Grow/ReadingPlansView.swift`
+- ✅ PlanDetailScreen → `PlanDetailView` (start + day list)
+- ✅ PlanDayScreen → `PlanDayView` (segments + complete day)
+- ✅ PrayerJournalScreen → `Features/Grow/PrayerJournalView.swift` (add/edit/answer/delete)
+- ✅ VerseLibraryScreen → `Features/Grow/VerseLibraryView.swift` (add/delete)
+- Hub: `Features/Grow/GrowView.swift`. NOTE: writes are online-first for now;
+  retrofit onto `SyncEngine.writeThrough` in the offline-engine phase.
 
 ### Phase 3 — Community
 - ☐ ChatScreen ☐ ChatThreadScreen ☐ NewMessageScreen ☐ ThreadScreen
@@ -56,3 +63,6 @@
   app boots and renders the Login ceremony screen (fonts load, tokens applied).
 - 2026-06-30: Phase 1 Pathway (Levels→Module→Quiz) added → **BUILD SUCCEEDED**.
   Runtime render of the authed Pathway tab pending a live backend session.
+- 2026-06-30: Phase 2 Grow (Devotional, Memory Verses, Reading Plans, Prayer
+  Journal, Verse Library) added → **BUILD SUCCEEDED**; app boots clean. Authed
+  runtime render pending a live backend session.
