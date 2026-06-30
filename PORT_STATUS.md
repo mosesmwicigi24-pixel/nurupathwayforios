@@ -46,10 +46,12 @@
 - ✅ PrayerWallScreen → `Features/Community/PrayerWallView.swift` (hero, sort, cards, compose) — exact port
 - ✅ PrayerWallDetailScreen → `Features/Community/PrayerWallDetailView.swift` (reactions, comments, composer) — exact port
 - Hub: `Features/Community/CommunityView.swift`
-- ☐ ChatScreen ☐ ChatThreadScreen ☐ NewMessageScreen ☐ ThreadScreen
-- ☐ CohortDiscussionsScreen ☐ SpacePreviewScreen
+- ✅ ChatScreen → `Features/Chat/ChatView.swift` (inbox: conversations + discover spaces)
+- ✅ ChatThreadScreen → `Features/Chat/ChatThreadView.swift` (bubbles, reactions, composer)
+- ☐ NewMessageScreen ☐ ThreadScreen ☐ CohortDiscussionsScreen ☐ SpacePreviewScreen
 - NOTE: voice-note record/playback shown as a tag for now (audio subsystem ported
   later); compose writes are online-first (retrofit onto SyncEngine.writeThrough).
+  Minor: stray nav-back chevron on a few tab roots (cosmetic) — batch-fix pending.
 
 ### Phase 4 — Events & calendar
 - ✅ EventsScreen → `Features/Events/EventsView.swift` (navy header + pulse row,

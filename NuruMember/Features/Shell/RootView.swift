@@ -59,7 +59,7 @@ struct RootView: View {
             PathwayView().tag(AppTab.pathway)
             PlansTab().tag(AppTab.plans)
             EventsView().tag(AppTab.events)
-            placeholderTab("Chat", "Direct messages and spaces.", .messageCircle).tag(AppTab.chat)
+            ChatView().tag(AppTab.chat)
             GivingView().tag(AppTab.give)
             ProfileView().tag(AppTab.profile)
         }

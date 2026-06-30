@@ -322,6 +322,39 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("giving/schedules/\(id)/cancel", as: EmptyResponse.self)
     }
 
+    // MARK: Chat
+
+    /// GET /chat/conversations?scope=mine — the member's inbox (Spaces/DMs/Groups).
+    static func chatInbox() async throws -> ChatInbox {
+        try await APIClient.shared.get("chat/conversations", query: ["scope": "mine"], as: ChatInbox.self)
+    }
+
+    /// GET /chat/conversations/{id} — a thread with its messages.
+    static func chatConversation(_ id: String) async throws -> ChatThreadDetail {
+        try await APIClient.shared.get("chat/conversations/\(id)", as: ChatThreadDetail.self)
+    }
+
+    /// POST /chat/conversations/{id}/messages — send a text message.
+    static func sendChatMessage(_ conversationId: String, body: String) async throws {
+        struct Body: Encodable { let messageId: String; let body: String; let msgType: String; let clientMutationId: String }
+        _ = try await APIClient.shared.post("chat/conversations/\(conversationId)/messages",
+            body: Body(messageId: UUID().uuidString, body: body, msgType: "text", clientMutationId: UUID().uuidString),
+            as: EmptyResponse.self)
+    }
+
+    /// POST /chat/conversations/{id}/read — mark the thread read.
+    static func markChatRead(_ conversationId: String) async throws {
+        _ = try await APIClient.shared.postEmpty("chat/conversations/\(conversationId)/read", as: EmptyResponse.self)
+    }
+
+    /// POST /chat/messages/{id}/reactions — toggle an emoji reaction.
+    @discardableResult
+    static func toggleChatReaction(_ messageId: String, emoji: String) async throws -> Bool {
+        struct Body: Encodable { let emoji: String }
+        struct Res: Decodable { let on: Bool }
+        return try await APIClient.shared.post("chat/messages/\(messageId)/reactions", body: Body(emoji: emoji), as: Res.self).on
+    }
+
     // MARK: Community — Prayer Wall (public, opt-in)
 
     /// GET /prayer-wall?sort= — the congregation's shared prayer requests.

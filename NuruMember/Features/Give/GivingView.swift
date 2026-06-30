@@ -100,6 +100,7 @@ struct GivingView: View {
                 }
                 ctaBar
             }
+            .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
         }
         .task { if vm.history.isEmpty { await vm.load() } }
