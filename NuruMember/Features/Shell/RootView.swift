@@ -8,6 +8,24 @@ import SwiftUI
 enum AppTab: Hashable, CaseIterable {
     case home, pathway, plans, events, chat, give, profile
 
+    /// Debug-only: lets a screenshot script open the app on a chosen tab via the
+    /// NURU_TAB launch env var (e.g. SIMCTL_CHILD_NURU_TAB=pathway). Defaults home.
+    static var initialTab: AppTab {
+        #if DEBUG
+        switch ProcessInfo.processInfo.environment["NURU_TAB"] {
+        case "pathway": return .pathway
+        case "plans": return .plans
+        case "events": return .events
+        case "chat": return .chat
+        case "give": return .give
+        case "profile": return .profile
+        default: return .home
+        }
+        #else
+        return .home
+        #endif
+    }
+
     var label: String {
         switch self {
         case .home: return "Home"
@@ -33,7 +51,7 @@ enum AppTab: Hashable, CaseIterable {
 }
 
 struct RootView: View {
-    @State private var tab: AppTab = .home
+    @State private var tab: AppTab = .initialTab
 
     var body: some View {
         TabView(selection: $tab) {
@@ -113,30 +131,32 @@ struct ProfileView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                Nuru.paper.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: Nuru.S.base) {
-                        if let p = auth.profile {
-                            Card {
-                                HStack(spacing: Nuru.S.base) {
-                                    Avatar(url: p.avatarUrl, name: p.fullName, size: 52)
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(p.fullName).font(.nHeading).foregroundStyle(Nuru.ink)
-                                        if let email = p.email { Text(email).font(.nCaption).foregroundStyle(Nuru.muted) }
-                                        Text(p.role.capitalized).font(.nMicro).foregroundStyle(Nuru.gold)
-                                    }
-                                    Spacer(minLength: 0)
+            ScrollView {
+                VStack(alignment: .leading, spacing: Nuru.S.base) {
+                    Text("Profile").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.ink)
+                        .padding(.top, Nuru.S.sm)
+                    if let p = auth.profile {
+                        Card {
+                            HStack(spacing: Nuru.S.base) {
+                                Avatar(url: p.avatarUrl, name: p.fullName, size: 52)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(p.fullName).font(.nHeading).foregroundStyle(Nuru.ink)
+                                    if let email = p.email { Text(email).font(.nCaption).foregroundStyle(Nuru.muted) }
+                                    Text(p.role.capitalized).font(.nMicro).foregroundStyle(Nuru.gold)
                                 }
+                                Spacer(minLength: 0)
                             }
                         }
-                        PButton(title: "Sign out", variant: .navy) { auth.signOut() }
                     }
-                    .padding(Nuru.S.screen)
-                    .padding(.bottom, Nuru.tabBarSpace)
+                    PButton(title: "Sign out", variant: .navy) { auth.signOut() }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Nuru.S.screen)
+                .padding(.top, 60)
+                .padding(.bottom, Nuru.tabBarSpace)
             }
-            .navigationTitle("Profile")
+            .background(Nuru.paper.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
         }
     }
 }
