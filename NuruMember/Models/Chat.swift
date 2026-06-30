@@ -56,6 +56,9 @@ struct ChatMessage: Codable, Sendable, Identifiable {
     let createdAt: String
     let mine: Bool
     let reactions: [ChatReaction]
+    let readCount: Int?
+    let recipientCount: Int?
+    let aiTag: String?
 
     var id: String { messageId }
 }
