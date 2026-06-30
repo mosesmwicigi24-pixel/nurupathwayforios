@@ -49,6 +49,14 @@ struct GiftsView: View {
                         Text("WAYS TO SERVE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.gold).padding(.top, Nuru.S.sm)
                         ForEach(g.suggestedTracks) { trackRow($0) }
                     }
+                    NavigationLink(value: GrowDestination.giftsAssessment) {
+                        Text("Retake assessment")
+                            .font(.inter(14, .semibold)).foregroundStyle(Nuru.gold)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, Nuru.S.md)
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.top, Nuru.S.xs)
                 } else {
                     discoverCTA
                 }
@@ -118,7 +126,14 @@ struct GiftsView: View {
             Text("Discover your gifts").font(.nTitle).foregroundStyle(Nuru.ink)
             Text("Take the short assessment to reveal how God has wired you to serve.")
                 .font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-            Text("Assessment coming soon").font(.nMicro).foregroundStyle(Nuru.faint)
+            NavigationLink(value: GrowDestination.giftsAssessment) {
+                Text("Discover how God wired you")
+                    .font(.inter(16, .semibold)).foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
+                    .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .padding(.top, Nuru.S.xs)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl).padding(.horizontal, Nuru.S.base)
         .giftCard()

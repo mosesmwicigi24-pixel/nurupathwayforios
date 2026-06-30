@@ -294,6 +294,11 @@ extension MemberAPI {
         try await APIClient.shared.get("calendar/series", as: Envelope<EventSeries>.self).data
     }
 
+    /// POST /calendar/series/{id}/follow — toggle following a series.
+    static func toggleSeriesFollow(_ id: String) async throws -> SeriesFollowResult {
+        try await APIClient.shared.postEmpty("calendar/series/\(id)/follow", as: SeriesFollowResult.self)
+    }
+
     /// GET /home/featured-announcement — the admin-featured announcement (may be null).
     static func featuredAnnouncement() async throws -> FeaturedAnnouncement? {
         struct Env: Decodable { let data: FeaturedAnnouncement? }
@@ -398,6 +403,21 @@ extension MemberAPI {
     /// GET /me/gifts — the member's spiritual-gifts profile.
     static func myGifts() async throws -> MyGifts {
         try await APIClient.shared.get("me/gifts", as: MyGifts.self)
+    }
+
+    /// GET /gifts/questions — the (possibly AI-personalized) Likert question set.
+    static func giftQuestions() async throws -> GiftQuestionSet {
+        try await APIClient.shared.get("gifts/questions", as: GiftQuestionSet.self)
+    }
+
+    /// POST /gifts/assessments — submit Likert answers; returns the new profile.
+    static func submitGifts(setId: String, clientMutationId: String, answers: [GiftAnswerInput]) async throws -> MyGifts {
+        struct Body: Encodable { let clientMutationId: String; let setId: String; let answers: [GiftAnswerInput] }
+        return try await APIClient.shared.post(
+            "gifts/assessments",
+            body: Body(clientMutationId: clientMutationId, setId: setId, answers: answers),
+            as: MyGifts.self
+        )
     }
 
     /// GET /giving/schedules — the member's recurring gifts.

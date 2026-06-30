@@ -216,6 +216,17 @@ struct HomeView: View {
         case "verseLibrary": path.append(GrowDestination.verseLibrary)
         case "prayerWall": path.append(CommunityRoute.prayerWall)
         case "gifts": path.append(GrowDestination.gifts)
+        case "giftsAssessment": path.append(GrowDestination.giftsAssessment)
+        case "planSegment":
+            let segs = [
+                PlanSegment(segmentId: "s1", sort: 0, kind: "video", title: "Watch",
+                            reference: nil, content: "A short reflection to begin the day.",
+                            videoUrl: "https://example.com/v.mp4", imageUrl: nil, completed: false),
+                PlanSegment(segmentId: "s2", sort: 1, kind: "reading", title: "Today's Reading",
+                            reference: "Psalm 1", content: "Blessed is the one who does not walk in step with the wicked…",
+                            videoUrl: nil, imageUrl: nil, completed: false),
+            ]
+            path.append(PlanSegmentRef(planTitle: "Rooted: 10 Days in the Psalms", dayNumber: 2, segments: segs, index: 0))
         case "level": path.append(PathwayRoute.level(1))
         case "notifications": path.append(AppRoute.notifications)
         default: break

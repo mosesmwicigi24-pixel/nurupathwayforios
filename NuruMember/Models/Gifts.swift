@@ -37,3 +37,24 @@ struct MyGifts: Codable, Sendable {
     let personas: [GiftPersona]
     let suggestedTracks: [ServingTrack]
 }
+
+/// GET /gifts/questions — one Likert prompt in the (possibly AI-tuned) question set.
+struct GiftQuestion: Codable, Sendable, Identifiable, Hashable {
+    let questionId: String
+    let giftKey: String
+    let prompt: String
+    var id: String { questionId }
+}
+
+/// GET /gifts/questions — the served question set for the calling member.
+struct GiftQuestionSet: Codable, Sendable {
+    let setId: String
+    let aiInfluenced: Bool
+    let data: [GiftQuestion]
+}
+
+/// One answer (1–5 Likert) submitted to POST /gifts/assessments.
+struct GiftAnswerInput: Encodable, Sendable {
+    let questionId: String
+    let value: Int
+}
