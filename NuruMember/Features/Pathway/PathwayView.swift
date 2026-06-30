@@ -115,8 +115,7 @@ private struct LevelCard: View {
                 }
                 Spacer(minLength: 0)
                 if !locked {
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Nuru.ink300)
+                    Icon(.chevronRight, size: 13, color: Nuru.ink300)
                 }
             }
             .opacity(locked ? 0.6 : 1)
@@ -132,9 +131,8 @@ private struct LevelCard: View {
             Circle()
                 .fill(level.status == .completed ? Nuru.success : (locked ? Nuru.mutedBg : Nuru.goldTint))
                 .frame(width: 44, height: 44)
-            Image(systemName: locked ? "lock.fill" : (level.status == .completed ? "checkmark" : "book.fill"))
-                .font(.system(size: 16, weight: .semibold))
-                .foregroundStyle(level.status == .completed ? .white : (locked ? Nuru.faint : Nuru.gold))
+            Icon(locked ? .lock : (level.status == .completed ? .check : .book), size: 16,
+                 color: level.status == .completed ? .white : (locked ? Nuru.faint : Nuru.gold))
         }
     }
 }

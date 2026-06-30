@@ -57,7 +57,7 @@ struct VerseLibraryView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { adding = true } label: { Image(systemName: "plus") }
+                Button { adding = true } label: { Icon(.plus, size: 18, color: Nuru.gold) }
             }
         }
         .task { if vm.verses.isEmpty { await vm.load() } }
@@ -90,8 +90,8 @@ private struct SavedVerseCard: View {
                 HStack {
                     Spacer()
                     Button(role: .destructive, action: remove) {
-                        Image(systemName: "trash").font(.system(size: 13))
-                    }.foregroundStyle(Nuru.danger)
+                        Icon(.trash2, size: 13, color: Nuru.danger)
+                    }
                 }
             }
         }

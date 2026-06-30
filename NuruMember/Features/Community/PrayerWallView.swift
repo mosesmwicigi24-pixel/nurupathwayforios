@@ -78,12 +78,12 @@ struct PrayerWallView: View {
             VStack {
                 HStack {
                     Button { dismiss() } label: {
-                        Image(systemName: "arrow.left").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                        Icon(.arrowLeft, size: 18, color: .white)
                             .frame(width: 40, height: 40).background(Color.black.opacity(0.4), in: Circle())
                     }
                     Spacer()
                     Button { composing = true } label: {
-                        Image(systemName: "plus").font(.system(size: 18, weight: .bold)).foregroundStyle(Nuru.navyDeep)
+                        Icon(.plus, size: 18, color: Nuru.navyDeep)
                             .frame(width: 40, height: 40).background(Nuru.gold, in: Circle())
                     }
                 }
@@ -162,7 +162,7 @@ private struct PrayerCardView: View {
                 }
                 .buttonStyle(.plain)
                 HStack(spacing: 4) {
-                    Image(systemName: "bubble.left").font(.system(size: 14)).foregroundStyle(Nuru.faint)
+                    Icon(.messageCircle, size: 14, color: Nuru.faint)
                     Text("\(post.commentCount)").font(.nCaption).foregroundStyle(Nuru.faint)
                 }
                 Spacer(minLength: 0)
@@ -177,7 +177,7 @@ private struct PrayerCardView: View {
 
     private var answeredChip: some View {
         HStack(spacing: 4) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(Nuru.successText)
+            Icon(.checkCircle2, size: 11, color: Nuru.successText)
             Text("Answered").font(.nMicro).foregroundStyle(Nuru.successText)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -186,7 +186,7 @@ private struct PrayerCardView: View {
 
     private var voiceTag: some View {
         HStack(spacing: 6) {
-            Image(systemName: "waveform").font(.system(size: 13)).foregroundStyle(Nuru.gold)
+            Icon(.audioLines, size: 13, color: Nuru.gold)
             Text("Voice prayer").font(.nCaption).foregroundStyle(Nuru.muted)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)

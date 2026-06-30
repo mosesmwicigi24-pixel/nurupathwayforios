@@ -93,9 +93,7 @@ private struct ModuleRowCard: View {
                     Circle()
                         .fill(module.completed ? Nuru.success : (module.locked ? Nuru.mutedBg : Nuru.goldTint))
                         .frame(width: 38, height: 38)
-                    Image(systemName: icon)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(module.completed ? .white : (module.locked ? Nuru.faint : Nuru.gold))
+                    Icon(glyph, size: 14, color: module.completed ? .white : (module.locked ? Nuru.faint : Nuru.gold))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(module.title).font(.nHeading).foregroundStyle(Nuru.ink)
@@ -107,18 +105,17 @@ private struct ModuleRowCard: View {
                 }
                 Spacer(minLength: 0)
                 if !module.locked {
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Nuru.ink300)
+                    Icon(.chevronRight, size: 13, color: Nuru.ink300)
                 }
             }
             .opacity(module.locked ? 0.6 : 1)
         }
     }
 
-    private var icon: String {
-        if module.locked { return "lock.fill" }
-        if module.completed { return "checkmark" }
-        return module.requiresQuiz ? "pencil.and.list.clipboard" : "book.fill"
+    private var glyph: Lucide {
+        if module.locked { return .lock }
+        if module.completed { return .check }
+        return module.requiresQuiz ? .pencil : .book
     }
 }
 

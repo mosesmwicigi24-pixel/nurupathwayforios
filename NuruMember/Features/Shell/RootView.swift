@@ -1,62 +1,113 @@
-// The signed-in tab shell — the native port of navigation/RootNavigator.tsx +
-// BottomTabBar.tsx. Five primary tabs (Home · Pathway · Give · Community ·
-// Profile); the full seven-destination map from the RN app is reintroduced as
-// each feature screen is ported (see PORT_STATUS.md). Home is fully wired; the
-// others are placeholders for the next porting phases.
+// The signed-in shell — the native port of navigation/RootNavigator.tsx +
+// BottomTabBar.tsx. Seven primary destinations on a custom navy bar with a gold
+// active icon + label + top indicator dot (Home · Pathway · Plans · Events ·
+// Chat · Give · Profile). The system tab bar is hidden; we draw our own to match
+// the RN design exactly.
 import SwiftUI
 
+enum AppTab: Hashable, CaseIterable {
+    case home, pathway, plans, events, chat, give, profile
+
+    var label: String {
+        switch self {
+        case .home: return "Home"
+        case .pathway: return "Pathway"
+        case .plans: return "Plans"
+        case .events: return "Events"
+        case .chat: return "Chat"
+        case .give: return "Give"
+        case .profile: return "Profile"
+        }
+    }
+    var icon: Lucide {
+        switch self {
+        case .home: return .house
+        case .pathway: return .bookOpen
+        case .plans: return .bookMarked
+        case .events: return .calendarDays
+        case .chat: return .messageCircle
+        case .give: return .handHeart
+        case .profile: return .user
+        }
+    }
+}
+
 struct RootView: View {
+    @State private var tab: AppTab = .home
+
     var body: some View {
-        TabView {
-            HomeView()
-                .tabItem { Label("Home", systemImage: "house.fill") }
-
-            PathwayView()
-                .tabItem { Label("Pathway", systemImage: "map.fill") }
-
-            GrowView()
-                .tabItem { Label("Grow", systemImage: "leaf.fill") }
-
-            CommunityView()
-                .tabItem { Label("Community", systemImage: "bubble.left.and.bubble.right.fill") }
-
-            ProfileView()
-                .tabItem { Label("Profile", systemImage: "person.fill") }
+        TabView(selection: $tab) {
+            HomeView().tag(AppTab.home)
+            PathwayView().tag(AppTab.pathway)
+            PlansTab().tag(AppTab.plans)
+            placeholderTab("Events", "The church calendar and gatherings.", .calendarDays).tag(AppTab.events)
+            placeholderTab("Chat", "Direct messages and spaces.", .messageCircle).tag(AppTab.chat)
+            placeholderTab("Give", "Generosity, schedules and statements.", .handHeart).tag(AppTab.give)
+            ProfileView().tag(AppTab.profile)
         }
-        .tint(Nuru.gold)
+        .toolbar(.hidden, for: .tabBar)
+        .overlay(alignment: .bottom) {
+            NuruTabBar(selection: $tab).ignoresSafeArea(edges: .bottom)
+        }
     }
-}
 
-/// Placeholder destination for screens not yet ported.
-struct ComingSoon: View {
-    var title: String
-    var icon: String
-    var blurb: String
-
-    var body: some View {
+    private func placeholderTab(_ title: String, _ blurb: String, _ icon: Lucide) -> some View {
         NavigationStack {
-            ZStack {
-                Nuru.paper.ignoresSafeArea()
-                VStack(spacing: Nuru.S.base) {
-                    Image(systemName: icon)
-                        .font(.system(size: 40))
-                        .foregroundStyle(Nuru.gold)
-                    Text(title).font(.nTitle).foregroundStyle(Nuru.ink)
-                    Text(blurb)
-                        .font(.nBody).foregroundStyle(Nuru.muted)
-                        .multilineTextAlignment(.center)
-                    Text("Porting in progress")
-                        .font(.nMicro).foregroundStyle(Nuru.faint)
-                        .padding(.top, Nuru.S.sm)
-                }
-                .padding(Nuru.S.xl)
-            }
-            .navigationTitle(title)
+            PlaceholderScreen(title: title, blurb: blurb, icon: icon).navigationTitle(title)
         }
     }
 }
 
-/// Minimal Profile tab — shows the signed-in member and a sign-out control.
+/// Plans tab — the reading-plan catalogue with its own navigation stack.
+private struct PlansTab: View {
+    var body: some View {
+        NavigationStack { ReadingPlansView() }.nuruDestinations()
+    }
+}
+
+/// Custom bottom bar: navy, gold active (icon + label + top dot), dim inactive.
+private struct NuruTabBar: View {
+    @Binding var selection: AppTab
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(AppTab.allCases, id: \.self) { t in
+                let focused = selection == t
+                Button {
+                    selection = t
+                } label: {
+                    VStack(spacing: 3) {
+                        Icon(t.icon, size: 21, color: focused ? Nuru.gold : Nuru.onNavyFaint)
+                        Text(t.label).font(.inter(11, .medium)).foregroundStyle(focused ? Nuru.gold : Nuru.onNavyFaint)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 48)
+                    .overlay(alignment: .top) {
+                        if focused {
+                            Capsule().fill(Nuru.gold).frame(width: 28, height: 3).offset(y: -2)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.top, Nuru.S.sm)
+        .padding(.bottom, Self.safeBottom)
+        .background(Nuru.navy)
+        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1) }
+    }
+
+    /// Bottom safe-area inset (home indicator) so labels never sit under it.
+    static var safeBottom: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
+        return max(inset, Nuru.S.md)
+    }
+}
+
+/// Profile tab — identity + sign out (native port of screens/ProfileScreen.tsx
+/// header; full profile detail lands in Phase 6).
 struct ProfileView: View {
     @EnvironmentObject private var auth: AuthStore
 
@@ -68,18 +119,21 @@ struct ProfileView: View {
                     VStack(spacing: Nuru.S.base) {
                         if let p = auth.profile {
                             Card {
-                                VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                                    Text(p.fullName).font(.nHeading).foregroundStyle(Nuru.ink)
-                                    if let email = p.email {
-                                        Text(email).font(.nCaption).foregroundStyle(Nuru.muted)
+                                HStack(spacing: Nuru.S.base) {
+                                    Avatar(url: p.avatarUrl, name: p.fullName, size: 52)
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(p.fullName).font(.nHeading).foregroundStyle(Nuru.ink)
+                                        if let email = p.email { Text(email).font(.nCaption).foregroundStyle(Nuru.muted) }
+                                        Text(p.role.capitalized).font(.nMicro).foregroundStyle(Nuru.gold)
                                     }
-                                    Text(p.role.capitalized).font(.nMicro).foregroundStyle(Nuru.gold)
+                                    Spacer(minLength: 0)
                                 }
                             }
                         }
                         PButton(title: "Sign out", variant: .navy) { auth.signOut() }
                     }
                     .padding(Nuru.S.screen)
+                    .padding(.bottom, Nuru.tabBarSpace)
                 }
             }
             .navigationTitle("Profile")

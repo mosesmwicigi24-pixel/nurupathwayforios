@@ -183,11 +183,8 @@ struct QuizView: View {
     private func optionRow(label: String, selected: Bool, isCheckbox: Bool = false, tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
             HStack(spacing: Nuru.S.md) {
-                Image(systemName: selected
-                      ? (isCheckbox ? "checkmark.square.fill" : "largecircle.fill.circle")
-                      : (isCheckbox ? "square" : "circle"))
-                    .font(.system(size: 18))
-                    .foregroundStyle(selected ? Nuru.gold : Nuru.ink300)
+                Icon(selected ? (isCheckbox ? .squareCheck : .circleCheckBig) : (isCheckbox ? .square : .circle),
+                     size: 18, color: selected ? Nuru.gold : Nuru.ink300)
                 Text(label).font(.nBody).foregroundStyle(Nuru.ink)
                 Spacer(minLength: 0)
             }
@@ -210,9 +207,8 @@ private struct ResultView: View {
             Spacer()
             ZStack {
                 Circle().fill(result.isPassed ? Nuru.successBg : Nuru.urgentBg).frame(width: 96, height: 96)
-                Image(systemName: result.isPassed ? "checkmark" : (result.requiresManualReview ? "hourglass" : "arrow.counterclockwise"))
-                    .font(.system(size: 40, weight: .semibold))
-                    .foregroundStyle(result.isPassed ? Nuru.success : Nuru.urgentText)
+                Icon(result.isPassed ? .check : (result.requiresManualReview ? .clock : .arrowLeft),
+                     size: 40, color: result.isPassed ? Nuru.success : Nuru.urgentText)
             }
             Text(result.requiresManualReview ? "Submitted for review"
                  : (result.isPassed ? "Passed!" : "Not quite yet"))

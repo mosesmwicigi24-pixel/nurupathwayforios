@@ -115,7 +115,7 @@ struct LoginView: View {
         VStack(spacing: 0) {
             Button { go(.login) } label: {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.left").font(.system(size: 14, weight: .semibold))
+                    Icon(.arrowLeft, size: 14, color: .white)
                     Text("Back").font(.nCaption)
                 }.foregroundStyle(.white)
             }
@@ -130,37 +130,37 @@ struct LoginView: View {
     @ViewBuilder
     private var fields: some View {
         if mode == .register {
-            field("FULL NAME", icon: "person") {
+            field("FULL NAME", icon: .user) {
                 plainField("Your name", text: $fullName, autocap: .words)
             }
         }
         switch mode {
         case .reset:
-            field("RESET TOKEN", icon: "lock") {
+            field("RESET TOKEN", icon: .lock) {
                 plainField("Paste the token from your email", text: $token)
             }
         case .mfa:
-            field("VERIFICATION CODE", icon: "lock") {
+            field("VERIFICATION CODE", icon: .lock) {
                 plainField("123456", text: $mfaCode, keyboard: .numberPad)
             }
         default:
-            field("EMAIL ADDRESS", icon: "envelope") {
+            field("EMAIL ADDRESS", icon: .mail) {
                 plainField("name@email.com", text: $email, keyboard: .emailAddress)
             }
         }
 
         if mode == .login || mode == .register {
-            field("PASSWORD", icon: "lock", trailing: eyeToggle) {
+            field("PASSWORD", icon: .lock, trailing: eyeToggle) {
                 secureField(mode == .register ? "At least 8 characters" : "••••••••", text: $password)
             }
         }
         if mode == .register {
-            field("CONFIRM PASSWORD", icon: "lock") {
+            field("CONFIRM PASSWORD", icon: .lock) {
                 secureField("Re-enter password", text: $confirm)
             }
         }
         if mode == .reset {
-            field("NEW PASSWORD", icon: "lock", trailing: eyeToggle) {
+            field("NEW PASSWORD", icon: .lock, trailing: eyeToggle) {
                 secureField("At least 8 characters", text: $newPassword)
             }
         }
@@ -176,7 +176,7 @@ struct LoginView: View {
                             .background(remember ? Nuru.gold : .clear, in: RoundedRectangle(cornerRadius: 6))
                             .frame(width: 20, height: 20)
                         if remember {
-                            Image(systemName: "checkmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Nuru.navy)
+                            Icon(.check, size: 11, color: Nuru.navy)
                         }
                     }
                     Text("Remember me").font(.nCaption).foregroundStyle(Nuru.onNavyDim)
@@ -205,20 +205,19 @@ struct LoginView: View {
     private var eyeToggle: AnyView {
         AnyView(
             Button { showPw.toggle() } label: {
-                Image(systemName: showPw ? "eye.slash" : "eye")
-                    .font(.system(size: 17)).foregroundStyle(Color.white.opacity(0.40))
+                Icon(showPw ? .eyeOff : .eye, size: 17, color: Color.white.opacity(0.40))
             }
         )
     }
 
     // MARK: Field building blocks
 
-    private func field<Content: View>(_ label: String, icon: String, trailing: AnyView? = nil,
+    private func field<Content: View>(_ label: String, icon: Lucide, trailing: AnyView? = nil,
                                       @ViewBuilder content: () -> Content) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(label).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.onNavyDim)
             HStack(spacing: Nuru.S.sm) {
-                Image(systemName: icon).font(.system(size: 17)).foregroundStyle(Color.white.opacity(0.40))
+                Icon(icon, size: 17, color: Color.white.opacity(0.40))
                 content().frame(maxWidth: .infinity)
                 if let trailing { trailing }
             }

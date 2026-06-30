@@ -67,7 +67,7 @@ struct PrayerWallDetailView: View {
     private var header: some View {
         HStack(spacing: Nuru.S.md) {
             Button { dismiss() } label: {
-                Image(systemName: "arrow.left").font(.system(size: 18, weight: .semibold)).foregroundStyle(.white)
+                Icon(.arrowLeft, size: 18, color: .white)
                     .frame(width: 40, height: 40).background(Color.white.opacity(0.10), in: Circle())
             }
             Text("Prayer").font(.fraunces(20, .semibold)).foregroundStyle(.white)
@@ -131,7 +131,7 @@ struct PrayerWallDetailView: View {
             if post.mine {
                 Button { Task { await vm.toggleAnswered() } } label: {
                     HStack(spacing: 6) {
-                        Image(systemName: "checkmark.circle").font(.system(size: 14)).foregroundStyle(Nuru.successText)
+                        Icon(.checkCircle2, size: 14, color: Nuru.successText)
                         Text(post.isAnswered ? "Mark unanswered" : "Mark answered")
                             .font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
                     }
@@ -176,7 +176,7 @@ struct PrayerWallDetailView: View {
                 .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
                 .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
             Button { Task { await vm.comment() } } label: {
-                Image(systemName: "paperplane.fill").font(.system(size: 17)).foregroundStyle(.white)
+                Icon(.send, size: 17, color: .white)
                     .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
             }
             .disabled(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
@@ -189,7 +189,7 @@ struct PrayerWallDetailView: View {
 
     private var answeredChip: some View {
         HStack(spacing: 4) {
-            Image(systemName: "checkmark.circle.fill").font(.system(size: 12)).foregroundStyle(Nuru.successText)
+            Icon(.checkCircle2, size: 12, color: Nuru.successText)
             Text("Answered").font(.nMicro).foregroundStyle(Nuru.successText)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)

@@ -154,7 +154,7 @@ private struct DayRow: View {
             HStack(spacing: Nuru.S.base) {
                 ZStack {
                     Circle().fill(done ? Nuru.success : Nuru.goldTint).frame(width: 36, height: 36)
-                    if done { Image(systemName: "checkmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.white) }
+                    if done { Icon(.check, size: 13, color: .white) }
                     else { Text("\(day.dayNumber)").font(.inter(14, .semibold)).foregroundStyle(Nuru.gold) }
                 }
                 VStack(alignment: .leading, spacing: 2) {
@@ -162,7 +162,7 @@ private struct DayRow: View {
                     Text(day.reference).font(.nCaption).foregroundStyle(Nuru.muted)
                 }
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Nuru.ink300)
+                Icon(.chevronRight, size: 13, color: Nuru.ink300)
             }
         }
     }

@@ -123,7 +123,8 @@ enum Nuru {
     // MARK: Fonts — register the bundled OFL faces (Inter + Fraunces).
     static func registerFonts() {
         let faces = ["Inter-Regular", "Inter-Medium", "Inter-SemiBold", "Inter-Bold",
-                     "Fraunces-Regular", "Fraunces-Medium", "Fraunces-SemiBold", "Fraunces-Bold"]
+                     "Fraunces-Regular", "Fraunces-Medium", "Fraunces-SemiBold", "Fraunces-Bold",
+                     "lucide"]
         for f in faces {
             if let url = Bundle.main.url(forResource: f, withExtension: "ttf") {
                 CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)

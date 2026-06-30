@@ -1,74 +1,55 @@
-// Grow — the daily-rhythm & Word hub. A native home for the screens the RN app
-// reached from Home and the "Plans" tab: today's Devotional, Memory Verses,
-// Reading Plans, the Prayer Journal and the Verse Library. Hosts the navigation
-// stack for all of them.
+// Shared navigation destinations + small load-state helper for the member app.
+// The growth screens (Devotional, Memory Verses, Reading Plans, Prayer Journal,
+// Verse Library) are reached from Home's "Grow your faith" grid and the Plans
+// tab — exactly like the RN app, which has no separate "Grow" tab.
 import SwiftUI
 
-enum GrowRoute: Hashable {
+/// Value-routes for the growth screens, pushed from Home / Plans stacks.
+enum GrowDestination: Hashable {
     case devotional
     case memoryVerses
-    case plans
-    case prayer
-    case verses
+    case readingPlans
+    case prayerJournal
+    case verseLibrary
+    case gifts
+    case resources
 }
 
-struct GrowView: View {
-    var body: some View {
-        NavigationStack {
-            ZStack {
-                Nuru.paper.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: Nuru.S.md) {
-                        row(.devotional, "Today's Devotional", "Read and reflect", "sun.max.fill")
-                        row(.memoryVerses, "Memory Verses", "Hide the Word in your heart", "text.book.closed.fill")
-                        row(.plans, "Reading Plans", "Guided journeys through Scripture", "list.bullet.rectangle.fill")
-                        row(.prayer, "Prayer Journal", "Your private prayers", "hands.sparkles.fill")
-                        row(.verses, "Verse Library", "Verses you've saved", "bookmark.fill")
-                    }
-                    .padding(Nuru.S.screen)
-                    .padding(.bottom, Nuru.tabBarSpace)
-                }
-            }
-            .navigationTitle("Grow")
-            .navigationDestination(for: GrowRoute.self) { route in
-                switch route {
-                case .devotional:   DevotionalView()
-                case .memoryVerses: MemoryVerseView()
-                case .plans:        ReadingPlansView()
-                case .prayer:       PrayerJournalView()
-                case .verses:       VerseLibraryView()
+extension View {
+    /// Registers every cross-screen navigation destination so any stack (Home,
+    /// Plans, Community) can push the same screens with value-based links.
+    func nuruDestinations() -> some View {
+        self
+            .navigationDestination(for: GrowDestination.self) { d in
+                switch d {
+                case .devotional:    DevotionalView()
+                case .memoryVerses:  MemoryVerseView()
+                case .readingPlans:  ReadingPlansView()
+                case .prayerJournal: PrayerJournalView()
+                case .verseLibrary:  VerseLibraryView()
+                case .gifts:         PlaceholderScreen(title: "Your Calling", blurb: "Discover your spiritual gifts.", icon: .sparkles)
+                case .resources:     PlaceholderScreen(title: "Resources", blurb: "Books, audio and teaching.", icon: .bookOpen)
                 }
             }
             .navigationDestination(for: ReadingPlanRow.self) { PlanDetailView(plan: $0) }
             .navigationDestination(for: PlanDayRef.self) { PlanDayView(ref: $0) }
-        }
-    }
-
-    private func row(_ route: GrowRoute, _ title: String, _ subtitle: String, _ icon: String) -> some View {
-        NavigationLink(value: route) {
-            Card {
-                HStack(spacing: Nuru.S.base) {
-                    ZStack {
-                        Circle().fill(Nuru.goldTint).frame(width: 44, height: 44)
-                        Image(systemName: icon).font(.system(size: 18)).foregroundStyle(Nuru.gold)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.nHeading).foregroundStyle(Nuru.ink)
-                        Text(subtitle).font(.nCaption).foregroundStyle(Nuru.muted)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(Nuru.ink300)
+            .navigationDestination(for: CommunityRoute.self) { r in
+                switch r {
+                case .prayerWall: PrayerWallView()
+                case .prayer(let id): PrayerWallDetailView(postId: id)
                 }
             }
-        }
-        .buttonStyle(.plain)
+            .navigationDestination(for: PathwayRoute.self) { r in
+                switch r {
+                case .level(let n): LevelDetailView(levelNumber: n)
+                case .module(let id): ModuleView(moduleId: id)
+                case .quiz(let id): QuizView(moduleId: id)
+                }
+            }
     }
 }
 
-// MARK: - Small shared helpers for Grow screens
-
-/// A standard loading / empty / error scaffold so each Grow screen stays terse.
+/// A standard loading / empty / error scaffold so each data screen stays terse.
 struct LoadStateView<Content: View>: View {
     let loading: Bool
     let isEmpty: Bool
@@ -91,5 +72,27 @@ struct LoadStateView<Content: View>: View {
         } else {
             content()
         }
+    }
+}
+
+/// A simple branded placeholder for screens not yet ported.
+struct PlaceholderScreen: View {
+    var title: String
+    var blurb: String
+    var icon: Lucide
+
+    var body: some View {
+        ZStack {
+            Nuru.paper.ignoresSafeArea()
+            VStack(spacing: Nuru.S.base) {
+                Icon(icon, size: 40, color: Nuru.gold)
+                Text(title).font(.fraunces(22, .semibold)).foregroundStyle(Nuru.ink)
+                Text(blurb).font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
+                Text("Coming soon").font(.nMicro).foregroundStyle(Nuru.faint)
+            }
+            .padding(Nuru.S.xl)
+        }
+        .navigationTitle(title)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }

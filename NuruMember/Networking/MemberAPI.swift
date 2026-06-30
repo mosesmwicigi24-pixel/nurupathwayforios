@@ -61,6 +61,55 @@ enum MemberAPI {
         return try await APIClient.shared.post("me/rhythm/complete", body: Body(kind: kind), as: RhythmToday.self)
     }
 
+    /// GET /me/achievements — used on Home for the streak count.
+    static func achievements() async throws -> Achievements {
+        try await APIClient.shared.get("me/achievements", as: Achievements.self)
+    }
+
+    /// GET /me/notifications — Home needs only the unread count.
+    static func unreadNotifications() async throws -> Int {
+        struct Res: Decodable { let unread: Int }
+        return try await APIClient.shared.get("me/notifications", as: Res.self).unread
+    }
+
+    /// GET /me/scores — the five growth scores + weighted overall.
+    static func scores() async throws -> ScoresSummary {
+        try await APIClient.shared.get("me/scores", as: ScoresSummary.self)
+    }
+
+    /// GET /me/home/greeting — the warm daily-greeting line under the greeting.
+    static func dailyGreeting() async throws -> String {
+        struct Res: Decodable { let greeting: String }
+        return try await APIClient.shared.get("me/home/greeting", as: Res.self).greeting
+    }
+
+    /// GET /me/home/verse — the tailored "Verse for today".
+    static func homeVerse() async throws -> TailoredVerse {
+        try await APIClient.shared.get("me/home/verse", as: TailoredVerse.self)
+    }
+
+    /// GET /scripture?ref= — fetch a passage's text + translation.
+    static func scripture(_ ref: String) async throws -> ScripturePassage {
+        try await APIClient.shared.get("scripture", query: ["ref": ref], as: ScripturePassage.self)
+    }
+
+    /// GET /me/home/verse/reactions — community reaction counts for today's verse.
+    static func verseReactions() async throws -> VerseReactions {
+        try await APIClient.shared.get("me/home/verse/reactions", as: VerseReactions.self)
+    }
+
+    /// POST /me/home/verse/reactions — set my reaction (one per member/day).
+    @discardableResult
+    static func setVerseReaction(_ emoji: String) async throws -> VerseReactions {
+        struct Body: Encodable { let emoji: String }
+        return try await APIClient.shared.post("me/home/verse/reactions", body: Body(emoji: emoji), as: VerseReactions.self)
+    }
+
+    /// PUT /me/verses — save the verse-of-the-day to the library (one-tap Save).
+    static func saveVerseQuick(reference: String, version: String?, text: String?) async throws {
+        try await saveVerse(savedVerseId: UUID().uuidString, reference: reference, version: version, verseText: text)
+    }
+
     // MARK: Pathway (levels · modules · quiz — server-authoritative gating §1.9)
 
     /// GET /me/pathway — the member's level trail with per-level progress + status.

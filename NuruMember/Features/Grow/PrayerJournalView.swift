@@ -63,7 +63,7 @@ struct PrayerJournalView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                Button { editing = PrayerDraft() } label: { Image(systemName: "plus") }
+                Button { editing = PrayerDraft() } label: { Icon(.plus, size: 18, color: Nuru.gold) }
             }
         }
         .task { if vm.entries.isEmpty { await vm.load() } }
@@ -116,8 +116,8 @@ private struct PrayerCard: View {
                     Button("Edit", action: edit).font(.nCaption).foregroundStyle(Nuru.muted)
                     Spacer()
                     Button(role: .destructive, action: remove) {
-                        Image(systemName: "trash").font(.system(size: 13))
-                    }.foregroundStyle(Nuru.danger)
+                        Icon(.trash2, size: 13, color: Nuru.danger)
+                    }
                 }
                 .padding(.top, Nuru.S.xs)
             }
