@@ -50,7 +50,10 @@ struct LoginView: View {
             if let saved = UserDefaults.standard.string(forKey: rememberKey), !saved.isEmpty {
                 email = saved; remember = true
             }
-            #if DEBUG
+            // Dev convenience only on the simulator (seeded local backend). On a
+            // real device the build targets prod, where these creds don't exist —
+            // so leave the fields empty there.
+            #if targetEnvironment(simulator) && DEBUG
             if email.isEmpty { email = "student1@dev.local" }
             if password.isEmpty { password = "pathway123" }
             #endif

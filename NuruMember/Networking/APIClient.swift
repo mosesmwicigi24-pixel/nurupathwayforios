@@ -81,18 +81,26 @@ actor APIClient {
     }
 
     /// API base-URL resolution mirroring config.ts:
-    ///   1. NURU_API_URL env override (used by smoke-test scripts).
-    ///   2. Debug builds → the dev machine (simulator reaches it on localhost).
-    ///   3. Release builds → production over HTTPS.
+    ///   1. NURU_API_URL env override (used by smoke-test scripts / device dev).
+    ///   2. Debug builds ON THE SIMULATOR → the dev machine on localhost.
+    ///   3. Everything else (a physical device, any Release build) → production.
+    ///
+    /// A physical device can't reach the Mac's `localhost`, and there is no Metro
+    /// packager host to borrow (unlike the RN app), so device builds default to
+    /// prod over HTTPS — point at a LAN backend with the NURU_API_URL scheme env
+    /// var if you need local dev on a real phone.
+    private static let prodBase = URL(string: "https://pathway.nuruplace.org/v1")!
+
     private static func resolveBaseURL() -> URL {
         let env = ProcessInfo.processInfo.environment
-        if let raw = env["NURU_API_URL"], let url = URL(string: raw.trimmingCharacters(in: .whitespaces)), !raw.isEmpty {
+        if let raw = env["NURU_API_URL"]?.trimmingCharacters(in: .whitespaces),
+           !raw.isEmpty, let url = URL(string: raw) {
             return url
         }
-        #if DEBUG
+        #if targetEnvironment(simulator) && DEBUG
         return URL(string: "http://localhost:8080/v1")!
         #else
-        return URL(string: "https://pathway.nuruplace.org/v1")!
+        return prodBase
         #endif
     }
 
