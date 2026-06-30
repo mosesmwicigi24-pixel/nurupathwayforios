@@ -44,6 +44,9 @@ enum Ev {
 
 enum EventSegment: String, CaseIterable { case today = "Today", upcoming = "Upcoming", rsvps = "My RSVPs" }
 
+/// Pushable routes within the Events stack (the month calendar).
+enum EventsNav: Hashable { case calendar }
+
 @MainActor
 final class EventsViewModel: ObservableObject {
     @Published var occurrences: [CalendarOccurrence] = []
@@ -138,6 +141,7 @@ struct EventsView: View {
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
             .navigationDestination(for: CalendarOccurrence.self) { EventDetailView(occurrence: $0) }
+            .navigationDestination(for: EventsNav.self) { _ in CalendarView() }
         }
         .task { if vm.occurrences.isEmpty { await vm.load() } }
     }
@@ -222,18 +226,21 @@ struct EventsView: View {
     }
 
     private var calendarLink: some View {
-        HStack(spacing: Nuru.S.md) {
-            ZStack { RoundedRectangle(cornerRadius: 16).fill(Nuru.goldGradient).frame(width: 44, height: 44); Icon(.calendarDays, size: 22, color: Nuru.navy) }
-            VStack(alignment: .leading, spacing: 1) {
-                Text("CALENDAR").font(.inter(9, .bold)).kerning(1).foregroundStyle(Nuru.goldLight)
-                Text("All events & calendar").font(.fraunces(15, .semibold)).foregroundStyle(Nuru.onNavy)
-                Text("See the whole month · \(vm.upcomingCount) upcoming").font(.inter(10)).foregroundStyle(Nuru.onNavyDim)
+        NavigationLink(value: EventsNav.calendar) {
+            HStack(spacing: Nuru.S.md) {
+                ZStack { RoundedRectangle(cornerRadius: 16).fill(Nuru.goldGradient).frame(width: 44, height: 44); Icon(.calendarDays, size: 22, color: Nuru.navy) }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CALENDAR").font(.inter(9, .bold)).kerning(1).foregroundStyle(Nuru.goldLight)
+                    Text("All events & calendar").font(.fraunces(15, .semibold)).foregroundStyle(Nuru.onNavy)
+                    Text("See the whole month · \(vm.upcomingCount) upcoming").font(.inter(10)).foregroundStyle(Nuru.onNavyDim)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: .white)
             }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 18, color: .white)
+            .padding(Nuru.S.base)
+            .background(Nuru.navy, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
         }
-        .padding(Nuru.S.base)
-        .background(Nuru.navy, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .buttonStyle(.plain)
     }
 
     private var segmentBar: some View {
