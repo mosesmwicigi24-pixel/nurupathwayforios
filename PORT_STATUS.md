@@ -23,8 +23,13 @@
 - ◑ ProfileScreen (minimal: identity + sign-out) → `Features/Shell/RootView.swift`
 
 ### Phase 1 — Pathway
-- ☐ LevelsScreen ☐ LevelScreen ☐ ModuleScreen ☐ QuizScreen
-- ☐ ReflectionScreen ☐ LevelCompleteScreen
+- ✅ LevelsScreen → `Features/Pathway/PathwayView.swift` (level trail, §1.9 lock)
+- ✅ LevelScreen → `Features/Pathway/LevelDetailView.swift` (module trail)
+- ✅ ModuleScreen → `Features/Pathway/ModuleView.swift` (lesson + complete/quiz CTA)
+- ✅ QuizScreen → `Features/Pathway/QuizView.swift` (all 5 question kinds, server-scored result)
+- ☐ ReflectionScreen (module reflection review state — M3)
+- ◑ LevelCompleteScreen (quiz result screen done; standalone level-complete ceremony pending)
+- Gating: ✅ `Features/Pathway/LevelGating.swift` (§1.9, server-authoritative)
 
 ### Phase 2 — Daily rhythm & Word
 - ☐ DevotionalScreen ☐ MemoryVerseScreen ☐ ReadingPlansScreen
@@ -49,3 +54,5 @@
 ## Verification log
 - 2026-06-30: `xcodebuild` Debug/iPhone 17 simulator → **BUILD SUCCEEDED**;
   app boots and renders the Login ceremony screen (fonts load, tokens applied).
+- 2026-06-30: Phase 1 Pathway (Levels→Module→Quiz) added → **BUILD SUCCEEDED**.
+  Runtime render of the authed Pathway tab pending a live backend session.

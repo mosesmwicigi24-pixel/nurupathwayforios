@@ -11,8 +11,7 @@ struct RootView: View {
             HomeView()
                 .tabItem { Label("Home", systemImage: "house.fill") }
 
-            ComingSoon(title: "Pathway", icon: "map.fill",
-                       blurb: "Levels, modules, quizzes and the learning path.")
+            PathwayView()
                 .tabItem { Label("Pathway", systemImage: "map.fill") }
 
             ComingSoon(title: "Give", icon: "heart.fill",
