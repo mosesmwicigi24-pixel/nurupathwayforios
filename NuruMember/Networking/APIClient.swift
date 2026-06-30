@@ -236,6 +236,15 @@ actor APIClient {
         return .session(session)
     }
 
+    /// POST /auth/register → a new account + session.
+    func register(fullName: String, email: String, password: String) async throws -> Session {
+        struct Body: Encodable { let fullName: String; let email: String; let password: String }
+        let session = try await send("auth/register", method: "POST",
+                                     body: Body(fullName: fullName, email: email, password: password), as: Session.self)
+        setSession(access: session.accessToken, refresh: session.refreshToken)
+        return session
+    }
+
     /// Second step of a 2FA login: exchange the challenge token + code for a session.
     func completeMfa(mfaToken: String, code: String) async throws -> Session {
         struct Body: Encodable { let mfaToken: String; let code: String }

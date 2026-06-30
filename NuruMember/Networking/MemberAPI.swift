@@ -16,6 +16,26 @@ enum MemberAPI {
         try await APIClient.shared.completeMfa(mfaToken: mfaToken, code: code)
     }
 
+    /// POST /auth/register — create an account and sign in.
+    static func register(fullName: String, email: String, password: String) async throws -> Session {
+        try await APIClient.shared.register(fullName: fullName, email: email, password: password)
+    }
+
+    /// POST /auth/password/forgot — request a reset. In dev the server returns a
+    /// `dev_token` (no email provider) so the flow can continue inline.
+    static func forgotPassword(_ email: String) async throws -> String? {
+        struct Body: Encodable { let email: String }
+        struct Res: Decodable { let sent: Bool; let devToken: String? }
+        return try await APIClient.shared.post("auth/password/forgot", body: Body(email: email), as: Res.self).devToken
+    }
+
+    /// POST /auth/password/reset — set a new password from a reset token.
+    static func resetPassword(token: String, newPassword: String) async throws {
+        struct Body: Encodable { let token: String; let newPassword: String }
+        _ = try await APIClient.shared.post("auth/password/reset",
+                                            body: Body(token: token, newPassword: newPassword), as: EmptyResponse.self)
+    }
+
     // MARK: Profile
 
     /// GET /me — the signed-in member's profile + enrollment summary.
