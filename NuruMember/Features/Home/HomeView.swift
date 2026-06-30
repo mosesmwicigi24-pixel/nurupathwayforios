@@ -398,7 +398,7 @@ struct HomeView: View {
         ZStack {
             Rectangle().fill(Nuru.mutedBg)
             if let s = v.thumbnailUrl, let u = URL(string: s) {
-                AsyncImage(url: u) { phase in
+                CachedAsyncImage(url: u) { phase in
                     if let img = phase.image { img.resizable().scaledToFill() }
                     else { Rectangle().fill(Nuru.mutedBg) }
                 }
@@ -611,7 +611,7 @@ struct HomeView: View {
     private func featuredCellCard(_ c: FeaturedCell) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let s = c.imageUrl, let u = URL(string: s) {
-                AsyncImage(url: u) { phase in
+                CachedAsyncImage(url: u) { phase in
                     if let img = phase.image { img.resizable().scaledToFill() }
                     else { Rectangle().fill(Nuru.mutedBg) }
                 }
@@ -718,7 +718,7 @@ struct HomeView: View {
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 if let s = a.primaryImageUrl, let u = URL(string: s) {
-                    AsyncImage(url: u) { phase in
+                    CachedAsyncImage(url: u) { phase in
                         if let img = phase.image { img.resizable().scaledToFill() }
                         else { Rectangle().fill(Nuru.mutedBg) }
                     }
@@ -1058,7 +1058,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(weekdayLine(occ.startAt)).font(.inter(10, .bold)).kerning(0.8).foregroundStyle(Nuru.goldChipText)
                         if let s = occ.primaryImageUrl, let u = URL(string: s) {
-                            AsyncImage(url: u) { phase in
+                            CachedAsyncImage(url: u) { phase in
                                 if let img = phase.image { img.resizable().scaledToFill() }
                                 else { Rectangle().fill(Nuru.mutedBg) }
                             }
@@ -1180,7 +1180,7 @@ struct HomeView: View {
     private func announcementRow(_ a: MyAnnouncement) -> some View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
             if let s = a.primaryImageUrl, let u = URL(string: s) {
-                AsyncImage(url: u) { phase in
+                CachedAsyncImage(url: u) { phase in
                     if let img = phase.image { img.resizable().scaledToFill() }
                     else { Rectangle().fill(Nuru.mutedBg) }
                 }

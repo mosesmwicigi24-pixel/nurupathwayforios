@@ -132,7 +132,7 @@ struct PlanSegmentView: View {
     @ViewBuilder
     private var mediaBackground: some View {
         if let url = segment.imageUrl.flatMap(URL.init) {
-            AsyncImage(url: url) { phase in
+            CachedAsyncImage(url: url) { phase in
                 if let img = phase.image {
                     img.resizable().scaledToFill()
                 } else {

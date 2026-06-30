@@ -73,7 +73,7 @@ struct Avatar: View {
         ZStack {
             Circle().fill(Nuru.tintBlue)
             if let url, let u = URL(string: url) {
-                AsyncImage(url: u) { phase in
+                CachedAsyncImage(url: u) { phase in
                     if let img = phase.image { img.resizable().scaledToFill() }
                     else { initials }
                 }

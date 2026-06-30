@@ -566,7 +566,7 @@ private struct AnnouncementRow: View {
         HStack(spacing: Nuru.S.md) {
             ZStack {
                 if let url = announcement.primaryImageUrl.flatMap(URL.init) {
-                    AsyncImage(url: url) { p in
+                    CachedAsyncImage(url: url) { p in
                         (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
                     }
                     .frame(width: 48, height: 48).clipped()
@@ -603,7 +603,7 @@ struct EventCardView: View {
         VStack(alignment: .leading, spacing: 0) {
             ZStack(alignment: .top) {
                 if let url = occ.primaryImageUrl.flatMap(URL.init) {
-                    AsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                    CachedAsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
                         .frame(height: 150).frame(maxWidth: .infinity).clipped()
                 } else {
                     LinearGradient(colors: [Nuru.navy700, Nuru.navy, accent], startPoint: .topLeading, endPoint: .bottomTrailing)
