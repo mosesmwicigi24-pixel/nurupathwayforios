@@ -4,6 +4,25 @@ The 55 screenshots in `~/Downloads/iphone` (IMG_1866–IMG_1920) are the authori
 spec for the look/feel/UX of the real RN NuruPlace app. We replicate them **exactly**
 into the native Swift app — colour, card, spacing, icon, copy, flow — page by page.
 
+## STATUS — COMPLETE (PRs #1–#15)
+**All 55 screens ported, built, and screenshot-verified.** Full inventory:
+Profile/Account · Pathway · Level detail · Module · Quiz · Home dashboard ·
+Chat (Nuru Connect) + DM/Space threads · Events tab · Calendar · Event detail ·
+Announcement detail · Plans · Plan detail/day · Plan segment (Watch) · Give ·
+Statement · Receipt · Devotional · Memory verses · Prayer Wall (list+detail) ·
+Prayer Journal · Your Calling (gifts) · Gifts assessment · Mentor · Notifications · Login.
+
+**Backend↔Swift wiring verified end-to-end** (#19): all 32 primary screen endpoints
+return 200 + decodable. Fixed the `/home/featured-cell` 500 (local replica DSN pointed
+at a stale DB — prod unaffected; replica is a true replica there).
+
+**Performance** (#15): `CachedAsyncImage` (decoded-image NSCache over disk URLCache,
+off-main decode, load cancellation) replaces stock AsyncImage at all 16 sites →
+no re-download/re-decode flicker.
+
+**Remaining (separate, larger efforts, not yet started):** offline-first sync engine +
+SQLCipher store (§1.7 guardrail); rich admin-content demo seeding; list pagination.
+
 **Authority:** full autonomous decision-making; pick the best engineering/UI choice and
 proceed. **Cadence:** a **PR per page** (branch → build → screenshot-verify on the live
 local backend → commit → push → `gh pr create` → squash-merge so `main` stays current).
