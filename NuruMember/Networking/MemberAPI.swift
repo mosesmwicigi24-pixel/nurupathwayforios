@@ -289,6 +289,71 @@ extension MemberAPI {
         return try await APIClient.shared.get("home/featured-event", as: Env.self).data
     }
 
+    /// GET /calendar/series — followable event series.
+    static func eventSeries() async throws -> [EventSeries] {
+        try await APIClient.shared.get("calendar/series", as: Envelope<EventSeries>.self).data
+    }
+
+    /// GET /home/featured-announcement — the admin-featured announcement (may be null).
+    static func featuredAnnouncement() async throws -> FeaturedAnnouncement? {
+        struct Env: Decodable { let data: FeaturedAnnouncement? }
+        return try await APIClient.shared.get("home/featured-announcement", as: Env.self).data
+    }
+
+    /// GET /me/announcements — the member's announcements.
+    static func myAnnouncements() async throws -> [MyAnnouncement] {
+        try await APIClient.shared.get("me/announcements", as: Envelope<MyAnnouncement>.self).data
+    }
+
+    /// GET /announcements/{id} — full announcement (carousel images + body).
+    static func announcement(_ id: String) async throws -> AnnouncementDetail {
+        try await APIClient.shared.get("announcements/\(id)", as: AnnouncementDetail.self)
+    }
+
+    /// POST /announcements/{id}/open — mark opened (best-effort).
+    static func openAnnouncement(_ id: String) async {
+        _ = try? await APIClient.shared.postEmpty("announcements/\(id)/open", as: EmptyResponse.self)
+    }
+
+    // MARK: Home dashboard extras
+
+    /// GET /home/welcome-video — the homepage welcome video (may be null).
+    static func welcomeVideo() async throws -> WelcomeVideo? {
+        try await APIClient.shared.get("home/welcome-video", as: WelcomeVideo?.self)
+    }
+
+    /// POST /media/{id}/reactions — toggle a reaction on a media asset.
+    @discardableResult
+    static func toggleMediaReaction(_ mediaAssetId: String, emoji: String) async throws -> ReactionToggleResult {
+        struct Body: Encodable { let emoji: String }
+        return try await APIClient.shared.post("media/\(mediaAssetId)/reactions", body: Body(emoji: emoji), as: ReactionToggleResult.self)
+    }
+
+    /// GET /home/featured-cell — "This week at Nuru" (may be null).
+    static func featuredCell() async throws -> FeaturedCell? {
+        try await APIClient.shared.get("home/featured-cell", as: FeaturedCell?.self)
+    }
+
+    /// GET /home/disciplers — "Meet your discipler" carousel.
+    static func disciplers() async throws -> [Discipler] {
+        try await APIClient.shared.get("home/disciplers", as: Envelope<Discipler>.self).data
+    }
+
+    /// GET /home/prayer-wall — prayer-wall posts for the Home carousel.
+    static func prayerWallHome() async throws -> [PrayerWallPost] {
+        try await APIClient.shared.get("home/prayer-wall", as: Envelope<PrayerWallPost>.self).data
+    }
+
+    /// GET /me/cell-summary — the member's cell card.
+    static func cellSummary() async throws -> CellSummary {
+        try await APIClient.shared.get("me/cell-summary", as: CellSummary.self)
+    }
+
+    /// GET /moments — curated photo gallery.
+    static func moments() async throws -> [Moment] {
+        try await APIClient.shared.get("moments", as: Envelope<Moment>.self).data
+    }
+
     /// GET /events/{id} — full event detail.
     static func event(_ id: String) async throws -> EventDetail {
         try await APIClient.shared.get("events/\(id)", as: EventDetail.self)
