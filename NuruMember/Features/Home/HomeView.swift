@@ -131,6 +131,7 @@ struct HomeView: View {
         case "prayerJournal": path.append(GrowDestination.prayerJournal)
         case "verseLibrary": path.append(GrowDestination.verseLibrary)
         case "prayerWall": path.append(CommunityRoute.prayerWall)
+        case "notifications": path.append(AppRoute.notifications)
         default: break
         }
         #endif
@@ -143,18 +144,21 @@ struct HomeView: View {
             HStack(alignment: .center, spacing: 0) {
                 Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.4).foregroundStyle(Nuru.gold)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                ZStack(alignment: .topTrailing) {
-                    Icon(.bell, size: 20, color: Nuru.onNavy)
-                        .frame(width: 44, height: 44)
-                        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    if vm.unread > 0 {
-                        Text(vm.unread > 9 ? "9+" : "\(vm.unread)")
-                            .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
-                            .frame(minWidth: 18, minHeight: 18)
-                            .background(Nuru.gold, in: Circle())
-                            .offset(x: 4, y: -4)
+                NavigationLink(value: AppRoute.notifications) {
+                    ZStack(alignment: .topTrailing) {
+                        Icon(.bell, size: 20, color: Nuru.onNavy)
+                            .frame(width: 44, height: 44)
+                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        if vm.unread > 0 {
+                            Text(vm.unread > 9 ? "9+" : "\(vm.unread)")
+                                .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                                .frame(minWidth: 18, minHeight: 18)
+                                .background(Nuru.gold, in: Circle())
+                                .offset(x: 4, y: -4)
+                        }
                     }
                 }
+                .buttonStyle(.plain)
                 Text("\(overallPct)%").font(.fraunces(14, .semibold)).foregroundStyle(Nuru.onNavy)
                     .frame(width: 48, height: 48)
                     .background(Nuru.gold.opacity(0.08), in: Circle())

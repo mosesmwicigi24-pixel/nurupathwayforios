@@ -148,6 +148,19 @@ struct ProfileView: View {
                             }
                         }
                     }
+                    VStack(spacing: 0) {
+                        menuRow("Notifications", .bell, route: AppRoute.notifications)
+                        Divider().padding(.leading, 56)
+                        menuRow("Your Calling", .sparkles, route: GrowDestination.gifts)
+                        Divider().padding(.leading, 56)
+                        menuRow("Memory Verses", .quote, route: GrowDestination.memoryVerses)
+                        Divider().padding(.leading, 56)
+                        menuRow("Resources", .bookOpen, route: GrowDestination.resources)
+                    }
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .nuruShadow()
+
                     PButton(title: "Sign out", variant: .navy) { auth.signOut() }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -157,6 +170,20 @@ struct ProfileView: View {
             }
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .nuruDestinations()
         }
+    }
+
+    private func menuRow<R: Hashable>(_ title: String, _ icon: Lucide, route: R) -> some View {
+        NavigationLink(value: route) {
+            HStack(spacing: Nuru.S.md) {
+                Icon(icon, size: 18, color: Nuru.gold).frame(width: 28)
+                Text(title).font(.inter(15, .medium)).foregroundStyle(Nuru.ink)
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 14, color: Nuru.ink300)
+            }
+            .padding(Nuru.S.base)
+        }
+        .buttonStyle(.plain)
     }
 }

@@ -72,6 +72,19 @@ enum MemberAPI {
         return try await APIClient.shared.get("me/notifications", as: Res.self).unread
     }
 
+    /// GET /me/notifications — the full notification center (rows + unread count).
+    static func notifications() async throws -> (rows: [NotificationRow], unread: Int) {
+        struct Res: Decodable { let data: [NotificationRow]; let unread: Int }
+        let r = try await APIClient.shared.get("me/notifications", as: Res.self)
+        return (r.data, r.unread)
+    }
+
+    /// POST /me/notifications/read — mark some (or all) notifications read.
+    static func markNotificationsRead(_ ids: [String]? = nil) async throws {
+        struct Body: Encodable { let ids: [String]? }
+        _ = try await APIClient.shared.post("me/notifications/read", body: Body(ids: ids), as: EmptyResponse.self)
+    }
+
     /// GET /me/scores — the five growth scores + weighted overall.
     static func scores() async throws -> ScoresSummary {
         try await APIClient.shared.get("me/scores", as: ScoresSummary.self)

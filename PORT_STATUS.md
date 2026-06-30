@@ -60,7 +60,9 @@
   live/featured hero, week-window segments, photo event cards) — exact
 - ✅ EventDetailScreen → `Features/Events/EventDetailView.swift` (hero, RSVP
   Going/Maybe/Can't-go, who's-going roster, description) — core ported
-- ☐ CalendarScreen ☐ AnnouncementDetailScreen ☐ NotificationsScreen
+- ✅ NotificationsScreen → `Features/Profile/NotificationsView.swift` (typed rows,
+  mark-all-read, unread dots, deep-link routing) — exact (reached from Home bell + Profile)
+- ☐ CalendarScreen ☐ AnnouncementDetailScreen
 - NOTE: hero + event cards not render-verified (dev DB has 0 seeded events);
   empty state + header verified. Buzz-feed photo wall on detail deferred.
 

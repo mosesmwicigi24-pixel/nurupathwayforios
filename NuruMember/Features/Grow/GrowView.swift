@@ -4,6 +4,9 @@
 // tab — exactly like the RN app, which has no separate "Grow" tab.
 import SwiftUI
 
+/// App-wide pushable routes (notification center, etc.).
+enum AppRoute: Hashable { case notifications }
+
 /// Value-routes for the growth screens, pushed from Home / Plans stacks.
 enum GrowDestination: Hashable {
     case devotional
@@ -45,6 +48,9 @@ extension View {
                 case .module(let id): ModuleView(moduleId: id)
                 case .quiz(let id): QuizView(moduleId: id)
                 }
+            }
+            .navigationDestination(for: AppRoute.self) { r in
+                switch r { case .notifications: NotificationsView() }
             }
     }
 }
