@@ -113,7 +113,27 @@ struct HomeView: View {
             .refreshable { await vm.load() }
             .nuruDestinations()
         }
-        .task { if vm.pathway == nil { await vm.load() } }
+        .task {
+            if vm.pathway == nil { await vm.load() }
+            deepLinkForScreenshots()
+        }
+    }
+
+    /// DEBUG-only: deep-link into a pushed screen for screenshot verification
+    /// (e.g. SIMCTL_CHILD_NURU_SCREEN=devotional). No-op in Release / when unset.
+    private func deepLinkForScreenshots() {
+        #if DEBUG
+        guard path.isEmpty else { return }
+        switch ProcessInfo.processInfo.environment["NURU_SCREEN"] {
+        case "devotional": path.append(GrowDestination.devotional)
+        case "memoryVerses": path.append(GrowDestination.memoryVerses)
+        case "readingPlans": path.append(GrowDestination.readingPlans)
+        case "prayerJournal": path.append(GrowDestination.prayerJournal)
+        case "verseLibrary": path.append(GrowDestination.verseLibrary)
+        case "prayerWall": path.append(CommunityRoute.prayerWall)
+        default: break
+        }
+        #endif
     }
 
     // MARK: Header
