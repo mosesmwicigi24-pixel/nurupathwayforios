@@ -49,6 +49,12 @@ struct EventSeries: Codable, Sendable, Identifiable {
     var id: String { seriesId }
 }
 
+/// POST /calendar/series/{id}/follow — toggle result for "Series you follow".
+struct SeriesFollowResult: Codable, Sendable {
+    let seriesId: String
+    let following: Bool
+}
+
 /// GET /home/featured-event — the admin-featured event anchoring the hero.
 struct FeaturedEvent: Codable, Sendable {
     let seriesId: String

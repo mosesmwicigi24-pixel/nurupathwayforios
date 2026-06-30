@@ -320,7 +320,18 @@ struct PlanDayView: View {
                     if let content = ref.day.content, !content.isEmpty {
                         Text(content).font(.nBody).foregroundStyle(Nuru.ink).fixedSize(horizontal: false, vertical: true)
                     }
-                    ForEach(ref.day.segments ?? []) { seg in segmentCard(seg) }
+                    let segments = ref.day.segments ?? []
+                    // PlanDayRef carries no plan title, so fall back to the day title.
+                    let planTitle = ref.day.title ?? "Reading plan"
+                    ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
+                        NavigationLink(value: PlanSegmentRef(planTitle: planTitle,
+                                                             dayNumber: ref.day.dayNumber,
+                                                             segments: segments,
+                                                             index: idx)) {
+                            segmentCard(seg)
+                        }
+                        .buttonStyle(.plain)
+                    }
 
                     if vm.dayCompleted {
                         Label("Day complete", systemImage: "checkmark.circle.fill")
@@ -339,35 +350,34 @@ struct PlanDayView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
+    // A tappable row that pushes the full-screen PlanSegmentView (watch / read /
+    // devotional / talk). Completion + watching now live on that screen.
     private func segmentCard(_ seg: PlanSegment) -> some View {
         let done = vm.completedSegments.contains(seg.segmentId)
         return Card {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                HStack {
+            HStack(spacing: Nuru.S.base) {
+                ZStack {
+                    Circle().fill(done ? Nuru.success : Nuru.goldTint).frame(width: 36, height: 36)
+                    Icon(segmentIcon(seg.kind), size: 15, color: done ? .white : Nuru.gold)
+                }
+                VStack(alignment: .leading, spacing: 2) {
                     Text(seg.title).font(.nHeading).foregroundStyle(Nuru.ink)
-                    Spacer()
-                    Text(seg.kind.capitalized).font(.nMicro).foregroundStyle(Nuru.faint)
+                    Text(seg.kind.capitalized).font(.nCaption).foregroundStyle(Nuru.muted)
                 }
-                if let ref = seg.reference { Text(ref).font(.nCaption).foregroundStyle(Nuru.gold) }
-                if let content = seg.content, !content.isEmpty {
-                    Text(content).font(.nBody).foregroundStyle(Nuru.ink).fixedSize(horizontal: false, vertical: true)
-                }
-                if let url = seg.videoUrl.flatMap(URL.init) {
-                    Link(destination: url) {
-                        Label("Watch", systemImage: "play.circle.fill").font(.inter(13, .semibold)).foregroundStyle(Nuru.gold)
-                    }
-                }
-                Button {
-                    if !done { Task { await vm.completeSegment(seg.segmentId) } }
-                } label: {
-                    Label(done ? "Completed" : "Mark complete",
-                          systemImage: done ? "checkmark.circle.fill" : "circle")
-                        .font(.inter(13, .semibold))
-                        .foregroundStyle(done ? Nuru.success : Nuru.gold)
-                }
-                .buttonStyle(.plain)
-                .disabled(done)
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 13, color: Nuru.ink300)
             }
+        }
+    }
+
+    private func segmentIcon(_ kind: String) -> Lucide {
+        switch kind.lowercased() {
+        case "video":      return .play
+        case "reading":    return .bookOpen
+        case "devotional": return .sun
+        case "talk":       return .messageCircle
+        case "scripture":  return .quote
+        default:           return .book
         }
     }
 }

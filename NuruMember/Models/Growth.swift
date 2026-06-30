@@ -113,6 +113,15 @@ struct PlanDayRef: Hashable {
     let day: ReadingPlanDay
 }
 
+/// Navigation reference for one plan-day segment (Watch / Read / Devotional / Talk),
+/// carrying its sibling segments + day so the segment screen can page next/prev.
+struct PlanSegmentRef: Hashable {
+    let planTitle: String
+    let dayNumber: Int
+    let segments: [PlanSegment]
+    let index: Int
+}
+
 // MARK: - Prayer journal
 
 struct PrayerEntry: Codable, Sendable, Identifiable {

@@ -15,6 +15,7 @@ enum GrowDestination: Hashable {
     case prayerJournal
     case verseLibrary
     case gifts
+    case giftsAssessment
     case resources
 }
 
@@ -31,11 +32,13 @@ extension View {
                 case .prayerJournal: PrayerJournalView()
                 case .verseLibrary:  VerseLibraryView()
                 case .gifts:         GiftsView()
+                case .giftsAssessment: GiftsAssessmentView()
                 case .resources:     PlaceholderScreen(title: "Resources", blurb: "Books, audio and teaching.", icon: .bookOpen)
                 }
             }
             .navigationDestination(for: ReadingPlanRow.self) { PlanDetailView(plan: $0) }
             .navigationDestination(for: PlanDayRef.self) { PlanDayView(ref: $0) }
+            .navigationDestination(for: PlanSegmentRef.self) { PlanSegmentView(ref: $0) }
             .navigationDestination(for: CommunityRoute.self) { r in
                 switch r {
                 case .prayerWall: PrayerWallView()
