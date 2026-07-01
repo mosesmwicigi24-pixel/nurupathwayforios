@@ -274,62 +274,78 @@ struct HomeView: View {
 
     // MARK: 1 — Navy header
 
+    // Cream, navy-on-light header — exact Figma HomeTab (HEADER_BG cream gradient,
+    // Bell + Radio + MiniRing, greeting, subtitle, level chip).
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 0) {
-                Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.4).foregroundStyle(Nuru.gold)
+                Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.42).foregroundStyle(Color(hex: 0x9A7A2A))
                     .frame(maxWidth: .infinity, alignment: .leading)
                 NavigationLink(value: AppRoute.notifications) {
                     ZStack(alignment: .topTrailing) {
-                        Icon(.bell, size: 20, color: Nuru.onNavy)
-                            .frame(width: 44, height: 44)
-                            .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        Icon(.bell, size: 18, color: Nuru.navy)
+                            .frame(width: 40, height: 40)
+                            .background(Color.white, in: Circle())
+                            .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
                         if vm.unread > 0 {
                             Text(vm.unread > 9 ? "9+" : "\(vm.unread)")
-                                .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
-                                .frame(minWidth: 18, minHeight: 18)
-                                .background(Nuru.gold, in: Circle())
-                                .offset(x: 4, y: -4)
+                                .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                                .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2)
+                                .background(Nuru.gold, in: Capsule())
+                                .offset(x: 5, y: -5)
                         }
                     }
                 }
                 .buttonStyle(.plain)
-                progressRing
-                    .padding(.leading, Nuru.S.sm)
+                Button { } label: {
+                    Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
+                        .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
+                        .background(Color.white, in: Circle())
+                        .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain).padding(.leading, 8)
+                progressRing.padding(.leading, 8)
             }
             Text("\(greeting), \(firstName).")
-                .font(.fraunces(25, .semibold)).foregroundStyle(Nuru.onNavy)
-                .padding(.top, Nuru.S.base)
-            Text(vm.greetingLine).font(.inter(14)).foregroundStyle(Nuru.onNavyDim)
+                .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
+                .padding(.top, 10)
+            Text(vm.greetingLine).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Nuru.S.xs)
+                .padding(.top, 6)
             if let a = active {
-                Text("Level \(a.levelNumber) · \(a.completedModules) of \(a.totalModules) modules · \(vm.streak)d streak")
-                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldGlow)
-                    .padding(.horizontal, 14).padding(.vertical, 6)
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.55), lineWidth: 1))
-                    .padding(.top, Nuru.S.md)
+                Text("Level \(a.levelNumber) · \(a.completedModules) of \(a.totalModules) modules · \(vm.streak > 0 ? "\(vm.streak)d streak" : "Begin today")")
+                    .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Color.white, in: Capsule())
+                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.53), lineWidth: 1))
+                    .padding(.top, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.base)
-        .padding(.top, 64)   // clears the status bar / Dynamic Island (header is full-bleed)
-        .padding(.bottom, Nuru.S.base)
-        .background(Nuru.navy)
+        .padding(.horizontal, 20)
+        .padding(.top, 60)   // clears the status bar / Dynamic Island (header is full-bleed)
+        .padding(.bottom, 16)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 40, y: -60)
+                }
+        )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
+    // MiniRing (Figma) — 42px, navy track, gold progress, navy pct.
     private var progressRing: some View {
         ZStack {
-            Circle().stroke(Color.white.opacity(0.14), lineWidth: 4)
+            Circle().stroke(Nuru.navy.opacity(0.12), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: CGFloat(overallPct) / 100)
-                .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text("\(overallPct)%").font(.fraunces(13, .semibold)).foregroundStyle(Nuru.onNavy)
+            Text("\(overallPct)%").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
         }
-        .frame(width: 48, height: 48)
-        .background(Nuru.gold.opacity(0.06), in: Circle())
+        .frame(width: 42, height: 42)
     }
 
     // MARK: 2 — Next-action hero
