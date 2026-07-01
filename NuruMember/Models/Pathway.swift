@@ -4,7 +4,16 @@ import Foundation
 
 // MARK: - Levels
 
-enum LevelStatus: String, Codable, Sendable { case completed, active, locked }
+enum LevelStatus: String, Codable, Sendable {
+    case completed, active, locked
+    // Tolerate any status the server sends that we don't model (prod may use a
+    // vocabulary this client predates) — decode unknowns to `locked` rather than
+    // throwing, which would fail the whole pathway response and blank the page.
+    init(from decoder: Decoder) throws {
+        let raw = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
+        self = LevelStatus(rawValue: raw) ?? .locked
+    }
+}
 
 struct PathwayLevel: Codable, Sendable, Identifiable {
     let levelNumber: Int
@@ -26,7 +35,13 @@ struct PathwaySummary: Codable, Sendable {
 
 // MARK: - Modules
 
-enum ModuleStatus: String, Codable, Sendable { case completed, next, locked }
+enum ModuleStatus: String, Codable, Sendable {
+    case completed, next, locked
+    init(from decoder: Decoder) throws {
+        let raw = (try? decoder.singleValueContainer().decode(String.self)) ?? ""
+        self = ModuleStatus(rawValue: raw) ?? .locked
+    }
+}
 
 struct LevelModule: Codable, Sendable, Identifiable {
     let moduleId: String
