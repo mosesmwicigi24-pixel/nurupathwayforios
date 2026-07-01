@@ -74,6 +74,7 @@ struct PathwayView: View {
                 }
                 .padding(.bottom, Nuru.tabBarSpace)
             }
+            .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
@@ -85,6 +86,7 @@ struct PathwayView: View {
                 }
             }
         }
+        .background(Color.clear.preferredColorScheme(.dark))   // full-bleed navy header → white status bar
         .task { if vm.summary == nil { await vm.load() } }
     }
 
@@ -124,7 +126,7 @@ struct PathwayView: View {
             .padding(.top, 2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, 56).padding(.bottom, Nuru.S.lg)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
