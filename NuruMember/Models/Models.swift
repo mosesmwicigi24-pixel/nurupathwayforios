@@ -63,6 +63,12 @@ struct MeResponse: Codable, Sendable {
     let enrollment: EnrollmentSummary?
 }
 
+/// POST /auth/mfa/enroll — the TOTP secret the member confirms to turn 2FA on.
+struct MfaEnrollment: Codable, Sendable {
+    let otpauthUri: String
+    let secret: String
+}
+
 // MARK: - Home (server-driven dashboard)
 
 /// GET /me/rhythm/today — the three daily rhythms feeding the streak.

@@ -43,6 +43,36 @@ enum MemberAPI {
         try await APIClient.shared.get("me", as: MeResponse.self)
     }
 
+    // MARK: Security — TOTP two-factor (§5.3)
+
+    /// POST /auth/mfa/enroll — begin 2FA enrollment; returns the secret to confirm.
+    static func enrollMfa() async throws -> MfaEnrollment {
+        struct Empty: Encodable {}
+        return try await APIClient.shared.post("auth/mfa/enroll", body: Empty(), as: MfaEnrollment.self)
+    }
+    /// POST /auth/mfa/verify — confirm enrollment with a 6-digit code (turns 2FA on).
+    static func verifyMfa(code: String) async throws {
+        struct Body: Encodable { let code: String }
+        _ = try await APIClient.shared.post("auth/mfa/verify", body: Body(code: code), as: EmptyResponse.self)
+    }
+    /// POST /auth/mfa/disable — turn 2FA off (requires a current TOTP/recovery code).
+    static func disableMfa(code: String) async throws {
+        struct Body: Encodable { let code: String }
+        _ = try await APIClient.shared.post("auth/mfa/disable", body: Body(code: code), as: EmptyResponse.self)
+    }
+
+    // MARK: Privacy — approximate location sharing (§proximity; coarse geohash only)
+
+    /// POST /me/location — share an approximate fix (server keeps only a coarse geohash).
+    static func shareLocation(lat: Double, lng: Double) async throws {
+        struct Body: Encodable { let lat: Double; let lng: Double }
+        _ = try await APIClient.shared.post("me/location", body: Body(lat: lat, lng: lng), as: EmptyResponse.self)
+    }
+    /// DELETE /me/location — opt out; erases the stored coarse location.
+    static func stopSharingLocation() async throws {
+        _ = try await APIClient.shared.delete("me/location", as: EmptyResponse.self)
+    }
+
     // MARK: Home (server-driven dashboard)
 
     /// GET /me/rhythm/today — today's three daily rhythms.

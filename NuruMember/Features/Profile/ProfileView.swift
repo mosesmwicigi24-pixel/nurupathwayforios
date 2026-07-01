@@ -3,20 +3,34 @@
 // (live /me data), Security & Login, Connected Accounts, Social Links,
 // Notifications, Achievements, Milestones, Certificates, Display, Privacy, Help &
 // Privacy, and Sign out / Delete account. Profile fields + sign-out are wired to
-// the backend; toggles/connections without an endpoint are faithful local state.
+// the backend. The Security 2FA toggle runs the real TOTP enroll/verify/disable
+// flow; Share-location wires to /me/location; notification prefs persist on device
+// (+ real push permission). Connected/social links remain visual placeholders.
 import SwiftUI
+import CoreLocation
+import UserNotifications
 
 struct ProfileView: View {
     @EnvironmentObject private var auth: AuthStore
 
-    // Local UI state for controls without a dedicated endpoint (visual parity).
-    @State private var twoFactor = false
-    @State private var pushOn = true
-    @State private var emailOn = true
-    @State private var smsOn = false
-    @State private var shareLocation = true
+    // Notification channel prefs — persisted on device (no backend channel-pref
+    // endpoint yet); push additionally requests the real system permission.
+    @AppStorage("nuru.notif.push") private var pushOn = true
+    @AppStorage("nuru.notif.email") private var emailOn = true
+    @AppStorage("nuru.notif.sms") private var smsOn = false
+    /// Approximate-location sharing consent (persisted); wired to /me/location.
+    @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
     /// Global text scale (persisted); the font helpers read Nuru.textScale from here.
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
+
+    @StateObject private var location = LocationManager()
+    @State private var showMfaEnroll = false
+    @State private var showMfaDisable = false
+    @State private var mfaDisableCode = ""
+    @State private var mfaError: String?
+
+    /// Real 2FA state from the server profile — the toggle reflects the truth.
+    private var twoFactorOn: Bool { auth.profile?.mfaEnabled ?? false }
 
     private var p: UserProfile? { auth.profile }
 
@@ -44,6 +58,47 @@ struct ProfileView: View {
         }
         .background(Nuru.paper.ignoresSafeArea(edges: .bottom))
         .ignoresSafeArea(edges: .top)
+        .sheet(isPresented: $showMfaEnroll) {
+            MfaEnrollSheet(onEnabled: { Task { await auth.loadProfile() } })
+        }
+        .alert("Turn off two-factor?", isPresented: $showMfaDisable) {
+            TextField("6-digit code", text: $mfaDisableCode).keyboardType(.numberPad)
+            Button("Turn off", role: .destructive) {
+                Task {
+                    do { try await MemberAPI.disableMfa(code: mfaDisableCode); await auth.loadProfile() }
+                    catch { mfaError = (error as? APIError)?.errorDescription ?? "Couldn't turn off two-factor." }
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Enter a current code from your authenticator app to confirm.")
+        }
+        .alert("Two-factor authentication", isPresented: Binding(get: { mfaError != nil }, set: { if !$0 { mfaError = nil } })) {
+            Button("OK") { mfaError = nil }
+        } message: { Text(mfaError ?? "") }
+        .onChange(of: pushOn) { _, on in if on { requestPushPermission() } }
+        .onChange(of: shareLocation) { _, on in Task { await applyLocationSharing(on) } }
+    }
+
+    // MARK: Settings side-effects
+
+    /// Ask iOS for notification permission when the member turns push on.
+    private func requestPushPermission() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    /// Share or stop sharing an approximate location fix (§proximity). If permission
+    /// is denied or a fix can't be obtained, revert the toggle so it never lies.
+    private func applyLocationSharing(_ on: Bool) async {
+        if on {
+            if let c = await location.requestCoarseFix() {
+                try? await MemberAPI.shareLocation(lat: c.latitude, lng: c.longitude)
+            } else {
+                shareLocation = false
+            }
+        } else {
+            try? await MemberAPI.stopSharingLocation()
+        }
     }
 
     // MARK: Header
@@ -122,7 +177,12 @@ struct ProfileView: View {
         sectionCard("SECURITY & LOGIN", icon: .lock) {
             actionRow(.lock, "Change password", "Keep your account secure")
             divider
-            toggleRow(.badgeCheck, "Two-factor authentication", twoFactor ? "Enabled" : "Not enabled · recommended", $twoFactor)
+            toggleRow(.badgeCheck, "Two-factor authentication",
+                      twoFactorOn ? "Enabled" : "Not enabled · recommended",
+                      Binding(get: { twoFactorOn }, set: { want in
+                          if want, !twoFactorOn { showMfaEnroll = true }
+                          else if !want, twoFactorOn { mfaDisableCode = ""; showMfaDisable = true }
+                      }))
             divider
             actionRow(.user, "Active sessions", "This device")
         }
