@@ -52,14 +52,14 @@ final class VerseLibraryViewModel: ObservableObject {
 
     private func cacheAll(_ list: [SavedVerse]) async {
         let rows = list.compactMap { v -> (id: String, body: Data)? in
-            (try? JSONEncoder().encode(v)).map { (v.savedVerseId, $0) }
+            (try? JSONEncoder.nuruSnake.encode(v)).map { (v.savedVerseId, $0) }
         }
         await sync.store.cacheReplace(domain: domain, rows: rows)
     }
 
     private func cached() async -> [SavedVerse] {
         await sync.store.cachedRows(domain: domain)
-            .compactMap { try? JSONDecoder().decode(SavedVerse.self, from: $0) }
+            .compactMap { try? JSONDecoder.nuruSnake.decode(SavedVerse.self, from: $0) }
             .sorted { $0.createdAt > $1.createdAt }
     }
 }

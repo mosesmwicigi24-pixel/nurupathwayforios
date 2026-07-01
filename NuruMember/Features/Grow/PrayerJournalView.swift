@@ -66,14 +66,14 @@ final class PrayerJournalViewModel: ObservableObject {
 
     private func cacheAll(_ list: [PrayerEntry]) async {
         let rows = list.compactMap { e -> (id: String, body: Data)? in
-            (try? JSONEncoder().encode(e)).map { (e.entryId, $0) }
+            (try? JSONEncoder.nuruSnake.encode(e)).map { (e.entryId, $0) }
         }
         await sync.store.cacheReplace(domain: domain, rows: rows)
     }
 
     private func cached() async -> [PrayerEntry] {
         await sync.store.cachedRows(domain: domain)
-            .compactMap { try? JSONDecoder().decode(PrayerEntry.self, from: $0) }
+            .compactMap { try? JSONDecoder.nuruSnake.decode(PrayerEntry.self, from: $0) }
             .sorted { $0.createdAt > $1.createdAt }
     }
 

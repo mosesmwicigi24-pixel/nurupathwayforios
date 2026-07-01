@@ -24,6 +24,14 @@ final class SyncCoordinator: ObservableObject {
     private let monitor = NWPathMonitor()
     private var started = false
 
+    /// Read domains kept warm in the encrypted cache via background delta pulls, so
+    /// their screens open instantly and work offline with last-known server data.
+    private let pullDomains = [
+        "prayer_entries", "saved_verses", "event_rsvps", "module_progress",
+        "module_reflections", "gift_assessments", "enrollments",
+        "discussion_threads", "discussion_comments",
+    ]
+
     init(store: EncryptedSQLiteStore = EncryptedSQLiteStore()) {
         self.store = store
         self.engine = SyncEngine(store: store)
@@ -39,11 +47,11 @@ final class SyncCoordinator: ObservableObject {
                 guard let self else { return }
                 let reconnected = online && !self.isOnline
                 self.isOnline = online
-                if reconnected { await self.flush() }
+                if reconnected { await self.flush(); await self.pull(domains: self.pullDomains) }
             }
         }
         monitor.start(queue: DispatchQueue(label: "org.nuruplace.member.connectivity"))
-        Task { await self.refreshPending(); await self.flush() }
+        Task { await self.refreshPending(); await self.flush(); await self.pull(domains: self.pullDomains) }
     }
 
     /// Enqueue an offline-capable write (durably), then flush immediately if online.
