@@ -9,25 +9,58 @@ final class VerseLibraryViewModel: ObservableObject {
     @Published var loading = true
     @Published var error: String?
 
+    // Offline-first (§1.7): cache-then-network reads; writes apply optimistically
+    // and route through the durable mutation queue (idempotent on saved_verse_id).
+    private let sync = SyncCoordinator.shared
+    private let domain = "saved_verses"
+
     func load() async {
-        loading = true; error = nil
-        do { verses = try await MemberAPI.verses() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your verses." }
+        error = nil
+        let cachedList = await cached()
+        if !cachedList.isEmpty { verses = cachedList; loading = false }
+        if let fresh = try? await MemberAPI.verses() {
+            verses = fresh
+            await cacheAll(fresh)
+        } else if cachedList.isEmpty {
+            error = "You're offline — your verses will load when you reconnect."
+        }
         loading = false
     }
 
     func save(reference: String, version: String, text: String, note: String) async {
-        try? await MemberAPI.saveVerse(savedVerseId: UUID().uuidString,
-                                       reference: reference,
-                                       version: version.isEmpty ? nil : version,
-                                       verseText: text.isEmpty ? nil : text,
-                                       note: note.isEmpty ? nil : note)
-        await load()
+        let id = UUID().uuidString
+        let ver = version.isEmpty ? "KJV" : version
+        let verse = SavedVerse(savedVerseId: id, reference: reference, version: ver,
+                               verseText: text.isEmpty ? nil : text, note: note.isEmpty ? nil : note,
+                               createdAt: ISO8601DateFormatter().string(from: Date()))
+        verses.insert(verse, at: 0)
+        await cacheAll(verses)
+        await sync.enqueue(domain: domain, op: "save", payload: [
+            "saved_verse_id": AnyCodable(id),
+            "reference": AnyCodable(reference),
+            "version": AnyCodable(ver),
+            "verse_text": AnyCodable(text.isEmpty ? nil : text),
+            "note": AnyCodable(note.isEmpty ? nil : note),
+        ])
     }
 
     func delete(_ v: SavedVerse) async {
-        try? await MemberAPI.deleteVerse(v.savedVerseId)
-        await load()
+        verses.removeAll { $0.savedVerseId == v.savedVerseId }
+        await cacheAll(verses)
+        await sync.enqueue(domain: domain, op: "delete", payload: ["saved_verse_id": AnyCodable(v.savedVerseId)])
+    }
+
+    private func cacheAll(_ list: [SavedVerse]) async {
+        let rows = list.compactMap { v -> (id: String, body: Data)? in
+            (try? JSONEncoder().encode(v)).map { (v.savedVerseId, $0) }
+        }
+        await sync.store.cacheReplace(domain: domain, rows: rows)
+    }
+
+    private func cached() async -> [SavedVerse] {
+        await sync.store.cachedRows(domain: domain)
+            .compactMap { try? JSONDecoder().decode(SavedVerse.self, from: $0) }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 }
 
