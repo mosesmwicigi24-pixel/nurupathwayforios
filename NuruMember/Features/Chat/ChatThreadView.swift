@@ -40,15 +40,40 @@ final class ChatThreadViewModel: ObservableObject {
         loading = false
     }
 
+    /// Optimistic messages queued locally until the server echoes them back.
+    @Published var pending: [ChatMessage] = []
+
+    /// Server thread + any still-in-flight optimistic sends (deduped by id).
+    var allMessages: [ChatMessage] {
+        let base = thread?.messages ?? []
+        let ids = Set(base.map(\.messageId))
+        return base + pending.filter { !ids.contains($0.messageId) }
+    }
+
+    /// Offline-capable send: the bubble appears instantly and the write goes through
+    /// the durable queue as `chat_messages:create` (idempotent on message_id).
     func send(_ text: String? = nil) async {
         let body = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, !sending else { return }
         sending = true; defer { sending = false }
-        do {
-            try await MemberAPI.sendChatMessage(conversation.conversationId, body: body)
-            if text == nil { draft = "" }
+        let mid = UUID().uuidString
+        pending.append(ChatMessage(
+            messageId: mid, authorUserId: "", authorName: "You", authorAvatar: nil,
+            body: body, msgType: "text", attachmentUrl: nil, replyBody: nil, replyAuthor: nil,
+            isEdited: false, createdAt: ISO8601DateFormatter().string(from: Date()), mine: true,
+            reactions: [], readCount: nil, recipientCount: nil, aiTag: nil))
+        if text == nil { draft = "" }
+        await SyncCoordinator.shared.enqueue(domain: "chat_messages", op: "create", payload: [
+            "conversation_id": AnyCodable(conversation.conversationId),
+            "message_id": AnyCodable(mid),
+            "body": AnyCodable(body),
+            "msg_type": AnyCodable("text"),
+        ])
+        if SyncCoordinator.shared.isOnline {
             await load()
-        } catch {}
+            let landed = Set((thread?.messages ?? []).map(\.messageId))
+            pending.removeAll { landed.contains($0.messageId) }
+        }
     }
 
     func react(_ m: ChatMessage, _ emoji: String) async {
@@ -144,7 +169,7 @@ struct ChatThreadView: View {
                 LazyVStack(spacing: Nuru.S.md) {
                     confidenceBanner
                     if let group = dateLabel { dateChip(group) }
-                    ForEach(vm.thread?.messages ?? []) { m in
+                    ForEach(vm.allMessages) { m in
                         MessageBubble(m: m) { emoji in Task { await vm.react(m, emoji) } }
                             .id(m.id)
                     }
@@ -153,7 +178,7 @@ struct ChatThreadView: View {
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.vertical, Nuru.S.md)
             }
-            .onChange(of: vm.thread?.messages.count ?? 0) { _, _ in scrollToEnd(proxy) }
+            .onChange(of: vm.allMessages.count) { _, _ in scrollToEnd(proxy) }
             .onAppear { scrollToEnd(proxy, animated: false) }
         }
     }

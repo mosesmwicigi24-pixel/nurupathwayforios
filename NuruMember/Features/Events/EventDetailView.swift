@@ -13,21 +13,30 @@ final class EventDetailViewModel: ObservableObject {
     @Published var loading = true
     @Published var error: String?
     @Published var rsvpBusy = false
+    /// Optimistic RSVP shown immediately (incl. offline) until the server confirms.
+    @Published var myRsvpOverride: String?
 
+    private let sync = SyncCoordinator.shared
     let occurrence: CalendarOccurrence
     init(occurrence: CalendarOccurrence) { self.occurrence = occurrence }
 
     func load() async {
         loading = true; error = nil
-        do { detail = try await MemberAPI.event(occurrence.occurrenceId) }
+        do { detail = try await MemberAPI.event(occurrence.occurrenceId); myRsvpOverride = nil }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this event." }
         loading = false
     }
 
+    /// Offline-capable RSVP (§C.2): applies optimistically, queues durably, and is
+    /// idempotent on the (user, event) row so replays are no-ops.
     func setRsvp(_ status: String) async {
         rsvpBusy = true; defer { rsvpBusy = false }
-        try? await MemberAPI.rsvp(occurrence.occurrenceId, status: status)
-        await load()
+        myRsvpOverride = status
+        await sync.enqueue(domain: "event_rsvps", op: "set", payload: [
+            "event_id": AnyCodable(occurrence.occurrenceId),
+            "status": AnyCodable(status),
+        ])
+        if sync.isOnline { await load() }  // refresh authoritative counts + roster
     }
 }
 
@@ -295,7 +304,7 @@ struct EventDetailView: View {
     // MARK: RSVP segmented control.
 
     private var rsvpControl: some View {
-        let mine = vm.detail?.myRsvp
+        let mine = vm.myRsvpOverride ?? vm.detail?.myRsvp
         return VStack(alignment: .leading, spacing: Nuru.S.md) {
             overline("WILL YOU BE THERE?")
             HStack(spacing: Nuru.S.sm) {
