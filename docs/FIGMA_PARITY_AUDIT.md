@@ -38,6 +38,17 @@ consumes **69** (`MemberAPI`).
 
 ## 2. Gap analysis
 
+### Cream-header pass (Figma-exact)
+The Figma uses a **light cream header** (`linear-gradient 160° #f6f4ef→#efe8da`,
+navy text, gold-brown `#9a7a2a` eyebrow, gold radial glow, white bordered
+controls, bottom hairline) on every hub/tab and `ScreenShell` sub-page — the iOS
+app had them navy. Converted to exact spec (build-verified on iPhone 17 sim):
+Home, Give, Profile, Chat, Events, Devotional, Memory Verses, Prayer Journal,
+Mentor. Pathway + Plans keep their navy heroes; Gifts already had a light bar.
+Still navy/other (image-hero or Figma "E6 placeholder", left intentionally):
+EventDetail, AnnouncementDetail, CellInfo, LevelDetail, Module, Calendar,
+PrayerWall (deliberate gradient hero).
+
 ### Closed this session
 - **Pathway** was the wrong Figma component (levels-overview). Rebuilt to `PathwayHub`
   (hero for current level → journey rail → inline real module trail → milestones →
