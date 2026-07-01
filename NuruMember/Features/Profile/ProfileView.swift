@@ -135,7 +135,7 @@ struct ProfileView: View {
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 64).padding(.bottom, Nuru.S.xl)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, 56).padding(.bottom, Nuru.S.xl)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))

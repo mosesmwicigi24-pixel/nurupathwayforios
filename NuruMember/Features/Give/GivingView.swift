@@ -163,15 +163,6 @@ struct GivingView: View {
 
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Button {} label: {
-                ZStack {
-                    Circle().fill(Color.white.opacity(0.10)).frame(width: 40, height: 40)
-                    Icon(.arrowRight, size: 18, color: .white).rotationEffect(.degrees(180))
-                }
-            }
-            .buttonStyle(.plain)
-            .padding(.bottom, Nuru.S.base)
-
             Text("GIVE")
                 .font(.inter(11, .bold)).kerning(2).foregroundStyle(Nuru.gold)
             Text("Sow into the Kingdom")
@@ -192,7 +183,7 @@ struct GivingView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 64)
+        .padding(.top, 56)
         .padding(.bottom, Nuru.S.lg)
         .background(
             UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)

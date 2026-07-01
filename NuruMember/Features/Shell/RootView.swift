@@ -52,33 +52,49 @@ enum AppTab: Hashable, CaseIterable {
 
 struct RootView: View {
     @State private var tab: AppTab = .initialTab
+    // Tabs that have been opened at least once — kept alive so their state (scroll,
+    // loaded data) survives switching, without loading all seven on launch.
+    @State private var loaded: Set<AppTab> = [AppTab.initialTab]
     @EnvironmentObject private var sync: SyncCoordinator
-    // The member's chosen text size. `tab` lives on RootView (outside the .id'd
-    // TabView), so changing the scale rebuilds every tab with the new fonts while
-    // keeping the current tab selected.
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
 
+    // A hand-rolled tab container instead of TabView: a stock TabView with 7 tabs
+    // collapses tabs 5–7 into a system "More" navigation controller on iPhone, which
+    // wrapped Chat/Give/Profile in a nav bar (the stray ‹ + "More" screen) and blocked
+    // their full-bleed headers. Rendering the selected tab directly avoids all of it.
     var body: some View {
-        TabView(selection: $tab) {
-            HomeView().tag(AppTab.home)
-            PathwayView().tag(AppTab.pathway)
-            PlansTab().tag(AppTab.plans)
-            EventsView().tag(AppTab.events)
-            ChatView().tag(AppTab.chat)
-            GivingView().tag(AppTab.give)
-            ProfileView().tag(AppTab.profile)
+        ZStack {
+            ForEach(AppTab.allCases, id: \.self) { t in
+                if loaded.contains(t) {
+                    tabView(t)
+                        .opacity(t == tab ? 1 : 0)
+                        .allowsHitTesting(t == tab)
+                        .accessibilityHidden(t != tab)
+                }
+            }
         }
         .id(textScale)
-        .toolbar(.hidden, for: .tabBar)
+        // One place to force the light (white) status bar for the whole signed-in
+        // app — every tab has a navy header at the top. Hidden view → only the
+        // window's status bar flips, content keeps its scheme.
+        .background(Color.clear.preferredColorScheme(.dark))
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
         .overlay(alignment: .bottom) {
             NuruTabBar(selection: $tab).ignoresSafeArea(edges: .bottom)
         }
+        .onChange(of: tab) { _, t in loaded.insert(t) }
     }
 
-    private func placeholderTab(_ title: String, _ blurb: String, _ icon: Lucide) -> some View {
-        NavigationStack {
-            PlaceholderScreen(title: title, blurb: blurb, icon: icon).navigationTitle(title)
+    @ViewBuilder
+    private func tabView(_ t: AppTab) -> some View {
+        switch t {
+        case .home:    HomeView()
+        case .pathway: PathwayView()
+        case .plans:   PlansTab()
+        case .events:  EventsView()
+        case .chat:    ChatView()
+        case .give:    GivingView()
+        case .profile: ProfileView()
         }
     }
 }
