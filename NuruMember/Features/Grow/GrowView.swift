@@ -33,7 +33,7 @@ extension View {
                 case .verseLibrary:  VerseLibraryView()
                 case .gifts:         GiftsView()
                 case .giftsAssessment: GiftsAssessmentView()
-                case .resources:     PlaceholderScreen(title: "Resources", blurb: "Books, audio and teaching.", icon: .bookOpen)
+                case .resources:     ResourcesLibraryView()
                 }
             }
             .navigationDestination(for: ReadingPlanRow.self) { PlanDetailView(plan: $0) }

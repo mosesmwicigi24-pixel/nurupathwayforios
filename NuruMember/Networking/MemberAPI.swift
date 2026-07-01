@@ -233,6 +233,11 @@ extension MemberAPI {
         try await APIClient.shared.get("growth/plans", as: Envelope<ReadingPlanRow>.self).data
     }
 
+    /// GET /growth/resources — the library (books, audio, video, articles).
+    static func resources() async throws -> [ResourceRow] {
+        try await APIClient.shared.get("growth/resources", as: Envelope<ResourceRow>.self).data
+    }
+
     /// GET /growth/plans/{id} — a plan with its day-by-day breakdown.
     static func plan(_ id: String) async throws -> ReadingPlanDetail {
         try await APIClient.shared.get("growth/plans/\(id)", as: ReadingPlanDetail.self)
