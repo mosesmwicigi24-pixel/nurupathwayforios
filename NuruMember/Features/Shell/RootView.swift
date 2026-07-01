@@ -53,6 +53,10 @@ enum AppTab: Hashable, CaseIterable {
 struct RootView: View {
     @State private var tab: AppTab = .initialTab
     @EnvironmentObject private var sync: SyncCoordinator
+    // The member's chosen text size. `tab` lives on RootView (outside the .id'd
+    // TabView), so changing the scale rebuilds every tab with the new fonts while
+    // keeping the current tab selected.
+    @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
 
     var body: some View {
         TabView(selection: $tab) {
@@ -64,6 +68,7 @@ struct RootView: View {
             GivingView().tag(AppTab.give)
             ProfileView().tag(AppTab.profile)
         }
+        .id(textScale)
         .toolbar(.hidden, for: .tabBar)
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
         .overlay(alignment: .bottom) {
