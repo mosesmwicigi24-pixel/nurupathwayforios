@@ -58,6 +58,13 @@ struct RootView: View {
     @EnvironmentObject private var sync: SyncCoordinator
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
 
+    /// Height of the top safe-area inset (status-bar / Dynamic Island band) so the
+    /// cream stripe covers exactly that region. Falls back to 59 (Dynamic Island).
+    private static var safeAreaTop: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
+    }
+
     // A hand-rolled tab container instead of TabView: a stock TabView with 7 tabs
     // collapses tabs 5–7 into a system "More" navigation controller on iPhone, which
     // wrapped Chat/Give/Profile in a nav bar (the stray ‹ + "More" screen) and blocked
@@ -74,10 +81,18 @@ struct RootView: View {
             }
         }
         .id(textScale)
-        // One place to force the light (white) status bar for the whole signed-in
-        // app — every tab has a navy header at the top. Hidden view → only the
-        // window's status bar flips, content keeps its scheme.
-        .background(Color.clear.preferredColorScheme(.dark))
+        // Cream status-bar stripe. The window's status-bar glyphs render DARK (light
+        // scheme — reliable across devices, unlike forcing white which came out black
+        // on some phones), and we paint the top safe-area band in warm paper so the
+        // phone's time/wifi/battery stay legible on cream instead of dark-on-navy.
+        // Hidden clear view flips only the status bar; content keeps its own colors.
+        .background(Color.clear.preferredColorScheme(.light))
+        .overlay(alignment: .top) {
+            Nuru.paper
+                .frame(maxWidth: .infinity)
+                .frame(height: Self.safeAreaTop)
+                .ignoresSafeArea(edges: .top)
+        }
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
         .overlay(alignment: .bottom) {
             NuruTabBar(selection: $tab).ignoresSafeArea(edges: .bottom)
@@ -135,7 +150,9 @@ private struct SyncStatusBanner: View {
 /// Plans tab — the reading-plan catalogue with its own navigation stack.
 private struct PlansTab: View {
     var body: some View {
-        NavigationStack { ReadingPlansView() }.nuruDestinations()
+        // .nuruDestinations() MUST be inside the stack — applied to the stack from
+        // outside, SwiftUI never registers the destinations and plan taps do nothing.
+        NavigationStack { ReadingPlansView().nuruDestinations() }
     }
 }
 

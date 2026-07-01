@@ -126,7 +126,7 @@ struct GivingView: View {
             ZStack(alignment: .bottom) {
                 Nuru.paper.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                    VStack(alignment: .leading, spacing: Nuru.S.md) {
                         if let g = vm.lastGift { repeatCard(g) }
                         fundsSection
                         amountCard
@@ -183,7 +183,7 @@ struct GivingView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 56)
+        .padding(.top, 64)
         .padding(.bottom, Nuru.S.lg)
         .background(
             UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)
@@ -229,20 +229,20 @@ struct GivingView: View {
                     ForEach(funds) { f in
                         let on = f.code == fundCode
                         Button { fundCode = f.code } label: {
-                            VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 8) {
                                 ZStack {
-                                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: f.tint))
-                                        .frame(width: 44, height: 44)
-                                    Icon(f.icon, size: 20, color: Color(hex: f.fg))
+                                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color(hex: f.tint))
+                                        .frame(width: 36, height: 36)
+                                    Icon(f.icon, size: 17, color: Color(hex: f.fg))
                                 }
-                                Text(f.label).font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
-                                Text(f.tagline).font(.inter(12)).foregroundStyle(Nuru.muted).lineLimit(1)
+                                Text(f.label).font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
+                                Text(f.tagline).font(.inter(11)).foregroundStyle(Nuru.muted).lineLimit(1)
                             }
-                            .frame(width: 150, alignment: .leading)
-                            .padding(Nuru.S.base)
+                            .frame(width: 124, alignment: .leading)
+                            .padding(12)
                             .background(on ? Nuru.priorityBg : Nuru.white,
-                                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(on ? Nuru.gold : Nuru.border, lineWidth: on ? 2 : 1))
                         }
                         .buttonStyle(.plain)
@@ -256,13 +256,13 @@ struct GivingView: View {
     // MARK: Amount
 
     private var amountCard: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.base) {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
             overline("AMOUNT")
             Button { showKeypad = true } label: {
-                HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text("KSh").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.ink300)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("KSh").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.ink300)
                     Text(amount.formatted(.number.grouping(.automatic)))
-                        .font(.fraunces(48, .bold)).foregroundStyle(Nuru.ink)
+                        .font(.fraunces(38, .bold)).foregroundStyle(Nuru.ink)
                     Spacer(minLength: 0)
                 }
             }
@@ -288,7 +288,7 @@ struct GivingView: View {
                 }.buttonStyle(.plain)
             }
         }
-        .padding(Nuru.S.lg).giveCard()
+        .padding(Nuru.S.base).giveCard()
     }
 
     // MARK: Frequency
@@ -340,11 +340,11 @@ struct GivingView: View {
             HStack(spacing: Nuru.S.md) {
                 methodBadge(m)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(m.label).font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
+                    Text(m.label).font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
                     if on && m.key == "mpesa" {
-                        Text(mpesaPhone).font(.inter(12)).foregroundStyle(Nuru.muted)
+                        Text(mpesaPhone).font(.inter(11)).foregroundStyle(Nuru.muted)
                     } else {
-                        Text(m.sub).font(.inter(12)).foregroundStyle(Nuru.muted)
+                        Text(m.sub).font(.inter(11)).foregroundStyle(Nuru.muted)
                     }
                 }
                 Spacer(minLength: Nuru.S.sm)
@@ -368,13 +368,13 @@ struct GivingView: View {
                         Icon(.chevronDown, size: 14, color: Nuru.ink300)
                     }.buttonStyle(.plain).disabled(index == orderedMethods.count - 1)
                 }
-                Icon(.gripVertical, size: 16, color: Nuru.ink300)
+                Icon(.gripVertical, size: 15, color: Nuru.ink300)
             }
-            .padding(Nuru.S.base)
+            .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(on ? Nuru.goldTint.opacity(0.45) : Nuru.white,
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .stroke(on ? Nuru.gold : Nuru.border, lineWidth: on ? 2 : 1))
             .opacity(soon ? 0.7 : 1)
         }
@@ -383,9 +383,9 @@ struct GivingView: View {
 
     private func methodBadge(_ m: PayMethod) -> some View {
         ZStack {
-            Circle().fill(Color(hex: m.badgeBg)).frame(width: 44, height: 44)
+            Circle().fill(Color(hex: m.badgeBg)).frame(width: 40, height: 40)
             if let icon = m.icon {
-                Icon(icon, size: 18, color: Color(hex: m.badgeFg))
+                Icon(icon, size: 17, color: Color(hex: m.badgeFg))
             } else {
                 Text(m.badgeText)
                     .font(.inter(m.badgeText.count > 3 ? 7 : 11, .heavy))
@@ -423,15 +423,15 @@ struct GivingView: View {
                                 .font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.goldLo)
                         }
                         Text("KSh \((s.amountMinor / 100).formatted(.number.grouping(.automatic)))")
-                            .font(.fraunces(24, .semibold)).foregroundStyle(Nuru.ink)
-                        Text(s.fund.capitalized).font(.inter(13)).foregroundStyle(Nuru.muted)
-                        Text("Next \(shortDate(s.nextRunAt))").font(.inter(12)).foregroundStyle(Nuru.faint)
+                            .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                        Text(s.fund.capitalized).font(.inter(12)).foregroundStyle(Nuru.muted)
+                        Text("Next \(shortDate(s.nextRunAt))").font(.inter(11)).foregroundStyle(Nuru.faint)
                             .padding(.top, 2)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(Nuru.S.base)
-                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .padding(12)
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
             }
         }
@@ -444,13 +444,13 @@ struct GivingView: View {
             HStack {
                 overline("RECENT GIVING")
                 Spacer()
-                if !vm.history.isEmpty {
-                    NavigationLink(value: GiveRoute.statement) {
-                        HStack(spacing: 3) {
-                            Text("View statement").font(.inter(13, .semibold))
-                            Icon(.chevronRight, size: 12, color: Nuru.goldLo)
-                        }.foregroundStyle(Nuru.goldLo)
-                    }
+                // Always reachable — the statement page has its own empty state, so the
+                // giving record + receipts stay discoverable even before the first gift.
+                NavigationLink(value: GiveRoute.statement) {
+                    HStack(spacing: 3) {
+                        Text("View statement").font(.inter(13, .semibold))
+                        Icon(.chevronRight, size: 12, color: Nuru.goldLo)
+                    }.foregroundStyle(Nuru.goldLo)
                 }
             }
             VStack(spacing: 0) {

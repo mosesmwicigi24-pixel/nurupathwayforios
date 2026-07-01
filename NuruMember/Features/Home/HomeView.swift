@@ -281,7 +281,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.base)
-        .padding(.top, 56)   // clears the status bar / Dynamic Island (header is full-bleed)
+        .padding(.top, 64)   // clears the status bar / Dynamic Island (header is full-bleed)
         .padding(.bottom, Nuru.S.base)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
