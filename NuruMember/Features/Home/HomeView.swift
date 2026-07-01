@@ -230,6 +230,7 @@ struct HomeView: View {
         case "prayerJournal": path.append(GrowDestination.prayerJournal)
         case "verseLibrary": path.append(GrowDestination.verseLibrary)
         case "prayerWall": path.append(CommunityRoute.prayerWall)
+        case "prayerDetail": path.append(CommunityRoute.prayer("de300000-0000-0000-0000-000000000500"))
         case "gifts": path.append(GrowDestination.gifts)
         case "giftsAssessment": path.append(GrowDestination.giftsAssessment)
         case "mentor": path.append(AppRoute.mentor)
@@ -561,7 +562,7 @@ struct HomeView: View {
                 .padding(.top, 4)
             HStack(spacing: 4) {
                 Icon(.handHeart, size: 13, color: Nuru.goldChipText)
-                Text("\(post.prayCount) praying · \(post.commentCount) reply")
+                Text("\(post.prayCount) praying · \(post.commentCount ?? 0) reply")
                     .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
             }
             .padding(.top, Nuru.S.sm)

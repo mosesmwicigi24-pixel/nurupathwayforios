@@ -4,8 +4,6 @@
 // compose sheet. Styled to match the RN screen exactly.
 import SwiftUI
 
-private let prayerHero = "https://images.unsplash.com/photo-1529070538774-1843cb3265df?w=1200&q=80"
-
 @MainActor
 final class PrayerWallViewModel: ObservableObject {
     @Published var posts: [PrayerWallPost] = []
@@ -67,13 +65,11 @@ struct PrayerWallView: View {
         }
     }
 
-    // Full-bleed hero: edge-to-edge image, controls + title overlaid.
+    // Full-bleed hero: brand gradient (image removed by design), controls + title overlaid.
     private var hero: some View {
         ZStack(alignment: .bottom) {
-            CachedAsyncImage(url: URL(string: prayerHero)) { phase in
-                (phase.image ?? Image(systemName: "photo")).resizable().scaledToFill()
-            }
-            .frame(maxWidth: .infinity).frame(height: 240).clipped()
+            Nuru.heroGradient
+                .frame(maxWidth: .infinity).frame(height: 240).clipped()
             Color(hex: 0x081C36, alpha: 0.55)
             VStack {
                 HStack {
@@ -163,7 +159,7 @@ private struct PrayerCardView: View {
                 .buttonStyle(.plain)
                 HStack(spacing: 4) {
                     Icon(.messageCircle, size: 14, color: Nuru.faint)
-                    Text("\(post.commentCount)").font(.nCaption).foregroundStyle(Nuru.faint)
+                    Text("\(post.commentCount ?? 0)").font(.nCaption).foregroundStyle(Nuru.faint)
                 }
                 Spacer(minLength: 0)
             }
