@@ -276,7 +276,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.base)
-        .padding(.top, 52)
+        .padding(.top, Nuru.S.base)
         .padding(.bottom, Nuru.S.base)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
