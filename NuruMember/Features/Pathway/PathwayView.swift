@@ -12,6 +12,7 @@ enum PathwayRoute: Hashable {
     case level(Int)
     case module(String)   // moduleId
     case quiz(String)     // moduleId
+    case map              // the full levels map ("Map view")
 }
 
 // Exact Figma palette (LevelsOverview.tsx) — kept local so this page is 1:1 with
@@ -49,13 +50,50 @@ private enum PW {
         5: "How Scripture forms faith and life",
         6: "Walking in the Spirit's gifts and power",
     ]
+
+    // PathwayHub additions
+    static let goldLight  = Color(hex: 0xE6C068)
+    static let navyDeep   = Color(hex: 0x081C36)
+    static let surface    = Color(hex: 0xFBF8F1)
+    static let border     = Color(hex: 0x0A2540, alpha: 0.08)
+    static let badgeEmoji = ["🪨", "🕊️", "🌿", "🔥", "📖", "👑", "⭐", "🏅"]
+}
+
+// Small helpers shared by the PathwayHub subviews (mirror the Figma functions).
+private func pwGreeting() -> String {
+    let h = Calendar.current.component(.hour, from: Date())
+    if h < 12 { return "Good morning" }
+    if h < 17 { return "Good afternoon" }
+    return "Good evening"
+}
+private func pwShortName(_ t: String) -> String {
+    let w = t.split(separator: " ").first.map(String.init) ?? ""
+    guard let f = w.first else { return "" }
+    return String(f).uppercased() + w.dropFirst().lowercased()
+}
+private func pwSubtitle(_ l: PathwayLevel?) -> String {
+    guard let l else { return "" }
+    if let t = l.theme, !t.isEmpty { return t }
+    if let d = l.description, !d.isEmpty { return d }
+    return PW.subtitle[l.levelNumber] ?? ""
+}
+
+/// The reward the member is working toward — the first not-yet-complete level.
+struct PWReward { let name: String; let emoji: String; let remaining: Int; let pct: Int }
+
+private func nextReward(_ s: PathwaySummary) -> PWReward? {
+    guard let idx = s.levels.firstIndex(where: { $0.status != .completed }) else { return nil }
+    let l = s.levels[idx]
+    let remaining = max(l.totalModules - l.completedModules, 0)
+    let pct = l.totalModules > 0 ? Int((Double(l.completedModules) / Double(l.totalModules) * 100).rounded()) : 0
+    return PWReward(name: pwShortName(l.title), emoji: PW.badgeEmoji[idx % PW.badgeEmoji.count], remaining: remaining, pct: pct)
 }
 
 @MainActor
 final class PathwayViewModel: ObservableObject {
     @Published var summary: PathwaySummary?
     @Published var streak = 0
-    @Published var activeModules: [LevelModule] = []
+    @Published var modulesByLevel: [Int: [LevelModule]] = [:]   // real module trails, cached per level
     @Published var loading = true
     @Published var error: String?
 
@@ -68,10 +106,15 @@ final class PathwayViewModel: ObservableObject {
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your pathway."
         }
         streak = (try? await MemberAPI.achievements())?.streak.current ?? 0
-        if let active = active(in: summary) {
-            activeModules = (try? await MemberAPI.levelModules(active.levelNumber)) ?? []
-        }
+        if let active = active(in: summary) { await fetchModules(active.levelNumber) }
         loading = false
+    }
+
+    /// Lazily fetch (and cache) a level's real module trail — driven by taps on
+    /// the journey rail so each level's list is the server's, not a placeholder.
+    func fetchModules(_ levelNumber: Int) async {
+        if modulesByLevel[levelNumber] != nil { return }
+        modulesByLevel[levelNumber] = (try? await MemberAPI.levelModules(levelNumber)) ?? []
     }
 
     private func active(in p: PathwaySummary?) -> PathwayLevel? {
@@ -82,29 +125,43 @@ final class PathwayViewModel: ObservableObject {
     }
     var activeLevel: PathwayLevel? { active(in: summary) }
 
+    /// The module to resume in a level (status-driven from the real trail).
+    func resumeModule(in levelNumber: Int) -> LevelModule? {
+        let mods = modulesByLevel[levelNumber] ?? []
+        return mods.first { $0.status == .next } ?? mods.first { !$0.completed } ?? mods.last
+    }
+
     var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }
     var doneModules: Int { summary?.levels.reduce(0) { $0 + $1.completedModules } ?? 0 }
     var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.totalModules } ?? 0 }
     var levelCount: Int { summary?.levels.count ?? 6 }
     var overallPct: Int { totalModules > 0 ? Int(round(Double(doneModules) / Double(totalModules) * 100)) : 0 }
+    func pct(_ l: PathwayLevel) -> Int { l.totalModules > 0 ? Int(round(Double(l.completedModules) / Double(l.totalModules) * 100)) : 0 }
 }
 
 struct PathwayView: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var vm = PathwayViewModel()
     @State private var path = NavigationPath()
+    @State private var selectedLevelNumber: Int?
+
+    /// The level whose module list is shown inline (defaults to the active level).
+    private var selectedLevel: PathwayLevel? {
+        guard let s = vm.summary else { return nil }
+        let target = selectedLevelNumber ?? vm.activeLevel?.levelNumber
+        return s.levels.first { $0.levelNumber == target } ?? vm.activeLevel
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    header
                     if vm.loading && vm.summary == nil {
-                        ProgressView().tint(PW.gold).padding(.top, Nuru.S.xxl)
-                    } else if vm.summary != nil {
-                        body(vm.summary!)
+                        ProgressView().tint(PW.gold).frame(maxWidth: .infinity).padding(.top, 140)
+                    } else if let s = vm.summary {
+                        content(s)
                     } else {
-                        errorState
+                        errorState.padding(.top, 120)
                     }
                 }
                 .padding(.bottom, Nuru.tabBarSpace)
@@ -118,92 +175,51 @@ struct PathwayView: View {
                 case .level(let n): LevelDetailView(levelNumber: n)
                 case .module(let id): ModuleView(moduleId: id)
                 case .quiz(let id): QuizView(moduleId: id)
+                case .map: LevelsMapView(vm: vm) { path.append(PathwayRoute.level($0)) }
                 }
             }
         }
         .task { if vm.summary == nil { await vm.load() } }
-    }
-
-    // MARK: header (navy, full-bleed to the top edge)
-
-    private var header: some View {
-        ZStack(alignment: .topLeading) {
-            // Decorative brand glows (LevelsOverview blur circles).
-            Circle().fill(PW.gold.opacity(0.12)).frame(width: 288, height: 288).blur(radius: 60)
-                .offset(x: 210, y: -150)
-            Circle().fill(Color(hex: 0x5F8FC8).opacity(0.15)).frame(width: 96, height: 96).blur(radius: 40)
-                .offset(x: 28, y: 96)
-
-            VStack(alignment: .leading, spacing: 0) {
-                Text("Welcome back, \(firstName)".uppercased())
-                    .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(PW.gold)
-                HStack(alignment: .bottom, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Your pathway is unfolding.")
-                            .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4)
-                            .foregroundStyle(.white)
-                        Text("A calm view of your discipleship journey, saved progress, and what opens next.")
-                            .font(.inter(14)).foregroundStyle(.white.opacity(0.55)).lineSpacing(3)
-                            .frame(maxWidth: 280, alignment: .leading)
-                            .padding(.top, 12)
-                    }
-                    Spacer(minLength: 0)
-                    PWProgressRing(pct: vm.overallPct)
-                }
-                .padding(.top, 12)
-
-                HStack(spacing: 8) {
-                    PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
-                    PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
-                    PWStatCard(label: "Offline", value: "Ready")
-                }
-                .padding(.top, 24)
-            }
-            .padding(.horizontal, 20)
-            .padding(.top, 64)      // clears the status-bar / cream stripe
-            .padding(.bottom, 24)
+        .task(id: selectedLevel?.levelNumber) {
+            if let n = selectedLevel?.levelNumber { await vm.fetchModules(n) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(PW.navy)
-        .clipped()
     }
 
-    // MARK: body
+    // MARK: content — the PathwayHub layout (hero → journey rail → level modules → milestones → summit)
 
-    private func body(_ summary: PathwaySummary) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let a = vm.activeLevel {
-                PWContinueCard(level: a) { path.append(PathwayRoute.level(a.levelNumber)) }
-                    .padding(.bottom, 20)
-            }
-            sectionHeader.padding(.bottom, 12)
-            VStack(spacing: 12) {
-                ForEach(summary.levels) { level in
-                    PWLevelCard(level: level) {
-                        if level.status != .locked { path.append(PathwayRoute.level(level.levelNumber)) }
-                    }
+    private func content(_ s: PathwaySummary) -> some View {
+        let active = vm.activeLevel
+        return VStack(spacing: 0) {
+            PathwayHubHeader(
+                vm: vm, firstName: firstName, active: active,
+                resume: active.flatMap { vm.resumeModule(in: $0.levelNumber) },
+                openModule: { path.append(PathwayRoute.module($0)) })
+
+            VStack(alignment: .leading, spacing: 24) {
+                PathwayJourneyRail(
+                    levels: s.levels, selected: selectedLevel?.levelNumber ?? -1,
+                    onSelect: { selectedLevelNumber = $0 },
+                    onMap: { path.append(PathwayRoute.map) })
+
+                if let sel = selectedLevel {
+                    PathwaySelectedModules(
+                        level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
+                        loading: vm.modulesByLevel[sel.levelNumber] == nil,
+                        resume: vm.resumeModule(in: sel.levelNumber),
+                        openModule: { path.append(PathwayRoute.module($0)) })
                 }
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 20)
-        .padding(.bottom, 24)
-    }
 
-    private var sectionHeader: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 0) {
-                Text("SIX-LEVEL PATHWAY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.ink2)
-                Text("Choose your level").font(.fraunces(22, .medium)).kerning(-0.88).foregroundStyle(PW.ink)
-                    .padding(.top, 4)
+                PathwayMilestones(
+                    levels: s.levels, reward: nextReward(s),
+                    openResume: {
+                        if let a = active, let m = vm.resumeModule(in: a.levelNumber) {
+                            path.append(PathwayRoute.module(m.moduleId))
+                        }
+                    })
+
+                PathwaySummitCard()
             }
-            Spacer(minLength: 0)
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white)
-                    .shadow(color: PW.navy.opacity(0.05), radius: 6, y: 2)
-                Icon(.map, size: 19, color: PW.navy)
-            }
-            .frame(width: 40, height: 40)
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
         }
     }
 
@@ -215,6 +231,467 @@ struct PathwayView: View {
     }
 
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
+}
+
+// MARK: - PathwayHub · cinematic hero (your current level)
+
+private struct PathwayHubHeader: View {
+    @ObservedObject var vm: PathwayViewModel
+    let firstName: String
+    let active: PathwayLevel?
+    let resume: LevelModule?
+    let openModule: (String) -> Void
+
+    private var idx: Int {
+        guard let a = active, let levels = vm.summary?.levels else { return 0 }
+        return levels.firstIndex { $0.levelNumber == a.levelNumber } ?? 0
+    }
+    private var activePct: Int { active.map { vm.pct($0) } ?? 0 }
+    private var remaining: Int { active.map { max($0.totalModules - $0.completedModules, 0) } ?? 0 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            LinearGradient(colors: PW.tone(active?.levelNumber ?? 1), startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.35), Color(hex: 0x081424, alpha: 0.12), Color(hex: 0x081424, alpha: 0.72)], startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [PW.gold.opacity(0.4), .clear], center: .center, startRadius: 0, endRadius: 112)
+                .frame(width: 224, height: 224).blur(radius: 40).offset(x: 150, y: -70)
+
+            VStack(alignment: .leading, spacing: 0) {
+                topBar
+                Text("\(pwGreeting()), \(firstName) · Level \(idx + 1) of \(vm.levelCount)")
+                    .font(.inter(10)).foregroundStyle(.white.opacity(0.7)).padding(.top, 16)
+                Text(active?.title ?? "Your pathway")
+                    .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
+                    .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
+                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(.white.opacity(0.7)).padding(.top, 4)
+                HStack(spacing: 8) {
+                    PWBar(pct: activePct, height: 6, fill: .color(.white), track: Color.white.opacity(0.22))
+                    Text("\(active?.completedModules ?? 0)/\(active?.totalModules ?? 0)")
+                        .font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.8))
+                }.padding(.top, 16)
+                if remaining > 0 {
+                    HStack(spacing: 6) {
+                        Icon(.sparkles, size: 11, color: PW.goldLight)
+                        Text(remaining == 1 ? "Just 1 module left to level up 🎉" : "Only \(remaining) modules to complete this level")
+                            .font(.inter(10, .semibold)).foregroundStyle(PW.goldLight)
+                    }.padding(.top, 8)
+                }
+                continueCard.padding(.top, 16)
+            }
+            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 24)
+        }
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
+    }
+
+    private var topBar: some View {
+        HStack {
+            HStack(spacing: 8) {
+                Text("YOUR PATHWAY").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PW.goldLight)
+                if vm.streak > 0 {
+                    HStack(spacing: 4) {
+                        Icon(.flame, size: 9, color: PW.goldLight)
+                        Text("\(vm.streak)-day streak").font(.inter(9, .bold)).foregroundStyle(PW.goldLight)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color.white.opacity(0.12), in: Capsule())
+                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                }
+            }
+            Spacer()
+            HStack(spacing: 8) {
+                Icon(.bell, size: 17, color: .white).frame(width: 36, height: 36)
+                    .background(Color.white.opacity(0.12), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                PWHeaderRing(pct: vm.overallPct)
+            }
+        }
+    }
+
+    private var continueCard: some View {
+        Button { if let m = resume { openModule(m.moduleId) } } label: {
+            HStack(spacing: 12) {
+                Icon(.playCircle, size: 22, color: PW.navy)
+                    .frame(width: 44, height: 44)
+                    .background(PW.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CONTINUE WHERE YOU LEFT OFF").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
+                    Text(resume?.title ?? "Level complete").font(.inter(14, .semibold)).foregroundStyle(.white).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: .white)
+            }
+            .padding(12)
+            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PWHeaderRing: View {
+    let pct: Int
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.22), lineWidth: 3)
+            Circle().trim(from: 0, to: CGFloat(max(0, min(100, pct))) / 100)
+                .stroke(PW.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+            Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(.white)
+        }
+        .frame(width: 40, height: 40)
+    }
+}
+
+// MARK: - PathwayHub · journey rail
+
+private struct PathwayJourneyRail: View {
+    let levels: [PathwayLevel]
+    let selected: Int
+    let onSelect: (Int) -> Void
+    let onMap: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("THE JOURNEY · \(levels.count) LEVELS").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
+                Spacer()
+                Button(action: onMap) { Text("Map view").font(.inter(9, .bold)).foregroundStyle(PW.gold) }.buttonStyle(.plain)
+            }.padding(.horizontal, 4)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 0) {
+                    ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
+                        PWJourneyNode(level: lvl, number: i + 1, selected: lvl.levelNumber == selected) { onSelect(lvl.levelNumber) }
+                        if i < levels.count - 1 {
+                            Capsule().fill(lvl.status == .completed ? PW.gold : PW.navy.opacity(0.12))
+                                .frame(width: 28, height: 3).padding(.top, 40)
+                        }
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+    }
+}
+
+private struct PWJourneyNode: View {
+    let level: PathwayLevel
+    let number: Int
+    let selected: Bool
+    let onTap: () -> Void
+    private var done: Bool { level.status == .completed }
+    private var active: Bool { level.status == .active }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 6) {
+                Text(active ? "▾ You" : " ").font(.inter(7, .bold)).kerning(0.7)
+                    .foregroundStyle(active ? PW.gold : Color.clear).frame(height: 10)
+                ZStack {
+                    Circle()
+                        .fill(done || active
+                              ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : AnyShapeStyle(PW.mutedBg))
+                        .frame(width: 48, height: 48)
+                        .overlay { if active { Circle().stroke(PW.navy, lineWidth: 2) } }
+                    if done { Icon(.check, size: 20, color: PW.navy) }
+                    else if active { Text("\(number)").font(.inter(13, .bold)).foregroundStyle(PW.navy) }
+                    else { Icon(.lock, size: 15, color: PW.ink3) }
+                }
+                .overlay { if selected { Circle().stroke(PW.gold, lineWidth: 2).frame(width: 54, height: 54) } }
+                Text(pwShortName(level.title))
+                    .font(.inter(9, active ? .bold : .medium))
+                    .foregroundStyle(active ? PW.navy : (level.status == .locked ? PW.ink3 : PW.ink2))
+                    .lineLimit(1)
+            }
+            .frame(width: 68)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - PathwayHub · selected level's modules (inline, real trail)
+
+private struct PathwaySelectedModules: View {
+    let level: PathwayLevel
+    let modules: [LevelModule]
+    let loading: Bool
+    let resume: LevelModule?
+    let openModule: (String) -> Void
+
+    // Progression order — completed, then the one in progress, then locked (each
+    // by sequence). Identical to raw sequence for a clean curriculum; for real
+    // data it keeps finished modules from being buried below locked ones.
+    private var ordered: [LevelModule] {
+        func rank(_ m: LevelModule) -> Int { m.status == .completed ? 0 : m.status == .next ? 1 : 2 }
+        return modules.sorted { a, b in
+            rank(a) != rank(b) ? rank(a) < rank(b) : a.moduleSequenceNumber < b.moduleSequenceNumber
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(level.title.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).lineLimit(1)
+                    Text("\(level.completedModules) of \(level.totalModules) done").font(.inter(11)).foregroundStyle(PW.ink2)
+                }
+                Spacer()
+                if let r = resume {
+                    Button { openModule(r.moduleId) } label: { Text("Continue →").font(.inter(10, .bold)).foregroundStyle(PW.gold) }.buttonStyle(.plain)
+                }
+            }.padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                if loading {
+                    ProgressView().tint(PW.gold).frame(maxWidth: .infinity).padding(.vertical, 26)
+                } else if ordered.isEmpty {
+                    Text("Modules open as you progress.").font(.inter(12)).foregroundStyle(PW.ink3)
+                        .frame(maxWidth: .infinity).padding(.vertical, 26)
+                } else {
+                    ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
+                        PWModuleRow(module: m, last: i == ordered.count - 1) { if m.status != .locked { openModule(m.moduleId) } }
+                    }
+                }
+            }
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PW.border, lineWidth: 1))
+        }
+    }
+}
+
+private struct PWModuleRow: View {
+    let module: LevelModule
+    let last: Bool
+    let onTap: () -> Void
+    private var done: Bool { module.status == .completed }
+    private var active: Bool { module.status == .next }
+    private var locked: Bool { module.status == .locked }
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
+                              : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : AnyShapeStyle(PW.mutedBg))
+                        .frame(width: 32, height: 32)
+                    if done { Icon(.check, size: 15, color: PW.goldDeep) }
+                    else if active { Icon(.playCircle, size: 16, color: PW.navy) }
+                    else { Icon(.lock, size: 13, color: PW.ink3) }
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(module.title).font(.inter(13, active ? .bold : .medium)).foregroundStyle(locked ? PW.ink3 : PW.navy).lineLimit(1)
+                    Text(done ? "Completed" : active ? "In progress · tap to continue" : "Locked")
+                        .font(.inter(9, active ? .bold : .medium)).foregroundStyle(active ? PW.goldDeep : PW.ink3)
+                }
+                Spacer(minLength: 0)
+                if active {
+                    Text("Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                        .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
+                } else if done {
+                    Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(active ? PW.gold.opacity(0.05) : Color.clear)
+            .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
+        }
+        .buttonStyle(.plain)
+        .disabled(locked)
+    }
+}
+
+// MARK: - PathwayHub · milestones (next reward + badge rail)
+
+private struct PathwayMilestones: View {
+    let levels: [PathwayLevel]
+    let reward: PWReward?
+    let openResume: () -> Void
+    private var earned: Int { levels.filter { $0.status == .completed }.count }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("MILESTONES").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
+                Spacer()
+                Text("\(earned) earned").font(.inter(9, .semibold)).foregroundStyle(PW.ink3)
+            }.padding(.horizontal, 4)
+            if let r = reward, r.remaining > 0 { nextRewardCard(r) }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
+                        PWRewardBadge(name: pwShortName(lvl.title), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.status == .completed)
+                    }
+                }.padding(.horizontal, 2)
+            }
+        }
+    }
+
+    private func nextRewardCard(_ r: PWReward) -> some View {
+        Button(action: openResume) {
+            HStack(spacing: 12) {
+                Text(r.emoji).font(.system(size: 22))
+                    .frame(width: 48, height: 48)
+                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("NEXT REWARD").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
+                    Text("The “\(r.name)” badge").font(.inter(13, .bold)).foregroundStyle(.white).lineLimit(1)
+                    HStack(spacing: 8) {
+                        PWBar(pct: r.pct, height: 6, fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing), track: Color.white.opacity(0.16))
+                        Text("\(r.remaining) to go").font(.inter(9, .semibold)).foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+            }
+            .padding(14)
+            .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: PW.navyDeep.opacity(0.6), radius: 20, y: 12)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+private struct PWRewardBadge: View {
+    let name: String
+    let emoji: String
+    let earned: Bool
+    var body: some View {
+        VStack(spacing: 6) {
+            Text(emoji).font(.system(size: 20)).frame(width: 44, height: 44)
+                .background(earned ? Color.white : PW.mutedBg, in: Circle())
+                .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
+                .grayscale(earned ? 0 : 1).opacity(earned ? 1 : 0.7)
+            Text(name).font(.inter(9, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+            if earned {
+                HStack(spacing: 1) {
+                    ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 8)).foregroundStyle(PW.gold) }
+                }
+            } else {
+                Icon(.lock, size: 9, color: PW.ink3)
+            }
+        }
+        .frame(width: 84).padding(.vertical, 12)
+        .background(earned
+                    ? AnyShapeStyle(LinearGradient(colors: [PW.gold.opacity(0.14), PW.gold.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(PW.surface),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(earned ? PW.gold.opacity(0.33) : PW.navy.opacity(0.18), style: StrokeStyle(lineWidth: 1, dash: earned ? [] : [4])))
+    }
+}
+
+// MARK: - PathwayHub · the summit
+
+private struct PathwaySummitCard: View {
+    private let img = "https://images.unsplash.com/photo-1513759565286-20e9c5fad06b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
+    var body: some View {
+        ZStack {
+            if let u = URL(string: img) {
+                CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+            }
+            LinearGradient(colors: [Color(hex: 0x081C36, alpha: 0.25), Color(hex: 0x081C36, alpha: 0.45), Color(hex: 0x081C36, alpha: 0.86)], startPoint: .top, endPoint: .bottom)
+            VStack(spacing: 2) {
+                Text("👑").font(.system(size: 24))
+                Text("THE SUMMIT").font(.inter(8, .bold)).kerning(1.76).foregroundStyle(PW.goldLight).padding(.top, 2)
+                Text("Commissioned").font(.fraunces(18, .semibold)).kerning(-0.18).foregroundStyle(.white).padding(.top, 1)
+                Text("Sent to make disciples · Matthew 28:19").font(.inter(11)).foregroundStyle(.white.opacity(0.82))
+            }
+            .frame(maxHeight: .infinity, alignment: .bottom).padding(16)
+        }
+        .frame(height: 160).frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: PW.navy.opacity(0.35), radius: 20, y: 12)
+    }
+}
+
+// MARK: - Levels map ("Map view") — the calm all-levels overview (LevelsOverview.tsx)
+
+struct LevelsMapView: View {
+    @ObservedObject var vm: PathwayViewModel
+    let onOpenLevel: (Int) -> Void
+    @EnvironmentObject private var auth: AuthStore
+    @Environment(\.dismiss) private var dismiss
+
+    private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                header
+                if let s = vm.summary {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if let a = vm.activeLevel {
+                            PWContinueCard(level: a) { onOpenLevel(a.levelNumber) }.padding(.bottom, 20)
+                        }
+                        sectionHeader.padding(.bottom, 12)
+                        VStack(spacing: 12) {
+                            ForEach(s.levels) { level in
+                                PWLevelCard(level: level) { if level.status != .locked { onOpenLevel(level.levelNumber) } }
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
+                }
+            }
+            .padding(.bottom, Nuru.tabBarSpace)
+        }
+        .ignoresSafeArea(edges: .top)
+        .background(PW.bg.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    private var header: some View {
+        ZStack(alignment: .topLeading) {
+            Circle().fill(PW.gold.opacity(0.12)).frame(width: 288, height: 288).blur(radius: 60).offset(x: 210, y: -150)
+            Circle().fill(Color(hex: 0x5F8FC8).opacity(0.15)).frame(width: 96, height: 96).blur(radius: 40).offset(x: 28, y: 96)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Button { dismiss() } label: {
+                        Icon(.chevronLeft, size: 20, color: .white).frame(width: 36, height: 36)
+                            .background(Color.white.opacity(0.12), in: Circle())
+                    }.buttonStyle(.plain)
+                    Spacer()
+                }
+                Text("Welcome back, \(firstName)".uppercased())
+                    .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(PW.gold).padding(.top, 14)
+                HStack(alignment: .bottom, spacing: 16) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("Your pathway is unfolding.")
+                            .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(.white)
+                        Text("A calm view of your discipleship journey, saved progress, and what opens next.")
+                            .font(.inter(14)).foregroundStyle(.white.opacity(0.55)).lineSpacing(3)
+                            .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
+                    }
+                    Spacer(minLength: 0)
+                    PWProgressRing(pct: vm.overallPct)
+                }.padding(.top, 12)
+                HStack(spacing: 8) {
+                    PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
+                    PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
+                    PWStatCard(label: "Offline", value: "Ready")
+                }.padding(.top, 24)
+            }
+            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 24)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading).background(PW.navy).clipped()
+    }
+
+    private var sectionHeader: some View {
+        HStack(alignment: .center) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("SIX-LEVEL PATHWAY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.ink2)
+                Text("Choose your level").font(.fraunces(22, .medium)).kerning(-0.88).foregroundStyle(PW.ink).padding(.top, 4)
+            }
+            Spacer(minLength: 0)
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white).shadow(color: PW.navy.opacity(0.05), radius: 6, y: 2)
+                Icon(.map, size: 19, color: PW.navy)
+            }.frame(width: 40, height: 40)
+        }
+    }
 }
 
 // MARK: - 74px progress ring
