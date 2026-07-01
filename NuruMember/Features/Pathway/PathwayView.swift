@@ -21,15 +21,19 @@ final class PathwayViewModel: ObservableObject {
 
     func load() async {
         loading = true; error = nil
-        async let pathway = try? MemberAPI.pathway()
-        async let ach = try? MemberAPI.achievements()
-        let p = await pathway
-        summary = p
-        streak = await ach?.streak.current ?? 0
-        if let active = active(in: p) {
+        // Surface the real decode/transport error instead of swallowing it into a
+        // blank page — if the pathway response ever fails to parse, we want the
+        // exact reason on screen, not a generic "couldn't load".
+        do {
+            summary = try await MemberAPI.pathway()
+        } catch {
+            summary = nil
+            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your pathway."
+        }
+        streak = (try? await MemberAPI.achievements())?.streak.current ?? 0
+        if let active = active(in: summary) {
             activeModules = (try? await MemberAPI.levelModules(active.levelNumber)) ?? []
         }
-        if summary == nil { error = "Couldn't load your pathway." }
         loading = false
     }
 
