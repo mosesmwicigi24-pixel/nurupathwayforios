@@ -217,12 +217,14 @@ struct EventsView: View {
                     .padding(.bottom, Nuru.tabBarSpace)
                 }
             }
+            .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
             .navigationDestination(for: EventsNav.self) { _ in CalendarView() }
             .nuruDestinations()
         }
+        .background(Color.clear.preferredColorScheme(.dark))   // full-bleed navy header → white status bar
         .task { if vm.occurrences.isEmpty && vm.series.isEmpty && vm.announcements.isEmpty { await vm.load() } }
     }
 
@@ -247,7 +249,7 @@ struct EventsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, 56).padding(.bottom, Nuru.S.lg)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }

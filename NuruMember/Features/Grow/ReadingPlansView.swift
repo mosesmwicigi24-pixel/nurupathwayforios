@@ -44,7 +44,9 @@ struct ReadingPlansView: View {
                 }
             }
         }
+        .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
+        .background(Color.clear.preferredColorScheme(.dark))   // full-bleed navy header → white status bar
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await vm.load() }
@@ -63,7 +65,7 @@ struct ReadingPlansView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, 56)
         .padding(.bottom, Nuru.S.lg)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
