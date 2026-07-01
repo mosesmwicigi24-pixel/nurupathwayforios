@@ -107,16 +107,22 @@ struct RootView: View {
         .onChange(of: tabs.selected) { _, t in loaded.insert(t) }
     }
 
-    @ViewBuilder
-    private func tabView(_ t: AppTab) -> some View {
+    // Type-ERASED per tab (AnyView): otherwise RootView.body's type embeds all
+    // seven tab view types (HomeView, PathwayView, …) in one _ConditionalContent.
+    // That combined type's mangled name is resolved even on the login path (it's a
+    // branch of the app's root Group), and it's large enough to overflow the Swift
+    // metadata demangler's stack ON DEVICE → EXC_BAD_ACCESS at launch. AnyView
+    // keeps RootView's type tiny; each tab's own type is only resolved when it
+    // actually renders.
+    private func tabView(_ t: AppTab) -> AnyView {
         switch t {
-        case .home:    HomeView()
-        case .pathway: PathwayView()
-        case .plans:   PlansTab()
-        case .events:  EventsView()
-        case .chat:    ChatView()
-        case .give:    GivingView()
-        case .profile: ProfileView()
+        case .home:    return AnyView(HomeView())
+        case .pathway: return AnyView(PathwayView())
+        case .plans:   return AnyView(PlansTab())
+        case .events:  return AnyView(EventsView())
+        case .chat:    return AnyView(ChatView())
+        case .give:    return AnyView(GivingView())
+        case .profile: return AnyView(ProfileView())
         }
     }
 }
