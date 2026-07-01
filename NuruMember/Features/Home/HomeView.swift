@@ -165,43 +165,42 @@ struct HomeView: View {
         ]
     }
 
-    // The Home feed, split into three opaque `some View` groups so no single
-    // container compiles to a giant TupleView (see the note in `body`).
-    @ViewBuilder private var feedTop: some View {
-        if let a = vm.nextAction { heroCard(a) }                       // 2
-        if let v = vm.welcomeVideo { welcomeVideoCard(v) }             // 3
-        verseCard                                                      // 4
-        if !vm.prayerPosts.isEmpty { prayerWallCard }                  // 5
-        minisRow                                                       // 6
-        if let c = vm.featuredCell {                                   // 7
+    // The Home feed as an ARRAY of individually type-erased views. This is the only
+    // form that reliably avoids the on-device type-demangler stack overflow: the
+    // enclosing VStack/ForEach type is flat (`ForEach<…, AnyView>`), and each card's
+    // (deeply-generic) type is demangled ONE AT A TIME here — in a shallow stack —
+    // as its AnyView box is built. `some View` groups and even AnyView-of-6 still
+    // forced the runtime to decode several cards' types together and overflowed.
+    private var feedSections: [AnyView] {
+        var s: [AnyView] = []
+        if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
+        if let v = vm.welcomeVideo { s.append(AnyView(welcomeVideoCard(v))) }           // 3
+        s.append(AnyView(verseCard))                                                    // 4
+        if !vm.prayerPosts.isEmpty { s.append(AnyView(prayerWallCard)) }                // 5
+        s.append(AnyView(minisRow))                                                     // 6
+        if let c = vm.featuredCell {                                                    // 7
             if let aid = weekAnnouncementId {
-                Button {
+                s.append(AnyView(Button {
                     path.append(AppRoute.announcement(aid))
                     Task { await vm.openAnnouncement(aid) }
-                } label: { featuredCellCard(c) }
-                .buttonStyle(.plain)
+                } label: { featuredCellCard(c) }.buttonStyle(.plain)))
             } else {
-                featuredCellCard(c)
+                s.append(AnyView(featuredCellCard(c)))
             }
         }
-    }
-
-    @ViewBuilder private var feedMid: some View {
-        if !vm.disciplers.isEmpty { disciplersCard }                   // 8
-        if let a = vm.featuredAnnouncement { featuredAnnouncementCard(a) } // 9
-        continueLevelCard                                              // 10
-        rhythmCard                                                     // 11
-        if !vm.rhythm.reflection, let a = active { reflectionBanner(a) } // 12
-        if let s = vm.scores { progressCard(s) }                       // 13
-    }
-
-    @ViewBuilder private var feedBottom: some View {
-        growCard                                                       // 14
-        upcomingCard                                                   // 15
-        oneReflectionBanner                                            // 16
-        cohortCard                                                     // 17
-        if !vm.announcements.isEmpty { announcementsCard }             // 18
-        giveBanner                                                     // 19
+        if !vm.disciplers.isEmpty { s.append(AnyView(disciplersCard)) }                 // 8
+        if let a = vm.featuredAnnouncement { s.append(AnyView(featuredAnnouncementCard(a))) } // 9
+        s.append(AnyView(continueLevelCard))                                            // 10
+        s.append(AnyView(rhythmCard))                                                   // 11
+        if !vm.rhythm.reflection, let a = active { s.append(AnyView(reflectionBanner(a))) } // 12
+        if let sc = vm.scores { s.append(AnyView(progressCard(sc))) }                   // 13
+        s.append(AnyView(growCard))                                                     // 14
+        s.append(AnyView(upcomingCard))                                                 // 15
+        s.append(AnyView(oneReflectionBanner))                                          // 16
+        s.append(AnyView(cohortCard))                                                   // 17
+        if !vm.announcements.isEmpty { s.append(AnyView(announcementsCard)) }           // 18
+        s.append(AnyView(giveBanner))                                                   // 19
+        return s
     }
 
     var body: some View {
@@ -215,9 +214,9 @@ struct HomeView: View {
                     // (swift_getTypeByMangledNameImpl) at launch on-device → EXC_BAD_ACCESS.
                     // Each group boundary erases the tuple, keeping every type small.
                     VStack(spacing: Nuru.S.base) {
-                        feedTop
-                        feedMid
-                        feedBottom
+                        ForEach(Array(feedSections.enumerated()), id: \.offset) { _, section in
+                            section
+                        }
                     }
                     .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.base)
