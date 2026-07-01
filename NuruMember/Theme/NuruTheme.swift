@@ -146,15 +146,27 @@ extension Color {
 
 // MARK: - Typography (Inter body · Fraunces display) — mobile type scale
 
+extension Nuru {
+    /// The member's chosen text size (Profile → Display → Text size). The font
+    /// helpers multiply every size by this, so the whole app scales — the app's
+    /// custom fonts are fixed-size and don't respond to system Dynamic Type on
+    /// their own. Persisted in UserDefaults; clamped to a safe range.
+    static let textScaleKey = "nuru.textScale"
+    static var textScale: CGFloat {
+        let v = UserDefaults.standard.object(forKey: textScaleKey) as? Double ?? 1.0
+        return CGFloat(min(max(v, 0.85), 1.30))
+    }
+}
+
 extension Font {
     static func inter(_ size: CGFloat, _ weight: Font.Weight = .regular) -> Font {
-        .custom(interFace(weight), size: size)
+        .custom(interFace(weight), size: size * Nuru.textScale)
     }
     static func fraunces(_ size: CGFloat, _ weight: Font.Weight = .medium) -> Font {
-        .custom(frauncesFace(weight), size: size)
+        .custom(frauncesFace(weight), size: size * Nuru.textScale)
     }
     static func nuruDisplay(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
-        .custom(frauncesFace(weight), size: size)
+        .custom(frauncesFace(weight), size: size * Nuru.textScale)
     }
 
     // Semantic scale — matches tokens.ts `type` (designed at ~390pt).

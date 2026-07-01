@@ -15,7 +15,8 @@ struct ProfileView: View {
     @State private var emailOn = true
     @State private var smsOn = false
     @State private var shareLocation = true
-    @State private var textSize = "Small"
+    /// Global text scale (persisted); the font helpers read Nuru.textScale from here.
+    @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
 
     private var p: UserProfile? { auth.profile }
 
@@ -181,14 +182,19 @@ struct ProfileView: View {
         }
     }
 
+    /// Text-size options → the global scale the font helpers apply (Nuru.textScale).
+    private static let textSizes: [(label: String, scale: Double)] = [
+        ("Small", 0.90), ("Default", 1.0), ("Large", 1.15),
+    ]
+
     private var display: some View {
         sectionCard("DISPLAY", icon: .sun) {
             Text("Text size").font(.nCaption).foregroundStyle(Nuru.muted)
             HStack(spacing: Nuru.S.sm) {
-                ForEach(["Small", "Default", "Large"], id: \.self) { s in
-                    let on = textSize == s
-                    Button { textSize = s } label: {
-                        Text(s).font(.inter(14, on ? .semibold : .regular)).foregroundStyle(Nuru.ink)
+                ForEach(Self.textSizes, id: \.label) { opt in
+                    let on = abs(textScale - opt.scale) < 0.001
+                    Button { withAnimation(.easeInOut(duration: 0.15)) { textScale = opt.scale } } label: {
+                        Text(opt.label).font(.inter(14, on ? .semibold : .regular)).foregroundStyle(Nuru.ink)
                             .frame(maxWidth: .infinity).frame(height: 48)
                             .background(on ? Nuru.goldChipBg : Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
