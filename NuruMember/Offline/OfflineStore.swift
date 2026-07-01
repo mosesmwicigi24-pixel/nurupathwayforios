@@ -38,6 +38,22 @@ protocol LocalStore: Sendable {
     func removeMutations(ids: [String]) async
     func cursors() async -> [String: Int]
     func setCursor(domain: String, value: Int) async
+
+    // Per-domain read cache so screens open instantly (and work offline) with
+    // last-known data. Bodies are opaque encoded blobs owned by each feature.
+    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) async
+    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) async
+    func cacheDelete(domain: String, ids: [String]) async
+    func cachedRows(domain: String) async -> [Data]
+}
+
+// Default no-op cache so the lightweight `FileLocalStore` keeps conforming; the
+// encrypted SQLite store provides the real implementations.
+extension LocalStore {
+    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) async {}
+    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) async {}
+    func cacheDelete(domain: String, ids: [String]) async {}
+    func cachedRows(domain: String) async -> [Data] { [] }
 }
 
 // MARK: - File-backed local store
