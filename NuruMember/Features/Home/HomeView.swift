@@ -187,7 +187,7 @@ struct HomeView: View {
                         if !vm.announcements.isEmpty { announcementsCard }             // 18
                         giveBanner                                                     // 19
                     }
-                    .padding(.horizontal, Nuru.S.screen)
+                    .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace)
                 }
@@ -261,23 +261,23 @@ struct HomeView: View {
                     .padding(.leading, Nuru.S.sm)
             }
             Text("\(greeting), \(firstName).")
-                .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.onNavy)
-                .padding(.top, Nuru.S.xl)
-            Text(vm.greetingLine).font(.inter(16)).foregroundStyle(Nuru.onNavyDim)
+                .font(.fraunces(25, .semibold)).foregroundStyle(Nuru.onNavy)
+                .padding(.top, Nuru.S.base)
+            Text(vm.greetingLine).font(.inter(14)).foregroundStyle(Nuru.onNavyDim)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Nuru.S.sm)
+                .padding(.top, Nuru.S.xs)
             if let a = active {
                 Text("Level \(a.levelNumber) · \(a.completedModules) of \(a.totalModules) modules · \(vm.streak)d streak")
                     .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldGlow)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .padding(.horizontal, 14).padding(.vertical, 6)
                     .overlay(Capsule().stroke(Nuru.gold.opacity(0.55), lineWidth: 1))
-                    .padding(.top, Nuru.S.lg)
+                    .padding(.top, Nuru.S.md)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
-        .padding(.bottom, Nuru.S.xl)
+        .padding(.horizontal, Nuru.S.base)
+        .padding(.top, 52)
+        .padding(.bottom, Nuru.S.base)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
