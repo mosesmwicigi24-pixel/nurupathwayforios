@@ -62,6 +62,7 @@ struct ChatView: View {
                         .padding(.bottom, Nuru.tabBarSpace)
                     }
                 }
+                .ignoresSafeArea(edges: .top)
                 .background(Nuru.paper.ignoresSafeArea())
                 fab
             }
@@ -108,7 +109,7 @@ struct ChatView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, 56)
         .padding(.bottom, Nuru.S.lg)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
