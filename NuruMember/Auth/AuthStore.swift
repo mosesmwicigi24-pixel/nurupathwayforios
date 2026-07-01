@@ -34,10 +34,17 @@ final class AuthStore: ObservableObject {
         }
         #endif
         if await APIClient.shared.hasSession {
+            // Leave the splash IMMEDIATELY once we know a session exists — never gate
+            // the whole app on the /me round-trip (which, on a real device with an
+            // expired access token, first has to refresh; a slow or stalled network
+            // would otherwise trap the user on the spinner). The profile — and any
+            // token refresh — resolves in the background and fills in when it lands.
             isAuthenticated = true
+            booting = false
             await loadProfile()
+        } else {
+            booting = false
         }
-        booting = false
     }
 
     /// Called by LoginView once a full session is in hand.

@@ -287,6 +287,7 @@ actor APIClient {
         struct Body: Encodable { let refreshToken: String }
         var req = URLRequest(url: baseURL.appendingPathComponent("auth/token/refresh"))
         req.httpMethod = "POST"
+        req.timeoutInterval = 30   // bound the boot refresh so it can't stall the app
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? encoder.encode(Body(refreshToken: rt))
         guard let (data, resp) = try? await URLSession.shared.data(for: req),
