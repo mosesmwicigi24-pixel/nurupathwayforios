@@ -147,10 +147,18 @@ private let verseReactionEmojis = ["❤️", "🙏", "🔥", "🙌", "👍"]
 private let videoReactionEmojis = ["🙏", "🔥", "🎉", "👏"]
 private struct GrowTile { let label, sub: String; let icon: Lucide; let tint, fg: UInt32; let dest: AnyHashable }
 
+/// Tracks the Home scroll offset so the status bar can fade out once you scroll.
+private struct HomeScrollYKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var vm = HomeViewModel()
     @State private var path = NavigationPath()
+    /// True once the header has scrolled up — used to hide the status bar.
+    @State private var scrolled = false
 
     private var growTiles: [GrowTile] {
         [
@@ -166,6 +174,12 @@ struct HomeView: View {
         NavigationStack(path: $path) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
+                    // Reports the scroll offset so the status bar fades once you scroll.
+                    Color.clear.frame(height: 0)
+                        .background(GeometryReader { geo in
+                            Color.clear.preference(key: HomeScrollYKey.self,
+                                                   value: geo.frame(in: .named("homeScroll")).minY)
+                        })
                     header
                     VStack(spacing: Nuru.S.base) {
                         if let a = vm.nextAction { heroCard(a) }                       // 2
@@ -192,11 +206,18 @@ struct HomeView: View {
                     .padding(.bottom, Nuru.tabBarSpace)
                 }
             }
+            .coordinateSpace(name: "homeScroll")
+            .onPreferenceChange(HomeScrollYKey.self) { y in
+                let s = y < -12
+                if s != scrolled { withAnimation(.easeInOut(duration: 0.2)) { scrolled = s } }
+            }
+            .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
             .nuruDestinations()
         }
+        .statusBarHidden(scrolled)
         .task {
             if vm.pathway == nil { await vm.load() }
             deepLinkForScreenshots()
@@ -276,7 +297,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.base)
-        .padding(.top, Nuru.S.base)
+        .padding(.top, 56)   // clears the status bar / Dynamic Island (header is full-bleed)
         .padding(.bottom, Nuru.S.base)
         .background(Nuru.navy)
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
