@@ -199,11 +199,19 @@ actor APIClient {
         }
 
         if T.self == EmptyResponse.self { return EmptyResponse() as! T }
+        // Raw passthrough: the caller decodes the bytes itself (used by the sync
+        // engine, which must read pull rows WITHOUT snake_case key conversion).
+        if T.self == RawJSON.self { return RawJSON(data: data) as! T }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
             throw APIError.decoding(String(describing: error))
         }
+    }
+
+    /// POST returning the raw response bytes (no Codable key conversion).
+    func postRaw<B: Encodable>(_ path: String, body: B) async throws -> Data {
+        try await send(path, method: "POST", body: body, as: RawJSON.self).data
     }
 
     // MARK: Login (single endpoint that may return a 2FA challenge)
@@ -294,3 +302,11 @@ actor APIClient {
 
 /// Sentinel for endpoints with no/ignored response body (204 actions).
 struct EmptyResponse: Decodable {}
+
+/// Marker for a raw-bytes response; `APIClient.send` special-cases it and skips
+/// Codable decoding, so `data` holds the untouched server JSON.
+struct RawJSON: Decodable {
+    let data: Data
+    init(data: Data) { self.data = data }
+    init(from decoder: Decoder) throws { self.data = Data() } // unused; send() special-cases
+}

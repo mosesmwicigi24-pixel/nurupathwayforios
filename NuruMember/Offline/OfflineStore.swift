@@ -8,6 +8,20 @@
 // feature screens land — see PORT_STATUS.md. Money is never queued (§5.6).
 import Foundation
 
+// Shared coders so the on-device cache uses the SAME snake_case row shape the
+// server's /sync/pull returns — a screen can read a row whether it was written by
+// its own fetch or by a background delta pull.
+extension JSONEncoder {
+    static let nuruSnake: JSONEncoder = {
+        let e = JSONEncoder(); e.keyEncodingStrategy = .convertToSnakeCase; return e
+    }()
+}
+extension JSONDecoder {
+    static let nuruSnake: JSONDecoder = {
+        let d = JSONDecoder(); d.keyDecodingStrategy = .convertFromSnakeCase; return d
+    }()
+}
+
 // MARK: - Pending mutation (the durable queue entry)
 
 struct PendingMutation: Codable, Sendable, Identifiable {
@@ -157,16 +171,56 @@ actor SyncEngine {
         return res
     }
 
-    /// Cursor-driven delta pull. The per-domain cache upsert/tombstone apply is
-    /// ported with the feature screens (PORT_STATUS.md); this advances cursors.
+    /// Server pull-domain → its primary-key field in the returned rows (snake_case).
+    /// Mirrors PULL_DOMAINS `idCol` in the backend sync service.
+    static let pullIdField: [String: String] = [
+        "modules": "module_id", "module_progress": "progress_id", "quiz_attempts": "attempt_id",
+        "level_exam_attempts": "exam_attempt_id", "enrollments": "enrollment_id",
+        "video_progress": "media_asset_id", "event_rsvps": "rsvp_id",
+        "module_reflections": "reflection_id", "achievements": "user_badge_id",
+        "prayer_entries": "entry_id", "saved_verses": "saved_verse_id",
+        "gift_assessments": "assessment_id", "discussion_threads": "thread_id",
+        "discussion_comments": "comment_id",
+    ]
+
+    /// Cursor-driven delta pull: applies changed rows (upserts) and tombstones
+    /// (deletes) into the encrypted cache, then advances the per-domain cursors —
+    /// so cached screens stay fresh and readable offline. Rows are stored verbatim
+    /// (snake_case) as the server sent them; readers decode with convertFromSnakeCase.
     @discardableResult
     func pull(domains: [String]) async throws -> SyncPullResponse {
         let cursors = await store.cursors()
         struct Body: Encodable { let deviceId: String?; let cursors: [String: Int] }
-        let res = try await APIClient.shared.post(
-            "sync/pull", body: Body(deviceId: deviceId, cursors: cursors), as: SyncPullResponse.self)
-        for (domain, cursor) in res.cursors { await store.setCursor(domain: domain, value: cursor) }
-        return res
+        let raw = try await APIClient.shared.postRaw("sync/pull", body: Body(deviceId: deviceId, cursors: cursors))
+        guard let obj = try? JSONSerialization.jsonObject(with: raw) as? [String: Any] else {
+            return SyncPullResponse(cursors: [:])
+        }
+
+        if let changes = obj["changes"] as? [String: [[String: Any]]] {
+            for (domain, entries) in changes {
+                guard let idField = Self.pullIdField[domain] else { continue }
+                let rows: [(id: String, body: Data)] = entries.compactMap { entry in
+                    guard let row = entry["row"] as? [String: Any],
+                          let idVal = row[idField], !(idVal is NSNull),
+                          let body = try? JSONSerialization.data(withJSONObject: row) else { return nil }
+                    return (id: "\(idVal)", body: body)
+                }
+                await store.cacheUpsert(domain: domain, rows: rows)
+            }
+        }
+        if let tombstones = obj["tombstones"] as? [String: [String]] {
+            for (domain, ids) in tombstones { await store.cacheDelete(domain: domain, ids: ids) }
+        }
+
+        var newCursors: [String: Int] = [:]
+        if let cs = obj["cursors"] as? [String: Any] {
+            for (domain, value) in cs {
+                let n = (value as? Int) ?? Int("\(value)") ?? 0
+                await store.setCursor(domain: domain, value: n)
+                newCursors[domain] = n
+            }
+        }
+        return SyncPullResponse(cursors: newCursors)
     }
 }
 
