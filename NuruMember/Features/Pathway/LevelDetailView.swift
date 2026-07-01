@@ -100,18 +100,8 @@ struct LevelDetailView: View {
 
     private var hero: some View {
         ZStack(alignment: .bottomLeading) {
-            // Open-Bible photo if present, else the navy hero gradient.
-            Nuru.heroGradient
-                .overlay(
-                    CachedAsyncImage(url: heroImageURL) { phase in
-                        if let img = phase.image {
-                            img.resizable().scaledToFill()
-                        } else {
-                            Color.clear
-                        }
-                    }
-                )
-                .clipped()
+            // Hero image removed by design — the header is always the navy gradient.
+            Nuru.heroGradient.clipped()
 
             // Dark legibility gradient from the bottom.
             LinearGradient(
@@ -144,9 +134,6 @@ struct LevelDetailView: View {
             .padding(.top, 58)
         }
     }
-
-    /// No per-level image field in the contract → fall back to the navy hero gradient.
-    private var heroImageURL: URL? { nil }
 
     /// Short overline above the serif title (the title's first word, e.g. "Foundations").
     private var overline: String { vm.title.split(separator: " ").first.map(String.init) ?? "Level \(levelNumber)" }
