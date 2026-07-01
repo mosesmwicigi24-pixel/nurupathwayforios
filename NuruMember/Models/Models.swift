@@ -89,6 +89,15 @@ struct NextAction: Codable, Sendable, Identifiable {
     let route: String
     let accent: String
     let priority: Int
+    /// Route parameters — e.g. `{ moduleId }` when `route == "module"`, so the CTA
+    /// can deep-link straight to the specific lesson instead of the level.
+    let params: NextActionParams?
+}
+
+/// Destination parameters for a NextAction CTA (only the keys we navigate on).
+struct NextActionParams: Codable, Sendable, Hashable {
+    let moduleId: String?
+    let levelNumber: Int?
 }
 
 /// Envelope for the next-action endpoint: { "action": NextAction | null }.

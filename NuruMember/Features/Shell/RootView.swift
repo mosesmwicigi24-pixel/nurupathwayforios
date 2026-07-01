@@ -50,8 +50,15 @@ enum AppTab: Hashable, CaseIterable {
     }
 }
 
+/// The selected primary tab, hoisted out of RootView so any screen can switch
+/// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
+@MainActor
+final class TabRouter: ObservableObject {
+    @Published var selected: AppTab = .initialTab
+}
+
 struct RootView: View {
-    @State private var tab: AppTab = .initialTab
+    @EnvironmentObject private var tabs: TabRouter
     // Tabs that have been opened at least once — kept alive so their state (scroll,
     // loaded data) survives switching, without loading all seven on launch.
     @State private var loaded: Set<AppTab> = [AppTab.initialTab]
@@ -74,9 +81,9 @@ struct RootView: View {
             ForEach(AppTab.allCases, id: \.self) { t in
                 if loaded.contains(t) {
                     tabView(t)
-                        .opacity(t == tab ? 1 : 0)
-                        .allowsHitTesting(t == tab)
-                        .accessibilityHidden(t != tab)
+                        .opacity(t == tabs.selected ? 1 : 0)
+                        .allowsHitTesting(t == tabs.selected)
+                        .accessibilityHidden(t != tabs.selected)
                 }
             }
         }
@@ -95,9 +102,9 @@ struct RootView: View {
         }
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
         .overlay(alignment: .bottom) {
-            NuruTabBar(selection: $tab).ignoresSafeArea(edges: .bottom)
+            NuruTabBar(selection: $tabs.selected).ignoresSafeArea(edges: .bottom)
         }
-        .onChange(of: tab) { _, t in loaded.insert(t) }
+        .onChange(of: tabs.selected) { _, t in loaded.insert(t) }
     }
 
     @ViewBuilder
