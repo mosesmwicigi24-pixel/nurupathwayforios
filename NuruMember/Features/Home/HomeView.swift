@@ -173,7 +173,10 @@ struct HomeView: View {
                         verseCard                                                      // 4
                         if !vm.prayerPosts.isEmpty { prayerWallCard }                  // 5
                         minisRow                                                       // 6
-                        if let c = vm.featuredCell { featuredCellCard(c) }             // 7
+                        if let c = vm.featuredCell {                                   // 7
+                            NavigationLink(value: AppRoute.cell) { featuredCellCard(c) }
+                                .buttonStyle(.plain)
+                        }
                         if !vm.disciplers.isEmpty { disciplersCard }                   // 8
                         if let a = vm.featuredAnnouncement { featuredAnnouncementCard(a) } // 9
                         continueLevelCard                                              // 10
@@ -219,6 +222,7 @@ struct HomeView: View {
         case "gifts": path.append(GrowDestination.gifts)
         case "giftsAssessment": path.append(GrowDestination.giftsAssessment)
         case "mentor": path.append(AppRoute.mentor)
+        case "cell": path.append(AppRoute.cell)
         case "planSegment":
             let segs = [
                 PlanSegment(segmentId: "s1", sort: 0, kind: "video", title: "Watch",
@@ -623,6 +627,9 @@ struct HomeView: View {
                 HStack(spacing: 6) {
                     Icon(.users, size: 12, color: Nuru.goldChipText)
                     Text("THIS WEEK AT NURU").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                    Text("View cell").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
+                    Icon(.chevronRight, size: 12, color: Nuru.goldLo)
                 }
                 Text(c.name).font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
                 if let d = c.disciplerName {
@@ -1105,15 +1112,28 @@ struct HomeView: View {
 
     private var cohortCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Your cohort").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
-            Text(vm.cell?.name ?? "Your discipleship cell").font(.nCaption).foregroundStyle(Nuru.muted).padding(.top, 2)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
-                cohortStat(.users, "Leader", vm.cell?.leader?.name ?? "Not assigned")
-                cohortStat(.calendarDays, "Next gathering", nextGatheringText)
-                cohortStat(.handHeart, "Members", vm.cell.map { "\($0.members)" } ?? "—")
-                cohortStat(.percent, "Attendance", attendanceText)
+            NavigationLink(value: AppRoute.cell) {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: Nuru.S.sm) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Your cell").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                            Text(vm.cell?.name ?? "Your discipleship cell").font(.nCaption).foregroundStyle(Nuru.muted)
+                        }
+                        Spacer(minLength: 0)
+                        Text("Details").font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
+                        Icon(.chevronRight, size: 12, color: Nuru.goldLo)
+                    }
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
+                        cohortStat(.users, "Leader", vm.cell?.leader?.name ?? "Not assigned")
+                        cohortStat(.calendarDays, "Next gathering", nextGatheringText)
+                        cohortStat(.handHeart, "Members", vm.cell.map { "\($0.members)" } ?? "—")
+                        cohortStat(.percent, "Attendance", attendanceText)
+                    }
+                    .padding(.top, Nuru.S.md)
+                }
+                .contentShape(Rectangle())
             }
-            .padding(.top, Nuru.S.md)
+            .buttonStyle(.plain)
             NavigationLink(value: CommunityRoute.prayerWall) {
                 HStack {
                     Spacer()
