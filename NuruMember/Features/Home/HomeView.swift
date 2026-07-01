@@ -218,6 +218,10 @@ struct HomeView: View {
             .nuruDestinations()
         }
         .statusBarHidden(scrolled)
+        // Force a light (white) status bar over the navy header. Applied to a hidden
+        // view so only the window's status bar flips — Home's content keeps the app's
+        // light scheme (its cards use explicit brand colors either way).
+        .background(Color.clear.preferredColorScheme(.dark))
         .task {
             if vm.pathway == nil { await vm.load() }
             deepLinkForScreenshots()
