@@ -161,6 +161,7 @@ struct HomeView: View {
             GrowTile(label: "Reading plan", sub: "Continue your plan", icon: .bookMarked, tint: 0xEEF2FF, fg: 0x6366F1, dest: GrowDestination.readingPlans),
             GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFFF4DA, fg: 0xA87F2E, dest: GrowDestination.memoryVerses),
             GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF3E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
+            GrowTile(label: "Resources", sub: "Books, audio & teaching", icon: .bookOpen, tint: 0xE8EDFB, fg: 0x4F63C4, dest: GrowDestination.resources),
             GrowTile(label: "Prayer Wall", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xB91C1C, dest: CommunityRoute.prayerWall),
         ]
     }
@@ -251,6 +252,7 @@ struct HomeView: View {
         case "prayerDetail": path.append(CommunityRoute.prayer("de300000-0000-0000-0000-000000000500"))
         case "gifts": path.append(GrowDestination.gifts)
         case "giftsAssessment": path.append(GrowDestination.giftsAssessment)
+        case "resources": path.append(GrowDestination.resources)
         case "mentor": path.append(AppRoute.mentor)
         case "cell": path.append(AppRoute.cell)
         case "planSegment":
