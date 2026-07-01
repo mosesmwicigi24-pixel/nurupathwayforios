@@ -238,6 +238,21 @@ extension MemberAPI {
         try await APIClient.shared.get("growth/resources", as: Envelope<ResourceRow>.self).data
     }
 
+    // MARK: Nuru assistant (AI companion — POST is provider-backed, may be offline)
+
+    /// GET /assistant/history — this member's prior assistant turns.
+    static func assistantHistory() async throws -> [AssistantMessage] {
+        struct H: Decodable { let messages: [AssistantMessage] }
+        return try await APIClient.shared.get("assistant/history", as: H.self).messages
+    }
+
+    /// POST /assistant/chat — send the running transcript, get Nuru's reply.
+    static func assistantChat(_ messages: [AssistantMessage]) async throws -> String {
+        struct Body: Encodable { let messages: [AssistantMessage] }
+        struct Reply: Decodable { let reply: String }
+        return try await APIClient.shared.post("assistant/chat", body: Body(messages: messages), as: Reply.self).reply
+    }
+
     /// GET /growth/plans/{id} — a plan with its day-by-day breakdown.
     static func plan(_ id: String) async throws -> ReadingPlanDetail {
         try await APIClient.shared.get("growth/plans/\(id)", as: ReadingPlanDetail.self)

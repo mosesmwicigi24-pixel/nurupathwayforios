@@ -44,6 +44,7 @@ struct ChatView: View {
     @State private var path = NavigationPath()
     @State private var segment: ChatSegment = .space
     @State private var query = ""
+    @State private var showNuru = ProcessInfo.processInfo.environment["NURU_SCREEN"] == "nuru"  // debug screenshot hook
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -67,6 +68,7 @@ struct ChatView: View {
                 fab
             }
             .toolbar(.hidden, for: .navigationBar)
+            .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
         }
@@ -135,7 +137,7 @@ struct ChatView: View {
     // MARK: AI card ("Quick help from Nuru")
 
     private var aiCard: some View {
-        Button { /* AI assistant not wired yet */ } label: {
+        Button { showNuru = true } label: {
             HStack(spacing: Nuru.S.md) {
                 ZStack(alignment: .topTrailing) {
                     Icon(.sparkles, size: 22, color: .white)
