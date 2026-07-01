@@ -217,6 +217,7 @@ struct HomeView: View {
         case "prayerWall": path.append(CommunityRoute.prayerWall)
         case "gifts": path.append(GrowDestination.gifts)
         case "giftsAssessment": path.append(GrowDestination.giftsAssessment)
+        case "mentor": path.append(AppRoute.mentor)
         case "planSegment":
             let segs = [
                 PlanSegment(segmentId: "s1", sort: 0, kind: "video", title: "Watch",

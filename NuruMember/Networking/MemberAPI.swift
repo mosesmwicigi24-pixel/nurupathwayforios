@@ -369,6 +369,11 @@ extension MemberAPI {
         try await APIClient.shared.get("home/featured-cell", as: FeaturedCell?.self)
     }
 
+    /// GET /growth/mentor — the member's assigned discipler + meeting notes.
+    static func mentor() async throws -> MentorInfo {
+        try await APIClient.shared.get("growth/mentor", as: MentorInfo.self)
+    }
+
     /// GET /home/disciplers — "Meet your discipler" carousel.
     static func disciplers() async throws -> [Discipler] {
         try await APIClient.shared.get("home/disciplers", as: Envelope<Discipler>.self).data
