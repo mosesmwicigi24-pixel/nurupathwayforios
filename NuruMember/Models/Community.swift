@@ -21,7 +21,9 @@ struct PrayerWallPost: Codable, Sendable, Identifiable {
     let mine: Bool
     let prayCount: Int
     let iPrayed: Bool
-    let commentCount: Int
+    // Present on the wall list but omitted by the post-detail serializer — decode
+    // defensively so opening a prayer never fails on a missing count.
+    let commentCount: Int?
     let reactions: [PrayerReaction]
 
     var id: String { postId }
