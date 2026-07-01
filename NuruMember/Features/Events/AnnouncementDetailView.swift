@@ -62,12 +62,8 @@ struct AnnouncementDetailView: View {
 
     private var hero: some View {
         ZStack(alignment: .topLeading) {
-            if let url = vm.detail?.primaryImageUrl.flatMap(URL.init) {
-                CachedAsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
-                    .frame(height: 260).frame(maxWidth: .infinity).clipped()
-            } else {
-                Nuru.heroGradient.frame(height: 260)
-            }
+            // Hero image removed by design — always a brand gradient behind the title.
+            Nuru.heroGradient.frame(height: 260).frame(maxWidth: .infinity)
             LinearGradient(colors: [Color.black.opacity(0.35), .clear, Color(hex: 0x081C36, alpha: 0.85)],
                            startPoint: .top, endPoint: .bottom).frame(height: 260).allowsHitTesting(false)
             VStack(alignment: .leading) {

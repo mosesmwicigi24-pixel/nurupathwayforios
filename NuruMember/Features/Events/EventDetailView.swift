@@ -53,7 +53,6 @@ struct EventDetailView: View {
     private var title: String { vm.detail?.title ?? occ.title }
     private var category: String? { vm.detail?.category ?? occ.category }
     private var location: String? { vm.detail?.location ?? occ.location }
-    private var imageUrl: String? { vm.detail?.primaryImageUrl ?? occ.primaryImageUrl }
     private var aboutText: String? { vm.detail?.description ?? occ.description }
     private var going: Int { vm.detail?.rsvpCounts.going ?? occ.going }
     private var attendees: [EventAttendee] { vm.detail?.attendees ?? occ.attendees ?? [] }
@@ -116,16 +115,11 @@ struct EventDetailView: View {
 
     private var heroHeight: CGFloat { 280 }
 
-    @ViewBuilder
+    // Hero images removed by design — the header is always a brand navy→category
+    // gradient behind the overlaid chrome + title (no photo).
     private var heroImage: some View {
-        if let url = imageUrl.flatMap(URL.init) {
-            CachedAsyncImage(url: url) { p in
-                (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
-            }
-        } else {
-            LinearGradient(colors: [Nuru.navy700, Nuru.navy, Ev.categoryColor(category)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-        }
+        LinearGradient(colors: [Nuru.navy700, Nuru.navy, Ev.categoryColor(category)],
+                       startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     private var heroOverlay: some View {
