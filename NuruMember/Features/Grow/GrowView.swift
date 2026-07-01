@@ -50,6 +50,7 @@ extension View {
                 case .level(let n): LevelDetailView(levelNumber: n)
                 case .module(let id): ModuleView(moduleId: id)
                 case .quiz(let id): QuizView(moduleId: id)
+                case .map: EmptyView()   // only ever pushed from the Pathway tab
                 }
             }
             .navigationDestination(for: CalendarOccurrence.self) { EventDetailView(occurrence: $0) }
