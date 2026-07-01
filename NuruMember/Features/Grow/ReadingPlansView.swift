@@ -72,6 +72,19 @@ struct ReadingPlansView: View {
     }
 
     var body: some View {
+        Group {
+            #if DEBUG
+            if ProcessInfo.processInfo.environment["NURU_PLAN"] != nil, let pod = planOfDay {
+                NavigationStack { PlanDetailView(plan: pod) }
+            } else { listBody }
+            #else
+            listBody
+            #endif
+        }
+        .task { if vm.plans.isEmpty { await vm.load() } }
+    }
+
+    private var listBody: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
                 header
@@ -98,7 +111,6 @@ struct ReadingPlansView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await vm.load() }
-        .task { if vm.plans.isEmpty { await vm.load() } }
     }
 
     // MARK: header (navy gradient + search)
@@ -451,9 +463,14 @@ final class PlanDetailViewModel: ObservableObject {
     }
 }
 
+// Plan detail — rebuilt from the Figma PlanDetail slide-over: cover hero (back +
+// save), category/title/meta, "About this plan", "What you'll read" day rows, a
+// consistency nudge, and a sticky Start-plan / Invite bar.
 struct PlanDetailView: View {
     let plan: ReadingPlanRow
     @StateObject private var vm: PlanDetailViewModel
+    @Environment(\.dismiss) private var dismiss
+    @State private var saved = false
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -462,61 +479,185 @@ struct PlanDetailView: View {
 
     var body: some View {
         ZStack {
-            Nuru.paper.ignoresSafeArea()
-            LoadStateView(loading: vm.loading && vm.detail == nil,
-                          isEmpty: vm.detail == nil, error: vm.error,
-                          emptyText: "No days in this plan.", retry: { Task { await vm.load() } }) {
-                if let d = vm.detail { content(d) }
+            PL.cream.ignoresSafeArea()
+            if let d = vm.detail {
+                content(d)
+            } else if vm.loading {
+                ProgressView().tint(PL.gold)
+            } else {
+                VStack(spacing: 12) {
+                    Text(vm.error ?? "Couldn't load this plan.").font(.nBody).foregroundStyle(PL.ink2)
+                    Button("Try again") { Task { await vm.load() } }.foregroundStyle(PL.gold)
+                }
             }
         }
-        .navigationTitle(plan.title)
-        .navigationBarTitleDisplayMode(.inline)
+        .ignoresSafeArea(edges: .top)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
     }
 
     private func content(_ d: ReadingPlanDetail) -> some View {
-        ScrollView {
-            VStack(spacing: Nuru.S.md) {
-                if let desc = d.description, !desc.isEmpty {
-                    Text(desc).font(.nBody).foregroundStyle(Nuru.muted)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                if !d.enrolled {
-                    PButton(title: "Start plan", variant: .gold, busy: vm.busy) { Task { await vm.start() } }
-                }
-                ForEach(d.days) { day in
-                    let done = d.completedDays?.contains(day.dayNumber) ?? (day.completed ?? false)
-                    NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) {
-                        DayRow(day: day, done: done)
+        VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    coverHero(d)
+                    VStack(spacing: 16) {
+                        aboutCard(d)
+                        whatYoullRead(d)
+                        nudge
                     }
-                    .buttonStyle(.plain)
+                    .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 20)
                 }
             }
-            .padding(Nuru.S.screen)
-            .padding(.bottom, Nuru.tabBarSpace)
+            ctaBar(d)
         }
     }
-}
 
-private struct DayRow: View {
-    let day: ReadingPlanDay
-    let done: Bool
-    var body: some View {
-        Card {
-            HStack(spacing: Nuru.S.base) {
-                ZStack {
-                    Circle().fill(done ? Nuru.success : Nuru.goldTint).frame(width: 36, height: 36)
-                    if done { Icon(.check, size: 13, color: .white) }
-                    else { Text("\(day.dayNumber)").font(.inter(14, .semibold)).foregroundStyle(Nuru.gold) }
+    private func coverHero(_ d: ReadingPlanDetail) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            ZStack {
+                LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+                if let u = d.imageUrl.flatMap(URL.init) {
+                    CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(day.title ?? "Day \(day.dayNumber)").font(.nHeading).foregroundStyle(Nuru.ink)
-                    Text(day.reference).font(.nCaption).foregroundStyle(Nuru.muted)
-                }
-                Spacer(minLength: 0)
-                Icon(.chevronRight, size: 13, color: Nuru.ink300)
             }
+            .frame(height: 264).frame(maxWidth: .infinity).clipped()
+            .overlay(LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.40), Color(hex: 0x081424, alpha: 0.10), Color(hex: 0x081424, alpha: 0.92)], startPoint: .top, endPoint: .bottom))
+
+            VStack(alignment: .leading, spacing: 6) {
+                if let c = d.category, !c.isEmpty {
+                    Text(c.uppercased()).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                        .padding(.horizontal, 10).padding(.vertical, 4).background(PL.gold, in: Capsule())
+                }
+                Text(d.title).font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
+                    .lineLimit(3).multilineTextAlignment(.leading)
+                HStack(spacing: 16) {
+                    heroMeta(.clock, "\(d.dayCount) days")
+                    heroMeta(.bookOpen, "Devotional")
+                }
+                .padding(.top, 2)
+            }
+            .padding(.horizontal, 20).padding(.bottom, 16)
         }
+        .frame(height: 264)
+        .overlay(alignment: .topLeading) {
+            HStack {
+                circleBtn(.chevronLeft, tint: .white) { dismiss() }
+                Spacer()
+                circleBtn(.heart, tint: saved ? PL.gold : .white) { saved.toggle() }
+            }
+            .padding(.horizontal, 16).padding(.top, 60)
+        }
+    }
+
+    private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
+        HStack(spacing: 4) {
+            Icon(icon, size: 13, color: PL.goldLight)
+            Text(text).font(.inter(12)).foregroundStyle(.white.opacity(0.8))
+        }
+    }
+
+    private func circleBtn(_ icon: Lucide, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Icon(icon, size: icon == .heart ? 17 : 20, color: tint)
+                .frame(width: 40, height: 40)
+                .background(Color.black.opacity(0.35), in: Circle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func aboutCard(_ d: ReadingPlanDetail) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("ABOUT THIS PLAN").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+            Text(d.description ?? d.subtitle ?? "A guided plan — Scripture and a short devotional each day.")
+                .font(.inter(13)).lineSpacing(4).foregroundStyle(PL.blurb)
+                .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
+        }
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+
+    private func whatYoullRead(_ d: ReadingPlanDetail) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("WHAT YOU'LL READ").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+            VStack(spacing: 6) {
+                ForEach(d.days) { day in
+                    NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) { dayRow(day) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 10)
+        }
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+
+    private func dayRow(_ day: ReadingPlanDay) -> some View {
+        HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                Text("DAY").font(.inter(7, .bold)).foregroundStyle(PL.gold)
+                Text("\(day.dayNumber)").font(.fraunces(14, .semibold)).foregroundStyle(PL.navy)
+            }
+            .frame(width: 36, height: 36)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(PL.border, lineWidth: 1))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(day.title ?? "Reading & reflection").font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
+                Text(day.reference).font(.inter(10)).foregroundStyle(PL.ink3).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
+        }
+        .padding(10)
+        .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var nudge: some View {
+        HStack(spacing: 8) {
+            Icon(.sparkles, size: 16, color: PL.gold)
+            Text("Consistency over intensity — a few faithful minutes a day.")
+                .font(.fraunces(12)).italic().foregroundStyle(PL.navy)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
+    }
+
+    private func ctaBar(_ d: ReadingPlanDetail) -> some View {
+        HStack(spacing: 10) {
+            Button { Task { await vm.start() } } label: {
+                HStack(spacing: 8) {
+                    if vm.busy { ProgressView().tint(PL.navy) }
+                    else { Icon(.check, size: 16, color: PL.navy) }
+                    Text(d.enrolled ? "Continue reading" : "Start plan").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(LinearGradient(colors: [PL.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            Button { } label: {
+                HStack(spacing: 6) { Icon(.share2, size: 15, color: PL.navy); Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy) }
+                    .frame(minHeight: 48).padding(.horizontal, 16)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20).padding(.top, 12)
+        .padding(.bottom, Self.safeBottom + 12)
+        .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+    }
+
+    private static var safeBottom: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
     }
 }
 

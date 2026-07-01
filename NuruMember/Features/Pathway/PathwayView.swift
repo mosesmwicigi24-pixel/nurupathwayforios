@@ -321,9 +321,13 @@ private struct PWLevelCard: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(isActive ? PW.navy : isCompleted ? PW.goldTint : PW.mutedBg)
-                    Icon(isCompleted ? .check : isLocked ? .lock : .plus,
-                         size: isCompleted ? 19 : isLocked ? 17 : 18,
-                         color: isActive ? PW.gold : isCompleted ? PW.goldDeep : PW.ink3)
+                    if isCompleted {
+                        Icon(.check, size: 19, color: PW.goldDeep)
+                    } else if isLocked {
+                        Icon(.lock, size: 17, color: PW.ink3)
+                    } else {
+                        CrossMark(size: 18, color: PW.gold)   // Figma's lucide `Cross`
+                    }
                 }
                 .frame(width: 48, height: 48)
 
@@ -412,5 +416,21 @@ private struct PWBar: View {
         case .color(let c): return AnyShapeStyle(c)
         case .linearGradient(let colors, let s, let e): return AnyShapeStyle(LinearGradient(colors: colors, startPoint: s, endPoint: e))
         }
+    }
+}
+
+// Figma's lucide `Cross` — a thick, rounded, equal-arm cross (the Lucide subset
+// only ships the thin `plus`, so we draw it to match the active-level tile).
+private struct CrossMark: View {
+    var size: CGFloat = 18
+    var color: Color
+    var body: some View {
+        let bar = size * 0.32
+        ZStack {
+            Capsule().frame(width: bar, height: size)
+            Capsule().frame(width: size, height: bar)
+        }
+        .foregroundStyle(color)
+        .frame(width: size, height: size)
     }
 }
