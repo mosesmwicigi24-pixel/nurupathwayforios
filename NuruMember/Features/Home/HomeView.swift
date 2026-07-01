@@ -149,8 +149,11 @@ private struct GrowTile { let label, sub: String; let icon: Lucide; let tint, fg
 
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = HomeViewModel()
     @State private var path = NavigationPath()
+    @State private var playingVideo = false
+    @State private var sharePayload: SharePayload?
 
     private var growTiles: [GrowTile] {
         [
@@ -174,8 +177,15 @@ struct HomeView: View {
                         if !vm.prayerPosts.isEmpty { prayerWallCard }                  // 5
                         minisRow                                                       // 6
                         if let c = vm.featuredCell {                                   // 7
-                            NavigationLink(value: AppRoute.cell) { featuredCellCard(c) }
+                            if let aid = weekAnnouncementId {
+                                Button {
+                                    path.append(AppRoute.announcement(aid))
+                                    Task { await vm.openAnnouncement(aid) }
+                                } label: { featuredCellCard(c) }
                                 .buttonStyle(.plain)
+                            } else {
+                                featuredCellCard(c)
+                            }
                         }
                         if !vm.disciplers.isEmpty { disciplersCard }                   // 8
                         if let a = vm.featuredAnnouncement { featuredAnnouncementCard(a) } // 9
@@ -201,6 +211,7 @@ struct HomeView: View {
             .refreshable { await vm.load() }
             .nuruDestinations()
         }
+        .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
         .task {
             if vm.pathway == nil { await vm.load() }
             deepLinkForScreenshots()
@@ -304,7 +315,11 @@ struct HomeView: View {
 
     private func heroCard(_ a: NextAction) -> some View {
         Button {
-            if let lvl = active?.levelNumber { path.append(PathwayRoute.level(lvl)) }
+            if a.route == "module", let m = a.params?.moduleId {
+                path.append(PathwayRoute.module(m))
+            } else if let lvl = active?.levelNumber {
+                path.append(PathwayRoute.level(lvl))
+            }
         } label: {
             HStack(spacing: Nuru.S.md) {
                 RoundedRectangle(cornerRadius: 2).fill(heroAccent(a.accent)).frame(width: 4)
@@ -347,7 +362,17 @@ struct HomeView: View {
             }
             .padding(Nuru.S.base)
 
-            Button { openURL(v.playUrl) } label: { videoThumb(v) }.buttonStyle(.plain)
+            // Plays inline, pinned to the card's 16:9 box — never opens Safari.
+            Group {
+                if playingVideo {
+                    InlineVideoPlayer(video: v)
+                        .aspectRatio(16.0/9.0, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .background(Color.black)
+                } else {
+                    Button { playingVideo = true } label: { videoThumb(v) }.buttonStyle(.plain)
+                }
+            }
 
             VStack(alignment: .leading, spacing: 0) {
                 if let cap = v.caption, !cap.isEmpty {
@@ -380,7 +405,7 @@ struct HomeView: View {
                         }.buttonStyle(.plain)
                     }
                     Spacer(minLength: 0)
-                    Button { openURL(v.playUrl) } label: {
+                    Button { sharePayload = SharePayload(text: videoShareText(v)) } label: {
                         HStack(spacing: 5) {
                             Icon(.share2, size: 13, color: Nuru.ink600)
                             Text("Share").font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
@@ -474,7 +499,7 @@ struct HomeView: View {
                 Button { Task { await vm.saveVerse() } } label: {
                     pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : Nuru.ink600)
                 }.buttonStyle(.plain)
-                Button { openURL(nil) } label: {
+                Button { sharePayload = SharePayload(text: verseShareText()) } label: {
                     pill(icon: .share2, label: "Share", tint: Nuru.ink600)
                 }.buttonStyle(.plain)
             }
@@ -628,7 +653,7 @@ struct HomeView: View {
                     Icon(.users, size: 12, color: Nuru.goldChipText)
                     Text("THIS WEEK AT NURU").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
-                    Text("View cell").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
+                    Text("Read more").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                     Icon(.chevronRight, size: 12, color: Nuru.goldLo)
                 }
                 Text(c.name).font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
@@ -687,6 +712,12 @@ struct HomeView: View {
                 Icon(.users, size: 12, color: Nuru.goldChipText)
                 Text("MEET YOUR DISCIPLER").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
+                NavigationLink(value: AppRoute.mentor) {
+                    HStack(spacing: 3) {
+                        Text("View").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
+                        Icon(.chevronRight, size: 12, color: Nuru.goldLo)
+                    }
+                }.buttonStyle(.plain)
             }
             TabView {
                 ForEach(vm.disciplers) { d in disciplerView(d) }
@@ -789,7 +820,10 @@ struct HomeView: View {
                 Text("\(pct)% complete").font(.inter(11, .bold)).foregroundStyle(Nuru.goldLo)
             }
             .padding(.top, Nuru.S.base)
-            Button { path.append(PathwayRoute.level(a?.levelNumber ?? 1)) } label: {
+            Button {
+                if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
+                else { path.append(PathwayRoute.level(a?.levelNumber ?? 1)) }
+            } label: {
                 HStack(spacing: 6) {
                     Text("Continue").font(.inter(15, .bold)).foregroundStyle(Nuru.gold)
                     Icon(.chevronRight, size: 15, color: Nuru.gold)
@@ -1237,7 +1271,7 @@ struct HomeView: View {
                 Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
                     .font(.nCaption).foregroundStyle(Nuru.onNavyDim).padding(.top, Nuru.S.sm)
                     .fixedSize(horizontal: false, vertical: true)
-                Button { } label: {
+                Button { tabs.selected = .give } label: {
                     HStack(spacing: 6) {
                         Icon(.gift, size: 15, color: Nuru.navyDeep)
                         Text("Give now").font(.inter(15, .bold)).foregroundStyle(Nuru.navyDeep)
@@ -1258,6 +1292,30 @@ struct HomeView: View {
     }
 
     // MARK: derived / helpers
+
+    /// The announcement the "This week at Nuru" card opens — the featured one, or
+    /// the most recent announcement as a fallback.
+    private var weekAnnouncementId: String? {
+        vm.featuredAnnouncement?.announcementId ?? vm.announcements.first?.announcementId
+    }
+
+    /// The specific next lesson to resume, when the next-action CTA is a module.
+    private var nextModuleId: String? {
+        guard let a = vm.nextAction, a.route == "module" else { return nil }
+        return a.params?.moduleId
+    }
+
+    private func verseShareText() -> String {
+        let text = vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”"
+        let ref = vm.verse?.reference ?? "Psalm 119:105"
+        let ver = vm.verse?.version ?? "WEB"
+        return "\(text)\n— \(ref) (\(ver))"
+    }
+
+    private func videoShareText(_ v: WelcomeVideo) -> String {
+        let cap = v.caption ?? "A word for your week"
+        return v.playUrl.map { "\(cap)\n\($0)" } ?? cap
+    }
 
     private var active: PathwayLevel? {
         guard let p = vm.pathway else { return nil }

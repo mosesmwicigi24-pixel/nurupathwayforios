@@ -8,6 +8,7 @@ import UIKit
 struct NuruMemberApp: App {
     @StateObject private var auth = AuthStore()
     @StateObject private var sync = SyncCoordinator.shared
+    @StateObject private var tabs = TabRouter()
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
@@ -29,6 +30,7 @@ struct NuruMemberApp: App {
             }
             .environmentObject(auth)
             .environmentObject(sync)
+            .environmentObject(tabs)
             .tint(Nuru.gold)
             // The app is designed in warm light tones; keep system chrome light.
             .preferredColorScheme(.light)
