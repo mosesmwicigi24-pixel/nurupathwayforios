@@ -141,24 +141,32 @@ struct PrayerJournalView: View {
     private var header: some View {
         HStack(alignment: .center, spacing: Nuru.S.md) {
             Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.onNavy)
+                Icon(.arrowLeft, size: 18, color: Nuru.navy)
                     .frame(width: 40, height: 40)
-                    .background(Nuru.navyDeep, in: Circle())
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Prayer journal")
-                    .font(.fraunces(22, .semibold)).foregroundStyle(Nuru.onNavy)
+                    .font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Only you can read this — always.")
-                    .font(.nMicro).foregroundStyle(Nuru.onNavyDim)
+                    .font(.nMicro).foregroundStyle(Color(hex: 0x68758A))
             }
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 58)
+        .padding(.top, 60)
         .padding(.bottom, Nuru.S.lg)
-        .background(Nuru.navy)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.25)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+                .ignoresSafeArea(edges: .top)
+        )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
     // MARK: Prayer score card

@@ -54,28 +54,33 @@ struct MentorView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.onNavy)
-                    .frame(width: 38, height: 38)
-                    .background(Nuru.navyDeep, in: Circle())
+                Icon(.arrowLeft, size: 18, color: Nuru.navy)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
 
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("YOUR DISCIPLER")
                     .font(.inter(11, .bold)).tracking(1.4)
-                    .foregroundStyle(Nuru.gold)
+                    .foregroundStyle(Color(hex: 0x9A7A2A))
                 Text("Mentorship")
                     .font(.fraunces(26, .semibold))
-                    .foregroundStyle(Nuru.white)
+                    .foregroundStyle(Nuru.navy)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, Nuru.S.sm)
+        .padding(.top, 60)
         .padding(.bottom, Nuru.S.lg)
         .background(
-            UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)
-                .fill(Nuru.navy)
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.25)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous))
+                .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
                 .ignoresSafeArea(edges: .top)
         )
     }
