@@ -165,40 +165,59 @@ struct HomeView: View {
         ]
     }
 
+    // The Home feed, split into three opaque `some View` groups so no single
+    // container compiles to a giant TupleView (see the note in `body`).
+    @ViewBuilder private var feedTop: some View {
+        if let a = vm.nextAction { heroCard(a) }                       // 2
+        if let v = vm.welcomeVideo { welcomeVideoCard(v) }             // 3
+        verseCard                                                      // 4
+        if !vm.prayerPosts.isEmpty { prayerWallCard }                  // 5
+        minisRow                                                       // 6
+        if let c = vm.featuredCell {                                   // 7
+            if let aid = weekAnnouncementId {
+                Button {
+                    path.append(AppRoute.announcement(aid))
+                    Task { await vm.openAnnouncement(aid) }
+                } label: { featuredCellCard(c) }
+                .buttonStyle(.plain)
+            } else {
+                featuredCellCard(c)
+            }
+        }
+    }
+
+    @ViewBuilder private var feedMid: some View {
+        if !vm.disciplers.isEmpty { disciplersCard }                   // 8
+        if let a = vm.featuredAnnouncement { featuredAnnouncementCard(a) } // 9
+        continueLevelCard                                              // 10
+        rhythmCard                                                     // 11
+        if !vm.rhythm.reflection, let a = active { reflectionBanner(a) } // 12
+        if let s = vm.scores { progressCard(s) }                       // 13
+    }
+
+    @ViewBuilder private var feedBottom: some View {
+        growCard                                                       // 14
+        upcomingCard                                                   // 15
+        oneReflectionBanner                                            // 16
+        cohortCard                                                     // 17
+        if !vm.announcements.isEmpty { announcementsCard }             // 18
+        giveBanner                                                     // 19
+    }
+
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     header
+                    // Split into opaque `some View` groups. A single VStack with all
+                    // ~18 sections compiles to one enormous parameter-pack TupleView
+                    // whose mangled type name overflows the Swift metadata demangler
+                    // (swift_getTypeByMangledNameImpl) at launch on-device → EXC_BAD_ACCESS.
+                    // Each group boundary erases the tuple, keeping every type small.
                     VStack(spacing: Nuru.S.base) {
-                        if let a = vm.nextAction { heroCard(a) }                       // 2
-                        if let v = vm.welcomeVideo { welcomeVideoCard(v) }             // 3
-                        verseCard                                                      // 4
-                        if !vm.prayerPosts.isEmpty { prayerWallCard }                  // 5
-                        minisRow                                                       // 6
-                        if let c = vm.featuredCell {                                   // 7
-                            if let aid = weekAnnouncementId {
-                                Button {
-                                    path.append(AppRoute.announcement(aid))
-                                    Task { await vm.openAnnouncement(aid) }
-                                } label: { featuredCellCard(c) }
-                                .buttonStyle(.plain)
-                            } else {
-                                featuredCellCard(c)
-                            }
-                        }
-                        if !vm.disciplers.isEmpty { disciplersCard }                   // 8
-                        if let a = vm.featuredAnnouncement { featuredAnnouncementCard(a) } // 9
-                        continueLevelCard                                              // 10
-                        rhythmCard                                                     // 11
-                        if !vm.rhythm.reflection, let a = active { reflectionBanner(a) } // 12
-                        if let s = vm.scores { progressCard(s) }                       // 13
-                        growCard                                                       // 14
-                        upcomingCard                                                   // 15
-                        oneReflectionBanner                                            // 16
-                        cohortCard                                                     // 17
-                        if !vm.announcements.isEmpty { announcementsCard }             // 18
-                        giveBanner                                                     // 19
+                        feedTop
+                        feedMid
+                        feedBottom
                     }
                     .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.base)
