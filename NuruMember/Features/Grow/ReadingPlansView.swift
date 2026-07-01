@@ -1,9 +1,30 @@
-// Reading Plans — the native port of screens/ReadingPlansScreen.tsx +
-// PlanDetailScreen.tsx + PlanDayScreen.tsx. Browse plans, enrol, then work
-// through each day's segments. Progress is server-tracked.
+// Plans tab — rebuilt line-by-line from the Figma Make source of truth
+// (components/PlansTab.tsx). A reading-plan discovery page: navy-gradient header
+// with a search field, a "Continue reading" progress list, a "Plan of the day"
+// hero, topic pills, horizontal collection carousels (or a filtered grid while
+// searching), and a "Read with a friend" invite. Exact Figma palette; bound to
+// the real ReadingPlanRow catalogue. The plan-detail day list (PlanDetailView /
+// PlanDayView) below is unchanged and reached via the existing navigation.
 import SwiftUI
 
-// MARK: - Plans list
+// Exact Figma palette (PlansTab.tsx) — kept local so the page is 1:1 with the design.
+private enum PL {
+    static let navy      = Color(hex: 0x0A2540)
+    static let navyDeep  = Color(hex: 0x081C36)
+    static let gold      = Color(hex: 0xC9A227)
+    static let goldLight = Color(hex: 0xE6C068)
+    static let goldDeep  = Color(hex: 0xA8861C)
+    static let cream     = Color(hex: 0xF4F0E8)
+    static let creamLo   = Color(hex: 0xF1ECE1)
+    static let surface   = Color(hex: 0xFBF8F1)
+    static let border    = Color(hex: 0x0A2540, alpha: 0.08)
+    static let ink2      = Color(hex: 0x68758A)
+    static let ink3      = Color(hex: 0x9CA3AF)
+    static let catText   = Color(hex: 0x9A7A2A)
+    static let blurb     = Color(hex: 0x3A4A5F)
+}
+
+// MARK: - Plans list (discovery)
 
 @MainActor
 final class ReadingPlansViewModel: ObservableObject {
@@ -17,15 +38,38 @@ final class ReadingPlansViewModel: ObservableObject {
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
         loading = false
     }
-
-    /// Active plan = first enrolled plan (the one in progress at the top of the list).
-    var activePlan: ReadingPlanRow? { plans.first { $0.enrolled } }
-    /// Everything browsable in the catalogue (the active plan also appears here as in the spec).
-    var browsePlans: [ReadingPlanRow] { plans }
 }
 
 struct ReadingPlansView: View {
     @StateObject private var vm = ReadingPlansViewModel()
+    @State private var query = ""
+    @State private var category = "all"
+
+    private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
+    private var searching: Bool { !q.isEmpty || category != "all" }
+
+    private var filtered: [ReadingPlanRow] {
+        vm.plans.filter { p in
+            (category == "all" || p.category == category)
+                && (q.isEmpty || p.title.lowercased().contains(q) || (p.category ?? "").lowercased().contains(q))
+        }
+    }
+    private var continueReading: [ReadingPlanRow] { vm.plans.filter { $0.enrolled && $0.completedAt == nil } }
+    private var planOfDay: ReadingPlanRow? { vm.plans.first { !$0.enrolled } ?? vm.plans.first }
+    private var categories: [String] {
+        var seen = Set<String>(); var out: [String] = []
+        for p in vm.plans { if let c = p.category, !c.isEmpty, !seen.contains(c) { seen.insert(c); out.append(c) } }
+        return out
+    }
+    private var collections: [(id: String, label: String, plans: [ReadingPlanRow])] {
+        var out: [(String, String, [ReadingPlanRow])] = []
+        if !vm.plans.isEmpty { out.append(("featured", "Featured for you", Array(vm.plans.prefix(8)))) }
+        let short = vm.plans.filter { $0.dayCount <= 7 }
+        if !short.isEmpty { out.append(("short", "Short reads · 7 days or less", short)) }
+        let long = vm.plans.filter { $0.dayCount >= 14 }
+        if !long.isEmpty { out.append(("long", "Longer journeys · 2 weeks and up", long)) }
+        return out
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -34,147 +78,351 @@ struct ReadingPlansView: View {
                 LoadStateView(loading: vm.loading && vm.plans.isEmpty,
                               isEmpty: vm.plans.isEmpty, error: vm.error,
                               emptyText: "No reading plans yet.", retry: { Task { await vm.load() } }) {
-                    VStack(alignment: .leading, spacing: Nuru.S.lg) {
-                        if let active = vm.activePlan { activeSection(active) }
-                        browseSection
+                    VStack(alignment: .leading, spacing: 24) {
+                        if !searching, !continueReading.isEmpty { continueSection }
+                        if !searching, let pod = planOfDay { planOfDayCard(pod) }
+                        categoriesSection
+                        if searching { filteredResults } else { collectionsSections }
+                        if !searching { invitationCard }
                     }
-                    .padding(.horizontal, Nuru.S.screen)
-                    .padding(.top, Nuru.S.lg)
-                    .padding(.bottom, Nuru.tabBarSpace)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 20)
+                    .padding(.bottom, Nuru.tabBarSpace + 20)
                 }
             }
         }
         .ignoresSafeArea(edges: .top)
-        .background(Nuru.paper.ignoresSafeArea())
-        .background(Color.clear.preferredColorScheme(.dark))   // full-bleed navy header → white status bar
+        .background(
+            LinearGradient(colors: [PL.cream, PL.creamLo], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await vm.load() }
         .task { if vm.plans.isEmpty { await vm.load() } }
     }
 
-    // MARK: Navy header
+    // MARK: header (navy gradient + search)
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("READ · REFLECT · APPLY")
-                .font(.inter(11, .semibold)).kerning(1.5)
-                .foregroundStyle(Nuru.gold)
-            Text("Plans")
-                .font(.fraunces(30, .semibold)).foregroundStyle(Nuru.onNavy)
+        ZStack(alignment: .topTrailing) {
+            RadialGradient(colors: [PL.gold.opacity(0.33), .clear], center: .center, startRadius: 0, endRadius: 120)
+                .frame(width: 224, height: 224).blur(radius: 40).offset(x: 40, y: -70)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.goldLight)
+                        Text("Grow in the Word").font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
+                            .padding(.top, 4)
+                        Text("A little every day — with the whole family of God.")
+                            .font(.inter(12)).foregroundStyle(.white.opacity(0.6)).padding(.top, 4)
+                    }
+                    Spacer(minLength: 8)
+                    ZStack(alignment: .topTrailing) {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.10))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        Icon(.bell, size: 18, color: .white)
+                        Circle().fill(PL.gold).frame(width: 8, height: 8).offset(x: -8, y: 8)
+                    }
+                    .frame(width: 40, height: 40)
+                }
+                searchBar.padding(.top, 16)
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 64)
+            .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 64)
-        .padding(.bottom, Nuru.S.lg)
-        .background(Nuru.navy)
-        .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(.rect(bottomLeadingRadius: 28, bottomTrailingRadius: 28))
+        .shadow(color: PL.navyDeep.opacity(0.55), radius: 22, y: 14)
     }
 
-    // MARK: Active plan
+    private var searchBar: some View {
+        HStack(spacing: 10) {
+            Icon(.search, size: 16, color: .white.opacity(0.45))
+            ZStack(alignment: .leading) {
+                if query.isEmpty {
+                    Text("Search plans, topics, books…").font(.inter(14)).foregroundStyle(.white.opacity(0.40))
+                }
+                TextField("", text: $query)
+                    .font(.inter(14)).foregroundStyle(.white).tint(PL.gold)
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+            }
+            if !query.isEmpty {
+                Button { query = "" } label: { Icon(.x, size: 15, color: .white.opacity(0.45)) }.buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 13)
+        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
+    }
 
-    @ViewBuilder
-    private func activeSection(_ plan: ReadingPlanRow) -> some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
-            sectionOverline("ACTIVE PLANS")
-            NavigationLink(value: plan) { activeCard(plan) }.buttonStyle(.plain)
+    // MARK: continue reading
+
+    private var continueSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            overline("Continue reading")
+            ForEach(continueReading) { plan in
+                NavigationLink(value: plan) { PLContinueRow(plan: plan) }.buttonStyle(.plain)
+            }
         }
     }
 
-    private func activeCard(_ plan: ReadingPlanRow) -> some View {
-        let total = max(plan.dayCount, 1)
-        let doneDays = plan.completedDays?.count ?? 0
-        let currentDay = plan.currentDay ?? (doneDays + 1)
-        let progress = min(max(Double(doneDays) / Double(total), 0), 1)
-        return HStack(spacing: Nuru.S.base) {
+    // MARK: plan of the day
+
+    private func planOfDayCard(_ plan: ReadingPlanRow) -> some View {
+        NavigationLink(value: plan) {
             ZStack {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nuru.goldTint)
-                Icon(.bookMarked, size: 24, color: Nuru.gold)
+                PLCover(plan: plan)
+                LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.25), Color(hex: 0x081424, alpha: 0.35), Color(hex: 0x081424, alpha: 0.90)],
+                               startPoint: .top, endPoint: .bottom)
             }
-            .frame(width: 56, height: 56)
-            VStack(alignment: .leading, spacing: 6) {
-                Text(plan.title).font(.inter(16, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                Text("Day \(currentDay) of \(plan.dayCount)")
-                    .font(.nMicro).foregroundStyle(Nuru.faint)
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Nuru.gold.opacity(0.18)).frame(height: 4)
-                        Capsule().fill(Nuru.gold).frame(width: max(4, geo.size.width * progress), height: 4)
+            .frame(height: 192).frame(maxWidth: .infinity)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(alignment: .topLeading) {
+                Text("PLAN OF THE DAY").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(PL.gold, in: Capsule()).padding(14)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(plan.title).font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(.white)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                    HStack(spacing: 4) {
+                        Icon(.clock, size: 12, color: .white.opacity(0.8))
+                        Text("\(plan.dayCount) days").font(.inter(11)).foregroundStyle(.white.opacity(0.8))
                     }
                 }
-                .frame(height: 4)
-                .padding(.top, 2)
+                .padding(.horizontal, 16).padding(.bottom, 14)
             }
+            .shadow(color: PL.navyDeep.opacity(0.5), radius: 22, y: 12)
         }
-        .padding(Nuru.S.base)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        .buttonStyle(.plain)
     }
 
-    // MARK: Browse plans
+    // MARK: categories
 
-    private var browseSection: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
-            sectionOverline("BROWSE PLANS")
-            VStack(spacing: Nuru.S.md) {
-                ForEach(vm.browsePlans) { plan in
-                    NavigationLink(value: plan) { browseCard(plan) }.buttonStyle(.plain)
+    private var categoriesSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            overline("Browse by topic")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(["all"] + categories, id: \.self) { c in
+                        let on = category == c
+                        Button { category = (category == c ? "all" : c) } label: {
+                            Text(c == "all" ? "All plans" : c)
+                                .font(.inter(12, on ? .bold : .semibold))
+                                .foregroundStyle(on ? .white : PL.ink2)
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(on ? AnyShapeStyle(PL.navy) : AnyShapeStyle(Color.white), in: Capsule())
+                                .overlay(Capsule().stroke(on ? .clear : PL.border, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+            .padding(.horizontal, -20)
+        }
+    }
+
+    // MARK: collections (browse) / filtered results (search)
+
+    private var collectionsSections: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            ForEach(collections, id: \.id) { col in
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
+                        Spacer(minLength: 0)
+                        Text("See all").font(.inter(11, .bold)).foregroundStyle(PL.gold)
+                    }
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(col.plans) { plan in PLPlanCard(plan: plan) }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    .padding(.horizontal, -20)
                 }
             }
         }
     }
 
-    private func browseCard(_ plan: ReadingPlanRow) -> some View {
-        HStack(spacing: Nuru.S.base) {
-            planThumbnail(plan)
-            VStack(alignment: .leading, spacing: 4) {
-                Text("\(plan.dayCount) DAYS")
-                    .font(.inter(10, .semibold)).kerning(0.8)
-                    .foregroundStyle(Nuru.faint)
-                Text(plan.title).font(.inter(16, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                if let sub = plan.subtitle ?? plan.description, !sub.isEmpty {
-                    Text(sub).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(1)
+    private var filteredResults: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                overline(category == "all" ? "Results" : category)
+                Spacer(minLength: 0)
+                Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(10, .semibold)).foregroundStyle(PL.ink3)
+            }
+            if filtered.isEmpty {
+                VStack(spacing: 0) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.08))
+                        Icon(.bookOpen, size: 22, color: PL.gold)
+                    }.frame(width: 48, height: 48)
+                    Text("No plans found").font(.inter(13, .semibold)).foregroundStyle(PL.navy).padding(.top, 12)
+                    Button { query = ""; category = "all" } label: {
+                        Text("Clear filters").font(.inter(11, .bold)).foregroundStyle(PL.gold)
+                    }.buttonStyle(.plain).padding(.top, 2)
                 }
+                .frame(maxWidth: .infinity).padding(.vertical, 48)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
+            } else {
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    ForEach(filtered) { plan in PLPlanTile(plan: plan) }
+                }
+            }
+        }
+    }
+
+    // MARK: invitation
+
+    private var invitationCard: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
+                Icon(.users, size: 19, color: PL.gold)
+            }.frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
+                Text("Invite your cell to a plan and keep each other going.").font(.inter(11)).foregroundStyle(PL.ink2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
+            Icon(.chevronRight, size: 16, color: PL.ink3)
         }
-        .padding(Nuru.S.base)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        .padding(16)
+        .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
     }
 
-    @ViewBuilder
-    private func planThumbnail(_ plan: ReadingPlanRow) -> some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
-        if let url = plan.imageUrl.flatMap(URL.init) {
-            CachedAsyncImage(url: url) { phase in
-                if let img = phase.image {
-                    img.resizable().scaledToFill()
-                } else {
-                    fallbackTile
+    private func overline(_ text: String) -> some View {
+        Text(text.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PL.goldDeep)
+    }
+}
+
+// MARK: - plan cover (image with brand-gradient fallback)
+
+private struct PLCover: View {
+    let plan: ReadingPlanRow
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let u = plan.imageUrl.flatMap(URL.init) {
+                CachedAsyncImage(url: u) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() } else { Color.clear }
                 }
             }
-            .frame(width: 56, height: 56)
-            .clipShape(shape)
-        } else {
-            fallbackTile.frame(width: 56, height: 56).clipShape(shape)
         }
+        .clipped()
     }
+}
 
-    private var fallbackTile: some View {
-        ZStack {
-            Nuru.goldTint
-            Icon(.book, size: 22, color: Nuru.gold)
+// MARK: - continue-reading row
+
+private struct PLContinueRow: View {
+    let plan: ReadingPlanRow
+    private var total: Int { max(plan.dayCount, 1) }
+    private var day: Int { plan.currentDay ?? ((plan.completedDays?.count ?? 0) + 1) }
+    private var pct: Double { min(max(Double(day) / Double(total), 0), 1) }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            PLCover(plan: plan).frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 0) {
+                Text(plan.title).font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy).lineLimit(1)
+                Text("Today · \(plan.subtitle ?? "Day \(day) of \(total)")").font(.inter(11)).foregroundStyle(PL.ink2).lineLimit(1)
+                    .padding(.top, 2)
+                HStack(spacing: 8) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(PL.navy.opacity(0.08))
+                            Capsule().fill(PL.gold).frame(width: max(6, geo.size.width * pct))
+                        }
+                    }.frame(height: 6)
+                    Text("Day \(day)/\(total)").font(.inter(9, .semibold)).foregroundStyle(PL.ink2)
+                }
+                .padding(.top, 8)
+            }
+            ZStack {
+                Circle().fill(PL.gold.opacity(0.10))
+                Icon(.play, size: 16, color: PL.gold)
+            }
+            .frame(width: 36, height: 36)
         }
+        .padding(12)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.border, lineWidth: 1))
+        .shadow(color: PL.navy.opacity(0.10), radius: 10, y: 6)
     }
+}
 
-    private func sectionOverline(_ text: String) -> some View {
-        Text(text)
-            .font(.inter(11, .semibold)).kerning(1.2)
-            .foregroundStyle(Nuru.faint)
+// MARK: - portrait plan card (collection carousels)
+
+private struct PLPlanCard: View {
+    let plan: ReadingPlanRow
+    var body: some View {
+        NavigationLink(value: plan) {
+            ZStack(alignment: .bottomLeading) {
+                PLCover(plan: plan)
+                LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.05), Color(hex: 0x081424, alpha: 0.85)],
+                               startPoint: .init(x: 0.5, y: 0.4), endPoint: .bottom)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(plan.title).font(.fraunces(13, .semibold)).foregroundStyle(.white)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                    if let c = plan.category, !c.isEmpty {
+                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
+                    }
+                }
+                .padding(10)
+            }
+            .overlay(alignment: .topLeading) { daysBadge(plan.dayCount) }
+            .frame(width: 150, height: 200)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .shadow(color: PL.navy.opacity(0.5), radius: 14, y: 10)
+        }
+        .buttonStyle(.plain)
     }
+}
+
+// MARK: - grid tile (search results)
+
+private struct PLPlanTile: View {
+    let plan: ReadingPlanRow
+    var body: some View {
+        NavigationLink(value: plan) {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack(alignment: .topLeading) {
+                    PLCover(plan: plan).aspectRatio(16.0 / 10.0, contentMode: .fill).frame(maxWidth: .infinity).clipped()
+                    daysBadge(plan.dayCount)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy).lineLimit(2).multilineTextAlignment(.leading)
+                    if let c = plan.category, !c.isEmpty {
+                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.catText)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+            }
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+@ViewBuilder
+private func daysBadge(_ days: Int) -> some View {
+    Text("\(days) DAYS").font(.inter(8, .bold)).kerning(0.96).foregroundStyle(PL.navy)
+        .padding(.horizontal, 8).padding(.vertical, 2)
+        .background(Color.white.opacity(0.9), in: Capsule())
+        .padding(8)
 }
 
 // MARK: - Plan detail (days)
