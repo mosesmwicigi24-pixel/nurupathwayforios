@@ -1,0 +1,259 @@
+// Cell info — the destination behind every cell aspect surfaced on Home (the
+// "This week at Nuru" featured-cell card and the "Your cohort" card). It merges
+// the two cell payloads the member already sees — GET /home/featured-cell and
+// GET /me/cell-summary — into one screen: the cell's leader/discipler, its
+// meeting rhythm, the next gathering, and the members/attendance/level/focus
+// stats. Navy rounded-bottom header (no hero image), matching MentorView.
+import SwiftUI
+
+@MainActor
+final class CellInfoViewModel: ObservableObject {
+    @Published var featured: FeaturedCell?
+    @Published var cell: CellSummary.Cell?
+    @Published var loading = true
+    @Published var error: String?
+
+    var name: String { featured?.name ?? cell?.name ?? "Your cell" }
+    var isEmpty: Bool { featured == nil && cell == nil }
+
+    func load() async {
+        loading = true; error = nil
+        async let fc = try? MemberAPI.featuredCell()
+        async let cs = try? MemberAPI.cellSummary()
+        featured = await fc ?? nil
+        cell = (await cs)?.cell
+        if isEmpty { error = "Couldn't load your cell." }
+        loading = false
+    }
+}
+
+struct CellInfoView: View {
+    @StateObject private var vm = CellInfoViewModel()
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ZStack {
+            Nuru.paper.ignoresSafeArea()
+            VStack(spacing: 0) {
+                header
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: Nuru.S.base) {
+                        if vm.loading && vm.isEmpty {
+                            ProgressView().tint(Nuru.gold).padding(.top, Nuru.S.xxl)
+                        } else if vm.isEmpty {
+                            emptyCard
+                        } else {
+                            leaderCard
+                            if hasRhythm { rhythmCard }
+                            if let n = vm.cell?.next { nextGatheringCard(n) }
+                            statsGrid
+                            openCommunityButton
+                        }
+                    }
+                    .padding(Nuru.S.screen)
+                    .padding(.bottom, Nuru.tabBarSpace)
+                }
+            }
+        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .task { if vm.isEmpty { await vm.load() } }
+    }
+
+    // Navy header with rounded bottom, circular back button, gold overline, serif title.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            Button { dismiss() } label: {
+                Icon(.arrowLeft, size: 18, color: Nuru.onNavy)
+                    .frame(width: 38, height: 38)
+                    .background(Nuru.navyDeep, in: Circle())
+            }
+            .buttonStyle(.plain)
+
+            VStack(alignment: .leading, spacing: Nuru.S.xs) {
+                Text("YOUR CELL")
+                    .font(.inter(11, .bold)).tracking(1.4)
+                    .foregroundStyle(Nuru.gold)
+                Text(vm.name)
+                    .font(.fraunces(26, .semibold))
+                    .foregroundStyle(Nuru.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let f = vm.featured?.focus {
+                    Text(f).font(.nCaption).foregroundStyle(Nuru.onNavyFaint)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Nuru.S.screen)
+        .padding(.top, Nuru.S.sm)
+        .padding(.bottom, Nuru.S.lg)
+        .background(
+            UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)
+                .fill(Nuru.navy)
+                .ignoresSafeArea(edges: .top)
+        )
+    }
+
+    // MARK: Leader / discipler
+
+    private var leaderName: String? { vm.cell?.leader?.name ?? vm.featured?.disciplerName }
+    private var leaderRole: String? { vm.cell?.leader?.role ?? vm.featured?.disciplerRole }
+
+    private var leaderCard: some View {
+        HStack(spacing: Nuru.S.base) {
+            Avatar(url: vm.cell?.leader?.avatarUrl, name: leaderName ?? vm.name, size: 56)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("CELL LEADER").font(.inter(11, .semibold)).tracking(1.2).foregroundStyle(Nuru.gold)
+                Text(leaderName ?? "Not assigned yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                if let r = leaderRole { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
+    // MARK: Meeting rhythm (from featured-cell)
+
+    private var hasRhythm: Bool {
+        (vm.featured?.meets != nil) || (vm.featured?.nextSession != nil) || (vm.featured?.room != nil)
+    }
+
+    private var rhythmCard: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            Text("MEETING RHYTHM").font(.inter(11, .bold)).tracking(1.2).foregroundStyle(Nuru.muted)
+            if let m = vm.featured?.meets { rhythmRow(.calendarClock, "Meets", m) }
+            if let n = vm.featured?.nextSession { rhythmRow(.calendarDays, "Next session", n) }
+            if let r = vm.featured?.room { rhythmRow(.mapPin, "Where", r) }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
+    private func rhythmRow(_ icon: Lucide, _ label: String, _ value: String) -> some View {
+        HStack(spacing: Nuru.S.md) {
+            Icon(icon, size: 16, color: Nuru.goldChipText)
+                .frame(width: 34, height: 34)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label).font(.nMicro).foregroundStyle(Nuru.faint)
+                Text(value).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
+    // MARK: Next gathering (from cell-summary)
+
+    private func nextGatheringCard(_ n: CellSummary.Cell.Next) -> some View {
+        HStack(spacing: Nuru.S.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.goldTint).frame(width: 44, height: 44)
+                Icon(.calendarClock, size: 20, color: Nuru.gold)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("NEXT GATHERING").font(.inter(11, .semibold)).tracking(1.2).foregroundStyle(Nuru.gold)
+                Text(Self.longDate(n.startAt)).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                if let loc = n.location { Text(loc).font(.nMicro).foregroundStyle(Nuru.muted) }
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.base)
+        .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+    }
+
+    // MARK: Stats (members · attendance · level · focus)
+
+    private var statsGrid: some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
+            statTile(.handHeart, "Members", membersText)
+            statTile(.percent, "Attendance", attendanceText)
+            if let l = vm.featured?.levelLabel { statTile(.award, "Level", l) }
+            if let f = vm.featured?.focus { statTile(.target, "Focus", f) }
+        }
+    }
+
+    private func statTile(_ icon: Lucide, _ label: String, _ value: String) -> some View {
+        HStack(spacing: Nuru.S.sm) {
+            Icon(icon, size: 15, color: Nuru.goldChipText)
+                .frame(width: 32, height: 32)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text(label).font(.nMicro).foregroundStyle(Nuru.faint)
+                Text(value).font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.sm)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private var membersText: String {
+        if let m = vm.cell?.members { return "\(m)" }
+        if let m = vm.featured?.members { return "\(m)" }
+        return "—"
+    }
+    private var attendanceText: String {
+        guard let a = vm.cell?.attendance, a.expected > 0 else { return "—" }
+        return "\(a.attended)/\(a.expected)"
+    }
+
+    // MARK: Open community
+
+    private var openCommunityButton: some View {
+        NavigationLink(value: CommunityRoute.prayerWall) {
+            HStack {
+                Spacer()
+                Text("Open community ›").font(.inter(14, .bold)).foregroundStyle(Nuru.white)
+                Spacer()
+            }
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .padding(.top, Nuru.S.xs)
+    }
+
+    // MARK: Empty state
+
+    private var emptyCard: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.goldTint).frame(width: 48, height: 48)
+                Icon(.users, size: 22, color: Nuru.gold)
+            }
+            VStack(alignment: .leading, spacing: Nuru.S.xs) {
+                Text("No cell yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text("When your leader adds you to a discipleship cell, you'll see your leader, meeting rhythm and gatherings here.")
+                    .font(.nCaption).foregroundStyle(Nuru.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
+    // MARK: date helpers
+
+    private static func parse(_ iso: String) -> Date? {
+        ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+    }
+    private static func longDate(_ iso: String) -> String {
+        guard let d = parse(iso) else { return iso }
+        let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"; return f.string(from: d)
+    }
+}
