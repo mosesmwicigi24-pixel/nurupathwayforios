@@ -164,30 +164,35 @@ struct GivingView: View {
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("GIVE")
-                .font(.inter(11, .bold)).kerning(2).foregroundStyle(Nuru.gold)
+                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Color(hex: 0x9A7A2A))
             Text("Sow into the Kingdom")
-                .font(.fraunces(30, .semibold)).foregroundStyle(.white)
+                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .padding(.top, 4)
             Text("Generosity is worship — a quiet, joyful act.")
-                .font(.inter(14)).foregroundStyle(Color.white.opacity(0.55))
-                .padding(.top, 6)
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x68758A))
+                .padding(.top, 4)
 
             HStack(spacing: 8) {
                 Icon(.badgeCheck, size: 14, color: Nuru.gold)
                 Text("KSh \((vm.yearTotalMinor / 100).formatted(.number.grouping(.automatic))) given this year")
-                    .font(.inter(13, .semibold)).foregroundStyle(Nuru.goldHi)
+                    .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
             }
             .padding(.horizontal, 16).padding(.vertical, 9)
+            .background(Color.white, in: Capsule())
             .overlay(Capsule().stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
-            .padding(.top, Nuru.S.base)
+            .padding(.top, 14)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 64)
-        .padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, 20)
+        .padding(.top, 60)
+        .padding(.bottom, 20)
         .background(
-            UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)
-                .fill(Nuru.navy)
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24, style: .continuous))
+                .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
                 .ignoresSafeArea(edges: .top)
         )
     }

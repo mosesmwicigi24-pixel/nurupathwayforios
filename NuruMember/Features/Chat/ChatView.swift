@@ -77,27 +77,29 @@ struct ChatView: View {
 
     // MARK: Header
 
+    // Cream Figma header (ChatTab) — navy-on-light "Nuru Connect".
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 6) {
-                        Icon(.sparkle, size: 12, color: Nuru.gold)
+                        Icon(.sparkle, size: 12, color: Color(hex: 0x9A7A2A))
                         Text("\(greeting.uppercased()) · \(firstName.uppercased())")
-                            .font(.inter(11, .semibold)).kerning(2.2).foregroundStyle(Nuru.gold)
+                            .font(.inter(11, .semibold)).kerning(2.4).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     Text("Nuru Connect")
-                        .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.onNavy)
+                        .font(.fraunces(30, .semibold)).kerning(-0.6).foregroundStyle(Nuru.navy)
                         .padding(.top, Nuru.S.md)
-                    Text("You’re all caught up")
-                        .font(.inter(13)).foregroundStyle(Nuru.onNavyDim)
+                    Text(vm.totalUnread > 0 ? "\(vm.totalUnread) unread · \(vm.spaces.count) spaces" : "You’re all caught up")
+                        .font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
                         .padding(.top, 6)
                 }
                 Spacer(minLength: 0)
                 ZStack(alignment: .topTrailing) {
-                    Icon(.bell, size: 20, color: Nuru.onNavy)
+                    Icon(.bell, size: 19, color: Nuru.navy)
                         .frame(width: 44, height: 44)
-                        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                     if vm.totalUnread > 0 {
                         Text(vm.totalUnread > 9 ? "9+" : "\(vm.totalUnread)")
                             .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
@@ -111,27 +113,33 @@ struct ChatView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 64)
+        .padding(.top, 60)
         .padding(.bottom, Nuru.S.lg)
-        .background(Nuru.navy)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+        )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
     private var searchBar: some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.search, size: 16, color: Nuru.onNavyDim)
-            TextField("", text: $query, prompt: Text("Search spaces, people, messages").foregroundColor(Nuru.onNavyDim))
-                .font(.inter(14)).foregroundStyle(Nuru.onNavy)
+            Icon(.search, size: 16, color: Color(hex: 0x9CA3AF))
+            TextField("", text: $query, prompt: Text("Search spaces, people, messages").foregroundColor(Color(hex: 0x9CA3AF)))
+                .font(.inter(14)).foregroundStyle(Nuru.navy)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !query.isEmpty {
-                Button { query = "" } label: { Icon(.x, size: 14, color: Nuru.onNavyDim) }.buttonStyle(.plain)
+                Button { query = "" } label: { Icon(.x, size: 14, color: Color(hex: 0x9CA3AF)) }.buttonStyle(.plain)
             }
         }
         .padding(.horizontal, Nuru.S.base)
         .frame(height: 46)
-        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     // MARK: AI card ("Quick help from Nuru")

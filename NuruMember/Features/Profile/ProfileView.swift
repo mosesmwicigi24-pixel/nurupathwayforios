@@ -103,42 +103,54 @@ struct ProfileView: View {
 
     // MARK: Header
 
+    // Cream Figma header (ProfileTab) — navy-on-light "Account", white settings
+    // gear, avatar (gold ring + edit pencil), name, email, level chip.
     private var header: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.base) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("ACCOUNT").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                Text("ACCOUNT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A))
                 Spacer()
-                Icon(.settings, size: 18, color: Nuru.onNavy)
-                    .frame(width: 36, height: 36).background(Color.white.opacity(0.12), in: Circle())
+                Icon(.settings, size: 18, color: Nuru.navy)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
-            HStack(spacing: Nuru.S.base) {
+            HStack(spacing: 16) {
                 ZStack(alignment: .bottomTrailing) {
-                    Avatar(url: p?.avatarUrl, name: p?.fullName ?? "?", size: 64)
-                        .overlay(Circle().stroke(Nuru.gold.opacity(0.6), lineWidth: 2))
+                    Avatar(url: p?.avatarUrl, name: p?.fullName ?? "?", size: 72)
+                        .overlay(Circle().stroke(Nuru.gold, lineWidth: 2))
                     ZStack {
-                        Circle().fill(Nuru.goldGradient).frame(width: 22, height: 22)
-                        Text("\(auth.me?.enrollment?.currentLevel ?? 1)").font(.inter(10, .bold)).foregroundStyle(.white)
+                        Circle().fill(Nuru.gold).frame(width: 28, height: 28)
+                        Icon(.pencil, size: 11, color: Nuru.navy)
                     }
-                    .overlay(Circle().stroke(Nuru.navy, lineWidth: 2))
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .offset(x: 3, y: 3)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(p?.fullName ?? "—").font(.fraunces(22, .semibold)).foregroundStyle(.white)
-                    if let email = p?.email { Text(email).font(.nCaption).foregroundStyle(Nuru.onNavyDim) }
+                    Text(p?.fullName ?? "—").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
+                    if let email = p?.email { Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A)) }
                     HStack(spacing: 4) {
-                        Icon(.award, size: 11, color: Nuru.goldGlow)
-                        Text("Level \(auth.me?.enrollment?.currentLevel ?? 1)").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldGlow)
+                        Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
+                        Text("Level \(auth.me?.enrollment?.currentLevel ?? 1)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(Color.white, in: Capsule())
                     .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
                     .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
             }
         }
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 64).padding(.bottom, Nuru.S.xl)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Nuru.navy)
-        .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+        )
+        .clipShape(.rect(bottomLeadingRadius: 28, bottomTrailingRadius: 28))
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
         .padding(.horizontal, -Nuru.S.screen)   // full-bleed inside the padded scroll
     }
 
