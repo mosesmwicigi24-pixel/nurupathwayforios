@@ -52,6 +52,7 @@ enum AppTab: Hashable, CaseIterable {
 
 struct RootView: View {
     @State private var tab: AppTab = .initialTab
+    @EnvironmentObject private var sync: SyncCoordinator
 
     var body: some View {
         TabView(selection: $tab) {
@@ -64,6 +65,7 @@ struct RootView: View {
             ProfileView().tag(AppTab.profile)
         }
         .toolbar(.hidden, for: .tabBar)
+        .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
         .overlay(alignment: .bottom) {
             NuruTabBar(selection: $tab).ignoresSafeArea(edges: .bottom)
         }
@@ -72,6 +74,39 @@ struct RootView: View {
     private func placeholderTab(_ title: String, _ blurb: String, _ icon: Lucide) -> some View {
         NavigationStack {
             PlaceholderScreen(title: title, blurb: blurb, icon: icon).navigationTitle(title)
+        }
+    }
+}
+
+/// Thin status pill that appears under the status bar when the member is offline
+/// (or a queued write is still catching up). Reassures that nothing was lost —
+/// the durable queue will sync on reconnect.
+private struct SyncStatusBanner: View {
+    @ObservedObject var sync: SyncCoordinator
+
+    private var message: String? {
+        if !sync.isOnline {
+            return sync.pendingCount > 0
+                ? "Offline · \(sync.pendingCount) change\(sync.pendingCount == 1 ? "" : "s") will sync"
+                : "You're offline · changes are saved on this device"
+        }
+        if sync.isSyncing && sync.pendingCount > 0 { return "Syncing \(sync.pendingCount)…" }
+        return nil
+    }
+
+    var body: some View {
+        if let message {
+            HStack(spacing: 6) {
+                Icon(.clock, size: 12, color: Nuru.onNavy)
+                Text(message).font(.inter(12, .semibold)).foregroundStyle(Nuru.onNavy)
+            }
+            .padding(.horizontal, Nuru.S.base)
+            .padding(.vertical, 6)
+            .background(Capsule().fill(sync.isOnline ? Nuru.navy : Nuru.ink))
+            .nuruShadow()
+            .padding(.top, 60)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .animation(.easeInOut(duration: 0.25), value: message)
         }
     }
 }

@@ -10,28 +10,71 @@ final class PrayerJournalViewModel: ObservableObject {
     @Published var loading = true
     @Published var error: String?
 
+    // Offline-first (§1.7): reads come from the encrypted cache first (instant,
+    // works offline), then refresh from the network; writes apply optimistically
+    // and go through the durable mutation queue (idempotent on entry_id).
+    private let sync = SyncCoordinator.shared
+    private let domain = "prayer_entries"
+
     func load() async {
-        loading = true; error = nil
-        do { entries = try await MemberAPI.prayers() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your journal." }
+        error = nil
+        // 1) instant: last-known entries from the encrypted cache
+        let cachedList = await cached()
+        if !cachedList.isEmpty { entries = cachedList; loading = false }
+        // 2) refresh from the server when reachable; mirror into the cache
+        if let fresh = try? await MemberAPI.prayers() {
+            entries = fresh
+            await cacheAll(fresh)
+        } else if cachedList.isEmpty {
+            error = "You're offline — your journal will load when you reconnect."
+        }
         loading = false
     }
 
     func upsert(entryId: String, title: String, body: String, answered: Bool) async {
-        try? await MemberAPI.upsertPrayer(entryId: entryId, body: body,
-                                          title: title.isEmpty ? nil : title, isAnswered: answered)
-        await load()
+        let now = ISO8601DateFormatter().string(from: Date())
+        let existing = entries.first { $0.entryId == entryId }
+        let entry = PrayerEntry(
+            entryId: entryId, title: title.isEmpty ? nil : title, body: body, isAnswered: answered,
+            answeredNote: existing?.answeredNote, answeredAt: answered ? (existing?.answeredAt ?? now) : nil,
+            createdAt: existing?.createdAt ?? now, updatedAt: now)
+        // optimistic local apply + cache mirror
+        if let i = entries.firstIndex(where: { $0.entryId == entryId }) { entries[i] = entry }
+        else { entries.insert(entry, at: 0) }
+        await cacheAll(entries)
+        // durable, idempotent server write (LWW on updated_at)
+        await sync.enqueue(domain: domain, op: "upsert", payload: [
+            "entry_id": AnyCodable(entryId),
+            "title": AnyCodable(title.isEmpty ? nil : title),
+            "body": AnyCodable(body),
+            "is_answered": AnyCodable(answered),
+            "updated_at": AnyCodable(now),
+        ])
     }
 
     func toggleAnswered(_ e: PrayerEntry) async {
-        try? await MemberAPI.upsertPrayer(entryId: e.entryId, body: e.body,
-                                          title: e.title, isAnswered: !e.isAnswered)
-        await load()
+        await upsert(entryId: e.entryId, title: e.title ?? "", body: e.body, answered: !e.isAnswered)
     }
 
     func delete(_ e: PrayerEntry) async {
-        try? await MemberAPI.deletePrayer(e.entryId)
-        await load()
+        entries.removeAll { $0.entryId == e.entryId }
+        await cacheAll(entries)
+        await sync.enqueue(domain: domain, op: "delete", payload: ["entry_id": AnyCodable(e.entryId)])
+    }
+
+    // MARK: encrypted-cache mirror (round-trips via the DTO's own keys)
+
+    private func cacheAll(_ list: [PrayerEntry]) async {
+        let rows = list.compactMap { e -> (id: String, body: Data)? in
+            (try? JSONEncoder().encode(e)).map { (e.entryId, $0) }
+        }
+        await sync.store.cacheReplace(domain: domain, rows: rows)
+    }
+
+    private func cached() async -> [PrayerEntry] {
+        await sync.store.cachedRows(domain: domain)
+            .compactMap { try? JSONDecoder().decode(PrayerEntry.self, from: $0) }
+            .sorted { $0.createdAt > $1.createdAt }
     }
 
     // MARK: Computed prayer score (no endpoint) — grows as you pray and journal.

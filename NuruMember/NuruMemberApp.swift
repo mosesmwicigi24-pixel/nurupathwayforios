@@ -7,6 +7,8 @@ import UIKit
 @main
 struct NuruMemberApp: App {
     @StateObject private var auth = AuthStore()
+    @StateObject private var sync = SyncCoordinator.shared
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         configureNuruCaches()
@@ -26,9 +28,16 @@ struct NuruMemberApp: App {
                 }
             }
             .environmentObject(auth)
+            .environmentObject(sync)
             .tint(Nuru.gold)
             // The app is designed in warm light tones; keep system chrome light.
             .preferredColorScheme(.light)
+            // Start the offline sync engine once we're authenticated; drain the
+            // durable queue whenever the app returns to the foreground.
+            .task(id: auth.isAuthenticated) { if auth.isAuthenticated { sync.start() } }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active, auth.isAuthenticated { Task { await sync.flush() } }
+            }
         }
     }
 
