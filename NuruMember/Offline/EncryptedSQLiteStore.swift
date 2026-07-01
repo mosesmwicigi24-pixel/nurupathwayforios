@@ -25,7 +25,11 @@ import SQLite3
 private let SQLITE_TRANSIENT = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 actor EncryptedSQLiteStore: LocalStore {
-    private var db: OpaquePointer?
+    // `nonisolated(unsafe)` because the low-level SQLite helpers below are
+    // `nonisolated` (so `init` can create the tables without a Swift-6 actor
+    // violation). Concurrency is safe: the connection is opened with
+    // SQLITE_OPEN_FULLMUTEX, so SQLite serializes access internally.
+    nonisolated(unsafe) private var db: OpaquePointer?
     private let key: SymmetricKey
 
     init(filename: String = "nuru-offline.sqlite") {
@@ -159,10 +163,10 @@ actor EncryptedSQLiteStore: LocalStore {
 
     // MARK: - AES-GCM seal / unseal
 
-    private func seal(_ data: Data) -> Data {
+    nonisolated private func seal(_ data: Data) -> Data {
         (try? AES.GCM.seal(data, using: key).combined) ?? data
     }
-    private func unseal(_ data: Data) -> Data? {
+    nonisolated private func unseal(_ data: Data) -> Data? {
         guard let box = try? AES.GCM.SealedBox(combined: data) else { return nil }
         return try? AES.GCM.open(box, using: key)
     }
@@ -179,26 +183,26 @@ actor EncryptedSQLiteStore: LocalStore {
 
     // MARK: - tiny SQLite helpers
 
-    private func exec(_ sql: String) { sqlite3_exec(db, sql, nil, nil, nil) }
+    nonisolated private func exec(_ sql: String) { sqlite3_exec(db, sql, nil, nil, nil) }
 
-    private func prepare(_ sql: String, _ body: (OpaquePointer) -> Void) {
+    nonisolated private func prepare(_ sql: String, _ body: (OpaquePointer) -> Void) {
         var st: OpaquePointer?
         guard sqlite3_prepare_v2(db, sql, -1, &st, nil) == SQLITE_OK, let st else { return }
         body(st)
         sqlite3_finalize(st)
     }
 
-    private func bindText(_ st: OpaquePointer, _ i: Int32, _ v: String) {
+    nonisolated private func bindText(_ st: OpaquePointer, _ i: Int32, _ v: String) {
         sqlite3_bind_text(st, i, v, -1, SQLITE_TRANSIENT)
     }
-    private func bindBlob(_ st: OpaquePointer, _ i: Int32, _ v: Data) {
-        v.withUnsafeBytes { sqlite3_bind_blob(st, i, $0.baseAddress, Int32(v.count), SQLITE_TRANSIENT) }
+    nonisolated private func bindBlob(_ st: OpaquePointer, _ i: Int32, _ v: Data) {
+        _ = v.withUnsafeBytes { sqlite3_bind_blob(st, i, $0.baseAddress, Int32(v.count), SQLITE_TRANSIENT) }
     }
-    private func text(_ st: OpaquePointer, _ i: Int32) -> String? {
+    nonisolated private func text(_ st: OpaquePointer, _ i: Int32) -> String? {
         guard let c = sqlite3_column_text(st, i) else { return nil }
         return String(cString: c)
     }
-    private func blob(_ st: OpaquePointer, _ i: Int32) -> Data? {
+    nonisolated private func blob(_ st: OpaquePointer, _ i: Int32) -> Data? {
         guard let p = sqlite3_column_blob(st, i) else { return nil }
         return Data(bytes: p, count: Int(sqlite3_column_bytes(st, i)))
     }
