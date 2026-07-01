@@ -65,6 +65,28 @@ struct Discipler: Codable, Sendable, Identifiable {
     var id: String { userId }
 }
 
+/// GET /growth/mentor — the member's assigned discipler + meeting notes.
+struct MentorInfo: Codable, Sendable {
+    struct Mentor: Codable, Sendable {
+        let mentorUserId: String
+        let fullName: String
+        let avatarUrl: String?
+        let cellName: String?
+        let establishedAt: String?
+    }
+    struct Note: Codable, Sendable, Identifiable {
+        let noteId: String
+        let topic: String?
+        let note: String
+        let metAt: String?
+        let nextMeetingAt: String?
+        var id: String { noteId }
+    }
+    let mentor: Mentor?
+    let nextMeetingAt: String?
+    let notes: [Note]
+}
+
 /// GET /me/cell-summary — the member's cell card.
 struct CellSummary: Codable, Sendable {
     struct Cell: Codable, Sendable {
