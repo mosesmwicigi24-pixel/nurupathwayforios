@@ -344,8 +344,15 @@ struct HomeView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: 0) {
-                Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.42).foregroundStyle(Color(hex: 0x9A7A2A))
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // The kicker carries a tiny sky: sunrise, sun, sunset or moon
+                // matching the hour — the same clock that tints the gradient.
+                HStack(spacing: 6) {
+                    Image(systemName: skyGlyph).font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Nuru.gold)
+                    Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.42).foregroundStyle(Color(hex: 0x9A7A2A))
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 NavigationLink(value: AppRoute.notifications) {
                     ZStack(alignment: .topTrailing) {
                         Icon(.bell, size: 18, color: Color(hex: 0xA8861C))
@@ -375,18 +382,38 @@ struct HomeView: View {
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
                 .lineLimit(1).minimumScaleFactor(0.8)   // long first names shrink, never wrap
                 .padding(.top, 10)
+                .gentleEntrance()
             // Nuru's daily word — a blessing written for THIS member (grounded in
             // their streak/level/prayers server-side, cached per day). It deserves
             // more than flat gray: a hanging gold quote and a settled serif voice.
             HomePersonalWord(text: vm.greetingLine)
                 .padding(.top, 6)
             if let a = active {
-                Text("Level \(a.levelNumber) · \(a.completedModules) of \(a.totalModules) modules · \(vm.streak > 0 ? "\(vm.streak)d streak" : "Begin today")")
-                    .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.53), lineWidth: 1))
-                    .padding(.top, 10)
+                // The journey jewel — level · modules · streak, ringed in a soft
+                // gold gradient with a lit flame when the streak is alive.
+                HStack(spacing: 6) {
+                    Text("Level \(a.levelNumber)").font(.inter(12, .bold)).foregroundStyle(Nuru.navy)
+                    Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
+                    Text("\(a.completedModules) of \(a.totalModules) modules")
+                        .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
+                    if vm.streak > 0 {
+                        HStack(spacing: 3) {
+                            Icon(.flame, size: 11, color: Color(hex: 0xDC6B26))
+                            Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB4530A))
+                                .contentTransition(.numericText())
+                        }
+                    } else {
+                        Text("Begin today").font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Color.white, in: Capsule())
+                .overlay(Capsule().stroke(
+                    LinearGradient(colors: [Nuru.gold.opacity(0.75), Nuru.gold.opacity(0.25), Nuru.gold.opacity(0.75)],
+                                   startPoint: .leading, endPoint: .trailing), lineWidth: 1))
+                .shadow(color: Nuru.gold.opacity(0.18), radius: 5, y: 2)
+                .padding(.top, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -400,7 +427,23 @@ struct HomeView: View {
                 }
         )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+        // A gilded edge instead of the flat gray hairline — gold breathing at the
+        // center, fading to nothing at the corners — plus a whisper of lift so
+        // the header floats over the feed.
+        .overlay(alignment: .bottom) {
+            LinearGradient(colors: [.clear, Nuru.gold.opacity(0.55), Nuru.gold.opacity(0.55), .clear],
+                           startPoint: .leading, endPoint: .trailing)
+                .frame(height: 1.5)
+                .padding(.horizontal, 24)
+        }
+        .shadow(color: Color(hex: 0x0A2540).opacity(0.07), radius: 10, y: 5)
+    }
+
+    /// The sky in the kicker — mirrors headerPalette's hour bands.
+    private var skyGlyph: String {
+        let h = Calendar.current.component(.hour, from: Date())
+        return h < 5 ? "moon.stars.fill" : h < 9 ? "sunrise.fill" : h < 16 ? "sun.max.fill"
+             : h < 19 ? "sunset.fill" : "moon.stars.fill"
     }
 
     // MiniRing (Figma) — 42px, navy track, gold progress, navy pct.
