@@ -1,8 +1,12 @@
-// Plan segment — the native port of screens/PlanSegmentScreen.tsx. One day's
-// media segment (Watch / Read / Devotional / Talk it Over / Scripture): a 16:9
-// media card (with a play overlay for video kinds), a gold overline + Fraunces
-// title + body copy, and a pinned bottom bar that pages to the next segment.
-// Tapping the play button launches the immersive full-bleed player cover.
+// Plan segment — the native port of screens/PlanSegmentScreen.tsx, presented as
+// the Figma make's ReadingDayReader: a navy day header (gold kicker, serif title,
+// per-segment step chips), a warm reader canvas with serif passage text (small
+// gold verse numbers when the content carries them), a gold pull-quote card for
+// the featured scripture, a REFLECTION prompt card for talk-it-over segments,
+// an encouragement line, and a pinned completion CTA. Real segment data
+// throughout — the Figma's mock audio/video timers are skipped because the
+// model carries no media beyond `videoUrl`; video segments keep the immersive
+// full-bleed player.
 import SwiftUI
 import UIKit
 
@@ -20,7 +24,8 @@ struct PlanSegmentView: View {
     }
     private var hasNext: Bool { ref.index + 1 < ref.segments.count }
 
-    /// Gold overline label per segment kind (WATCH / READ / DEVOTIONAL / …).
+    /// Gold overline label per segment kind (WATCH / READ / DEVOTIONAL / …) —
+    /// used by the immersive player.
     private var overline: String {
         switch segment.kind.lowercased() {
         case "video":      return "WATCH"
@@ -32,48 +37,41 @@ struct PlanSegmentView: View {
         }
     }
 
-    /// Body copy: the segment's content, falling back to its reference.
-    private var bodyText: String? {
-        if let c = segment.content, !c.isEmpty { return c }
+    /// Short label per segment kind for the header step chips.
+    private static func chipLabel(_ kind: String) -> String {
+        switch kind.lowercased() {
+        case "video":      return "Watch"
+        case "reading":    return "Read"
+        case "devotional": return "Devotional"
+        case "talk":       return "Talk"
+        case "scripture":  return "Scripture"
+        default:           return kind.capitalized
+        }
+    }
+
+    /// Header caption: the scripture reference, else the segment kind.
+    private var headerCaption: String {
         if let r = segment.reference, !r.isEmpty { return r }
-        return nil
+        return Self.chipLabel(segment.kind)
     }
 
     var body: some View {
         ZStack {
-            Nuru.paper.ignoresSafeArea()
+            Nuru.surface.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Nuru.S.base) {
-                        mediaCard
-                        Text(overline)
-                            .font(.inter(11, .semibold)).kerning(1.5)
-                            .foregroundStyle(Nuru.gold)
-                            .padding(.top, Nuru.S.sm)
-                        Text(segment.title)
-                            .font(.fraunces(28, .semibold))
-                            .foregroundStyle(Nuru.ink)
-                        if let body = bodyText {
-                            Text(body)
-                                .font(.nBodyLg)
-                                .foregroundStyle(Nuru.muted)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        if let scriptureRef = segment.reference,
-                           !scriptureRef.isEmpty,
-                           scriptureRef != bodyText {
-                            Text(scriptureRef)
-                                .font(.inter(13, .semibold))
-                                .foregroundStyle(Nuru.gold)
-                        }
+                        if isVideo { videoCard }
+                        readerBlocks
+                        EncouragementRow()
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Nuru.S.screen)
                     .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.S.xxl)
+                    .padding(.bottom, Nuru.S.xl)
                 }
-                bottomBar
+                .safeAreaInset(edge: .bottom) { bottomCTA }
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -85,43 +83,74 @@ struct PlanSegmentView: View {
         }
     }
 
-    // MARK: Header (back arrow + plan title)
+    // MARK: Navy day header (kicker · serif title · step chips)
 
     private var header: some View {
-        HStack(spacing: Nuru.S.md) {
-            Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.ink)
-                    .frame(width: 38, height: 38)
-                    .background(Nuru.white, in: Circle())
-                    .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    headerChip { Icon(.arrowLeft, size: 18, color: .white) }
+                }
+                .buttonStyle(.plain)
+                Spacer(minLength: Nuru.S.sm)
+                Text("DAY \(ref.dayNumber) · \(ref.planTitle.uppercased())")
+                    .font(.inter(10, .bold)).kerning(1.8)
+                    .foregroundStyle(Nuru.gold)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: Nuru.S.sm)
+                headerChip { Icon(.bookmark, size: 16, color: Nuru.gold) }
             }
-            .buttonStyle(.plain)
-            Text(ref.planTitle)
-                .font(.inter(15, .semibold))
-                .foregroundStyle(Nuru.ink)
-                .lineLimit(1)
-            Spacer(minLength: 0)
+            Text(segment.title)
+                .font(.fraunces(22, .semibold))
+                .foregroundStyle(.white)
+                .padding(.top, Nuru.S.md)
+            Text(headerCaption)
+                .font(.inter(12, .regular))
+                .foregroundStyle(.white.opacity(0.7))
+                .padding(.top, 2)
+            stepChips
+                .padding(.top, Nuru.S.md)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
         .padding(.top, Nuru.S.sm)
         .padding(.bottom, Nuru.S.md)
+        .background(
+            Nuru.navy
+                .clipShape(.rect(bottomLeadingRadius: 20, bottomTrailingRadius: 20))
+                .ignoresSafeArea(edges: .top)
+        )
     }
 
-    // MARK: 16:9 media card
+    private func headerChip<C: View>(@ViewBuilder _ content: () -> C) -> some View {
+        content()
+            .frame(width: 38, height: 38)
+            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
 
-    private var mediaCard: some View {
+    /// One chip per sibling segment of the day — gold once completed.
+    private var stepChips: some View {
+        HStack(spacing: 6) {
+            ForEach(Array(ref.segments.enumerated()), id: \.element.id) { idx, seg in
+                StepChip(label: Self.chipLabel(seg.kind),
+                         done: seg.completed || (idx == ref.index && completed))
+            }
+        }
+    }
+
+    // MARK: 16:9 video card (real `videoUrl` only)
+
+    private var videoCard: some View {
         ZStack {
             mediaBackground
-            if isVideo {
-                Button { showPlayer = true } label: {
-                    ZStack {
-                        Circle().fill(Nuru.white).frame(width: 56, height: 56).nuruShadow()
-                        Icon(.play, size: 20, color: Nuru.navy)
-                            .offset(x: 1) // optically centre the play triangle
-                    }
+            Button { showPlayer = true } label: {
+                ZStack {
+                    Circle().fill(Nuru.gold).frame(width: 64, height: 64).nuruShadow()
+                    Icon(.play, size: 22, color: Nuru.navy)
+                        .offset(x: 1) // optically centre the play triangle
                 }
-                .buttonStyle(.plain)
             }
+            .buttonStyle(.plain)
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .frame(maxWidth: .infinity)
@@ -144,48 +173,65 @@ struct PlanSegmentView: View {
         }
     }
 
-    // MARK: Pinned bottom bar (Day x · n of N · next)
-
-    private var bottomBar: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Day \(ref.dayNumber)")
-                    .font(.inter(15, .bold))
-                    .foregroundStyle(Nuru.ink)
-                Text("\(ref.index + 1) of \(ref.segments.count)")
-                    .font(.nCaption)
-                    .foregroundStyle(Nuru.faint)
-            }
-            Spacer(minLength: 0)
-            nextButton
-        }
-        .padding(.horizontal, Nuru.S.screen)
-        .padding(.vertical, Nuru.S.base)
-        .background(Nuru.paper)
-        .overlay(Divider(), alignment: .top)
-    }
+    // MARK: Reader blocks per segment kind
 
     @ViewBuilder
-    private var nextButton: some View {
-        if hasNext {
-            NavigationLink(value: nextRef) {
-                nextButtonLabel(icon: .chevronRight)
+    private var readerBlocks: some View {
+        switch segment.kind.lowercased() {
+        case "scripture":
+            // Scripture segments ARE the featured verse — the whole content goes
+            // in the pull-quote card.
+            PullQuoteCard(text: (segment.content?.isEmpty == false ? segment.content : nil)
+                                ?? segment.reference ?? segment.title,
+                          caption: segment.reference ?? "Scripture",
+                          quoted: segment.content?.isEmpty == false)
+        case "talk":
+            if let prompt = segment.content, !prompt.isEmpty {
+                ReaderReflectionCard(prompt: prompt)
+            } else if let r = segment.reference, !r.isEmpty {
+                PullQuoteCard(text: r, caption: "Scripture", quoted: false)
             }
-            .buttonStyle(.plain)
-            .simultaneousGesture(TapGesture().onEnded { Task { await markComplete() } })
-        } else {
-            Button { Task { await markComplete(); dismiss() } } label: {
-                nextButtonLabel(icon: completed || segment.completed ? .check : .chevronRight)
+        default:
+            if let content = segment.content, !content.isEmpty {
+                PassageText(content: content)
             }
-            .buttonStyle(.plain)
+            if let r = segment.reference, !r.isEmpty, r != segment.content {
+                PullQuoteCard(text: r, caption: "Scripture", quoted: false)
+            }
         }
     }
 
-    private func nextButtonLabel(icon: Lucide) -> some View {
-        ZStack {
-            Circle().fill(Nuru.navyDeep).frame(width: 52, height: 52)
-            Icon(icon, size: 20, color: Nuru.onNavy)
+    // MARK: Pinned completion CTA (gradient fade + navy button)
+
+    private var bottomCTA: some View {
+        VStack(spacing: 0) {
+            if hasNext {
+                NavigationLink(value: nextRef) { ctaLabel("Continue") }
+                    .buttonStyle(.plain)
+                    .simultaneousGesture(TapGesture().onEnded { Task { await markComplete() } })
+            } else {
+                Button { Task { await markComplete(); dismiss() } } label: {
+                    ctaLabel(completed || segment.completed ? "Done" : "Mark complete")
+                }
+                .buttonStyle(.plain)
+            }
         }
+        .padding(.horizontal, Nuru.S.screen)
+        .padding(.top, Nuru.S.md)
+        .padding(.bottom, Nuru.S.md)
+        .background(
+            LinearGradient(colors: [Nuru.surface.opacity(0), Nuru.surface],
+                           startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea(edges: .bottom)
+        )
+    }
+
+    private func ctaLabel(_ title: String) -> some View {
+        Text(title)
+            .font(.inter(14, .bold))
+            .foregroundStyle(.white)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var nextRef: PlanSegmentRef {
@@ -276,5 +322,148 @@ struct PlanSegmentView: View {
         guard !completed, !segment.completed else { completed = true; return }
         _ = try? await MemberAPI.completePlanSegment(segment.segmentId)
         completed = true
+    }
+}
+
+// MARK: - Reader pieces (small private structs keep the body's type metadata light)
+
+/// One header step chip — gold with a check once its segment is done.
+private struct StepChip: View {
+    let label: String
+    let done: Bool
+    var body: some View {
+        HStack(spacing: 3) {
+            if done { Icon(.check, size: 9, color: Nuru.navy) }
+            Text(label)
+                .font(.inter(10, .bold))
+                .lineLimit(1).minimumScaleFactor(0.75)
+        }
+        .foregroundStyle(done ? Nuru.navy : Color.white.opacity(0.7))
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 5)
+        .background(done ? Nuru.gold : Color.white.opacity(0.08), in: Capsule())
+    }
+}
+
+/// Serif passage copy. Lines that open with a verse number ("14 but whoever…")
+/// render it as a small raised gold marker, matching the Figma reader.
+private struct PassageText: View {
+    let content: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            ForEach(Self.lines(content)) { line in
+                paragraph(line)
+            }
+        }
+    }
+
+    private func paragraph(_ line: Line) -> some View {
+        (numberText(line.number) + Text(line.text)
+            .font(.fraunces(16, .regular))
+            .foregroundStyle(Nuru.navy))
+            .lineSpacing(7)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func numberText(_ n: String?) -> Text {
+        guard let n else { return Text("") }
+        return Text("\(n)  ")
+            .font(.inter(11, .bold))
+            .foregroundStyle(Nuru.gold)
+            .baselineOffset(5)
+    }
+
+    struct Line: Identifiable {
+        let id: Int
+        let number: String?
+        let text: String
+    }
+
+    /// Split into trimmed non-empty lines; peel a leading verse number ("14 ",
+    /// "14. ", "14) ", "14: ") when present.
+    static func lines(_ content: String) -> [Line] {
+        content.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .enumerated()
+            .map { idx, raw in
+                let digits = raw.prefix(while: \.isNumber)
+                if (1...3).contains(digits.count) {
+                    var rest = raw.dropFirst(digits.count)
+                    if let f = rest.first, ".):".contains(f) { rest = rest.dropFirst() }
+                    if rest.first == " " {
+                        return Line(id: idx, number: String(digits),
+                                    text: rest.trimmingCharacters(in: .whitespaces))
+                    }
+                }
+                return Line(id: idx, number: nil, text: raw)
+            }
+    }
+}
+
+/// Gold pull-quote card — verse tint (#FFF8E6), gold spine + hairline, Quote
+/// glyph, serif text, uppercase reference caption.
+private struct PullQuoteCard: View {
+    let text: String
+    let caption: String
+    var quoted = true
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Rectangle().fill(Nuru.gold).frame(width: 3)
+            VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                Icon(.quote, size: 16, color: Nuru.gold)
+                Text(quoted ? "\u{201C}\(text)\u{201D}" : text)
+                    .font(.fraunces(18, .regular))
+                    .foregroundStyle(Nuru.navy)
+                    .lineSpacing(6)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(caption.uppercased())
+                    .font(.inter(11, .semibold)).kerning(1.6)
+                    .foregroundStyle(Nuru.muted)
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+/// "REFLECTION" prompt card — serif prompt on a white card (talk-it-over segments).
+private struct ReaderReflectionCard: View {
+    let prompt: String
+    var body: some View {
+        Card {
+            VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                Text("REFLECTION")
+                    .font(.inter(10, .bold)).tracking(1.8)
+                    .foregroundStyle(Nuru.goldLo)
+                Text(prompt)
+                    .font(.fraunces(15, .regular))
+                    .foregroundStyle(Nuru.navy)
+                    .lineSpacing(5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+}
+
+/// The reader's gentle sign-off line on a soft gold tint.
+private struct EncouragementRow: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: Nuru.S.sm) {
+            Icon(.handHeart, size: 16, color: Nuru.gold)
+            Text("Every faithful day adds up. There's no rush — just presence.")
+                .font(.inter(12, .regular))
+                .foregroundStyle(Nuru.navy)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(Nuru.S.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
