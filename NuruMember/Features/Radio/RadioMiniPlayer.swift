@@ -78,9 +78,15 @@ struct RadioMiniPlayer: View {
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
     /// The island cutout is ~126×37 with its top edge ~11pt down, centered.
+    /// Wings must stay SLIM: the status bar leaves roughly 100pt for the clock
+    /// on the left and the wifi/battery cluster from ~345pt on the right
+    /// (440pt-wide Pro Max), so total capsule width must stay ≤ ~210pt or it
+    /// collides with system chrome. 2×40 + 118 = 198 → spans 121…319, clear
+    /// of both sides on every current island device (the narrower phones have
+    /// proportionally narrower status clusters at the same 126pt cutout).
     private static let islandWidth: CGFloat = 126
     private static let islandHeight: CGFloat = 37
-    private static let wingWidth: CGFloat = 58
+    private static let wingWidth: CGFloat = 40
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -104,9 +110,9 @@ struct RadioMiniPlayer: View {
                 Haptics.tap()
                 onOpen()
             } label: {
-                HStack(spacing: 6) {
+                HStack(spacing: 4) {
                     pulsingDot
-                    RadioMiniWave(playing: center.playing, count: 7, height: 14)
+                    RadioMiniWave(playing: center.playing, count: 5, height: 12)
                 }
                 .frame(width: Self.wingWidth, height: Self.islandHeight)
                 .contentShape(Rectangle())
@@ -122,7 +128,7 @@ struct RadioMiniPlayer: View {
                 center.togglePlay()
             } label: {
                 Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: center.playing ? 0 : 1)
@@ -133,8 +139,9 @@ struct RadioMiniPlayer: View {
             .animation(.easeInOut(duration: 0.2), value: center.playing)
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
+        .frame(height: Self.islandHeight)   // exactly the cutout's height — never taller
         .background(Color.black, in: Capsule())
-        .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
         .transition(.scale(scale: 0.6).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
