@@ -43,6 +43,25 @@ enum ModuleStatus: String, Codable, Sendable {
     }
 }
 
+/// Int that tolerates Postgres NUMERIC drift: node-pg serializes numerics as
+/// strings, so `quiz_pass_mark` arrives as "70.00" from prod but 70 locally.
+/// Decodes Int, Double, or numeric String — never crashes a whole screen.
+@propertyWrapper
+struct FlexInt: Codable, Sendable, Hashable {
+    var wrappedValue: Int
+    init(wrappedValue: Int) { self.wrappedValue = wrappedValue }
+    init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if let i = try? c.decode(Int.self) { wrappedValue = i }
+        else if let d = try? c.decode(Double.self) { wrappedValue = Int(d.rounded()) }
+        else if let s = try? c.decode(String.self), let d = Double(s) { wrappedValue = Int(d.rounded()) }
+        else { wrappedValue = 0 }
+    }
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer(); try c.encode(wrappedValue)
+    }
+}
+
 struct LevelModule: Codable, Sendable, Identifiable {
     let moduleId: String
     let levelNumber: Int
@@ -51,7 +70,7 @@ struct LevelModule: Codable, Sendable, Identifiable {
     let summary: String?
     let estimatedMinutes: Int?
     let evaluationKind: String
-    let quizPassMark: Int
+    @FlexInt var quizPassMark: Int
     let completed: Bool
     let status: ModuleStatus
     let progress: Double
@@ -71,7 +90,7 @@ struct ModuleDetail: Codable, Sendable {
     let videoUrl: String?
     let evaluationKind: String
     let estimatedMinutes: Int?
-    let quizPassMark: Int
+    @FlexInt var quizPassMark: Int
     let currentVersion: Int
     let locked: Bool
 
@@ -171,9 +190,9 @@ struct AssembledQuiz: Decodable, Sendable {
 
 struct QuizResult: Decodable, Sendable {
     let attemptId: String
-    let scoreAchieved: Int
+    @FlexInt var scoreAchieved: Int
     let isPassed: Bool
-    let passMark: Int
+    @FlexInt var passMark: Int
     let unlockedNextModuleId: String?
     let requiresManualReview: Bool
     let duplicate: Bool
