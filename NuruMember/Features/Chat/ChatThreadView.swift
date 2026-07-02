@@ -32,8 +32,9 @@ final class ChatThreadViewModel: ObservableObject {
     }
     var memberCount: Int { thread?.memberCount ?? conversation.memberCount }
     var avatarUrl: String? { conversation.avatarUrl }
+    // DMs carry an inspiring covenant line instead of a flat "Direct message".
     var subtitle: String {
-        isSpace ? "Public space · \(memberCount) members" : "Direct message"
+        isSpace ? "Public space · \(memberCount) members" : "Walking together in faith"
     }
 
     func load() async {
@@ -332,9 +333,21 @@ private struct ThreadHeader: View {
     }
 
     private var titles: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(.fraunces(17, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
-            Text(subtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x68758A)).lineLimit(1)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title).font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy).lineLimit(1)
+            if isSpace {
+                Text(subtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x68758A)).lineLimit(1)
+            } else {
+                HStack(spacing: 4) {
+                    Text("🕊️").font(.system(size: 10))
+                    Text(subtitle).font(.fraunces(12, .medium)).italic()
+                        .foregroundStyle(Color(hex: 0x9A7A2A))
+                    LinearGradient(colors: [Color(hex: 0x9A7A2A).opacity(0.5), .clear],
+                                   startPoint: .leading, endPoint: .trailing)
+                        .frame(width: 26, height: 1).padding(.top, 1)
+                }
+                .lineLimit(1)
+            }
         }
     }
 
