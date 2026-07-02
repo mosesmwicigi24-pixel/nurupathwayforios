@@ -152,19 +152,24 @@ private struct SyncStatusBanner: View {
     }
 
     var body: some View {
-        if let message {
-            HStack(spacing: 6) {
-                Icon(.clock, size: 12, color: Nuru.onNavy)
-                Text(message).font(.inter(12, .semibold)).foregroundStyle(Nuru.onNavy)
+        // The animation/transition pair lives OUTSIDE the `if let` — attached to
+        // the conditional content itself they never ran, so the pill used to pop
+        // in/out instead of sliding.
+        ZStack(alignment: .top) {
+            if let message {
+                HStack(spacing: 6) {
+                    Icon(.clock, size: 12, color: Nuru.onNavy)
+                    Text(message).font(.inter(12, .semibold)).foregroundStyle(Nuru.onNavy)
+                }
+                .padding(.horizontal, Nuru.S.base)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(sync.isOnline ? Nuru.navy : Nuru.ink))
+                .nuruShadow()
+                .padding(.top, 60)
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
-            .padding(.horizontal, Nuru.S.base)
-            .padding(.vertical, 6)
-            .background(Capsule().fill(sync.isOnline ? Nuru.navy : Nuru.ink))
-            .nuruShadow()
-            .padding(.top, 60)
-            .transition(.move(edge: .top).combined(with: .opacity))
-            .animation(.easeInOut(duration: 0.25), value: message)
         }
+        .animation(.easeInOut(duration: 0.25), value: message)
     }
 }
 
@@ -180,16 +185,29 @@ private struct PlansTab: View {
 /// Custom bottom bar: navy, gold active (icon + label + top dot), dim inactive.
 private struct NuruTabBar: View {
     @Binding var selection: AppTab
+    /// The gold indicator is ONE shared capsule that springs between tabs
+    /// (matched geometry) instead of blinking out of one slot and into another.
+    @Namespace private var indicator
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         HStack(spacing: 0) {
             ForEach(AppTab.allCases, id: \.self) { t in
                 let focused = selection == t
                 Button {
-                    selection = t
+                    // Re-taps on the current tab are a no-op — no haptic, no bounce.
+                    guard selection != t else { return }
+                    Haptics.selection()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selection = t }
                 } label: {
                     VStack(spacing: 2) {
                         Icon(t.icon, size: 21, color: focused ? Nuru.gold : Nuru.onNavyFaint)
+                            // One subtle bounce on arrival: each selection change runs
+                            // the phase cycle once, and only the newly-focused icon
+                            // actually scales (others stay at 1).
+                            .phaseAnimator([false, true], trigger: selection) { icon, bouncing in
+                                icon.scaleEffect(bouncing && focused && !reduceMotion ? 1.12 : 1)
+                            } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
                         Text(t.label).font(.inter(10.5, .medium)).foregroundStyle(focused ? Nuru.gold : Nuru.onNavyFaint)
                     }
                     .frame(maxWidth: .infinity)
@@ -197,11 +215,13 @@ private struct NuruTabBar: View {
                     .overlay(alignment: .top) {
                         if focused {
                             Capsule().fill(Nuru.gold).frame(width: 28, height: 3).offset(y: -3)
+                                .matchedGeometryEffect(id: "nuru-tab-indicator", in: indicator)
                         }
                     }
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityAddTraits(focused ? [.isSelected] : [])
             }
         }
         .padding(.top, 6)

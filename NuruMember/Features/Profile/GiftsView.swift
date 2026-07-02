@@ -40,7 +40,7 @@ struct GiftsView: View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
                 if let a = g.assessment {
-                    summaryCard(a, personas: g.personas)
+                    summaryCard(a, personas: g.personas).gentleEntrance()
                     if !g.personas.isEmpty {
                         Text("YOUR GIFTS").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.gold)
                         ForEach(g.personas) { personaCard($0) }
@@ -54,8 +54,10 @@ struct GiftsView: View {
                             .font(.inter(14, .semibold)).foregroundStyle(Nuru.gold)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, Nuru.S.md)
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
+                    .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                     .padding(.top, Nuru.S.xs)
                 } else {
                     discoverCTA
@@ -132,11 +134,13 @@ struct GiftsView: View {
                     .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
                     .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
             .padding(.top, Nuru.S.xs)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl).padding(.horizontal, Nuru.S.base)
         .giftCard()
+        .gentleEntrance()
     }
 }
 

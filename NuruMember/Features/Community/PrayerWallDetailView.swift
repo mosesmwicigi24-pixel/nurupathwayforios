@@ -29,7 +29,8 @@ final class PrayerWallDetailViewModel: ObservableObject {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
         sending = true; defer { sending = false }
-        do { try await MemberAPI.prayerWallComment(postId, body: body); draft = ""; await load() } catch {}
+        do { try await MemberAPI.prayerWallComment(postId, body: body); draft = ""; await load() }
+        catch { Haptics.error() }   // draft is kept so the words aren't lost
     }
 
     func toggleAnswered() async {
@@ -54,7 +55,18 @@ struct PrayerWallDetailView: View {
                 composer
             } else {
                 Spacer()
-                Text(vm.error ?? "Couldn't open this request.").font(.nBody).foregroundStyle(Nuru.muted)
+                VStack(spacing: Nuru.S.md) {
+                    Text(vm.error ?? "Couldn't open this request.")
+                        .font(.nBody).foregroundStyle(Nuru.muted)
+                        .multilineTextAlignment(.center).padding(.horizontal, Nuru.S.xl)
+                    Button { Task { await vm.load() } } label: {
+                        Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
+                            .padding(.horizontal, 18).padding(.vertical, 8)
+                            .background(Nuru.goldChipBg, in: Capsule())
+                            .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
+                    }
+                    .buttonStyle(.pressable)
+                }
                 Spacer()
             }
         }
@@ -85,10 +97,13 @@ struct PrayerWallDetailView: View {
                      : "\(d.comments.count) \(d.comments.count == 1 ? "REPLY" : "REPLIES")")
                     .font(.nMicro).kerning(0.6).foregroundStyle(Nuru.faint)
                     .padding(.top, Nuru.S.lg).padding(.bottom, Nuru.S.sm)
-                ForEach(d.comments) { cm in commentCard(cm) }
+                ForEach(d.comments) { cm in
+                    commentCard(cm).transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
             }
             .padding(Nuru.S.screen)
             .padding(.bottom, Nuru.tabBarSpace)
+            .animation(.spring(response: 0.4, dampingFraction: 0.85), value: d.comments.count)
         }
     }
 
@@ -113,23 +128,29 @@ struct PrayerWallDetailView: View {
                 ForEach(quickReactions, id: \.self) { e in
                     let r = post.reactions.first { $0.emoji == e }
                     let mine = r?.mine ?? false
-                    Button { Task { await vm.react(e) } } label: {
+                    Button { Haptics.love(); Task { await vm.react(e) } } label: {
                         HStack(spacing: 4) {
                             Text(e).font(.system(size: 15))
                             if let r, r.count > 0 {
                                 Text("\(r.count)").font(.nMicro).foregroundStyle(mine ? Nuru.navyDeep : Nuru.ink600)
+                                    .contentTransition(.numericText(value: Double(r.count)))
                             }
                         }
                         .padding(.horizontal, 10).padding(.vertical, 6)
                         .background(mine ? Nuru.goldChipBg : Nuru.surface, in: Capsule())
                         .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        .animation(.spring(response: 0.35, dampingFraction: 0.7), value: r?.count ?? 0)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             .padding(.top, Nuru.S.md)
             if post.mine {
-                Button { Task { await vm.toggleAnswered() } } label: {
+                Button {
+                    // Marking a prayer answered is a small celebration; unmarking is quiet.
+                    if post.isAnswered { Haptics.tap() } else { Haptics.success() }
+                    Task { await vm.toggleAnswered() }
+                } label: {
                     HStack(spacing: 6) {
                         Icon(.checkCircle2, size: 14, color: Nuru.successText)
                         Text(post.isAnswered ? "Mark unanswered" : "Mark answered")
@@ -139,7 +160,7 @@ struct PrayerWallDetailView: View {
                     .background(Nuru.surface, in: Capsule())
                     .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .padding(.top, Nuru.S.md)
             }
         }
@@ -175,12 +196,14 @@ struct PrayerWallDetailView: View {
                 .frame(minHeight: 44)
                 .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
                 .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
-            Button { Task { await vm.comment() } } label: {
+            Button { Haptics.action(); Task { await vm.comment() } } label: {
                 Icon(.send, size: 17, color: .white)
                     .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
             }
+            .buttonStyle(.pressable)
             .disabled(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             .opacity(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+            .animation(.easeInOut(duration: 0.2), value: vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(Nuru.S.sm)
         .background(Nuru.white)

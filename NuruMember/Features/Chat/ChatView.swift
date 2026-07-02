@@ -124,6 +124,8 @@ struct ChatView: View {
                         .padding(.horizontal, Nuru.S.screen)
                         .padding(.top, Nuru.S.screen)
                         .padding(.bottom, Nuru.tabBarSpace)
+                        // Skeleton hands off to real rows with a soft cross-fade.
+                        .animation(.easeOut(duration: 0.22), value: vm.loading)
                     }
                 }
                 .ignoresSafeArea(edges: .top)
@@ -191,7 +193,10 @@ struct ChatView: View {
 
     // White tile bell → NotificationsView; glowing gold dot when anything is unread.
     private var bellButton: some View {
-        Button { path.append(ChatDest.notifications) } label: {
+        Button {
+            Haptics.tap()
+            path.append(ChatDest.notifications)
+        } label: {
             Icon(.bell, size: 19, color: Nuru.navy)
                 .frame(width: 44, height: 44)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -205,7 +210,7 @@ struct ChatView: View {
                     }
                 }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private var searchBar: some View {
@@ -216,7 +221,16 @@ struct ChatView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
             if !query.isEmpty {
-                Button { query = "" } label: { Icon(.x, size: 14, color: Color(hex: 0x9CA3AF)) }.buttonStyle(.plain)
+                // 44pt-tall hit area — the bare 14pt glyph was a fiddly target.
+                Button {
+                    Haptics.tap()
+                    query = ""
+                } label: {
+                    Icon(.x, size: 14, color: Color(hex: 0x9CA3AF))
+                        .frame(width: 32, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, Nuru.S.base)
@@ -228,7 +242,10 @@ struct ChatView: View {
     // MARK: AI card ("Quick help from Nuru" — gradient ring, glows, orb, live dot)
 
     private var aiCard: some View {
-        Button { showNuru = true } label: {
+        Button {
+            Haptics.tap()
+            showNuru = true
+        } label: {
             HStack(spacing: 14) {
                 ZStack(alignment: .topTrailing) {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -279,7 +296,7 @@ struct ChatView: View {
                         in: RoundedRectangle(cornerRadius: 26, style: .continuous))
             .shadow(color: Color(hex: 0x4C1D95).opacity(0.45), radius: 18, y: 10)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 
     // MARK: Verse for today (gold ribbon, italic serif verse)
@@ -331,7 +348,10 @@ struct ChatView: View {
     // Megaphone pill — 4th segment, staff only (no count chip; it's a composer).
     private var broadcastSegmentButton: some View {
         let selected = segment == .broadcast
-        return Button { withAnimation(.easeInOut(duration: 0.15)) { segment = .broadcast } } label: {
+        return Button {
+            if !selected { Haptics.selection() }
+            withAnimation(.easeInOut(duration: 0.15)) { segment = .broadcast }
+        } label: {
             HStack(spacing: 5) {
                 Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x68758A))
                 Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x68758A))
@@ -351,7 +371,10 @@ struct ChatView: View {
 
     private func segmentButton(_ seg: ChatSegment, _ label: String, _ count: Int) -> some View {
         let selected = segment == seg
-        return Button { withAnimation(.easeInOut(duration: 0.15)) { segment = seg } } label: {
+        return Button {
+            if !selected { Haptics.selection() }
+            withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
+        } label: {
             HStack(spacing: 5) {
                 Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x68758A))
                 Text("\(count)").font(.inter(10, .bold))
@@ -378,9 +401,9 @@ struct ChatView: View {
     @ViewBuilder
     private var segmentBody: some View {
         if vm.loading && vm.inbox == nil {
-            ProgressView().tint(Nuru.gold).padding(.top, Nuru.S.xl)
+            inboxSkeleton.transition(.opacity)
         } else if vm.inbox == nil {
-            Text(vm.error ?? "Couldn't load your chats.").font(.nBody).foregroundStyle(Nuru.muted).padding(.top, Nuru.S.xl)
+            loadFailedCard
         } else {
             switch segment {
             case .space: spaceList
@@ -390,6 +413,54 @@ struct ChatView: View {
                 if isStaff { BroadcastComposer(peopleCount: vm.people.count) }
             }
         }
+    }
+
+    // First-load placeholder — mirrors the grouped row card (52pt squircle +
+    // two text lines) so real rows land exactly where the bones were.
+    private var inboxSkeleton: some View {
+        groupedCard {
+            ForEach(0..<4, id: \.self) { i in
+                HStack(spacing: 14) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(Nuru.surface).frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 8) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Nuru.surface).frame(width: 132, height: 10)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(Nuru.surface.opacity(0.7)).frame(height: 8)
+                            .padding(.trailing, 56)
+                    }
+                }
+                .padding(.horizontal, Nuru.S.base)
+                .padding(.vertical, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .overlay(alignment: .top) { if i > 0 { Rectangle().fill(Nuru.border).frame(height: 1) } }
+            }
+        }
+        .nuruShimmer()
+    }
+
+    // Inbox failed to load — warm copy + a real retry, not a dead-end line.
+    private var loadFailedCard: some View {
+        VStack(spacing: Nuru.S.md) {
+            Icon(.messageCircle, size: 22, color: Color(hex: 0x9CA3AF))
+            Text(vm.error ?? "Couldn't load your chats.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x9CA3AF))
+                .multilineTextAlignment(.center)
+            Button {
+                Haptics.tap()
+                Task { await vm.load() }
+            } label: {
+                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, Nuru.S.lg).padding(.vertical, 9)
+                    .background(storyRing, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32).padding(.horizontal, Nuru.S.base)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     private func matches(_ c: ChatConversation) -> Bool {
@@ -406,13 +477,14 @@ struct ChatView: View {
         return VStack(alignment: .leading, spacing: 10) {
             sectionLabel(hash: true, "YOUR SPACES")
             if items.isEmpty {
-                emptyCard(query.isEmpty
+                emptyCard(icon: query.isEmpty ? .sparkles : .search,
+                          query.isEmpty
                     ? "No spaces yet — follow one below to get started."
                     : "No spaces match your search.")
             } else {
                 groupedCard {
                     ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
-                        NavigationLink(value: c) { SpaceRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.plain)
+                        NavigationLink(value: c) { SpaceRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
                     }
                 }
             }
@@ -422,6 +494,7 @@ struct ChatView: View {
                     ForEach(Array(discoverable.enumerated()), id: \.element.id) { idx, s in
                         DiscoverSpaceRow(space: s, index: idx, divider: idx > 0,
                                          joining: vm.joiningSpaceId == s.conversationId) {
+                            Haptics.tap()
                             Task { await vm.follow(s) }
                         }
                     }
@@ -447,20 +520,21 @@ struct ChatView: View {
             if query.isEmpty && !vm.dms.isEmpty { storiesRow.padding(.bottom, 10) }
             sectionLabel(icon: .users, "DIRECT MESSAGES")
             if items.isEmpty {
-                emptyCard(query.isEmpty
+                emptyCard(icon: query.isEmpty ? .messageCircle : .search,
+                          query.isEmpty
                     ? "No direct messages yet — start a conversation with someone below."
                     : "No conversations match your search.")
             } else {
                 groupedCard {
                     ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
-                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.plain)
+                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
                     }
                 }
             }
             if !vm.people.isEmpty {
                 sectionLabel(icon: .users, "PEOPLE").padding(.top, 6)
                 if directory.isEmpty {
-                    emptyCard("No people match your search.")
+                    emptyCard(icon: .search, "No people match your search.")
                 } else {
                     groupedCard {
                         ForEach(Array(directory.enumerated()), id: \.element.id) { idx, p in
@@ -484,6 +558,7 @@ struct ChatView: View {
 
     // Tap a directory person → POST /chat/dms → open the (existing or new) thread.
     private func startDm(_ person: ChatPerson) {
+        Haptics.tap()
         Task {
             if let c = await vm.startDm(with: person) { path.append(c) }
         }
@@ -494,13 +569,14 @@ struct ChatView: View {
         return VStack(alignment: .leading, spacing: 10) {
             sectionLabel(icon: .users, "YOUR GROUPS")
             if items.isEmpty {
-                emptyCard(query.isEmpty
+                emptyCard(icon: query.isEmpty ? .users : .search,
+                          query.isEmpty
                     ? "You’re not in any group rooms yet — they appear when your cell is set up."
                     : "No groups match your search.")
             } else {
                 groupedCard {
                     ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
-                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.plain)
+                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
                     }
                 }
             }
@@ -540,7 +616,7 @@ struct ChatView: View {
                             Text(firstWord(c.title)).font(.inter(10, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                         }
                         .frame(width: 60)
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.pressable)
                 }
             }
             .padding(.vertical, 2)
@@ -550,14 +626,17 @@ struct ChatView: View {
     // MARK: FAB + compose sheet
 
     private var fab: some View {
-        Button { composeOpen = true } label: {
+        Button {
+            Haptics.tap()
+            composeOpen = true
+        } label: {
             Icon(.pencil, size: 22, color: .white)
                 .frame(width: 56, height: 56)
                 .background(storyRing, in: Circle())
                 .shadow(color: Nuru.gold.opacity(0.55), radius: 12, y: 8)
                 .shadow(color: Color(hex: 0x0B1F33, alpha: 0.25), radius: 5, y: 3)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .padding(.trailing, Nuru.S.screen)
         .padding(.bottom, Nuru.tabBarSpace - 18)
     }
@@ -578,6 +657,8 @@ struct ChatView: View {
                         Icon(.x, size: 16, color: .white)
                             .frame(width: 32, height: 32)
                             .background(Color.white.opacity(0.15), in: Circle())
+                            .frame(width: 44, height: 44)     // full-size hit target
+                            .contentShape(Rectangle())
                     }.buttonStyle(.plain)
                 }
                 .padding(.horizontal, 8)
@@ -605,7 +686,11 @@ struct ChatView: View {
 
     private func composeAction(_ title: String, _ sub: String, divider: Bool,
                                @ViewBuilder icon: () -> some View, action: @escaping () -> Void) -> some View {
-        Button { action(); composeOpen = false } label: {
+        Button {
+            Haptics.tap()
+            action()
+            composeOpen = false
+        } label: {
             HStack(spacing: 14) {
                 icon()
                     .frame(width: 44, height: 44)
@@ -620,7 +705,7 @@ struct ChatView: View {
             .padding(Nuru.S.base)
             .overlay(alignment: .top) { if divider { Rectangle().fill(Nuru.border).frame(height: 1) } }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 
     // MARK: Shared bits
@@ -643,14 +728,19 @@ struct ChatView: View {
             .nuruShadow()
     }
 
-    private func emptyCard(_ text: String) -> some View {
-        Text(text)
-            .font(.inter(12)).foregroundStyle(Color(hex: 0x9CA3AF)).lineSpacing(3)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 32).padding(.horizontal, Nuru.S.base)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    private func emptyCard(icon: Lucide = .messageCircle, _ text: String) -> some View {
+        VStack(spacing: Nuru.S.md) {
+            Icon(icon, size: 18, color: Nuru.gold.opacity(0.7))
+                .frame(width: 40, height: 40)
+                .background(Nuru.gold.opacity(0.08), in: Circle())
+            Text(text)
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x9CA3AF)).lineSpacing(3)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 28).padding(.horizontal, Nuru.S.base)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     // MARK: Derived
@@ -898,8 +988,9 @@ private struct PersonRow: View {
             }
             .modifier(RowChrome(unread: false, divider: divider))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
         .disabled(busy)
+        .animation(.easeInOut(duration: 0.18), value: busy)
     }
 
     private var subtitle: String {
@@ -1001,11 +1092,13 @@ private struct DiscoverSpaceRow: View {
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 30)
+                .frame(minWidth: 44)   // spinner state stays a comfortable target
                 .background(storyRing, in: Capsule())
                 .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(joining)
+            .animation(.easeInOut(duration: 0.18), value: joining)
         }
         .modifier(RowChrome(unread: false, divider: divider))
     }
@@ -1105,11 +1198,16 @@ private struct BroadcastComposer: View {
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color(hex: 0x16A34A, alpha: 0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if let e = errorText {
                 Text(e).font(.inter(11)).foregroundStyle(Color(hex: 0xB91C1C))
+                    .transition(.opacity)
             }
-            Button { confirming = true } label: {
+            Button {
+                Haptics.action()
+                confirming = true
+            } label: {
                 Group {
                     if sending {
                         ProgressView().tint(.white)
@@ -1126,7 +1224,7 @@ private struct BroadcastComposer: View {
                 .shadow(color: Nuru.gold.opacity(0.5), radius: 9, y: 5)
                 .opacity(canSend ? 1 : 0.45)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(!canSend)
             .confirmationDialog("Send to \(peopleCount) member\(peopleCount == 1 ? "" : "s")?",
                                 isPresented: $confirming, titleVisibility: .visible) {
@@ -1140,6 +1238,11 @@ private struct BroadcastComposer: View {
         .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow()
+        // Success banner, inline errors and the attachment thumb settle in
+        // rather than snapping the card's layout.
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: sentTo)
+        .animation(.easeInOut(duration: 0.2), value: errorText)
+        .animation(.easeInOut(duration: 0.2), value: attachmentImage == nil)
     }
 
     private var canSend: Bool {
@@ -1157,8 +1260,10 @@ private struct BroadcastComposer: View {
             sentTo = n
             text = ""
             photoItem = nil; attachmentUrl = nil; attachmentImage = nil
+            Haptics.success()
         } catch {
             errorText = "Couldn’t send the broadcast — please try again."
+            Haptics.error()
         }
     }
 
@@ -1175,9 +1280,13 @@ private struct BroadcastComposer: View {
         do {
             let reply = try await MemberAPI.assistantChat([AssistantMessage(role: "user", text: ask)])
             let polished = reply.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !polished.isEmpty { text = polished }
+            if !polished.isEmpty {
+                text = polished
+                Haptics.tap()
+            }
         } catch {
             errorText = "Nuru couldn’t draft right now — please try again in a moment."
+            Haptics.error()
         }
     }
 
@@ -1202,6 +1311,7 @@ private struct BroadcastComposer: View {
         } catch {
             photoItem = nil; attachmentUrl = nil; attachmentImage = nil
             errorText = "Couldn’t attach the photo — please try again."
+            Haptics.error()
         }
     }
 }
@@ -1234,10 +1344,15 @@ private struct BroadcastAttachmentThumb: View {
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x8A93A0))
             Spacer(minLength: 0)
             if !uploading {
-                Button(action: onRemove) {
+                Button {
+                    Haptics.tap()
+                    onRemove()
+                } label: {
                     Icon(.x, size: 12, color: Color(hex: 0x64748B))
                         .frame(width: 26, height: 26)
                         .background(Color(hex: 0x0B1F33, alpha: 0.06), in: Circle())
+                        .frame(width: 44, height: 44)     // full-size hit target
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }

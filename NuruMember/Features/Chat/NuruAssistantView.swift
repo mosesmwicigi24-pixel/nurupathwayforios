@@ -74,12 +74,14 @@ final class NuruAssistantViewModel: ObservableObject {
         do {
             let reply = try await MemberAPI.assistantChat(transcript)
             messages.append(AssistantMessage(role: "assistant", text: reply))
+            Haptics.tap()   // a whisper when the reply lands
         } catch {
             let msg = (error as? APIError)?.errorDescription ?? ""
             let friendly = msg.lowercased().contains("unavailable")
                 ? "I'm resting right now and can't reply — please try again in a little while. 🤍"
                 : "Something went wrong reaching me. Please try again."
             messages.append(AssistantMessage(role: "assistant", text: friendly))
+            Haptics.error()
         }
         typing = false
     }
@@ -92,6 +94,9 @@ struct NuruAssistantView: View {
     @StateObject private var vm = NuruAssistantViewModel()
     @Environment(\.dismiss) private var dismiss
     @State private var taglineIndex = 0
+    /// Turn-entrance animations arm only after the transcript's first layout,
+    /// so restored history never plays a wall of transitions.
+    @State private var settled = false
     private let taglineTimer = Timer.publish(every: 3.2, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -100,12 +105,25 @@ struct NuruAssistantView: View {
             ScrollViewReader { proxy in
                 ScrollView {
                     VStack(alignment: .leading, spacing: 12) {
-                        suggestions
+                        suggestions.gentleEntrance(delay: 0.05)
                         VStack(spacing: 10) {
-                            ForEach(vm.messages) { m in bubble(m) }
-                            if vm.typing { typingRow.frame(maxWidth: .infinity, alignment: .leading) }
+                            // Keyed by position, not text-hash: two identical turns
+                            // (e.g. asking the same thing twice) must not collide.
+                            ForEach(Array(vm.messages.enumerated()), id: \.offset) { _, m in
+                                bubble(m)
+                                    .transition(.asymmetric(
+                                        insertion: .opacity.combined(with: .move(edge: .bottom)),
+                                        removal: .opacity))
+                            }
+                            if vm.typing {
+                                typingRow
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .transition(.opacity.combined(with: .scale(scale: 0.9, anchor: .bottomLeading)))
+                            }
                         }
                         .id("bottom")
+                        .animation(settled ? .spring(response: 0.4, dampingFraction: 0.85) : nil, value: vm.messages.count)
+                        .animation(settled ? .spring(response: 0.4, dampingFraction: 0.85) : nil, value: vm.typing)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 16)
                 }
@@ -126,14 +144,21 @@ struct NuruAssistantView: View {
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .task { await vm.load() }
+        .task {
+            await vm.load()
+            settled = true
+        }
     }
 
     // MARK: header
 
     private var header: some View {
         HStack(spacing: 12) {
-            Button { dismiss() } label: { Icon(.chevronLeft, size: 23, color: .white).frame(width: 40, height: 40) }.buttonStyle(.plain)
+            Button { dismiss() } label: {
+                Icon(.chevronLeft, size: 23, color: .white)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            }.buttonStyle(.pressable)
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NUR.orb).frame(width: 44, height: 44)
                     .overlay(Icon(.sparkles, size: 19, color: .white))
@@ -155,7 +180,9 @@ struct NuruAssistantView: View {
                 Icon(.x, size: 16, color: .white).frame(width: 36, height: 36)
                     .background(Color.white.opacity(0.10), in: Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
-            }.buttonStyle(.plain)
+                    .frame(width: 44, height: 44)     // full-size hit target
+                    .contentShape(Rectangle())
+            }.buttonStyle(.pressable)
         }
         .padding(.horizontal, 12).padding(.top, 56).padding(.bottom, 16)
         .frame(maxWidth: .infinity)
@@ -194,13 +221,19 @@ struct NuruAssistantView: View {
     private var suggestions: some View {
         ChipFlow(spacing: 6) {
             ForEach(NUR.suggestions, id: \.label) { s in
-                Button { Task { await vm.suggest(s.label) } } label: {
+                Button {
+                    Haptics.tap()
+                    Task { await vm.suggest(s.label) }
+                } label: {
                     Text(s.label).font(.inter(10, .semibold)).foregroundStyle(NUR.navy)
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white, in: Capsule())
                         .overlay(Capsule().stroke(s.color.opacity(0.33), lineWidth: 1))
                         .shadow(color: s.color.opacity(0.35), radius: 6, y: 4)
-                }.buttonStyle(.plain).disabled(vm.typing)
+                }
+                .buttonStyle(.pressable)
+                .disabled(vm.typing)
+                .opacity(vm.typing ? 0.55 : 1)
             }
         }
     }
@@ -249,38 +282,71 @@ struct NuruAssistantView: View {
     private var typingRow: some View {
         HStack(alignment: .bottom, spacing: 6) {
             orbAvatar
-            HStack(spacing: 4) {
-                ForEach(0..<3, id: \.self) { _ in Circle().fill(NUR.purpleLt).frame(width: 6, height: 6) }
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .background(Color.white, in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous))
-            .overlay(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous).stroke(NUR.border, lineWidth: 1))
+            TypingDots()
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .background(Color.white, in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous))
+                .overlay(UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: 6, bottomTrailingRadius: 18, topTrailingRadius: 18, style: .continuous).stroke(NUR.border, lineWidth: 1))
         }
     }
 
     private var composer: some View {
-        HStack(alignment: .bottom, spacing: 8) {
+        let sendable = !vm.draft.trimmingCharacters(in: .whitespaces).isEmpty && !vm.typing
+        return HStack(alignment: .bottom, spacing: 8) {
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("", text: $vm.draft, prompt: Text("Ask Nuru anything…").foregroundColor(NUR.hint), axis: .vertical)
                     .font(.inter(12)).foregroundStyle(NUR.navy).lineLimit(1...4)
-                    .onSubmit { Task { await vm.send() } }
+                    .onSubmit {
+                        if sendable { Haptics.action() }
+                        Task { await vm.send() }
+                    }
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(NUR.cream, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(NUR.border, lineWidth: 1))
 
-            Button { Task { await vm.send() } } label: {
+            Button {
+                Haptics.action()
+                Task { await vm.send() }
+            } label: {
                 Icon(.send, size: 17, color: .white)
                     .frame(width: 44, height: 44).background(NUR.sendG, in: Circle())
                     .shadow(color: NUR.purple.opacity(0.5), radius: 8, y: 4)
             }
-            .buttonStyle(.plain)
-            .disabled(vm.draft.trimmingCharacters(in: .whitespaces).isEmpty || vm.typing)
-            .opacity(vm.draft.trimmingCharacters(in: .whitespaces).isEmpty ? 0.5 : 1)
+            .buttonStyle(.pressable)
+            .disabled(!sendable)
+            // Dim whenever the button can't fire — it used to sit at full
+            // strength while Nuru was still typing.
+            .opacity(sendable ? 1 : 0.5)
+            .animation(.easeInOut(duration: 0.18), value: sendable)
         }
         .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10)
         .background(Color.white.opacity(0.92))
         .overlay(alignment: .top) { Rectangle().fill(NUR.border).frame(height: 1) }
+    }
+}
+
+// MARK: - Typing dots (the classic staggered pulse — still under Reduce Motion)
+
+private struct TypingDots: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulsing = false
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(0..<3, id: \.self) { i in
+                Circle().fill(NUR.purpleLt)
+                    .frame(width: 6, height: 6)
+                    .opacity(pulsing ? 1 : 0.35)
+                    .scaleEffect(pulsing ? 1 : 0.75)
+                    .animation(
+                        reduceMotion ? nil :
+                            .easeInOut(duration: 0.5)
+                            .repeatForever(autoreverses: true)
+                            .delay(Double(i) * 0.16),
+                        value: pulsing)
+            }
+        }
+        .onAppear { pulsing = true }
     }
 }
 

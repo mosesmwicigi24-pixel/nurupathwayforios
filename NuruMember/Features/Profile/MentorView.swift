@@ -45,12 +45,15 @@ struct MentorView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: Nuru.S.base) {
                         if vm.loading && vm.info == nil {
-                            ProgressView().tint(Nuru.gold).padding(.top, Nuru.S.xxl)
+                            skeleton
                         } else if let m = vm.info?.mentor {
-                            disciplerCard(m)
-                            meetingCard(m)
-                            historyCard
-                            if m.cellName != nil { cellCard(m) }
+                            disciplerCard(m).gentleEntrance()
+                            meetingCard(m).gentleEntrance(delay: 0.06)
+                            historyCard.gentleEntrance(delay: 0.12)
+                            if m.cellName != nil { cellCard(m).gentleEntrance(delay: 0.18) }
+                        } else if vm.info == nil, let err = vm.error {
+                            // A failed load is not "no discipler" — say so and offer a retry.
+                            errorCard(err)
                         } else {
                             emptyCard
                         }
@@ -174,7 +177,8 @@ struct MentorView: View {
     @ViewBuilder private func messageCTA(_ m: MentorInfo.Mentor) -> some View {
         if let dm = vm.mentorDm {
             NavigationLink(value: dm) { messageLabel }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
         } else {
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 messageLabel.opacity(0.45)
@@ -267,9 +271,60 @@ struct MentorView: View {
                     .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             }
         }
+    }
+
+    // MARK: Loading skeleton (mirrors the discipler + meeting card anatomy)
+
+    private var skeleton: some View {
+        VStack(spacing: Nuru.S.base) {
+            HStack(spacing: Nuru.S.base) {
+                Circle().fill(Nuru.surface).frame(width: 56, height: 56)
+                VStack(alignment: .leading, spacing: 6) {
+                    RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 140, height: 12)
+                    RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 90, height: 9)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(Nuru.S.base)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShimmer()
+
+            VStack(alignment: .leading, spacing: Nuru.S.md) {
+                RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 90, height: 8)
+                RoundedRectangle(cornerRadius: Nuru.R.control).fill(Nuru.surface)
+                    .frame(maxWidth: .infinity).frame(height: 68)
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShimmer()
+        }
+    }
+
+    // MARK: Error state (load failed — distinct from "no discipler yet")
+
+    private func errorCard(_ message: String) -> some View {
+        VStack(spacing: Nuru.S.md) {
+            Text(message).font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
+            Button { Task { await vm.load() } } label: {
+                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
     }
 
     // MARK: Empty state (no pairing yet)

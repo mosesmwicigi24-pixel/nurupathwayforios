@@ -49,15 +49,19 @@ struct PButton: View {
     var body: some View {
         Button(action: action) {
             ZStack {
-                if busy { ProgressView().tint(.white) }
-                else { Text(title).font(.inter(16, .semibold)) }
+                // Both branches live in a fixed-height ZStack, so the swap to a
+                // spinner never moves the layout — it just crossfades in place.
+                if busy { ProgressView().tint(.white).transition(.opacity) }
+                else { Text(title).font(.inter(16, .semibold)).transition(.opacity) }
             }
             .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
             .foregroundStyle(.white)
             .background(variant == .gold ? Nuru.goldGradient : Nuru.primaryButton,
                         in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
             .opacity(disabled || busy ? 0.6 : 1)
+            .animation(.easeOut(duration: 0.18), value: busy)
         }
+        .buttonStyle(.pressable)
         .disabled(disabled || busy)
     }
 }
@@ -102,6 +106,7 @@ struct Avatar: View {
 func timeAgo(_ iso: String) -> String {
     guard let date = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
     let mins = max(0, Int(Date().timeIntervalSince(date) / 60))
+    if mins < 1 { return "now" }        // "0m" read like a glitch
     if mins < 60 { return "\(mins)m" }
     if mins < 1440 { return "\(mins / 60)h" }
     let f = DateFormatter(); f.dateFormat = "MMM d"

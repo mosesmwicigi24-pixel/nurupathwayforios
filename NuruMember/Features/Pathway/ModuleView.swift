@@ -16,6 +16,7 @@ final class ModuleViewModel: ObservableObject {
     @Published var error: String?
     @Published var completing = false
     @Published var completed = false
+    @Published var completionError: String?
 
     private let moduleId: String
     init(moduleId: String) { self.moduleId = moduleId }
@@ -27,11 +28,19 @@ final class ModuleViewModel: ObservableObject {
         loading = false
     }
 
+    /// Marks the module complete server-side. Success/failure is surfaced (the
+    /// old `try?` swallowed network errors silently, leaving a dead button).
     func markComplete(reflection: String? = nil) async {
-        completing = true; defer { completing = false }
+        completing = true; completionError = nil
+        defer { completing = false }
         let text = (reflection?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 }
-        if let res = try? await MemberAPI.completeModule(moduleId, reflectionText: text) {
+        do {
+            let res = try await MemberAPI.completeModule(moduleId, reflectionText: text)
             completed = res.isCompleted || res.duplicate
+            if completed { Haptics.success() }   // the moment the server confirms
+        } catch {
+            completionError = (error as? APIError)?.errorDescription ?? "Couldn't save your progress. Please try again."
+            Haptics.error()
         }
     }
 }
@@ -75,20 +84,76 @@ struct ModuleView: View {
         ZStack {
             ML.cream.ignoresSafeArea()
             if vm.loading && vm.detail == nil {
-                ProgressView()
+                lessonSkeleton
             } else if let d = vm.detail {
                 loaded(d)
             } else {
-                Text(vm.error ?? "Couldn't load this lesson.")
-                    .font(.inter(14)).foregroundStyle(ML.secondary)
-                    .padding(Nuru.S.screen)
+                VStack(spacing: Nuru.S.md) {
+                    Text(vm.error ?? "Couldn't load this lesson.")
+                        .font(.inter(14)).foregroundStyle(ML.secondary).multilineTextAlignment(.center)
+                    Button {
+                        Haptics.tap()
+                        Task { await vm.load() }
+                    } label: {
+                        Text("Try again").font(.inter(13, .semibold)).foregroundStyle(ML.navy)
+                            .padding(.horizontal, 20).padding(.vertical, 10)
+                            .background(ML.gold, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                }
+                .padding(Nuru.S.screen)
             }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
         .task { if vm.detail == nil { await vm.load() } }
-        .onChange(of: vm.completed) { _, done in if done { dismiss() } }
+        // A short beat after the server confirms, so the success haptic and the
+        // button's confirmation register before the screen goes away.
+        .onChange(of: vm.completed) { _, done in
+            guard done else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                dismiss()
+            }
+        }
+    }
+
+    // MARK: - First-load skeleton (parchment header + text-line placeholders)
+
+    private var lessonSkeleton: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 12) {
+                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ML.track).frame(width: 140, height: 10)
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ML.track).frame(width: 230, height: 22)
+                HStack(spacing: 8) {
+                    Capsule().fill(ML.track).frame(width: 80, height: 22)
+                    Capsule().fill(ML.track).frame(width: 90, height: 22)
+                }
+            }
+            .padding(.horizontal, Nuru.S.screen)
+            .padding(.top, 110)
+            .padding(.bottom, Nuru.S.screen)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                LinearGradient(colors: [ML.headerTop, ML.headerBottom],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24, style: .continuous))
+                    .ignoresSafeArea(edges: .top)
+            )
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(0..<6, id: \.self) { i in
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(ML.track)
+                        .frame(maxWidth: .infinity).frame(height: 12)
+                        .padding(.trailing, i % 3 == 2 ? 80 : 0)
+                }
+            }
+            .padding(.horizontal, Nuru.S.screen)
+            .padding(.top, Nuru.S.lg)
+            Spacer()
+        }
+        .nuruShimmer()
+        .accessibilityLabel("Loading this lesson")
     }
 
     // MARK: - Loaded layout (sticky header + one flowing lesson page + gate)
@@ -115,7 +180,9 @@ struct ModuleView: View {
                 MLBottomGate(reachedEnd: reachedEnd,
                              requiresQuiz: d.requiresQuiz,
                              moduleId: d.moduleId,
-                             busy: vm.completing) {
+                             busy: vm.completing,
+                             error: vm.completionError) {
+                    Haptics.action()
                     Task { await vm.markComplete() }
                 }
             }
@@ -144,15 +211,20 @@ struct ModuleView: View {
                 MLSectionBlock(number: s.id + 1, section: s, showDivider: s.id > 0)
                     .padding(.top, 28)
             }
-            MLReflectionCard(text: $reflection, busy: vm.completing) {
+            MLReflectionCard(text: $reflection, busy: vm.completing, error: vm.completionError) {
+                Haptics.action()
                 Task { await vm.markComplete(reflection: reflection) }
             }
             .padding(.top, 32)
             .id("reflect")
             // Invisible sentinel — when it scrolls into the lower viewport we
-            // latch `reachedEnd`, unlocking the CTA.
+            // latch `reachedEnd`, unlocking the CTA (a whisper of haptic marks it).
             Color.clear.frame(height: 1)
-                .onAppear { reachedEnd = true }
+                .onAppear {
+                    guard !reachedEnd else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) { reachedEnd = true }
+                    Haptics.tap()
+                }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -160,15 +232,18 @@ struct ModuleView: View {
     // Read / Watch / Reflect step chips — jump to the matching part of the lesson.
     private func chips(hasVideo: Bool, proxy: ScrollViewProxy) -> [MLChipModel] {
         var out = [MLChipModel(label: "Read", done: reachedEnd) {
+            Haptics.selection()
             withAnimation { proxy.scrollTo("top", anchor: .top) }
         }]
         if hasVideo {
             out.append(MLChipModel(label: "Watch", done: playingVideo) {
+                Haptics.selection()
                 playingVideo = true
                 withAnimation { proxy.scrollTo("video", anchor: .top) }
             })
         }
         out.append(MLChipModel(label: "Reflect", done: vm.completed) {
+            Haptics.selection()
             withAnimation { proxy.scrollTo("reflect", anchor: .center) }
         })
         return out
@@ -252,7 +327,8 @@ private struct MLSquareButton: View {
     let icon: Lucide
     let action: () -> Void
     var body: some View {
-        Button(action: action) { MLSquareLabel(icon: icon) }.buttonStyle(.plain)
+        Button(action: action) { MLSquareLabel(icon: icon).contentShape(Rectangle()) }
+            .buttonStyle(.pressable)
     }
 }
 
@@ -298,7 +374,8 @@ private struct MLChipView: View {
                         in: Capsule())
             .overlay(Capsule().stroke(chip.done ? Color.clear : ML.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
+        .animation(.easeInOut(duration: 0.2), value: chip.done)
     }
 }
 
@@ -316,7 +393,7 @@ private struct MLVideoCard: View {
                     .frame(maxWidth: .infinity)
                     .background(Color.black)
             } else {
-                Button { playing = true } label: { poster }.buttonStyle(.plain)
+                Button { Haptics.tap(); playing = true } label: { poster }.buttonStyle(.pressableSubtle)
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -431,6 +508,7 @@ private struct MLBodyLine: View {
 private struct MLReflectionCard: View {
     @Binding var text: String
     let busy: Bool
+    let error: String?
     let onSubmit: () -> Void
 
     private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -450,7 +528,14 @@ private struct MLReflectionCard: View {
             editor.padding(.top, 12)
             Text(counterLine)
                 .font(.inter(11)).foregroundStyle(ML.secondary)
+                .contentTransition(.numericText())
+                .animation(.default, value: trimmed.count)
                 .padding(.top, 6)
+            if let error {
+                Text(error)
+                    .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                    .padding(.top, 6)
+            }
             submitButton.padding(.top, 12)
         }
         .padding(Nuru.S.base)
@@ -495,8 +580,9 @@ private struct MLReflectionCard: View {
             .background(canSubmit ? AnyShapeStyle(ML.navy) : AnyShapeStyle(Color(hex: 0x0A2540, alpha: 0.18)),
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!canSubmit || busy)
+        .animation(.easeInOut(duration: 0.2), value: canSubmit)
     }
 }
 
@@ -507,6 +593,7 @@ private struct MLBottomGate: View {
     let requiresQuiz: Bool
     let moduleId: String
     let busy: Bool
+    let error: String?
     let onComplete: () -> Void
 
     var body: some View {
@@ -517,12 +604,18 @@ private struct MLBottomGate: View {
                     .font(.inter(10, .bold))
                     .foregroundStyle(reachedEnd ? ML.overline : ML.secondary)
             }
+            if let error {
+                Text(error)
+                    .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             cta
         }
         .padding(.horizontal, Nuru.S.screen)
         .padding(.top, Nuru.S.md)
         .padding(.bottom, Nuru.S.screen)
         .background(ML.cream.ignoresSafeArea(edges: .bottom))
+        .animation(.easeInOut(duration: 0.25), value: reachedEnd)
     }
 
     private var progressBar: some View {
@@ -561,7 +654,8 @@ private struct MLBottomGate: View {
                 .background(ML.goldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .shadow(color: ML.gold.opacity(0.45), radius: 12, y: 8)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
         } else {
             Button(action: onComplete) {
                 ZStack {
@@ -573,7 +667,7 @@ private struct MLBottomGate: View {
                 .background(ML.goldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .shadow(color: ML.gold.opacity(0.45), radius: 12, y: 8)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(busy)
         }
     }

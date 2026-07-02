@@ -80,7 +80,12 @@ struct LoadStateView<Content: View>: View {
         } else if let error, isEmpty {
             VStack(spacing: Nuru.S.md) {
                 Text(error).font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                Button("Try again", action: retry).font(.inter(14, .semibold)).foregroundStyle(Nuru.gold)
+                Button { Haptics.tap(); retry() } label: {
+                    Text("Try again")
+                        .font(.inter(14, .semibold)).foregroundStyle(Nuru.gold)
+                        .frame(minWidth: 44, minHeight: 44) // comfortable tap target
+                }
+                .buttonStyle(.pressable)
             }
             .padding(Nuru.S.xl)
         } else if isEmpty {

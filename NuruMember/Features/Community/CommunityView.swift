@@ -18,9 +18,13 @@ struct CommunityView: View {
                         NavigationLink(value: CommunityRoute.prayerWall) {
                             hubRow("Prayer Wall", "Pray with the family", "hands.sparkles.fill", live: true)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressableSubtle)
+                        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                        .gentleEntrance()
                         hubRow("Chat", "Direct messages & spaces", "bubble.left.and.bubble.right.fill", live: false)
+                            .gentleEntrance(delay: 0.06)
                         hubRow("Cohort Discussions", "Your cell's board", "person.3.fill", live: false)
+                            .gentleEntrance(delay: 0.12)
                     }
                     .padding(Nuru.S.screen)
                     .padding(.bottom, Nuru.tabBarSpace)

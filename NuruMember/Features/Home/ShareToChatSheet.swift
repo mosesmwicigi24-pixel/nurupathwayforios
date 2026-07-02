@@ -16,7 +16,8 @@ struct ShareToChatSheet: View {
 
     @State private var conversations: [ChatConversation] = []
     @State private var loading = true
-    @State private var error: String?
+    @State private var error: String?        // loading the inbox failed
+    @State private var sendError: String?    // one send failed — keep the list up
     @State private var sendingId: String?
     @State private var sentTitle: String?
 
@@ -43,12 +44,25 @@ struct ShareToChatSheet: View {
 
     @ViewBuilder private var content: some View {
         if let sent = sentTitle {
+            // Success moment — settles in rather than blinking on.
             VStack(spacing: Nuru.S.md) {
                 Icon(.circleCheckBig, size: 40, color: Nuru.gold)
                 Text("Shared to \(sent)").font(.inter(16, .bold)).foregroundStyle(Nuru.ink)
             }
+            .gentleEntrance()
         } else if loading {
-            ProgressView().tint(Nuru.gold)
+            // Shimmer ghosts in the row rhythm instead of a lone spinner.
+            ScrollView {
+                VStack(spacing: Nuru.S.sm) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous)
+                            .fill(Nuru.surface)
+                            .frame(height: 68)
+                            .nuruShimmer()
+                    }
+                }
+                .padding(Nuru.S.screen)
+            }
         } else if let e = error {
             VStack(spacing: Nuru.S.md) {
                 Text(e).font(.nCaption).foregroundStyle(Nuru.muted)
@@ -60,6 +74,7 @@ struct ShareToChatSheet: View {
         } else {
             ScrollView {
                 VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                    if let e = sendError { sendErrorBanner(e) }
                     previewCard
                     section("SPACES", spaces)
                     section("GROUPS", groups)
@@ -68,6 +83,19 @@ struct ShareToChatSheet: View {
                 .padding(Nuru.S.screen)
             }
         }
+    }
+
+    /// A send failed — say so WITHOUT throwing the whole list away, so the
+    /// member can simply pick the same (or another) conversation again.
+    private func sendErrorBanner(_ message: String) -> some View {
+        HStack(spacing: Nuru.S.sm) {
+            Image(systemName: "exclamationmark.circle.fill")
+                .font(.system(size: 14)).foregroundStyle(Nuru.danger)
+            Text(message).font(.nCaption).foregroundStyle(Nuru.ink)
+            Spacer(minLength: 0)
+        }
+        .padding(Nuru.S.md)
+        .background(Color(hex: 0xFEE2E2), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var previewCard: some View {
@@ -111,7 +139,7 @@ struct ShareToChatSheet: View {
             .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(sendingId != nil)
     }
 
@@ -124,14 +152,19 @@ struct ShareToChatSheet: View {
 
     private func send(to c: ChatConversation) async {
         guard sendingId == nil else { return }
+        Haptics.action()
         sendingId = c.conversationId
+        sendError = nil
         do {
             try await MemberAPI.sendChatMessage(c.conversationId, body: text)
-            sentTitle = c.title ?? "chat"
+            Haptics.success()
+            withAnimation(.spring(response: 0.4, dampingFraction: 0.75)) { sentTitle = c.title ?? "chat" }
             try? await Task.sleep(nanoseconds: 900_000_000)
             dismiss()
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't send. Try again."
+            Haptics.error()
+            // Keep the conversation list on screen — only surface the failure.
+            sendError = (error as? APIError)?.errorDescription ?? "Couldn't send. Try again."
         }
         sendingId = nil
     }

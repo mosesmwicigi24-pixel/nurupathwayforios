@@ -83,7 +83,7 @@ struct MemoryVerseView: View {
                                           consistency: vm.consistency,
                                           memorization: vm.memorization,
                                           breadth: vm.breadth)
-                            MilestoneCard(remaining: vm.toNextMilestone)
+                            MilestoneCard(remaining: vm.toNextMilestone, mastered: vm.mastered)
                             if let current = vm.currentVerse {
                                 CurrentVerseCard(verse: current) { practiceTarget = current }
                             }
@@ -154,7 +154,7 @@ private struct BackButton: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -193,6 +193,8 @@ private struct WordScoreCard: View {
     private struct Bar: View {
         let label: String
         let value: Double // 0…1
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+        @State private var grown = false
         var body: some View {
             HStack(spacing: Nuru.S.sm) {
                 Text(label)
@@ -203,10 +205,15 @@ private struct WordScoreCard: View {
                     ZStack(alignment: .leading) {
                         Capsule().fill(Nuru.track)
                         Capsule().fill(Nuru.gold)
-                            .frame(width: max(0, min(1, value)) * geo.size.width)
+                            .frame(width: (grown ? max(0, min(1, value)) : 0) * geo.size.width)
                     }
                 }
                 .frame(height: 6)
+            }
+            .onAppear {
+                guard !grown else { return }
+                if reduceMotion { grown = true; return }
+                withAnimation(.easeOut(duration: 0.7).delay(0.2)) { grown = true }
             }
         }
     }
@@ -215,11 +222,13 @@ private struct WordScoreCard: View {
 private struct ScoreRing: View {
     let score: Int
     let band: String
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var grown = false
     var body: some View {
         ZStack {
             Circle().stroke(Nuru.goldGlow, lineWidth: 4)
             Circle()
-                .trim(from: 0, to: max(0.02, min(1, Double(score) / 100)))
+                .trim(from: 0, to: grown ? max(0.02, min(1, Double(score) / 100)) : 0.02)
                 .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
@@ -232,6 +241,11 @@ private struct ScoreRing: View {
             }
         }
         .frame(width: 84, height: 84)
+        .onAppear {
+            guard !grown else { return }
+            if reduceMotion { grown = true; return }
+            withAnimation(.easeOut(duration: 0.9).delay(0.15)) { grown = true }
+        }
     }
 }
 
@@ -239,16 +253,30 @@ private struct ScoreRing: View {
 
 private struct MilestoneCard: View {
     let remaining: Int
+    let mastered: Int
+
+    // "1 verses" read wrong, and "0 verses to go" undersold a reached milestone.
+    private var title: String {
+        remaining == 0
+            ? "Milestone reached — \(mastered) verses mastered"
+            : "\(remaining) verse\(remaining == 1 ? "" : "s") to your next milestone"
+    }
+    private var subtitle: String {
+        remaining == 0
+            ? "Beautiful work. Keep hiding His Word in your heart."
+            : "Master \(remaining) more to reach 10. Keep hiding His Word in your heart."
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
             Icon(.sparkles, size: 18, color: Nuru.gold)
                 .frame(width: 34, height: 34)
                 .background(Nuru.goldGlow, in: Circle())
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(remaining) verses to your next milestone")
+                Text(title)
                     .font(.inter(13, .semibold))
                     .foregroundStyle(Nuru.ink)
-                Text("Master \(remaining) more to reach 10. Keep hiding His Word in your heart.")
+                Text(subtitle)
                     .font(.inter(12, .regular))
                     .foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -306,7 +334,7 @@ private struct CurrentVerseCard: View {
 
     // Figma "Listen" twin button is a mock (no verse audio) — Practice goes full width.
     private var practiceButton: some View {
-        Button(action: practice) {
+        Button { Haptics.tap(); practice() } label: {
             HStack(spacing: Nuru.S.sm) {
                 Icon(.penLine, size: 14, color: Nuru.navy)
                 Text("Practice").font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
@@ -314,7 +342,7 @@ private struct CurrentVerseCard: View {
             .frame(maxWidth: .infinity, minHeight: 44)
             .background(Nuru.gold, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -325,7 +353,7 @@ private struct LibraryVerseRow: View {
     let practice: () -> Void
 
     var body: some View {
-        Button(action: practice) {
+        Button { Haptics.tap(); practice() } label: {
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 HStack(alignment: .top) {
                     Text(verse.reference)
@@ -347,7 +375,7 @@ private struct LibraryVerseRow: View {
             .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     @ViewBuilder private var chip: some View {
@@ -427,20 +455,29 @@ private struct PracticeSheet: View {
                             Capsule().fill(Nuru.track)
                             Capsule().fill(Nuru.gold)
                                 .frame(width: Double(matchPct) / 100 * geo.size.width)
+                                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: matchPct)
                         }
                     }
                     .frame(height: 8)
                     Text("\(matchPct)% match")
                         .font(.inter(10, .regular))
                         .foregroundStyle(Nuru.muted)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: matchPct)
+                }
+                // A quiet tick each time the match crosses a quarter — progress you can feel.
+                .onChange(of: matchPct) { old, new in
+                    if new / 25 != old / 25, new > old { Haptics.selection() }
                 }
 
                 PButton(title: "Save practice", variant: .gold, busy: saving,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                     Task {
+                        Haptics.action()
                         saving = true
                         await onSave(matchPct)
                         saving = false
+                        Haptics.success()
                         dismiss()
                     }
                 }

@@ -60,7 +60,7 @@ struct FitImage: View {
                 case .failure:
                     fallback
                 default:
-                    fallback.opacity(0.55)   // softer while loading
+                    fallback.opacity(0.55).nuruShimmer()   // softer + alive while loading
                 }
             }
         } else {

@@ -101,6 +101,7 @@ struct MfaEnrollSheet: View {
     @StateObject private var vm = MfaEnrollViewModel()
     @State private var step: Step = .scan
     @State private var copied = false
+    @FocusState private var codeFocused: Bool
     @Environment(\.dismiss) private var dismiss
 
     private enum Step { case scan, verify }
@@ -127,10 +128,13 @@ struct MfaEnrollSheet: View {
         case .failed:
             failedState
         case .ready:
-            switch step {
-            case .scan: scanStep
-            case .verify: verifyStep
+            Group {
+                switch step {
+                case .scan: scanStep.transition(.opacity.combined(with: .move(edge: .leading)))
+                case .verify: verifyStep.transition(.opacity.combined(with: .move(edge: .trailing)))
+                }
             }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: step)
         }
     }
 
@@ -172,8 +176,12 @@ struct MfaEnrollSheet: View {
             // Setup key for manual entry — tap to copy.
             Button {
                 vm.copySecret()
-                copied = true
-                Task { try? await Task.sleep(nanoseconds: 1_600_000_000); copied = false }
+                Haptics.success()
+                withAnimation(.easeInOut(duration: 0.15)) { copied = true }
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    withAnimation(.easeInOut(duration: 0.25)) { copied = false }
+                }
             } label: {
                 HStack(spacing: 6) {
                     Text(vm.groupedSecret)
@@ -187,7 +195,7 @@ struct MfaEnrollSheet: View {
             }
             .buttonStyle(.plain)
 
-            GoldSheetButton(title: "I've scanned it") { step = .verify }
+            GoldSheetButton(title: "I've scanned it") { Haptics.tap(); step = .verify }
                 .padding(.top, Nuru.S.xs)
         }
         .frame(maxWidth: .infinity)
@@ -206,6 +214,7 @@ struct MfaEnrollSheet: View {
             ))
             .keyboardType(.numberPad)
             .textContentType(.oneTimeCode)
+            .focused($codeFocused)
             .font(.system(size: 20, weight: .semibold, design: .monospaced))
             .foregroundStyle(Nuru.navy)
             .kerning(8)
@@ -214,20 +223,29 @@ struct MfaEnrollSheet: View {
             .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(vm.verifyError == nil ? Nuru.border : Nuru.danger, lineWidth: 1)
+                    .stroke(vm.verifyError == nil ? (codeFocused ? Nuru.gold : Nuru.border) : Nuru.danger,
+                            lineWidth: codeFocused || vm.verifyError != nil ? 1.5 : 1)
             )
+            .animation(.easeInOut(duration: 0.2), value: codeFocused)
+            .animation(.easeInOut(duration: 0.2), value: vm.verifyError != nil)
+            .onAppear { codeFocused = true }   // the keyboard should already be up
 
             if let err = vm.verifyError {
                 Text(err)
                     .font(.inter(12)).foregroundStyle(Nuru.danger)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
 
             GoldSheetButton(title: "Enable 2FA", busy: vm.verifying, disabled: !vm.canVerify) {
                 Task {
                     if await vm.verify() {
+                        Haptics.success()
                         onEnabled()
                         dismiss()
+                    } else {
+                        Haptics.error()
+                        codeFocused = true   // straight back to a fresh attempt
                     }
                 }
             }

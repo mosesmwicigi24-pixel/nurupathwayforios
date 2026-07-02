@@ -63,7 +63,10 @@ enum EventsNav: Hashable { case calendar, seriesAll, announcementsAll }
 
 /// One cell in the scrollable date strip.
 struct WeekDay: Identifiable {
-    let id = UUID()
+    // Identity is the day itself — a UUID here regenerated on every `week`
+    // recompute, forcing SwiftUI to tear down and rebuild all 14 pills each
+    // time occurrences refreshed.
+    var id: Date { date }
     let date: Date
     let letter: String   // S M T W T F S
     let day: Int         // day-of-month number
@@ -130,7 +133,10 @@ final class EventsViewModel: ObservableObject {
         }
         quickRsvps[occ.occurrenceId] = next
         do { try await MemberAPI.rsvp(occ.occurrenceId, status: next) }
-        catch { quickRsvps[occ.occurrenceId] = prev }
+        catch {
+            quickRsvps[occ.occurrenceId] = prev
+            Haptics.error()   // the optimistic flip was rolled back — say so
+        }
     }
 
     // Summary counts (header pills).
@@ -144,6 +150,10 @@ final class EventsViewModel: ObservableObject {
     /// The gathering that is live right now, if any — drives the hero card.
     var liveOccurrence: CalendarOccurrence? {
         occurrences.first { Ev.isLive($0.startAt, $0.endAt) }
+    }
+    /// True live count for the header chip (was hardcoded "1").
+    var liveCount: Int {
+        occurrences.filter { Ev.isLive($0.startAt, $0.endAt) }.count
     }
 
     /// Scrollable strip: 14 days starting two days back (Figma week-picker).
@@ -264,7 +274,7 @@ struct EventsView: View {
                     header
                     VStack(spacing: Nuru.S.base) {
                         if let live = vm.liveOccurrence {
-                            NavigationLink(value: live) { LiveHeroCard(occ: live) }.buttonStyle(.plain)
+                            NavigationLink(value: live) { LiveHeroCard(occ: live) }.buttonStyle(.pressableSubtle)
                         }
                         weekStrip
                         calendarLink
@@ -341,7 +351,7 @@ struct EventsView: View {
     private var livePulseChip: some View {
         HStack(spacing: 5) {
             Circle().fill(Color(hex: 0x22C55E)).frame(width: 6, height: 6)
-            Text("1 live now").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+            Text("\(vm.liveCount) live now").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Color(hex: 0xDCFCE7), in: Capsule())
@@ -364,8 +374,13 @@ struct EventsView: View {
             HStack {
                 Text(vm.monthLabel).font(.inter(10, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
                 Spacer()
-                Button { vm.selectToday() } label: {
+                Button {
+                    Haptics.selection()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectToday() }
+                } label: {
                     Text("TODAY").font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                        .padding(.vertical, 6).padding(.leading, 12)   // invisible tap-target growth
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -384,7 +399,11 @@ struct EventsView: View {
     private func dayPill(_ d: WeekDay) -> some View {
         let on = vm.isSelected(d.date)
         let bg: Color = on ? Nuru.navy : (d.isToday ? Nuru.gold.opacity(0.12) : .clear)
-        return Button { vm.selectedDay = d.date } label: {
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectedDay = d.date }
+        } label: {
             VStack(spacing: 3) {
                 Text(d.letter).font(.inter(9, .semibold)).kerning(0.8)
                     .foregroundStyle(on ? Color.white.opacity(0.65) : Color(hex: 0x9CA3AF))
@@ -395,7 +414,7 @@ struct EventsView: View {
             .padding(.vertical, 8)
             .background(bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     // MARK: 3 — calendar card (navy gradient + glow)
@@ -427,7 +446,7 @@ struct EventsView: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 
     // MARK: 4 — segment pills (single capsule container)
@@ -443,7 +462,11 @@ struct EventsView: View {
 
     private func segmentPill(_ s: EventSegment) -> some View {
         let on = vm.segment == s
-        return Button { vm.segment = s } label: {
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.segment = s }
+        } label: {
             HStack(spacing: 6) {
                 Text(s.rawValue).font(.inter(11, .semibold)).foregroundStyle(on ? .white : Nuru.ink600)
                 Text("\(vm.count(s))").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
@@ -468,10 +491,16 @@ struct EventsView: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.never)
             if !vm.search.isEmpty {
-                Button { vm.search = "" } label: {
+                Button {
+                    Haptics.tap()
+                    vm.search = ""
+                } label: {
                     Icon(.x, size: 15, color: Color(hex: 0x9CA3AF))
+                        .frame(width: 28, height: 28)          // comfortable tap target
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .transition(.opacity)
             }
         }
         .padding(.horizontal, Nuru.S.md).padding(.vertical, 11)
@@ -487,14 +516,18 @@ struct EventsView: View {
                 ForEach(vm.categories, id: \.self) { c in
                     let on = vm.category == c
                     let color = c == "All" ? Nuru.navy : Ev.categoryColor(c)
-                    Button { vm.category = c } label: {
+                    Button {
+                        guard !on else { return }
+                        Haptics.selection()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.category = c }
+                    } label: {
                         Text(c).font(.inter(12, on ? .semibold : .medium))
                             .foregroundStyle(on ? .white : Nuru.ink600)
                             .padding(.horizontal, Nuru.S.base).padding(.vertical, 9)
                             .background(on ? color : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             .padding(.horizontal, 1)
@@ -523,11 +556,26 @@ struct EventsView: View {
     @ViewBuilder
     private var gatheringBody: some View {
         if vm.loading && vm.occurrences.isEmpty {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl)
+            // Skeleton gathering cards — same silhouette as the real thing, so
+            // nothing jumps when content arrives.
+            VStack(spacing: Nuru.S.md) {
+                skeletonCard
+                skeletonCard.opacity(0.55)
+            }
         } else if vm.error != nil && vm.occurrences.isEmpty {
-            VStack(spacing: Nuru.S.xs) {
+            VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("Couldn't load events").font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink)
-                Text("Pull to refresh to try again.").font(.nCaption).foregroundStyle(Nuru.muted)
+                Text("Check your connection, then try again.").font(.nCaption).foregroundStyle(Nuru.muted)
+                Button {
+                    Haptics.tap()
+                    Task { await vm.load() }
+                } label: {
+                    Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
+                        .padding(.horizontal, 16).padding(.vertical, 8)
+                        .background(Nuru.navy, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .padding(.top, 4)
             }
             .frame(maxWidth: .infinity, alignment: .leading).padding(Nuru.S.base)
             .cardSurfaceEv()
@@ -540,9 +588,25 @@ struct EventsView: View {
                                   rsvpStatus: vm.quickRsvps[occ.occurrenceId],
                                   onRsvp: { await vm.quickRsvp(occ) })
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressableSubtle)
             }
         }
+    }
+
+    /// Shimmering placeholder in the shape of a gathering card.
+    private var skeletonCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(Nuru.surface).frame(height: 150).nuruShimmer()
+            VStack(alignment: .leading, spacing: 8) {
+                RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 190, height: 14).nuruShimmer()
+                RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 130, height: 10).nuruShimmer()
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private var emptyGatherings: some View {
@@ -591,7 +655,7 @@ struct EventsView: View {
                 NavigationLink(value: AppRoute.announcement(a.announcementId)) {
                     AnnouncementRow(announcement: a)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 if idx < vm.announcements.count - 1 { Divider().overlay(Nuru.border) }
             }
         }
@@ -766,6 +830,7 @@ private struct FollowButton: View {
     var body: some View {
         Button {
             guard !busy else { return }
+            Haptics.action()
             busy = true
             Task { await onToggle(); busy = false }
         } label: {
@@ -777,8 +842,9 @@ private struct FollowButton: View {
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(following ? Nuru.navy : .clear, in: Capsule())
             .overlay(Capsule().stroke(following ? .clear : Nuru.border, lineWidth: 1))
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: following)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .opacity(busy ? 0.5 : 1)
     }
 }
@@ -1012,10 +1078,14 @@ private struct EvCardFooter: View {
     private var rsvpButton: some View {
         Button {
             guard !busy, let onRsvp else { return }
+            Haptics.action()
             busy = true
             Task { await onRsvp(); busy = false }
-        } label: { rsvpLabel }
-        .buttonStyle(.plain)
+        } label: {
+            rsvpLabel
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: rsvpStatus)
+        }
+        .buttonStyle(.pressable)
         .disabled(busy)
         .opacity(busy ? 0.6 : 1)
     }
@@ -1107,7 +1177,7 @@ private struct AnnouncementsListPage: View {
                         NavigationLink(value: AppRoute.announcement(a.announcementId)) {
                             AnnouncementRow(announcement: a)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         if idx < vm.announcements.count - 1 { Divider().overlay(Nuru.border) }
                     }
                 }
@@ -1156,12 +1226,18 @@ private struct SeriesListPage: View {
 
     private var tabs: some View {
         HStack(spacing: 4) {
-            tab("Following", vm.series.filter(\.following).count, on: !discover) { discover = false }
-            tab("Discover", vm.series.filter { !$0.following }.count, on: discover) { discover = true }
+            tab("Following", vm.series.filter(\.following).count, on: !discover) { switchTab(false) }
+            tab("Discover", vm.series.filter { !$0.following }.count, on: discover) { switchTab(true) }
         }
         .padding(4)
         .background(Nuru.white, in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private func switchTab(_ toDiscover: Bool) {
+        guard discover != toDiscover else { return }
+        Haptics.selection()
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { discover = toDiscover }
     }
 
     private func tab(_ label: String, _ count: Int, on: Bool, action: @escaping () -> Void) -> some View {
@@ -1215,7 +1291,7 @@ private struct SeriesListRow: View {
     var body: some View {
         HStack(spacing: Nuru.S.md) {
             if let occ = nextOccurrence {
-                NavigationLink(value: occ) { info }.buttonStyle(.plain)
+                NavigationLink(value: occ) { info }.buttonStyle(.pressable)
             } else {
                 info
             }

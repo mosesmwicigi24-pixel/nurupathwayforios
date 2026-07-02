@@ -171,6 +171,7 @@ struct HomeView: View {
     @ObservedObject private var radio = RadioCenter.shared
     @State private var path = NavigationPath()
     @State private var playingVideo = false
+    @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
     @State private var showRadio = false
 
@@ -197,7 +198,17 @@ struct HomeView: View {
     // this week → disciplers → announcement → continue level → rhythm → Priority
     // (repeat) → progress → Grow → Upcoming → encouragement → cohort → give.
     private var feedSections: [AnyView] {
+        // TRUE first load only (refreshes keep the live content in place) —
+        // shimmering placeholders instead of a blank scroll.
+        if vm.loading && vm.pathway == nil {
+            return [AnyView(HomeFeedSkeleton())]
+        }
         var s: [AnyView] = []
+        // The whole dashboard failed (offline / server down) — a quiet retry
+        // strip on top; the sections below degrade gracefully as usual.
+        if vm.error != nil && vm.pathway == nil {
+            s.append(AnyView(HomeLoadErrorCard { Task { await vm.load() } }))
+        }
         if let p = vm.onAir { s.append(AnyView(onAirCard(p))) }                         // 0a · Radio ON AIR (pinned first)
         if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
@@ -209,9 +220,10 @@ struct HomeView: View {
         if let c = vm.featuredCell {                                                    // 7
             if let aid = weekAnnouncementId {
                 s.append(AnyView(Button {
+                    Haptics.tap()
                     path.append(AppRoute.announcement(aid))
                     Task { await vm.openAnnouncement(aid) }
-                } label: { featuredCellCard(c) }.buttonStyle(.plain)))
+                } label: { featuredCellCard(c) }.buttonStyle(.pressableSubtle)))
             } else {
                 s.append(AnyView(featuredCellCard(c)))
             }
@@ -320,7 +332,6 @@ struct HomeView: View {
             ]
             path.append(PlanSegmentRef(planTitle: "Rooted: 10 Days in the Psalms", dayNumber: 2, segments: segs, index: 0))
         case "level": path.append(PathwayRoute.level(1))
-        case "notifications": path.append(AppRoute.notifications)
         default: break
         }
         #endif
@@ -342,29 +353,27 @@ struct HomeView: View {
                             .background(Color(hex: 0xFFF4DA), in: Circle())
                             .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
                         if vm.unread > 0 {
-                            Text(vm.unread > 9 ? "9+" : "\(vm.unread)")
-                                .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
-                                .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2)
-                                .background(Nuru.gold, in: Capsule())
-                                .offset(x: 5, y: -5)
+                            HomeUnreadBadge(count: vm.unread).offset(x: 5, y: -5)
                         }
                     }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                 // Radio — opens the Nuru Radio player (live HLS via the new
                 // backend radio module, or the next scheduled program).
-                Button { showRadio = true } label: {
+                Button { Haptics.tap(); showRadio = true } label: {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
                         .foregroundStyle(Color(hex: 0xDC2626)).frame(width: 40, height: 40)
                         .background(Color(hex: 0xFEE2E2), in: Circle())
                         .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
                 }
-                .buttonStyle(.plain).padding(.leading, 8)
+                .buttonStyle(.pressable).padding(.leading, 8)
                 .fullScreenCover(isPresented: $showRadio) { RadioPlayerView() }
                 progressRing.padding(.leading, 8)
             }
             Text("\(greeting), \(firstName).")
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
+                .lineLimit(1).minimumScaleFactor(0.8)   // long first names shrink, never wrap
                 .padding(.top, 10)
             Text(vm.greetingLine).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
                 .fixedSize(horizontal: false, vertical: true)
@@ -393,17 +402,19 @@ struct HomeView: View {
     }
 
     // MiniRing (Figma) — 42px, navy track, gold progress, navy pct.
+    // The arc sweeps in once on appear and re-tracks smoothly as data lands.
     private var progressRing: some View {
         ZStack {
             Circle().fill(Color(hex: 0xDCFCE7).opacity(0.6))
             Circle().stroke(Color(hex: 0x16A34A).opacity(0.15), lineWidth: 3)
-            Circle()
-                .trim(from: 0, to: CGFloat(overallPct) / 100)
-                .stroke(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
-                                       startPoint: .top, endPoint: .bottom),
-                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                .rotationEffect(.degrees(-90))
+            HomeRingTrim(
+                pct: CGFloat(overallPct) / 100,
+                style: AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
+                                                    startPoint: .top, endPoint: .bottom)),
+                lineWidth: 3)
             Text("\(overallPct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
+                .contentTransition(.numericText())
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: overallPct)
         }
         .frame(width: 42, height: 42)
     }
@@ -503,12 +514,26 @@ struct HomeView: View {
             // Plays inline, pinned to the card's inset 16:9 box — never opens Safari.
             Group {
                 if playingVideo {
-                    InlineVideoPlayer(video: v)
+                    InlineVideoPlayer(video: v, onReady: {
+                        withAnimation(.easeOut(duration: 0.25)) { videoReady = true }
+                    })
                         .aspectRatio(16.0/9.0, contentMode: .fit)
                         .frame(maxWidth: .infinity)
                         .background(Color.black)
+                        // Buffering cue INSIDE the card — the black box never sits silent.
+                        .overlay {
+                            if !videoReady {
+                                ZStack {
+                                    Color.black
+                                    ProgressView().tint(Nuru.gold)
+                                }
+                                .allowsHitTesting(false)
+                                .transition(.opacity)
+                            }
+                        }
                 } else {
-                    Button { playingVideo = true } label: { videoThumb(v) }.buttonStyle(.plain)
+                    Button { Haptics.tap(); playingVideo = true } label: { videoThumb(v) }
+                        .buttonStyle(.pressableSubtle)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -522,19 +547,21 @@ struct HomeView: View {
                 Text("Start here — what the journey looks like")
                     .font(.inter(13)).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
                 HStack(spacing: 6) {
-                    Button { Task { await vm.toggleVideoReaction("❤️") } } label: {
+                    Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {
                             Text("❤️").font(.system(size: 15))
                             Text("\(love)").font(.inter(11, .bold)).foregroundStyle(liked ? Nuru.danger : Nuru.ink600)
+                                .contentTransition(.numericText())
                         }
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(liked ? Color(hex: 0xFEE2E2) : Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(liked ? Nuru.danger.opacity(0.35) : Nuru.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: love)
+                    }.buttonStyle(.pressable)
                     ForEach(videoReactionEmojis, id: \.self) { e in
                         let count = v.reactions?.first { $0.emoji == e }?.count ?? 0
                         let mine = v.reactions?.first { $0.emoji == e }?.mine ?? false
-                        Button { Task { await vm.toggleVideoReaction(e) } } label: {
+                        Button { Haptics.love(); Task { await vm.toggleVideoReaction(e) } } label: {
                             HStack(spacing: 4) {
                                 Text(e).font(.system(size: 15))
                                 if count > 0 { Text("\(count)").font(.inter(11, .bold)).foregroundStyle(Nuru.ink600) }
@@ -543,10 +570,10 @@ struct HomeView: View {
                             .padding(.horizontal, count > 0 ? 6 : 0)
                             .background(mine ? Nuru.goldChipBg : Nuru.white, in: Circle())
                             .overlay(Circle().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.pressable)
                     }
                     Spacer(minLength: 0)
-                    Button { sharePayload = SharePayload(text: videoShareText(v)) } label: {
+                    Button { Haptics.tap(); sharePayload = SharePayload(text: videoShareText(v)) } label: {
                         HStack(spacing: 5) {
                             Icon(.share2, size: 13, color: Nuru.ink600)
                             Text("Share").font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
@@ -554,7 +581,7 @@ struct HomeView: View {
                         .padding(.horizontal, 14).padding(.vertical, 8)
                         .background(Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.pressable)
                 }
                 .padding(.top, Nuru.S.md)
             }
@@ -631,23 +658,32 @@ struct HomeView: View {
                 ForEach(verseReactionEmojis, id: \.self) { e in
                     let count = vm.reactions?.counts[e] ?? 0
                     let mine = vm.reactions?.mine == e
-                    Button { Task { await vm.reactVerse(e) } } label: {
+                    Button { Haptics.love(); Task { await vm.reactVerse(e) } } label: {
                         HStack(spacing: 3) {
                             Text(e).font(.system(size: 14))
-                            if count > 0 { Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600) }
+                            if count > 0 {
+                                Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
+                                    .contentTransition(.numericText())
+                            }
                         }
                         .padding(.horizontal, 7).padding(.vertical, 6)
                         .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
+                        .contentShape(Capsule())   // whole chip is tappable, not just the glyph
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
+                    }.buttonStyle(.pressable)
                 }
                 Spacer(minLength: 4)
-                Button { Task { await vm.saveVerse() } } label: {
+                Button {
+                    if !vm.verseSaved { Haptics.success() }
+                    Task { await vm.saveVerse() }
+                } label: {
                     pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
-                }.buttonStyle(.plain)
-                Button { sharePayload = SharePayload(text: verseShareText()) } label: {
+                        .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
+                }.buttonStyle(.pressable)
+                Button { Haptics.tap(); sharePayload = SharePayload(text: verseShareText()) } label: {
                     pill(icon: .share2, label: "Share", tint: HomeFig.navy)
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressable)
             }
             .padding(.top, Nuru.S.md)
         }
@@ -682,14 +718,14 @@ struct HomeView: View {
             if vm.prayerPosts.count == 1, let post = vm.prayerPosts.first {
                 NavigationLink(value: CommunityRoute.prayer(post.postId)) {
                     prayerPostView(post, inPager: false)
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressableSubtle)
                 .padding(.top, Nuru.S.sm)
             } else {
                 TabView {
                     ForEach(vm.prayerPosts) { post in
                         NavigationLink(value: CommunityRoute.prayer(post.postId)) {
                             prayerPostView(post, inPager: true)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.pressableSubtle)
                     }
                 }
                 .tabViewStyle(.page(indexDisplayMode: .automatic))
@@ -733,8 +769,8 @@ struct HomeView: View {
 
     private var minisRow: some View {
         HStack(spacing: Nuru.S.sm) {
-            NavigationLink(value: GrowDestination.readingPlans) { readingPlanMini }.buttonStyle(.plain)
-            NavigationLink(value: GrowDestination.prayerJournal) { prayerJournalMini }.buttonStyle(.plain)
+            NavigationLink(value: GrowDestination.readingPlans) { readingPlanMini }.buttonStyle(.pressable)
+            NavigationLink(value: GrowDestination.prayerJournal) { prayerJournalMini }.buttonStyle(.pressable)
         }
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -804,7 +840,7 @@ struct HomeView: View {
                 ZStack {
                     Rectangle().fill(Nuru.mutedBg)
                     CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { img.resizable().scaledToFill() }
+                        if let img = phase.image { HomeFadeInImage(image: img) }
                         else { Rectangle().fill(Nuru.mutedBg) }
                     }
                 }
@@ -898,7 +934,7 @@ struct HomeView: View {
             TabView {
                 ForEach(vm.disciplers) { d in
                     NavigationLink(value: AppRoute.mentor) { disciplerView(d) }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressableSubtle)
                 }
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
@@ -942,6 +978,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 4)
             Button {
+                Haptics.tap()
                 path.append(AppRoute.announcement(a.announcementId))
                 Task { await vm.openAnnouncement(a.announcementId) }
             } label: {
@@ -950,7 +987,7 @@ struct HomeView: View {
                         ZStack {
                             Rectangle().fill(Nuru.mutedBg)
                             CachedAsyncImage(url: u) { phase in
-                                if let img = phase.image { img.resizable().scaledToFill() }
+                                if let img = phase.image { HomeFadeInImage(image: img) }
                                 else { Rectangle().fill(Nuru.mutedBg) }
                             }
                         }
@@ -981,7 +1018,7 @@ struct HomeView: View {
                 .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 .nuruShadow()
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressableSubtle)
         }
     }
 
@@ -1024,6 +1061,7 @@ struct HomeView: View {
                 .font(.inter(11, .semibold)).foregroundStyle(HomeFig.eyebrow)
                 .padding(.top, 6)
             Button {
+                Haptics.tap()
                 if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
                 else { path.append(PathwayRoute.level(a?.levelNumber ?? 1)) }
             } label: {
@@ -1034,7 +1072,7 @@ struct HomeView: View {
                 .frame(maxWidth: .infinity, minHeight: 46)
                 .background(HomeFig.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .padding(.top, Nuru.S.md)
         }
         .padding(Nuru.S.base)
@@ -1080,7 +1118,10 @@ struct HomeView: View {
 
     private func rhythmTile(_ kind: String, _ label: String) -> some View {
         let done = vm.done(kind)
-        return Button { Task { await vm.markRhythm(kind) } } label: {
+        return Button {
+            if !done { Haptics.action() }   // completing a discipline deserves a firmer tap
+            Task { await vm.markRhythm(kind) }
+        } label: {
             VStack(spacing: 4) {
                 ZStack {
                     Circle().fill(done ? Nuru.successText : Nuru.white).frame(width: 24, height: 24)
@@ -1091,7 +1132,8 @@ struct HomeView: View {
             }
             .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.md)
             .background(done ? Nuru.successBg : Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        }.buttonStyle(.plain)
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: done)   // pending → done springs, not snaps
+        }.buttonStyle(.pressable)
     }
 
     // MARK: 13 — Your progress (scores)
@@ -1108,11 +1150,13 @@ struct HomeView: View {
             HStack(spacing: Nuru.S.base) {
                 ZStack {
                     Circle().stroke(Color(hex: 0xEEE7D6), lineWidth: 6)
-                    Circle().trim(from: 0, to: CGFloat(s.overall.score) / 100)
-                        .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
+                    // Sweeps in once when the card scrolls into view.
+                    HomeRingTrim(pct: CGFloat(s.overall.score) / 100,
+                                 style: AnyShapeStyle(Nuru.gold), lineWidth: 6)
                     VStack(spacing: -2) {
                         Text("\(s.overall.score)").font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
+                            .contentTransition(.numericText())
+                            .animation(.spring(response: 0.4, dampingFraction: 0.8), value: s.overall.score)
                         Text("/100").font(.inter(9, .semibold)).foregroundStyle(HomeFig.faintGray)
                     }
                 }
@@ -1181,7 +1225,7 @@ struct HomeView: View {
                 ForEach(growTiles.indices, id: \.self) { i in
                     let t = growTiles[i]
                     growTileLink(t)
-                        .buttonStyle(.plain)
+                        .buttonStyle(.pressable)
                         // "New today" cue on the devotional — a gentle pull to start.
                         // (Decoration only — must never intercept the tile's tap.)
                         .overlay(alignment: .topTrailing) {
@@ -1206,7 +1250,7 @@ struct HomeView: View {
                 .padding(Nuru.S.md)
                 .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
-            }.buttonStyle(.plain)
+            }.buttonStyle(.pressable)
         }
         .padding(Nuru.S.md)
         .cardSurface()
@@ -1257,13 +1301,13 @@ struct HomeView: View {
             HStack {
                 Text(monthTitle().uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Nuru.gold)
                 Spacer()
-                Button { tabs.selected = .events } label: {
+                Button { Haptics.selection(); tabs.selected = .events } label: {
                     Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressable)
             }
             miniMonth
             if let occ = nextUpcoming {
-                Button { path.append(occ) } label: {
+                Button { Haptics.tap(); path.append(occ) } label: {
                     HomeUpcomingEventRow(
                         kicker: eventKicker(occ),
                         soon: eventSoon(occ),
@@ -1271,7 +1315,7 @@ struct HomeView: View {
                         sub: occ.going > 0 ? "\(occ.going) going" : (occ.location ?? "Next gathering"),
                         subHighlight: occ.going > 0,
                         imageUrl: occ.primaryImageUrl)
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressable)
             }
         }
         .padding(Nuru.S.base)
@@ -1374,7 +1418,7 @@ struct HomeView: View {
             if vm.cell == nil {
                 // Cold-start belonging cue — being known is the hook (Figma).
                 NavigationLink(value: AppRoute.cell) { HomeCohortColdStart() }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     .padding(.top, 10)
             }
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
@@ -1390,7 +1434,7 @@ struct HomeView: View {
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .padding(.top, Nuru.S.md)
         }
         .padding(Nuru.S.base)
@@ -1505,5 +1549,106 @@ private extension View {
             .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             .nuruShadow()
+    }
+}
+
+// MARK: - First-load skeleton (shimmering card ghosts in the feed's rhythm)
+
+/// Shown ONLY on the true first load (`loading && pathway == nil`) — pull-to-
+/// refresh keeps the live content in place. Mirrors the top of the feed:
+/// hero → video → verse → minis.
+private struct HomeFeedSkeleton: View {
+    var body: some View {
+        VStack(spacing: Nuru.S.base) {
+            ghost(height: 190)
+            ghost(height: 240)
+            ghost(height: 150)
+            HStack(spacing: Nuru.S.sm) {
+                ghost(height: 128)
+                ghost(height: 128)
+            }
+        }
+    }
+    private func ghost(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .fill(Nuru.surface)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShimmer()
+    }
+}
+
+// MARK: - Dashboard-failed strip (quiet retry; the rest degrades gracefully)
+
+private struct HomeLoadErrorCard: View {
+    let retry: () -> Void
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "wifi.slash")
+                .font(.system(size: 15, weight: .semibold)).foregroundStyle(HomeFig.metaGray)
+                .frame(width: 36, height: 36)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Couldn't load your dashboard").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                Text("Check your connection and try again.").font(.inter(11)).foregroundStyle(HomeFig.metaGray)
+            }
+            Spacer(minLength: 8)
+            Button { Haptics.tap(); retry() } label: {
+                Text("Retry")
+                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .background(HomeFig.navy, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+        }
+        .padding(12)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+}
+
+// MARK: - Unread bell badge (pops in once, counts roll numerically)
+
+private struct HomeUnreadBadge: View {
+    let count: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+    var body: some View {
+        Text(count > 9 ? "9+" : "\(count)")
+            .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+            .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2)
+            .background(Nuru.gold, in: Capsule())
+            .contentTransition(.numericText())
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
+            .scaleEffect(shown || reduceMotion ? 1 : 0.4)
+            .opacity(shown || reduceMotion ? 1 : 0)
+            .onAppear {
+                guard !shown else { return }
+                // One springy arrival beat — attention without a looping pulse.
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.6).delay(0.35)) { shown = true }
+            }
+    }
+}
+
+// MARK: - Progress-ring arc that sweeps in once and re-tracks data changes
+
+private struct HomeRingTrim: View {
+    let pct: CGFloat            // 0…1
+    let style: AnyShapeStyle
+    let lineWidth: CGFloat
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+    var body: some View {
+        Circle()
+            .trim(from: 0, to: shown ? min(max(pct, 0), 1) : 0)
+            .stroke(style, style: StrokeStyle(lineWidth: lineWidth, lineCap: .round))
+            .rotationEffect(.degrees(-90))
+            .animation(reduceMotion ? nil : .spring(response: 0.8, dampingFraction: 0.85), value: pct)
+            .onAppear {
+                guard !shown else { return }
+                if reduceMotion { shown = true }
+                else { withAnimation(.spring(response: 0.8, dampingFraction: 0.85).delay(0.2)) { shown = true } }
+            }
     }
 }

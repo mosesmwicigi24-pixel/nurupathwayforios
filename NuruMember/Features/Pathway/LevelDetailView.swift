@@ -56,6 +56,8 @@ struct LevelDetailView: View {
     let levelNumber: Int
     @StateObject private var vm: LevelDetailViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var barShown = false
 
     init(levelNumber: Int) {
         self.levelNumber = levelNumber
@@ -72,11 +74,24 @@ struct LevelDetailView: View {
                     disciplerCard
                     trailHeader
                     if vm.loading && vm.modules.isEmpty {
-                        ProgressView().padding(.top, Nuru.S.xl)
+                        trailSkeleton
                     } else if vm.modules.isEmpty {
-                        Text(vm.error ?? "No modules yet.")
-                            .font(.nBody).foregroundStyle(Nuru.muted)
-                            .frame(maxWidth: .infinity).padding(.top, Nuru.S.lg)
+                        VStack(spacing: Nuru.S.md) {
+                            Text(vm.error ?? "No modules yet.")
+                                .font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
+                            if vm.error != nil {
+                                Button {
+                                    Haptics.tap()
+                                    Task { await vm.load() }
+                                } label: {
+                                    Text("Try again").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                                        .padding(.horizontal, 20).padding(.vertical, 10)
+                                        .background(Nuru.gold, in: Capsule())
+                                }
+                                .buttonStyle(.pressable)
+                            }
+                        }
+                        .frame(maxWidth: .infinity).padding(.top, Nuru.S.lg)
                     } else {
                         moduleTrail
                     }
@@ -124,12 +139,14 @@ struct LevelDetailView: View {
         .frame(height: 280)
         .overlay(alignment: .topLeading) {
             // Custom back button (nav bar is hidden).
-            Button { dismiss() } label: {
+            Button { Haptics.tap(); dismiss() } label: {
                 Icon(.arrowLeft, size: 18, color: Nuru.navy)
                     .frame(width: 40, height: 40)
                     .background(.white, in: Circle())
                     .nuruShadow()
+                    .contentShape(Circle())
             }
+            .buttonStyle(.pressable)
             .padding(.leading, Nuru.S.screen)
             .padding(.top, 58)
         }
@@ -146,9 +163,13 @@ struct LevelDetailView: View {
                 HStack(alignment: .firstTextBaseline) {
                     Text("\(vm.completed) of \(vm.moduleCount) modules")
                         .font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: vm.completed)
                     Spacer()
                     Text("\(vm.pct)%")
                         .font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
+                        .contentTransition(.numericText())
+                        .animation(.default, value: vm.pct)
                 }
                 progressBar(Double(vm.pct) / 100)
                 HStack(spacing: Nuru.S.sm) {
@@ -248,6 +269,41 @@ struct LevelDetailView: View {
         }
     }
 
+    /// Shimmering placeholder trail while the real modules are fetched — same
+    /// rail-and-card silhouette so content settles in place.
+    private var trailSkeleton: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { i in
+                HStack(alignment: .top, spacing: Nuru.S.md) {
+                    VStack(spacing: 0) {
+                        Circle().fill(Nuru.mutedBg).frame(width: 36, height: 36)
+                        if i < 2 {
+                            Rectangle().fill(Nuru.gold.opacity(0.15)).frame(width: 2).frame(maxHeight: .infinity)
+                        }
+                    }
+                    .frame(width: 36)
+                    VStack(alignment: .leading, spacing: 10) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Nuru.mutedBg).frame(width: 76, height: 8)
+                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Nuru.mutedBg).frame(width: 180, height: 14)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Nuru.mutedBg).frame(maxWidth: .infinity).frame(height: 10)
+                        HStack(spacing: Nuru.S.sm) {
+                            Capsule().fill(Nuru.mutedBg).frame(width: 64, height: 24)
+                            Capsule().fill(Nuru.mutedBg).frame(width: 52, height: 24)
+                        }
+                    }
+                    .padding(Nuru.S.base)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .padding(.bottom, Nuru.S.base)
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .nuruShimmer()
+        .accessibilityLabel("Loading modules")
+    }
+
     @ViewBuilder
     private func moduleRow(_ m: LevelModule, isLast: Bool) -> some View {
         HStack(alignment: .top, spacing: Nuru.S.md) {
@@ -263,15 +319,18 @@ struct LevelDetailView: View {
             }
             .frame(width: 36)
 
-            // The card itself, tappable unless locked.
+            // The card itself, tappable unless locked. A locked tap never opens
+            // content (server-authoritative, §1.9) — it answers with a refusal
+            // shake; the card's footer already says what unlocks it.
             Group {
                 if m.locked {
-                    ModuleTrailCard(module: m)
+                    LockedTrailCard(module: m)
                 } else {
                     NavigationLink(value: PathwayRoute.module(m.moduleId)) {
                         ModuleTrailCard(module: m)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
+                    .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                 }
             }
             .padding(.bottom, Nuru.S.base)
@@ -302,10 +361,36 @@ struct LevelDetailView: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(Nuru.gold.opacity(0.15)).frame(height: 5)
                 Capsule().fill(Nuru.gold)
-                    .frame(width: max(0, min(1, value)) * geo.size.width, height: 5)
+                    .frame(width: (barShown ? max(0, min(1, value)) : 0) * geo.size.width, height: 5)
+                    .animation(.spring(response: 0.8, dampingFraction: 0.9), value: value)
             }
         }
         .frame(height: 5)
+        .onAppear {
+            guard !barShown else { return }
+            if reduceMotion { barShown = true }
+            else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.1)) { barShown = true } }
+        }
+    }
+}
+
+// MARK: - Locked trail card (refusal shake — lock state itself is the server's)
+
+private struct LockedTrailCard: View {
+    let module: LevelModule
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shakes = 0
+
+    var body: some View {
+        Button {
+            Haptics.error()
+            if !reduceMotion { withAnimation(.linear(duration: 0.35)) { shakes += 1 } }
+        } label: {
+            ModuleTrailCard(module: module)
+        }
+        .buttonStyle(.pressableSubtle)
+        .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
+        .accessibilityHint("Locked. Unlocks when you finish the one before.")
     }
 }
 

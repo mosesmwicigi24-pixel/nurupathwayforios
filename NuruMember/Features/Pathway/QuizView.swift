@@ -58,7 +58,8 @@ final class QuizViewModel: ObservableObject {
 
     func submit() async {
         guard let quiz else { return }
-        submitting = true; defer { submitting = false }
+        submitting = true; error = nil   // clear a stale submit error before retrying
+        defer { submitting = false }
         let answers: [QuizAnswer] = quiz.questions.map { q in
             let given: String
             switch q.kind {
@@ -74,6 +75,7 @@ final class QuizViewModel: ObservableObject {
             result = try await MemberAPI.submitQuiz(moduleId, clientMutationId: clientMutationId, answers: answers)
         } catch {
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+            Haptics.error()
         }
     }
 
@@ -104,6 +106,7 @@ struct QuizView: View {
     let moduleId: String
     @StateObject private var vm: QuizViewModel
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var idx = 0   // current question
 
     init(moduleId: String) {
@@ -119,13 +122,24 @@ struct QuizView: View {
                                  onDone: { dismiss() },
                                  onRetry: { vm.retry(); idx = 0 })
             } else if vm.loading && vm.quiz == nil {
-                ProgressView()
+                quizSkeleton
             } else if let quiz = vm.quiz, !quiz.questions.isEmpty {
                 flow(quiz)
             } else {
-                Text(vm.error ?? "Couldn't load the quiz.")
-                    .font(.inter(14)).foregroundStyle(QZ.copy)
-                    .padding(Nuru.S.screen)
+                VStack(spacing: Nuru.S.md) {
+                    Text(vm.error ?? "Couldn't load the quiz.")
+                        .font(.inter(14)).foregroundStyle(QZ.copy).multilineTextAlignment(.center)
+                    Button {
+                        Haptics.tap()
+                        Task { await vm.load() }
+                    } label: {
+                        Text("Try again").font(.inter(13, .semibold)).foregroundStyle(QZ.navy)
+                            .padding(.horizontal, 20).padding(.vertical, 10)
+                            .background(quizGoldGradient, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                }
+                .padding(Nuru.S.screen)
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -142,7 +156,7 @@ struct QuizView: View {
         let q = quiz.questions[safeIdx]
         return VStack(spacing: 0) {
             QuizHeader(title: vm.moduleTitle, index: safeIdx, count: count) {
-                if safeIdx > 0 { withAnimation(.easeInOut(duration: 0.2)) { idx = safeIdx - 1 } }
+                if safeIdx > 0 { withAnimation(.easeInOut(duration: 0.25)) { idx = safeIdx - 1 } }
                 else { dismiss() }
             }
             ScrollView(showsIndicators: false) {
@@ -163,18 +177,59 @@ struct QuizView: View {
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.lg)
+                // Each question settles in rather than snapping — a quiet
+                // cross-fade (plus a whisper of slide when motion is allowed).
+                .id(safeIdx)
+                .transition(reduceMotion
+                            ? .opacity
+                            : .asymmetric(insertion: .opacity.combined(with: .offset(x: 24)),
+                                          removal: .opacity.combined(with: .offset(x: -24))))
             }
             QuizCTABar(title: safeIdx < count - 1 ? "Next Question" : "Submit Answers",
                        enabled: vm.answered(q),
                        busy: vm.submitting,
                        error: vm.error) {
+                Haptics.action()
                 if safeIdx < count - 1 {
-                    withAnimation(.easeInOut(duration: 0.2)) { idx = safeIdx + 1 }
+                    withAnimation(.easeInOut(duration: 0.25)) { idx = safeIdx + 1 }
                 } else {
                     Task { await vm.submit() }
                 }
             }
         }
+    }
+
+    // MARK: - First-load skeleton (kicker + question + option-card placeholders)
+
+    private var quizSkeleton: some View {
+        VStack(spacing: 0) {
+            Rectangle().fill(QZ.navy).frame(height: 148)   // where the navy header sits
+                .ignoresSafeArea(edges: .top)
+            VStack(alignment: .leading, spacing: 0) {
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(Color(hex: 0x0A2540, alpha: 0.08)).frame(width: 130, height: 10)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color(hex: 0x0A2540, alpha: 0.08)).frame(maxWidth: .infinity).frame(height: 18)
+                    .padding(.top, 16)
+                RoundedRectangle(cornerRadius: 5, style: .continuous)
+                    .fill(Color(hex: 0x0A2540, alpha: 0.08)).frame(width: 190, height: 18)
+                    .padding(.top, 8)
+                VStack(spacing: 12) {
+                    ForEach(0..<4, id: \.self) { _ in
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(Color.white)
+                            .frame(height: 56)
+                            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(QZ.cardBorder, lineWidth: 1.5))
+                    }
+                }
+                .padding(.top, 28)
+            }
+            .padding(.horizontal, Nuru.S.screen)
+            Spacer()
+        }
+        .nuruShimmer()
+        .accessibilityLabel("Loading the quiz")
     }
 
     // MARK: - Answer renderers (Figma shows single-choice; the other server
@@ -198,8 +253,11 @@ struct QuizView: View {
                     ? (vm.checks[q.questionId]?.contains(c.id) ?? false)
                     : vm.text[q.questionId] == c.id
                 QuizOptionCard(label: c.text, selected: selected, isCheckbox: isCheckbox) {
-                    if isCheckbox { vm.toggleCheck(q.questionId, c.id) }
-                    else { vm.text[q.questionId] = c.id }
+                    Haptics.selection()
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        if isCheckbox { vm.toggleCheck(q.questionId, c.id) }
+                        else { vm.text[q.questionId] = c.id }
+                    }
                 }
             }
         }
@@ -212,7 +270,10 @@ struct QuizView: View {
             HStack(spacing: 10) {
                 ForEach(lo...hi, id: \.self) { n in
                     let sel = vm.text[q.questionId] == String(n)
-                    Button { vm.text[q.questionId] = String(n) } label: {
+                    Button {
+                        Haptics.selection()
+                        withAnimation(.easeInOut(duration: 0.15)) { vm.text[q.questionId] = String(n) }
+                    } label: {
                         Text("\(n)")
                             .font(.inter(16, sel ? .semibold : .regular))
                             .foregroundStyle(sel ? .white : QZ.ink)
@@ -220,7 +281,7 @@ struct QuizView: View {
                             .background(sel ? QZ.navy : Color.white, in: Circle())
                             .overlay(Circle().stroke(sel ? QZ.navy : QZ.cardBorder, lineWidth: 1.5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             if scale.minLabel != nil || scale.maxLabel != nil {
@@ -250,12 +311,13 @@ private struct QuizHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
-                Button(action: onBack) {
+                Button { Haptics.tap(); onBack() } label: {
                     Icon(.arrowLeft, size: 17, color: .white)
                         .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
+                        .contentShape(Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("MODULE QUIZ")
                         .font(.inter(11, .semibold)).kerning(0.9)
@@ -314,7 +376,7 @@ private struct QuizOptionCard: View {
                 .stroke(selected ? QZ.navy : QZ.cardBorder, lineWidth: 1.5))
             .shadow(color: selected ? QZ.navy.opacity(0.10) : .clear, radius: 8, y: 4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     @ViewBuilder
@@ -378,6 +440,7 @@ private struct QuizCTABar: View {
             if let error {
                 Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .transition(.opacity)
             }
             Button(action: action) {
                 ZStack {
@@ -388,9 +451,11 @@ private struct QuizCTABar: View {
                 .background(quizGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .opacity(enabled ? 1 : 0.45)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(!enabled || busy)
+            .animation(.easeInOut(duration: 0.2), value: enabled)
         }
+        .animation(.easeInOut(duration: 0.2), value: error != nil)
         .padding(.top, 16)
         .padding(.horizontal, Nuru.S.lg)
         .padding(.bottom, Nuru.S.md)
@@ -430,10 +495,14 @@ private struct QuizResultScreen: View {
 }
 
 /// Pass — full navy-deep ceremony screen with concentric gold rings + medal.
+/// The rings bloom in once (scale + fade) and a success haptic lands on arrival;
+/// the layout, copy and server score are untouched.
 private struct QuizPassScreen: View {
     let score: Int
     let unlockedNext: Bool
     let onContinue: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bloomed = false
 
     var body: some View {
         ZStack {
@@ -441,12 +510,16 @@ private struct QuizPassScreen: View {
             VStack(spacing: 0) {
                 Spacer()
                 rings
+                    .scaleEffect(bloomed ? 1 : 0.82)
+                    .opacity(bloomed ? 1 : 0)
                 Text("\(score)%")
                     .font(.inter(52, .bold)).foregroundStyle(QZ.gold)
                     .padding(.top, 28)
+                    .gentleEntrance(delay: 0.1)
                 Text("Module Passed")
                     .font(.inter(22, .bold)).foregroundStyle(.white)
                     .padding(.top, 6)
+                    .gentleEntrance(delay: 0.18)
                 Text(unlockedNext
                      ? "The next module on your pathway is now unlocked."
                      : "You've completed this module's quiz.")
@@ -454,18 +527,25 @@ private struct QuizPassScreen: View {
                     .multilineTextAlignment(.center)
                     .padding(.top, 10)
                     .padding(.horizontal, 44)
+                    .gentleEntrance(delay: 0.26)
                 divider.padding(.top, 24)
                 Spacer()
-                Button(action: onContinue) {
+                Button { Haptics.tap(); onContinue() } label: {
                     Text("Continue Pathway")
                         .font(.inter(16, .bold)).foregroundStyle(QZ.navy)
                         .frame(maxWidth: .infinity, minHeight: 56)
                         .background(quizGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.lg)
             }
+        }
+        .onAppear {
+            Haptics.success()
+            guard !bloomed else { return }
+            if reduceMotion { bloomed = true }
+            else { withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { bloomed = true } }
         }
     }
 
@@ -525,26 +605,28 @@ private struct QuizFailScreen: View {
                     .padding(.horizontal, 36)
                 Spacer()
                 VStack(spacing: 10) {
-                    Button(action: onReview) {
+                    Button { Haptics.tap(); onReview() } label: {
                         Text("Review Lesson")
                             .font(.inter(16, .semibold)).foregroundStyle(.white)
                             .frame(maxWidth: .infinity, minHeight: 56)
                             .background(QZ.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
-                    .buttonStyle(.plain)
-                    Button(action: onRetry) {
+                    .buttonStyle(.pressable)
+                    Button { Haptics.action(); onRetry() } label: {
                         Text("Retry Quiz")
                             .font(.inter(16, .semibold)).foregroundStyle(QZ.navy)
                             .frame(maxWidth: .infinity, minHeight: 56)
+                            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                                 .stroke(Color(hex: 0x0A2540, alpha: 0.15), lineWidth: 1.5))
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
                 .padding(.horizontal, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.lg)
             }
         }
+        .onAppear { Haptics.error() }   // kind copy stays; the hand hears "not yet"
     }
 }
 
@@ -570,16 +652,17 @@ private struct QuizReviewScreen: View {
                     .padding(.top, 10)
                     .padding(.horizontal, 36)
                 Spacer()
-                Button(action: onDone) {
+                Button { Haptics.tap(); onDone() } label: {
                     Text("Back to Lesson")
                         .font(.inter(16, .semibold)).foregroundStyle(.white)
                         .frame(maxWidth: .infinity, minHeight: 56)
                         .background(QZ.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.lg)
             }
         }
+        .onAppear { Haptics.success() }   // the submission itself landed safely
     }
 }

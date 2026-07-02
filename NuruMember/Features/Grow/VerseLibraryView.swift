@@ -36,7 +36,9 @@ final class VerseLibraryViewModel: ObservableObject {
         let verse = SavedVerse(savedVerseId: id, reference: reference, version: ver,
                                verseText: text.isEmpty ? nil : text, note: note.isEmpty ? nil : note,
                                createdAt: ISO8601DateFormatter().string(from: Date()))
-        verses.insert(verse, at: 0)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            verses.insert(verse, at: 0)
+        }
         await cacheAll(verses)
         await sync.enqueue(domain: domain, op: "save", payload: [
             "saved_verse_id": AnyCodable(id),
@@ -48,7 +50,9 @@ final class VerseLibraryViewModel: ObservableObject {
     }
 
     func delete(_ v: SavedVerse) async {
-        verses.removeAll { $0.savedVerseId == v.savedVerseId }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            verses.removeAll { $0.savedVerseId == v.savedVerseId }
+        }
         await cacheAll(verses)
         await sync.enqueue(domain: domain, op: "delete", payload: ["saved_verse_id": AnyCodable(v.savedVerseId)])
     }
@@ -71,6 +75,7 @@ struct VerseLibraryView: View {
     @StateObject private var vm = VerseLibraryViewModel()
     @State private var adding = false
     @State private var practicing: SavedVerse?
+    @State private var pendingDelete: SavedVerse?
 
     var body: some View {
         ZStack {
@@ -84,8 +89,8 @@ struct VerseLibraryView: View {
                         VStack(alignment: .leading, spacing: Nuru.S.sm) {
                             ForEach(vm.verses) { v in
                                 SavedVerseCard(verse: v,
-                                               practice: { practicing = v },
-                                               remove: { Task { await vm.delete(v) } })
+                                               practice: { Haptics.tap(); practicing = v },
+                                               remove: { pendingDelete = v })
                             }
                         }
                         .padding(Nuru.S.screen)
@@ -107,6 +112,21 @@ struct VerseLibraryView: View {
             VersePracticeSheet(verse: verse)
                 .presentationDetents([.medium, .large])
         }
+        // Removing a verse is irreversible — a beat of confirmation first.
+        .confirmationDialog(
+            "Remove this verse?",
+            isPresented: Binding(get: { pendingDelete != nil },
+                                 set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Remove verse", role: .destructive) {
+                if let v = pendingDelete { Task { await vm.delete(v) } }
+                pendingDelete = nil
+            }
+            Button("Keep it", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("It will leave your library on every device.")
+        }
     }
 
     // Cream Figma ScreenShell header — back on the left, "+ add" in the right slot.
@@ -115,13 +135,14 @@ struct VerseLibraryView: View {
             HStack {
                 BackButton()
                 Spacer()
-                Button { adding = true } label: {
+                Button { Haptics.tap(); adding = true } label: {
                     Icon(.plus, size: 18, color: Nuru.navy)
                         .frame(width: 40, height: 40)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Save a verse")
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("YOUR COLLECTION")
@@ -208,15 +229,18 @@ private struct SavedVerseCard: View {
                         .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.sm)
                         .background(Nuru.gold, in: Capsule())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
                 Spacer()
                 Button(role: .destructive, action: remove) {
                     Icon(.trash2, size: 14, color: Nuru.danger)
                         .frame(width: 32, height: 32)
                         .background(Nuru.surface, in: Circle())
+                        // Reach 44pt without visually growing the glyph disc.
+                        .contentShape(Rectangle().inset(by: -6))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Remove verse")
             }
             .padding(.top, 2)
         }
@@ -257,8 +281,13 @@ private struct VersePracticeSheet: View {
                     .foregroundStyle(Nuru.muted)
                 editor
                 matchBar
+                    // A quiet tick each quarter of the verse recalled correctly.
+                    .onChange(of: matchPct) { old, new in
+                        if new / 25 != old / 25, new > old { Haptics.selection() }
+                    }
                 PButton(title: "Save practice", variant: .gold,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    Haptics.success()
                     dismiss()
                 }
             }
@@ -297,12 +326,15 @@ private struct VersePracticeSheet: View {
                     Capsule().fill(Nuru.track)
                     Capsule().fill(Nuru.gold)
                         .frame(width: Double(matchPct) / 100 * geo.size.width)
+                        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: matchPct)
                 }
             }
             .frame(height: 8)
             Text("\(matchPct)% match")
                 .font(.inter(10, .regular))
                 .foregroundStyle(Nuru.muted)
+                .contentTransition(.numericText())
+                .animation(.default, value: matchPct)
         }
     }
 
@@ -344,8 +376,12 @@ private struct VerseEditor: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { onSave(reference, version, text, note); dismiss() }
-                        .disabled(reference.trimmingCharacters(in: .whitespaces).isEmpty)
+                    Button("Save") {
+                        Haptics.action()
+                        onSave(reference, version, text, note)
+                        dismiss()
+                    }
+                    .disabled(reference.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }

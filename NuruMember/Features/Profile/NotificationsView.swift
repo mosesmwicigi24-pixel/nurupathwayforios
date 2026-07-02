@@ -32,17 +32,24 @@ struct NotificationsView: View {
             ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: 0) {
                     if vm.loading && vm.rows.isEmpty {
-                        ProgressView().padding(.top, Nuru.S.xl)
+                        ForEach(0..<5, id: \.self) { _ in
+                            skeletonRow
+                            Divider().padding(.leading, 68)
+                        }
                     } else if vm.rows.isEmpty {
                         emptyState
                     } else {
                         ForEach(vm.rows) { n in
-                            Button { Task { await vm.open(n) } } label: { row(n) }.buttonStyle(.plain)
+                            Button {
+                                if n.isUnread { Haptics.tap() }
+                                Task { await vm.open(n) }
+                            } label: { row(n) }.buttonStyle(.pressableSubtle)
                             Divider().padding(.leading, 68)
                         }
                     }
                 }
                 .padding(.bottom, Nuru.tabBarSpace)
+                .animation(.easeInOut(duration: 0.3), value: vm.unread)
             }
             .refreshable { await vm.load() }
         }
@@ -70,6 +77,8 @@ struct NotificationsView: View {
                 Text("Notifications").font(.nHeading).foregroundStyle(Nuru.ink)
                 HStack(spacing: 6) {
                     Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up ✨").font(.nMicro).foregroundStyle(Nuru.faint)
+                        .contentTransition(.numericText(value: Double(vm.unread)))
+                        .animation(.easeInOut(duration: 0.25), value: vm.unread)
                     if rewardUnread > 0 {
                         HStack(spacing: 3) {
                             Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
@@ -82,7 +91,7 @@ struct NotificationsView: View {
                 }
             }
             Spacer()
-            Button { Task { await vm.markAll() } } label: {
+            Button { Haptics.action(); Task { await vm.markAll() } } label: {
                 HStack(spacing: 4) {
                     // Figma's CheckCheck (double tick) — composed from two check glyphs.
                     ZStack {
@@ -95,6 +104,7 @@ struct NotificationsView: View {
                 .padding(.horizontal, 12).padding(.vertical, 7).background(Nuru.navy, in: Capsule())
             }
             .disabled(vm.unread == 0).opacity(vm.unread == 0 ? 0.4 : 1)
+            .animation(.easeInOut(duration: 0.25), value: vm.unread == 0)
         }
         .padding(.horizontal, Nuru.S.base).padding(.top, 54).padding(.bottom, Nuru.S.md)
         .background(Nuru.white)
@@ -153,14 +163,31 @@ struct NotificationsView: View {
         }
     }
 
+    /// Shimmering placeholder row matching the notification anatomy (first load).
+    private var skeletonRow: some View {
+        HStack(alignment: .top, spacing: Nuru.S.md) {
+            RoundedRectangle(cornerRadius: 12).fill(Nuru.surface).frame(width: 40, height: 40)
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 150, height: 11)
+                RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(maxWidth: .infinity).frame(height: 9)
+            }
+        }
+        .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
+        .nuruShimmer()
+    }
+
     private var emptyState: some View {
         VStack(spacing: Nuru.S.sm) {
-            Icon(.sparkles, size: 24, color: Nuru.gold)
+            ZStack {
+                Circle().fill(Nuru.gold.opacity(0.10)).frame(width: 56, height: 56)
+                Icon(.sparkles, size: 24, color: Nuru.gold)
+            }
             Text("You're all caught up").font(.nHeading).foregroundStyle(Nuru.ink)
             Text("New encouragement, reflections, and event reminders will land here.")
                 .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl).padding(.horizontal, Nuru.S.xl)
+        .gentleEntrance()
     }
 
     // MARK: template mapping (port of metaFor/titleFor/bodyFor)

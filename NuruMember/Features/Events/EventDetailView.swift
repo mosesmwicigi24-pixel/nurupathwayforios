@@ -71,6 +71,7 @@ final class EventDetailViewModel: ObservableObject {
             // Roll back the optimistic row and restore the draft so nothing is lost.
             posts.removeAll { $0.postId == pid }
             postDraft = body
+            Haptics.error()
         }
     }
 
@@ -188,11 +189,14 @@ struct EventDetailView: View {
         VStack(spacing: 12) {
             EvdMetaCard(occ: occ, location: location, going: going,
                         accent: Ev.categoryColor(category), shareText: shareText)
-            if let d = aboutText, !d.isEmpty { EvdAboutCard(text: d) }
+                .gentleEntrance()
+            if let d = aboutText, !d.isEmpty { EvdAboutCard(text: d).gentleEntrance(delay: 0.05) }
             if !attendees.isEmpty || going > 0 {
                 EvdRosterCard(attendees: attendees, going: going)
+                    .gentleEntrance(delay: 0.1)
             }
             EvdRsvpCard(vm: vm)
+                .gentleEntrance(delay: 0.15)
             EvdBuzzCard(vm: vm) {
                 // Bring the composer above the keyboard once it has settled.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
@@ -270,10 +274,10 @@ private struct EvdHero: View {
             // top chrome — back (left) + share (right)
             HStack {
                 Button(action: onBack) { EvdCircleGlyph(icon: .chevronLeft, size: 20) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 Spacer()
                 ShareLink(item: shareText) { EvdCircleGlyph(icon: .share2, size: 17) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
             }
             .padding(.horizontal, 16)
             .padding(.top, 54)   // Figma frames 42; nudged for the real status bar
@@ -578,14 +582,20 @@ private struct EvdRsvpCard: View {
                         .font(.inter(11, .semibold)).foregroundStyle(EvD.goingText)
                 }
                 .padding(.top, 10)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
         .evdCard()
+        .animation(.spring(response: 0.32, dampingFraction: 0.8), value: mine)
     }
 
     private func option(_ label: String, _ status: String, tint: Color) -> some View {
         let on = mine == status
-        return Button { Task { await vm.setRsvp(status) } } label: {
+        return Button {
+            guard !on else { return }
+            Haptics.action()
+            Task { await vm.setRsvp(status) }
+        } label: {
             Text(label)
                 .font(.inter(12, .bold))
                 .foregroundStyle(on ? .white : EvD.secondary)
@@ -596,7 +606,7 @@ private struct EvdRsvpCard: View {
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .stroke(on ? .clear : EvD.borderMid, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(vm.rsvpBusy)
         .opacity(vm.rsvpBusy ? 0.7 : 1)
     }
@@ -682,10 +692,13 @@ private struct EvdComposer: View {
             }
             HStack(spacing: 6) {
                 // Real, local: drops a 🔥 into the draft.
-                Button { draft += draft.isEmpty ? "🔥" : " 🔥" } label: {
+                Button {
+                    Haptics.tap()
+                    draft += draft.isEmpty ? "🔥" : " 🔥"
+                } label: {
                     iconDisc(.flame, color: EvD.gold)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Spacer(minLength: 0)
                 postPill
             }
@@ -718,6 +731,7 @@ private struct EvdComposer: View {
 
     private var postPill: some View {
         Button {
+            Haptics.action()
             focused = false
             onPost()
         } label: {
@@ -732,9 +746,10 @@ private struct EvdComposer: View {
                         in: Capsule())
             .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!hasDraft || posting)
         .opacity(!hasDraft || posting ? 0.55 : 1)
+        .animation(.easeOut(duration: 0.18), value: hasDraft)
     }
 }
 
@@ -796,20 +811,25 @@ private struct EvdBuzzPostRow: View {
             chip("❤️", post.loveCount, on: post.myReaction == "love") { onReact("love") }
         }
         .padding(.top, 2)
+        .animation(.spring(response: 0.28, dampingFraction: 0.7), value: post.myReaction)
     }
 
     private func chip(_ emoji: String, _ count: Int, on: Bool, tap: @escaping () -> Void) -> some View {
-        Button(action: tap) {
+        Button {
+            Haptics.love()
+            tap()
+        } label: {
             HStack(spacing: 4) {
                 Text(emoji).font(.system(size: 12))
                 Text("\(count)").font(.inter(10, .bold))
                     .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
+                    .contentTransition(.numericText())
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(on ? EvD.gold.opacity(0.14) : Color.white, in: Capsule())
             .overlay(Capsule().stroke(on ? EvD.gold.opacity(0.45) : EvD.borderMid, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     static func relTime(_ iso: String) -> String {

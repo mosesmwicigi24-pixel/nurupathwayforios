@@ -47,9 +47,11 @@ final class PrayerJournalViewModel: ObservableObject {
             entryId: entryId, title: title.isEmpty ? nil : title, body: body, isAnswered: answered,
             answeredNote: existing?.answeredNote, answeredAt: answered ? (existing?.answeredAt ?? now) : nil,
             createdAt: existing?.createdAt ?? now, updatedAt: now)
-        // optimistic local apply + cache mirror
-        if let i = entries.firstIndex(where: { $0.entryId == entryId }) { entries[i] = entry }
-        else { entries.insert(entry, at: 0) }
+        // optimistic local apply + cache mirror (animated so cards settle, not snap)
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            if let i = entries.firstIndex(where: { $0.entryId == entryId }) { entries[i] = entry }
+            else { entries.insert(entry, at: 0) }
+        }
         await cacheAll(entries)
         // durable, idempotent server write (LWW on updated_at)
         await sync.enqueue(domain: domain, op: "upsert", payload: [
@@ -66,7 +68,9 @@ final class PrayerJournalViewModel: ObservableObject {
     }
 
     func delete(_ e: PrayerEntry) async {
-        entries.removeAll { $0.entryId == e.entryId }
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            entries.removeAll { $0.entryId == e.entryId }
+        }
         await cacheAll(entries)
         await sync.enqueue(domain: domain, op: "delete", payload: ["entry_id": AnyCodable(e.entryId)])
     }
@@ -168,6 +172,7 @@ struct PrayerJournalView: View {
     @StateObject private var vm = PrayerJournalViewModel()
     @State private var editing: PrayerDraft?
     @State private var tab: PrayerTab = .active
+    @State private var pendingDelete: PrayerEntry?
 
     var body: some View {
         ZStack {
@@ -187,16 +192,19 @@ struct PrayerJournalView: View {
                                             activeCount: vm.active.count,
                                             weekCount: vm.thisWeekCount,
                                             answeredCount: vm.answered.count)
+                                .gentleEntrance()
                             PrayerTabs(tab: $tab, activeCount: vm.active.count, answeredCount: vm.answered.count)
+                                .gentleEntrance(delay: 0.05)
                             let list = tab == .active ? vm.active : vm.answered
                             if list.isEmpty {
                                 EmptyPrayers(tab: tab)
                             } else {
-                                ForEach(list) { e in
+                                ForEach(Array(list.enumerated()), id: \.element.id) { idx, e in
                                     JournalCard(entry: e,
                                                 toggle: { Task { await vm.toggleAnswered(e) } },
-                                                edit: { editing = PrayerDraft(entry: e) },
-                                                remove: { Task { await vm.delete(e) } })
+                                                edit: { Haptics.tap(); editing = PrayerDraft(entry: e) },
+                                                remove: { pendingDelete = e })
+                                        .gentleEntrance(delay: 0.1 + min(Double(idx), 3) * 0.05)
                                 }
                             }
                         }
@@ -217,6 +225,21 @@ struct PrayerJournalView: View {
                 Task { await vm.upsert(entryId: draft.entryId, title: title, body: body, answered: answered) }
             }
         }
+        // Deleting a prayer is irreversible — ask before letting it go.
+        .confirmationDialog(
+            "Delete this prayer?",
+            isPresented: Binding(get: { pendingDelete != nil },
+                                 set: { if !$0 { pendingDelete = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete prayer", role: .destructive) {
+                if let e = pendingDelete { Task { await vm.delete(e) } }
+                pendingDelete = nil
+            }
+            Button("Keep it", role: .cancel) { pendingDelete = nil }
+        } message: {
+            Text("It will be removed from your journal on every device.")
+        }
     }
 
     // Cream Figma ScreenShell header: back · tracked kicker · gold compose, serif title.
@@ -230,12 +253,12 @@ struct PrayerJournalView: View {
                     .foregroundStyle(Color(hex: 0x9A7A2A))
                     .lineLimit(1).minimumScaleFactor(0.75)
                 Spacer(minLength: 0)
-                Button { editing = PrayerDraft() } label: {
+                Button { Haptics.tap(); editing = PrayerDraft() } label: {
                     Icon(.plus, size: 18, color: Nuru.navy)
                         .frame(width: 40, height: 40)
                         .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel("New prayer")
             }
             Text("Prayer journal")
@@ -279,6 +302,7 @@ private struct PrayerPulseCard: View {
     let activeCount: Int
     let weekCount: Int
     let answeredCount: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var grown = false
 
     private let gold = Color(hex: 0xC9A227)
@@ -339,7 +363,10 @@ private struct PrayerPulseCard: View {
                            startPoint: .topLeading, endPoint: .bottomTrailing),
             in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: Color(hex: 0x0A2540).opacity(0.35), radius: 14, x: 0, y: 8)
-        .onAppear { withAnimation(.easeOut(duration: 0.9)) { grown = true } }
+        .onAppear {
+            if reduceMotion { grown = true; return }
+            withAnimation(.easeOut(duration: 0.9)) { grown = true }
+        }
     }
 
     private var streakChip: some View {
@@ -388,6 +415,8 @@ private struct PrayerTabs: View {
     private func tabButton(_ t: PrayerTab, _ label: String, _ count: Int) -> some View {
         let on = tab == t
         return Button {
+            guard tab != t else { return }
+            Haptics.selection()
             withAnimation(.easeInOut(duration: 0.2)) { tab = t }
         } label: {
             HStack(spacing: 6) {
@@ -531,7 +560,10 @@ private struct JournalCard: View {
 
     /// Full-width gold-outline action (the comp's "I'm praying" slot → real toggle).
     private var markAnsweredButton: some View {
-        Button(action: toggle) {
+        Button {
+            Haptics.success() // an answered prayer is the journal's best moment
+            toggle()
+        } label: {
             HStack(spacing: 6) {
                 Icon(.checkCircle2, size: 13, color: Color(hex: 0x7A5A14))
                 Text("Mark answered").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
@@ -542,7 +574,7 @@ private struct JournalCard: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(Color(hex: 0xC9A227).opacity(0.27), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -551,15 +583,15 @@ private struct RowAction: View {
     let label: String
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
+        Button { Haptics.tap(); action() } label: {
             HStack(spacing: 6) {
                 Icon(icon, size: 15, color: Color(hex: 0x68758A))
                 Text(label).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x68758A))
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, Nuru.S.sm)
+            .frame(maxWidth: .infinity, minHeight: 44) // proper thumb-sized target
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -622,6 +654,7 @@ private struct PrayerComposerSheet: View {
             .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             Button {
+                Haptics.action() // the "saved" confirmation you can feel
                 onSave(draft.title, draft.body, draft.answered)
                 dismiss()
             } label: {
@@ -631,9 +664,10 @@ private struct PrayerComposerSheet: View {
                     .padding(.vertical, 14)
                     .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(bodyEmpty)
             .opacity(bodyEmpty ? 0.5 : 1)
+            .animation(.easeInOut(duration: 0.2), value: bodyEmpty)
             Spacer(minLength: 0)
         }
         .padding(Nuru.S.screen)

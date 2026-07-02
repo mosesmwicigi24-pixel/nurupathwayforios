@@ -63,7 +63,9 @@ struct NaturalImageThumb: View {
     }
 
     private func open() {
-        if url != nil { showLightbox = true }
+        guard url != nil else { return }
+        Haptics.tap()
+        showLightbox = true
     }
 
     /// The frame carries the (clamped) natural aspect; 4:3 until measured.
@@ -85,7 +87,7 @@ struct NaturalImageThumb: View {
                 } else if phase.error != nil {
                     ThumbPlaceholder()
                 } else {
-                    ZStack { ThumbPlaceholder(); ProgressView().tint(Nuru.gold) }
+                    ZStack { ThumbPlaceholder().nuruShimmer(); ProgressView().tint(Nuru.gold) }
                 }
             }
         } else {
@@ -115,15 +117,23 @@ private struct ThumbPlaceholder: View {
 struct ImageLightbox: View {
     let url: URL?
     @Environment(\.dismiss) private var dismiss
+    /// How far the pull-to-dismiss drag has travelled — drives the backdrop and
+    /// close-button fade so the photo visibly "detaches" as you pull.
+    @State private var dragProgress: CGFloat = 0
 
     init(url: URL?) { self.url = url }
 
     var body: some View {
         ZStack(alignment: .topLeading) {
-            Color.black.ignoresSafeArea()
-            LightboxZoomImage(url: url) { dismiss() }
+            Color.black.opacity(backdropOpacity).ignoresSafeArea()
+            LightboxZoomImage(url: url, onDragProgress: { dragProgress = $0 }) { dismiss() }
             closeButton
         }
+        .preferredColorScheme(.dark)   // white status-bar glyphs over the black backdrop
+    }
+
+    private var backdropOpacity: Double {
+        1 - Double(min(max(dragProgress, 0) / 500, 0.45))
     }
 
     private var closeButton: some View {
@@ -132,9 +142,10 @@ struct ImageLightbox: View {
                 .frame(width: 38, height: 38)
                 .background(Color.white.opacity(0.14), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .padding(.leading, 16)
         .padding(.top, 8)
+        .opacity(1 - Double(min(max(dragProgress, 0) / 150, 1)))
     }
 }
 
@@ -143,6 +154,7 @@ struct ImageLightbox: View {
 /// toggles 1x/2.5x. No scroll view lives underneath, so nothing competes.
 private struct LightboxZoomImage: View {
     let url: URL?
+    var onDragProgress: (CGFloat) -> Void = { _ in }
     var onDismiss: () -> Void
 
     @State private var scale: CGFloat = 1
@@ -151,11 +163,14 @@ private struct LightboxZoomImage: View {
     @State private var baseOffset: CGSize = .zero
     @State private var dismissDrag: CGFloat = 0
 
+    /// The photo shrinks a touch as it's pulled — the "detaching" cue.
+    private var dragScale: CGFloat { 1 - min(max(dismissDrag, 0) / 1600, 0.12) }
+
     var body: some View {
         GeometryReader { geo in
             fitted
                 .frame(width: geo.size.width, height: geo.size.height)
-                .scaleEffect(scale)
+                .scaleEffect(scale * dragScale)
                 .offset(x: offset.width, y: offset.height + dismissDrag)
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { toggleZoom() }
@@ -198,7 +213,11 @@ private struct LightboxZoomImage: View {
                     offset = CGSize(width: baseOffset.width + v.translation.width,
                                     height: baseOffset.height + v.translation.height)
                 } else {
-                    dismissDrag = max(0, v.translation.height)
+                    // Downward tracks 1:1 (pull to dismiss); upward rubber-bands
+                    // at 1/3 travel so the photo feels attached, never dead.
+                    let t = v.translation.height
+                    dismissDrag = t > 0 ? t : t / 3
+                    onDragProgress(dismissDrag)
                 }
             }
             .onEnded { v in
@@ -210,12 +229,14 @@ private struct LightboxZoomImage: View {
                 } else {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
                         dismissDrag = 0
+                        onDragProgress(0)
                     }
                 }
             }
     }
 
     private func toggleZoom() {
+        Haptics.tap()
         withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
             if scale > 1 {
                 scale = 1; baseScale = 1

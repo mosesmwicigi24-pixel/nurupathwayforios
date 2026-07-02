@@ -33,7 +33,12 @@ final class DevotionalViewModel: ObservableObject {
               !reflection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         saving = true; defer { saving = false }
         if (try? await MemberAPI.saveDevotionalReflection(devotionalId: d.devotionalId, body: reflection)) == true {
-            saved = true
+            // The reading-completion moment: a firm success tick + the
+            // "Submitted" check settling in with a small spring.
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { saved = true }
+            Haptics.success()
+        } else {
+            Haptics.error()
         }
     }
 }
@@ -71,14 +76,18 @@ struct DevotionalView: View {
                             BodyParagraphs(text: d.body)
                         }
                     }
+                    .gentleEntrance()
                     ReflectionCard(prompt: d.reflectionPrompt,
                                    text: $vm.reflection,
                                    saving: vm.saving,
                                    saved: vm.saved) {
                         Task { await vm.saveReflection() }
                     }
+                    .gentleEntrance(delay: 0.06)
                     FooterActions(devotional: d)
+                        .gentleEntrance(delay: 0.12)
                     EncouragementStrip()
+                        .gentleEntrance(delay: 0.18)
                 }
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.lg)
@@ -134,7 +143,7 @@ private struct BackButton: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -225,6 +234,7 @@ private struct ReflectionCard: View {
                             Icon(.check, size: 10, color: Nuru.gold)
                             Text("Submitted").font(.inter(10, .bold)).foregroundStyle(Nuru.gold)
                         }
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
                 }
                 Text(prompt ?? "What is God saying to you today?")
@@ -275,7 +285,7 @@ private struct ReflectionCard: View {
 
     // Figma: full-width navy submit, dimmed navy while below the minimum.
     private var submitButton: some View {
-        Button(action: onSave) {
+        Button { Haptics.action(); onSave() } label: {
             ZStack {
                 if saving {
                     ProgressView().tint(.white)
@@ -291,7 +301,7 @@ private struct ReflectionCard: View {
                 in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(!canSubmit || saving)
     }
 }
@@ -304,19 +314,23 @@ private struct FooterActions: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Button { loved.toggle() } label: {
+            Button {
+                loved.toggle()
+                Haptics.love()
+            } label: {
                 column(icon: .heart, label: loved ? "Saved" : "Save",
                        color: loved ? Nuru.gold : Nuru.navy)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: loved)
 
             ShareLink(item: shareText) {
                 column(icon: .share2, label: "Share", color: Nuru.navy)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
         .padding(.horizontal, Nuru.S.md)
-        .padding(.vertical, 10)
+        .padding(.vertical, 3) // the 44pt hit area lives inside each column
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
@@ -329,7 +343,8 @@ private struct FooterActions: View {
             Icon(icon, size: 16, color: color)
             Text(label).font(.inter(10, .medium)).foregroundStyle(color)
         }
-        .frame(maxWidth: .infinity)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .contentShape(Rectangle())
     }
 
     private var shareText: String {

@@ -103,15 +103,25 @@ struct GivingStatementView: View {
                 VStack(alignment: .leading, spacing: Nuru.S.base) {
                     periodSelector
                     if vm.loading && vm.history.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
+                        loadingSkeleton
                     } else if let e = vm.error, vm.history.isEmpty {
-                        Text(e).font(.nBody).foregroundStyle(Nuru.muted)
-                            .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
+                        VStack(spacing: Nuru.S.sm) {
+                            Text(e).font(.nBody).foregroundStyle(Nuru.muted)
+                            Button {
+                                Haptics.tap()
+                                Task { await vm.load() }
+                            } label: {
+                                Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
+                                    .padding(.horizontal, 16).padding(.vertical, 8)
+                                    .background(Nuru.navy, in: Capsule())
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
                     } else if vm.history.isEmpty {
-                        Text("No gifts yet.").font(.nBody).foregroundStyle(Nuru.muted)
-                            .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
+                        emptyState
                     } else {
-                        fundTotalsCard
+                        fundTotalsCard.gentleEntrance()
                         historyList
                         Text("Statement reflects records held under Finance · receipts emailed per gift.")
                             .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
@@ -131,6 +141,41 @@ struct GivingStatementView: View {
         .sheet(item: $shareFile) { f in ActivityShareSheet(url: f.url) }
     }
 
+    // MARK: Loading / empty states
+
+    /// Shimmering placeholder in the statement's silhouette (fund card + rows).
+    private var loadingSkeleton: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.base) {
+            VStack(spacing: 14) {
+                ForEach(0..<3, id: \.self) { _ in
+                    HStack(spacing: 10) {
+                        Circle().fill(Nuru.surface).frame(width: 32, height: 32).nuruShimmer()
+                        RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(height: 12).nuruShimmer()
+                    }
+                }
+            }
+            .padding(Nuru.S.base)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .fill(Nuru.white).frame(height: 68).nuruShimmer()
+        }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: Nuru.S.sm) {
+            ZStack {
+                Circle().fill(Nuru.gold.opacity(0.1)).frame(width: 48, height: 48)
+                Icon(.handHeart, size: 20, color: Nuru.gold)
+            }
+            Text("No gifts yet").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+            Text("When you give, your full record and receipts live here.")
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
+    }
+
     // MARK: Navy masthead (per Figma)
 
     private var header: some View {
@@ -141,7 +186,10 @@ struct GivingStatementView: View {
                 Text("GIVING STATEMENT")
                     .font(.inter(10, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
                 Spacer()
-                circleButton(.download) { share() }
+                circleButton(.download) {
+                    Haptics.action()
+                    share()
+                }
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("Total given").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
@@ -181,7 +229,7 @@ struct GivingStatementView: View {
                     .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 Icon(icon, size: 17, color: .white)
             }
-        }.buttonStyle(.plain)
+        }.buttonStyle(.pressable)
     }
 
     // MARK: Period selector (This year / Last year)
@@ -198,7 +246,11 @@ struct GivingStatementView: View {
 
     private func segment(_ label: String, _ y: Int) -> some View {
         let on = year == y
-        return Button { year = y } label: {
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { year = y }
+        } label: {
             Text(label)
                 .font(.inter(13, .semibold))
                 .foregroundStyle(on ? Nuru.navy : Color(hex: 0x6B7280))
@@ -269,15 +321,18 @@ struct GivingStatementView: View {
             Text("No gifts \(periodLabel).").font(.nBody).foregroundStyle(Nuru.muted)
                 .frame(maxWidth: .infinity).padding(.top, Nuru.S.lg)
         } else {
-            ForEach(vm.groups(in: year), id: \.key) { group in
+            ForEach(Array(vm.groups(in: year).enumerated()), id: \.element.key) { idx, group in
                 VStack(alignment: .leading, spacing: 10) {
                     Text(group.label.uppercased())
                         .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Color(hex: 0xA8861C))
                     ForEach(group.records) { r in
-                        NavigationLink(value: r) { giftCard(r) }.buttonStyle(.plain)
+                        NavigationLink(value: r) { giftCard(r) }.buttonStyle(.pressableSubtle)
                     }
                 }
                 .padding(.top, Nuru.S.sm)
+                // Stagger fades out after the first few groups — long statements
+                // shouldn't feel slower to arrive.
+                .gentleEntrance(delay: 0.05 + Double(min(idx, 3)) * 0.05)
             }
         }
     }
@@ -329,7 +384,9 @@ struct GivingStatementView: View {
         do {
             try data.write(to: url)
             shareFile = ShareFile(url: url)
-        } catch { /* nothing to share */ }
+        } catch {
+            Haptics.error()   // the tap did something — say the file didn't make it
+        }
     }
 }
 

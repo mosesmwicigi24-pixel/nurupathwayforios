@@ -11,20 +11,25 @@ struct InlineVideoPlayer: UIViewRepresentable {
     let urlString: String?
     let source: String               // cloudinary | youtube | vimeo | direct | private
     let externalVideoId: String?
+    /// Fires once when the embed's page finishes (or fails) loading — hosts use
+    /// it to drop their buffering spinner. Optional, so call sites are unchanged.
+    var onReady: (() -> Void)?
 
     /// The Home welcome-video payload, unchanged call sites.
-    init(video: WelcomeVideo) {
+    init(video: WelcomeVideo, onReady: (() -> Void)? = nil) {
         self.urlString = video.playUrl
         self.source = video.videoSource
         self.externalVideoId = video.externalVideoId
+        self.onReady = onReady
     }
 
     /// Any raw video URL (announcements, events). When `source` is nil the
     /// provider is sniffed from the URL's host (youtube/vimeo/direct).
-    init(urlString: String?, source: String? = nil, externalVideoId: String? = nil) {
+    init(urlString: String?, source: String? = nil, externalVideoId: String? = nil, onReady: (() -> Void)? = nil) {
         self.urlString = urlString
         self.source = source ?? Self.detectSource(urlString)
         self.externalVideoId = externalVideoId
+        self.onReady = onReady
     }
 
     func makeUIView(context: Context) -> WKWebView {
@@ -32,6 +37,7 @@ struct InlineVideoPlayer: UIViewRepresentable {
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []   // allow autoplay after the tap
         let web = WKWebView(frame: .zero, configuration: config)
+        web.navigationDelegate = context.coordinator
         web.scrollView.isScrollEnabled = false
         web.isOpaque = false
         web.backgroundColor = .black
@@ -40,17 +46,35 @@ struct InlineVideoPlayer: UIViewRepresentable {
     }
 
     func updateUIView(_ web: WKWebView, context: Context) {
+        context.coordinator.onReady = onReady
         guard !context.coordinator.loaded else { return }
         context.coordinator.loaded = true
         if let embed = embedURL {
             web.load(URLRequest(url: embed))
         } else if let raw = urlString, let u = URL(string: raw) {
             web.loadHTMLString(Self.html(for: u), baseURL: nil)
+        } else {
+            // Nothing playable — never leave the host spinning forever.
+            context.coordinator.signalReady()
         }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
-    final class Coordinator { var loaded = false }
+
+    final class Coordinator: NSObject, WKNavigationDelegate {
+        var loaded = false
+        var onReady: (() -> Void)?
+
+        /// Fire the host's ready callback exactly once (finish OR failure both
+        /// mean "stop showing the spinner"; the web view shows its own errors).
+        func signalReady() {
+            onReady?()
+            onReady = nil
+        }
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { signalReady() }
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { signalReady() }
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { signalReady() }
+    }
 
     /// Best-effort provider detection for URLs that arrive without a source tag.
     static func detectSource(_ raw: String?) -> String {

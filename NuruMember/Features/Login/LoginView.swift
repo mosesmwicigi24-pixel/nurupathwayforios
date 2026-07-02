@@ -6,14 +6,28 @@
 import SwiftUI
 
 private enum LoginMode { case login, register, forgot, reset, mfa }
+private enum LoginField: Hashable { case name, email, password, confirm, token, code, newPassword }
+
+/// Horizontal "no" shake for a failed submit — three quick cycles, driven by an
+/// incrementing counter so repeat failures re-shake.
+private struct ShakeEffect: GeometryEffect {
+    var travel: CGFloat = 7
+    var animatableData: CGFloat
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: travel * sin(animatableData * .pi * 6), y: 0))
+    }
+}
 
 struct LoginView: View {
     @EnvironmentObject private var auth: AuthStore
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var mode: LoginMode = .login
     @State private var busy = false
     @State private var error: String?
     @State private var notice: String?
+    @State private var shakes = 0
+    @FocusState private var focus: LoginField?
 
     @State private var fullName = ""
     @State private var email = ""
@@ -109,6 +123,20 @@ struct LoginView: View {
                 PButton(title: primaryTitle, variant: .gold, busy: busy) { Task { await submit() } }
             }
             .padding(.top, Nuru.S.xl)
+            .modifier(ShakeEffect(animatableData: CGFloat(shakes)))
+            .animation(.easeOut(duration: 0.2), value: error)
+            .animation(.easeOut(duration: 0.2), value: notice)
+            // Return chains to the next field; on the last field it submits —
+            // same path as the gold button, so validation/haptics all apply.
+            .onSubmit {
+                switch focus {
+                case .name: focus = .email
+                case .email where mode != .forgot: focus = .password
+                case .password where mode == .register: focus = .confirm
+                case .token: focus = .newPassword
+                default: Task { await submit() }
+                }
+            }
 
             footer.padding(.top, Nuru.S.xl)
         }
@@ -133,45 +161,48 @@ struct LoginView: View {
     @ViewBuilder
     private var fields: some View {
         if mode == .register {
-            field("FULL NAME", icon: .user) {
-                plainField("Your name", text: $fullName, autocap: .words)
+            field("FULL NAME", icon: .user, id: .name) {
+                plainField("Your name", text: $fullName, id: .name, autocap: .words)
             }
         }
         switch mode {
         case .reset:
-            field("RESET TOKEN", icon: .lock) {
-                plainField("Paste the token from your email", text: $token)
+            field("RESET TOKEN", icon: .lock, id: .token) {
+                plainField("Paste the token from your email", text: $token, id: .token)
             }
         case .mfa:
-            field("VERIFICATION CODE", icon: .lock) {
-                plainField("123456", text: $mfaCode, keyboard: .numberPad)
+            field("VERIFICATION CODE", icon: .lock, id: .code) {
+                plainField("123456", text: $mfaCode, id: .code, keyboard: .numberPad)
             }
         default:
-            field("EMAIL ADDRESS", icon: .mail) {
-                plainField("name@email.com", text: $email, keyboard: .emailAddress)
+            field("EMAIL ADDRESS", icon: .mail, id: .email) {
+                plainField("name@email.com", text: $email, id: .email, keyboard: .emailAddress)
             }
         }
 
         if mode == .login || mode == .register {
-            field("PASSWORD", icon: .lock, trailing: eyeToggle) {
-                secureField(mode == .register ? "At least 8 characters" : "••••••••", text: $password)
+            field("PASSWORD", icon: .lock, id: .password, trailing: eyeToggle) {
+                secureField(mode == .register ? "At least 8 characters" : "••••••••", text: $password, id: .password)
             }
         }
         if mode == .register {
-            field("CONFIRM PASSWORD", icon: .lock) {
-                secureField("Re-enter password", text: $confirm)
+            field("CONFIRM PASSWORD", icon: .lock, id: .confirm) {
+                secureField("Re-enter password", text: $confirm, id: .confirm)
             }
         }
         if mode == .reset {
-            field("NEW PASSWORD", icon: .lock, trailing: eyeToggle) {
-                secureField("At least 8 characters", text: $newPassword)
+            field("NEW PASSWORD", icon: .lock, id: .newPassword, trailing: eyeToggle) {
+                secureField("At least 8 characters", text: $newPassword, id: .newPassword)
             }
         }
     }
 
     private var rememberRow: some View {
         HStack {
-            Button { remember.toggle() } label: {
+            Button {
+                Haptics.selection()
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.7)) { remember.toggle() }
+            } label: {
                 HStack(spacing: Nuru.S.sm) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 6)
@@ -180,11 +211,14 @@ struct LoginView: View {
                             .frame(width: 20, height: 20)
                         if remember {
                             Icon(.check, size: 11, color: Nuru.navy)
+                                .transition(.scale.combined(with: .opacity))
                         }
                     }
                     Text("Remember me").font(.nCaption).foregroundStyle(Nuru.onNavyDim)
                 }
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.pressableSubtle)
             Spacer()
             Button { go(.forgot) } label: {
                 Text("Forgot your password?").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
@@ -207,31 +241,40 @@ struct LoginView: View {
 
     private var eyeToggle: AnyView {
         AnyView(
-            Button { showPw.toggle() } label: {
+            Button {
+                Haptics.tap()
+                showPw.toggle()
+            } label: {
                 Icon(showPw ? .eyeOff : .eye, size: 17, color: Color.white.opacity(0.40))
+                    // Bigger invisible hit area — the visible glyph stays 17pt.
+                    .frame(width: 36, height: 36)
+                    .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
         )
     }
 
     // MARK: Field building blocks
 
-    private func field<Content: View>(_ label: String, icon: Lucide, trailing: AnyView? = nil,
+    private func field<Content: View>(_ label: String, icon: Lucide, id: LoginField, trailing: AnyView? = nil,
                                       @ViewBuilder content: () -> Content) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let focused = focus == id
+        return VStack(alignment: .leading, spacing: 8) {
             Text(label).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.onNavyDim)
             HStack(spacing: Nuru.S.sm) {
-                Icon(icon, size: 17, color: Color.white.opacity(0.40))
+                Icon(icon, size: 17, color: focused ? Nuru.gold.opacity(0.85) : Color.white.opacity(0.40))
                 content().frame(maxWidth: .infinity)
                 if let trailing { trailing }
             }
             .padding(.horizontal, Nuru.S.base)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+            .background(Color.white.opacity(focused ? 0.09 : 0.06), in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
-                .stroke(Color.white.opacity(0.14), lineWidth: 1))
+                .stroke(focused ? Nuru.gold.opacity(0.55) : Color.white.opacity(0.14), lineWidth: 1))
+            .animation(.easeOut(duration: 0.16), value: focused)
         }
     }
 
-    private func plainField(_ placeholder: String, text: Binding<String>,
+    private func plainField(_ placeholder: String, text: Binding<String>, id: LoginField,
                             keyboard: UIKeyboardType = .default,
                             autocap: TextInputAutocapitalization = .never) -> some View {
         TextField("", text: text, prompt: Text(placeholder).foregroundColor(Color.white.opacity(0.40)))
@@ -241,9 +284,10 @@ struct LoginView: View {
             .font(.inter(16))
             .foregroundStyle(.white)
             .padding(.vertical, 14)
+            .focused($focus, equals: id)
     }
 
-    private func secureField(_ placeholder: String, text: Binding<String>) -> some View {
+    private func secureField(_ placeholder: String, text: Binding<String>, id: LoginField) -> some View {
         Group {
             if showPw {
                 TextField("", text: text, prompt: Text(placeholder).foregroundColor(Color.white.opacity(0.40)))
@@ -256,6 +300,7 @@ struct LoginView: View {
         .font(.inter(16))
         .foregroundStyle(.white)
         .padding(.vertical, 14)
+        .focused($focus, equals: id)
     }
 
     // MARK: Copy
@@ -293,15 +338,30 @@ struct LoginView: View {
     // MARK: Actions
 
     private func go(_ next: LoginMode) {
-        error = nil; notice = nil; mode = next
+        error = nil; notice = nil
+        withAnimation(.easeInOut(duration: 0.22)) { mode = next }
     }
 
     private func enter(_ session: Session) async {
+        Haptics.success()
         await auth.onAuthenticated(session)
     }
 
+    /// Failed-submit feedback: error haptic + a quick horizontal shake of the form.
+    private func feedbackOnError() {
+        Haptics.error()
+        guard !reduceMotion else { return }
+        withAnimation(.easeInOut(duration: 0.4)) { shakes += 1 }
+    }
+
     private func submit() async {
-        error = nil; busy = true; defer { busy = false }
+        error = nil; busy = true
+        // Runs on EVERY exit path (early validation returns included): any
+        // non-nil error at this point is a fresh failure from this attempt.
+        defer {
+            busy = false
+            if error != nil { feedbackOnError() }
+        }
         do {
             switch mode {
             case .login:
@@ -312,7 +372,8 @@ struct LoginView: View {
                     else { UserDefaults.standard.removeObject(forKey: rememberKey) }
                     await enter(s)
                 case .mfaChallenge(let c):
-                    mfaToken = c.mfaToken; mfaCode = ""; mode = .mfa
+                    mfaToken = c.mfaToken; mfaCode = ""
+                    withAnimation(.easeInOut(duration: 0.22)) { mode = .mfa }
                 }
             case .mfa:
                 guard !mfaCode.trimmed.isEmpty else { error = "Enter your 6-digit code."; return }
@@ -326,7 +387,8 @@ struct LoginView: View {
             case .forgot:
                 guard !email.trimmed.isEmpty else { error = "Enter your account email."; return }
                 if let devToken = try await MemberAPI.forgotPassword(email.trimmed) {
-                    token = devToken; notice = "Reset link generated (dev). Set your new password below."; mode = .reset
+                    token = devToken; notice = "Reset link generated (dev). Set your new password below."
+                    withAnimation(.easeInOut(duration: 0.22)) { mode = .reset }
                 } else {
                     notice = "If an account exists for that email, a reset link is on its way."
                 }
@@ -334,7 +396,9 @@ struct LoginView: View {
                 guard !token.trimmed.isEmpty else { error = "Paste the reset token from your email."; return }
                 guard newPassword.count >= 8 else { error = "Password must be at least 8 characters."; return }
                 try await MemberAPI.resetPassword(token: token.trimmed, newPassword: newPassword)
-                password = ""; notice = "Password reset. Sign in with your new password."; mode = .login
+                Haptics.success()
+                password = ""; notice = "Password reset. Sign in with your new password."
+                withAnimation(.easeInOut(duration: 0.22)) { mode = .login }
             }
         } catch let e as APIError {
             error = errorMessage(for: e)

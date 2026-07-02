@@ -47,6 +47,8 @@ struct VideoPlayerPage: View {
 
             closeButton
         }
+        // Poster → player is a crossfade, not a hard cut.
+        .animation(.easeInOut(duration: 0.3), value: playing)
         .preferredColorScheme(.dark)
     }
 
@@ -101,16 +103,21 @@ struct VideoPlayerPage: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, Nuru.S.screen)
+            .gentleEntrance()
 
             startWatchingButton
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.xl)
+                .gentleEntrance(delay: 0.08)
         }
     }
 
     private var startWatchingButton: some View {
-        Button { playing = true } label: {
+        Button {
+            Haptics.action()
+            playing = true
+        } label: {
             HStack(spacing: Nuru.S.sm) {
                 Icon(.play, size: 16, color: Nuru.navy)
                 Text("Start watching")
@@ -121,7 +128,7 @@ struct VideoPlayerPage: View {
             .frame(height: Nuru.buttonHeightLg)
             .background(Nuru.white, in: Capsule())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     // MARK: top-left circular ✕
@@ -134,7 +141,7 @@ struct VideoPlayerPage: View {
                         .frame(width: 38, height: 38)
                         .background(Color.white.opacity(0.18), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Nuru.S.screen)

@@ -157,7 +157,7 @@ struct PathwayView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     if vm.loading && vm.summary == nil {
-                        ProgressView().tint(PW.gold).frame(maxWidth: .infinity).padding(.top, 140)
+                        PathwaySkeleton()
                     } else if let s = vm.summary {
                         content(s)
                     } else {
@@ -198,8 +198,12 @@ struct PathwayView: View {
             VStack(alignment: .leading, spacing: 24) {
                 PathwayJourneyRail(
                     levels: s.levels, selected: selectedLevel?.levelNumber ?? -1,
-                    onSelect: { selectedLevelNumber = $0 },
+                    onSelect: { n in
+                        Haptics.selection()
+                        withAnimation(.easeInOut(duration: 0.2)) { selectedLevelNumber = n }
+                    },
                     onMap: { path.append(PathwayRoute.map) })
+                    .gentleEntrance()
 
                 if let sel = selectedLevel {
                     PathwaySelectedModules(
@@ -207,6 +211,7 @@ struct PathwayView: View {
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
                         openModule: { path.append(PathwayRoute.module($0)) })
+                        .gentleEntrance(delay: 0.05)
                 }
 
                 PathwayMilestones(
@@ -216,9 +221,11 @@ struct PathwayView: View {
                             path.append(PathwayRoute.module(m.moduleId))
                         }
                     })
+                    .gentleEntrance(delay: 0.1)
 
                 PathwaySummitCard(overallPct: vm.overallPct,
                               levelsLeft: s.levels.filter { $0.status != .completed }.count)
+                    .gentleEntrance(delay: 0.15)
             }
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
         }
@@ -226,8 +233,17 @@ struct PathwayView: View {
 
     private var errorState: some View {
         VStack(spacing: Nuru.S.md) {
-            Text(vm.error ?? "Something went wrong.").font(.nBody).foregroundStyle(PW.ink2)
-            Button("Try again") { Task { await vm.load() } }.font(.inter(14, .semibold)).foregroundStyle(PW.gold)
+            Text(vm.error ?? "Something went wrong.")
+                .font(.nBody).foregroundStyle(PW.ink2).multilineTextAlignment(.center)
+            Button {
+                Haptics.tap()
+                Task { await vm.load() }
+            } label: {
+                Text("Try again").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
+                    .padding(.horizontal, 22).padding(.vertical, 11)
+                    .background(PW.gold, in: Capsule())
+            }
+            .buttonStyle(.pressable)
         }.padding(Nuru.S.xl)
     }
 
@@ -270,6 +286,8 @@ private struct PathwayHubHeader: View {
                           track: PW.navy.opacity(0.10))
                     Text("\(active?.completedModules ?? 0)/\(active?.totalModules ?? 0)")
                         .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x68758A))
+                        .contentTransition(.numericText())
+                        .animation(.default, value: active?.completedModules)
                 }.padding(.top, 16)
                 if remaining > 0 {
                     HStack(spacing: 6) {
@@ -316,7 +334,7 @@ private struct PathwayHubHeader: View {
 
     // Navy CTA that pops on the light header (fresh Figma).
     private var continueCard: some View {
-        Button { if let m = resume { openModule(m.moduleId) } } label: {
+        Button { if let m = resume { Haptics.tap(); openModule(m.moduleId) } } label: {
             HStack(spacing: 12) {
                 Icon(.playCircle, size: 22, color: PW.navy)
                     .frame(width: 44, height: 44)
@@ -333,21 +351,31 @@ private struct PathwayHubHeader: View {
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .shadow(color: Color(hex: 0x0A1628).opacity(0.5), radius: 17, y: 10)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
 private struct PWHeaderRing: View {
     let pct: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
     var body: some View {
         ZStack {
             Circle().stroke(PW.navy.opacity(0.12), lineWidth: 3)
-            Circle().trim(from: 0, to: CGFloat(max(0, min(100, pct))) / 100)
+            Circle().trim(from: 0, to: shown ? CGFloat(max(0, min(100, pct))) / 100 : 0)
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
             Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                .contentTransition(.numericText())
+                .animation(.default, value: pct)
         }
         .frame(width: 40, height: 40)
+        .onAppear {
+            guard !shown else { return }
+            if reduceMotion { shown = true }
+            else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.1)) { shown = true } }
+        }
     }
 }
 
@@ -364,7 +392,13 @@ private struct PathwayJourneyRail: View {
             HStack {
                 Text("THE JOURNEY · \(levels.count) LEVELS").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
                 Spacer()
-                Button(action: onMap) { Text("Map view").font(.inter(9, .bold)).foregroundStyle(PW.gold) }.buttonStyle(.plain)
+                Button { Haptics.tap(); onMap() } label: {
+                    Text("Map view").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                        .padding(.vertical, 10).padding(.leading, 16)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, -10)   // hit area grows; layout doesn't move
             }.padding(.horizontal, 4)
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
@@ -414,7 +448,7 @@ private struct PWJourneyNode: View {
             }
             .frame(width: 68)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -446,12 +480,18 @@ private struct PathwaySelectedModules: View {
                 }
                 Spacer()
                 if let r = resume {
-                    Button { openModule(r.moduleId) } label: { Text("Continue →").font(.inter(10, .bold)).foregroundStyle(PW.gold) }.buttonStyle(.plain)
+                    Button { Haptics.tap(); openModule(r.moduleId) } label: {
+                        Text("Continue →").font(.inter(10, .bold)).foregroundStyle(PW.gold)
+                            .padding(.vertical, 10).padding(.leading, 16)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.vertical, -10)   // hit area grows; layout doesn't move
                 }
             }.padding(.horizontal, 4)
             VStack(spacing: 0) {
                 if loading {
-                    ProgressView().tint(PW.gold).frame(maxWidth: .infinity).padding(.vertical, 26)
+                    skeletonRows
                 } else if ordered.isEmpty {
                     Text("Modules open as you progress.").font(.inter(12)).foregroundStyle(PW.ink3)
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
@@ -468,18 +508,40 @@ private struct PathwaySelectedModules: View {
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PW.border, lineWidth: 1))
         }
     }
+
+    /// Shimmering placeholder rows while a level's real trail is fetched.
+    private var skeletonRows: some View {
+        VStack(spacing: 0) {
+            ForEach(0..<3, id: \.self) { i in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PW.mutedBg).frame(width: 32, height: 32)
+                    VStack(alignment: .leading, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(PW.mutedBg).frame(width: 150, height: 10)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(PW.mutedBg).frame(width: 72, height: 8)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 13)
+                .overlay(alignment: .bottom) { if i < 2 { Rectangle().fill(PW.border).frame(height: 1) } }
+            }
+        }
+        .nuruShimmer()
+    }
 }
 
 private struct PWModuleRow: View {
     let module: LevelModule
     let last: Bool
     let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shakes = 0
+    @State private var lockHint = false
     private var done: Bool { module.status == .completed }
     private var active: Bool { module.status == .next }
     private var locked: Bool { module.status == .locked }
 
     var body: some View {
-        Button(action: onTap) {
+        Button(action: handleTap) {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
@@ -496,7 +558,8 @@ private struct PWModuleRow: View {
                     // #8B95A5-on-white washed the whole card out on device.
                     Text(module.title).font(.inter(13, active ? .bold : .medium))
                         .foregroundStyle(locked ? PW.ink2 : PW.navy).lineLimit(1)
-                    Text(done ? "Completed" : active ? "In progress · tap to continue" : "Locked")
+                    Text(done ? "Completed" : active ? "In progress · tap to continue"
+                         : lockHint ? "Finish the previous module to unlock" : "Locked")
                         .font(.inter(9, active ? .bold : .medium)).foregroundStyle(active ? PW.goldDeep : PW.ink3)
                 }
                 Spacer(minLength: 0)
@@ -511,8 +574,33 @@ private struct PWModuleRow: View {
             .background(active ? PW.gold.opacity(0.05) : Color.clear)
             .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
         }
-        .buttonStyle(.plain)
-        .disabled(locked)
+        .buttonStyle(.pressable)
+        .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
+        .accessibilityHint(locked ? "Locked. Finish the previous module to unlock." : "")
+    }
+
+    /// Locked rows stay locked (server-authoritative) — a tap just answers with a
+    /// gentle refusal shake and a hint of what unlocks it.
+    private func handleTap() {
+        guard locked else { Haptics.tap(); onTap(); return }
+        Haptics.error()
+        if !reduceMotion { withAnimation(.linear(duration: 0.35)) { shakes += 1 } }
+        guard !lockHint else { return }
+        withAnimation(.easeInOut(duration: 0.2)) { lockHint = true }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            withAnimation(.easeInOut(duration: 0.2)) { lockHint = false }
+        }
+    }
+}
+
+/// Refusal shake for locked content — three quick sways, driven by bumping an
+/// integer trigger inside `withAnimation` (callers skip it under Reduce Motion).
+struct PWLockedShake: GeometryEffect {
+    var travel: CGFloat = 5
+    var animatableData: CGFloat
+    func effectValue(size: CGSize) -> ProjectionTransform {
+        ProjectionTransform(CGAffineTransform(translationX: travel * sin(animatableData * .pi * 6), y: 0))
     }
 }
 
@@ -543,7 +631,7 @@ private struct PathwayMilestones: View {
     }
 
     private func nextRewardCard(_ r: PWReward) -> some View {
-        Button(action: openResume) {
+        Button { Haptics.tap(); openResume() } label: {
             HStack(spacing: 12) {
                 Text(r.emoji).font(.system(size: 22))
                     .frame(width: 48, height: 48)
@@ -563,7 +651,7 @@ private struct PathwayMilestones: View {
             .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             .shadow(color: PW.navyDeep.opacity(0.6), radius: 20, y: 12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -732,11 +820,12 @@ struct LevelsMapView: View {
             Circle().fill(PW.gold.opacity(0.14)).frame(width: 288, height: 288).blur(radius: 48).offset(x: 80, y: -96)
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Button { dismiss() } label: {
+                    Button { Haptics.tap(); dismiss() } label: {
                         Icon(.chevronLeft, size: 20, color: PW.navy).frame(width: 36, height: 36)
                             .background(Color.white, in: Circle())
                             .overlay(Circle().stroke(PW.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
+                            .contentShape(Circle())
+                    }.buttonStyle(.pressable)
                     Spacer()
                 }
                 Text("Welcome back, \(firstName)".uppercased())
@@ -785,19 +874,29 @@ struct LevelsMapView: View {
 
 private struct PWProgressRing: View {
     let pct: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
     var body: some View {
         ZStack {
             Circle().stroke(Color(hex: 0x0B1F33, alpha: 0.12), lineWidth: 6)
-            Circle().trim(from: 0, to: CGFloat(pct) / 100)
+            Circle().trim(from: 0, to: shown ? CGFloat(max(0, min(100, pct))) / 100 : 0)
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
+                .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
             VStack(spacing: 0) {
                 Text("\(pct)%").font(.fraunces(18, .medium)).kerning(-0.72).foregroundStyle(PW.navy)
+                    .contentTransition(.numericText())
+                    .animation(.default, value: pct)
                 Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x9CA3AF))
                     .padding(.top, -1)
             }
         }
         .frame(width: 74, height: 74)
+        .onAppear {
+            guard !shown else { return }
+            if reduceMotion { shown = true }
+            else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.15)) { shown = true } }
+        }
     }
 }
 
@@ -826,7 +925,7 @@ private struct PWContinueCard: View {
     private var pct: Int { level.totalModules > 0 ? Int(round(Double(level.completedModules) / Double(level.totalModules) * 100)) : 0 }
 
     var body: some View {
-        Button(action: onTap) {
+        Button { Haptics.tap(); onTap() } label: {
             ZStack(alignment: .trailing) {
                 // Right tone strip (w-32, opacity 90) + decorative ring.
                 HStack(spacing: 0) {
@@ -863,7 +962,7 @@ private struct PWContinueCard: View {
             .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(PW.gold.opacity(0.35), lineWidth: 1))
             .shadow(color: PW.navy.opacity(0.10), radius: 8, y: 3)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 }
 
@@ -872,6 +971,8 @@ private struct PWContinueCard: View {
 private struct PWLevelCard: View {
     let level: PathwayLevel
     let onTap: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shakes = 0
 
     private var isCompleted: Bool { level.status == .completed }
     private var isActive: Bool { level.status == .active }
@@ -880,7 +981,7 @@ private struct PWLevelCard: View {
     private var subtitle: String { level.theme ?? level.description ?? PW.subtitle[level.levelNumber] ?? "" }
 
     var body: some View {
-        Button(action: onTap) {
+        Button(action: handleTap) {
             HStack(alignment: .top, spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -940,8 +1041,17 @@ private struct PWLevelCard: View {
             .shadow(color: PW.navy.opacity(0.04), radius: 4, y: 1)
             .opacity(isLocked ? 0.6 : 1)
         }
-        .buttonStyle(.plain)
-        .disabled(isLocked)
+        .buttonStyle(.pressableSubtle)
+        .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
+        .accessibilityHint(isLocked ? "Locked. Complete Level \(level.levelNumber - 1) to unlock." : "")
+    }
+
+    /// Locked levels stay locked (server-authoritative, §1.9) — a tap answers
+    /// with a refusal shake; the card already says what unlocks it.
+    private func handleTap() {
+        guard isLocked else { Haptics.tap(); onTap(); return }
+        Haptics.error()
+        if !reduceMotion { withAnimation(.linear(duration: 0.35)) { shakes += 1 } }
     }
 
     private var statusPill: some View {
@@ -964,15 +1074,24 @@ private struct PWBar: View {
     let height: CGFloat
     let fill: Fill
     let track: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(track)
-                Capsule().fill(fillShape).frame(width: geo.size.width * CGFloat(max(0, min(100, pct))) / 100)
+                Capsule().fill(fillShape)
+                    .frame(width: geo.size.width * (shown ? CGFloat(max(0, min(100, pct))) / 100 : 0))
+                    .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
             }
         }
         .frame(height: height)
+        .onAppear {
+            guard !shown else { return }
+            if reduceMotion { shown = true }
+            else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.1)) { shown = true } }
+        }
     }
 
     private var fillShape: AnyShapeStyle {
@@ -980,6 +1099,59 @@ private struct PWBar: View {
         case .color(let c): return AnyShapeStyle(c)
         case .linearGradient(let colors, let s, let e): return AnyShapeStyle(LinearGradient(colors: colors, startPoint: s, endPoint: e))
         }
+    }
+}
+
+// MARK: - First-load skeleton (mirrors the hub layout so content settles in place)
+
+private struct PathwaySkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            // Hero placeholder — same parchment gradient and rounded bottom as the real header.
+            ZStack(alignment: .bottomLeading) {
+                LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                VStack(alignment: .leading, spacing: 10) {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous).fill(PW.mutedBg).frame(width: 170, height: 10)
+                    RoundedRectangle(cornerRadius: 7, style: .continuous).fill(PW.mutedBg).frame(width: 230, height: 24)
+                    RoundedRectangle(cornerRadius: 5, style: .continuous).fill(PW.mutedBg).frame(width: 190, height: 10)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PW.navy.opacity(0.10))
+                        .frame(height: 68).padding(.top, 8)
+                }
+                .padding(20)
+            }
+            .frame(height: 300)
+            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
+
+            // Journey rail + module list placeholders.
+            VStack(alignment: .leading, spacing: 20) {
+                HStack(spacing: 20) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        Circle().fill(PW.mutedBg).frame(width: 48, height: 48)
+                    }
+                }
+                VStack(spacing: 0) {
+                    ForEach(0..<4, id: \.self) { i in
+                        HStack(spacing: 12) {
+                            RoundedRectangle(cornerRadius: 11, style: .continuous).fill(PW.mutedBg).frame(width: 32, height: 32)
+                            VStack(alignment: .leading, spacing: 6) {
+                                RoundedRectangle(cornerRadius: 4, style: .continuous).fill(PW.mutedBg).frame(width: 160, height: 10)
+                                RoundedRectangle(cornerRadius: 4, style: .continuous).fill(PW.mutedBg).frame(width: 76, height: 8)
+                            }
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.horizontal, 16).padding(.vertical, 13)
+                        .overlay(alignment: .bottom) { if i < 3 { Rectangle().fill(PW.border).frame(height: 1) } }
+                    }
+                }
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PW.border, lineWidth: 1))
+            }
+            .padding(.horizontal, 20)
+        }
+        .nuruShimmer()
+        .accessibilityLabel("Loading your pathway")
     }
 }
 

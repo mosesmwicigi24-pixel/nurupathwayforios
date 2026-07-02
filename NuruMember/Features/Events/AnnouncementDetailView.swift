@@ -43,16 +43,18 @@ struct AnnouncementDetailView: View {
                 header
                 VStack(alignment: .leading, spacing: Nuru.S.base) {
                     if let d = vm.detail {
-                        if let url = d.primaryImageUrl.flatMap(URL.init) { heroImage(url) }
+                        if let url = d.primaryImageUrl.flatMap(URL.init) {
+                            heroImage(url).gentleEntrance()
+                        }
                         Text(d.body).font(.nBodyLg).foregroundStyle(Nuru.ink)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let v = d.videoUrl.flatMap(URL.init) { videoTile(v) }
-                        if !images.isEmpty { gallery }
+                            .gentleEntrance(delay: 0.05)
+                        if let v = d.videoUrl.flatMap(URL.init) { videoTile(v).gentleEntrance(delay: 0.1) }
+                        if !images.isEmpty { gallery.gentleEntrance(delay: 0.15) }
                     } else if vm.loading {
-                        ProgressView().frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
+                        loadingSkeleton
                     } else {
-                        Text(vm.error ?? "Couldn't load this announcement.")
-                            .font(.nBody).foregroundStyle(Nuru.muted)
+                        errorCard
                     }
                 }
                 .padding(.horizontal, Nuru.S.screen)
@@ -75,6 +77,38 @@ struct AnnouncementDetailView: View {
                     quickNote: d.sentAt.map { "Sent \(whenString($0))" },
                     posterUrl: d.primaryImageUrl)
             }
+        }
+    }
+
+    // MARK: loading / error states
+
+    /// Shimmering placeholder in the shape of the announcement — an image
+    /// block and a few body lines — so the page doesn't jump when it lands.
+    private var loadingSkeleton: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(Nuru.surface).frame(height: 180).nuruShimmer()
+            RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(height: 12).nuruShimmer()
+            RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 250, height: 12).nuruShimmer()
+            RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 180, height: 12).nuruShimmer()
+        }
+        .padding(.top, 2)
+    }
+
+    private var errorCard: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.xs) {
+            Text(vm.error ?? "Couldn't load this announcement.")
+                .font(.nBody).foregroundStyle(Nuru.muted)
+            Button {
+                Haptics.tap()
+                Task { await vm.load() }
+            } label: {
+                Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(Nuru.navy, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .padding(.top, 4)
         }
     }
 
@@ -134,14 +168,17 @@ struct AnnouncementDetailView: View {
     // Video tile — poster-backed, opens the universal full-bleed player page
     // (never Safari).
     private func videoTile(_ url: URL) -> some View {
-        Button { showVideo = true } label: {
+        Button {
+            Haptics.tap()
+            showVideo = true
+        } label: {
             ZStack {
                 Nuru.navyGradient.frame(height: 180)
                 Icon(.playCircle, size: 48, color: .white)
             }
             .clipShape(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 
     // Gallery rail — a fixed-height strip where each photo keeps its own

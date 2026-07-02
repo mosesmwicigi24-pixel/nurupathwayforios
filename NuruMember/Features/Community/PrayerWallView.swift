@@ -18,7 +18,10 @@ final class PrayerWallViewModel: ObservableObject {
         loading = false
     }
 
-    func setSort(_ s: String) async { sort = s; await load() }
+    func setSort(_ s: String) async {
+        guard s != sort else { return }   // re-tapping the active chip shouldn't refetch
+        sort = s; await load()
+    }
 
     func pray(_ p: PrayerWallPost) async {
         try? await MemberAPI.prayerWallReact(p.postId, emoji: "🙏")
@@ -38,7 +41,11 @@ struct PrayerWallView: View {
                 VStack(alignment: .leading, spacing: Nuru.S.sm) {
                     sortRow
                     if vm.loading && vm.posts.isEmpty {
-                        ProgressView().frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
+                        ForEach(0..<3, id: \.self) { i in
+                            SkeletonPrayerCard().gentleEntrance(delay: Double(i) * 0.08)
+                        }
+                    } else if vm.posts.isEmpty, let err = vm.error {
+                        errorState(err)
                     } else if vm.posts.isEmpty {
                         emptyState
                     } else {
@@ -46,13 +53,15 @@ struct PrayerWallView: View {
                             NavigationLink(value: CommunityRoute.prayer(post.postId)) {
                                 PrayerCardView(post: post) { Task { await vm.pray(post) } }
                             }
-                            .buttonStyle(.plain)
+                            .buttonStyle(.pressableSubtle)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
                         }
                     }
                 }
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.base)
                 .padding(.bottom, Nuru.tabBarSpace)
+                .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.posts.map(\.postId))
             }
         }
         .background(Nuru.coolPaper.ignoresSafeArea())
@@ -78,10 +87,11 @@ struct PrayerWallView: View {
                             .frame(width: 40, height: 40).background(Color.black.opacity(0.4), in: Circle())
                     }
                     Spacer()
-                    Button { composing = true } label: {
+                    Button { Haptics.tap(); composing = true } label: {
                         Icon(.plus, size: 18, color: Nuru.navyDeep)
                             .frame(width: 40, height: 40).background(Nuru.gold, in: Circle())
                     }
+                    .buttonStyle(.pressable)
                 }
                 .padding(.horizontal, Nuru.S.lg).padding(.top, 54)
                 Spacer()
@@ -103,7 +113,10 @@ struct PrayerWallView: View {
         HStack(spacing: Nuru.S.sm) {
             ForEach([("latest", "Latest"), ("prayed", "Most prayed")], id: \.0) { key, label in
                 let on = vm.sort == key
-                Button { Task { await vm.setSort(key) } } label: {
+                Button {
+                    if !on { Haptics.selection() }
+                    Task { await vm.setSort(key) }
+                } label: {
                     Text(label).font(.inter(12, .bold))
                         .foregroundStyle(on ? Nuru.navyDeep : Nuru.ink600)
                         .padding(.horizontal, 14).padding(.vertical, 7)
@@ -115,12 +128,52 @@ struct PrayerWallView: View {
     }
 
     private var emptyState: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: Nuru.S.sm) {
+            Text("🙏").font(.system(size: 32))
             Text("No requests yet").font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             Text("Be the first to share a prayer for the family to stand with you.")
                 .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
+        .gentleEntrance()
+    }
+
+    /// Honest failure state — the empty state used to swallow load errors.
+    private func errorState(_ message: String) -> some View {
+        VStack(spacing: Nuru.S.sm) {
+            Text(message).font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
+            Button { Task { await vm.load() } } label: {
+                Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
+                    .padding(.horizontal, 18).padding(.vertical, 8)
+                    .background(Nuru.goldChipBg, in: Capsule())
+                    .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+        }
+        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
+    }
+}
+
+/// Shimmering placeholder matching the request-card anatomy (first load only).
+private struct SkeletonPrayerCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            HStack(spacing: Nuru.S.sm) {
+                Circle().fill(Nuru.surface).frame(width: 36, height: 36)
+                VStack(alignment: .leading, spacing: 4) {
+                    RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 110, height: 10)
+                    RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 64, height: 8)
+                }
+                Spacer(minLength: 0)
+            }
+            RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(maxWidth: .infinity).frame(height: 12)
+            RoundedRectangle(cornerRadius: 4).fill(Nuru.surface).frame(width: 200, height: 12)
+            Capsule().fill(Nuru.surface).frame(width: 88, height: 30).padding(.top, Nuru.S.xs)
+        }
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShimmer()
     }
 }
 
@@ -146,17 +199,19 @@ private struct PrayerCardView: View {
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
             if post.audioUrl != nil { voiceTag.padding(.top, Nuru.S.sm) }
             HStack(spacing: Nuru.S.base) {
-                Button(action: pray) {
+                Button { Haptics.love(); pray() } label: {
                     HStack(spacing: 6) {
                         Text("🙏").font(.system(size: 15))
                         Text(post.prayCount > 0 ? "\(post.prayCount) praying" : "Pray")
                             .font(.inter(12, .bold)).foregroundStyle(post.iPrayed ? Nuru.navyDeep : Nuru.ink600)
+                            .contentTransition(.numericText(value: Double(post.prayCount)))
                     }
                     .padding(.horizontal, 12).padding(.vertical, 7)
                     .background(post.iPrayed ? Nuru.goldChipBg : Nuru.surface, in: Capsule())
                     .overlay(Capsule().stroke(post.iPrayed ? Nuru.gold : Nuru.border, lineWidth: 1))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.7), value: post.prayCount)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 HStack(spacing: 4) {
                     Icon(.messageCircle, size: 14, color: Nuru.faint)
                     Text("\(post.commentCount ?? 0)").font(.nCaption).foregroundStyle(Nuru.faint)
@@ -221,8 +276,10 @@ private struct PrayerComposeSheet: View {
                             .frame(maxWidth: .infinity, minHeight: 52)
                             .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: Nuru.R.button))
                     }
+                    .buttonStyle(.pressable)
                     .disabled(busy || body_.trimmed.isEmpty)
                     .opacity(busy || body_.trimmed.isEmpty ? 0.5 : 1)
+                    .animation(.easeInOut(duration: 0.2), value: busy || body_.trimmed.isEmpty)
                     .padding(.top, Nuru.S.base)
                 }
                 .padding(Nuru.S.lg)
@@ -237,11 +294,14 @@ private struct PrayerComposeSheet: View {
     private func post() async {
         let text = body_.trimmed
         guard !text.isEmpty else { return }
+        Haptics.action()
         busy = true; err = nil
         do {
             try await MemberAPI.createPrayerWallPost(title: title.trimmed.isEmpty ? nil : title.trimmed, body: text)
+            Haptics.success()
             await onPosted(); dismiss()
         } catch {
+            Haptics.error()
             err = (error as? APIError)?.errorDescription ?? "Couldn't post. Try again."; busy = false
         }
     }

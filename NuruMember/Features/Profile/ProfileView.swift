@@ -33,6 +33,7 @@ struct ProfileView: View {
 
     // Sheets
     @State private var editingField: PField?
+    @State private var showSignOutConfirm = false
     @State private var showPasswordSheet = false
     @State private var helpSheet: PHelpSheet?
     @State private var viewingBadge: PBadgeItem?
@@ -97,8 +98,8 @@ struct ProfileView: View {
             TextField("6-digit code", text: $mfaDisableCode).keyboardType(.numberPad)
             Button("Turn off", role: .destructive) {
                 Task {
-                    do { try await MemberAPI.disableMfa(code: mfaDisableCode); await auth.loadProfile() }
-                    catch { mfaError = (error as? APIError)?.errorDescription ?? "Couldn't turn off two-factor." }
+                    do { try await MemberAPI.disableMfa(code: mfaDisableCode); Haptics.success(); await auth.loadProfile() }
+                    catch { Haptics.error(); mfaError = (error as? APIError)?.errorDescription ?? "Couldn't turn off two-factor." }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -188,7 +189,11 @@ struct ProfileView: View {
                 }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(p?.fullName ?? "—").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
-                    if let email = p?.email { Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A)) }
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    if let email = p?.email {
+                        Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
+                            .lineLimit(1).truncationMode(.middle)
+                    }
                     HStack(spacing: 4) {
                         Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
                         Text("Level \(auth.me?.enrollment?.currentLevel ?? 1)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
@@ -200,6 +205,7 @@ struct ProfileView: View {
                 }
                 Spacer(minLength: 0)
             }
+            .gentleEntrance()
         }
         .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -267,10 +273,10 @@ struct ProfileView: View {
             infoRow(.mail, "EMAIL", p?.email ?? "—")   // login identity — not editable (§5.8)
             Divider()
             ForEach(Self.fields) { f in
-                Button { editingField = f } label: {
+                Button { Haptics.tap(); editingField = f } label: {
                     infoRow(f.icon, f.label.uppercased(), displayValue(for: f), editable: true)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressableSubtle)
                 if f.id != "city" { Divider() }
             }
             Divider()
@@ -340,10 +346,10 @@ struct ProfileView: View {
 
     private var security: some View {
         sectionCard("SECURITY & LOGIN", icon: .lock) {
-            Button { showPasswordSheet = true } label: {
+            Button { Haptics.tap(); showPasswordSheet = true } label: {
                 actionRow(.key, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
                           "Change password", "Keep your account secure")
-            }.buttonStyle(.plain)
+            }.buttonStyle(.pressableSubtle)
             Divider()
             HStack(spacing: Nuru.S.md) {
                 iconTile(.fingerprint,
@@ -356,6 +362,7 @@ struct ProfileView: View {
                 }
                 Spacer(minLength: 0)
                 Toggle("", isOn: Binding(get: { twoFactorOn }, set: { want in
+                    Haptics.selection()
                     if want, !twoFactorOn { showMfaEnroll = true }
                     else if !want, twoFactorOn { mfaDisableCode = ""; showMfaDisable = true }
                 })).labelsHidden().tint(Nuru.gold)
@@ -374,7 +381,7 @@ struct ProfileView: View {
             toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", $pushOn); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", $emailOn); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", $smsOn); Divider()
-            Button { openSystemSettings() } label: {
+            Button { Haptics.tap(); openSystemSettings() } label: {
                 HStack(spacing: Nuru.S.md) {
                     iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
                     VStack(alignment: .leading, spacing: 1) {
@@ -385,7 +392,8 @@ struct ProfileView: View {
                     Icon(.chevronRight, size: 16, color: Color(hex: 0x9CA3AF))
                 }
                 .padding(.vertical, 10)
-            }.buttonStyle(.plain)
+                .contentShape(Rectangle())
+            }.buttonStyle(.pressableSubtle)
         }
     }
 
@@ -407,7 +415,8 @@ struct ProfileView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(badges) { b in
-                            Button { viewingBadge = b } label: { BadgeMedallion(badge: b) }.buttonStyle(.plain)
+                            Button { Haptics.tap(); viewingBadge = b } label: { BadgeMedallion(badge: b) }
+                                .buttonStyle(.pressable)
                         }
                     }
                 }
@@ -492,7 +501,10 @@ struct ProfileView: View {
             HStack(spacing: Nuru.S.sm) {
                 ForEach(Self.textSizes, id: \.label) { opt in
                     let on = abs(textScale - opt.scale) < 0.001
-                    Button { withAnimation(.easeInOut(duration: 0.15)) { textScale = opt.scale } } label: {
+                    Button {
+                        if !on { Haptics.selection() }
+                        withAnimation(.easeInOut(duration: 0.15)) { textScale = opt.scale }
+                    } label: {
                         Text(opt.label)
                             .font(.inter(opt.preview, on ? .bold : .semibold))
                             .foregroundStyle(on ? Nuru.navy : Color(hex: 0x68758A))
@@ -529,20 +541,20 @@ struct ProfileView: View {
 
     private var helpPrivacy: some View {
         sectionCard("HELP & PRIVACY", icon: .lifeBuoy) {
-            Button { helpSheet = .language } label: {
+            Button { Haptics.tap(); helpSheet = .language } label: {
                 actionRow(.languages, tint: Color(hex: 0xE0F2FE), color: Color(hex: 0x0EA5E9),
                           "Language", "App language · \(localeLanguageName)")
-            }.buttonStyle(.plain)
+            }.buttonStyle(.pressableSubtle)
             Divider()
-            Button { helpSheet = .support } label: {
+            Button { Haptics.tap(); helpSheet = .support } label: {
                 actionRow(.lifeBuoy, tint: Nuru.successBg, color: Color(hex: 0x16A34A),
                           "Help & support", "FAQs, contact us")
-            }.buttonStyle(.plain)
+            }.buttonStyle(.pressableSubtle)
             Divider()
-            Button { helpSheet = .privacyPolicy } label: {
+            Button { Haptics.tap(); helpSheet = .privacyPolicy } label: {
                 actionRow(.shieldCheck, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
                           "Privacy policy", "How we handle your data")
-            }.buttonStyle(.plain)
+            }.buttonStyle(.pressableSubtle)
         }
     }
 
@@ -550,12 +562,20 @@ struct ProfileView: View {
 
     private var actions: some View {
         HStack(spacing: Nuru.S.sm) {
-            Button { auth.signOut() } label: {
+            Button { Haptics.tap(); showSignOutConfirm = true } label: {
                 HStack(spacing: 6) { Icon(.logOut, size: 15, color: Nuru.navy); Text("Sign out").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.pressable)
+            // Calm confirm — signing out is reversible, so no destructive red.
+            .confirmationDialog("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+                Button("Sign out") { auth.signOut() }
+                Button("Stay signed in", role: .cancel) {}
+            } message: {
+                Text("Your progress is saved — you can pick up right where you left off.")
+            }
             Button { } label: {
                 HStack(spacing: 6) { Icon(.trash2, size: 15, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
                     .frame(maxWidth: .infinity).frame(height: 46)
@@ -646,7 +666,9 @@ struct ProfileView: View {
                 Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
             }
             Spacer(minLength: 0)
-            Toggle("", isOn: binding).labelsHidden().tint(Nuru.gold)
+            Toggle("", isOn: Binding(get: { binding.wrappedValue },
+                                     set: { binding.wrappedValue = $0; Haptics.selection() }))
+                .labelsHidden().tint(Nuru.gold)
         }
         .padding(.vertical, 10)
     }
@@ -838,7 +860,7 @@ private struct BadgeGallerySheet: View {
                     .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                     ForEach(badges) { b in
-                        Button { viewing = b } label: {
+                        Button { Haptics.tap(); viewing = b } label: {
                             VStack(spacing: 6) {
                                 BadgeMedallion(badge: b)
                             }
@@ -847,7 +869,7 @@ private struct BadgeGallerySheet: View {
                             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                             .opacity(b.earned ? 1 : 0.6)
-                        }.buttonStyle(.plain)
+                        }.buttonStyle(.pressable)
                     }
                 }
                 Text("Locked badges unlock as you grow. Keep going.")
@@ -949,8 +971,12 @@ private struct CertificateCardView: View {
             // Verification code — tap to copy (public proof at /verify/{code}).
             Button {
                 UIPasteboard.general.string = cert.verificationCode
-                copied = true
-                Task { try? await Task.sleep(nanoseconds: 1_600_000_000); copied = false }
+                Haptics.success()
+                withAnimation(.easeInOut(duration: 0.15)) { copied = true }
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    withAnimation(.easeInOut(duration: 0.25)) { copied = false }
+                }
             } label: {
                 HStack(spacing: 8) {
                     Icon(.fingerprint, size: 13, color: Color(hex: 0x9CA3AF))
@@ -971,7 +997,7 @@ private struct CertificateCardView: View {
             }.buttonStyle(.plain)
 
             // Trust chip → live verification against the public endpoint.
-            Button(action: onVerify) {
+            Button { Haptics.tap(); onVerify() } label: {
                 HStack(spacing: 4) {
                     Icon(.shieldCheck, size: 13, color: Color(hex: 0x8A6D18))
                     Text("Signed · Verify").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
@@ -1093,7 +1119,7 @@ private struct EditFieldSheet: View {
                 case .select:
                     VStack(spacing: Nuru.S.sm) {
                         ForEach(field.options, id: \.value) { opt in
-                            Button { selected = opt.value } label: {
+                            Button { Haptics.selection(); selected = opt.value } label: {
                                 HStack {
                                     Text(opt.label).font(.inter(14, .medium)).foregroundStyle(Nuru.navy)
                                     Spacer()
@@ -1167,9 +1193,11 @@ private struct EditFieldSheet: View {
         }
         do {
             _ = try await APIClient.shared.patch("me", body: body, as: EmptyResponse.self)
+            Haptics.success()
             onSaved()
             dismiss()
         } catch {
+            Haptics.error()
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
         }
     }
@@ -1224,8 +1252,10 @@ private struct PasswordChangeSheet: View {
             _ = try await APIClient.shared.post("me/password",
                                                 body: Body(currentPassword: current, newPassword: new1),
                                                 as: EmptyResponse.self)
+            Haptics.success()
             dismiss()
         } catch {
+            Haptics.error()
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't change the password — check your current one."
         }
     }
@@ -1256,7 +1286,7 @@ private struct AppLanguageSheet: View {
                     .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
                 VStack(spacing: Nuru.S.sm) {
                     ForEach(options, id: \.code) { o in
-                        Button { if o.enabled { picked = o.code } } label: {
+                        Button { if o.enabled { Haptics.selection(); picked = o.code } } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(o.name).font(.inter(14, .medium)).foregroundStyle(Nuru.navy)
@@ -1318,7 +1348,7 @@ private struct HelpSupportSheet: View {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 ForEach(Array(faqs.enumerated()), id: \.offset) { i, f in
                     VStack(alignment: .leading, spacing: 0) {
-                        Button { withAnimation(.easeInOut(duration: 0.2)) { open = open == i ? nil : i } } label: {
+                        Button { Haptics.tap(); withAnimation(.easeInOut(duration: 0.2)) { open = open == i ? nil : i } } label: {
                             HStack(spacing: Nuru.S.sm) {
                                 Text(f.q).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                                     .multilineTextAlignment(.leading)
@@ -1452,7 +1482,8 @@ struct GoldSheetButton: View {
             .background(disabled ? Nuru.gold.opacity(0.4) : Nuru.gold,
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(disabled || busy)
+        .animation(.easeInOut(duration: 0.2), value: disabled || busy)
     }
 }

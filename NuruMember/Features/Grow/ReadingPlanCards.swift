@@ -42,7 +42,12 @@ struct PLCover: View {
                 // layout (the root cause of titles painting outside plan cards).
                 Color.clear.overlay {
                     CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { img.resizable().scaledToFill() } else { Color.clear }
+                        if let img = phase.image {
+                            img.resizable().scaledToFill()
+                                .transition(.opacity.animation(.easeOut(duration: 0.25))) // fade in, no pop
+                        } else {
+                            Color.clear
+                        }
                     }
                 }
             }
@@ -66,6 +71,7 @@ struct PLDaysBadge: View {
 // MARK: - shimmer sweep (Plan-of-the-day badge)
 
 struct PLShimmer: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var x: CGFloat = -0.8
     var body: some View {
         GeometryReader { geo in
@@ -74,6 +80,7 @@ struct PLShimmer: View {
                 .frame(width: geo.size.width * 0.7)
                 .offset(x: geo.size.width * x)
                 .onAppear {
+                    guard !reduceMotion else { return }
                     withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: false)) { x = 2.2 }
                 }
         }
@@ -84,12 +91,16 @@ struct PLShimmer: View {
 // MARK: - expanding pulse ring (continue-row play button)
 
 struct PLPulseRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var on = false
     var body: some View {
         Circle().stroke(PL.gold, lineWidth: 1.5)
             .scaleEffect(on ? 1.4 : 1)
             .opacity(on ? 0 : 0.55)
-            .onAppear { withAnimation(.easeOut(duration: 1.7).repeatForever(autoreverses: false)) { on = true } }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 1.7).repeatForever(autoreverses: false)) { on = true }
+            }
     }
 }
 
@@ -149,7 +160,7 @@ struct PLStreakStrip: View {
                 .frame(height: 8)
                 HStack(spacing: 4) {
                     Icon(.gift, size: 12, color: PL.catText)
-                    Text(toReward == 0 ? "Reward ready!" : "\(toReward) days to a badge")
+                    Text(toReward == 0 ? "Reward ready!" : "\(toReward) day\(toReward == 1 ? "" : "s") to a badge")
                         .font(.inter(10, .bold)).foregroundStyle(PL.catText)
                 }
             }
@@ -185,25 +196,33 @@ struct PLStreakStrip: View {
 
 /// Gently pulsing filled flame (Lucide has only the outline glyph → SF Symbol).
 private struct PLFlame: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var up = false
     var body: some View {
         Image(systemName: "flame.fill")
             .font(.system(size: 18))
             .foregroundStyle(PL.gold)
             .scaleEffect(up ? 1.14 : 1)
-            .onAppear { withAnimation(.easeInOut(duration: 0.9).repeatForever()) { up = true } }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.9).repeatForever()) { up = true }
+            }
     }
 }
 
 /// The breathing gold dot inside today's (unread) streak circle.
 private struct PLTodayDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var up = false
     var body: some View {
         Circle().fill(PL.gold)
             .frame(width: 6, height: 6)
             .scaleEffect(up ? 1.5 : 1)
             .opacity(up ? 0.5 : 1)
-            .onAppear { withAnimation(.easeInOut(duration: 0.7).repeatForever()) { up = true } }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.7).repeatForever()) { up = true }
+            }
     }
 }
 
@@ -279,7 +298,7 @@ struct PLPlanCard: View {
                 .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
                 .shadow(color: PL.navy.opacity(0.4), radius: 12, y: 9)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -312,7 +331,7 @@ struct PLPlanTile: View {
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -321,6 +340,7 @@ struct PLPlanTile: View {
 struct PLFinishEarnCard: View {
     let category: String?
     let dayCount: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var glow = false
 
     var body: some View {
@@ -334,7 +354,10 @@ struct PLFinishEarnCard: View {
                     .font(.system(size: 20)).foregroundStyle(PL.goldLight)
             }
             .frame(width: 48, height: 48)
-            .onAppear { withAnimation(.easeInOut(duration: 1.2).repeatForever()) { glow = true } }
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 1.2).repeatForever()) { glow = true }
+            }
             VStack(alignment: .leading, spacing: 2) {
                 Text("FINISH & EARN").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(PL.goldLight)
                 Text("The “\(category ?? "Finisher")” badge")

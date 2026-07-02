@@ -167,7 +167,12 @@ struct ReadingPlansView: View {
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
             }
             if !query.isEmpty {
-                Button { query = "" } label: { Icon(.x, size: 15, color: PL.ink3) }.buttonStyle(.plain)
+                Button { Haptics.tap(); query = "" } label: {
+                    Icon(.x, size: 15, color: PL.ink3)
+                        // Grow the hit area without growing the field.
+                        .contentShape(Rectangle().inset(by: -14))
+                }
+                .buttonStyle(.pressable)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 12)
@@ -181,7 +186,7 @@ struct ReadingPlansView: View {
         VStack(alignment: .leading, spacing: 10) {
             overline("Continue reading")
             ForEach(continueReading) { plan in
-                NavigationLink(value: plan) { PLContinueRow(plan: plan) }.buttonStyle(.plain)
+                NavigationLink(value: plan) { PLContinueRow(plan: plan) }.buttonStyle(.pressable)
             }
         }
     }
@@ -212,7 +217,7 @@ struct ReadingPlansView: View {
             }
             .shadow(color: PL.navyDeep.opacity(0.5), radius: 22, y: 12)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle) // hero-sized card, gentler scale
     }
 
     private var planOfDayBadge: some View {
@@ -234,7 +239,10 @@ struct ReadingPlansView: View {
                 HStack(spacing: 6) {
                     ForEach(["all"] + categories, id: \.self) { c in
                         let on = category == c
-                        Button { category = (category == c ? "all" : c) } label: {
+                        Button {
+                            Haptics.selection()
+                            category = (category == c ? "all" : c)
+                        } label: {
                             Text(c == "all" ? "All plans" : c)
                                 .font(.inter(12, on ? .bold : .semibold))
                                 .foregroundStyle(on ? .white : PL.ink2)
@@ -289,9 +297,11 @@ struct ReadingPlansView: View {
                         Icon(.bookOpen, size: 22, color: PL.gold)
                     }.frame(width: 48, height: 48)
                     Text("No plans found").font(.inter(13, .semibold)).foregroundStyle(PL.navy).padding(.top, 12)
-                    Button { query = ""; category = "all" } label: {
+                    Button { Haptics.tap(); query = ""; category = "all" } label: {
                         Text("Clear filters").font(.inter(11, .bold)).foregroundStyle(PL.gold)
-                    }.buttonStyle(.plain).padding(.top, 2)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }.buttonStyle(.pressable)
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, 48)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -385,7 +395,11 @@ struct PlanDetailView: View {
             } else {
                 VStack(spacing: 12) {
                     Text(vm.error ?? "Couldn't load this plan.").font(.nBody).foregroundStyle(PL.ink2)
-                    Button("Try again") { Task { await vm.load() } }.foregroundStyle(PL.gold)
+                    Button { Haptics.tap(); Task { await vm.load() } } label: {
+                        Text("Try again").font(.inter(14, .semibold)).foregroundStyle(PL.gold)
+                            .frame(minWidth: 44, minHeight: 44)
+                    }
+                    .buttonStyle(.pressable)
                 }
             }
         }
@@ -438,8 +452,18 @@ struct PlanDetailView: View {
                 if let u = d.imageUrl.flatMap(URL.init) {
                     // Contained fill image — its oversized ideal size must never
                     // inflate the hero ZStack (would shove the title off-canvas).
+                    // Phase-based: while loading/failed the navy gradient shows
+                    // (the old `Image(systemName: "photo")` fallback stretched a
+                    // giant glyph across the hero), and the real cover fades in.
                     Color.clear.overlay {
-                        CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                        CachedAsyncImage(url: u) { p in
+                            if let img = p.image {
+                                img.resizable().scaledToFill()
+                                    .transition(.opacity.animation(.easeOut(duration: 0.25)))
+                            } else {
+                                Color.clear
+                            }
+                        }
                     }
                 }
             }
@@ -475,18 +499,23 @@ struct PlanDetailView: View {
     }
 
     private var saveButton: some View {
-        Button { saved.toggle() } label: {
+        Button {
+            saved.toggle()
+            Haptics.love()
+        } label: {
             Group {
                 if saved {
                     Image(systemName: "heart.fill").font(.system(size: 15)).foregroundStyle(PL.gold)
+                        .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else {
                     Icon(.heart, size: 17, color: .white)
                 }
             }
             .frame(width: 40, height: 40)
             .background(Color.black.opacity(0.35), in: Circle())
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: saved)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
@@ -502,7 +531,7 @@ struct PlanDetailView: View {
                 .frame(width: 40, height: 40)
                 .background(Color.black.opacity(0.35), in: Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func aboutCard(_ d: ReadingPlanDetail) -> some View {
@@ -536,14 +565,18 @@ struct PlanDetailView: View {
                     NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) {
                         PLDetailDayRow(day: day, isNext: !allDone && day.dayNumber == next)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
                 if !showAllDays, d.days.count > 4 {
-                    Button { withAnimation(.easeOut(duration: 0.25)) { showAllDays = true } } label: {
+                    Button {
+                        Haptics.tap()
+                        withAnimation(.easeOut(duration: 0.25)) { showAllDays = true }
+                    } label: {
                         Text("+ \(d.days.count - 4) more days").font(.inter(10)).foregroundStyle(PL.ink3)
-                            .frame(maxWidth: .infinity).padding(.top, 4)
+                            .frame(maxWidth: .infinity, minHeight: 36) // fingertip-friendly
+                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             .padding(.top, 10)
@@ -581,10 +614,13 @@ struct PlanDetailView: View {
                 if d.enrolled, let target {
                     NavigationLink(value: PlanDayRef(planId: d.planId, day: target)) { ctaLabel(label) }
                 } else {
-                    Button { Task { await vm.start() } } label: { ctaLabel(label) }
+                    Button {
+                        Haptics.action()
+                        Task { await vm.start() }
+                    } label: { ctaLabel(label) }
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             Button { } label: {
                 HStack(spacing: 6) { Icon(.share2, size: 15, color: PL.navy); Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy) }
                     .frame(minHeight: 48).padding(.horizontal, 16)
@@ -701,7 +737,7 @@ struct PlanDayView: View {
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Spacer()
                 Text("DAY \(ref.day.dayNumber)").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
                 Spacer()
@@ -717,6 +753,7 @@ struct PlanDayView: View {
                     Capsule()
                         .fill(LinearGradient(colors: [PL.gold, PL.goldLight], startPoint: .leading, endPoint: .trailing))
                         .frame(width: max(progress > 0 ? 8 : 0, geo.size.width * progress))
+                        .animation(.spring(response: 0.5, dampingFraction: 0.85), value: progress)
                 }
             }
             .frame(height: 4)
@@ -776,7 +813,7 @@ struct PlanDayView: View {
                                      done: vm.completedSegments.contains(seg.segmentId),
                                      isNext: seg.segmentId == nextId)
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                 }
             }
             .padding(.top, 10)
@@ -809,11 +846,12 @@ struct PlanDayView: View {
                                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             } else {
                 Button {
                     Task {
                         await vm.completeDay()
+                        Haptics.success() // land the confetti with a felt "done"
                         withAnimation { justDone = true }
                     }
                 } label: {
@@ -827,7 +865,8 @@ struct PlanDayView: View {
                                 in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .disabled(vm.busy) // double-taps queued a second completion call
             }
         }
         .padding(.horizontal, 20).padding(.top, 12)

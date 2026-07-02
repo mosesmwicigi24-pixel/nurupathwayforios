@@ -92,7 +92,7 @@ struct ResourcesLibraryView: View {
                     Icon(.arrowLeft, size: 18, color: RES.navy).frame(width: 40, height: 40)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(RES.border, lineWidth: 1))
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressable)
                 Spacer()
                 Text("LIBRARY").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(RES.kicker)
                 Spacer()
@@ -131,13 +131,17 @@ struct ResourcesLibraryView: View {
             HStack(spacing: 8) {
                 ForEach(RES.filters, id: \.self) { k in
                     let on = filter == k
-                    Button { filter = k } label: {
+                    Button {
+                        guard filter != k else { return }
+                        Haptics.selection()
+                        filter = k
+                    } label: {
                         Text(k == "all" ? "All" : RES.meta(k).label)
                             .font(.inter(11, .bold)).foregroundStyle(on ? RES.navy : RES.ink2)
                             .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(on ? RES.gold : Color.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? Color.clear : RES.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
+                    }.buttonStyle(.pressable)
                 }
             }.padding(.horizontal, 1)
         }
@@ -146,17 +150,33 @@ struct ResourcesLibraryView: View {
 
     @ViewBuilder private var content: some View {
         if vm.loading && vm.items.isEmpty {
-            ProgressView().tint(RES.gold).frame(maxWidth: .infinity).padding(.top, 44)
+            // Skeleton rows in the real row anatomy — the list "arrives", it
+            // doesn't sit behind a lone spinner.
+            VStack(spacing: 8) {
+                ForEach(0..<6, id: \.self) { _ in skeletonRow }
+            }
         } else if let e = vm.error, vm.items.isEmpty {
             VStack(spacing: 12) {
                 Text(e).font(.inter(13)).foregroundStyle(RES.ink2).multilineTextAlignment(.center)
-                Button("Try again") { Task { await vm.load() } }.font(.inter(13, .bold)).foregroundStyle(RES.gold)
+                Button { Haptics.tap(); Task { await vm.load() } } label: {
+                    Text("Try again").font(.inter(13, .bold)).foregroundStyle(RES.gold)
+                        .frame(minWidth: 44, minHeight: 44)
+                }
+                .buttonStyle(.pressable)
             }.frame(maxWidth: .infinity).padding(.top, 44)
         } else if filtered.isEmpty {
             VStack(spacing: 8) {
                 Icon(.bookMarked, size: 30, color: RES.ink2.opacity(0.5))
                 Text("No resources found").font(.inter(14, .semibold)).foregroundStyle(RES.navy)
                 Text("Try a different filter or search term.").font(.inter(12)).foregroundStyle(RES.ink2)
+                if !q.isEmpty || filter != "all" {
+                    Button { Haptics.tap(); query = ""; filter = "all" } label: {
+                        Text("Clear search").font(.inter(12, .bold)).foregroundStyle(RES.gold)
+                            .frame(minWidth: 44, minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressable)
+                }
             }.frame(maxWidth: .infinity).padding(.top, 44)
         } else {
             VStack(spacing: 8) {
@@ -165,10 +185,30 @@ struct ResourcesLibraryView: View {
         }
     }
 
+    /// Placeholder mirroring resourceRow's exact metrics (48pt tile, two lines).
+    private var skeletonRow: some View {
+        HStack(spacing: 12) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(RES.border)
+                .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 6) {
+                RoundedRectangle(cornerRadius: 4).fill(RES.border).frame(width: 150, height: 11)
+                RoundedRectangle(cornerRadius: 4).fill(RES.border).frame(width: 96, height: 9)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(RES.border, lineWidth: 1))
+        .nuruShimmer()
+    }
+
     private func resourceRow(_ r: ResourceRow) -> some View {
         let m = RES.meta(r.kind)
         return Button {
-            if let u = r.url, let url = URL(string: u) { UIApplication.shared.open(url) }
+            if let u = r.url, let url = URL(string: u) {
+                Haptics.tap()
+                UIApplication.shared.open(url)
+            }
         } label: {
             HStack(spacing: 12) {
                 Image(systemName: m.sf).font(.system(size: 18)).foregroundStyle(m.color)
@@ -187,6 +227,6 @@ struct ResourcesLibraryView: View {
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(RES.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }

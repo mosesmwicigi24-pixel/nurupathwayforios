@@ -12,7 +12,23 @@ struct RadioMiniPlayer: View {
     init(open: @escaping () -> Void) { self.open = open }
 
     var body: some View {
-        if let p = center.program {
+        // The `if let` lives inside a container so the slide-up/away transition
+        // actually runs when the radio is tuned/stopped (attached to conditional
+        // content directly, SwiftUI would pop it in with no animation).
+        ZStack {
+            if let p = center.program {
+                capsule(p)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: center.program?.id)
+    }
+
+    private func capsule(_ p: RadioProgram) -> some View {
+        Button {
+            Haptics.tap()
+            open()
+        } label: {
             HStack(spacing: 10) {
                 thumb(p)
                 VStack(alignment: .leading, spacing: 1) {
@@ -30,22 +46,30 @@ struct RadioMiniPlayer: View {
                         .lineLimit(1).truncationMode(.tail)
                 }
                 Spacer(minLength: 6)
-                Button { center.togglePlay() } label: {
+                Button {
+                    Haptics.tap()
+                    center.togglePlay()
+                } label: {
                     Image(systemName: center.playing ? "pause.fill" : "play.fill")
                         .font(.system(size: 13, weight: .bold)).foregroundStyle(Nuru.navy)
+                        .contentTransition(.symbolEffect(.replace))
                         .offset(x: center.playing ? 0 : 1)
                         .frame(width: 34, height: 34)
                         .background(Nuru.gold, in: Circle())
                         .shadow(color: Nuru.gold.opacity(0.45), radius: 6, y: 3)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
+                .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
-                Button { center.stop() } label: {
+                Button {
+                    Haptics.tap()
+                    center.stop()
+                } label: {
                     Icon(.x, size: 13, color: .white.opacity(0.7))
                         .frame(width: 28, height: 28)
                         .background(Color.white.opacity(0.10), in: Circle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .accessibilityLabel("Stop radio")
             }
             .padding(.horizontal, 10).padding(.vertical, 8)
@@ -54,12 +78,11 @@ struct RadioMiniPlayer: View {
                                startPoint: .topLeading, endPoint: .bottomTrailing),
                 in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-            .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
             .contentShape(Capsule())
-            .onTapGesture(perform: open)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Opens the radio player")
         }
+        .buttonStyle(.pressableSubtle)
+        .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
+        .accessibilityHint("Opens the radio player")
     }
 
     private func thumb(_ p: RadioProgram) -> some View {

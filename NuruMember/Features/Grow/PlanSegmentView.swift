@@ -91,7 +91,7 @@ struct PlanSegmentView: View {
                 Button { dismiss() } label: {
                     headerChip { Icon(.arrowLeft, size: 18, color: .white) }
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 Spacer(minLength: Nuru.S.sm)
                 Text("DAY \(ref.dayNumber) · \(ref.planTitle.uppercased())")
                     .font(.inter(10, .bold)).kerning(1.8)
@@ -136,6 +136,8 @@ struct PlanSegmentView: View {
                          done: seg.completed || (idx == ref.index && completed))
             }
         }
+        // The current chip turning gold settles in rather than snapping.
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: completed)
     }
 
     // MARK: 16:9 video card (real `videoUrl` only)
@@ -143,14 +145,14 @@ struct PlanSegmentView: View {
     private var videoCard: some View {
         ZStack {
             mediaBackground
-            Button { showPlayer = true } label: {
+            Button { Haptics.tap(); showPlayer = true } label: {
                 ZStack {
                     Circle().fill(Nuru.gold).frame(width: 64, height: 64).nuruShadow()
                     Icon(.play, size: 22, color: Nuru.navy)
                         .offset(x: 1) // optically centre the play triangle
                 }
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .frame(maxWidth: .infinity)
@@ -164,6 +166,7 @@ struct PlanSegmentView: View {
             CachedAsyncImage(url: url) { phase in
                 if let img = phase.image {
                     img.resizable().scaledToFill()
+                        .transition(.opacity.animation(.easeOut(duration: 0.25))) // no pop
                 } else {
                     Rectangle().fill(Nuru.navyGradient)
                 }
@@ -207,13 +210,24 @@ struct PlanSegmentView: View {
         VStack(spacing: 0) {
             if hasNext {
                 NavigationLink(value: nextRef) { ctaLabel("Continue") }
-                    .buttonStyle(.plain)
-                    .simultaneousGesture(TapGesture().onEnded { Task { await markComplete() } })
+                    .buttonStyle(.pressable)
+                    .simultaneousGesture(TapGesture().onEnded {
+                        Haptics.tap()
+                        Task { await markComplete() }
+                    })
             } else {
-                Button { Task { await markComplete(); dismiss() } } label: {
+                Button {
+                    let alreadyDone = completed || segment.completed
+                    Task {
+                        await markComplete()
+                        // Celebrate only the first completion, not a revisit.
+                        if alreadyDone { Haptics.tap() } else { Haptics.success() }
+                        dismiss()
+                    }
+                } label: {
                     ctaLabel(completed || segment.completed ? "Done" : "Mark complete")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
             }
         }
         .padding(.horizontal, Nuru.S.screen)
@@ -262,7 +276,7 @@ struct PlanSegmentView: View {
                             .frame(width: 38, height: 38)
                             .background(Color.white.opacity(0.18), in: Circle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressable)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, Nuru.S.screen)
@@ -299,6 +313,7 @@ struct PlanSegmentView: View {
     private var startWatchingButton: some View {
         if let url = segment.videoUrl.flatMap(URL.init) {
             Button {
+                Haptics.action()
                 UIApplication.shared.open(url)
                 Task { await markComplete() }
             } label: {
@@ -312,7 +327,7 @@ struct PlanSegmentView: View {
                 .frame(height: Nuru.buttonHeightLg)
                 .background(Nuru.white, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
     }
 

@@ -110,12 +110,14 @@ struct RadioPlayerView: View {
                 RadioBackground()
                 content
             }
+            // Skeleton → list resolves as a soft crossfade, not a snap.
+            .animation(.easeInOut(duration: 0.25), value: vm.loading)
             .overlay(alignment: .topLeading) {
                 Button { dismiss() } label: {
                     Icon(.x, size: 18, color: .white).frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.12), in: Circle())
                 }
-                .buttonStyle(.plain).padding(.leading, 16).padding(.top, 8)
+                .buttonStyle(.pressable).padding(.leading, 16).padding(.top, 8)
             }
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: RadioProgram.self) { p in
@@ -139,7 +141,7 @@ struct RadioPlayerView: View {
 
     @ViewBuilder private var content: some View {
         if vm.loading {
-            ProgressView().tint(Nuru.gold)
+            stationSkeleton
         } else if let err = vm.errorText {
             RadioErrorState(message: err) { Task { await vm.load() } }
         } else if vm.programs.isEmpty {
@@ -147,6 +149,40 @@ struct RadioPlayerView: View {
         } else {
             stationList
         }
+    }
+
+    /// First-load placeholder — the real header plus shimmering ghost rows in the
+    /// exact geometry of RadioProgramRow, so loaded content lands without a jump.
+    private var stationSkeleton: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Nuru Radio").font(.fraunces(28, .semibold)).kerning(-0.5).foregroundStyle(.white)
+                RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08))
+                    .frame(width: 190, height: 12)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 20)
+            ForEach(0..<5, id: \.self) { _ in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(Color.white.opacity(0.07)).frame(width: 52, height: 52)
+                    VStack(alignment: .leading, spacing: 7) {
+                        RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.08))
+                            .frame(width: 150, height: 12)
+                        RoundedRectangle(cornerRadius: 4).fill(Color.white.opacity(0.06))
+                            .frame(width: 100, height: 9)
+                    }
+                    Spacer(minLength: 8)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .nuruShimmer()
+                .padding(.horizontal, 16).padding(.vertical, 4)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .accessibilityLabel("Loading radio programs")
     }
 
     private var stationList: some View {
@@ -187,7 +223,7 @@ struct RadioPlayerView: View {
     }
 
     private func row(_ p: RadioProgram) -> some View {
-        NavigationLink(value: p) { RadioProgramRow(program: p) }.buttonStyle(.plain)
+        NavigationLink(value: p) { RadioProgramRow(program: p) }.buttonStyle(.pressable)
     }
 }
 
@@ -219,12 +255,15 @@ private struct RadioErrorState: View {
             Text("Couldn't tune in").font(.fraunces(20, .semibold)).foregroundStyle(.white)
             Text(message).font(.inter(12)).foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center).padding(.horizontal, 48)
-            Button(action: retry) {
+            Button {
+                Haptics.tap()
+                retry()
+            } label: {
                 Text("Try again").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     .padding(.horizontal, 22).padding(.vertical, 10)
                     .background(Nuru.gold, in: Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
         }
     }
 }
@@ -449,13 +488,16 @@ private struct StudioHeader: View {
     let minimize: () -> Void
     var body: some View {
         HStack {
-            Button(action: minimize) {
+            Button {
+                Haptics.tap()
+                minimize()
+            } label: {
                 Icon(.chevronDown, size: 18, color: .white)
                     .frame(width: 40, height: 40)
                     .background(Color.white.opacity(0.10), in: Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .accessibilityLabel("Minimize player — audio keeps playing")
             Spacer(minLength: 0)
             StudioLamps(live: live)
@@ -641,10 +683,12 @@ private struct StudioTransport: View {
     var body: some View {
         VStack(spacing: 14) {
             Button {
+                Haptics.action()
                 if tuned { center.togglePlay() } else { center.tune(program) }
             } label: {
                 Image(systemName: playingHere ? "pause.fill" : "play.fill")
                     .font(.system(size: 30)).foregroundStyle(Nuru.navy)
+                    .contentTransition(.symbolEffect(.replace))
                     .offset(x: playingHere ? 0 : 2)
                     .frame(width: 84, height: 84)
                     .background(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)],
@@ -652,7 +696,8 @@ private struct StudioTransport: View {
                     .overlay(Circle().stroke(Color.white.opacity(0.22), lineWidth: 4).padding(3))
                     .shadow(color: Nuru.gold.opacity(playingHere ? 0.55 : 0.35), radius: 22, y: 10)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .animation(.easeInOut(duration: 0.2), value: playingHere)
             .disabled(program.streamUrl == nil)
             .opacity(program.streamUrl == nil ? 0.4 : 1)
 
@@ -694,7 +739,10 @@ private struct RecordedScrubber: View {
                 in: 0...max(center.duration, 1)
             ) { editing in
                 if editing { scrubbing = true }
-                else { center.seek(to: scrubValue); scrubbing = false }
+                else {
+                    Haptics.selection()   // confirm the seek landed
+                    center.seek(to: scrubValue); scrubbing = false
+                }
             }
             .tint(Nuru.gold)
             .disabled(center.duration <= 0)
@@ -744,11 +792,10 @@ private struct StudioReactionChip: View {
     let action: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var particles: [EmojiParticle] = []
-    @State private var taps = 0
 
     var body: some View {
         Button {
-            taps += 1
+            Haptics.love()   // soft — a reaction, not a machine click
             action()
             spawnBurst()
         } label: {
@@ -763,14 +810,13 @@ private struct StudioReactionChip: View {
             .background(Color.white.opacity(0.10), in: Capsule())
             .overlay(Capsule().stroke(Color.white.opacity(0.16), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .overlay(alignment: .top) {
             ZStack {
                 ForEach(particles) { p in FloatingEmoji(emoji: emoji, particle: p) }
             }
             .allowsHitTesting(false)
         }
-        .sensoryFeedback(.impact(weight: .light), trigger: taps)
     }
 
     private func spawnBurst() {
@@ -916,16 +962,25 @@ private struct StudioComposer: View {
                 .background(Color.white.opacity(0.08), in: Capsule())
                 .overlay(Capsule().stroke(Color.white.opacity(0.12), lineWidth: 1))
                 .submitLabel(.send)
-                .onSubmit { Task { await vm.sendComment() } }
-            Button { Task { await vm.sendComment() } } label: {
+                .onSubmit(send)
+            Button(action: send) {
                 Icon(.send, size: 16, color: Nuru.navy)
                     .frame(width: 38, height: 38)
                     .background(Nuru.gold, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(vm.sending || empty)
             .opacity(empty ? 0.4 : 1)
+            .animation(.easeOut(duration: 0.15), value: empty)
         }
+    }
+
+    /// One path for button + keyboard send: confirm haptic, then the model's
+    /// optimistic-append send (unchanged).
+    private func send() {
+        guard !empty, !vm.sending else { return }
+        Haptics.action()
+        Task { await vm.sendComment() }
     }
 }
 

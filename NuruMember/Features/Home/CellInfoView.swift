@@ -39,7 +39,14 @@ struct CellInfoView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: Nuru.S.base) {
                         if vm.loading && vm.isEmpty {
-                            ProgressView().tint(Nuru.gold).padding(.top, Nuru.S.xxl)
+                            // Shimmer ghosts in the screen's own rhythm: leader
+                            // card → rhythm card → stats row.
+                            loadingGhost(height: 88)
+                            loadingGhost(height: 132)
+                            HStack(spacing: Nuru.S.sm) {
+                                loadingGhost(height: 56)
+                                loadingGhost(height: 56)
+                            }
                         } else if vm.isEmpty {
                             emptyCard
                         } else {
@@ -53,6 +60,7 @@ struct CellInfoView: View {
                     .padding(Nuru.S.screen)
                     .padding(.bottom, Nuru.tabBarSpace)
                 }
+                .refreshable { await vm.load() }
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -60,15 +68,24 @@ struct CellInfoView: View {
         .task { if vm.isEmpty { await vm.load() } }
     }
 
+    /// One shimmering placeholder card (loading state only).
+    private func loadingGhost(height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous)
+            .fill(Nuru.surface)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .nuruShimmer()
+    }
+
     // Navy header with rounded bottom, circular back button, gold overline, serif title.
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
-            Button { dismiss() } label: {
+            Button { Haptics.tap(); dismiss() } label: {
                 Icon(.arrowLeft, size: 18, color: Nuru.onNavy)
                     .frame(width: 38, height: 38)
                     .background(Nuru.navyDeep, in: Circle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
 
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("YOUR CELL")
@@ -221,7 +238,7 @@ struct CellInfoView: View {
             .frame(maxWidth: .infinity, minHeight: 48)
             .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .padding(.top, Nuru.S.xs)
     }
 
@@ -239,6 +256,12 @@ struct CellInfoView: View {
                     .font(.nCaption).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // Also the recovery path when the fetch failed (both cell endpoints
+            // swallow errors, so "empty" and "offline" look the same here).
+            Button { Haptics.tap(); Task { await vm.load() } } label: {
+                Text("Refresh").font(.inter(13, .semibold)).foregroundStyle(Nuru.gold)
+            }
+            .buttonStyle(.pressable)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Nuru.S.base)

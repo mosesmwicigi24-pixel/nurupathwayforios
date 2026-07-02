@@ -21,6 +21,25 @@ enum HomeFig {
     static let liveRed   = Color(hex: 0xDC2626)
 }
 
+// MARK: - Fade-in network image (success phase settles in instead of popping)
+
+/// Wraps the success image of a `CachedAsyncImage` phase closure so freshly
+/// loaded artwork fades in over ~0.25s. Warm-cache hits fade too — fast enough
+/// to read as "settling", never as "loading".
+struct HomeFadeInImage: View {
+    let image: Image
+    var maxOpacity: Double = 1
+    @State private var shown = false
+    var body: some View {
+        image.resizable().scaledToFill()
+            .opacity(shown ? maxOpacity : 0)
+            .onAppear {
+                guard !shown else { return }
+                withAnimation(.easeOut(duration: 0.25)) { shown = true }
+            }
+    }
+}
+
 // MARK: - Section label ("GROW YOUR FAITH", "UPCOMING", "YOUR COHORT")
 
 struct HomeSectionLabel: View {
@@ -42,6 +61,7 @@ struct HomeLiveNowCard: View {
     let posterUrl: String?
     let startsInMin: Int?     // nil → live; else "starts soon" variant
     let onOpen: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
     private var isLive: Bool { startsInMin == nil }
@@ -55,7 +75,7 @@ struct HomeLiveNowCard: View {
                     .lineLimit(3).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                 metaRow.padding(.top, 4)
-                Button(action: onOpen) {
+                Button { Haptics.tap(); onOpen() } label: {
                     HStack(spacing: 8) {
                         if isLive { Icon(.play, size: 15, color: HomeFig.navy) }
                         else { Image(systemName: "bell.badge.fill").font(.system(size: 14)).foregroundStyle(HomeFig.navy) }
@@ -65,7 +85,7 @@ struct HomeLiveNowCard: View {
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(HomeFig.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressable)
                 .padding(.top, 12)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -74,7 +94,10 @@ struct HomeLiveNowCard: View {
         .background(HomeFig.navy)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .onAppear { withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true } }
+        .onAppear {
+            guard !reduceMotion else { return }   // pulses are decoration only
+            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 
     // 16:9 poster with LIVE pill, ON AIR studio lights, and the gold play disc.
@@ -86,7 +109,7 @@ struct HomeLiveNowCard: View {
                 // inflate the 16:9 media box (same overflow class as plan cards).
                 Color.clear.overlay {
                     CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
+                        if let img = phase.image { HomeFadeInImage(image: img, maxOpacity: 0.9) }
                         else { posterFallback }
                     }
                 }
@@ -95,7 +118,7 @@ struct HomeLiveNowCard: View {
             }
             LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.55)],
                            startPoint: .top, endPoint: .bottom)
-            Button(action: onOpen) { playDisc }.buttonStyle(.plain)
+            Button { Haptics.tap(); onOpen() } label: { playDisc }.buttonStyle(.pressable)
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fill)
         .frame(maxWidth: .infinity)
@@ -180,7 +203,7 @@ struct HomePriorityStrip: View {
     let action: () -> Void
 
     var body: some View {
-        Button(action: action) {
+        Button { Haptics.tap(); action() } label: {
             HStack(spacing: 12) {
                 Icon(.messageSquareText, size: 16, color: HomeFig.gold)
                     .frame(width: 36, height: 36)
@@ -200,7 +223,7 @@ struct HomePriorityStrip: View {
             .background(HomeFig.priorityBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(HomeFig.gold.opacity(0.33), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -217,7 +240,7 @@ struct HomeResumeHero: View {
     private var clamped: Int { min(max(pct, 0), 100) }
 
     var body: some View {
-        Button(action: action) {
+        Button { Haptics.tap(); action() } label: {
             ZStack(alignment: .topTrailing) {
                 LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -238,7 +261,7 @@ struct HomeResumeHero: View {
             }
             .nuruShadow()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 
     private var content: some View {
@@ -288,6 +311,7 @@ struct HomeResumeHero: View {
 struct HomeWeekChain: View {
     let streakDays: Int
     let todayDone: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
     private static let days = ["M", "T", "W", "T", "F", "S", "S"]
 
@@ -320,7 +344,10 @@ struct HomeWeekChain: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .onAppear { withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true } }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 }
 
@@ -349,6 +376,7 @@ struct HomeEncouragementCard: View {
 // MARK: - "You're not in a cell yet" belonging cue (cohort cold start)
 
 struct HomeCohortColdStart: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
     var body: some View {
         HStack(spacing: 10) {
@@ -373,7 +401,10 @@ struct HomeCohortColdStart: View {
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(HomeFig.gold.opacity(0.2), lineWidth: 1))
-        .onAppear { withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true } }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 }
 
@@ -386,6 +417,7 @@ struct HomeUpcomingEventRow: View {
     let sub: String           // "3 going" or the location
     let subHighlight: Bool    // gold-bold when it's a going-count
     let imageUrl: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
     var body: some View {
@@ -397,7 +429,7 @@ struct HomeUpcomingEventRow: View {
                     // 56×56 so the crop stays centred and nothing paints outside.
                     Color.clear.overlay {
                         CachedAsyncImage(url: u) { phase in
-                            if let img = phase.image { img.resizable().scaledToFill() }
+                            if let img = phase.image { HomeFadeInImage(image: img) }
                             else { Rectangle().fill(Nuru.mutedBg) }
                         }
                     }
@@ -427,7 +459,10 @@ struct HomeUpcomingEventRow: View {
         }
         .padding(10)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onAppear { withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true } }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 }
 
@@ -436,7 +471,7 @@ struct HomeUpcomingEventRow: View {
 struct HomeGiveCard: View {
     let action: () -> Void
     var body: some View {
-        Button(action: action) {
+        Button { Haptics.tap(); action() } label: {
             ZStack(alignment: .topTrailing) {
                 LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -491,7 +526,7 @@ struct HomeGiveCard: View {
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             .nuruShadow()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressableSubtle)
     }
 }
 
@@ -563,6 +598,7 @@ struct HomeOnAirCard: View {
     }
 
     private func togglePlay() {
+        Haptics.tap()
         if isPlayingThis { radio.pause() } else { radio.tune(program) }
     }
 
@@ -716,6 +752,7 @@ struct EqualizerWave: View {
 // MARK: - "New today" pulsing dot (devotional tile in the Grow grid)
 
 struct HomePulseDot: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
     var body: some View {
         ZStack {
@@ -724,6 +761,9 @@ struct HomePulseDot: View {
                 .opacity(pulse ? 0 : 0.6)
             Circle().fill(HomeFig.gold).frame(width: 10, height: 10)
         }
-        .onAppear { withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true } }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
+        }
     }
 }

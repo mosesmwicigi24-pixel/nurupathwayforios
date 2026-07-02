@@ -52,7 +52,9 @@ final class GiftsAssessmentViewModel: ObservableObject {
             result = try await MemberAPI.submitGifts(setId: questionSet.setId,
                                                      clientMutationId: UUID().uuidString,
                                                      answers: answers)
+            Haptics.success()
         } catch {
+            Haptics.error()
             submitError = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
         }
     }
@@ -142,6 +144,10 @@ struct GiftsAssessmentView: View {
         } else if let qs = vm.questionSet {
             if vm.step < qs.data.count {
                 questionPane(qs.data[vm.step], index: vm.step, total: qs.data.count)
+                    .id(vm.step)   // each question settles in like a fresh page
+                    .transition(.asymmetric(
+                        insertion: .move(edge: .trailing).combined(with: .opacity),
+                        removal: .move(edge: .leading).combined(with: .opacity)))
             } else {
                 submitPane
             }
@@ -178,7 +184,10 @@ struct GiftsAssessmentView: View {
                         VStack(spacing: Nuru.S.sm) {
                             ForEach(Self.likertOptions) { opt in
                                 LikertRow(label: opt.label) {
-                                    vm.choose(opt.value, for: q)
+                                    Haptics.selection()
+                                    withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                                        vm.choose(opt.value, for: q)
+                                    }
                                     // Last answer in → hand the set to the server.
                                     if vm.allAnswered { Task { await vm.submit() } }
                                 }
@@ -246,6 +255,7 @@ private struct SegmentedProgress: View {
                     .frame(maxWidth: .infinity)
             }
         }
+        .animation(.easeInOut(duration: 0.3), value: step)
     }
 }
 
@@ -263,10 +273,11 @@ private struct LikertRow: View {
                 Icon(.chevronRight, size: 14, color: Nuru.faint)
             }
             .padding(Nuru.S.md)
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -310,10 +321,10 @@ private struct ResultsPane: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
-                topGiftsCard
-                if !gifts.suggestedTracks.isEmpty { servingCard }
-                retakeButton
-                PButton(title: "Done", variant: .gold, action: onDone)
+                topGiftsCard.gentleEntrance()
+                if !gifts.suggestedTracks.isEmpty { servingCard.gentleEntrance(delay: 0.12) }
+                retakeButton.gentleEntrance(delay: 0.2)
+                PButton(title: "Done", variant: .gold, action: onDone).gentleEntrance(delay: 0.2)
             }
             .padding(Nuru.S.screen)
             .padding(.bottom, Nuru.tabBarSpace)
@@ -369,7 +380,7 @@ private struct ResultsPane: View {
     }
 
     private var retakeButton: some View {
-        Button(action: onRetake) {
+        Button { Haptics.tap(); onRetake() } label: {
             Text("Retake assessment")
                 .font(.inter(13, .semibold))
                 .foregroundStyle(Nuru.navy)
@@ -377,7 +388,7 @@ private struct ResultsPane: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -386,6 +397,9 @@ private struct GiftBar: View {
     let title: String
     let pct: Int
     let color: Color
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var revealed = false
+
     var body: some View {
         VStack(spacing: Nuru.S.xs) {
             HStack {
@@ -401,10 +415,15 @@ private struct GiftBar: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Nuru.track)
                     Capsule().fill(color)
-                        .frame(width: Double(pct) / 100 * geo.size.width)
+                        .frame(width: (revealed ? Double(pct) / 100 : 0) * geo.size.width)
                 }
             }
             .frame(height: 8)
+        }
+        .onAppear {
+            guard !revealed else { return }
+            if reduceMotion { revealed = true; return }
+            withAnimation(.spring(response: 0.7, dampingFraction: 0.85).delay(0.2)) { revealed = true }
         }
     }
 }

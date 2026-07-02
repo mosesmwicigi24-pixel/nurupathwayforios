@@ -183,7 +183,9 @@ struct GivingView: View {
                         fundsSection
                         amountCard
                         frequencyRow
-                        if recurring { recurringSummary }
+                        if recurring {
+                            recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
+                        }
                         methodSection
                         coverFeeRow
                         if !vm.schedules.isEmpty { schedulesSection }
@@ -275,7 +277,10 @@ struct GivingView: View {
     // MARK: Repeat last gift
 
     private func repeatCard(_ g: GivingRecord) -> some View {
-        Button { applyRepeat(g) } label: {
+        Button {
+            Haptics.tap()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { applyRepeat(g) }
+        } label: {
             HStack(spacing: Nuru.S.md) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold)
@@ -296,7 +301,7 @@ struct GivingView: View {
             .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     // MARK: Funds
@@ -315,7 +320,11 @@ struct GivingView: View {
 
     private func fundCard(_ f: Fund) -> some View {
         let on = f.code == fundCode
-        return Button { fundCode = f.code } label: {
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { fundCode = f.code }
+        } label: {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: f.tint))
@@ -336,20 +345,24 @@ struct GivingView: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(on ? Nuru.gold : Nuru.border, lineWidth: on ? 2 : 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     // MARK: Amount (centred, per Figma)
 
     private var amountCard: some View {
         VStack(spacing: 0) {
-            Button { showKeypad = true } label: {
+            Button {
+                Haptics.tap()
+                showKeypad = true
+            } label: {
                 VStack(spacing: 4) {
                     Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x9CA3AF))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x9CA3AF))
                         Text(amount.formatted(.number.grouping(.automatic)))
                             .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
+                            .contentTransition(.numericText(value: Double(amount)))
                     }
                     Text("\(fund.label) · \(freqLabel)").font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
                 }
@@ -370,21 +383,28 @@ struct GivingView: View {
         FlowWrap(spacing: 6, centered: true) {
             ForEach(presets, id: \.self) { v in
                 let on = amount == v
-                Button { amount = v } label: {
+                Button {
+                    guard !on else { return }
+                    Haptics.selection()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amount = v }
+                } label: {
                     Text(v.formatted(.number.grouping(.automatic)))
                         .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                         .padding(.horizontal, 14).frame(height: 34)
                         .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
                         .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressable)
             }
-            Button { showKeypad = true } label: {
+            Button {
+                Haptics.tap()
+                showKeypad = true
+            } label: {
                 Text("Custom")
                     .font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
                     .padding(.horizontal, 14).frame(height: 34)
                     .background(Nuru.white, in: Capsule())
                     .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-            }.buttonStyle(.plain)
+            }.buttonStyle(.pressable)
         }
     }
 
@@ -394,7 +414,11 @@ struct GivingView: View {
         HStack(spacing: 4) {
             ForEach([("once", "One-time"), ("weekly", "Weekly"), ("monthly", "Monthly")], id: \.0) { key, label in
                 let on = freq == key
-                Button { freq = key } label: {
+                Button {
+                    guard !on else { return }
+                    Haptics.selection()
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { freq = key }
+                } label: {
                     Text(label)
                         .font(.inter(13, .semibold))
                         .foregroundStyle(on ? Nuru.navy : Color(hex: 0x6B7280))
@@ -466,7 +490,11 @@ struct GivingView: View {
         let on = method == m.key
         let soon = m.provider == nil
         HStack(spacing: 8) {
-            Button { if !soon { method = m.key } } label: {
+            Button {
+                guard !soon, method != m.key else { return }
+                Haptics.selection()
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { method = m.key }
+            } label: {
                 HStack(spacing: Nuru.S.md) {
                     methodBadge(m)
                     VStack(alignment: .leading, spacing: 2) {
@@ -494,11 +522,13 @@ struct GivingView: View {
             }
             .buttonStyle(.plain)
             VStack(spacing: 2) {
-                Button { moveMethod(from: index, by: -1) } label: {
+                Button { nudgeMethod(from: index, by: -1) } label: {
                     Icon(.chevronUp, size: 14, color: Nuru.ink300)
+                        .frame(width: 26, height: 22).contentShape(Rectangle())   // easier to hit
                 }.buttonStyle(.plain).disabled(index == 0)
-                Button { moveMethod(from: index, by: 1) } label: {
+                Button { nudgeMethod(from: index, by: 1) } label: {
                     Icon(.chevronDown, size: 14, color: Nuru.ink300)
+                        .frame(width: 26, height: 22).contentShape(Rectangle())
                 }.buttonStyle(.plain).disabled(index == orderedMethods.count - 1)
             }
             Icon(.gripVertical, size: 16, color: Color(hex: 0xC4C9D0))
@@ -545,6 +575,7 @@ struct GivingView: View {
         .padding(12)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .onChange(of: coverFee) { _, _ in Haptics.tap() }
     }
 
     // MARK: Active schedules (horizontal scroll, tap to manage)
@@ -555,8 +586,11 @@ struct GivingView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(vm.schedules) { s in
-                        Button { scheduleDetail = s } label: { scheduleCard(s) }
-                            .buttonStyle(.plain)
+                        Button {
+                            Haptics.tap()
+                            scheduleDetail = s
+                        } label: { scheduleCard(s) }
+                            .buttonStyle(.pressable)
                     }
                 }
                 .padding(.vertical, 2)
@@ -612,13 +646,17 @@ struct GivingView: View {
             .padding(.horizontal, Nuru.S.base).padding(.top, 14).padding(.bottom, 6)
 
             if recentGifts.isEmpty {
-                Text("Your gifts will appear here.")
-                    .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Nuru.S.base).padding(.bottom, 14)
+                HStack(spacing: 8) {
+                    Icon(.handHeart, size: 14, color: Nuru.gold)
+                    Text("No gifts yet — your first one will appear here the moment it settles.")
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Nuru.S.base).padding(.bottom, 14)
             } else {
                 ForEach(Array(recentGifts.enumerated()), id: \.element.id) { i, g in
-                    NavigationLink(value: g) { recentRow(g) }.buttonStyle(.plain)
+                    NavigationLink(value: g) { recentRow(g) }.buttonStyle(.pressable)
                     if i != recentGifts.count - 1 {
                         Divider().overlay(Nuru.border).padding(.leading, Nuru.S.base)
                     }
@@ -678,7 +716,10 @@ struct GivingView: View {
     // MARK: Sticky CTA (quiet gold outline, per Figma)
 
     private var ctaBar: some View {
-        Button { Task { await give() } } label: {
+        Button {
+            Haptics.action()
+            Task { await give() }
+        } label: {
             HStack(spacing: 6) {
                 if submitting {
                     ProgressView().tint(Nuru.goldLo).scaleEffect(0.8)
@@ -697,7 +738,7 @@ struct GivingView: View {
                 .stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(submitting || amount <= 0)
         .opacity(amount <= 0 ? 0.5 : 1)
         .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.lg).padding(.bottom, 28)
@@ -758,10 +799,12 @@ struct GivingView: View {
                 as: Created.self)
             scheduledNextAt = res.nextRunAt
             ceremony = "scheduled"
+            Haptics.success()   // the server really created the schedule
             await vm.load()
         } catch {
             ceremonyNote = (error as? APIError)?.errorDescription ?? "Couldn't create the schedule."
             ceremony = "failed"
+            Haptics.error()
         }
     }
 
@@ -786,6 +829,7 @@ struct GivingView: View {
         } catch {
             ceremonyNote = (error as? APIError)?.errorDescription ?? "Something went wrong."
             ceremony = "failed"
+            Haptics.error()
         }
     }
 
@@ -800,11 +844,13 @@ struct GivingView: View {
             case "succeeded", "settled", "completed":
                 successRef = d.providerRef ?? String(d.transactionId.prefix(8)).uppercased()
                 ceremony = "success"
+                Haptics.success()   // only on the server's confirmed outcome
                 await vm.load()
                 return
             case "failed", "cancelled":
                 ceremonyNote = "The payment didn't complete — no charge was made."
                 ceremony = "failed"
+                Haptics.error()
                 return
             default:
                 break   // still processing — keep waiting
@@ -826,6 +872,14 @@ struct GivingView: View {
         amount = g.amountMinor / 100
         if funds.contains(where: { $0.code == g.fund }) { fundCode = g.fund }
         if let m = g.method, baseMethods.contains(where: { $0.key == m }) { method = m }
+    }
+
+    /// Reorder with a light tap and a spring, so rows glide instead of jumping.
+    private func nudgeMethod(from index: Int, by delta: Int) {
+        Haptics.tap()
+        withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+            moveMethod(from: index, by: delta)
+        }
     }
 
     private func moveMethod(from index: Int, by delta: Int) {
@@ -893,13 +947,16 @@ private struct GiveKeypadSheet: View {
 
             Spacer(minLength: 0)
 
-            Button { onConfirm(num); dismiss() } label: {
+            Button {
+                Haptics.action()
+                onConfirm(num); dismiss()
+            } label: {
                 Text("Give \(ksh(num))")
                     .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(num <= 0)
             .opacity(num <= 0 ? 0.4 : 1)
         }
@@ -929,12 +986,13 @@ private struct GiveKeypadSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .stroke(k == "del" ? Color.clear : Nuru.border, lineWidth: 1))
                     .contentShape(Rectangle())
-                }.buttonStyle(.plain)
+                }.buttonStyle(.pressable)
             }
         }
     }
 
     private func press(_ k: String) {
+        Haptics.tap()
         switch k {
         case "del":
             value = String(value.dropLast())
@@ -995,6 +1053,7 @@ private struct MobileMoneySheet: View {
 
             Button {
                 guard valid else { return }
+                Haptics.action()
                 dismiss(); onSubmit()
             } label: {
                 Text("Give Now")
@@ -1002,7 +1061,7 @@ private struct MobileMoneySheet: View {
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
             .disabled(!valid)
             .opacity(valid ? 1 : 0.4)
 
@@ -1067,10 +1126,15 @@ private struct ScheduleDetailSheet: View {
                 Text(e).font(.inter(12)).foregroundStyle(Nuru.danger).padding(.top, Nuru.S.sm)
             }
 
-            if confirming { confirmBox.padding(.top, Nuru.S.base) }
-            else { cancelButton.padding(.top, Nuru.S.base) }
+            if confirming {
+                confirmBox.padding(.top, Nuru.S.base)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else {
+                cancelButton.padding(.top, Nuru.S.base)
+            }
             Spacer(minLength: 0)
         }
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: confirming)
         .padding(.horizontal, Nuru.S.screen)
         .presentationDetents([.height(500)])
         .presentationDragIndicator(.visible)
@@ -1100,7 +1164,10 @@ private struct ScheduleDetailSheet: View {
     }
 
     private var cancelButton: some View {
-        Button { confirming = true } label: {
+        Button {
+            Haptics.tap()
+            confirming = true
+        } label: {
             Text("Cancel schedule")
                 .font(.inter(13, .bold)).foregroundStyle(Color(hex: 0xDC2626))
                 .frame(maxWidth: .infinity).frame(height: 44)
@@ -1147,10 +1214,12 @@ private struct ScheduleDetailSheet: View {
         Task { @MainActor in
             do {
                 try await MemberAPI.cancelSchedule(schedule.scheduleId)
+                Haptics.success()   // server confirmed the cancellation
                 onCancelled()
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? "Couldn't cancel — try again."
                 busy = false
+                Haptics.error()
             }
         }
     }
@@ -1250,17 +1319,23 @@ private struct SuccessStage: View {
     var body: some View {
         VStack(spacing: 0) {
             Spacer()
+            // This stage only ever renders on the server's confirmed outcome —
+            // let the moment settle in quietly rather than snap.
             ZStack {
+                Circle().fill(Nuru.gold.opacity(0.18)).frame(width: 108, height: 108)
                 Circle().fill(Nuru.gold).frame(width: 80, height: 80)
                 Icon(.check, size: 34, color: Nuru.navy)
             }
+            .gentleEntrance()
             Text("Thank you for your generosity")
                 .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.lg).padding(.horizontal, Nuru.S.xl)
+                .gentleEntrance(delay: 0.08)
             Text(refCode.map { "\(amountLabel) · \(fundLabel) · Ref \($0)" } ?? "\(amountLabel) · \(fundLabel)")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x6B7280))
                 .padding(.top, Nuru.S.sm)
+                .gentleEntrance(delay: 0.16)
             Spacer()
             VStack(spacing: Nuru.S.sm) {
                 if hasReceipt {
@@ -1293,16 +1368,20 @@ private struct ScheduledStage: View {
         VStack(spacing: 0) {
             Spacer()
             ZStack {
+                Circle().fill(Nuru.gold.opacity(0.18)).frame(width: 108, height: 108)
                 Circle().fill(Nuru.gold).frame(width: 80, height: 80)
                 Icon(.repeat, size: 32, color: Nuru.navy)
             }
+            .gentleEntrance()
             Text("Schedule created")
                 .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.lg)
+                .gentleEntrance(delay: 0.08)
             Text("\(amountLabel) to \(fundLabel) every \(cadenceWord).")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x6B7280))
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
+                .gentleEntrance(delay: 0.16)
             if let nextChargeLabel {
                 HStack(spacing: 6) {
                     Icon(.repeat, size: 12, color: Nuru.goldLo)

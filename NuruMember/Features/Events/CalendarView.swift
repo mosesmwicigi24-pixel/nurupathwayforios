@@ -221,15 +221,18 @@ struct CalendarView: View {
                     Text(vm.yearTitle).font(.fraunces(18, .regular)).foregroundStyle(Color(hex: 0xB8C0CC))
                 }
                 Spacer(minLength: 0)
-                Button { vm.goToday() } label: {
+                Button {
+                    Haptics.selection()
+                    withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { vm.goToday() }
+                } label: {
                     Text("TODAY").font(.inter(9, .bold)).kerning(1)
                         .foregroundStyle(Color(hex: 0xA8861C))
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(Nuru.gold.opacity(0.1), in: Capsule())
                 }
-                .buttonStyle(.plain)
-                navButton(.chevronLeft) { vm.step(-1) }
-                navButton(.chevronRight) { vm.step(1) }
+                .buttonStyle(.pressable)
+                navButton(.chevronLeft) { stepMonth(-1) }
+                navButton(.chevronRight) { stepMonth(1) }
             }
 
             // weekday header
@@ -266,6 +269,13 @@ struct CalendarView: View {
         .nuruShadow()
     }
 
+    /// Month navigation: a light tap plus an eased grid change, so the new
+    /// month settles in instead of snapping.
+    private func stepMonth(_ delta: Int) {
+        Haptics.tap()
+        withAnimation(.easeOut(duration: 0.25)) { vm.step(delta) }
+    }
+
     private func navButton(_ glyph: Lucide, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Icon(glyph, size: 14, color: Nuru.ink600)
@@ -273,7 +283,7 @@ struct CalendarView: View {
                 .background(Nuru.surface, in: Circle())
                 .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     // Rounded-square day cell: navy gradient when selected, gold inset ring on
@@ -284,7 +294,10 @@ struct CalendarView: View {
         let dots = vm.dayDots(day)
         let num = Calendar.current.component(.day, from: day)
 
-        return Button { vm.toggle(day) } label: {
+        return Button {
+            Haptics.selection()
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.toggle(day) }
+        } label: {
             VStack(spacing: 3) {
                 Text("\(num)")
                     .font(.inter(12, selected || today ? .bold : .semibold))
@@ -314,7 +327,7 @@ struct CalendarView: View {
             }
             .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func legendItem(_ category: String) -> some View {
@@ -339,15 +352,31 @@ struct CalendarView: View {
     @ViewBuilder
     private var daySection: some View {
         if vm.loading && vm.occurrences.isEmpty {
-            ProgressView().frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl)
+            skeletonCard
         } else if vm.listEvents.isEmpty {
             emptyDay
         } else {
             ForEach(vm.listEvents) { occ in
                 NavigationLink(value: occ) { EventCardView(occ: occ) }
-                    .buttonStyle(.plain)
+                    .buttonStyle(.pressableSubtle)
             }
         }
+    }
+
+    /// Shimmering placeholder in the shape of an event card.
+    private var skeletonCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(Nuru.surface).frame(height: 150).nuruShimmer()
+            VStack(alignment: .leading, spacing: 8) {
+                RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 190, height: 14).nuruShimmer()
+                RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 130, height: 10).nuruShimmer()
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
     }
 
     private var emptyDay: some View {
@@ -359,8 +388,13 @@ struct CalendarView: View {
             Text(vm.selected == nil ? "Nothing coming up" : "Nothing on this day.")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
             if vm.selected != nil {
-                Button { vm.selected = nil } label: {
+                Button {
+                    Haptics.tap()
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.selected = nil }
+                } label: {
                     Text("See all upcoming").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, 12).padding(.vertical, 6)   // comfortable tap target
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             } else {

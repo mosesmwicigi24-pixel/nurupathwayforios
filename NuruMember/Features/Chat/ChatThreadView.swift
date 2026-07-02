@@ -247,7 +247,7 @@ struct ChatThreadView: View {
 
     @ViewBuilder private var content: some View {
         if vm.loading && vm.thread == nil {
-            Spacer(); ProgressView().tint(Nuru.gold); Spacer()
+            ThreadSkeleton()
         } else if let error = vm.error, vm.thread == nil {
             ThreadErrorState(message: error) { Task { await vm.load() } }
         } else {
@@ -267,9 +267,15 @@ struct ChatThreadView: View {
     // composer on the home indicator and floats it on the keyboard while typing.
     private var bottomBar: some View {
         VStack(spacing: 0) {
-            QuickReplyRow { reply in Task { await vm.send(reply) } }
+            QuickReplyRow { reply in
+                Haptics.action()
+                Task { await vm.send(reply) }
+            }
             ComposerBar(draft: $vm.draft, sending: vm.sending,
-                        myName: auth.profile?.fullName ?? "You") { Task { await vm.send() } }
+                        myName: auth.profile?.fullName ?? "You") {
+                Haptics.action()
+                Task { await vm.send() }
+            }
         }
         .background(Aurora.sectionBg)
     }
@@ -316,7 +322,9 @@ private struct ThreadHeader: View {
                 .frame(width: 38, height: 38)
                 .background(Color.white, in: Circle())
                 .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+                .contentShape(Circle())
         }
+        .buttonStyle(.pressable)
     }
 
     @ViewBuilder private var avatar: some View {
@@ -380,6 +388,13 @@ private struct MessagesList: View {
     let keyboardVisible: Bool
     var onReact: (ChatMessage, String) -> Void
 
+    /// Insert-animations arm only after the first layout, so opening a thread
+    /// never plays a whole screen of entrance transitions at once.
+    @State private var settled = false
+    /// True while the newest message is scrolled well out of view (the lazy
+    /// bottom sentinel has left the viewport).
+    @State private var awayFromBottom = false
+
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
@@ -392,11 +407,18 @@ private struct MessagesList: View {
                             onReact(row.m, emoji)
                         }
                         .id(row.id)
+                        // New bubbles rise in; the rest of the list never replays.
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .bottom)),
+                            removal: .opacity))
                     }
                     Color.clear.frame(height: 1).id("bottom")
+                        .onAppear { awayFromBottom = false }
+                        .onDisappear { awayFromBottom = true }
                 }
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.vertical, Nuru.S.screen)
+                .animation(settled ? .spring(response: 0.35, dampingFraction: 0.85) : nil, value: rows.count)
             }
             .background(Aurora.canvas)
             .scrollDismissesKeyboard(.interactively)
@@ -405,7 +427,23 @@ private struct MessagesList: View {
             .onChange(of: keyboardVisible) { _, visible in
                 if visible { scrollToEnd(proxy) }
             }
-            .onAppear { scrollToEnd(proxy, animated: false) }
+            .onAppear {
+                scrollToEnd(proxy, animated: false)
+                DispatchQueue.main.async { settled = true }
+            }
+            // Floating "back to now" chevron when the reader is far up-thread.
+            .overlay(alignment: .bottomTrailing) {
+                if awayFromBottom && !rows.isEmpty {
+                    JumpToLatestButton {
+                        Haptics.tap()
+                        scrollToEnd(proxy)
+                    }
+                    .padding(.trailing, Nuru.S.base)
+                    .padding(.bottom, Nuru.S.md)
+                    .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                }
+            }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: awayFromBottom)
         }
     }
 
@@ -413,6 +451,47 @@ private struct MessagesList: View {
         guard let last = rows.last else { return }
         if animated { withAnimation { proxy.scrollTo(last.id, anchor: .bottom) } }
         else { proxy.scrollTo("bottom", anchor: .bottom) }
+    }
+}
+
+/// Small white circle-chevron that drops the reader back to the newest message.
+private struct JumpToLatestButton: View {
+    var action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Icon(.chevronDown, size: 16, color: Aurora.navy)
+                .frame(width: 40, height: 40)
+                .background(Color.white, in: Circle())
+                .overlay(Circle().stroke(Aurora.border, lineWidth: 1))
+                .shadow(color: Aurora.shadowInk.opacity(0.22), radius: 8, y: 5)
+        }
+        .buttonStyle(.pressable)
+    }
+}
+
+/// Shimmering bubble bones while the thread loads — real bubble geometry on the
+/// Aurora canvas, alternating sides, no invented content.
+private struct ThreadSkeleton: View {
+    var body: some View {
+        VStack(spacing: Nuru.S.base) {
+            bone(width: 190, mine: false)
+            bone(width: 148, mine: true)
+            bone(width: 224, mine: false)
+            bone(width: 122, mine: true)
+        }
+        .padding(.horizontal, Nuru.S.base)
+        .padding(.vertical, Nuru.S.screen)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(Aurora.canvas)
+    }
+
+    private func bone(width: CGFloat, mine: Bool) -> some View {
+        RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .fill(mine ? Color(hex: 0x0B1F33, alpha: 0.10) : Color.white.opacity(0.8))
+            .frame(width: width, height: 44)
+            .nuruShimmer()
+            .frame(maxWidth: .infinity, alignment: mine ? .trailing : .leading)
     }
 }
 
@@ -583,7 +662,10 @@ private struct AuroraBubble: View {
                               : (m.mine ? Color.white.opacity(0.08) : Aurora.bubbleBorder), lineWidth: 1))
         .shadow(color: Aurora.shadowInk.opacity(m.mine ? 0.35 : 0.16), radius: 6, x: 0, y: 5)
         .shadow(color: celebrated ? Aurora.gold.opacity(0.35) : .clear, radius: 10, x: 0, y: 7)
-        .onTapGesture(count: 2) { onReact("❤️") }
+        .onTapGesture(count: 2) {
+            Haptics.love()
+            onReact("❤️")
+        }
         .contextMenu { menu }
     }
 
@@ -621,7 +703,10 @@ private struct AuroraBubble: View {
 
     @ViewBuilder private var menu: some View {
         ForEach(["🙏", "❤️", "🔥", "🎉", "👍"], id: \.self) { emoji in
-            Button(emoji) { onReact(emoji) }
+            Button(emoji) {
+                Haptics.love()
+                onReact(emoji)
+            }
         }
         if !m.body.isEmpty {
             Divider()
@@ -685,7 +770,10 @@ private struct BubbleImage: View {
     @ViewBuilder private var imageView: some View {
         if let url = m.attachmentUrl, let u = URL(string: url) {
             NaturalImageThumb(url: u, maxWidth: 240, maxHeight: 480,
-                              onDoubleTap: { onReact("❤️") })
+                              onDoubleTap: {
+                                  Haptics.love()
+                                  onReact("❤️")
+                              })
         } else {
             placeholder
                 .frame(width: 200, height: 160)
@@ -757,7 +845,10 @@ private struct ReactionChip: View {
     var onTap: () -> Void
 
     var body: some View {
-        Button(action: onTap) {
+        Button {
+            Haptics.tap()
+            onTap()
+        } label: {
             HStack(spacing: 2) {
                 Text(r.emoji).font(.system(size: 11))
                 Text("\(r.count)").font(.inter(9.5, .bold))
@@ -794,7 +885,10 @@ private struct PrayerChip: View {
 
     var body: some View {
         let mine = pray?.mine ?? false
-        Button { onReact("🙏") } label: {
+        Button {
+            Haptics.love()
+            onReact("🙏")
+        } label: {
             Text(label(mine: mine))
                 .font(.inter(11, .bold))
                 .foregroundStyle(mine ? Aurora.goldDeep : Aurora.navy)
@@ -804,7 +898,7 @@ private struct PrayerChip: View {
                 .overlay(Capsule().stroke(mine ? Aurora.gold.opacity(0.5) : Aurora.border, lineWidth: 1))
                 .shadow(color: mine ? .clear : Aurora.shadowInk.opacity(0.15), radius: 5, x: 0, y: 4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 
     private func label(mine: Bool) -> String {
@@ -842,7 +936,7 @@ private struct QuickReplyRow: View {
                 .overlay(Capsule().stroke(Aurora.border, lineWidth: 1))
                 .shadow(color: Aurora.shadowInk.opacity(0.16), radius: 4, x: 0, y: 4)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
     }
 }
 
@@ -909,8 +1003,10 @@ private struct ComposerBar: View {
                 .background(hasDraft ? AnyShapeStyle(Aurora.storyRing) : AnyShapeStyle(Aurora.inkBubble), in: Circle())
                 .shadow(color: hasDraft ? Aurora.gold.opacity(0.5) : Aurora.shadowInk.opacity(0.4), radius: 6, x: 0, y: 5)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressable)
         .disabled(sending)
         .opacity(sending ? 0.6 : 1)
+        // Mic ↔ gold send swap eases instead of snapping per keystroke.
+        .animation(.easeInOut(duration: 0.18), value: hasDraft)
     }
 }

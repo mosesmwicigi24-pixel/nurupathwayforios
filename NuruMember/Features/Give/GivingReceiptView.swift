@@ -30,17 +30,51 @@ struct GivingReceiptView: View {
         VStack(spacing: 0) {
             header
             if vm.loading && vm.detail == nil {
-                Spacer(); ProgressView(); Spacer()
+                loadingSkeleton
+                Spacer()
             } else if let d = vm.detail {
                 content(d)
             } else {
-                Spacer(); Text(vm.error ?? "Couldn't load this receipt.").font(.nBody).foregroundStyle(Nuru.muted); Spacer()
+                Spacer()
+                VStack(spacing: Nuru.S.sm) {
+                    Text(vm.error ?? "Couldn't load this receipt.").font(.nBody).foregroundStyle(Nuru.muted)
+                    Button {
+                        Haptics.tap()
+                        Task { await vm.load() }
+                    } label: {
+                        Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
+                            .padding(.horizontal, 16).padding(.vertical, 8)
+                            .background(Nuru.navy, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                }
+                Spacer()
             }
         }
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
+    }
+
+    /// Shimmering placeholder in the receipt's silhouette — the amount ceremony
+    /// card and the details card — so nothing jumps when the real one lands.
+    private var loadingSkeleton: some View {
+        VStack(spacing: Nuru.S.base) {
+            VStack(spacing: Nuru.S.sm) {
+                Circle().fill(Nuru.surface).frame(width: 64, height: 64).nuruShimmer()
+                RoundedRectangle(cornerRadius: 8).fill(Nuru.surface).frame(width: 160, height: 30).nuruShimmer()
+                RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 100, height: 12).nuruShimmer()
+            }
+            .frame(maxWidth: .infinity).padding(Nuru.S.lg).receiptCard()
+            VStack(spacing: 14) {
+                ForEach(0..<4, id: \.self) { _ in
+                    RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(height: 12).nuruShimmer()
+                }
+            }
+            .padding(Nuru.S.base).receiptCard()
+        }
+        .padding(Nuru.S.screen)
     }
 
     // Cream Figma header — consistent with the rest of the ScreenShell chrome.
@@ -51,6 +85,7 @@ struct GivingReceiptView: View {
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
+            .buttonStyle(.pressable)
             Text("Receipt").font(.fraunces(20, .semibold)).foregroundStyle(Nuru.navy)
             Spacer()
         }
@@ -75,6 +110,7 @@ struct GivingReceiptView: View {
                     statusChip(d.status)
                 }
                 .frame(maxWidth: .infinity).padding(Nuru.S.lg).receiptCard()
+                .gentleEntrance()
 
                 // Details
                 VStack(spacing: 0) {
@@ -86,6 +122,7 @@ struct GivingReceiptView: View {
                     Divider(); detailRow("Transaction", String(d.transactionId.prefix(8)) + "…")
                 }
                 .padding(.horizontal, Nuru.S.base).receiptCard()
+                .gentleEntrance(delay: 0.06)
 
                 // Ledger trail
                 if !d.ledger.isEmpty {
@@ -103,6 +140,7 @@ struct GivingReceiptView: View {
                         }
                     }
                     .padding(Nuru.S.base).frame(maxWidth: .infinity, alignment: .leading).receiptCard()
+                    .gentleEntrance(delay: 0.12)
                 }
             }
             .padding(Nuru.S.screen)
