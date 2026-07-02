@@ -563,13 +563,66 @@ extension MemberAPI {
     /// POST /chat/broadcast — staff only (Instructor+; the server 403s Students):
     /// ONE message delivered to every active member of the congregation as an
     /// individual DM from the sender — replies come back as normal 1:1 threads.
-    /// Returns how many members it reached. Replays of the same clientMutationId
-    /// are server-side no-ops (§3.6).
-    static func broadcast(body: String, clientMutationId: String = UUID().uuidString) async throws -> Int {
-        struct Body: Encodable { let body: String; let clientMutationId: String }
+    /// May carry an image (`msgType: "image"` + `attachmentUrl` from the
+    /// sign-and-upload flow below); `body` is then the caption. Returns how many
+    /// members it reached. Replays of the same clientMutationId are server-side
+    /// no-ops (§3.6).
+    static func broadcast(body: String, attachmentUrl: String? = nil, msgType: String = "text",
+                          clientMutationId: String = UUID().uuidString) async throws -> Int {
+        struct Body: Encodable {
+            let body: String; let msgType: String; let attachmentUrl: String?; let clientMutationId: String
+        }
         struct Res: Decodable { let sent: Int }
         return try await APIClient.shared.post("chat/broadcast",
-            body: Body(body: body, clientMutationId: clientMutationId), as: Res.self).sent
+            body: Body(body: body, msgType: msgType, attachmentUrl: attachmentUrl,
+                       clientMutationId: clientMutationId), as: Res.self).sent
+    }
+
+    // MARK: Chat attachments (bytes go straight to Cloudinary, never our server — §4.5)
+
+    /// POST /chat/attachments/sign — broker Cloudinary signed-upload params for a
+    /// chat attachment (folder is namespaced per author server-side). The client
+    /// then multipart-POSTs the bytes directly to `uploadUrl`.
+    static func signChatAttachment(contentType: String, kind: String = "image") async throws -> CloudinarySign {
+        struct Body: Encodable { let contentType: String; let kind: String }
+        return try await APIClient.shared.post("chat/attachments/sign",
+            body: Body(contentType: contentType, kind: kind), as: CloudinarySign.self)
+    }
+
+    /// Multipart POST the bytes straight to Cloudinary with the server-signed
+    /// params (same field set as the RN client: file + api_key + timestamp +
+    /// folder + signature). Returns the delivered `secure_url`.
+    static func uploadChatAttachment(sign: CloudinarySign, data: Data,
+                                     filename: String, contentType: String) async throws -> String {
+        guard let url = URL(string: sign.uploadUrl) else {
+            throw APIError.transport("Bad Cloudinary upload URL.")
+        }
+        let boundary = "nuru-\(UUID().uuidString)"
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+
+        var form = Data()
+        func field(_ name: String, _ value: String) {
+            form.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
+        }
+        field("api_key", sign.apiKey)
+        field("timestamp", String(sign.timestamp))
+        field("folder", sign.folder)
+        field("signature", sign.signature)
+        form.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\nContent-Type: \(contentType)\r\n\r\n".utf8))
+        form.append(data)
+        form.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        let (resData, response) = try await URLSession.shared.upload(for: req, from: form)
+        guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            throw APIError.http(status: status, code: nil, message: "Attachment upload failed.")
+        }
+        struct UploadResult: Decodable { let secureUrl: String }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(UploadResult.self, from: resData).secureUrl
     }
 
     /// POST /chat/spaces/{id}/join — follow a public space.
@@ -684,6 +737,18 @@ extension MemberAPI {
 struct QuizAnswer: Encodable, Sendable {
     let questionId: String
     let givenAnswer: String
+}
+
+/// Cloudinary signed-upload params from POST /chat/attachments/sign. The upload
+/// is a multipart POST to `uploadUrl` (…/v1_1/<cloud>/auto/upload) carrying
+/// exactly these fields plus the file — mirrors the RN client's CloudinarySign.
+struct CloudinarySign: Decodable, Sendable {
+    let cloudName: String
+    let apiKey: String
+    let timestamp: Int
+    let folder: String
+    let signature: String
+    let uploadUrl: String
 }
 
 /// Generic `{ "data": [...] }` list envelope used by several collection endpoints.

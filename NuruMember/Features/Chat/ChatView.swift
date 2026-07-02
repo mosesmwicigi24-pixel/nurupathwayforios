@@ -6,7 +6,10 @@
 // white card of rows: spaces (# avatar, author preview, member dots, Active
 // pill), DMs (stories row, real-or-initials avatars, unread badges, read ticks)
 // and groups. A gold pen FAB opens the "Start something" compose sheet.
+import PhotosUI
 import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
 
 @MainActor
 final class ChatInboxViewModel: ObservableObject {
@@ -1022,6 +1025,12 @@ private struct BroadcastComposer: View {
     @State private var sending = false
     @State private var sentTo: Int?
     @State private var errorText: String?
+    // ✨ AI drafting + 🖼️ image attachment (sign → Cloudinary → secure_url)
+    @State private var aiDrafting = false
+    @State private var photoItem: PhotosPickerItem?
+    @State private var uploading = false
+    @State private var attachmentUrl: String?
+    @State private var attachmentImage: UIImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1037,16 +1046,49 @@ private struct BroadcastComposer: View {
                         .font(.inter(9, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
             }
-            TextField("", text: $text,
-                      prompt: Text("Write the message every member should receive…").foregroundColor(Color(hex: 0x9CA3AF)),
-                      axis: .vertical)
-                .font(.inter(14)).foregroundStyle(Nuru.navy)
-                .lineLimit(5...10)
-                .lineSpacing(4)
-                .padding(Nuru.S.md)
-                .background(Nuru.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .disabled(sending)
+            if uploading || attachmentImage != nil {
+                BroadcastAttachmentThumb(image: attachmentImage, uploading: uploading) {
+                    photoItem = nil; attachmentUrl = nil; attachmentImage = nil
+                }
+            }
+            HStack(alignment: .bottom, spacing: 10) {
+                TextField("", text: $text,
+                          prompt: Text("Write the message every member should receive…").foregroundColor(Color(hex: 0x9CA3AF)),
+                          axis: .vertical)
+                    .font(.inter(14)).foregroundStyle(Nuru.navy)
+                    .lineLimit(5...10)
+                    .lineSpacing(4)
+                    .padding(Nuru.S.md)
+                    .background(Nuru.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .disabled(sending)
+                VStack(spacing: 8) {
+                    // ✨ Ask Nuru to polish (or write) the draft.
+                    Button { Task { await aiAssist() } } label: {
+                        Group {
+                            if aiDrafting { ProgressView().tint(Color(hex: 0x7C3AED)).scaleEffect(0.7) }
+                            else { Icon(.sparkles, size: 15, color: Color(hex: 0x7C3AED)) }
+                        }
+                        .frame(width: 38, height: 38)
+                        .background(Color(hex: 0x7C3AED, alpha: 0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color(hex: 0x7C3AED, alpha: 0.25), lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(aiDrafting || sending)
+                    // 🖼️ Attach a photo — uploaded straight to Cloudinary.
+                    PhotosPicker(selection: $photoItem, matching: .images) {
+                        Icon(.image, size: 15, color: Color(hex: 0x9A7A2A))
+                            .frame(width: 38, height: 38)
+                            .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+                    }
+                    .disabled(uploading || sending)
+                }
+            }
+            .onChange(of: photoItem) { _, item in
+                guard item != nil else { return }
+                Task { await uploadPicked() }
+            }
             Text("Delivers as a personal message to \(peopleCount) member\(peopleCount == 1 ? "" : "s") · replies come back to you individually")
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x8A93A0)).lineSpacing(3)
             if let n = sentTo {
@@ -1096,18 +1138,104 @@ private struct BroadcastComposer: View {
     }
 
     private var canSend: Bool {
-        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending && !uploading && !aiDrafting
     }
 
     private func send() async {
         sending = true; errorText = nil; sentTo = nil
         defer { sending = false }
         do {
-            let n = try await MemberAPI.broadcast(body: text.trimmingCharacters(in: .whitespacesAndNewlines))
+            let n = try await MemberAPI.broadcast(
+                body: text.trimmingCharacters(in: .whitespacesAndNewlines),
+                attachmentUrl: attachmentUrl,
+                msgType: attachmentUrl == nil ? "text" : "image")
             sentTo = n
             text = ""
+            photoItem = nil; attachmentUrl = nil; attachmentImage = nil
         } catch {
             errorText = "Couldn’t send the broadcast — please try again."
+        }
+    }
+
+    /// ✨ Polish the current draft with Nuru — or, when the field is empty, ask
+    /// for a fresh broadcast. Fills the field with the reply; the provider being
+    /// offline degrades to a friendly inline error.
+    private func aiAssist() async {
+        aiDrafting = true; errorText = nil
+        defer { aiDrafting = false }
+        let draft = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let ask = draft.isEmpty
+            ? "Write a warm broadcast message from a pastor to the whole congregation (2-4 sentences). Reply with the message only."
+            : "Polish this as a warm broadcast message from a pastor to all members (2-4 sentences). Reply with the message only: \(draft)"
+        do {
+            let reply = try await MemberAPI.assistantChat([AssistantMessage(role: "user", text: ask)])
+            let polished = reply.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !polished.isEmpty { text = polished }
+        } catch {
+            errorText = "Nuru couldn’t draft right now — please try again in a moment."
+        }
+    }
+
+    /// 🖼️ Load the picked photo and push its bytes straight to Cloudinary via the
+    /// server-signed params (sign → multipart POST → secure_url, §4.5).
+    private func uploadPicked() async {
+        guard let item = photoItem else { return }
+        uploading = true; errorText = nil
+        defer { uploading = false }
+        do {
+            guard let data = try await item.loadTransferable(type: Data.self),
+                  let image = UIImage(data: data) else {
+                throw APIError.transport("Unreadable photo.")
+            }
+            attachmentImage = image
+            let type = item.supportedContentTypes.first
+            let mime = type?.preferredMIMEType ?? "image/jpeg"
+            let ext = type?.preferredFilenameExtension ?? "jpg"
+            let sign = try await MemberAPI.signChatAttachment(contentType: mime)
+            attachmentUrl = try await MemberAPI.uploadChatAttachment(
+                sign: sign, data: data, filename: "broadcast.\(ext)", contentType: mime)
+        } catch {
+            photoItem = nil; attachmentUrl = nil; attachmentImage = nil
+            errorText = "Couldn’t attach the photo — please try again."
+        }
+    }
+}
+
+/// The removable attachment preview above the broadcast field: the picked photo
+/// as a small rounded thumbnail, a spinner veil while it uploads, and an ✕ to
+/// drop it before sending.
+private struct BroadcastAttachmentThumb: View {
+    let image: UIImage?
+    let uploading: Bool
+    let onRemove: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            ZStack {
+                if let image {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    Nuru.paper
+                }
+                if uploading {
+                    Color.black.opacity(0.25)
+                    ProgressView().tint(.white).scaleEffect(0.8)
+                }
+            }
+            .frame(width: 64, height: 64)
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            Text(uploading ? "Uploading photo…" : "Photo attached · sent with your message")
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x8A93A0))
+            Spacer(minLength: 0)
+            if !uploading {
+                Button(action: onRemove) {
+                    Icon(.x, size: 12, color: Color(hex: 0x64748B))
+                        .frame(width: 26, height: 26)
+                        .background(Color(hex: 0x0B1F33, alpha: 0.06), in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 }
