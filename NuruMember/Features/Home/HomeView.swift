@@ -235,6 +235,12 @@ struct HomeView: View {
             .refreshable { await vm.load() }
             .nuruDestinations()
         }
+        // Tapping one of our iOS notifications lands on the in-app inbox.
+        .onReceive(NotificationCenter.default.publisher(for: .nuruOpenNotifications)) { _ in
+            tabs.selected = .home
+            if !path.isEmpty { path = NavigationPath() }
+            path.append(AppRoute.notifications)
+        }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
         .task {
             if vm.pathway == nil { await vm.load() }

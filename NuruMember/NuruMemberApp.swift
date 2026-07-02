@@ -36,9 +36,21 @@ struct NuruMemberApp: App {
             .preferredColorScheme(.light)
             // Start the offline sync engine once we're authenticated; drain the
             // durable queue whenever the app returns to the foreground.
-            .task(id: auth.isAuthenticated) { if auth.isAuthenticated { sync.start() } }
+            .task(id: auth.isAuthenticated) {
+                if auth.isAuthenticated {
+                    sync.start()
+                    // Real iOS notifications: ask permission, then surface any
+                    // new server notifications with banner + sound (vibration
+                    // on silent) into the phone's Notification Center.
+                    LocalNotifier.shared.requestPermission()
+                    await LocalNotifier.shared.sync()
+                }
+            }
             .onChange(of: scenePhase) { _, phase in
-                if phase == .active, auth.isAuthenticated { Task { await sync.flush() } }
+                if phase == .active, auth.isAuthenticated {
+                    Task { await sync.flush() }
+                    Task { await LocalNotifier.shared.sync() }
+                }
             }
         }
     }
