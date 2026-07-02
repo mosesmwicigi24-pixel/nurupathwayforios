@@ -1,8 +1,10 @@
-// Mentorship — the native port of screens/MentorScreen.tsx. A navy rounded-bottom
-// header over the member's real discipler pairing from GET /growth/mentor: the
-// assigned discipler (avatar, cell, since-date), the next scheduled meeting, and
-// the meeting-notes history. Falls back to an empty invite card when a leader
-// hasn't paired the member with a discipler yet.
+// Mentorship — the native port of the Figma MentorScreen (PathwayScreens.tsx)
+// over the member's real discipler pairing from GET /growth/mentor. Body follows
+// the Figma card anatomy: discipler card (avatar real-or-initials), the NEXT
+// MEETING card (surface inset row + Message CTA — deep-linked to the discipler's
+// DM when the chat inbox has one), the CONVERSATION HISTORY card with divided
+// note rows, and a YOUR CELL card that opens the real cell screen. Falls back to
+// an invite card when a leader hasn't paired the member with a discipler yet.
 import SwiftUI
 
 @MainActor
@@ -10,12 +12,24 @@ final class MentorViewModel: ObservableObject {
     @Published var info: MentorInfo?
     @Published var loading = true
     @Published var error: String?
+    /// The DM thread with the discipler, when the chat inbox has one — the
+    /// conversations contract carries no peer user id, so we match the DM title
+    /// (the peer's name) against the mentor's full name.
+    @Published var mentorDm: ChatConversation?
 
     func load() async {
         loading = true; error = nil
         do { info = try await MemberAPI.mentor() }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your mentorship." }
         loading = false
+
+        if let name = info?.mentor?.fullName,
+           let inbox = try? await MemberAPI.chatInbox() {
+            mentorDm = inbox.conversations.first {
+                $0.kind == "dm" &&
+                $0.title?.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }
+        }
     }
 }
 
@@ -34,8 +48,9 @@ struct MentorView: View {
                             ProgressView().tint(Nuru.gold).padding(.top, Nuru.S.xxl)
                         } else if let m = vm.info?.mentor {
                             disciplerCard(m)
-                            if let next = vm.info?.nextMeetingAt { nextMeetingCard(next) }
-                            notesSection
+                            meetingCard(m)
+                            historyCard
+                            if m.cellName != nil { cellCard(m) }
                         } else {
                             emptyCard
                         }
@@ -47,10 +62,13 @@ struct MentorView: View {
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        // Lets the Message CTA push the discipler's DM thread from this stack
+        // (only the Chat tab's own stack registers this destination otherwise).
+        .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
         .task { if vm.info == nil { await vm.load() } }
     }
 
-    // Navy header with a rounded bottom, circular back button, gold overline and serif title.
+    // Cream Figma ScreenShell header (done — keep as is).
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Button { dismiss() } label: {
@@ -85,7 +103,7 @@ struct MentorView: View {
         )
     }
 
-    // MARK: Discipler card (avatar · name · cell · since)
+    // MARK: Discipler card (avatar real-or-initials · name · cell · since)
 
     private func disciplerCard(_ m: MentorInfo.Mentor) -> some View {
         HStack(spacing: Nuru.S.base) {
@@ -108,65 +126,150 @@ struct MentorView: View {
         .nuruShadow()
     }
 
-    // MARK: Next meeting
+    // MARK: Next meeting (Figma card 1: overline, surface inset row, quick actions)
 
-    private func nextMeetingCard(_ iso: String) -> some View {
-        HStack(spacing: Nuru.S.md) {
-            ZStack {
-                RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.goldTint).frame(width: 44, height: 44)
-                Icon(.calendarClock, size: 20, color: Nuru.gold)
+    private func meetingCard(_ m: MentorInfo.Mentor) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: Nuru.S.md) {
+                Text("NEXT MEETING")
+                    .font(.inter(10, .bold)).tracking(1.8)
+                    .foregroundStyle(Color(hex: 0xA8861C))
+
+                HStack(spacing: Nuru.S.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
+                            .fill(Nuru.goldTint)
+                            .frame(width: 44, height: 44)
+                        Icon(.calendarClock, size: 18, color: Nuru.gold)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        if let next = vm.info?.nextMeetingAt {
+                            Text(Self.longDate(next))
+                                .font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                            Text("With \(m.fullName)")
+                                .font(.inter(11, .regular)).foregroundStyle(Nuru.muted)
+                        } else {
+                            Text("No meeting scheduled yet")
+                                .font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                            Text("Your discipler will set the next one.")
+                                .font(.inter(11, .regular)).foregroundStyle(Nuru.muted)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(Nuru.S.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+
+                messageCTA(m)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("NEXT MEETING").font(.inter(11, .semibold)).tracking(1.2).foregroundStyle(Nuru.gold)
-                Text(Self.longDate(iso)).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
-            }
-            Spacer(minLength: 0)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.base)
-        .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
     }
 
-    // MARK: Meeting notes
+    // The Figma Message quick button — a real deep link into the discipler's DM
+    // when the inbox has one; otherwise an honest pointer to Nuru Connect.
+    // (Call / Reschedule from the make are omitted: the mentor contract carries
+    // no phone number and there is no rescheduling endpoint.)
+    @ViewBuilder private func messageCTA(_ m: MentorInfo.Mentor) -> some View {
+        if let dm = vm.mentorDm {
+            NavigationLink(value: dm) { messageLabel }
+                .buttonStyle(.plain)
+        } else {
+            VStack(alignment: .leading, spacing: Nuru.S.xs) {
+                messageLabel.opacity(0.45)
+                Text("No chat with \(firstName(m.fullName)) yet — start one from Nuru Connect.")
+                    .font(.nMicro).foregroundStyle(Nuru.faint)
+            }
+        }
+    }
 
-    private var notesSection: some View {
+    private var messageLabel: some View {
+        HStack(spacing: Nuru.S.sm) {
+            Icon(.messageCircle, size: 15, color: Nuru.navy)
+            Text("Message").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private func firstName(_ full: String) -> String {
+        full.split(separator: " ").first.map(String.init) ?? full
+    }
+
+    // MARK: Conversation history (Figma card 2: one card, divided note rows)
+
+    private var historyCard: some View {
         let notes = vm.info?.notes ?? []
-        return VStack(alignment: .leading, spacing: Nuru.S.md) {
-            if !notes.isEmpty {
-                Text("MEETING NOTES").font(.inter(11, .bold)).tracking(1.2).foregroundStyle(Nuru.muted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                ForEach(notes) { note in noteCard(note) }
-            } else {
-                Text("Your discipler's meeting notes will appear here after your first session.")
-                    .font(.nCaption).foregroundStyle(Nuru.muted)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    private func noteCard(_ note: MentorInfo.Note) -> some View {
-        VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(note.topic?.isEmpty == false ? note.topic! : "Session")
-                    .font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
-                Spacer(minLength: Nuru.S.sm)
-                if let met = note.metAt.flatMap(Self.shortDate) {
-                    Text(met).font(.nMicro).foregroundStyle(Nuru.gold)
+        return Card {
+            VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                Text("CONVERSATION HISTORY")
+                    .font(.inter(10, .bold)).tracking(1.8)
+                    .foregroundStyle(Color(hex: 0xA8861C))
+                if notes.isEmpty {
+                    Text("Your discipler's meeting notes will appear here after your first session.")
+                        .font(.nCaption).foregroundStyle(Nuru.muted)
+                        .padding(.top, Nuru.S.xs)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    VStack(alignment: .leading, spacing: 0) {
+                        ForEach(Array(notes.enumerated()), id: \.element.noteId) { i, note in
+                            noteRow(note)
+                            if i < notes.count - 1 { Divider().overlay(Nuru.border) }
+                        }
+                    }
                 }
             }
-            Text(note.note).font(.nBody).foregroundStyle(Nuru.ink)
+        }
+    }
+
+    private func noteRow(_ note: MentorInfo.Note) -> some View {
+        VStack(alignment: .leading, spacing: Nuru.S.xs) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(note.topic?.isEmpty == false ? note.topic! : "Session")
+                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.ink)
+                Spacer(minLength: Nuru.S.sm)
+                if let met = note.metAt.flatMap(Self.shortDate) {
+                    Text(met).font(.inter(10, .regular)).foregroundStyle(Nuru.faint)
+                }
+            }
+            Text(note.note)
+                .font(.inter(12, .regular)).foregroundStyle(Nuru.muted)
+                .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             if let next = note.nextMeetingAt.flatMap(Self.shortDate) {
-                Label("Next: \(next)", systemImage: "calendar")
-                    .font(.nMicro).foregroundStyle(Nuru.muted)
+                HStack(spacing: 4) {
+                    Icon(.calendar, size: 11, color: Nuru.faint)
+                    Text("Next: \(next)").font(.nMicro).foregroundStyle(Nuru.faint)
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.base)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        .padding(.vertical, Nuru.S.md)
+    }
+
+    // MARK: Your cell (Figma card 3 — opens the real cell screen)
+
+    private func cellCard(_ m: MentorInfo.Mentor) -> some View {
+        Card {
+            VStack(alignment: .leading, spacing: Nuru.S.md) {
+                Text("YOUR CELL")
+                    .font(.inter(10, .bold)).tracking(1.8)
+                    .foregroundStyle(Color(hex: 0xA8861C))
+                Text(m.cellName ?? "")
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                NavigationLink(value: AppRoute.cell) {
+                    HStack(spacing: Nuru.S.sm) {
+                        Icon(.users, size: 15, color: Nuru.navy)
+                        Text("Open community").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
     }
 
     // MARK: Empty state (no pairing yet)

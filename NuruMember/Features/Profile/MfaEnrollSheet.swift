@@ -1,13 +1,16 @@
 // Two-factor (TOTP) enrollment sheet — presented from Profile → Security when
-// the member flips "Two-factor authentication" on. It runs the REAL backend
+// the member flips "Two-factor authentication" on. Styled after the Figma
+// TwoFASheet (bottom sheet, scan → verify steps) but runs the REAL backend
 // enroll → verify flow (POST /auth/mfa/enroll then confirm the 6-digit code):
 //   1. .task calls MemberAPI.enrollMfa() → an MfaEnrollment { otpauthUri, secret }.
-//   2. The member adds the secret to an authenticator app, then types the code.
-//   3. MemberAPI.verifyMfa(code:) confirms it server-side; on success we call
-//      onEnabled() (so Security can persist the toggle) and dismiss.
+//   2. Scan step: a real QR is rendered from otpauthUri (CoreImage), with the
+//      setup key below it for manual entry, then "I've scanned it".
+//   3. Verify step: MemberAPI.verifyMfa(code:) confirms it server-side; on
+//      success we call onEnabled() (so Profile refreshes /me) and dismiss.
 // Server-authoritative: the client never decides 2FA is "on" — the verify call does.
 import SwiftUI
 import UIKit
+import CoreImage.CIFilterBuiltins
 
 // MARK: - View model
 
@@ -35,6 +38,18 @@ final class MfaEnrollViewModel: ObservableObject {
             out.append(ch)
         }
         return out
+    }
+
+    /// The REAL provisioning QR — generated locally from the server's otpauth URI
+    /// so Google Authenticator / Authy / 1Password can scan straight into setup.
+    var qrImage: UIImage? {
+        guard let uri = enrollment?.otpauthUri, !uri.isEmpty else { return nil }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.message = Data(uri.utf8)
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 8, y: 8))
+        guard let cg = CIContext().createCGImage(scaled, from: scaled.extent) else { return nil }
+        return UIImage(cgImage: cg)
     }
 
     func enroll() async {
@@ -80,28 +95,19 @@ final class MfaEnrollViewModel: ObservableObject {
 // MARK: - Sheet
 
 struct MfaEnrollSheet: View {
-    /// Called after a successful verify, before dismiss — lets Security persist
-    /// the "2FA on" state.
+    /// Called after a successful verify, before dismiss — lets Profile refresh /me.
     let onEnabled: () -> Void
 
     @StateObject private var vm = MfaEnrollViewModel()
+    @State private var step: Step = .scan
+    @State private var copied = false
     @Environment(\.dismiss) private var dismiss
 
+    private enum Step { case scan, verify }
+
     var body: some View {
-        NavigationStack {
-            ZStack {
-                Nuru.paper.ignoresSafeArea()
-                content
-            }
-            .navigationTitle("Two-factor authentication")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                        .font(.inter(16, .regular))
-                        .foregroundStyle(Nuru.muted)
-                }
-            }
+        PSheetShell(title: "Enable 2-factor authentication") {
+            content
         }
         .task { if vm.enrollment == nil { await vm.enroll() } }
     }
@@ -115,12 +121,16 @@ struct MfaEnrollSheet: View {
             VStack(spacing: Nuru.S.md) {
                 ProgressView().tint(Nuru.gold)
                 Text("Setting up two-factor…")
-                    .font(.nCaption).foregroundStyle(Nuru.muted)
+                    .font(.inter(12)).foregroundStyle(Nuru.muted)
             }
+            .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xxl)
         case .failed:
             failedState
         case .ready:
-            enrolledState
+            switch step {
+            case .scan: scanStep
+            case .verify: verifyStep
+            }
         }
     }
 
@@ -128,147 +138,106 @@ struct MfaEnrollSheet: View {
         VStack(spacing: Nuru.S.md) {
             Icon(.shieldCheck, size: 28, color: Nuru.faint)
             Text(vm.enrollError ?? "Couldn't start two-factor setup.")
-                .font(.nBody).foregroundStyle(Nuru.muted)
+                .font(.inter(13)).foregroundStyle(Nuru.muted)
                 .multilineTextAlignment(.center)
-            PButton(title: "Try again", variant: .navy) { Task { await vm.enroll() } }
+            GoldSheetButton(title: "Try again") { Task { await vm.enroll() } }
                 .frame(maxWidth: 220)
         }
-        .padding(Nuru.S.screen)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Nuru.S.xl)
     }
 
-    // MARK: enrolled — secret + code entry
+    // MARK: scan step — real QR + setup key
 
-    private var enrolledState: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Nuru.S.base) {
-                heroCard
-                secretCard
-                codeCard
-                reassurance
+    private var scanStep: some View {
+        VStack(spacing: Nuru.S.md) {
+            Text("Scan this QR code with Google Authenticator, Authy or 1Password.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .multilineTextAlignment(.center)
+
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.surface)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .frame(width: 176, height: 176)
+                if let qr = vm.qrImage {
+                    Image(uiImage: qr)
+                        .interpolation(.none)
+                        .resizable()
+                        .frame(width: 140, height: 140)
+                } else {
+                    Icon(.qrCode, size: 140, color: Nuru.navy)
+                }
             }
-            .padding(Nuru.S.screen)
-            .padding(.bottom, Nuru.S.xl)
+
+            // Setup key for manual entry — tap to copy.
+            Button {
+                vm.copySecret()
+                copied = true
+                Task { try? await Task.sleep(nanoseconds: 1_600_000_000); copied = false }
+            } label: {
+                HStack(spacing: 6) {
+                    Text(vm.groupedSecret)
+                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .kerning(1.5).foregroundStyle(Nuru.navy)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Icon(copied ? .check : .copy, size: 12, color: copied ? Nuru.success : Nuru.faint)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .buttonStyle(.plain)
+
+            GoldSheetButton(title: "I've scanned it") { step = .verify }
+                .padding(.top, Nuru.S.xs)
         }
+        .frame(maxWidth: .infinity)
     }
 
-    private var heroCard: some View {
-        HStack(alignment: .top, spacing: Nuru.S.md) {
-            Icon(.shieldCheck, size: 22, color: Nuru.onNavy)
-                .frame(width: 40, height: 40)
-                .background(Color.white.opacity(0.14), in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
-            VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("Add an extra layer")
-                    .font(.fraunces(20, .semibold))
-                    .foregroundStyle(Nuru.white)
-                Text("Add this key to an authenticator app (Google Authenticator, Authy, 1Password), then enter the 6-digit code it shows.")
-                    .font(.nCaption)
-                    .foregroundStyle(Nuru.onNavyDim)
+    // MARK: verify step — confirm the 6-digit code server-side
+
+    private var verifyStep: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            Text("Enter the 6-digit code from your authenticator app.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+
+            TextField("123456", text: Binding(
+                get: { vm.code },
+                set: { vm.sanitize($0) }
+            ))
+            .keyboardType(.numberPad)
+            .textContentType(.oneTimeCode)
+            .font(.system(size: 20, weight: .semibold, design: .monospaced))
+            .foregroundStyle(Nuru.navy)
+            .kerning(8)
+            .multilineTextAlignment(.center)
+            .frame(height: 52)
+            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(vm.verifyError == nil ? Nuru.border : Nuru.danger, lineWidth: 1)
+            )
+
+            if let err = vm.verifyError {
+                Text(err)
+                    .font(.inter(12)).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            GoldSheetButton(title: "Enable 2FA", busy: vm.verifying, disabled: !vm.canVerify) {
+                Task {
+                    if await vm.verify() {
+                        onEnabled()
+                        dismiss()
+                    }
+                }
+            }
+
+            HStack(alignment: .top, spacing: Nuru.S.sm) {
+                Icon(.check, size: 14, color: Nuru.success)
+                Text("You'll enter a code from your authenticator each time you sign in on a new device.")
+                    .font(.inter(12)).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(Nuru.S.base)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Nuru.heroGradient, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .nuruShadow()
-    }
-
-    private var secretCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: Nuru.S.md) {
-                HStack(spacing: Nuru.S.sm) {
-                    Icon(.key, size: 16, color: Nuru.gold)
-                    Text("Setup key")
-                        .font(.nOverline)
-                        .foregroundStyle(Nuru.muted)
-                        .textCase(.uppercase)
-                }
-
-                HStack(alignment: .center, spacing: Nuru.S.md) {
-                    Text(vm.groupedSecret)
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(Nuru.ink)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Spacer(minLength: 0)
-                }
-                .padding(Nuru.S.md)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
-                        .stroke(Nuru.border, lineWidth: 1)
-                )
-
-                Button(action: vm.copySecret) {
-                    HStack(spacing: Nuru.S.sm) {
-                        Icon(.copy, size: 15, color: Nuru.navyDeep)
-                        Text("Copy key")
-                            .font(.inter(14, .semibold))
-                            .foregroundStyle(Nuru.navyDeep)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightMd)
-                    .background(Nuru.inputBg, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
-                }
-                .buttonStyle(.plain)
-            }
-        }
-    }
-
-    private var codeCard: some View {
-        Card {
-            VStack(alignment: .leading, spacing: Nuru.S.md) {
-                Text("Enter the 6-digit code")
-                    .font(.nHeading)
-                    .foregroundStyle(Nuru.ink)
-
-                TextField("000000", text: Binding(
-                    get: { vm.code },
-                    set: { vm.sanitize($0) }
-                ))
-                .keyboardType(.numberPad)
-                .textContentType(.oneTimeCode)
-                .font(.system(size: 24, weight: .semibold, design: .monospaced))
-                .foregroundStyle(Nuru.ink)
-                .kerning(4)
-                .padding(.horizontal, Nuru.S.base)
-                .frame(height: Nuru.buttonHeightMd)
-                .background(Nuru.inputBg, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
-                        .stroke(vm.verifyError == nil ? Nuru.border : Nuru.danger, lineWidth: 1)
-                )
-
-                if let err = vm.verifyError {
-                    Text(err)
-                        .font(.nCaption)
-                        .foregroundStyle(Nuru.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-
-                PButton(title: "Verify & enable",
-                        variant: .gold,
-                        busy: vm.verifying,
-                        disabled: !vm.canVerify) {
-                    Task {
-                        if await vm.verify() {
-                            onEnabled()
-                            dismiss()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var reassurance: some View {
-        HStack(alignment: .top, spacing: Nuru.S.sm) {
-            Icon(.check, size: 14, color: Nuru.success)
-            Text("You'll enter a code from your authenticator each time you sign in on a new device.")
-                .font(.nCaption)
-                .foregroundStyle(Nuru.muted)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(.horizontal, Nuru.S.xs)
     }
 }
