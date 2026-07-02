@@ -723,26 +723,27 @@ struct LevelsMapView: View {
         .toolbar(.hidden, for: .navigationBar)
     }
 
+    // Fresh Figma LevelsOverview: light cream header, navy text, white stat cards.
     private var header: some View {
-        ZStack(alignment: .topLeading) {
-            Circle().fill(PW.gold.opacity(0.12)).frame(width: 288, height: 288).blur(radius: 60).offset(x: 210, y: -150)
-            Circle().fill(Color(hex: 0x5F8FC8).opacity(0.15)).frame(width: 96, height: 96).blur(radius: 40).offset(x: 28, y: 96)
+        ZStack(alignment: .topTrailing) {
+            Circle().fill(PW.gold.opacity(0.14)).frame(width: 288, height: 288).blur(radius: 48).offset(x: 80, y: -96)
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Button { dismiss() } label: {
-                        Icon(.chevronLeft, size: 20, color: .white).frame(width: 36, height: 36)
-                            .background(Color.white.opacity(0.12), in: Circle())
+                        Icon(.chevronLeft, size: 20, color: PW.navy).frame(width: 36, height: 36)
+                            .background(Color.white, in: Circle())
+                            .overlay(Circle().stroke(PW.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                     Spacer()
                 }
                 Text("Welcome back, \(firstName)".uppercased())
-                    .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(PW.gold).padding(.top, 14)
+                    .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A)).padding(.top, 14)
                 HStack(alignment: .bottom, spacing: 16) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Your pathway is unfolding.")
-                            .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(.white)
+                            .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
                         Text("A calm view of your discipleship journey, saved progress, and what opens next.")
-                            .font(.inter(14)).foregroundStyle(.white.opacity(0.55)).lineSpacing(3)
+                            .font(.inter(14)).foregroundStyle(Color(hex: 0x68758A)).lineSpacing(3)
                             .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
                     }
                     Spacer(minLength: 0)
@@ -756,7 +757,10 @@ struct LevelsMapView: View {
             }
             .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 24)
         }
-        .frame(maxWidth: .infinity, alignment: .leading).background(PW.navy).clipped()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
+        .clipped()
     }
 
     private var sectionHeader: some View {
@@ -780,13 +784,13 @@ private struct PWProgressRing: View {
     let pct: Int
     var body: some View {
         ZStack {
-            Circle().stroke(Color.white.opacity(0.10), lineWidth: 6)
+            Circle().stroke(Color(hex: 0x0B1F33, alpha: 0.12), lineWidth: 6)
             Circle().trim(from: 0, to: CGFloat(pct) / 100)
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
-                Text("\(pct)%").font(.fraunces(18, .medium)).kerning(-0.72).foregroundStyle(.white)
-                Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(.white.opacity(0.35))
+                Text("\(pct)%").font(.fraunces(18, .medium)).kerning(-0.72).foregroundStyle(PW.navy)
+                Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x9CA3AF))
                     .padding(.top, -1)
             }
         }
@@ -794,20 +798,20 @@ private struct PWProgressRing: View {
     }
 }
 
-// MARK: - glass stat card
+// MARK: - stat card (white on the cream header, fresh Figma)
 
 private struct PWStatCard: View {
     let label: String
     let value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(label.uppercased()).font(.inter(10, .medium)).kerning(1.2).foregroundStyle(.white.opacity(0.38))
-            Text(value).font(.inter(16, .bold)).kerning(-0.32).foregroundStyle(.white).padding(.top, 4)
+            Text(label.uppercased()).font(.inter(10, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x9CA3AF))
+            Text(value).font(.inter(16, .bold)).kerning(-0.32).foregroundStyle(PW.navy).padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PW.border, lineWidth: 1))
     }
 }
 
