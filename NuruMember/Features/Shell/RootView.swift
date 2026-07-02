@@ -55,6 +55,9 @@ enum AppTab: Hashable, CaseIterable {
 @MainActor
 final class TabRouter: ObservableObject {
     @Published var selected: AppTab = .initialTab
+    /// Full-screen conversation surfaces (chat threads) hide the tab bar so the
+    /// composer owns the bottom edge — set on appear, cleared on disappear.
+    @Published var chromeHidden = false
 }
 
 struct RootView: View {
@@ -102,8 +105,13 @@ struct RootView: View {
         }
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
         .overlay(alignment: .bottom) {
-            NuruTabBar(selection: $tabs.selected).ignoresSafeArea(edges: .bottom)
+            if !tabs.chromeHidden {
+                NuruTabBar(selection: $tabs.selected)
+                    .ignoresSafeArea(edges: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
+        .animation(.easeInOut(duration: 0.22), value: tabs.chromeHidden)
         .onChange(of: tabs.selected) { _, t in loaded.insert(t) }
     }
 
@@ -180,15 +188,15 @@ private struct NuruTabBar: View {
                 Button {
                     selection = t
                 } label: {
-                    VStack(spacing: 3) {
+                    VStack(spacing: 2) {
                         Icon(t.icon, size: 21, color: focused ? Nuru.gold : Nuru.onNavyFaint)
-                        Text(t.label).font(.inter(11, .medium)).foregroundStyle(focused ? Nuru.gold : Nuru.onNavyFaint)
+                        Text(t.label).font(.inter(10.5, .medium)).foregroundStyle(focused ? Nuru.gold : Nuru.onNavyFaint)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 48)
+                    .frame(height: 42)
                     .overlay(alignment: .top) {
                         if focused {
-                            Capsule().fill(Nuru.gold).frame(width: 28, height: 3).offset(y: -2)
+                            Capsule().fill(Nuru.gold).frame(width: 28, height: 3).offset(y: -3)
                         }
                     }
                     .contentShape(Rectangle())
@@ -196,17 +204,19 @@ private struct NuruTabBar: View {
                 .buttonStyle(.plain)
             }
         }
-        .padding(.top, Nuru.S.sm)
+        .padding(.top, 6)
         .padding(.bottom, Self.safeBottom)
         .background(Nuru.navy)
         .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1) }
     }
 
-    /// Bottom safe-area inset (home indicator) so labels never sit under it.
+    /// Bottom clearance: tuck the labels close to the home indicator — the
+    /// indicator overlays content harmlessly, so we reclaim most of that inset
+    /// instead of stacking a full 34pt of dead navy under the labels.
     static var safeBottom: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
-        return max(inset, Nuru.S.md)
+        return inset > 0 ? max(inset - 16, 10) : Nuru.S.md
     }
 }
 

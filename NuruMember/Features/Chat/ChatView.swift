@@ -101,7 +101,16 @@ struct ChatView: View {
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
             .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
         }
-        .task { if vm.inbox == nil { await vm.load() } }
+        .task {
+            if vm.inbox == nil { await vm.load() }
+            #if DEBUG
+            // Screenshot hook: NURU_SCREEN=thread opens the first conversation.
+            if ProcessInfo.processInfo.environment["NURU_SCREEN"] == "thread", path.isEmpty,
+               let first = vm.spaces.first ?? vm.dms.first ?? vm.groups.first {
+                path.append(first)
+            }
+            #endif
+        }
     }
 
     // MARK: Header

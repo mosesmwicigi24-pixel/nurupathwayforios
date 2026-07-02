@@ -207,9 +207,9 @@ private func mentionText(_ s: String) -> Text {
 struct ChatThreadView: View {
     @StateObject private var vm: ChatThreadViewModel
     @EnvironmentObject var auth: AuthStore
+    @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
-    /// Tracked via keyboardWillShow/Hide so the composer's tab-bar clearance is
-    /// dropped while typing (the keyboard covers the tab bar anyway).
+    /// Tracked via keyboardWillShow/Hide so the list can pin to the newest turn.
     @State private var keyboardVisible = false
 
     init(conversation: ChatConversation) { _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation)) }
@@ -224,6 +224,10 @@ struct ChatThreadView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.thread == nil { await vm.load() } }
+        // A conversation owns the whole bottom edge: slide the tab bar away while
+        // this screen is up so the composer sits on the home indicator / keyboard.
+        .onAppear { tabs.chromeHidden = true }
+        .onDisappear { tabs.chromeHidden = false }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             keyboardVisible = true
         }
@@ -250,24 +254,15 @@ struct ChatThreadView: View {
         }
     }
 
+    // With the tab bar hidden for the thread, the safe-area inset alone puts the
+    // composer on the home indicator and floats it on the keyboard while typing.
     private var bottomBar: some View {
         VStack(spacing: 0) {
             QuickReplyRow { reply in Task { await vm.send(reply) } }
             ComposerBar(draft: $vm.draft, sending: vm.sending,
                         myName: auth.profile?.fullName ?? "You") { Task { await vm.send() } }
         }
-        .padding(.bottom, keyboardVisible ? 0 : Self.tabBarClearance)
         .background(Aurora.sectionBg)
-        .animation(.easeOut(duration: 0.22), value: keyboardVisible)
-    }
-
-    /// Height of the custom navy tab bar (drawn by RootView over pushed screens)
-    /// above the bottom safe area — Nuru.tabBarSpace minus the home-indicator
-    /// inset the safe-area inset already clears.
-    private static var tabBarClearance: CGFloat {
-        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
-        return max(Nuru.tabBarSpace - inset, 56)
     }
 }
 
