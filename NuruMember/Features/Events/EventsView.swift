@@ -302,7 +302,7 @@ struct EventsView: View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("EVENTS").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("📅 EVENTS").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
                     Text("Gathered together").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
                     Text(vm.headerSubline).font(.inter(11)).foregroundStyle(Color(hex: 0x68758A))
                 }
