@@ -430,6 +430,39 @@ extension MemberAPI {
         try await APIClient.shared.get("me/rsvps", as: Envelope<MyRsvp>.self).data
     }
 
+    // MARK: Event wall ("Who's coming" buzz posts)
+
+    /// GET /events/{id}/posts — the event's buzz posts, newest first.
+    static func eventPosts(_ eventId: String) async throws -> [EventPost] {
+        try await APIClient.shared.get("events/\(eventId)/posts", as: Envelope<EventPost>.self).data
+    }
+
+    /// POST /events/{id}/posts — post to the wall. Idempotent on both the
+    /// client-minted post_id and client_mutation_id (server dedupes replays).
+    @discardableResult
+    static func createEventPost(_ eventId: String, postId: String, body: String) async throws -> EventPostCreateResult {
+        struct Body: Encodable { let postId: String; let body: String; let clientMutationId: String }
+        return try await APIClient.shared.post("events/\(eventId)/posts",
+            body: Body(postId: postId, body: body, clientMutationId: UUID().uuidString),
+            as: EventPostCreateResult.self)
+    }
+
+    /// POST /events/{id}/posts/{postId}/react — set/switch (kind) or clear (nil)
+    /// the member's single reaction. `kind` must serialize as an explicit JSON
+    /// null when clearing (the server's schema requires the key).
+    static func reactToEventPost(_ eventId: String, postId: String, kind: String?) async throws -> EventPostReactionResult {
+        struct Body: Encodable {
+            let kind: String?
+            enum CodingKeys: String, CodingKey { case kind }
+            func encode(to encoder: Encoder) throws {
+                var c = encoder.container(keyedBy: CodingKeys.self)
+                if let kind { try c.encode(kind, forKey: .kind) } else { try c.encodeNil(forKey: .kind) }
+            }
+        }
+        return try await APIClient.shared.post("events/\(eventId)/posts/\(postId)/react",
+            body: Body(kind: kind), as: EventPostReactionResult.self)
+    }
+
     // MARK: Giving (online-only, §5.6 — money is never queued)
 
     /// GET /giving/history — the member's gift history.

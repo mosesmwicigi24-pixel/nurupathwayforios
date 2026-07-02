@@ -40,6 +40,61 @@ final class EventDetailViewModel: ObservableObject {
         ])
         if sync.isOnline { await load() }  // refresh authoritative counts + roster
     }
+
+    // ---- Event wall ("Who's coming" buzz posts — GET/POST /events/{id}/posts) ----
+
+    @Published var posts: [EventPost] = []
+    @Published var postDraft = ""
+    @Published var posting = false
+
+    func loadPosts() async {
+        if let fresh = try? await MemberAPI.eventPosts(occurrence.occurrenceId) { posts = fresh }
+    }
+
+    /// Post to the wall: optimistic insert, then the real POST (idempotent on the
+    /// client-minted post_id + client_mutation_id), then reconcile from the server.
+    func submitPost() async {
+        let body = postDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, !posting else { return }
+        posting = true; defer { posting = false }
+        let pid = UUID().uuidString
+        posts.insert(EventPost(
+            postId: pid, authorUserId: "", authorName: "You", authorAvatar: nil,
+            body: body, imageUrl: nil, createdAt: ISO8601DateFormatter().string(from: Date()),
+            mine: true, rsvpStatus: myRsvpOverride ?? detail?.myRsvp,
+            cheerCount: 0, loveCount: 0, myReaction: nil), at: 0)
+        postDraft = ""
+        do {
+            _ = try await MemberAPI.createEventPost(occurrence.occurrenceId, postId: pid, body: body)
+            await loadPosts()
+        } catch {
+            // Roll back the optimistic row and restore the draft so nothing is lost.
+            posts.removeAll { $0.postId == pid }
+            postDraft = body
+        }
+    }
+
+    /// One reaction per member per post: tap sets/switches, tapping the held
+    /// emoji clears. Optimistic counts, reconciled with the server's response.
+    func toggleReaction(_ post: EventPost, kind: String) async {
+        guard let i = posts.firstIndex(where: { $0.postId == post.postId }) else { return }
+        let newKind: String? = post.myReaction == kind ? nil : kind
+        var p = posts[i]
+        if p.myReaction == "cheer" { p.cheerCount = max(0, p.cheerCount - 1) }
+        if p.myReaction == "love" { p.loveCount = max(0, p.loveCount - 1) }
+        if newKind == "cheer" { p.cheerCount += 1 }
+        if newKind == "love" { p.loveCount += 1 }
+        p.myReaction = newKind
+        posts[i] = p
+        do {
+            let r = try await MemberAPI.reactToEventPost(occurrence.occurrenceId, postId: post.postId, kind: newKind)
+            if let j = posts.firstIndex(where: { $0.postId == post.postId }) {
+                posts[j].cheerCount = r.cheerCount
+                posts[j].loveCount = r.loveCount
+                posts[j].myReaction = r.myReaction
+            }
+        } catch { await loadPosts() }
+    }
 }
 
 // MARK: - Figma palette for this screen (exact make hexes)
@@ -107,23 +162,29 @@ struct EventDetailView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            // The content column overlaps the hero by 16 (Figma -mt-4).
-            VStack(spacing: -16) {
-                EvdHero(title: title, category: category, imageUrl: imageUrl,
-                        isLive: isLive, isCompleted: isCompleted,
-                        shareText: shareText, onBack: { dismiss() })
-                content
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                // The content column overlaps the hero by 16 (Figma -mt-4).
+                VStack(spacing: -16) {
+                    EvdHero(title: title, category: category, imageUrl: imageUrl,
+                            isLive: isLive, isCompleted: isCompleted,
+                            shareText: shareText, onBack: { dismiss() })
+                    content(proxy)
+                }
             }
+            .scrollDismissesKeyboard(.interactively)
         }
         .background(EvD.paper.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .task { if vm.detail == nil { await vm.load() } }
+        .task {
+            if vm.detail == nil { await vm.load() }
+            await vm.loadPosts()
+        }
     }
 
-    private var content: some View {
+    private func content(_ proxy: ScrollViewProxy) -> some View {
         VStack(spacing: 12) {
             EvdMetaCard(occ: occ, location: location, going: going,
                         accent: Ev.categoryColor(category), shareText: shareText)
@@ -132,7 +193,13 @@ struct EventDetailView: View {
                 EvdRosterCard(attendees: attendees, going: going)
             }
             EvdRsvpCard(vm: vm)
-            EvdBuzzCard()
+            EvdBuzzCard(vm: vm) {
+                // Bring the composer above the keyboard once it has settled.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                    withAnimation { proxy.scrollTo("buzzCard", anchor: .top) }
+                }
+            }
+            .id("buzzCard")
             if !isLive && !isCompleted { EvdCheckInNotice().padding(.top, 4) }
         }
         .padding(.horizontal, 16)
@@ -535,19 +602,37 @@ private struct EvdRsvpCard: View {
     }
 }
 
-// MARK: - Who's coming — buzz header + visual hype composer + empty state.
-// The buzz feed has no API yet, so this shows a tasteful compose-and-be-first
-// state; the Figma seed posts / reactions are mock-only.
+// MARK: - Who's coming — buzz header + working hype composer + real post feed.
+// Wired to GET/POST /events/{id}/posts and /events/{id}/posts/{postId}/react.
+// The make's image/camera pickers are not built: the posts contract carries an
+// image_url, but the app has no member image-upload path yet, so those two
+// buttons are omitted rather than shipped inert (images from other surfaces
+// still render in the feed).
 
 private struct EvdBuzzCard: View {
+    @ObservedObject var vm: EventDetailViewModel
+    var onComposerFocus: () -> Void
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            EvdComposer()
-            Text("Be the first to share a moment.")
-                .font(.inter(12)).foregroundStyle(EvD.tertiary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 8)
+            EvdComposer(draft: $vm.postDraft, posting: vm.posting,
+                        onPost: { Task { await vm.submitPost() } },
+                        onFocus: onComposerFocus)
+            if vm.posts.isEmpty {
+                Text("Be the first to share a moment.")
+                    .font(.inter(12)).foregroundStyle(EvD.tertiary)
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .padding(.vertical, 8)
+            } else {
+                VStack(spacing: 8) {
+                    ForEach(vm.posts) { p in
+                        EvdBuzzPostRow(post: p) { kind in
+                            Task { await vm.toggleReaction(p, kind: kind) }
+                        }
+                    }
+                }
+            }
         }
         .evdCard()
     }
@@ -561,7 +646,8 @@ private struct EvdBuzzCard: View {
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 EvdPulseDot(size: 6)
-                Text("Buzzing").font(.inter(10, .bold)).foregroundStyle(.white)
+                Text(vm.posts.isEmpty ? "Buzzing" : "Buzzing · \(vm.posts.count)")
+                    .font(.inter(10, .bold)).foregroundStyle(.white)
             }
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
@@ -573,19 +659,33 @@ private struct EvdBuzzCard: View {
 }
 
 private struct EvdComposer: View {
+    @Binding var draft: String
+    let posting: Bool
+    var onPost: () -> Void
+    var onFocus: () -> Void
+    @FocusState private var focused: Bool
+
+    private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     var body: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
                 youDisc
-                Text("Hype the room — say you're coming 🔥")
-                    .font(.inter(13)).foregroundStyle(EvD.placeholder)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
+                TextField("", text: $draft,
+                          prompt: Text("Hype the room — say you're coming 🔥")
+                            .foregroundColor(EvD.placeholder),
+                          axis: .vertical)
+                    .font(.inter(13)).foregroundStyle(EvD.ink)
+                    .lineLimit(1...4)
+                    .focused($focused)
+                    .padding(.top, 9)
             }
             HStack(spacing: 6) {
-                iconDisc(.image, color: EvD.going)
-                iconDisc(.camera, color: EvD.ink)
-                iconDisc(.smile, color: EvD.gold)
+                // Real, local: drops a 🔥 into the draft.
+                Button { draft += draft.isEmpty ? "🔥" : " 🔥" } label: {
+                    iconDisc(.flame, color: EvD.gold)
+                }
+                .buttonStyle(.plain)
                 Spacer(minLength: 0)
                 postPill
             }
@@ -597,6 +697,7 @@ private struct EvdComposer: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .stroke(EvD.gold.opacity(0.28), lineWidth: 1))
         .shadow(color: EvD.navyBase.opacity(0.10), radius: 8, x: 0, y: 5)
+        .onChange(of: focused) { _, f in if f { onFocus() } }
     }
 
     private var youDisc: some View {
@@ -616,16 +717,146 @@ private struct EvdComposer: View {
     }
 
     private var postPill: some View {
-        HStack(spacing: 6) {
-            Text("Post").font(.inter(12, .bold)).foregroundStyle(EvD.ink)
-            Icon(.send, size: 15, color: EvD.ink)
+        Button {
+            focused = false
+            onPost()
+        } label: {
+            HStack(spacing: 6) {
+                Text("Post").font(.inter(12, .bold)).foregroundStyle(EvD.ink)
+                Icon(.send, size: 15, color: EvD.ink)
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 40)
+            .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: Capsule())
+            .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
         }
-        .padding(.horizontal, 16)
-        .frame(height: 40)
-        .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: Capsule())
-        .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
+        .buttonStyle(.plain)
+        .disabled(!hasDraft || posting)
+        .opacity(!hasDraft || posting ? 0.55 : 1)
+    }
+}
+
+/// One buzz post — author disc, name (+ Going tag), relative time, caption,
+/// optional image, and the 🎉/❤️ single-reaction chips.
+private struct EvdBuzzPostRow: View {
+    let post: EventPost
+    var onReact: (String) -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            EvdBuzzAvatar(name: post.authorName, url: post.authorAvatar)
+            VStack(alignment: .leading, spacing: 4) {
+                titleLine
+                if let body = post.body, !body.isEmpty {
+                    Text(body)
+                        .font(.inter(12.5)).foregroundStyle(EvD.body)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                postImage
+                reactions
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(EvD.tile, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(Color(hex: 0x0A2540, alpha: 0.06), lineWidth: 1))
+    }
+
+    private var titleLine: some View {
+        HStack(spacing: 6) {
+            Text(post.mine ? "You" : post.authorName)
+                .font(.inter(12, .bold)).foregroundStyle(EvD.ink).lineLimit(1)
+            if post.rsvpStatus == "going" {
+                Text("GOING")
+                    .font(.inter(8, .bold)).kerning(1)
+                    .foregroundStyle(EvD.goingText)
+                    .padding(.horizontal, 5).padding(.vertical, 2)
+                    .background(EvD.going.opacity(0.12), in: Capsule())
+            }
+            Spacer(minLength: 0)
+            Text(EvdBuzzPostRow.relTime(post.createdAt))
+                .font(.inter(10)).foregroundStyle(EvD.tertiary)
+        }
+    }
+
+    @ViewBuilder private var postImage: some View {
+        if let s = post.imageUrl, let url = URL(string: s) {
+            CachedAsyncImage(url: url) { phase in
+                if let img = phase.image {
+                    img.resizable().scaledToFill()
+                } else {
+                    Rectangle().fill(Color(hex: 0x0A2540, alpha: 0.05))
+                        .overlay(Icon(.image, size: 22, color: EvD.tertiary))
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 150)
+            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        }
+    }
+
+    private var reactions: some View {
+        HStack(spacing: 6) {
+            chip("🎉", post.cheerCount, on: post.myReaction == "cheer") { onReact("cheer") }
+            chip("❤️", post.loveCount, on: post.myReaction == "love") { onReact("love") }
+        }
+        .padding(.top, 2)
+    }
+
+    private func chip(_ emoji: String, _ count: Int, on: Bool, tap: @escaping () -> Void) -> some View {
+        Button(action: tap) {
+            HStack(spacing: 4) {
+                Text(emoji).font(.system(size: 12))
+                Text("\(count)").font(.inter(10, .bold))
+                    .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(on ? EvD.gold.opacity(0.14) : Color.white, in: Capsule())
+            .overlay(Capsule().stroke(on ? EvD.gold.opacity(0.45) : EvD.borderMid, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    static func relTime(_ iso: String) -> String {
+        let d = Ev.date(iso)
+        if Date().timeIntervalSince(d) < 60 { return "now" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return f.localizedString(for: d, relativeTo: Date())
+    }
+}
+
+/// 32pt author disc — photo when present, otherwise initials on the
+/// deterministic accent gradient (same palette as the roster rail).
+private struct EvdBuzzAvatar: View {
+    let name: String
+    let url: String?
+
+    private var accent: Color { EvD.avatarAccent(name) }
+
+    var body: some View {
+        ZStack {
+            Circle().fill(LinearGradient(colors: [accent, accent.opacity(0.71)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+            if let s = url, let u = URL(string: s) {
+                CachedAsyncImage(url: u) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() }
+                    else { initials }
+                }
+            } else {
+                initials
+            }
+        }
+        .frame(width: 32, height: 32)
+        .clipShape(Circle())
+    }
+
+    private var initials: some View {
+        Text(Avatar.initials(name)).font(.inter(10, .bold)).foregroundStyle(.white)
     }
 }
 

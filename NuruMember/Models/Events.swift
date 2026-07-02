@@ -91,3 +91,34 @@ struct MyRsvp: Codable, Sendable, Identifiable {
     let occursAt: String
     var id: String { rsvpId }
 }
+
+/// GET /events/{id}/posts — one buzz post on the event wall ("Who's coming").
+/// Reaction fields are `var` so the screen can apply optimistic updates.
+struct EventPost: Codable, Sendable, Identifiable {
+    let postId: String
+    let authorUserId: String
+    let authorName: String
+    let authorAvatar: String?
+    let body: String?
+    let imageUrl: String?
+    let createdAt: String
+    let mine: Bool
+    let rsvpStatus: String?
+    var cheerCount: Int
+    var loveCount: Int
+    var myReaction: String?   // "cheer" | "love" | nil
+    var id: String { postId }
+}
+
+/// POST /events/{id}/posts/{postId}/react — fresh counts + my reaction.
+struct EventPostReactionResult: Codable, Sendable {
+    let cheerCount: Int
+    let loveCount: Int
+    let myReaction: String?
+}
+
+/// POST /events/{id}/posts — creation receipt (idempotent on client_mutation_id).
+struct EventPostCreateResult: Codable, Sendable {
+    let postId: String
+    let duplicate: Bool
+}
