@@ -58,6 +58,10 @@ final class TabRouter: ObservableObject {
     /// Full-screen conversation surfaces (chat threads) hide the tab bar so the
     /// composer owns the bottom edge — set on appear, cleared on disappear.
     @Published var chromeHidden = false
+    /// True while Home's ON AIR bar is on screen — the island radio pill yields
+    /// to it (one radio surface at a time; scroll the bar away and the pill
+    /// slides into the notch, Apple-Music style).
+    @Published var onAirBarVisible = false
 }
 
 struct RootView: View {
@@ -108,19 +112,25 @@ struct RootView: View {
                 .ignoresSafeArea(edges: .top)
         }
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
-        // Nuru Radio island — while the station is tuned, a black capsule with a
-        // living waveform floats just under the Dynamic Island on EVERY tab (the
-        // Figma "island" mini player). Tap the wave to reopen the studio; the
-        // gold button pauses/resumes. When the app backgrounds or the phone
-        // locks, the REAL island takes over via RadioCenter's Now Playing.
+        // Nuru Radio island — while the station is tuned, the black capsule
+        // WRAPS the phone's Dynamic Island (wings around the hardware cutout,
+        // Apple-Music style) on every tab. On Home it appears only once the
+        // ON AIR bar scrolls out of view — one radio surface at a time. When
+        // the app backgrounds/locks, the REAL island takes over via Now Playing.
         .overlay(alignment: .top) {
-            if radio.program != nil && !radioOpen {
-                RadioMiniPlayer { radioOpen = true }
-                    .padding(.top, 6)
-                    .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
+            if radio.program != nil && !radioOpen
+                && !(tabs.selected == .home && tabs.onAirBarVisible) {
+                VStack(spacing: 0) {
+                    RadioMiniPlayer { radioOpen = true }
+                        .padding(.top, RadioMiniPlayer.isIslandDevice ? 11 : Self.safeAreaTop + 4)
+                    Spacer(minLength: 0)
+                }
+                .ignoresSafeArea(edges: .top)
+                .transition(.opacity)
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: radio.program == nil)
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: tabs.onAirBarVisible)
         .fullScreenCover(isPresented: $radioOpen) { RadioPlayerView() }
         .overlay(alignment: .bottom) {
             if !tabs.chromeHidden {

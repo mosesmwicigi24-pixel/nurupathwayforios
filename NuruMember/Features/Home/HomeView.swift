@@ -504,10 +504,21 @@ struct HomeView: View {
 
     // MARK: 0a — Nuru Radio ON AIR hero (pinned first, only while actually live)
 
-    /// The card itself starts/pauses the station through RadioCenter; tapping the
-    /// poster/title opens the player, which lands in the live studio.
+    /// The bar itself starts/pauses the station through RadioCenter; tapping
+    /// elsewhere opens the studio. It also reports its on-screen visibility so
+    /// the shell's island pill yields while the bar is in view and slides into
+    /// the notch the moment it scrolls away (one radio surface at a time).
     private func onAirCard(_ p: RadioProgram) -> some View {
         HomeOnAirCard(program: p) { showRadio = true }
+            .background(GeometryReader { geo in
+                Color.clear
+                    .onChange(of: geo.frame(in: .global).minY, initial: true) { _, y in
+                        // Visible until (almost) fully scrolled past the top.
+                        let visible = y > -40
+                        if tabs.onAirBarVisible != visible { tabs.onAirBarVisible = visible }
+                    }
+            })
+            .onDisappear { if tabs.onAirBarVisible { tabs.onAirBarVisible = false } }
     }
 
     // MARK: 2 — Next-action hero ("For you today" — real pathway numbers)

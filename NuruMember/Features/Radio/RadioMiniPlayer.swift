@@ -67,24 +67,81 @@ struct RadioMiniPlayer: View {
 
     init(onOpen: @escaping () -> Void) { self.onOpen = onOpen }
 
+    // ── Hardware geometry ──────────────────────────────────────────────
+    /// True on Dynamic Island phones (top safe-area inset ≥ 51pt). There the
+    /// capsule WRAPS the hardware cutout — black wings extending left and
+    /// right of the island, exactly the Apple-Music-mini illusion. Elsewhere
+    /// it stays a free-floating capsule below the status bar.
+    static var isIslandDevice: Bool { topInset >= 51 }
+    static var topInset: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
+    }
+    /// The island cutout is ~126×37 with its top edge ~11pt down, centered.
+    private static let islandWidth: CGFloat = 126
+    private static let islandHeight: CGFloat = 37
+    private static let wingWidth: CGFloat = 58
+
     var body: some View {
         // The `if let` lives inside a container so the spring transition
         // actually runs when the radio is tuned/stopped (attached to conditional
         // content directly, SwiftUI would pop it in with no animation).
         ZStack {
             if center.program != nil {
-                capsule
-                    .transition(.offset(y: -24)
-                        .combined(with: .opacity)
-                        .combined(with: .scale(scale: 0.9)))
+                if Self.isIslandDevice { islandCapsule } else { floatingCapsule }
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    private var capsule: some View {
+    // ── Island-hugging capsule (wings around the hardware cutout) ─────
+    // Symmetric wings keep the middle gap perfectly centered on the cutout;
+    // the phone's own black island fills the gap, so capsule + hardware read
+    // as ONE expanded island with a living wave.
+    private var islandCapsule: some View {
+        HStack(spacing: 0) {
+            Button {
+                Haptics.tap()
+                onOpen()
+            } label: {
+                HStack(spacing: 6) {
+                    pulsingDot
+                    RadioMiniWave(playing: center.playing, count: 7, height: 14)
+                }
+                .frame(width: Self.wingWidth, height: Self.islandHeight)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Open Nuru Radio")
+
+            // The hardware island lives here — leave it to the phone.
+            Color.clear.frame(width: Self.islandWidth - 8, height: Self.islandHeight)
+
+            Button {
+                Haptics.tap()
+                center.togglePlay()
+            } label: {
+                Image(systemName: center.playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundStyle(Nuru.gold)
+                    .contentTransition(.symbolEffect(.replace))
+                    .offset(x: center.playing ? 0 : 1)
+                    .frame(width: Self.wingWidth, height: Self.islandHeight)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .animation(.easeInOut(duration: 0.2), value: center.playing)
+            .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
+        }
+        .background(Color.black, in: Capsule())
+        .shadow(color: .black.opacity(0.45), radius: 10, y: 6)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
+        .accessibilityHint("Nuru Radio is playing — opens the full player")
+    }
+
+    // ── Free-floating capsule (notch / older devices) ──────────────────
+    private var floatingCapsule: some View {
         HStack(spacing: 8) {
-            // Dot + wave — the "open the player" surface.
             Button {
                 Haptics.tap()
                 onOpen()
@@ -97,7 +154,6 @@ struct RadioMiniPlayer: View {
             .buttonStyle(.pressable)
             .accessibilityLabel("Open Nuru Radio")
 
-            // 28pt gold play/pause.
             Button {
                 Haptics.tap()
                 center.togglePlay()
@@ -119,6 +175,7 @@ struct RadioMiniPlayer: View {
         .padding(.trailing, 6)
         .background(Color.black, in: Capsule())
         .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
+        .transition(.offset(y: -24).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
 
