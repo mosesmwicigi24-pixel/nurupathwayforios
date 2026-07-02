@@ -80,10 +80,16 @@ struct RadioMiniPlayer: View {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
-    /// Cutout ≈ 126×37 with its top edge ~11pt down. The dock tucks under it:
-    /// y = 11 + 37 − overlap. Never wider than the island, never beside it —
-    /// so it can't collide with the clock or the wifi/battery cluster.
-    static var dockTop: CGFloat { isIslandDevice ? 41 : topInset + 4 }
+    /// GAP-PROOF geometry: cutout metrics drift per generation (14 Pro ≈ y11
+    /// h37; 16/17 Pro Max, inset 62, ≈ bottom 51 — but Apple moves it a few
+    /// points every year). So the dock's black body STARTS ABOVE any island
+    /// top (y=8) and runs down behind the cutout; iOS's island mask hides
+    /// everything it covers, and the controls are bottom-aligned BELOW any
+    /// possible island bottom. Whatever the true cutout, black meets black —
+    /// a gap is geometrically impossible.
+    static var dockTop: CGFloat { isIslandDevice ? 8 : topInset + 4 }
+    static let dockHeight: CGFloat = 70     // 8 + 70 = 78 — chin ends below any cutout
+    static let dockWidth: CGFloat = 110     // narrower than every island (~120–140)
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -97,46 +103,47 @@ struct RadioMiniPlayer: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    // ── Island dock (hangs from the cutout's bottom edge) ──────────────
+    // ── Island dock (black body behind the cutout, controls in the chin) ──
     private var islandDock: some View {
-        HStack(spacing: 7) {
-            Button {
-                Haptics.tap()
-                onOpen()
-            } label: {
-                HStack(spacing: 5) {
-                    pulsingDot
-                    RadioMiniWave(playing: center.playing, count: 6, height: 10)
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            HStack(spacing: 7) {
+                Button {
+                    Haptics.tap()
+                    onOpen()
+                } label: {
+                    HStack(spacing: 5) {
+                        pulsingDot
+                        RadioMiniWave(playing: center.playing, count: 6, height: 10)
+                    }
+                    .contentShape(Rectangle())
                 }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Open Nuru Radio")
+                .buttonStyle(.plain)
+                .accessibilityLabel("Open Nuru Radio")
 
-            Button {
-                Haptics.tap()
-                center.togglePlay()
-            } label: {
-                Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundStyle(Nuru.gold)
-                    .contentTransition(.symbolEffect(.replace))
-                    .offset(x: center.playing ? 0 : 0.5)
-                    .frame(width: 20, height: 20)
-                    .contentShape(Circle())
+                Button {
+                    Haptics.tap()
+                    center.togglePlay()
+                } label: {
+                    Image(systemName: center.playing ? "pause.fill" : "play.fill")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(Nuru.gold)
+                        .contentTransition(.symbolEffect(.replace))
+                        .offset(x: center.playing ? 0 : 0.5)
+                        .frame(width: 20, height: 20)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.2), value: center.playing)
+                .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .buttonStyle(.plain)
-            .animation(.easeInOut(duration: 0.2), value: center.playing)
-            .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
+            .padding(.bottom, 5)   // the visible chin — always below the cutout
         }
-        .padding(.horizontal, 12)
-        .frame(height: 26)
-        // Squared top / round bottom — the seam hides under the island's own
-        // bottom curve, so dock + cutout read as one black shape.
+        .frame(width: Self.dockWidth, height: Self.dockHeight)
         .background(Color.black, in: UnevenRoundedRectangle(
-            topLeadingRadius: 6, bottomLeadingRadius: 13,
-            bottomTrailingRadius: 13, topTrailingRadius: 6, style: .continuous))
-        .shadow(color: .black.opacity(0.25), radius: 5, y: 3)
+            topLeadingRadius: 18, bottomLeadingRadius: 16,
+            bottomTrailingRadius: 16, topTrailingRadius: 18, style: .continuous))
+        .shadow(color: .black.opacity(0.22), radius: 5, y: 3)
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
