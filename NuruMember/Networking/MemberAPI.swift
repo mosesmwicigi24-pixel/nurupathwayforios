@@ -620,6 +620,53 @@ extension MemberAPI {
     }
 }
 
+extension MemberAPI {
+    // MARK: Radio (Nuru Radio station — live HLS, scheduled shows, recorded archive)
+    //
+    // Member routes of the backend radio module (packages/backend/src/modules/radio).
+    // The public DTO strips ingest secrets; writes carry a client_event_id so
+    // replays are idempotent server-side (§2.1/§3.6).
+
+    /// GET /radio/programs — all visible non-draft programs, live-first.
+    static func radioPrograms() async throws -> [RadioProgram] {
+        try await APIClient.shared.get("radio/programs", as: [RadioProgram].self)
+    }
+
+    /// GET /radio/now-playing — the live program, else the next scheduled, else null.
+    static func radioNowPlaying() async throws -> RadioProgram? {
+        try await APIClient.shared.get("radio/now-playing", as: RadioProgram?.self)
+    }
+
+    /// GET /radio/programs/{id} — one program (404s on private/unknown).
+    static func radioProgram(_ id: String) async throws -> RadioProgram {
+        try await APIClient.shared.get("radio/programs/\(id)", as: RadioProgram.self)
+    }
+
+    /// GET /radio/programs/{id}/comments — non-hidden comments, newest first.
+    /// Rows carry member_id only (the backend select has no author-name join).
+    static func radioComments(_ programId: String) async throws -> [RadioComment] {
+        try await APIClient.shared.get("radio/programs/\(programId)/comments", as: [RadioComment].self)
+    }
+
+    /// POST /radio/programs/{id}/comments — { body, client_event_id } → 201 comment row.
+    @discardableResult
+    static func addRadioComment(_ programId: String, body: String) async throws -> RadioComment {
+        struct Body: Encodable { let body: String; let clientEventId: String }
+        return try await APIClient.shared.post("radio/programs/\(programId)/comments",
+            body: Body(body: body, clientEventId: UUID().uuidString), as: RadioComment.self)
+    }
+
+    /// POST /radio/programs/{id}/react — { kind, client_event_id } → { counts }.
+    /// kind ∈ heart | amen | fire; the zod schema is strict, so client_event_id
+    /// is REQUIRED (the previous player omitted it and would 400).
+    static func radioReact(_ programId: String, kind: String) async throws -> RadioReactionCounts {
+        struct Body: Encodable { let kind: String; let clientEventId: String }
+        struct Res: Decodable { let counts: RadioReactionCounts }
+        return try await APIClient.shared.post("radio/programs/\(programId)/react",
+            body: Body(kind: kind, clientEventId: UUID().uuidString), as: Res.self).counts
+    }
+}
+
 /// One submitted answer — `givenAnswer` is always a string per the wire contract
 /// (checkbox carries a JSON array of selected ids; scale carries the number).
 struct QuizAnswer: Encodable, Sendable {

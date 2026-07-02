@@ -49,10 +49,14 @@ final class ChatThreadViewModel: ObservableObject {
     @Published var pending: [ChatMessage] = []
 
     /// Server thread + any still-in-flight optimistic sends (deduped by id).
+    /// Ids compare case-insensitively: Postgres normalizes uuid columns to
+    /// lowercase, so a client-minted uppercase id comes back lowercased — a
+    /// case-sensitive match would keep the optimistic bubble alongside the
+    /// server echo forever (the "every send shows twice" bug).
     var allMessages: [ChatMessage] {
         let base = thread?.messages ?? []
-        let ids = Set(base.map(\.messageId))
-        return base + pending.filter { !ids.contains($0.messageId) }
+        let ids = Set(base.map { $0.messageId.lowercased() })
+        return base + pending.filter { !ids.contains($0.messageId.lowercased()) }
     }
 
     /// Offline-capable send: the bubble appears instantly and the write goes through
@@ -61,7 +65,9 @@ final class ChatThreadViewModel: ObservableObject {
         let body = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty, !sending else { return }
         sending = true; defer { sending = false }
-        let mid = UUID().uuidString
+        // Lowercased to match the server's canonical uuid form, so the echoed
+        // row and this optimistic one dedupe by exact id.
+        let mid = UUID().uuidString.lowercased()
         pending.append(ChatMessage(
             messageId: mid, authorUserId: "", authorName: "You", authorAvatar: nil,
             body: body, msgType: "text", attachmentUrl: nil, replyBody: nil, replyAuthor: nil,
@@ -76,8 +82,10 @@ final class ChatThreadViewModel: ObservableObject {
         ])
         if SyncCoordinator.shared.isOnline {
             await load()
-            let landed = Set((thread?.messages ?? []).map(\.messageId))
-            pending.removeAll { landed.contains($0.messageId) }
+            // Case-insensitive prune (see allMessages) — also heals bubbles
+            // minted uppercase by older builds that are still in `pending`.
+            let landed = Set((thread?.messages ?? []).map { $0.messageId.lowercased() })
+            pending.removeAll { landed.contains($0.messageId.lowercased()) }
         }
     }
 
