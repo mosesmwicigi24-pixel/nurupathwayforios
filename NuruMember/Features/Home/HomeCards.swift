@@ -52,6 +52,7 @@ struct HomeLiveNowCard: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
                     .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                    .lineLimit(3).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                 metaRow.padding(.top, 4)
                 Button(action: onOpen) {
@@ -81,9 +82,13 @@ struct HomeLiveNowCard: View {
         ZStack {
             Rectangle().fill(Color.black)
             if let s = posterUrl, let u = URL(string: s) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
-                    else { posterFallback }
+                // Contained fill image — a portrait/oversized poster must never
+                // inflate the 16:9 media box (same overflow class as plan cards).
+                Color.clear.overlay {
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
+                        else { posterFallback }
+                    }
                 }
             } else {
                 posterFallback
@@ -182,6 +187,7 @@ struct HomePriorityStrip: View {
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        .lineLimit(2).truncationMode(.tail)
                     Text(meta).font(.inter(11)).foregroundStyle(HomeFig.metaGray).lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -240,9 +246,10 @@ struct HomeResumeHero: View {
             Text("FOR YOU TODAY").font(.inter(10, .bold)).kerning(2).foregroundStyle(HomeFig.gold)
             Text(title)
                 .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                .lineLimit(3).truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
-            Text(meta).font(.inter(12.5)).foregroundStyle(.white.opacity(0.55)).padding(.top, 4)
+            Text(meta).font(.inter(12.5)).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
             HStack(spacing: 8) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -386,9 +393,13 @@ struct HomeUpcomingEventRow: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.goldChipBg)
                 if let s = imageUrl, let u = URL(string: s) {
-                    CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { img.resizable().scaledToFill() }
-                        else { Rectangle().fill(Nuru.mutedBg) }
+                    // Contained fill image — keeps the thumb ZStack at exactly
+                    // 56×56 so the crop stays centred and nothing paints outside.
+                    Color.clear.overlay {
+                        CachedAsyncImage(url: u) { phase in
+                            if let img = phase.image { img.resizable().scaledToFill() }
+                            else { Rectangle().fill(Nuru.mutedBg) }
+                        }
                     }
                 } else {
                     Icon(.calendarDays, size: 18, color: Nuru.goldChipText)

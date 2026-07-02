@@ -323,9 +323,10 @@ struct GivingView: View {
                     Icon(f.icon, size: 17, color: Color(hex: f.fg))
                 }
                 Text(f.label).font(.inter(13, .semibold)).kerning(-0.13).foregroundStyle(Nuru.navy)
+                    .lineLimit(1).minimumScaleFactor(0.85)
                     .padding(.top, 8)
                 Text(f.tagline).font(.inter(10)).foregroundStyle(Color(hex: 0x6B7280))
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
             .frame(width: 124, alignment: .leading)
@@ -470,6 +471,7 @@ struct GivingView: View {
                     methodBadge(m)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(m.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+                            .lineLimit(1).minimumScaleFactor(0.85)
                         if on {
                             Text(activeDetail(m)).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280)).lineLimit(1)
                         }
@@ -571,10 +573,13 @@ struct GivingView: View {
             }
             Text(ksh(s.amountMinor / 100))
                 .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
+                .lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.top, 5)
             Text(s.fund.capitalized).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
             Text("Next \(giveDateShort(s.nextRunAt))").font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                .lineLimit(1)
                 .padding(.top, 5)
         }
         .frame(width: 150, alignment: .leading)
@@ -628,12 +633,14 @@ struct GivingView: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+                    .lineLimit(1)
                 Text("\(giveDateShort(g.createdAt)) · \(givingMethodName(g.method))")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280)).lineLimit(1)
             }
             Spacer()
             Text(ksh(g.amountMinor / 100))
                 .font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+                .lineLimit(1).layoutPriority(1)
         }
         .padding(.horizontal, Nuru.S.base).padding(.vertical, 11)
         .contentShape(Rectangle())

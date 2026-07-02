@@ -37,8 +37,13 @@ struct PLCover: View {
         ZStack {
             LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
             if let u = plan.imageUrl.flatMap(URL.init) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill() } else { Color.clear }
+                // Color.clear takes exactly the proposed size; the fill image lives
+                // in an overlay so its oversized ideal size can never inflate the
+                // layout (the root cause of titles painting outside plan cards).
+                Color.clear.overlay {
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill() } else { Color.clear }
+                    }
                 }
             }
         }
@@ -122,8 +127,10 @@ struct PLStreakStrip: View {
                 .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("\(count)-day streak").font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
+                        .lineLimit(1)
                     Text(count > 0 ? "Read today to keep it alive 🔥" : "Read today to start your streak 🔥")
                         .font(.inter(11)).foregroundStyle(PL.ink2)
+                        .lineLimit(2).minimumScaleFactor(0.9)
                 }
                 Spacer(minLength: 8)
                 HStack(spacing: 4) {
@@ -249,23 +256,28 @@ struct PLPlanCard: View {
     let plan: ReadingPlanRow
     var body: some View {
         NavigationLink(value: plan) {
-            ZStack(alignment: .bottomLeading) {
-                PLCover(plan: plan)
-                LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.05), Color(hex: 0x081424, alpha: 0.85)],
-                               startPoint: .init(x: 0.5, y: 0.4), endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plan.title).font(.fraunces(13, .semibold)).foregroundStyle(.white)
-                        .lineLimit(2).multilineTextAlignment(.leading)
-                    if let c = plan.category, !c.isEmpty {
-                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
+            // Size the cover FIRST, then overlay text — every overlay is proposed
+            // the 150×200 card size, so the title can never lay out wider than
+            // the card. Two lines max, tail truncation, 12pt inset all round.
+            PLCover(plan: plan)
+                .frame(width: 150, height: 200)
+                .overlay(LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.05), Color(hex: 0x081424, alpha: 0.85)],
+                                        startPoint: .init(x: 0.5, y: 0.4), endPoint: .bottom))
+                .overlay(alignment: .bottomLeading) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(plan.title).font(.fraunces(13, .semibold)).foregroundStyle(.white)
+                            .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                        if let c = plan.category, !c.isEmpty {
+                            Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
+                                .lineLimit(1)
+                        }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(12)
                 }
-                .padding(10)
-            }
-            .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
-            .frame(width: 150, height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: PL.navy.opacity(0.4), radius: 12, y: 9)
+                .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
+                .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: PL.navy.opacity(0.4), radius: 12, y: 9)
         }
         .buttonStyle(.plain)
     }
@@ -278,20 +290,23 @@ struct PLPlanTile: View {
     var body: some View {
         NavigationLink(value: plan) {
             VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    PLCover(plan: plan).aspectRatio(16.0 / 10.0, contentMode: .fill)
-                        .frame(maxWidth: .infinity).clipped()
-                    PLDaysBadge(days: plan.dayCount)
-                }
+                // .fit on the flexible PLCover pins the image region to exactly
+                // tile-width × 10/16 — the fill image inside can't inflate it.
+                PLCover(plan: plan)
+                    .aspectRatio(16.0 / 10.0, contentMode: .fit)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+                    .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy)
-                        .lineLimit(2).multilineTextAlignment(.leading)
+                        .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     if let c = plan.category, !c.isEmpty {
                         Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.catText)
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
+                .padding(12)
             }
             .background(Color.white)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -324,6 +339,7 @@ struct PLFinishEarnCard: View {
                 Text("FINISH & EARN").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(PL.goldLight)
                 Text("The “\(category ?? "Finisher")” badge")
                     .font(.inter(13, .bold)).kerning(-0.13).foregroundStyle(.white)
+                    .lineLimit(2).truncationMode(.tail)
                 Text("A little gift for your shelf when you complete all \(dayCount) days.")
                     .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)

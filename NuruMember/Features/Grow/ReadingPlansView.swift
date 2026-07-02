@@ -201,12 +201,13 @@ struct ReadingPlansView: View {
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(plan.title).font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(.white)
-                        .lineLimit(2).multilineTextAlignment(.leading)
+                        .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     HStack(spacing: 4) {
                         Icon(.clock, size: 12, color: .white.opacity(0.8))
                         Text("\(plan.dayCount) days").font(.inter(11)).foregroundStyle(.white.opacity(0.8))
                     }
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 16).padding(.bottom, 14)
             }
             .shadow(color: PL.navyDeep.opacity(0.5), radius: 22, y: 12)
@@ -435,7 +436,11 @@ struct PlanDetailView: View {
             ZStack {
                 LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
                 if let u = d.imageUrl.flatMap(URL.init) {
-                    CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                    // Contained fill image — its oversized ideal size must never
+                    // inflate the hero ZStack (would shove the title off-canvas).
+                    Color.clear.overlay {
+                        CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                    }
                 }
             }
             .clipped()
@@ -444,18 +449,21 @@ struct PlanDetailView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let c = d.category, !c.isEmpty {
                     Text(c.uppercased()).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                        .lineLimit(1)
                         .padding(.horizontal, 10).padding(.vertical, 4).background(PL.gold, in: Capsule())
                 }
                 Text(d.title).font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
-                    .lineLimit(3).multilineTextAlignment(.leading)
+                    .lineLimit(3).truncationMode(.tail).multilineTextAlignment(.leading)
                 HStack(spacing: 16) {
                     heroMeta(.clock, "\(d.dayCount) days")
                     heroMeta(.bookOpen, "Devotional")
                 }
                 .padding(.top, 2)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 20).padding(.bottom, 16)
         }
+        .clipped()
         .overlay(alignment: .topLeading) {
             HStack {
                 circleBtn(.chevronLeft, tint: .white) { dismiss() }

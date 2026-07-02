@@ -297,6 +297,7 @@ private struct CurrentVerseCard: View {
                 Text(verse.reference)
                     .font(.inter(12, .bold))
                     .foregroundStyle(Nuru.gold)
+                    .lineLimit(1)
                 practiceButton
                     .padding(.top, Nuru.S.xs)
             }
@@ -330,8 +331,9 @@ private struct LibraryVerseRow: View {
                     Text(verse.reference)
                         .font(.inter(12, .bold))
                         .foregroundStyle(Nuru.gold)
-                    Spacer()
-                    chip
+                        .lineLimit(1).truncationMode(.tail)
+                    Spacer(minLength: Nuru.S.sm)
+                    chip.layoutPriority(1)
                 }
                 Text("\u{201C}\(verse.verseText)\u{201D}")
                     .font(.inter(13, .regular))
