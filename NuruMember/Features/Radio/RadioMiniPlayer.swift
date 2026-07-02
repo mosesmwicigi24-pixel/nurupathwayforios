@@ -89,10 +89,10 @@ struct RadioMiniPlayer: View {
     /// a gap is geometrically impossible.
     static var dockTop: CGFloat { isIslandDevice ? 8 : topInset + 4 }
     /// Device photo (iPhone 17 Pro Max): the cutout's bottom edge lands ≈44pt,
-    /// higher than the 16-era 51 — 8+62=70 puts the 24pt control row snug
-    /// beneath it with only a hairline of black in between.
-    static let dockHeight: CGFloat = 62
-    static let dockWidth: CGFloat = 110     // narrower than every island (~120–140)
+    /// higher than the 16-era 51. Dock 8→60 leaves a SLIM ~16pt visible chin —
+    /// just enough for the miniature dot/wave/pause row, nothing more.
+    static let dockHeight: CGFloat = 52
+    static let dockWidth: CGFloat = 96      // narrower than every island (~120–140)
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -110,14 +110,14 @@ struct RadioMiniPlayer: View {
     private var islandDock: some View {
         VStack(spacing: 0) {
             Spacer(minLength: 0)
-            HStack(spacing: 7) {
+            HStack(spacing: 6) {
                 Button {
                     Haptics.tap()
                     onOpen()
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         pulsingDot
-                        RadioMiniWave(playing: center.playing, count: 6, height: 10)
+                        RadioMiniWave(playing: center.playing, count: 6, height: 7)
                     }
                     .contentShape(Rectangle())
                 }
@@ -129,23 +129,23 @@ struct RadioMiniPlayer: View {
                     center.togglePlay()
                 } label: {
                     Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 9, weight: .bold))
                         .foregroundStyle(Nuru.gold)
                         .contentTransition(.symbolEffect(.replace))
                         .offset(x: center.playing ? 0 : 0.5)
-                        .frame(width: 20, height: 20)
-                        .contentShape(Circle())
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .padding(.bottom, 4)   // the visible chin — snug under the cutout
+            .padding(.bottom, 3)   // the visible chin — a slim sliver under the cutout
         }
         .frame(width: Self.dockWidth, height: Self.dockHeight)
         .background(Color.black, in: UnevenRoundedRectangle(
-            topLeadingRadius: 18, bottomLeadingRadius: 16,
-            bottomTrailingRadius: 16, topTrailingRadius: 18, style: .continuous))
+            topLeadingRadius: 18, bottomLeadingRadius: 12,
+            bottomTrailingRadius: 12, topTrailingRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.22), radius: 5, y: 3)
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
