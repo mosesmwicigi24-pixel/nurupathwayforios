@@ -217,7 +217,8 @@ struct PathwayView: View {
                         }
                     })
 
-                PathwaySummitCard()
+                PathwaySummitCard(overallPct: vm.overallPct,
+                              levelsLeft: s.levels.filter { $0.status != .completed }.count)
             }
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
         }
@@ -250,63 +251,70 @@ private struct PathwayHubHeader: View {
     private var remaining: Int { active.map { max($0.totalModules - $0.completedModules, 0) } ?? 0 }
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            LinearGradient(colors: PW.tone(active?.levelNumber ?? 1), startPoint: .topLeading, endPoint: .bottomTrailing)
-            LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.35), Color(hex: 0x081424, alpha: 0.12), Color(hex: 0x081424, alpha: 0.72)], startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [PW.gold.opacity(0.4), .clear], center: .center, startRadius: 0, endRadius: 112)
-                .frame(width: 224, height: 224).blur(radius: 40).offset(x: 150, y: -70)
+        // Fresh Figma PathwayHub: LIGHT cream hero (navy text) with a navy Continue CTA.
+        ZStack(alignment: .topTrailing) {
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            Circle().fill(PW.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
 
             VStack(alignment: .leading, spacing: 0) {
                 topBar
                 Text("\(pwGreeting()), \(firstName) · Level \(idx + 1) of \(vm.levelCount)")
-                    .font(.inter(10)).foregroundStyle(.white.opacity(0.7)).padding(.top, 16)
+                    .font(.inter(10)).foregroundStyle(Color(hex: 0x68758A)).padding(.top, 16)
                 Text(active?.title ?? "Your pathway")
-                    .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
+                    .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(PW.navy)
                     .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
-                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(.white.opacity(0.7)).padding(.top, 4)
+                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(Color(hex: 0x68758A)).padding(.top, 4)
                 HStack(spacing: 8) {
-                    PWBar(pct: activePct, height: 6, fill: .color(.white), track: Color.white.opacity(0.22))
+                    PWBar(pct: activePct, height: 6,
+                          fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
+                          track: PW.navy.opacity(0.10))
                     Text("\(active?.completedModules ?? 0)/\(active?.totalModules ?? 0)")
-                        .font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.8))
+                        .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x68758A))
                 }.padding(.top, 16)
                 if remaining > 0 {
                     HStack(spacing: 6) {
-                        Icon(.sparkles, size: 11, color: PW.goldLight)
+                        Icon(.sparkles, size: 11, color: Color(hex: 0x9A7A2A))
                         Text(remaining == 1 ? "Just 1 module left to level up 🎉" : "Only \(remaining) modules to complete this level")
-                            .font(.inter(10, .semibold)).foregroundStyle(PW.goldLight)
+                            .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }.padding(.top, 8)
                 }
                 continueCard.padding(.top, 16)
             }
-            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 20)
         }
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
+        .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
     }
 
     private var topBar: some View {
         HStack {
             HStack(spacing: 8) {
-                Text("YOUR PATHWAY").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PW.goldLight)
+                Text("YOUR PATHWAY").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0x9A7A2A))
                 if vm.streak > 0 {
                     HStack(spacing: 4) {
-                        Icon(.flame, size: 9, color: PW.goldLight)
-                        Text("\(vm.streak)-day streak").font(.inter(9, .bold)).foregroundStyle(PW.goldLight)
+                        Icon(.flame, size: 9, color: Color(hex: 0x9A7A2A))
+                        Text("\(vm.streak)-day streak").font(.inter(9, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color.white.opacity(0.12), in: Capsule())
-                    .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    .background(Color.white, in: Capsule())
+                    .overlay(Capsule().stroke(PW.border, lineWidth: 1))
                 }
             }
             Spacer()
             HStack(spacing: 8) {
-                Icon(.bell, size: 17, color: .white).frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.12), in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                ZStack(alignment: .topTrailing) {
+                    Icon(.bell, size: 17, color: PW.navy).frame(width: 36, height: 36)
+                        .background(Color.white, in: Circle())
+                        .overlay(Circle().stroke(PW.border, lineWidth: 1))
+                    Circle().fill(PW.gold).frame(width: 8, height: 8).offset(x: -6, y: 6)
+                }
                 PWHeaderRing(pct: vm.overallPct)
             }
         }
     }
 
+    // Navy CTA that pops on the light header (fresh Figma).
     private var continueCard: some View {
         Button { if let m = resume { openModule(m.moduleId) } } label: {
             HStack(spacing: 12) {
@@ -321,8 +329,9 @@ private struct PathwayHubHeader: View {
                 Icon(.chevronRight, size: 18, color: .white)
             }
             .padding(12)
-            .background(Color.white.opacity(0.12), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
+            .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: Color(hex: 0x0A1628).opacity(0.5), radius: 17, y: 10)
         }
         .buttonStyle(.plain)
     }
@@ -332,11 +341,11 @@ private struct PWHeaderRing: View {
     let pct: Int
     var body: some View {
         ZStack {
-            Circle().stroke(Color.white.opacity(0.22), lineWidth: 3)
+            Circle().stroke(PW.navy.opacity(0.12), lineWidth: 3)
             Circle().trim(from: 0, to: CGFloat(max(0, min(100, pct))) / 100)
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(.white)
+            Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
         }
         .frame(width: 40, height: 40)
     }
@@ -449,6 +458,8 @@ private struct PathwaySelectedModules: View {
                 } else {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
                         PWModuleRow(module: m, last: i == ordered.count - 1) { if m.status != .locked { openModule(m.moduleId) } }
+                        // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
+                        if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
                     }
                 }
             }
@@ -582,27 +593,96 @@ private struct PWRewardBadge: View {
     }
 }
 
-// MARK: - PathwayHub · the summit
+// MARK: - PathwayHub · mid-trail "Pause & surrender" figure (fresh Figma)
+
+private struct PWSurrenderFigure: View {
+    private let img = "https://images.unsplash.com/photo-1510590337019-5ef8d3d32116?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
+    var body: some View {
+        ZStack(alignment: .bottomLeading) {
+            if let u = URL(string: img) {
+                CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+            }
+            LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.15), Color(hex: 0x081424, alpha: 0.55), Color(hex: 0x081424, alpha: 0.90)], startPoint: .top, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("PAUSE & SURRENDER").font(.inter(7, .bold)).kerning(1.54).foregroundStyle(PW.goldLight)
+                Text("“Offer yourselves as a living sacrifice, holy and pleasing to God.”")
+                    .font(.fraunces(12, .medium)).italic().foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Romans 12:1 · Surrender to His Word").font(.inter(8, .semibold)).foregroundStyle(.white.opacity(0.65))
+            }
+            .padding(14)
+        }
+        .frame(height: 224).frame(maxWidth: .infinity).clipped()
+        .overlay(alignment: .top) { Rectangle().fill(PW.border).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
+    }
+}
+
+// MARK: - PathwayHub · the summit (fresh Figma: rich destination card)
 
 private struct PathwaySummitCard: View {
+    let overallPct: Int
+    let levelsLeft: Int
+    private var reached: Bool { overallPct >= 100 }
     private let img = "https://images.unsplash.com/photo-1513759565286-20e9c5fad06b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
+
     var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("THE SUMMIT · YOUR DESTINATION")
+                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).padding(.horizontal, 4)
+            card
+        }
+    }
+
+    private var card: some View {
         ZStack {
             if let u = URL(string: img) {
                 CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
             }
-            LinearGradient(colors: [Color(hex: 0x081C36, alpha: 0.25), Color(hex: 0x081C36, alpha: 0.45), Color(hex: 0x081C36, alpha: 0.86)], startPoint: .top, endPoint: .bottom)
-            VStack(spacing: 2) {
-                Text("👑").font(.system(size: 24))
-                Text("THE SUMMIT").font(.inter(8, .bold)).kerning(1.76).foregroundStyle(PW.goldLight).padding(.top, 2)
-                Text("Commissioned").font(.fraunces(18, .semibold)).kerning(-0.18).foregroundStyle(.white).padding(.top, 1)
-                Text("Sent to make disciples · Matthew 28:19").font(.inter(11)).foregroundStyle(.white.opacity(0.82))
-            }
-            .frame(maxHeight: .infinity, alignment: .bottom).padding(16)
+            LinearGradient(colors: [Color(hex: 0x0A1628, alpha: 0.25), Color(hex: 0x0A1628, alpha: 0.50), Color(hex: 0x0A1628, alpha: 0.92)], startPoint: .top, endPoint: .bottom)
+            RadialGradient(colors: [PW.gold.opacity(0.33), .clear], center: .top, startRadius: 0, endRadius: 90)
+                .frame(width: 160, height: 160).blur(radius: 30).offset(y: -80)
+            content
         }
-        .frame(height: 160).frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: PW.navy.opacity(0.35), radius: 20, y: 12)
+        .frame(height: 256).frame(maxWidth: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(alignment: .topTrailing) { statusChip.padding(12) }
+        .shadow(color: Color(hex: 0x0A1628).opacity(0.5), radius: 23, y: 14)
+    }
+
+    private var statusChip: some View {
+        HStack(spacing: 4) {
+            if reached { Image(systemName: "star.fill").font(.system(size: 10)) } else { Icon(.lock, size: 10, color: .white) }
+            Text(reached ? "Reached" : "Locked").font(.inter(9, .bold))
+        }
+        .foregroundStyle(reached ? PW.navy : .white)
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(reached ? AnyShapeStyle(PW.gold) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+    }
+
+    private var content: some View {
+        VStack(spacing: 2) {
+            ZStack {
+                Circle().fill(Color.white.opacity(0.08)).frame(width: 56, height: 56)
+                    .overlay(Circle().stroke(PW.gold.opacity(0.4), lineWidth: 1))
+                Text("👑").font(.system(size: 26))
+            }
+            .padding(.bottom, 6)
+            Text("THE SUMMIT").font(.inter(8, .bold)).kerning(1.92).foregroundStyle(PW.goldLight)
+            Text("Commissioned").font(.fraunces(22, .bold)).kerning(-0.44).foregroundStyle(.white).padding(.top, 1)
+            Text("Sent to make disciples · Matthew 28:19").font(.inter(11)).foregroundStyle(.white.opacity(0.82))
+            VStack(spacing: 6) {
+                PWBar(pct: overallPct, height: 6,
+                      fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
+                      track: Color.white.opacity(0.22))
+                    .frame(maxWidth: 260)
+                Text(reached ? "You've been commissioned 🎉" : "\(overallPct)% of the way · \(levelsLeft) \(levelsLeft == 1 ? "level" : "levels") to go")
+                    .font(.inter(10, .bold)).foregroundStyle(PW.goldLight)
+            }
+            .padding(.top, 12)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+        .padding(20)
     }
 }
 
