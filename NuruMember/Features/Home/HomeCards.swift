@@ -495,6 +495,150 @@ struct HomeGiveCard: View {
     }
 }
 
+// MARK: - Nuru Radio ON AIR hero (pinned FIRST on Home while a broadcast is live)
+
+/// Figma LiveNowCard adapted for radio — full-width navy media card: 16:9 artwork
+/// with LIVE badge, studio lights, "Nuru Radio" chip and the gold play disc, then
+/// title + speaker·category meta and a gold "Listen live" CTA. The WHOLE card is
+/// one button (disc and CTA are visuals inside it) → opens the radio player.
+struct HomeOnAirCard: View {
+    let title: String
+    let speaker: String?
+    let category: String
+    let artworkUrl: String?
+    let onOpen: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(spacing: 0) {
+                poster
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(title)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                        .lineLimit(3).truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                    metaRow.padding(.top, 4)
+                    HStack(spacing: 8) {
+                        Icon(.play, size: 15, color: HomeFig.navy)
+                        Text("Listen live").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(HomeFig.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .padding(.top, 12)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+            }
+            .background(HomeFig.navy)
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .onAppear {
+            guard !reduceMotion else { return }   // pulses are decoration only
+            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+
+    // 16:9 artwork with LIVE badge, studio lights, provider chip and gold play disc.
+    private var poster: some View {
+        ZStack {
+            Rectangle().fill(HomeFig.navy)
+            if let s = artworkUrl, let u = URL(string: s) {
+                // Contained fill image — oversized artwork must never inflate the
+                // 16:9 media box (same overflow class as the live-event card).
+                Color.clear.overlay {
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
+                        else { posterFallback }
+                    }
+                }
+            } else {
+                posterFallback
+            }
+            LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.55)],
+                           startPoint: .top, endPoint: .bottom)
+            playDisc
+        }
+        .aspectRatio(16.0 / 9.0, contentMode: .fill)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .overlay(alignment: .topLeading) { liveBadge.padding(12) }
+        .overlay(alignment: .topTrailing) { studioLights.padding(12) }
+        .overlay(alignment: .bottomTrailing) { providerChip.padding(12) }
+    }
+
+    // Navy fill with the gold radial studio glow (Figma: 120% 80% at 30% 20%).
+    private var posterFallback: some View {
+        ZStack {
+            HomeFig.navy
+            RadialGradient(colors: [HomeFig.gold.opacity(0.25), .clear],
+                           center: UnitPoint(x: 0.3, y: 0.2), startRadius: 0, endRadius: 260)
+        }
+    }
+
+    private var playDisc: some View {
+        ZStack {
+            Circle().fill(HomeFig.gold).frame(width: 64, height: 64)
+                .shadow(color: HomeFig.gold.opacity(0.65), radius: 14, y: 7)
+            Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
+            Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2)
+        }
+    }
+
+    private var liveBadge: some View {
+        HStack(spacing: 6) {
+            Circle().fill(.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
+            Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(HomeFig.liveRed, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    // Studio-light trio (red pulses, amber + green glow) + "ON AIR".
+    private var studioLights: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 4) {
+                Circle().fill(HomeFig.liveRed).frame(width: 8, height: 8)
+                    .shadow(color: HomeFig.liveRed, radius: 4)
+                    .opacity(pulse ? 0.25 : 1)
+                Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
+                    .shadow(color: Color(hex: 0xF59E0B), radius: 3)
+                Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
+                    .shadow(color: Color(hex: 0x22C55E), radius: 3)
+            }
+            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(Color.black.opacity(0.45), in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
+    }
+
+    private var providerChip: some View {
+        HStack(spacing: 5) {
+            Image(systemName: "dot.radiowaves.left.and.right")
+                .font(.system(size: 11)).foregroundStyle(.white)
+            Text("Nuru Radio").font(.inter(10, .semibold)).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 6).padding(.vertical, 2)
+        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+    }
+
+    // Speaker · category with a dot separator — missing parts are omitted, and
+    // viewer counts are intentionally absent (no live-listener endpoint = no number).
+    private var metaRow: some View {
+        let bits = [speaker, category].compactMap { $0 }.filter { !$0.isEmpty }
+        return HStack(spacing: 6) {
+            ForEach(Array(bits.enumerated()), id: \.offset) { i, bit in
+                if i > 0 { Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4) }
+                Text(bit).font(.inter(12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+            }
+        }
+    }
+}
+
 // MARK: - "New today" pulsing dot (devotional tile in the Grow grid)
 
 struct HomePulseDot: View {

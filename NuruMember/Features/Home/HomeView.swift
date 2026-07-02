@@ -36,6 +36,9 @@ final class HomeViewModel: ObservableObject {
     @Published var announcements: [MyAnnouncement] = []
     @Published var cell: CellSummary.Cell?
     @Published var events: [CalendarOccurrence] = []
+    /// The radio broadcast that is live RIGHT NOW (nil = off air). The now-playing
+    /// endpoint also returns the next scheduled show — that must stay off Home.
+    @Published var onAir: RadioProgram?
 
     @Published var loading = true
     @Published var error: String?
@@ -61,6 +64,7 @@ final class HomeViewModel: ObservableObject {
         async let anns = try? MemberAPI.myAnnouncements()
         async let summary = try? MemberAPI.cellSummary()
         async let cal = try? MemberAPI.calendar(from: Self.calFrom, to: Self.calTo)
+        async let radio = try? MemberAPI.radioNowPlaying()
 
         self.pathway = await pathway
         self.streak = await ach?.streak.current ?? 0
@@ -90,6 +94,7 @@ final class HomeViewModel: ObservableObject {
         self.announcements = await anns ?? []
         self.cell = (await summary)?.cell
         self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
+        self.onAir = Self.liveOnly((await radio) ?? nil)
 
         if self.pathway == nil { error = "Couldn't load your dashboard." }
         loading = false
@@ -125,6 +130,16 @@ final class HomeViewModel: ObservableObject {
     }
 
     func openAnnouncement(_ id: String) async { await MemberAPI.openAnnouncement(id) }
+
+    // Radio — lightweight re-check (polled while Home is visible) so the ON AIR
+    // card appears/disappears as broadcasts start and end without a full reload.
+    func refreshOnAir() async {
+        onAir = Self.liveOnly((try? await MemberAPI.radioNowPlaying()) ?? nil)
+    }
+    private static func liveOnly(_ p: RadioProgram?) -> RadioProgram? {
+        guard let p, p.live else { return nil }
+        return p
+    }
 
     // Two-month calendar window around today (drives section 15's mini month grid).
     private static var calFrom: String {
@@ -173,12 +188,14 @@ struct HomeView: View {
     // (deeply-generic) type is demangled ONE AT A TIME here — in a shallow stack —
     // as its AnyView box is built. `some View` groups and even AnyView-of-6 still
     // forced the runtime to decode several cards' types together and overflowed.
-    // Section order mirrors the fresh Figma HomeTab return block exactly:
-    // LiveNow → Priority → continue hero → video → verse → pray → plans/journal →
+    // Section order mirrors the fresh Figma HomeTab return block exactly (with the
+    // radio ON AIR hero pinned first whenever a broadcast is live):
+    // Radio ON AIR → LiveNow → Priority → continue hero → video → verse → pray → plans/journal →
     // this week → disciplers → announcement → continue level → rhythm → Priority
     // (repeat) → progress → Grow → Upcoming → encouragement → cohort → give.
     private var feedSections: [AnyView] {
         var s: [AnyView] = []
+        if let p = vm.onAir { s.append(AnyView(onAirCard(p))) }                         // 0a · Radio ON AIR (pinned first)
         if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
@@ -246,6 +263,15 @@ struct HomeView: View {
         .task {
             if vm.pathway == nil { await vm.load() }
             deepLinkForScreenshots()
+        }
+        // Radio poll — re-check now-playing every 45s while Home is visible so the
+        // ON AIR card appears/disappears as broadcasts start and end. The `.task`
+        // is cancelled automatically when Home leaves the screen.
+        .task {
+            while !Task.isCancelled {
+                await vm.refreshOnAir()
+                try? await Task.sleep(nanoseconds: 45_000_000_000)
+            }
         }
     }
 
@@ -413,6 +439,19 @@ struct HomeView: View {
             if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
             else { path.append(PathwayRoute.level(active?.levelNumber ?? 1)) }
         }
+    }
+
+    // MARK: 0a — Nuru Radio ON AIR hero (pinned first, only while actually live)
+
+    /// Tapping opens the existing fullScreenCover player — RadioPlayerView
+    /// auto-opens the live program itself, so no route payload is needed.
+    private func onAirCard(_ p: RadioProgram) -> some View {
+        HomeOnAirCard(
+            title: p.title,
+            speaker: p.speaker,
+            category: p.category,
+            artworkUrl: p.artworkUrl
+        ) { showRadio = true }
     }
 
     // MARK: 2 — Next-action hero ("For you today" — real pathway numbers)
