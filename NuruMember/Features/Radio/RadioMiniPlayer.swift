@@ -88,7 +88,10 @@ struct RadioMiniPlayer: View {
     /// possible island bottom. Whatever the true cutout, black meets black —
     /// a gap is geometrically impossible.
     static var dockTop: CGFloat { isIslandDevice ? 8 : topInset + 4 }
-    static let dockHeight: CGFloat = 70     // 8 + 70 = 78 — chin ends below any cutout
+    /// Device photo (iPhone 17 Pro Max): the cutout's bottom edge lands ≈44pt,
+    /// higher than the 16-era 51 — 8+62=70 puts the 24pt control row snug
+    /// beneath it with only a hairline of black in between.
+    static let dockHeight: CGFloat = 62
     static let dockWidth: CGFloat = 110     // narrower than every island (~120–140)
 
     var body: some View {
@@ -137,7 +140,7 @@ struct RadioMiniPlayer: View {
                 .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .padding(.bottom, 5)   // the visible chin — always below the cutout
+            .padding(.bottom, 4)   // the visible chin — snug under the cutout
         }
         .frame(width: Self.dockWidth, height: Self.dockHeight)
         .background(Color.black, in: UnevenRoundedRectangle(
