@@ -112,8 +112,12 @@ struct ChatView: View {
                     VStack(spacing: 0) {
                         header
                         VStack(spacing: Nuru.S.screen) {
-                            aiCard
-                            if query.isEmpty { verseCard }
+                            // Broadcast is a focused composer — drop the AI/verse
+                            // cards there so "Send to all" stays above the fold.
+                            if segment != .broadcast {
+                                aiCard
+                                if query.isEmpty { verseCard }
+                            }
                             segmentControl
                             segmentBody
                         }
@@ -124,7 +128,8 @@ struct ChatView: View {
                 }
                 .ignoresSafeArea(edges: .top)
                 .background(Nuru.paper.ignoresSafeArea())
-                fab
+                .scrollDismissesKeyboard(.interactively)
+                if segment != .broadcast { fab }   // the DM-compose FAB would sit on the Send button
                 if composeOpen { composeSheet }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: composeOpen)
