@@ -458,15 +458,10 @@ struct HomeView: View {
 
     // MARK: 0a — Nuru Radio ON AIR hero (pinned first, only while actually live)
 
-    /// Tapping opens the existing fullScreenCover player — RadioPlayerView
-    /// auto-opens the live program itself, so no route payload is needed.
+    /// The card itself starts/pauses the station through RadioCenter; tapping the
+    /// poster/title opens the player, which lands in the live studio.
     private func onAirCard(_ p: RadioProgram) -> some View {
-        HomeOnAirCard(
-            title: p.title,
-            speaker: p.speaker,
-            category: p.category,
-            artworkUrl: p.artworkUrl
-        ) { showRadio = true }
+        HomeOnAirCard(program: p) { showRadio = true }
     }
 
     // MARK: 2 — Next-action hero ("For you today" — real pathway numbers)

@@ -498,68 +498,99 @@ struct HomeGiveCard: View {
 // MARK: - Nuru Radio ON AIR hero (pinned FIRST on Home while a broadcast is live)
 
 /// Figma LiveNowCard adapted for radio — full-width navy media card: 16:9 artwork
-/// with LIVE badge, studio lights, "Nuru Radio" chip and the gold play disc, then
-/// title + speaker·category meta and a gold "Listen live" CTA. The WHOLE card is
-/// one button (disc and CTA are visuals inside it) → opens the radio player.
+/// (a warm on-air studio photo when the show has none) with LIVE badge, studio
+/// lights and the gold disc. The card IS the remote: the disc and the gold CTA
+/// start/pause the station through RadioCenter (so audio keeps going app-wide and
+/// the Dynamic Island / Lock Screen show the system playback wave, Apple-Music
+/// style), an equalizer wave animates on the card while it plays, and tapping the
+/// poster or title opens the live studio.
 struct HomeOnAirCard: View {
-    let title: String
-    let speaker: String?
-    let category: String
-    let artworkUrl: String?
+    let program: RadioProgram
     let onOpen: () -> Void
+    @ObservedObject private var radio = RadioCenter.shared
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
+    private var title: String { program.title }
+    private var isPlayingThis: Bool { radio.program?.id == program.id && radio.playing }
+
+    /// Warm on-air studio microphone — shown only when the program has no artwork.
+    private static let studioFallbackUrl =
+        URL(string: "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=1200&q=80")
+
     var body: some View {
-        Button(action: onOpen) {
-            VStack(spacing: 0) {
-                poster
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(title)
-                        .font(.fraunces(18, .semibold)).foregroundStyle(.white)
-                        .lineLimit(3).truncationMode(.tail)
-                        .fixedSize(horizontal: false, vertical: true)
-                    metaRow.padding(.top, 4)
+        VStack(spacing: 0) {
+            poster
+            VStack(alignment: .leading, spacing: 0) {
+                Button(action: onOpen) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                            .lineLimit(3).truncationMode(.tail)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        metaRow
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Button(action: togglePlay) {
                     HStack(spacing: 8) {
-                        Icon(.play, size: 15, color: HomeFig.navy)
-                        Text("Listen live").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                        if isPlayingThis {
+                            EqualizerWave(color: HomeFig.navy, barHeight: 14)
+                            Text("Pause radio").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                        } else {
+                            Icon(.play, size: 15, color: HomeFig.navy)
+                            Text("Listen live").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                        }
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(HomeFig.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.top, 12)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
+                .buttonStyle(.plain)
+                .padding(.top, 12)
             }
-            .background(HomeFig.navy)
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
         }
-        .buttonStyle(.plain)
+        .background(HomeFig.navy)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
         .onAppear {
             guard !reduceMotion else { return }   // pulses are decoration only
             withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
         }
     }
 
-    // 16:9 artwork with LIVE badge, studio lights, provider chip and gold play disc.
+    private func togglePlay() {
+        if isPlayingThis { radio.pause() } else { radio.tune(program) }
+    }
+
+    // 16:9 artwork with LIVE badge, studio lights, provider chip and gold disc.
+    // The poster opens the studio; the disc starts/pauses playback.
     private var poster: some View {
         ZStack {
-            Rectangle().fill(HomeFig.navy)
-            if let s = artworkUrl, let u = URL(string: s) {
-                // Contained fill image — oversized artwork must never inflate the
-                // 16:9 media box (same overflow class as the live-event card).
-                Color.clear.overlay {
-                    CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
-                        else { posterFallback }
+            Button(action: onOpen) {
+                ZStack {
+                    Rectangle().fill(HomeFig.navy)
+                    // Contained fill image — oversized artwork must never inflate
+                    // the 16:9 media box (same overflow class as the live-event card).
+                    if let u = (program.artworkUrl.flatMap(URL.init(string:))) ?? Self.studioFallbackUrl {
+                        Color.clear.overlay {
+                            CachedAsyncImage(url: u) { phase in
+                                if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
+                                else { posterFallback }
+                            }
+                        }
+                    } else {
+                        posterFallback
                     }
+                    LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.55)],
+                                   startPoint: .top, endPoint: .bottom)
                 }
-            } else {
-                posterFallback
+                .contentShape(Rectangle())
             }
-            LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.55)],
-                           startPoint: .top, endPoint: .bottom)
+            .buttonStyle(.plain)
             playDisc
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fill)
@@ -580,12 +611,20 @@ struct HomeOnAirCard: View {
     }
 
     private var playDisc: some View {
-        ZStack {
-            Circle().fill(HomeFig.gold).frame(width: 64, height: 64)
-                .shadow(color: HomeFig.gold.opacity(0.65), radius: 14, y: 7)
-            Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
-            Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2)
+        Button(action: togglePlay) {
+            ZStack {
+                Circle().fill(HomeFig.gold).frame(width: 64, height: 64)
+                    .shadow(color: HomeFig.gold.opacity(0.65), radius: 14, y: 7)
+                Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
+                if isPlayingThis {
+                    Image(systemName: "pause.fill")
+                        .font(.system(size: 24)).foregroundStyle(HomeFig.navy)
+                } else {
+                    Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2)
+                }
+            }
         }
+        .buttonStyle(.plain)
     }
 
     private var liveBadge: some View {
@@ -626,16 +665,51 @@ struct HomeOnAirCard: View {
         .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
     }
 
-    // Speaker · category with a dot separator — missing parts are omitted, and
-    // viewer counts are intentionally absent (no live-listener endpoint = no number).
+    // Speaker · category with a dot separator — missing parts are omitted. The
+    // listener count only appears when the backend reports a real number, and a
+    // small gold equalizer joins the row while this station is actually playing.
     private var metaRow: some View {
-        let bits = [speaker, category].compactMap { $0 }.filter { !$0.isEmpty }
+        let bits = [program.speaker, program.category].compactMap { $0 }.filter { !$0.isEmpty }
         return HStack(spacing: 6) {
+            if isPlayingThis { EqualizerWave(color: HomeFig.gold, barHeight: 12) }
             ForEach(Array(bits.enumerated()), id: \.offset) { i, bit in
                 if i > 0 { Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4) }
                 Text(bit).font(.inter(12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
+            if let n = program.peakListeners, n > 0 {
+                Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4)
+                Icon(.eye, size: 12, color: .white.opacity(0.7))
+                Text("\(n) listening").font(.inter(12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+            }
         }
+    }
+}
+
+// MARK: - Equalizer wave (Apple-Music-style dancing bars while radio plays)
+
+/// Five capsule bars bouncing on staggered, slightly-detuned loops so the wave
+/// reads organic rather than metronomic. Purely decorative — honors Reduce
+/// Motion by holding a static mid-height wave.
+struct EqualizerWave: View {
+    var color: Color = HomeFig.gold
+    var barHeight: CGFloat = 14
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dancing = false
+    // Each bar's full height as a share of barHeight — an uneven skyline.
+    private let peaks: [CGFloat] = [0.55, 1.0, 0.7, 0.9, 0.5]
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 2.5) {
+            ForEach(peaks.indices, id: \.self) { i in
+                Capsule().fill(color)
+                    .frame(width: 3, height: max(3, peaks[i] * barHeight * (dancing ? 1 : 0.3)))
+                    .animation(reduceMotion ? nil
+                               : .easeInOut(duration: 0.42 + Double(i) * 0.07).repeatForever(autoreverses: true),
+                               value: dancing)
+            }
+        }
+        .frame(height: barHeight)
+        .onAppear { dancing = true }
     }
 }
 
