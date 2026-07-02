@@ -154,6 +154,7 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @State private var playingVideo = false
     @State private var sharePayload: SharePayload?
+    @State private var showRadio = false
 
     // The five Grow tiles from the fresh Figma GrowGrid (exact tints/labels).
     private var growTiles: [GrowTile] {
@@ -309,18 +310,16 @@ struct HomeView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                // Radio / "on air" affordance — opens the live gathering when one is
-                // happening (or imminent), otherwise jumps to the Events tab.
-                Button {
-                    if let live = liveNowInfo { path.append(live.occ) }
-                    else { tabs.selected = .events }
-                } label: {
+                // Radio — opens the Nuru Radio player (live HLS via the new
+                // backend radio module, or the next scheduled program).
+                Button { showRadio = true } label: {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
                         .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
                         .background(Color.white, in: Circle())
                         .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain).padding(.leading, 8)
+                .fullScreenCover(isPresented: $showRadio) { RadioPlayerView() }
                 progressRing.padding(.leading, 8)
             }
             Text("\(greeting), \(firstName).")
