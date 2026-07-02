@@ -166,6 +166,9 @@ struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = HomeViewModel()
+    // The app-wide radio engine — observed so the floating mini player appears
+    // the moment a stream is tuned and vanishes when it's stopped.
+    @ObservedObject private var radio = RadioCenter.shared
     @State private var path = NavigationPath()
     @State private var playingVideo = false
     @State private var sharePayload: SharePayload?
@@ -273,6 +276,18 @@ struct HomeView: View {
                 try? await Task.sleep(nanoseconds: 45_000_000_000)
             }
         }
+        // Floating radio mini player — playback lives in RadioCenter, so closing
+        // the full player keeps the audio going; this pill (just above the tab
+        // bar) shows what's on and reopens the player on tap.
+        .overlay(alignment: .bottom) {
+            if radio.program != nil && !showRadio {
+                RadioMiniPlayer { showRadio = true }
+                    .padding(.horizontal, Nuru.S.base)
+                    .padding(.bottom, 46)   // clears the custom navy tab bar
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.25), value: radio.program == nil)
     }
 
     /// DEBUG-only: deep-link into a pushed screen for screenshot verification
