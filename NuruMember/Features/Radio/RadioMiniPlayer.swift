@@ -68,25 +68,22 @@ struct RadioMiniPlayer: View {
     init(onOpen: @escaping () -> Void) { self.onOpen = onOpen }
 
     // ── Hardware geometry ──────────────────────────────────────────────
-    /// True on Dynamic Island phones (top safe-area inset ≥ 51pt). There the
-    /// capsule WRAPS the hardware cutout — black wings extending left and
-    /// right of the island, exactly the Apple-Music-mini illusion. Elsewhere
-    /// it stays a free-floating capsule below the status bar.
+    /// True on Dynamic Island phones (top safe-area inset ≥ 51pt). Apps cannot
+    /// draw INSIDE the cutout (iOS composites the black island over foreground
+    /// apps — Apple Music's in-island wave is the SYSTEM's, shown once the app
+    /// backgrounds; ours does that too via Now Playing). In-app we hang a slim
+    /// dock off the island's bottom edge instead: narrower than the cutout and
+    /// overlapping its bottom curve, so black merges into black and it reads
+    /// as the island growing a chin with a living wave.
     static var isIslandDevice: Bool { topInset >= 51 }
     static var topInset: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
-    /// The island cutout is ~126×37 with its top edge ~11pt down, centered.
-    /// Wings must stay SLIM: the status bar leaves roughly 100pt for the clock
-    /// on the left and the wifi/battery cluster from ~345pt on the right
-    /// (440pt-wide Pro Max), so total capsule width must stay ≤ ~210pt or it
-    /// collides with system chrome. 2×40 + 118 = 198 → spans 121…319, clear
-    /// of both sides on every current island device (the narrower phones have
-    /// proportionally narrower status clusters at the same 126pt cutout).
-    private static let islandWidth: CGFloat = 126
-    private static let islandHeight: CGFloat = 37
-    private static let wingWidth: CGFloat = 40
+    /// Cutout ≈ 126×37 with its top edge ~11pt down. The dock tucks under it:
+    /// y = 11 + 37 − overlap. Never wider than the island, never beside it —
+    /// so it can't collide with the clock or the wifi/battery cluster.
+    static var dockTop: CGFloat { isIslandDevice ? 41 : topInset + 4 }
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -94,55 +91,53 @@ struct RadioMiniPlayer: View {
         // content directly, SwiftUI would pop it in with no animation).
         ZStack {
             if center.program != nil {
-                if Self.isIslandDevice { islandCapsule } else { floatingCapsule }
+                if Self.isIslandDevice { islandDock } else { floatingCapsule }
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    // ── Island-hugging capsule (wings around the hardware cutout) ─────
-    // Symmetric wings keep the middle gap perfectly centered on the cutout;
-    // the phone's own black island fills the gap, so capsule + hardware read
-    // as ONE expanded island with a living wave.
-    private var islandCapsule: some View {
-        HStack(spacing: 0) {
+    // ── Island dock (hangs from the cutout's bottom edge) ──────────────
+    private var islandDock: some View {
+        HStack(spacing: 7) {
             Button {
                 Haptics.tap()
                 onOpen()
             } label: {
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     pulsingDot
-                    RadioMiniWave(playing: center.playing, count: 5, height: 12)
+                    RadioMiniWave(playing: center.playing, count: 6, height: 10)
                 }
-                .frame(width: Self.wingWidth, height: Self.islandHeight)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open Nuru Radio")
-
-            // The hardware island lives here — leave it to the phone.
-            Color.clear.frame(width: Self.islandWidth - 8, height: Self.islandHeight)
 
             Button {
                 Haptics.tap()
                 center.togglePlay()
             } label: {
                 Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 11, weight: .bold))
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
-                    .offset(x: center.playing ? 0 : 1)
-                    .frame(width: Self.wingWidth, height: Self.islandHeight)
-                    .contentShape(Rectangle())
+                    .offset(x: center.playing ? 0 : 0.5)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Circle())
             }
             .buttonStyle(.plain)
             .animation(.easeInOut(duration: 0.2), value: center.playing)
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
-        .frame(height: Self.islandHeight)   // exactly the cutout's height — never taller
-        .background(Color.black, in: Capsule())
-        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-        .transition(.scale(scale: 0.6).combined(with: .opacity))
+        .padding(.horizontal, 12)
+        .frame(height: 26)
+        // Squared top / round bottom — the seam hides under the island's own
+        // bottom curve, so dock + cutout read as one black shape.
+        .background(Color.black, in: UnevenRoundedRectangle(
+            topLeadingRadius: 6, bottomLeadingRadius: 13,
+            bottomTrailingRadius: 13, topTrailingRadius: 6, style: .continuous))
+        .shadow(color: .black.opacity(0.25), radius: 5, y: 3)
+        .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
 

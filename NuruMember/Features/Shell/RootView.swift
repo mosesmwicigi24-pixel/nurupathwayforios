@@ -122,7 +122,7 @@ struct RootView: View {
                 && !(tabs.selected == .home && tabs.onAirBarVisible) {
                 VStack(spacing: 0) {
                     RadioMiniPlayer { radioOpen = true }
-                        .padding(.top, RadioMiniPlayer.isIslandDevice ? 11 : Self.safeAreaTop + 4)
+                        .padding(.top, RadioMiniPlayer.dockTop)
                     Spacer(minLength: 0)
                 }
                 .ignoresSafeArea(edges: .top)
