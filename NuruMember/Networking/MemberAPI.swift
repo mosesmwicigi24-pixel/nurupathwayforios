@@ -560,6 +560,18 @@ extension MemberAPI {
         return try await APIClient.shared.post("chat/dms", body: Body(userId: peerUserId), as: Res.self).conversationId
     }
 
+    /// POST /chat/broadcast — staff only (Instructor+; the server 403s Students):
+    /// ONE message delivered to every active member of the congregation as an
+    /// individual DM from the sender — replies come back as normal 1:1 threads.
+    /// Returns how many members it reached. Replays of the same clientMutationId
+    /// are server-side no-ops (§3.6).
+    static func broadcast(body: String, clientMutationId: String = UUID().uuidString) async throws -> Int {
+        struct Body: Encodable { let body: String; let clientMutationId: String }
+        struct Res: Decodable { let sent: Int }
+        return try await APIClient.shared.post("chat/broadcast",
+            body: Body(body: body, clientMutationId: clientMutationId), as: Res.self).sent
+    }
+
     /// POST /chat/spaces/{id}/join — follow a public space.
     static func joinChatSpace(_ conversationId: String) async throws {
         _ = try await APIClient.shared.postEmpty("chat/spaces/\(conversationId)/join", as: EmptyResponse.self)

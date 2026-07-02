@@ -67,7 +67,7 @@ final class ChatInboxViewModel: ObservableObject {
     private let defaultVerseText = "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”"
 }
 
-private enum ChatSegment: Int, CaseIterable { case space, dm, group }
+private enum ChatSegment: Int, CaseIterable { case space, dm, group, broadcast }
 private enum ChatDest: Hashable { case notifications }
 
 // Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
@@ -305,10 +305,40 @@ struct ChatView: View {
             segmentButton(.space, "#My Space", vm.spaces.count)
             segmentButton(.dm, "DM", vm.dms.count)
             segmentButton(.group, "My Groups", vm.groups.count)
+            if isStaff { broadcastSegmentButton }
         }
         .padding(4)
         .background(Color.white.opacity(0.7), in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+    }
+
+    /// Staff gate for the Broadcast composer — mirrors the server's
+    /// requireRole("Instructor"): any role above Student (Instructor, Admin,
+    /// SuperAdmin). The server 403s Students regardless; this only hides the UI.
+    private var isStaff: Bool {
+        guard let role = auth.profile?.role, !role.isEmpty else { return false }
+        return role != "Student"
+    }
+
+    // Megaphone pill — 4th segment, staff only (no count chip; it's a composer).
+    private var broadcastSegmentButton: some View {
+        let selected = segment == .broadcast
+        return Button { withAnimation(.easeInOut(duration: 0.15)) { segment = .broadcast } } label: {
+            HStack(spacing: 5) {
+                Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x68758A))
+                Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x68758A))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(
+                selected
+                    ? AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x16273F)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(Color.clear),
+                in: Capsule())
+            .shadow(color: selected ? Color(hex: 0x0B1F33).opacity(0.35) : .clear, radius: 8, y: 4)
+        }
+        .buttonStyle(.plain)
     }
 
     private func segmentButton(_ seg: ChatSegment, _ label: String, _ count: Int) -> some View {
@@ -348,6 +378,8 @@ struct ChatView: View {
             case .space: spaceList
             case .dm: dmList
             case .group: groupList
+            case .broadcast:
+                if isStaff { BroadcastComposer(peopleCount: vm.people.count) }
             }
         }
     }
@@ -975,6 +1007,108 @@ private struct DiscoverSpaceRow: View {
         if let t = space.topic, !t.isEmpty { return "\(t) · \(members)" }
         if let c = space.category, !c.isEmpty { return "\(c) · \(members)" }
         return "Public space · \(members)"
+    }
+}
+
+// MARK: - Broadcast composer (staff only — ONE message → every member as a DM)
+
+// The Broadcast segment body: an inspiring composer card. What the admin writes
+// here is fanned out server-side (POST /chat/broadcast) as an individual DM to
+// every member of the congregation — replies arrive back as normal 1:1 threads.
+private struct BroadcastComposer: View {
+    let peopleCount: Int
+    @State private var text = ""
+    @State private var confirming = false
+    @State private var sending = false
+    @State private var sentTo: Int?
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(spacing: 12) {
+                Icon(.megaphone, size: 19, color: .white)
+                    .frame(width: 44, height: 44)
+                    .background(storyRing, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: Nuru.gold.opacity(0.45), radius: 7, y: 4)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Reach every member")
+                        .font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
+                    Text("BROADCAST · STAFF ONLY")
+                        .font(.inter(9, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                }
+            }
+            TextField("", text: $text,
+                      prompt: Text("Write the message every member should receive…").foregroundColor(Color(hex: 0x9CA3AF)),
+                      axis: .vertical)
+                .font(.inter(14)).foregroundStyle(Nuru.navy)
+                .lineLimit(5...10)
+                .lineSpacing(4)
+                .padding(Nuru.S.md)
+                .background(Nuru.paper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .disabled(sending)
+            Text("Delivers as a personal message to \(peopleCount) member\(peopleCount == 1 ? "" : "s") · replies come back to you individually")
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x8A93A0)).lineSpacing(3)
+            if let n = sentTo {
+                HStack(spacing: 6) {
+                    Icon(.checkCircle2, size: 14, color: Color(hex: 0x15803D))
+                    Text("Sent to \(n) member\(n == 1 ? "" : "s") ✓")
+                        .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x15803D))
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(hex: 0x16A34A, alpha: 0.09), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            }
+            if let e = errorText {
+                Text(e).font(.inter(11)).foregroundStyle(Color(hex: 0xB91C1C))
+            }
+            Button { confirming = true } label: {
+                Group {
+                    if sending {
+                        ProgressView().tint(.white)
+                    } else {
+                        HStack(spacing: 6) {
+                            Icon(.send, size: 13, color: .white)
+                            Text("Send to all").font(.inter(13, .bold)).foregroundStyle(.white)
+                        }
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 48)
+                .background(storyRing, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: Nuru.gold.opacity(0.5), radius: 9, y: 5)
+                .opacity(canSend ? 1 : 0.45)
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .confirmationDialog("Send to \(peopleCount) member\(peopleCount == 1 ? "" : "s")?",
+                                isPresented: $confirming, titleVisibility: .visible) {
+                Button("Send to all — this can’t be undone", role: .destructive) { Task { await send() } }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Every member receives this as a personal message from you. There is no way to unsend it.")
+            }
+        }
+        .padding(Nuru.S.base)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
+    private var canSend: Bool {
+        !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !sending
+    }
+
+    private func send() async {
+        sending = true; errorText = nil; sentTo = nil
+        defer { sending = false }
+        do {
+            let n = try await MemberAPI.broadcast(body: text.trimmingCharacters(in: .whitespacesAndNewlines))
+            sentTo = n
+            text = ""
+        } catch {
+            errorText = "Couldn’t send the broadcast — please try again."
+        }
     }
 }
 
