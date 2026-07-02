@@ -303,7 +303,12 @@ struct HomeView: View {
                     }
                 }
                 .buttonStyle(.plain)
-                Button { } label: {
+                // Radio / "on air" affordance — opens the live gathering when one is
+                // happening (or imminent), otherwise jumps to the Events tab.
+                Button {
+                    if let live = liveNowInfo { path.append(live.occ) }
+                    else { tabs.selected = .events }
+                } label: {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
                         .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
                         .background(Color.white, in: Circle())
@@ -825,7 +830,10 @@ struct HomeView: View {
                 }.buttonStyle(.plain)
             }
             TabView {
-                ForEach(vm.disciplers) { d in disciplerView(d) }
+                ForEach(vm.disciplers) { d in
+                    NavigationLink(value: AppRoute.mentor) { disciplerView(d) }
+                        .buttonStyle(.plain)
+                }
             }
             .tabViewStyle(.page(indexDisplayMode: .always))
             .frame(height: 150)
@@ -1106,11 +1114,14 @@ struct HomeView: View {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(growTiles.indices, id: \.self) { i in
                     let t = growTiles[i]
-                    NavigationLink(value: t.dest) { growTileView(t) }
+                    growTileLink(t)
                         .buttonStyle(.plain)
                         // "New today" cue on the devotional — a gentle pull to start.
+                        // (Decoration only — must never intercept the tile's tap.)
                         .overlay(alignment: .topTrailing) {
-                            if i == 0 { HomePulseDot().offset(x: 2, y: -2) }
+                            if i == 0 {
+                                HomePulseDot().offset(x: 2, y: -2).allowsHitTesting(false)
+                            }
                         }
                 }
             }
@@ -1133,6 +1144,21 @@ struct HomeView: View {
         }
         .padding(Nuru.S.md)
         .cardSurface()
+    }
+
+    /// `NavigationLink(value:)` must carry a CONCRETE Hashable — pushing the tile's
+    /// `AnyHashable` box matches no registered `navigationDestination`, so SwiftUI
+    /// silently DISABLES the link (the "dead Grow tiles" bug). Unwrap to the real
+    /// route type before building the link.
+    @ViewBuilder
+    private func growTileLink(_ t: GrowTile) -> some View {
+        if let g = t.dest as? GrowDestination {
+            NavigationLink(value: g) { growTileView(t) }
+        } else if let c = t.dest as? CommunityRoute {
+            NavigationLink(value: c) { growTileView(t) }
+        } else {
+            growTileView(t)   // unreachable with the current tile set
+        }
     }
 
     private func growTileView(_ t: GrowTile) -> some View {
