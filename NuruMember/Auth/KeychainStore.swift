@@ -17,7 +17,11 @@ enum Keychain {
         guard let value, let data = value.data(using: .utf8) else { return }
         var add = query
         add[kSecValueData as String] = data
-        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+        // ThisDeviceOnly: tokens/keys never migrate via backup or to a new device
+        // (§5.7); set() is delete+re-add, so pre-existing items upgrade on next write.
+        add[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+        // Explicit: session secrets must never sync to iCloud Keychain.
+        add[kSecAttrSynchronizable as String] = false
         SecItemAdd(add as CFDictionary, nil)
     }
 

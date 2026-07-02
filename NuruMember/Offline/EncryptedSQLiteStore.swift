@@ -59,6 +59,14 @@ actor EncryptedSQLiteStore: LocalStore {
                 domain TEXT NOT NULL, row_id TEXT NOT NULL, body BLOB NOT NULL,
                 updated_at REAL NOT NULL, PRIMARY KEY (domain, row_id));
         """)
+        // The WAL sidecars hold the same sensitive pages as the main DB; the
+        // CREATE TABLEs above materialize them, so stamp the protection class
+        // here too (best-effort — the directory default already matches).
+        for suffix in ["-wal", "-shm"] {
+            try? FileManager.default.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: url.path + suffix)
+        }
     }
 
     deinit { if db != nil { sqlite3_close(db) } }
@@ -173,6 +181,9 @@ actor EncryptedSQLiteStore: LocalStore {
 
     private static func loadOrCreateKey() -> SymmetricKey {
         if let b64 = Keychain.get("offline.dbkey"), let raw = Data(base64Encoded: b64) {
+            // Re-write on load so a key created before the ThisDeviceOnly
+            // hardening picks up the stricter Keychain class (set() = delete+re-add).
+            Keychain.set(b64, for: "offline.dbkey")
             return SymmetricKey(data: raw)
         }
         let fresh = SymmetricKey(size: .bits256)

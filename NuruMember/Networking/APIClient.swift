@@ -74,6 +74,22 @@ actor APIClient {
         return e
     }()
 
+    /// Dedicated session (not `URLSession.shared`): bounded timeouts, fail-fast
+    /// when offline (the app must fall through to its cache immediately, §1.7),
+    /// and no cookie/credential persistence — auth is bearer-JWT only (§1.3).
+    private static let session: URLSession = {
+        let c = URLSessionConfiguration.default
+        c.timeoutIntervalForRequest = 30    // Argon2id endpoints can take seconds (§5.5)
+        c.timeoutIntervalForResource = 120  // hard ceiling for one whole transfer
+        c.waitsForConnectivity = false      // offline-first: surface .offline now, don't wait
+        c.httpShouldSetCookies = false      // bearer tokens only — never send cookies
+        c.httpCookieAcceptPolicy = .never   // …and never store any the server sets
+        c.httpCookieStorage = nil
+        c.urlCredentialStorage = nil        // no URL-auth credentials to persist
+        c.urlCache = URLCache.shared        // the disk cache sized by configureNuruCaches()
+        return URLSession(configuration: c)
+    }()
+
     init() {
         baseURL = Self.resolveBaseURL()
         accessToken = Keychain.get(atKey)
@@ -170,7 +186,7 @@ actor APIClient {
 
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await Self.session.data(for: req)
         } catch let urlErr as URLError {
             if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
                 throw APIError.offline
@@ -229,7 +245,7 @@ actor APIClient {
 
         let data: Data, response: URLResponse
         do {
-            (data, response) = try await URLSession.shared.data(for: req)
+            (data, response) = try await Self.session.data(for: req)
         } catch let urlErr as URLError {
             if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
                 throw APIError.offline
@@ -290,7 +306,7 @@ actor APIClient {
         req.timeoutInterval = 30   // bound the boot refresh so it can't stall the app
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? encoder.encode(Body(refreshToken: rt))
-        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+        guard let (data, resp) = try? await Self.session.data(for: req),
               let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
               let session = try? decoder.decode(Session.self, from: data) else {
             clearSession()

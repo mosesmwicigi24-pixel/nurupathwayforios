@@ -12,6 +12,7 @@
 // so a given URL is fetched + decoded at most once per cold start.
 import SwiftUI
 import UIKit
+import ImageIO
 
 /// Process-wide cache of decoded images, sized by pixel cost. Sits on top of the
 /// disk `URLCache` so repeat appearances are an O(1) dictionary hit.
@@ -33,8 +34,8 @@ final class NuruImageCache {
 }
 
 /// Size the shared HTTP cache generously and wire it before any request runs.
-/// `URLSession.shared` (used by both the API client and image loads) honours
-/// `URLCache.shared`, so this also disk-caches cacheable API GETs for free.
+/// Image loads go through `URLSession.shared`, and the API client's dedicated
+/// session points at `URLCache.shared` too — so both share this one disk cache.
 func configureNuruCaches() {
     URLCache.shared = URLCache(
         memoryCapacity: 32 * 1024 * 1024,   // 32 MB
@@ -100,7 +101,26 @@ struct CachedAsyncImage<Content: View>: View {
     /// Decode off the main actor so large hero images never hitch the UI.
     private static func decode(_ data: Data, scale: CGFloat) async -> UIImage? {
         await Task.detached(priority: .userInitiated) {
-            UIImage(data: data, scale: scale)
+            // Downsample oversized originals at decode time (ImageIO thumbnail
+            // API) so a huge camera upload never inflates to a full-size bitmap
+            // in memory — 2400px covers 2x/3x hero cards with room to spare.
+            let maxPixels: CGFloat = 2400
+            if let src = CGImageSourceCreateWithData(data as CFData, nil),
+               let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+               let w = props[kCGImagePropertyPixelWidth] as? CGFloat,
+               let h = props[kCGImagePropertyPixelHeight] as? CGFloat,
+               max(w, h) > maxPixels {
+                let opts: [CFString: Any] = [
+                    kCGImageSourceCreateThumbnailFromImageAlways: true,
+                    kCGImageSourceThumbnailMaxPixelSize: maxPixels,
+                    kCGImageSourceCreateThumbnailWithTransform: true, // bake in EXIF orientation
+                    kCGImageSourceShouldCacheImmediately: true,       // decode now, off-main
+                ]
+                if let cg = CGImageSourceCreateThumbnailAtIndex(src, 0, opts as CFDictionary) {
+                    return UIImage(cgImage: cg, scale: scale, orientation: .up)
+                }
+            }
+            return UIImage(data: data, scale: scale)
         }.value
     }
 }
