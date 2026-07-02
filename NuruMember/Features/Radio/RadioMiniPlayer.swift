@@ -80,18 +80,16 @@ struct RadioMiniPlayer: View {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
-    /// GAP-PROOF geometry: cutout metrics drift per generation (14 Pro ≈ y11
-    /// h37; 16/17 Pro Max, inset 62, ≈ bottom 51 — but Apple moves it a few
-    /// points every year). So the dock's black body STARTS ABOVE any island
-    /// top (y=8) and runs down behind the cutout; iOS's island mask hides
-    /// everything it covers, and the controls are bottom-aligned BELOW any
-    /// possible island bottom. Whatever the true cutout, black meets black —
-    /// a gap is geometrically impossible.
-    static var dockTop: CGFloat { isIslandDevice ? 8 : topInset + 4 }
-    /// Device photo (iPhone 17 Pro Max): the cutout's bottom edge lands ≈44pt,
-    /// higher than the 16-era 51. Dock 8→60 leaves a SLIM ~16pt visible chin —
-    /// just enough for the miniature dot/wave/pause row, nothing more.
-    static let dockHeight: CGFloat = 52
+    /// BROW geometry: the island is a physical HOLE in the display — no pixels
+    /// exist inside it, so content can never sit "in front" of it. What DOES
+    /// exist is the thin strip of live screen between the phone's top edge and
+    /// the cutout (top edge ≈ y 8–12 on island devices). The dock is a black
+    /// brow riding that strip: body from y=0 down INTO the cutout region (the
+    /// hole swallows whatever overlaps it, so the merge is seamless on every
+    /// island geometry), with the miniature wave row TOP-aligned in the
+    /// visible sliver above the island.
+    static var dockTop: CGFloat { isIslandDevice ? 0 : topInset + 4 }
+    static let dockHeight: CGFloat = 30     // 0…30 — bottom half swallowed by the cutout
     static let dockWidth: CGFloat = 96      // narrower than every island (~120–140)
 
     var body: some View {
@@ -106,18 +104,18 @@ struct RadioMiniPlayer: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    // ── Island dock (black body behind the cutout, controls in the chin) ──
+    // ── Island brow (wave rides the strip ABOVE the cutout) ────────────
     private var islandDock: some View {
         VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Button {
                     Haptics.tap()
                     onOpen()
                 } label: {
-                    HStack(spacing: 4) {
-                        pulsingDot
-                        RadioMiniWave(playing: center.playing, count: 6, height: 7)
+                    HStack(spacing: 3) {
+                        Circle().fill(Color(hex: 0xEF4444)).frame(width: 3, height: 3)
+                            .opacity(dotDim ? 0.2 : 1)
+                        RadioMiniWave(playing: center.playing, count: 6, height: 6)
                     }
                     .contentShape(Rectangle())
                 }
@@ -129,26 +127,29 @@ struct RadioMiniPlayer: View {
                     center.togglePlay()
                 } label: {
                     Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 9, weight: .bold))
+                        .font(.system(size: 6, weight: .bold))
                         .foregroundStyle(Nuru.gold)
                         .contentTransition(.symbolEffect(.replace))
-                        .offset(x: center.playing ? 0 : 0.5)
-                        .frame(width: 14, height: 14)
+                        .frame(width: 12, height: 8)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .padding(.bottom, 3)   // the visible chin — a slim sliver under the cutout
+            .padding(.top, 1)   // the visible brow — the sliver above the cutout
+            Spacer(minLength: 0)
         }
         .frame(width: Self.dockWidth, height: Self.dockHeight)
         .background(Color.black, in: UnevenRoundedRectangle(
-            topLeadingRadius: 18, bottomLeadingRadius: 12,
-            bottomTrailingRadius: 12, topTrailingRadius: 18, style: .continuous))
-        .shadow(color: .black.opacity(0.22), radius: 5, y: 3)
+            topLeadingRadius: 10, bottomLeadingRadius: 18,
+            bottomTrailingRadius: 18, topTrailingRadius: 10, style: .continuous))
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { dotDim = true }
+        }
     }
 
     // ── Free-floating capsule (notch / older devices) ──────────────────
