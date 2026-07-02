@@ -155,14 +155,14 @@ struct HomeView: View {
     @State private var playingVideo = false
     @State private var sharePayload: SharePayload?
 
+    // The five Grow tiles from the fresh Figma GrowGrid (exact tints/labels).
     private var growTiles: [GrowTile] {
         [
-            GrowTile(label: "Devotional", sub: "Today's devotional", icon: .sun, tint: 0xFFF4DA, fg: 0xA87F2E, dest: GrowDestination.devotional),
+            GrowTile(label: "Devotional", sub: "Today's devotional", icon: .sun, tint: 0xFFF4DA, fg: 0x9A7A2A, dest: GrowDestination.devotional),
             GrowTile(label: "Reading plan", sub: "Continue your plan", icon: .bookMarked, tint: 0xEEF2FF, fg: 0x6366F1, dest: GrowDestination.readingPlans),
-            GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFFF4DA, fg: 0xA87F2E, dest: GrowDestination.memoryVerses),
-            GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF3E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
-            GrowTile(label: "Resources", sub: "Books, audio & teaching", icon: .bookOpen, tint: 0xE8EDFB, fg: 0x4F63C4, dest: GrowDestination.resources),
-            GrowTile(label: "Prayer Wall", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xB91C1C, dest: CommunityRoute.prayerWall),
+            GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFEF3C7, fg: 0xB45309, dest: GrowDestination.memoryVerses),
+            GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF5E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
+            GrowTile(label: "Prayer Wall", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
         ]
     }
 
@@ -172,8 +172,14 @@ struct HomeView: View {
     // (deeply-generic) type is demangled ONE AT A TIME here — in a shallow stack —
     // as its AnyView box is built. `some View` groups and even AnyView-of-6 still
     // forced the runtime to decode several cards' types together and overflowed.
+    // Section order mirrors the fresh Figma HomeTab return block exactly:
+    // LiveNow → Priority → continue hero → video → verse → pray → plans/journal →
+    // this week → disciplers → announcement → continue level → rhythm → Priority
+    // (repeat) → progress → Grow → Upcoming → encouragement → cohort → give.
     private var feedSections: [AnyView] {
         var s: [AnyView] = []
+        if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
+        if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
         if let v = vm.welcomeVideo { s.append(AnyView(welcomeVideoCard(v))) }           // 3
         s.append(AnyView(verseCard))                                                    // 4
@@ -193,14 +199,13 @@ struct HomeView: View {
         if let a = vm.featuredAnnouncement { s.append(AnyView(featuredAnnouncementCard(a))) } // 9
         s.append(AnyView(continueLevelCard))                                            // 10
         s.append(AnyView(rhythmCard))                                                   // 11
-        if !vm.rhythm.reflection, let a = active { s.append(AnyView(reflectionBanner(a))) } // 12
+        if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(AnyView(progressCard(sc))) }                   // 13
-        s.append(AnyView(growCard))                                                     // 14
-        s.append(AnyView(upcomingCard))                                                 // 15
+        s.append(AnyView(growSection))                                                  // 14
+        s.append(AnyView(upcomingSection))                                              // 15
         s.append(AnyView(oneReflectionBanner))                                          // 16
-        s.append(AnyView(cohortCard))                                                   // 17
-        if !vm.announcements.isEmpty { s.append(AnyView(announcementsCard)) }           // 18
-        s.append(AnyView(giveBanner))                                                   // 19
+        s.append(AnyView(cohortSection))                                                // 17
+        s.append(AnyView(giveBanner))                                                   // 18
         return s
     }
 
@@ -349,38 +354,73 @@ struct HomeView: View {
         .frame(width: 42, height: 42)
     }
 
-    // MARK: 2 — Next-action hero
+    // MARK: 0 — Live now (driven by REAL calendar occurrences; no fake stream data)
+
+    /// A worship-ish gathering that is happening right now (live) or starts within
+    /// the hour (soon). No live-stream endpoint exists, so the card routes to the
+    /// real event detail and never shows invented viewer counts.
+    private var liveNowInfo: (occ: CalendarOccurrence, startsInMin: Int?)? {
+        let now = Date()
+        for occ in vm.events {
+            guard isWorshipish(occ), let start = parseISO(occ.startAt) else { continue }
+            let end = parseISO(occ.endAt) ?? start.addingTimeInterval(2 * 3600)
+            if start <= now, now <= end { return (occ, nil) }
+            let mins = Int(start.timeIntervalSince(now) / 60)
+            if mins > 0, mins <= 60 { return (occ, mins) }
+        }
+        return nil
+    }
+
+    private func isWorshipish(_ occ: CalendarOccurrence) -> Bool {
+        let hay = "\(occ.category ?? "") \(occ.title)".lowercased()
+        return hay.contains("worship") || hay.contains("service") || hay.contains("praise") || hay.contains("church")
+    }
+
+    private func liveNowCard(_ info: (occ: CalendarOccurrence, startsInMin: Int?)) -> some View {
+        HomeLiveNowCard(
+            title: info.occ.title,
+            location: info.occ.location,
+            posterUrl: info.occ.primaryImageUrl,
+            startsInMin: info.startsInMin
+        ) { path.append(info.occ) }
+    }
+
+    // MARK: 1 — Priority strip (reflection due; appears at top AND before progress)
+
+    private var reflectionDue: Bool {
+        !vm.rhythm.reflection && (vm.nextAction != nil || active != nil)
+    }
+
+    private var priorityStrip: some View {
+        HomePriorityStrip(
+            title: "Reflection due today",
+            meta: vm.nextAction?.title ?? active?.title ?? "Today's module",
+            cta: "Start reflection"
+        ) {
+            if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
+            else { path.append(PathwayRoute.level(active?.levelNumber ?? 1)) }
+        }
+    }
+
+    // MARK: 2 — Next-action hero ("For you today" — real pathway numbers)
 
     private func heroCard(_ a: NextAction) -> some View {
-        Button {
+        let done = active?.completedModules ?? 0
+        let total = active?.totalModules ?? 0
+        let pct = total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
+        return HomeResumeHero(
+            title: a.title,
+            meta: total > 0 ? "Level \(active?.levelNumber ?? 1) · \(done) of \(total) modules" : a.body,
+            pct: pct,
+            note: a.body,
+            ctaLabel: a.ctaLabel
+        ) {
             if a.route == "module", let m = a.params?.moduleId {
                 path.append(PathwayRoute.module(m))
             } else if let lvl = active?.levelNumber {
                 path.append(PathwayRoute.level(lvl))
             }
-        } label: {
-            HStack(spacing: Nuru.S.md) {
-                RoundedRectangle(cornerRadius: 2).fill(heroAccent(a.accent)).frame(width: 4)
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("FOR YOU TODAY").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldGlow)
-                    Text(a.title).font(.fraunces(19, .semibold)).foregroundStyle(Nuru.onNavy).padding(.top, 4)
-                    Text(a.body).font(.nCaption).foregroundStyle(Nuru.onNavyDim).padding(.top, 4)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    HStack(spacing: 4) {
-                        Text(a.ctaLabel).font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                        Icon(.chevronRight, size: 14, color: Nuru.navyDeep)
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(Nuru.gold, in: Capsule())
-                    .padding(.top, Nuru.S.md)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(Nuru.S.base)
-            .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-            .nuruShadow()
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: 3 — Featured welcome video
@@ -390,17 +430,15 @@ struct HomeView: View {
         let liked = v.liked ?? false
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Nuru.S.sm) {
-                BrandMark(size: 30)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Nuru Pathway").font(.inter(13, .bold)).foregroundStyle(Nuru.ink)
-                    Text("Welcome").font(.nMicro).foregroundStyle(Nuru.faint)
-                }
+                BrandMark(size: 28)
+                Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                Icon(.badgeCheck, size: 14, color: Nuru.gold)
                 Spacer(minLength: 0)
-                Text("FEATURED").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.faint)
+                Text("FEATURED").font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(HomeFig.metaGray)
             }
             .padding(Nuru.S.base)
 
-            // Plays inline, pinned to the card's 16:9 box — never opens Safari.
+            // Plays inline, pinned to the card's inset 16:9 box — never opens Safari.
             Group {
                 if playingVideo {
                     InlineVideoPlayer(video: v)
@@ -411,13 +449,16 @@ struct HomeView: View {
                     Button { playingVideo = true } label: { videoThumb(v) }.buttonStyle(.plain)
                 }
             }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .padding(.horizontal, Nuru.S.base)
 
             VStack(alignment: .leading, spacing: 0) {
                 if let cap = v.caption, !cap.isEmpty {
-                    Text(cap).font(.fraunces(17, .semibold)).foregroundStyle(Nuru.ink)
+                    // Clean sans title block (Figma) — the serif stays on ceremony cards.
+                    Text(cap).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
                 }
                 Text("Start here — what the journey looks like")
-                    .font(.nCaption).foregroundStyle(Nuru.muted).padding(.top, 2)
+                    .font(.inter(13)).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
                 HStack(spacing: 6) {
                     Button { Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {
@@ -458,32 +499,37 @@ struct HomeView: View {
             .padding(Nuru.S.base)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(Color(hex: 0xEEF0F3), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow()
     }
 
     private func videoThumb(_ v: WelcomeVideo) -> some View {
         ZStack {
-            Rectangle().fill(Nuru.mutedBg)
+            Rectangle().fill(Color(hex: 0xD6DADE))
             if let s = v.thumbnailUrl, let u = URL(string: s) {
                 CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill() }
-                    else { Rectangle().fill(Nuru.mutedBg) }
+                    if let img = phase.image { img.resizable().scaledToFill().opacity(0.95) }
+                    else { Rectangle().fill(Color(hex: 0xD6DADE)) }
                 }
             }
+            LinearGradient(colors: [Color(hex: 0x0F141E).opacity(0), Color(hex: 0x0F141E).opacity(0.45)],
+                           startPoint: .top, endPoint: .bottom)
+            // Gold play disc — navy glyph, white inset ring, gold glow (Figma).
             ZStack {
-                Circle().fill(Color.black.opacity(0.45)).frame(width: 60, height: 60)
-                Icon(.play, size: 24, color: .white)
+                Circle().fill(Nuru.gold).frame(width: 64, height: 64)
+                    .shadow(color: Nuru.gold.opacity(0.5), radius: 14, y: 7)
+                Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
+                Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2)
             }
             if let d = v.durationSec, d > 0 {
                 VStack {
                     Spacer()
                     HStack {
                         Spacer()
-                        Text(durationLabel(d)).font(.inter(10, .bold)).foregroundStyle(.white)
+                        Text(durationLabel(d)).font(.inter(10, .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 3)
-                            .background(Color.black.opacity(0.6), in: Capsule())
+                            .background(Color(hex: 0x0F141E).opacity(0.7), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .padding(8)
                     }
                 }
@@ -502,58 +548,58 @@ struct HomeView: View {
                 Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
                 Text("VERSE FOR TODAY").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
-                Text(vm.verse?.version ?? "WEB").font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
+                Text((vm.verse?.version ?? "WEB").uppercased())
+                    .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(Nuru.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
             }
             Text(vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”")
-                .font(.fraunces(18)).foregroundStyle(Nuru.ink).lineSpacing(5).padding(.top, Nuru.S.md)
+                .font(.fraunces(18)).foregroundStyle(HomeFig.navy).lineSpacing(5).padding(.top, Nuru.S.md)
             Text("\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")")
-                .font(.inter(12, .medium)).foregroundStyle(Nuru.ink600).padding(.top, Nuru.S.sm)
+                .font(.inter(13, .semibold)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.sm)
             if let reason = vm.verseReason, !reason.isEmpty {
                 HStack(spacing: 5) {
                     Icon(.sparkles, size: 12, color: Nuru.goldChipText)
                     Text("Chosen for you · \(reason)").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }.padding(.top, 6)
             }
-            HStack(spacing: 6) {
+            // One row (Figma): reactions left, Save + Share pushed right.
+            HStack(spacing: 5) {
                 ForEach(verseReactionEmojis, id: \.self) { e in
                     let count = vm.reactions?.counts[e] ?? 0
                     let mine = vm.reactions?.mine == e
                     Button { Task { await vm.reactVerse(e) } } label: {
-                        HStack(spacing: 4) {
-                            Text(e).font(.system(size: 15))
-                            if count > 0 { Text("\(count)").font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600) }
+                        HStack(spacing: 3) {
+                            Text(e).font(.system(size: 14))
+                            if count > 0 { Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600) }
                         }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(mine ? Nuru.verseBg : Nuru.white, in: Capsule())
+                        .padding(.horizontal, 7).padding(.vertical, 6)
+                        .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
-            }
-            .padding(.top, Nuru.S.md)
-            HStack(spacing: Nuru.S.sm) {
+                Spacer(minLength: 4)
                 Button { Task { await vm.saveVerse() } } label: {
-                    pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : Nuru.ink600)
+                    pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
                 }.buttonStyle(.plain)
                 Button { sharePayload = SharePayload(text: verseShareText()) } label: {
-                    pill(icon: .share2, label: "Share", tint: Nuru.ink600)
+                    pill(icon: .share2, label: "Share", tint: HomeFig.navy)
                 }.buttonStyle(.plain)
             }
             .padding(.top, Nuru.S.md)
         }
         .padding(Nuru.S.base)
         .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
     }
 
     private func pill(icon: Lucide, label: String, tint: Color) -> some View {
-        HStack(spacing: 5) {
-            Icon(icon, size: 13, color: tint)
+        HStack(spacing: 4) {
+            Icon(icon, size: 12, color: tint)
             Text(label).font(.inter(11, .semibold)).foregroundStyle(tint)
         }
-        .padding(.horizontal, 14).padding(.vertical, 8)
+        .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Nuru.white, in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
@@ -587,21 +633,24 @@ struct HomeView: View {
     private func prayerPostView(_ post: PrayerWallPost) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Nuru.S.sm) {
-                Avatar(url: post.authorAvatar, name: post.authorName, size: 36)
-                Text(post.authorName).font(.inter(13, .bold)).foregroundStyle(Nuru.ink)
+                Avatar(url: post.authorAvatar, name: post.authorName, size: 32)
+                Text(post.authorName).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
                 Spacer(minLength: 0)
             }
             if let t = post.title, !t.isEmpty {
-                Text(t).font(.fraunces(17, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
+                Text(t).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).padding(.top, Nuru.S.sm)
             }
-            Text(post.body).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(2)
+            Text(post.body).font(.inter(12)).foregroundStyle(HomeFig.metaGray).lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
-            HStack(spacing: 4) {
+            // Gold-tinted praying pill (Figma).
+            HStack(spacing: 5) {
                 Icon(.handHeart, size: 13, color: Nuru.goldChipText)
-                Text("\(post.prayCount) praying · \(post.commentCount ?? 0) reply")
+                Text("\(post.prayCount) praying · \(post.commentCount ?? 0) replies")
                     .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
             }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Nuru.gold.opacity(0.10), in: Capsule())
             .padding(.top, Nuru.S.sm)
             Spacer(minLength: 0)
         }
@@ -628,24 +677,24 @@ struct HomeView: View {
         }()
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Icon(.book, size: 16, color: Color(hex: 0x6366F1))
-                    .frame(width: 34, height: 34)
+                Icon(.bookMarked, size: 17, color: Color(hex: 0x6366F1))
+                    .frame(width: 36, height: 36)
                     .background(Color(hex: 0xEEF2FF), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 Spacer()
-                Text("\(pct)%").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x6366F1))
-                    .padding(.horizontal, 9).padding(.vertical, 4)
+                Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x6366F1))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color(hex: 0xEEF2FF), in: Capsule())
             }
-            Text("READING PLAN").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Color(hex: 0x6366F1)).padding(.top, Nuru.S.md)
-            Text(p?.title ?? "Start a plan").font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1).padding(.top, 3)
+            Text("READING PLAN").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Color(hex: 0x6366F1)).padding(.top, 10)
+            Text(p?.title ?? "Start a plan").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
+            if let p { Text("Day \(p.currentDay ?? 1) of \(p.dayCount)").font(.inter(11)).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
+            else { Text("Pick a reading plan").font(.inter(11)).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Nuru.track).frame(height: 6)
-                    Capsule().fill(Color(hex: 0x6366F1)).frame(width: geo.size.width * CGFloat(pct) / 100, height: 6)
+                    Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 4)
+                    Capsule().fill(Color(hex: 0x6366F1)).frame(width: geo.size.width * CGFloat(pct) / 100, height: 4)
                 }
-            }.frame(height: 6).padding(.top, Nuru.S.sm)
-            if let p { Text("Day \(p.currentDay ?? 1) of \(p.dayCount)").font(.nMicro).foregroundStyle(Nuru.faint).padding(.top, 6) }
-            else { Text("Pick a reading plan").font(.nMicro).foregroundStyle(Nuru.faint).padding(.top, 6) }
+            }.frame(height: 4).padding(.top, Nuru.S.sm)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Nuru.S.base)
@@ -657,17 +706,18 @@ struct HomeView: View {
         let latest = vm.prayerEntries.first
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Icon(.handHeart, size: 16, color: Color(hex: 0xB91C1C))
-                    .frame(width: 34, height: 34)
+                Icon(.handHeart, size: 17, color: Color(hex: 0xDC2626))
+                    .frame(width: 36, height: 36)
                     .background(Color(hex: 0xFEE2E2), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 Spacer()
-                Text(answered > 0 ? "\(answered) answered" : "Private").font(.inter(11, .bold)).foregroundStyle(Nuru.successText)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Nuru.successBg, in: Capsule())
+                // Amber "N answered" chip (Figma).
+                Text("\(answered) answered").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x92400E))
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Color(hex: 0xFEF3C7), in: Capsule())
             }
-            Text("PRAYER JOURNAL").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Color(hex: 0xB91C1C)).padding(.top, Nuru.S.md)
-            Text(latest?.title ?? "Your prayers").font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1).padding(.top, 3)
-            Text(latest?.body ?? "Start journaling your prayers").font(.nMicro).foregroundStyle(Nuru.faint).lineLimit(2).padding(.top, 6)
+            Text("PRAYER JOURNAL").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
+            Text(latest?.title ?? "Your prayers").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
+            Text(latest?.body ?? "Start journaling your prayers").font(.inter(11)).foregroundStyle(HomeFig.faintGray).lineLimit(1).padding(.top, 2)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -680,66 +730,84 @@ struct HomeView: View {
     private func featuredCellCard(_ c: FeaturedCell) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let s = c.imageUrl, let u = URL(string: s) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill() }
-                    else { Rectangle().fill(Nuru.mutedBg) }
+                ZStack {
+                    Rectangle().fill(Nuru.mutedBg)
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill() }
+                        else { Rectangle().fill(Nuru.mutedBg) }
+                    }
                 }
-                .frame(height: 168).frame(maxWidth: .infinity).clipped()
+                .aspectRatio(16.0/10.0, contentMode: .fill)
+                .frame(maxWidth: .infinity)
+                .clipped()
+                .overlay(alignment: .topLeading) {
+                    // Anticipation cue — soft gold countdown pill (Figma).
+                    HStack(spacing: 4) {
+                        Circle().fill(HomeFig.navy).frame(width: 4, height: 4)
+                        Text("This week").font(.inter(8, .bold)).foregroundStyle(HomeFig.navy)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
+                    .padding(12)
+                }
             }
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
-                    Icon(.users, size: 12, color: Nuru.goldChipText)
-                    Text("THIS WEEK AT NURU").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+                    Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 11))
+                        .foregroundStyle(HomeFig.eyebrow)
+                    Text("THIS WEEK AT NURU").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(HomeFig.eyebrow)
                     Spacer(minLength: 0)
-                    Text("Read more").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
-                    Icon(.chevronRight, size: 12, color: Nuru.goldLo)
                 }
-                Text(c.name).font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
+                Text(c.name).font(.fraunces(17, .semibold)).foregroundStyle(HomeFig.navy).padding(.top, 4)
                 if let d = c.disciplerName {
-                    Text("\(d)\(c.disciplerRole.map { " · \($0)" } ?? "")").font(.nCaption).foregroundStyle(Nuru.muted).padding(.top, 2)
+                    Text("\(d)\(c.disciplerRole.map { " · \($0)" } ?? "")").font(.inter(11)).foregroundStyle(HomeFig.subGray).padding(.top, 1)
                 }
-                HStack(spacing: Nuru.S.sm) {
-                    if let f = c.focus { chip(.target, f) }
-                    if let l = c.levelLabel { chip(.award, l) }
+                HStack(spacing: 6) {
+                    if let f = c.focus { chip(f) }
+                    if let l = c.levelLabel { chip(l) }
                 }
-                .padding(.top, Nuru.S.md)
+                .padding(.top, 10)
                 if let m = c.meets {
                     HStack(spacing: Nuru.S.sm) {
-                        Icon(.calendarClock, size: 14, color: Nuru.goldChipText)
-                            .frame(width: 30, height: 30)
-                            .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(m).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
-                            if let n = c.nextSession { Text("Next: \(n)").font(.nMicro).foregroundStyle(Nuru.faint) }
-                        }
+                        Icon(.calendarDays, size: 15, color: Nuru.gold)
+                        (Text(m).font(.inter(11, .semibold)).foregroundStyle(HomeFig.navy)
+                         + Text(c.nextSession.map { " · Next: \($0)" } ?? "").font(.inter(11)).foregroundStyle(HomeFig.faintGray))
                         Spacer(minLength: 0)
                     }
-                    .padding(Nuru.S.sm)
-                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .padding(.top, Nuru.S.md)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
+                    .padding(.top, 10)
                 }
-                HStack(spacing: Nuru.S.sm) {
-                    if let r = c.room { chip(.mapPin, r) }
-                    chip(.users, "\(c.members) members")
+                HStack {
+                    HStack(spacing: 4) {
+                        Icon(.mapPin, size: 11, color: HomeFig.faintGray)
+                        Text(c.room ?? c.name).font(.inter(10)).foregroundStyle(HomeFig.faintGray).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    HStack(spacing: 4) {
+                        Icon(.users, size: 11, color: HomeFig.eyebrow)
+                        Text(c.members > 0 ? "\(c.members) members" : "Be the first to join 🔥")
+                            .font(.inter(10, .bold)).foregroundStyle(HomeFig.eyebrow)
+                    }
                 }
-                .padding(.top, Nuru.S.md)
+                .padding(.top, Nuru.S.sm)
             }
             .padding(Nuru.S.base)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow()
     }
 
-    private func chip(_ icon: Lucide, _ text: String) -> some View {
-        HStack(spacing: 5) {
-            Icon(icon, size: 12, color: Nuru.goldChipText)
-            Text(text).font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(Nuru.surface, in: Capsule())
-        .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+    private func chip(_ text: String) -> some View {
+        Text(text)
+            .font(.inter(9, .semibold)).foregroundStyle(Nuru.goldChipText)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Nuru.surface, in: Capsule())
+            .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
 
     // MARK: 8 — Meet your discipler (carousel)
@@ -747,8 +815,7 @@ struct HomeView: View {
     private var disciplersCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Icon(.users, size: 12, color: Nuru.goldChipText)
-                Text("MEET YOUR DISCIPLER").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+                Text("MEET YOUR DISCIPLER").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(HomeFig.eyebrow)
                 Spacer(minLength: 0)
                 NavigationLink(value: AppRoute.mentor) {
                     HStack(spacing: 3) {
@@ -771,12 +838,12 @@ struct HomeView: View {
     private func disciplerView(_ d: Discipler) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: Nuru.S.md) {
-                Avatar(url: d.avatarUrl, name: d.fullName, size: 52)
+                Avatar(url: d.avatarUrl, name: d.fullName, size: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(d.fullName).font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
-                    Text(d.roleLabel).font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                    Text(d.fullName).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text(d.roleLabel.uppercased()).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Nuru.gold)
                     if let m = d.message, !m.isEmpty {
-                        Text("“\(m)”").font(.fraunces(13)).italic().foregroundStyle(Nuru.muted).lineLimit(3).padding(.top, 4)
+                        Text("“\(m)”").font(.fraunces(12)).italic().foregroundStyle(Color(hex: 0x3A4A5F)).lineLimit(3).padding(.top, 5)
                     }
                 }
                 Spacer(minLength: 0)
@@ -790,42 +857,58 @@ struct HomeView: View {
     // MARK: 9 — Featured announcement
 
     private func featuredAnnouncementCard(_ a: FeaturedAnnouncement) -> some View {
-        Button {
-            path.append(AppRoute.announcement(a.announcementId))
-            Task { await vm.openAnnouncement(a.announcementId) }
-        } label: {
-            VStack(alignment: .leading, spacing: 0) {
-                if let s = a.primaryImageUrl, let u = URL(string: s) {
-                    CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { img.resizable().scaledToFill() }
-                        else { Rectangle().fill(Nuru.mutedBg) }
-                    }
-                    .frame(height: 168).frame(maxWidth: .infinity).clipped()
-                }
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Icon(.megaphone, size: 12, color: Nuru.goldChipText)
-                        Text("FEATURED ANNOUNCEMENT").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
-                    }
-                    Text(a.title).font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(a.body).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.top, Nuru.S.sm)
-                    HStack {
-                        if let s = a.sentAt { Text(shortDate(s)).font(.nMicro).foregroundStyle(Nuru.faint) }
-                        Spacer()
-                        Text("Read more ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
-                    }
-                    .padding(.top, Nuru.S.md)
-                }
-                .padding(Nuru.S.base)
+        VStack(alignment: .leading, spacing: 8) {
+            // Header lives OUTSIDE the card (Figma).
+            HStack {
+                Text("FEATURED ANNOUNCEMENT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Nuru.goldChipText)
+                Spacer()
+                NavigationLink(value: AppRoute.notifications) {
+                    Text("View all").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                }.buttonStyle(.plain)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            .nuruShadow()
+            .padding(.horizontal, 4)
+            Button {
+                path.append(AppRoute.announcement(a.announcementId))
+                Task { await vm.openAnnouncement(a.announcementId) }
+            } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let s = a.primaryImageUrl, let u = URL(string: s) {
+                        ZStack {
+                            Rectangle().fill(Nuru.mutedBg)
+                            CachedAsyncImage(url: u) { phase in
+                                if let img = phase.image { img.resizable().scaledToFill() }
+                                else { Rectangle().fill(Nuru.mutedBg) }
+                            }
+                        }
+                        .aspectRatio(16.0/9.0, contentMode: .fill)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                    }
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(a.title).font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(a.body).font(.inter(13)).foregroundStyle(HomeFig.metaGray).lineLimit(3)
+                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                        HStack {
+                            if let s = a.sentAt { Text(shortDate(s)).font(.inter(11)).foregroundStyle(HomeFig.faintGray) }
+                            Spacer()
+                            HStack(spacing: 3) {
+                                Text("Read more").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                                Icon(.chevronRight, size: 13, color: Nuru.gold)
+                            }
+                        }
+                        .padding(.top, Nuru.S.sm)
+                    }
+                    .padding(Nuru.S.base)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .nuruShadow()
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: 10 — Continue · Level n
@@ -836,41 +919,49 @@ struct HomeView: View {
         let total = a?.totalModules ?? 0
         let pct = total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: Nuru.S.md) {
+            HStack(alignment: .center, spacing: Nuru.S.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Nuru.goldChipBg).frame(width: 52, height: 52)
-                    Icon(.play, size: 22, color: Nuru.gold)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                    Icon(.play, size: 18, color: HomeFig.navy).offset(x: 1)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("CONTINUE · LEVEL \(a?.levelNumber ?? 1)").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
-                    Text(a?.title ?? "Foundations of Faith").font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
-                    Text("\(done) of \(total) modules").font(.nCaption).foregroundStyle(Nuru.muted)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CONTINUE · LEVEL \(a?.levelNumber ?? 1)").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(HomeFig.eyebrow)
+                    Text(a?.title ?? "Foundations of Faith").font(.fraunces(16, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text("\(done) of \(total) modules").font(.inter(11)).foregroundStyle(HomeFig.faintGray)
                 }
                 Spacer(minLength: 0)
             }
             HStack(spacing: Nuru.S.sm) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
-                        Capsule().fill(Nuru.track).frame(height: 6)
-                        Capsule().fill(Nuru.gold).frame(width: geo.size.width * CGFloat(pct) / 100, height: 6)
+                        Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 6)
+                        Capsule()
+                            .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
+                            .frame(width: geo.size.width * CGFloat(pct) / 100, height: 6)
                     }
                 }.frame(height: 6)
-                Text("\(pct)% complete").font(.inter(11, .bold)).foregroundStyle(Nuru.goldLo)
+                Text("\(pct)% complete").font(.inter(10, .bold)).foregroundStyle(HomeFig.eyebrow)
             }
-            .padding(.top, Nuru.S.base)
+            .padding(.top, Nuru.S.md)
+            // Goal-gradient nudge — momentum grows nearer the finish (Figma).
+            Text(pct >= 60 ? "Almost there — finish strong 🎉" : "Just \(100 - pct)% to your next badge")
+                .font(.inter(11, .semibold)).foregroundStyle(HomeFig.eyebrow)
+                .padding(.top, 6)
             Button {
                 if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
                 else { path.append(PathwayRoute.level(a?.levelNumber ?? 1)) }
             } label: {
                 HStack(spacing: 6) {
-                    Text("Continue").font(.inter(15, .bold)).foregroundStyle(Nuru.gold)
+                    Text("Continue").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
                     Icon(.chevronRight, size: 15, color: Nuru.gold)
                 }
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .frame(maxWidth: .infinity, minHeight: 46)
+                .background(HomeFig.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
-            .padding(.top, Nuru.S.base)
+            .padding(.top, Nuru.S.md)
         }
         .padding(Nuru.S.base)
         .cardSurface()
@@ -879,15 +970,18 @@ struct HomeView: View {
     // MARK: 11 — Today's rhythm
 
     private var rhythmCard: some View {
-        let done = vm.rhythm.doneCount
+        let complete = vm.rhythm.doneCount == 3
+        // Finishing today's rhythm counts today automatically (Figma displayStreak).
+        let displayStreak = vm.streak + (complete ? 1 : 0)
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(done == 3 ? "Today's rhythm complete 🎉" : "Today's rhythm")
-                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                Text(complete ? "Today's rhythm complete 🎉" : "Today's rhythm")
+                    .font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
                 Spacer()
                 HStack(spacing: 4) {
                     Icon(.flame, size: 12, color: Nuru.goldChipText)
-                    Text("\(vm.streak)-day streak").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                    Text(displayStreak > 0 ? "\(displayStreak)-day streak" : "Start today")
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Nuru.goldChipBg, in: Capsule())
@@ -898,8 +992,12 @@ struct HomeView: View {
                 rhythmTile("reflection", "Reflection")
             }
             .padding(.top, Nuru.S.md)
-            if !vm.rhythm.reflection {
-                Text("Complete reflection to keep your rhythm.").font(.nMicro).foregroundStyle(Nuru.faint).padding(.top, Nuru.S.sm)
+            // Weekly consistency — reflects real completion (today fills when done).
+            HomeWeekChain(streakDays: vm.streak, todayDone: complete)
+                .padding(.top, 14)
+            if !complete {
+                Text(vm.rhythm.reflection ? "One more to complete today's rhythm." : "Complete reflection to keep your rhythm.")
+                    .font(.inter(13)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.md)
             }
         }
         .padding(Nuru.S.base)
@@ -922,68 +1020,45 @@ struct HomeView: View {
         }.buttonStyle(.plain)
     }
 
-    // MARK: 12 — Reflection due today
-
-    private func reflectionBanner(_ a: PathwayLevel) -> some View {
-        Button { path.append(PathwayRoute.level(a.levelNumber)) } label: {
-            HStack(spacing: Nuru.S.md) {
-                Icon(.messageSquareText, size: 18, color: Nuru.goldChipText)
-                    .frame(width: 40, height: 40)
-                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Reflection due today").font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
-                    Text(a.title).font(.nCaption).foregroundStyle(Nuru.muted)
-                }
-                Spacer(minLength: 0)
-                Text("Start reflection").font(.inter(12, .bold)).foregroundStyle(Nuru.gold)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(Nuru.navyDeep, in: Capsule())
-            }
-            .padding(Nuru.S.md)
-            .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        }
-        .buttonStyle(.plain)
-    }
-
     // MARK: 13 — Your progress (scores)
 
     private func progressCard(_ s: ScoresSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Your progress").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                Text("Your progress").font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
                 Spacer()
                 NavigationLink(value: PathwayRoute.level(active?.levelNumber ?? 1)) {
-                    Text("View pathway ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
+                    Text("View pathway").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
                 }
             }
             HStack(spacing: Nuru.S.base) {
                 ZStack {
-                    Circle().stroke(Nuru.track, lineWidth: 3)
+                    Circle().stroke(Color(hex: 0xEEE7D6), lineWidth: 6)
                     Circle().trim(from: 0, to: CGFloat(s.overall.score) / 100)
-                        .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                         .rotationEffect(.degrees(-90))
-                    VStack(spacing: -3) {
-                        Text("\(s.overall.score)").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navyDeep)
-                        Text("/100").font(.nMicro).foregroundStyle(Nuru.ink600)
+                    VStack(spacing: -2) {
+                        Text("\(s.overall.score)").font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
+                        Text("/100").font(.inter(9, .semibold)).foregroundStyle(HomeFig.faintGray)
                     }
                 }
-                .frame(width: 72, height: 72)
+                .frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("OVERALL GROWTH").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldLo)
-                    Text(s.overall.band).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
-                    Text("Your rhythm across the disciplines").font(.nCaption).foregroundStyle(Nuru.muted)
+                    Text("OVERALL GROWTH").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                    Text(s.overall.band).font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text("Your rhythm across the disciplines").font(.inter(12)).foregroundStyle(HomeFig.metaGray)
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.top, Nuru.S.md)
-            VStack(spacing: Nuru.S.sm) {
+            .padding(.top, Nuru.S.base)
+            VStack(spacing: 10) {
                 scoreBar("Habits", s.habits.score, Nuru.gold)
-                scoreBar("Word", s.word.score, Color(hex: 0x1B5FAE))
-                scoreBar("Prayer", s.prayer.score, Nuru.goldLo)
-                scoreBar("Curriculum", s.curriculum.score, Nuru.navy)
-                scoreBar("Attendance", s.attendance.score, Nuru.success)
+                scoreBar("Word", s.word.score, Color(hex: 0x2F6FB0))
+                scoreBar("Prayer", s.prayer.score, Color(hex: 0xC98A3C))
+                scoreBar("Curriculum", s.curriculum.score, HomeFig.navy)
+                scoreBar("Attendance", s.attendance.score, Color(hex: 0x16A34A))
             }
-            .padding(.top, Nuru.S.md)
+            .padding(.top, Nuru.S.base)
             if let a = active {
                 let left = max(0, a.totalModules - a.completedModules)
                 HStack(spacing: Nuru.S.sm) {
@@ -1004,81 +1079,137 @@ struct HomeView: View {
     }
 
     private func scoreBar(_ label: String, _ value: Int, _ fill: Color) -> some View {
-        HStack(spacing: Nuru.S.sm) {
-            Text(label).font(.nCaption).foregroundStyle(Nuru.ink600).frame(width: 86, alignment: .leading)
+        HStack(spacing: Nuru.S.md) {
+            Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).frame(width: 72, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule().fill(Nuru.track).frame(height: 8)
+                    Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 8)
                     Capsule().fill(fill).frame(width: geo.size.width * CGFloat(value) / 100, height: 8)
                 }
             }.frame(height: 8)
-            Text("\(value)").font(.nCaption).foregroundStyle(Nuru.ink).fontWeight(.bold).frame(width: 30, alignment: .trailing)
+            Text("\(value)").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy).frame(width: 24, alignment: .trailing)
         }
     }
 
     // MARK: 14 — Grow your faith
 
+    /// Section label OUTSIDE the card + the grid (fresh Figma layout).
+    private var growSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HomeSectionLabel(text: "Grow your faith")
+            growCard
+        }
+    }
+
     private var growCard: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
-            Text("Grow your faith").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
+        VStack(alignment: .leading, spacing: 10) {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
                 ForEach(growTiles.indices, id: \.self) { i in
                     let t = growTiles[i]
-                    NavigationLink(value: t.dest) { growTileView(t) }.buttonStyle(.plain)
+                    NavigationLink(value: t.dest) { growTileView(t) }
+                        .buttonStyle(.plain)
+                        // "New today" cue on the devotional — a gentle pull to start.
+                        .overlay(alignment: .topTrailing) {
+                            if i == 0 { HomePulseDot().offset(x: 2, y: -2) }
+                        }
                 }
             }
             NavigationLink(value: AppRoute.mentor) {
                 HStack(spacing: Nuru.S.md) {
-                    Icon(.users, size: 18, color: Nuru.gold)
+                    Circle()
+                        .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 36, height: 36)
-                        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("YOUR DISCIPLER").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
-                        Text("Meet your discipler").font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
+                        Text("YOUR DISCIPLER").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(HomeFig.eyebrow)
+                        Text("Meet your discipler").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
                     }
                     Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: Nuru.ink300)
+                    Icon(.chevronRight, size: 16, color: HomeFig.faintGray)
                 }
                 .padding(Nuru.S.md)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+                .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
             }.buttonStyle(.plain)
         }
-        .padding(Nuru.S.base)
+        .padding(Nuru.S.md)
         .cardSurface()
     }
 
     private func growTileView(_ t: GrowTile) -> some View {
-        HStack(spacing: Nuru.S.sm) {
+        HStack(spacing: 10) {
             Icon(t.icon, size: 16, color: Color(hex: t.fg))
-                .frame(width: 32, height: 32)
-                .background(Color(hex: t.tint), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .frame(width: 36, height: 36)
+                .background(Color(hex: t.tint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 0) {
-                Text(t.label).font(.inter(12, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                Text(t.sub).font(.nMicro).foregroundStyle(Nuru.faint).lineLimit(1)
+                Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
+                Text(t.sub).font(.inter(11)).foregroundStyle(HomeFig.metaGray).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
         .padding(Nuru.S.md)
-        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: 15 — Upcoming (mini month + next event)
+    // MARK: 15 — Upcoming (label outside; full-width mini month + next-event row)
+
+    private var upcomingSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HomeSectionLabel(text: "Upcoming")
+            upcomingCard
+        }
+    }
 
     private var upcomingCard: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.base) {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
-                Text("Upcoming").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                Text(monthTitle().uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Nuru.gold)
                 Spacer()
-                Text("See all ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
+                Button { tabs.selected = .events } label: {
+                    Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                }.buttonStyle(.plain)
             }
-            HStack(alignment: .top, spacing: Nuru.S.base) {
-                miniMonth.frame(maxWidth: .infinity)
-                nextEventColumn.frame(width: 132)
+            miniMonth
+            if let occ = nextUpcoming {
+                Button { path.append(occ) } label: {
+                    HomeUpcomingEventRow(
+                        kicker: eventKicker(occ),
+                        soon: eventSoon(occ),
+                        title: occ.title,
+                        sub: occ.going > 0 ? "\(occ.going) going" : (occ.location ?? "Next gathering"),
+                        subHighlight: occ.going > 0,
+                        imageUrl: occ.primaryImageUrl)
+                }.buttonStyle(.plain)
             }
         }
         .padding(Nuru.S.base)
         .cardSurface()
+    }
+
+    private var nextUpcoming: CalendarOccurrence? {
+        vm.events.first {
+            (parseISO($0.startAt) ?? .distantPast) >= Calendar.current.startOfDay(for: Date())
+        } ?? vm.events.first
+    }
+
+    private func monthTitle() -> String {
+        let f = DateFormatter(); f.dateFormat = "MMMM"
+        return f.string(from: Date())
+    }
+
+    private func eventKicker(_ occ: CalendarOccurrence) -> String {
+        guard let d = parseISO(occ.startAt) else { return timeLine(occ.startAt) }
+        let cal = Calendar.current
+        let day: String
+        if cal.isDateInToday(d) { day = "Today" }
+        else if cal.isDateInTomorrow(d) { day = "Tomorrow" }
+        else { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; day = f.string(from: d) }
+        return "\(day) · \(timeLine(occ.startAt))"
+    }
+
+    private func eventSoon(_ occ: CalendarOccurrence) -> Bool {
+        guard let d = parseISO(occ.startAt) else { return false }
+        return d.timeIntervalSinceNow < 48 * 3600
     }
 
     private var miniMonth: some View {
@@ -1096,11 +1227,9 @@ struct HomeView: View {
             return cal.component(.day, from: d)
         })
         let todayNum = cal.isDate(today, equalTo: monthStart, toGranularity: .month) ? cal.component(.day, from: today) : -1
-        let mf = DateFormatter(); mf.dateFormat = "MMMM"
         let cols = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
 
         return VStack(spacing: 6) {
-            Text(mf.string(from: monthStart).uppercased()).font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
             LazyVGrid(columns: cols, spacing: 2) {
                 ForEach(Array(["M","T","W","T","F","S","S"].enumerated()), id: \.offset) { _, d in
                     Text(d).font(.inter(9, .semibold)).foregroundStyle(Nuru.ink400).frame(maxWidth: .infinity)
@@ -1132,88 +1261,42 @@ struct HomeView: View {
         }
     }
 
-    private var nextEventColumn: some View {
-        Group {
-            if let occ = vm.events.first(where: { (ISO8601DateFormatter.nuru.date(from: $0.startAt) ?? ISO8601DateFormatter().date(from: $0.startAt) ?? .distantPast) >= Calendar.current.startOfDay(for: Date()) }) ?? vm.events.first {
-                Button { path.append(occ) } label: {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(weekdayLine(occ.startAt)).font(.inter(10, .bold)).kerning(0.8).foregroundStyle(Nuru.goldChipText)
-                        if let s = occ.primaryImageUrl, let u = URL(string: s) {
-                            CachedAsyncImage(url: u) { phase in
-                                if let img = phase.image { img.resizable().scaledToFill() }
-                                else { Rectangle().fill(Nuru.mutedBg) }
-                            }
-                            .frame(width: 132, height: 100).clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .padding(.top, 6)
-                        }
-                        Text(timeLine(occ.startAt)).font(.inter(11, .bold)).foregroundStyle(Nuru.goldLo).padding(.top, 6)
-                        Text(occ.title).font(.inter(13, .bold)).foregroundStyle(Nuru.ink).lineLimit(2).padding(.top, 1)
-                        if let loc = occ.location { Text(loc).font(.nMicro).foregroundStyle(Nuru.faint).lineLimit(1).padding(.top, 1) }
-                        Text("Next gathering").font(.nMicro).foregroundStyle(Nuru.faint).padding(.top, 1)
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }.buttonStyle(.plain)
-            } else {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("No upcoming").font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
-                    Text("Nothing scheduled yet").font(.nMicro).foregroundStyle(Nuru.faint)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-    }
-
-    // MARK: 16 — One-reflection-away banner
+    // MARK: 16 — Encouragement ("one reflection away" / "beautifully done")
 
     private var oneReflectionBanner: some View {
-        HStack(spacing: Nuru.S.sm) {
-            Icon(.sparkle, size: 16, color: Nuru.goldChipText)
-                .frame(width: 32, height: 32)
-                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            Text("You're one reflection away from completing this week's rhythm.")
-                .font(.inter(12, .medium)).foregroundStyle(Nuru.goldChipText)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-        }
-        .padding(Nuru.S.md)
-        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        HomeEncouragementCard(rhythmComplete: vm.rhythm.doneCount == 3)
     }
 
-    // MARK: 17 — Your cohort
+    // MARK: 17 — Your cohort (label outside; belonging cue when not in a cell)
+
+    private var cohortSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HomeSectionLabel(text: "Your cohort")
+            cohortCard
+        }
+    }
 
     private var cohortCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            NavigationLink(value: AppRoute.cell) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: Nuru.S.sm) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Your cell").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
-                            Text(vm.cell?.name ?? "Your discipleship cell").font(.nCaption).foregroundStyle(Nuru.muted)
-                        }
-                        Spacer(minLength: 0)
-                        Text("Details").font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
-                        Icon(.chevronRight, size: 12, color: Nuru.goldLo)
-                    }
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
-                        cohortStat(.users, "Leader", vm.cell?.leader?.name ?? "Not assigned")
-                        cohortStat(.calendarDays, "Next gathering", nextGatheringText)
-                        cohortStat(.handHeart, "Members", vm.cell.map { "\($0.members)" } ?? "—")
-                        cohortStat(.percent, "Attendance", attendanceText)
-                    }
-                    .padding(.top, Nuru.S.md)
-                }
-                .contentShape(Rectangle())
+            Text(vm.cell?.name ?? "Your discipleship cell").font(.inter(11)).foregroundStyle(HomeFig.faintGray)
+            if vm.cell == nil {
+                // Cold-start belonging cue — being known is the hook (Figma).
+                NavigationLink(value: AppRoute.cell) { HomeCohortColdStart() }
+                    .buttonStyle(.plain)
+                    .padding(.top, 10)
             }
-            .buttonStyle(.plain)
-            NavigationLink(value: CommunityRoute.prayerWall) {
-                HStack {
-                    Spacer()
-                    Text("Open community ›").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
-                    Spacer()
-                }
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                cohortStat(.users, "Leader", vm.cell?.leader?.name ?? "Not assigned")
+                cohortStat(.calendarDays, "Next gathering", nextGatheringText)
+                cohortStat(.users, "Members", vm.cell.map { "\($0.members)" } ?? "—")
+                cohortStat(.target, "Attendance", attendanceText)
+            }
+            .padding(.top, 10)
+            NavigationLink(value: AppRoute.cell) {
+                Text("Open community →").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
+                    .frame(maxWidth: .infinity, minHeight: 42)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
             .buttonStyle(.plain)
             .padding(.top, Nuru.S.md)
@@ -1223,18 +1306,16 @@ struct HomeView: View {
     }
 
     private func cohortStat(_ icon: Lucide, _ label: String, _ value: String) -> some View {
-        HStack(spacing: Nuru.S.sm) {
-            Icon(icon, size: 14, color: Nuru.goldChipText)
-                .frame(width: 30, height: 30)
-                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.nMicro).foregroundStyle(Nuru.faint)
-                Text(value).font(.inter(13, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 5) {
+                Icon(icon, size: 11, color: Nuru.gold)
+                Text(label.uppercased()).font(.inter(9, .semibold)).kerning(0.9).foregroundStyle(HomeFig.faintGray)
             }
-            Spacer(minLength: 0)
+            Text(value).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
         }
-        .padding(Nuru.S.sm)
-        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.md)
+        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var nextGatheringText: String {
@@ -1246,87 +1327,10 @@ struct HomeView: View {
         return "\(a.attended)/\(a.expected)"
     }
 
-    // MARK: 18 — Announcements list
-
-    private var announcementsCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("ANNOUNCEMENTS").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldChipText)
-                Spacer()
-                Text("View all ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
-            }
-            VStack(spacing: Nuru.S.md) {
-                ForEach(vm.announcements.prefix(4)) { a in
-                    Button {
-                        path.append(AppRoute.announcement(a.announcementId))
-                        Task { await vm.openAnnouncement(a.announcementId) }
-                    } label: {
-                        announcementRow(a)
-                    }.buttonStyle(.plain)
-                }
-            }
-            .padding(.top, Nuru.S.md)
-        }
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
-    private func announcementRow(_ a: MyAnnouncement) -> some View {
-        HStack(alignment: .top, spacing: Nuru.S.sm) {
-            if let s = a.primaryImageUrl, let u = URL(string: s) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill() }
-                    else { Rectangle().fill(Nuru.mutedBg) }
-                }
-                .frame(width: 56, height: 56).clipped()
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            } else {
-                Icon(.megaphone, size: 18, color: Nuru.goldChipText)
-                    .frame(width: 56, height: 56)
-                    .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(a.title).font(.inter(13, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                Text(a.body).font(.nMicro).foregroundStyle(Nuru.muted).lineLimit(2)
-                if let s = a.sentAt { Text(shortDate(s)).font(.nMicro).foregroundStyle(Nuru.faint) }
-            }
-            Spacer(minLength: 0)
-            if !a.opened { Circle().fill(Nuru.gold).frame(width: 8, height: 8).padding(.top, 4) }
-        }
-    }
-
-    // MARK: 19 — Support God's work (give banner)
+    // MARK: 18 — Support God's work (give panel — centered ceremony layout)
 
     private var giveBanner: some View {
-        ZStack {
-            Nuru.ceremonyGradient
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Icon(.heart, size: 12, color: Nuru.goldGlow)
-                    Text("SUPPORT GOD'S WORK").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldGlow)
-                }
-                Text("Sow into something eternal").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.onNavy).padding(.top, Nuru.S.sm)
-                Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
-                    .font(.nCaption).foregroundStyle(Nuru.onNavyDim).padding(.top, Nuru.S.sm)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button { tabs.selected = .give } label: {
-                    HStack(spacing: 6) {
-                        Icon(.gift, size: 15, color: Nuru.navyDeep)
-                        Text("Give now").font(.inter(15, .bold)).foregroundStyle(Nuru.navyDeep)
-                        Icon(.arrowRight, size: 14, color: Nuru.navyDeep)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, Nuru.S.base)
-                Text("Tithe & offering · M-Pesa, card and more").font(.nMicro).foregroundStyle(Nuru.onNavyFaint)
-                    .frame(maxWidth: .infinity).padding(.top, Nuru.S.sm)
-            }
-            .padding(Nuru.S.lg)
-        }
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .nuruShadow()
+        HomeGiveCard { tabs.selected = .give }
     }
 
     // MARK: derived / helpers
@@ -1372,9 +1376,6 @@ struct HomeView: View {
         let h = Calendar.current.component(.hour, from: Date())
         return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
     }
-    private func heroAccent(_ a: String) -> Color {
-        switch a { case "success": return Nuru.success; case "steady": return Color(hex: 0x1B5FAE); case "navy": return Nuru.goldGlow; default: return Nuru.gold }
-    }
     private func todayKicker() -> String {
         let f = DateFormatter(); f.dateFormat = "EEEE · MMM d"
         return f.string(from: Date()).uppercased() + " · EAT"
@@ -1398,10 +1399,6 @@ struct HomeView: View {
     private func shortDateTime(_ iso: String) -> String {
         guard let d = parseISO(iso) else { return "TBA" }
         let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"; return f.string(from: d)
-    }
-    private func weekdayLine(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; return f.string(from: d).uppercased()
     }
     private func timeLine(_ iso: String) -> String {
         guard let d = parseISO(iso) else { return "" }
