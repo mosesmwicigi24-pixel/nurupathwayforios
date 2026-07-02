@@ -11,27 +11,57 @@ import SwiftUI
 @MainActor
 final class ChatInboxViewModel: ObservableObject {
     @Published var inbox: ChatInbox?
+    @Published var people: [ChatPerson] = []
     @Published var verse: (text: String, reference: String, version: String)?
     @Published var loading = true
     @Published var error: String?
+    @Published var busyPersonId: String?    // person whose DM is being created
+    @Published var joiningSpaceId: String?  // discover space being followed
 
     var conversations: [ChatConversation] { inbox?.conversations ?? [] }
     var spaces: [ChatConversation] { conversations.filter { $0.kind == "space" } }
     var dms: [ChatConversation] { conversations.filter { $0.kind == "dm" } }
     var groups: [ChatConversation] { conversations.filter { $0.kind == "group" } }
+    var discover: [DiscoverSpace] { inbox?.discoverSpaces ?? [] }
     var totalUnread: Int { conversations.reduce(0) { $0 + $1.unread } }
 
     func load() async {
         loading = true; error = nil
         async let inboxReq = try? MemberAPI.chatInbox()
+        async let peopleReq = try? MemberAPI.chatPeople()
         async let verseReq = try? MemberAPI.homeVerse()
 
         if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
+        if let p = await peopleReq { people = p }
         if let v = await verseReq {
             if let t = v.text, !t.isEmpty { verse = (t, v.reference, v.version) }
             else { verse = (defaultVerseText, v.reference, v.version) }
         }
         loading = false
+    }
+
+    /// POST /chat/dms then refresh the inbox; returns the conversation to open.
+    func startDm(with person: ChatPerson) async -> ChatConversation? {
+        guard busyPersonId == nil else { return nil }
+        busyPersonId = person.userId
+        defer { busyPersonId = nil }
+        guard let id = try? await MemberAPI.createDm(peerUserId: person.userId) else { return nil }
+        if let i = try? await MemberAPI.chatInbox() { inbox = i }
+        // Prefer the real inbox row (preview, unread); fall back to a stub the
+        // thread screen can hydrate from GET /chat/conversations/{id}.
+        return conversations.first { $0.conversationId == id } ?? ChatConversation(
+            conversationId: id, kind: "dm", isPublic: false, title: person.fullName,
+            topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+            lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: person.avatarUrl)
+    }
+
+    /// POST /chat/spaces/{id}/join then refresh — the space moves to "your spaces".
+    func follow(_ space: DiscoverSpace) async {
+        guard joiningSpaceId == nil else { return }
+        joiningSpaceId = space.conversationId
+        defer { joiningSpaceId = nil }
+        guard (try? await MemberAPI.joinChatSpace(space.conversationId)) != nil else { return }
+        if let i = try? await MemberAPI.chatInbox() { inbox = i }
     }
 
     private let defaultVerseText = "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”"
@@ -332,11 +362,12 @@ struct ChatView: View {
 
     private var spaceList: some View {
         let items = vm.spaces.filter(matches)
+        let discoverable = filteredDiscover
         return VStack(alignment: .leading, spacing: 10) {
             sectionLabel(hash: true, "YOUR SPACES")
             if items.isEmpty {
                 emptyCard(query.isEmpty
-                    ? "No spaces yet — they’ll appear as your cell gets set up."
+                    ? "No spaces yet — follow one below to get started."
                     : "No spaces match your search.")
             } else {
                 groupedCard {
@@ -345,18 +376,40 @@ struct ChatView: View {
                     }
                 }
             }
+            if !discoverable.isEmpty {
+                sectionLabel(hash: true, "DISCOVER SPACES").padding(.top, 6)
+                groupedCard {
+                    ForEach(Array(discoverable.enumerated()), id: \.element.id) { idx, s in
+                        DiscoverSpaceRow(space: s, index: idx, divider: idx > 0,
+                                         joining: vm.joiningSpaceId == s.conversationId) {
+                            Task { await vm.follow(s) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Public spaces the member hasn't joined (inbox `discover_spaces`), searched.
+    private var filteredDiscover: [DiscoverSpace] {
+        guard !query.isEmpty else { return vm.discover }
+        let q = query.lowercased()
+        return vm.discover.filter {
+            ($0.title ?? "").lowercased().contains(q) || ($0.topic ?? "").lowercased().contains(q)
+                || ($0.category ?? "").lowercased().contains(q)
         }
     }
 
     private var dmList: some View {
         let items = vm.dms.filter(matches)
+        let directory = filteredPeople
         return VStack(alignment: .leading, spacing: 10) {
             if query.isEmpty && !vm.dms.isEmpty { storiesRow.padding(.bottom, 10) }
             sectionLabel(icon: .users, "DIRECT MESSAGES")
             if items.isEmpty {
                 emptyCard(query.isEmpty
-                    ? "No direct messages yet — start a conversation with someone in your space."
-                    : "No people match your search.")
+                    ? "No direct messages yet — start a conversation with someone below."
+                    : "No conversations match your search.")
             } else {
                 groupedCard {
                     ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
@@ -364,6 +417,35 @@ struct ChatView: View {
                     }
                 }
             }
+            if !vm.people.isEmpty {
+                sectionLabel(icon: .users, "PEOPLE").padding(.top, 6)
+                if directory.isEmpty {
+                    emptyCard("No people match your search.")
+                } else {
+                    groupedCard {
+                        ForEach(Array(directory.enumerated()), id: \.element.id) { idx, p in
+                            PersonRow(person: p, index: idx, divider: idx > 0,
+                                      busy: vm.busyPersonId == p.userId) { startDm(p) }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // The whole registered directory (server-scoped), name/congregation searched.
+    private var filteredPeople: [ChatPerson] {
+        guard !query.isEmpty else { return vm.people }
+        let q = query.lowercased()
+        return vm.people.filter {
+            $0.fullName.lowercased().contains(q) || ($0.congregation ?? "").lowercased().contains(q)
+        }
+    }
+
+    // Tap a directory person → POST /chat/dms → open the (existing or new) thread.
+    private func startDm(_ person: ChatPerson) {
+        Task {
+            if let c = await vm.startDm(with: person) { path.append(c) }
         }
     }
 
@@ -441,7 +523,8 @@ struct ChatView: View {
     }
 
     // Figma ComposeSheet — dark scrim, "Start something", three segment shortcuts.
-    // (No create-DM/group endpoint yet, so actions jump to the matching segment.)
+    // "New DM" jumps to the DM segment (PEOPLE directory below the rows) and
+    // "Browse spaces" to the space segment (DISCOVER SPACES below your spaces).
     private var composeSheet: some View {
         ZStack(alignment: .bottom) {
             Color(hex: 0x0B1F33, alpha: 0.45)
@@ -734,6 +817,105 @@ private struct ConversationRow: View {
             }
         }
         .modifier(RowChrome(unread: unread, divider: divider))
+    }
+}
+
+// MARK: - Directory person row (PEOPLE section — tap to start/open the DM)
+
+private struct PersonRow: View {
+    let person: ChatPerson
+    let index: Int
+    let divider: Bool
+    let busy: Bool
+    let action: () -> Void
+    private var tint: Color { rowTint(index + 1) }
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 14) {
+                SquircleAvatar(url: person.avatarUrl, name: person.fullName, tint: tint)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(person.fullName)
+                        .font(.inter(12, .medium)).kerning(-0.12)
+                        .foregroundStyle(Nuru.navy).lineLimit(1)
+                    Text(subtitle)
+                        .font(.inter(10)).foregroundStyle(Color(hex: 0x8A93A0)).lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                if busy {
+                    ProgressView().tint(Nuru.gold).scaleEffect(0.8)
+                } else {
+                    Icon(.messageCircle, size: 15, color: Nuru.gold)
+                        .frame(width: 32, height: 32)
+                        .background(Nuru.gold.opacity(0.10), in: Circle())
+                }
+            }
+            .modifier(RowChrome(unread: false, divider: divider))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+
+    private var subtitle: String {
+        let role = (person.role?.isEmpty == false) ? person.role! : "Member"
+        if let c = person.congregation, !c.isEmpty { return "\(role) · \(c)" }
+        return role
+    }
+}
+
+// MARK: - Discover space row (public spaces to follow — gold Follow button)
+
+private struct DiscoverSpaceRow: View {
+    let space: DiscoverSpace
+    let index: Int
+    let divider: Bool
+    let joining: Bool
+    let follow: () -> Void
+    private var tint: Color { rowTint(index + 2) }
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 14) {
+            Text("#").font(.inter(22, .bold)).foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(
+                    LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: tint.opacity(0.35), radius: 7, y: 5)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(space.title ?? "Space")
+                    .font(.inter(12, .medium)).kerning(-0.12)
+                    .foregroundStyle(Nuru.navy).lineLimit(1)
+                Text(subtitle)
+                    .font(.inter(10)).foregroundStyle(Color(hex: 0x8A93A0)).lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Button(action: follow) {
+                Group {
+                    if joining {
+                        ProgressView().tint(.white).scaleEffect(0.7)
+                    } else {
+                        HStack(spacing: 4) {
+                            Icon(.plus, size: 11, color: .white)
+                            Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
+                        }
+                    }
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 30)
+                .background(storyRing, in: Capsule())
+                .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+            }
+            .buttonStyle(.plain)
+            .disabled(joining)
+        }
+        .modifier(RowChrome(unread: false, divider: divider))
+    }
+
+    private var subtitle: String {
+        let members = "\(space.memberCount) member\(space.memberCount == 1 ? "" : "s")"
+        if let t = space.topic, !t.isEmpty { return "\(t) · \(members)" }
+        if let c = space.category, !c.isEmpty { return "\(c) · \(members)" }
+        return "Public space · \(members)"
     }
 }
 

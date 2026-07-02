@@ -543,6 +543,28 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("chat/conversations/\(conversationId)/read", as: EmptyResponse.self)
     }
 
+    /// GET /chat/people — the member directory (everyone the caller may DM,
+    /// minor-safe and congregation-scoped server-side). Optional name search.
+    static func chatPeople(query: String? = nil) async throws -> [ChatPerson] {
+        struct Res: Decodable { let people: [ChatPerson] }
+        var q: [String: String] = [:]
+        if let query, !query.isEmpty { q["q"] = query }
+        return try await APIClient.shared.get("chat/people", query: q, as: Res.self).people
+    }
+
+    /// POST /chat/dms — create (or return) the 1:1 DM with a member.
+    /// Body key on the wire is `user_id`; the server dedupes an existing DM.
+    static func createDm(peerUserId: String) async throws -> String {
+        struct Body: Encodable { let userId: String }
+        struct Res: Decodable { let conversationId: String }
+        return try await APIClient.shared.post("chat/dms", body: Body(userId: peerUserId), as: Res.self).conversationId
+    }
+
+    /// POST /chat/spaces/{id}/join — follow a public space.
+    static func joinChatSpace(_ conversationId: String) async throws {
+        _ = try await APIClient.shared.postEmpty("chat/spaces/\(conversationId)/join", as: EmptyResponse.self)
+    }
+
     /// POST /chat/messages/{id}/reactions — toggle an emoji reaction.
     @discardableResult
     static func toggleChatReaction(_ messageId: String, emoji: String) async throws -> Bool {

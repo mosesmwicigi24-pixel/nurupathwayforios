@@ -36,6 +36,17 @@ struct ChatInbox: Codable, Sendable {
     let discoverSpaces: [DiscoverSpace]
 }
 
+/// One row of GET /chat/people — a congregation member the caller may DM.
+struct ChatPerson: Codable, Sendable, Identifiable, Hashable {
+    let userId: String
+    let fullName: String
+    let role: String?
+    let avatarUrl: String?
+    let congregation: String?   // present only for portal-staff callers
+
+    var id: String { userId }
+}
+
 struct ChatReaction: Codable, Sendable {
     let emoji: String
     let count: Int
