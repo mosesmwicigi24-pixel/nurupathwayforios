@@ -1,16 +1,18 @@
-// Calendar — the full-month view reachable from EventsView. A navy header with a
-// soft warm glow, a custom circular back button, and a serif month title; below
-// it a white month-grid card (selectable days, occurrence dots, today ring) and
-// a per-day event list. Bound to the real MemberAPI.calendar window. Pushed onto
-// the Events NavigationStack, so NavigationLink(value: occ) resolves to the
+// Calendar — the full-month view reachable from EventsView, matching the
+// make's EventsCalendarPage: a cream sub-page header (back button, EVENTS
+// eyebrow chip, serif title, gold accent bar), a white month-grid card
+// (rounded day cells, multi-category dots, today ring, tap-again-to-clear
+// selection) and a photo-forward event list that shows the selected day or
+// all upcoming. Bound to the real MemberAPI.calendar window. Pushed onto the
+// Events NavigationStack, so NavigationLink(value: occ) resolves to the
 // `.navigationDestination(for: CalendarOccurrence.self)` registered there.
 import SwiftUI
 
 @MainActor
 final class CalendarViewModel: ObservableObject {
     @Published var occurrences: [CalendarOccurrence] = []
-    @Published var month: Date          // first day of the displayed month
-    @Published var selected: Date       // selected day (start of day)
+    @Published var month: Date            // first day of the displayed month
+    @Published var selected: Date?        // selected day; nil = show all upcoming
     @Published var loading = true
 
     let today: Date
@@ -20,7 +22,7 @@ final class CalendarViewModel: ObservableObject {
         let c = Calendar.current
         let now = c.startOfDay(for: Date())
         today = now
-        selected = now
+        selected = nil
         month = c.date(from: c.dateComponents([.year, .month], from: now))!
     }
 
@@ -74,10 +76,16 @@ final class CalendarViewModel: ObservableObject {
         Task { await load() }
     }
 
+    /// Tap a day to select it; tap it again to clear back to "all upcoming".
+    func toggle(_ day: Date) {
+        let d = cal.startOfDay(for: day)
+        selected = isSelected(d) ? nil : d
+    }
+
     func isToday(_ d: Date) -> Bool { cal.isDate(d, inSameDayAs: today) }
-    func isSelected(_ d: Date) -> Bool { cal.isDate(d, inSameDayAs: selected) }
-    func inDisplayedMonth(_ d: Date) -> Bool {
-        cal.isDate(d, equalTo: month, toGranularity: .month)
+    func isSelected(_ d: Date) -> Bool {
+        guard let selected else { return false }
+        return cal.isDate(d, inSameDayAs: selected)
     }
 
     /// Occurrences that fall on a given day.
@@ -85,18 +93,32 @@ final class CalendarViewModel: ObservableObject {
         occurrences.filter { cal.isDate(Ev.date($0.startAt), inSameDayAs: day) }
     }
 
-    /// The dominant category color for a day (for the grid dot) — nil if no events.
-    func dayCategory(_ day: Date) -> String? { occurrences(on: day).first?.category }
+    /// Up to three distinct category dots for a day (the make shows several).
+    func dayDots(_ day: Date) -> [Color] {
+        var seen: [String] = []
+        for o in occurrences(on: day) {
+            let key = (o.category ?? "").lowercased()
+            if !seen.contains(key) { seen.append(key) }
+            if seen.count == 3 { break }
+        }
+        return seen.map { Ev.categoryColor($0) }
+    }
 
-    /// Events for the currently-selected day, time-sorted.
-    var selectedEvents: [CalendarOccurrence] {
-        occurrences(on: selected).sorted { Ev.date($0.startAt) < Ev.date($1.startAt) }
+    /// The list below the grid: the selected day, or every upcoming event.
+    var listEvents: [CalendarOccurrence] {
+        let rows: [CalendarOccurrence]
+        if let selected {
+            rows = occurrences(on: selected)
+        } else {
+            rows = occurrences.filter { Ev.date($0.startAt) >= today }
+        }
+        return rows.sorted { Ev.date($0.startAt) < Ev.date($1.startAt) }
     }
 
     /// Distinct categories present in the displayed month (legend row).
     var legendCategories: [String] {
         var seen: [String] = []
-        for o in occurrences where inDisplayedMonth(Ev.date(o.startAt)) {
+        for o in occurrences where cal.isDate(Ev.date(o.startAt), equalTo: month, toGranularity: .month) {
             if let c = o.category, !seen.contains(c) { seen.append(c) }
         }
         return seen
@@ -106,7 +128,10 @@ final class CalendarViewModel: ObservableObject {
         occurrences.filter { Ev.date($0.startAt) >= today }.count
     }
 
-    var selectedDayTitle: String { Ev.weekday(iso(selected), "MMMM d") }   // "June 28"
+    var listTitle: String {
+        guard let selected else { return "UPCOMING" }
+        return Ev.weekday(iso(selected), "MMM d").uppercased()      // "JUN 15"
+    }
 
     private func iso(_ d: Date) -> String { ISO8601DateFormatter().string(from: d) }
 }
@@ -116,93 +141,91 @@ struct CalendarView: View {
     @Environment(\.dismiss) private var dismiss
 
     private let cols = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+    // Sunday-first labels to match the grid math (the make's label row starts
+    // on Monday against a Sunday-first grid — an upstream bug we don't copy).
     private let weekdays = ["S", "M", "T", "W", "T", "F", "S"]
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
                 header
-                VStack(spacing: Nuru.S.lg) {
+                VStack(spacing: Nuru.S.base) {
                     monthCard
+                    listHeader
                     daySection
                 }
                 .padding(.horizontal, Nuru.S.screen)
-                .padding(.top, Nuru.S.lg)
+                .padding(.top, Nuru.S.base)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
         }
         .background(Nuru.paper.ignoresSafeArea())
+        .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await vm.load() }
         .task { if vm.occurrences.isEmpty { await vm.load() } }
     }
 
-    // MARK: header — navy, rounded bottom, warm glow top-right, back + overline.
-    private var header: some View {
-        ZStack(alignment: .topTrailing) {
-            // soft warm glow, upper-right
-            RadialGradient(
-                colors: [Nuru.goldGlow.opacity(0.55), Nuru.gold.opacity(0.18), .clear],
-                center: .topTrailing, startRadius: 4, endRadius: 220
-            )
-            .frame(width: 320, height: 260)
-            .offset(x: 70, y: -70)
-            .allowsHitTesting(false)
+    // MARK: header — cream sub-page chrome (make's CommunityPage).
 
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    Button { dismiss() } label: {
-                        Icon(.arrowLeft, size: 18, color: Nuru.navy)
-                            .frame(width: 40, height: 40)
-                            .background(Nuru.white, in: Circle())
-                    }
-                    .buttonStyle(.plain)
-                    Spacer()
-                    Text("EVENTS")
-                        .font(.inter(11, .semibold)).kerning(2)
-                        .foregroundStyle(Nuru.gold)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(Color.white.opacity(0.06), in: Capsule())
-                        .padding(.top, 2)
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    Icon(.chevronLeft, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
-                Text(vm.headerTitle)
-                    .font(.fraunces(30, .semibold))
-                    .foregroundStyle(Nuru.onNavy)
-                    .padding(.top, Nuru.S.lg)
-                Text("\(vm.upcomingCount) upcoming · \(vm.monthTitle) \(vm.yearTitle)")
-                    .font(.inter(12))
-                    .foregroundStyle(Nuru.onNavyDim)
-                    .padding(.top, 4)
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(Nuru.gold)
-                    .frame(width: 44, height: 3)
-                    .padding(.top, Nuru.S.md)
+                .buttonStyle(.plain)
+                Spacer()
+                Text("EVENTS").font(.inter(9, .bold)).kerning(1.5)
+                    .foregroundStyle(Color(hex: 0x9A7A2A))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.white, in: Capsule())
+                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Nuru.S.screen)
-            .padding(.top, 56)
-            .padding(.bottom, Nuru.S.lg)
+            Text("All events & calendar")
+                .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
+                .padding(.top, Nuru.S.base)
+            Text("\(vm.upcomingCount) upcoming · \(vm.headerTitle)")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x68758A))
+                .padding(.top, 6)
+            RoundedRectangle(cornerRadius: 2)
+                .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))
+                .frame(width: 48, height: 3)
+                .padding(.top, Nuru.S.md)
         }
-        .background(Nuru.navy)
-        .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .background {
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+        }
+        .clipShape(.rect(bottomLeadingRadius: 30, bottomTrailingRadius: 30))
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
     // MARK: month-grid card
+
     private var monthCard: some View {
         VStack(spacing: Nuru.S.base) {
-            // title row + TODAY pill + nav buttons
+            // title row + TODAY pill + nav buttons (nav kept for real months —
+            // the make is a single-month mock).
             HStack(spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
-                    Text(vm.monthTitle).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
-                    Text(vm.yearTitle).font(.fraunces(18, .regular)).foregroundStyle(Nuru.ink300)
+                    Text(vm.monthTitle).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
+                    Text(vm.yearTitle).font(.fraunces(18, .regular)).foregroundStyle(Color(hex: 0xB8C0CC))
                 }
                 Spacer(minLength: 0)
                 Button { vm.goToday() } label: {
-                    Text("TODAY").font(.inter(10, .bold)).kerning(0.8)
-                        .foregroundStyle(Nuru.goldChipText)
+                    Text("TODAY").font(.inter(9, .bold)).kerning(1)
+                        .foregroundStyle(Color(hex: 0xA8861C))
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(Nuru.goldChipBg, in: Capsule())
+                        .background(Nuru.gold.opacity(0.1), in: Capsule())
                 }
                 .buttonStyle(.plain)
                 navButton(.chevronLeft) { vm.step(-1) }
@@ -212,20 +235,20 @@ struct CalendarView: View {
             // weekday header
             LazyVGrid(columns: cols, spacing: 0) {
                 ForEach(Array(weekdays.enumerated()), id: \.offset) { _, d in
-                    Text(d).font(.inter(11, .semibold)).foregroundStyle(Nuru.ink400)
+                    Text(d).font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Color(hex: 0xB0B8C4))
                         .frame(maxWidth: .infinity)
                 }
             }
             .padding(.bottom, 2)
 
             // day grid
-            LazyVGrid(columns: cols, spacing: Nuru.S.sm) {
+            LazyVGrid(columns: cols, spacing: 4) {
                 ForEach(Array(vm.gridDays.enumerated()), id: \.offset) { _, day in
-                    if let day { dayCell(day) } else { Color.clear.frame(height: 40) }
+                    if let day { dayCell(day) } else { Color.clear.frame(height: 42) }
                 }
             }
 
-            Divider().background(Nuru.border)
+            Divider().overlay(Nuru.border)
 
             // legend
             HStack(spacing: Nuru.S.base) {
@@ -239,6 +262,7 @@ struct CalendarView: View {
         }
         .padding(Nuru.S.base)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow()
     }
 
@@ -252,145 +276,100 @@ struct CalendarView: View {
         .buttonStyle(.plain)
     }
 
+    // Rounded-square day cell: navy gradient when selected, gold inset ring on
+    // today, and up to three category dots (white while selected).
     private func dayCell(_ day: Date) -> some View {
-        let inMonth = vm.inDisplayedMonth(day)
         let selected = vm.isSelected(day)
         let today = vm.isToday(day)
-        let cat = vm.dayCategory(day)
-        let num = Ev.weekday(ISO8601DateFormatter().string(from: day), "d")
+        let dots = vm.dayDots(day)
+        let num = Calendar.current.component(.day, from: day)
 
-        return Button {
-            vm.selected = Calendar.current.startOfDay(for: day)
-        } label: {
-            ZStack {
-                if selected {
-                    Circle().fill(Nuru.navy).frame(width: 40, height: 40)
-                } else if today {
-                    Circle().stroke(Nuru.gold, lineWidth: 1.5).frame(width: 40, height: 40)
-                }
-                VStack(spacing: 2) {
-                    Text(num)
-                        .font(.inter(13, selected || today ? .bold : .medium))
-                        .foregroundStyle(
-                            selected ? Nuru.onNavy
-                            : today ? Nuru.gold
-                            : inMonth ? Nuru.ink : Nuru.ink300
-                        )
-                    if let cat, !selected {
-                        Circle().fill(Ev.categoryColor(cat)).frame(width: 5, height: 5)
+        return Button { vm.toggle(day) } label: {
+            VStack(spacing: 3) {
+                Text("\(num)")
+                    .font(.inter(12, selected || today ? .bold : .semibold))
+                    .foregroundStyle(selected ? .white : today ? Color(hex: 0xA8861C) : Nuru.navy)
+                HStack(spacing: 2) {
+                    if dots.isEmpty {
+                        Color.clear.frame(width: 4, height: 4)
                     } else {
-                        Color.clear.frame(width: 5, height: 5)
+                        ForEach(Array(dots.enumerated()), id: \.offset) { _, c in
+                            Circle().fill(selected ? Color.white.opacity(0.9) : c).frame(width: 4, height: 4)
+                        }
                     }
                 }
             }
             .frame(maxWidth: .infinity)
-            .frame(height: 40)
+            .frame(height: 42)
+            .background {
+                if selected {
+                    LinearGradient(colors: [Nuru.navy, Color(hex: 0x060F1C)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                if today && !selected {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold, lineWidth: 1.5)
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }
 
     private func legendItem(_ category: String) -> some View {
-        HStack(spacing: 6) {
-            Circle().fill(Ev.categoryColor(category)).frame(width: 7, height: 7)
-            Text(category).font(.inter(11, .medium)).foregroundStyle(Nuru.ink600)
+        HStack(spacing: 5) {
+            Circle().fill(Ev.categoryColor(category)).frame(width: 6, height: 6)
+            Text(category.capitalized).font(.inter(10, .medium)).foregroundStyle(Nuru.ink600)
         }
     }
 
-    // MARK: selected-day section
-    private var daySection: some View {
-        VStack(spacing: Nuru.S.md) {
-            HStack {
-                Text(vm.selectedDayTitle)
-                    .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
-                Spacer(minLength: 0)
-                let n = vm.selectedEvents.count
-                Text("\(n) \(n == 1 ? "event" : "events")")
-                    .font(.inter(11, .bold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 12).padding(.vertical, 6)
-                    .background(Nuru.navy, in: Capsule())
-            }
+    // MARK: selected-day / upcoming list
 
-            if vm.loading && vm.occurrences.isEmpty {
-                ProgressView().padding(.top, Nuru.S.lg)
-            } else if vm.selectedEvents.isEmpty {
-                emptyDay
-            } else {
-                ForEach(vm.selectedEvents) { occ in
-                    NavigationLink(value: occ) { dayEventCard(occ) }
-                        .buttonStyle(.plain)
-                }
+    private var listHeader: some View {
+        HStack {
+            Text(vm.listTitle).font(.inter(10, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
+            Spacer(minLength: 0)
+            let n = vm.listEvents.count
+            Text("\(n) \(n == 1 ? "event" : "events")").font(.inter(10, .semibold)).foregroundStyle(Nuru.faint)
+        }
+        .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private var daySection: some View {
+        if vm.loading && vm.occurrences.isEmpty {
+            ProgressView().frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl)
+        } else if vm.listEvents.isEmpty {
+            emptyDay
+        } else {
+            ForEach(vm.listEvents) { occ in
+                NavigationLink(value: occ) { EventCardView(occ: occ) }
+                    .buttonStyle(.plain)
             }
         }
     }
 
     private var emptyDay: some View {
-        VStack(spacing: 6) {
-            Text("Nothing scheduled").font(.nHeading).foregroundStyle(Nuru.ink)
-            Text("Pick another day, or check back soon.")
-                .font(.nCaption).foregroundStyle(Nuru.muted)
+        VStack(spacing: Nuru.S.sm) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.gold.opacity(0.08)).frame(width: 48, height: 48)
+                Icon(.calendarDays, size: 22, color: Nuru.gold)
+            }
+            Text(vm.selected == nil ? "Nothing coming up" : "Nothing on this day.")
+                .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+            if vm.selected != nil {
+                Button { vm.selected = nil } label: {
+                    Text("See all upcoming").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Text("Check back soon — new gatherings land here.")
+                    .font(.inter(10)).foregroundStyle(Nuru.faint)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Nuru.S.xl)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
-    }
-
-    // Compact event row: left accent bar + icon tile + title/time/place + going.
-    private func dayEventCard(_ occ: CalendarOccurrence) -> some View {
-        let accent = Ev.categoryColor(occ.category)
-        return HStack(spacing: 0) {
-            Rectangle().fill(accent).frame(width: 4)
-            HStack(alignment: .top, spacing: Nuru.S.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous)
-                        .fill(accent.opacity(0.12))
-                        .frame(width: 44, height: 44)
-                    Icon(.calendar, size: 20, color: accent)
-                }
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(occ.title)
-                        .font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    HStack(spacing: 6) {
-                        Icon(.clock, size: 13, color: Nuru.ink600)
-                        Text(Ev.timeOf(occ.startAt)).font(.inter(12)).foregroundStyle(Nuru.muted)
-                    }
-                    if let loc = occ.location, !loc.isEmpty {
-                        HStack(spacing: 6) {
-                            Icon(.mapPin, size: 13, color: Nuru.ink600)
-                            Text(loc).font(.inter(12)).foregroundStyle(Nuru.muted).lineLimit(1)
-                        }
-                    }
-                    attendeeRow(occ)
-                        .padding(.top, 2)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(Nuru.S.base)
-        }
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
-        .clipShape(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-    }
-
-    private func attendeeRow(_ occ: CalendarOccurrence) -> some View {
-        let avatars = Array((occ.attendees ?? []).prefix(3))
-        return HStack(spacing: Nuru.S.sm) {
-            if !avatars.isEmpty {
-                HStack(spacing: -8) {
-                    ForEach(avatars) { a in
-                        Avatar(url: a.avatarUrl, name: a.fullName, size: 24)
-                            .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
-                    }
-                }
-            } else {
-                Icon(.users, size: 13, color: Nuru.ink600)
-            }
-            Text(occ.going > 0 ? "\(occ.going) going" : "Be the first")
-                .font(.inter(12)).foregroundStyle(Nuru.muted)
-        }
+        .cardSurfaceEv()
     }
 }

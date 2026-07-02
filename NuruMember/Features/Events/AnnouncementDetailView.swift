@@ -1,6 +1,9 @@
-// Announcement detail — native port of the RN announcement screen (GET
-// /announcements/{id}). Full-bleed hero image, title + date, body, an optional
-// video tile, and an image-gallery carousel. Replicates the card/image/video set.
+// Announcement detail — the announcement reader (GET /announcements/{id}),
+// presented with the make's cream sub-page chrome: back button, ANNOUNCEMENT
+// eyebrow chip, serif title, sent date and a gold accent bar. Below it: the
+// primary image (when the announcement has one), the body, an optional video
+// tile and an image-gallery carousel — every image slot renders a real URL or
+// a branded gradient, never a blank gray.
 import SwiftUI
 
 @MainActor
@@ -35,21 +38,24 @@ struct AnnouncementDetailView: View {
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: Nuru.S.base) {
-                hero
+            VStack(alignment: .leading, spacing: 0) {
+                header
                 VStack(alignment: .leading, spacing: Nuru.S.base) {
                     if let d = vm.detail {
-                        if let sent = d.sentAt { Text(whenString(sent)).font(.nCaption).foregroundStyle(Nuru.muted) }
-                        Text(d.body).font(.nBodyLg).foregroundStyle(Nuru.ink).fixedSize(horizontal: false, vertical: true)
+                        if let url = d.primaryImageUrl.flatMap(URL.init) { heroImage(url) }
+                        Text(d.body).font(.nBodyLg).foregroundStyle(Nuru.ink)
+                            .fixedSize(horizontal: false, vertical: true)
                         if let v = d.videoUrl.flatMap(URL.init) { videoTile(v) }
                         if !images.isEmpty { gallery }
                     } else if vm.loading {
                         ProgressView().frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
                     } else {
-                        Text(vm.error ?? "Couldn't load this announcement.").font(.nBody).foregroundStyle(Nuru.muted)
+                        Text(vm.error ?? "Couldn't load this announcement.")
+                            .font(.nBody).foregroundStyle(Nuru.muted)
                     }
                 }
                 .padding(.horizontal, Nuru.S.screen)
+                .padding(.top, Nuru.S.base)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
         }
@@ -60,30 +66,61 @@ struct AnnouncementDetailView: View {
         .task { if vm.detail == nil { await vm.load() } }
     }
 
-    private var hero: some View {
-        ZStack(alignment: .topLeading) {
-            // Hero image removed by design — always a brand gradient behind the title.
-            Nuru.heroGradient.frame(height: 260).frame(maxWidth: .infinity)
-            LinearGradient(colors: [Color.black.opacity(0.35), .clear, Color(hex: 0x081C36, alpha: 0.85)],
-                           startPoint: .top, endPoint: .bottom).frame(height: 260).allowsHitTesting(false)
-            VStack(alignment: .leading) {
-                HStack {
-                    Button { dismiss() } label: {
-                        Icon(.arrowLeft, size: 18, color: .white).frame(width: 40, height: 40).background(Color.black.opacity(0.4), in: Circle())
-                    }
-                    Spacer()
-                    Icon(.share2, size: 17, color: .white).frame(width: 40, height: 40).background(Color.black.opacity(0.4), in: Circle())
+    // MARK: cream sub-page header (make's CommunityPage chrome)
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    Icon(.chevronLeft, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
-                .padding(.horizontal, Nuru.S.lg).padding(.top, 54)
+                .buttonStyle(.plain)
                 Spacer()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("ANNOUNCEMENT").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.goldGlow)
-                    Text(vm.detail?.title ?? "Announcement").font(.fraunces(24, .semibold)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, Nuru.S.lg).padding(.bottom, Nuru.S.lg)
+                Text("ANNOUNCEMENT").font(.inter(9, .bold)).kerning(1.5)
+                    .foregroundStyle(Color(hex: 0x9A7A2A))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color.white, in: Capsule())
+                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
             }
+            Text(vm.detail?.title ?? "Announcement")
+                .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
+                .padding(.top, Nuru.S.base)
+            if let sent = vm.detail?.sentAt {
+                Text(whenString(sent)).font(.inter(12)).foregroundStyle(Color(hex: 0x68758A))
+                    .padding(.top, 6)
+            }
+            RoundedRectangle(cornerRadius: 2)
+                .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))
+                .frame(width: 48, height: 3)
+                .padding(.top, Nuru.S.md)
         }
-        .frame(height: 260)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .background {
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+        }
+        .clipShape(.rect(bottomLeadingRadius: 30, bottomTrailingRadius: 30))
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+    }
+
+    // MARK: media
+
+    // Primary image — real URL with a branded gradient while loading / on failure.
+    private func heroImage(_ url: URL) -> some View {
+        CachedAsyncImage(url: url) { p in
+            if let img = p.image { img.resizable().scaledToFill() } else { Nuru.heroGradient }
+        }
+        .frame(height: 200)
+        .frame(maxWidth: .infinity)
+        .clipped()
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     private func videoTile(_ url: URL) -> some View {
@@ -93,7 +130,8 @@ struct AnnouncementDetailView: View {
                 Icon(.playCircle, size: 48, color: .white)
             }
             .clipShape(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        }.buttonStyle(.plain)
+        }
+        .buttonStyle(.plain)
     }
 
     private var gallery: some View {
@@ -101,9 +139,12 @@ struct AnnouncementDetailView: View {
             HStack(spacing: Nuru.S.sm) {
                 ForEach(images, id: \.self) { s in
                     if let url = URL(string: s) {
-                        CachedAsyncImage(url: url) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
-                            .frame(width: 240, height: 150).clipped()
-                            .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                        CachedAsyncImage(url: url) { p in
+                            if let img = p.image { img.resizable().scaledToFill() } else { Nuru.heroGradient }
+                        }
+                        .frame(width: 240, height: 150)
+                        .clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                     }
                 }
             }
