@@ -112,7 +112,7 @@ struct DevotionalView: View {
                 if let series = d.series {
                     Text(series)
                         .font(.inter(13, .regular))
-                        .foregroundStyle(Color(hex: 0x68758A))
+                        .foregroundStyle(Color(hex: 0x59667C))
                 }
             }
         }

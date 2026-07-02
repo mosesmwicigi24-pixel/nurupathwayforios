@@ -14,9 +14,9 @@ enum HomeFig {
     static let goldDeep  = Color(hex: 0xB6862F)   // gradient end
     static let goldSoft  = Color(hex: 0xE6C068)   // progress-bar highlight
     static let eyebrow   = Color(hex: 0x9A7A2A)   // section labels / kickers
-    static let metaGray  = Color(hex: 0x6B7280)   // secondary text
-    static let faintGray = Color(hex: 0x9CA3AF)   // tertiary text
-    static let subGray   = Color(hex: 0x68758A)   // header subtitle gray
+    static let metaGray  = Color(hex: 0x5B6472)   // secondary text
+    static let faintGray = Color(hex: 0x74808F)   // tertiary text
+    static let subGray   = Color(hex: 0x59667C)   // header subtitle gray
     static let priorityBg = Color(hex: 0xFFFAEC)  // PriorityStrip tint
     static let liveRed   = Color(hex: 0xDC2626)
 }

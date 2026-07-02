@@ -23,8 +23,8 @@ private enum PW {
     static let gold      = Color(hex: 0xC9A227)
     static let bg        = Color(hex: 0xF4F0E8)
     static let ink       = Color(hex: 0x0B0B0C)   // primary heading
-    static let ink2      = Color(hex: 0x68758A)   // secondary
-    static let ink3      = Color(hex: 0x8B95A5)   // tertiary / locked
+    static let ink2      = Color(hex: 0x59667C)   // secondary
+    static let ink3      = Color(hex: 0x6F7E93)   // tertiary / locked
     static let goldDeep  = Color(hex: 0xA8861C)   // overlines
     static let goldTint  = Color(hex: 0xFFF4C7)   // completed tile
     static let mutedBg   = Color(hex: 0xEEF1F5)   // locked tile
@@ -278,17 +278,17 @@ private struct PathwayHubHeader: View {
             VStack(alignment: .leading, spacing: 0) {
                 topBar
                 Text("\(pwGreeting()), \(firstName) · Level \(idx + 1) of \(vm.levelCount)")
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0x68758A)).padding(.top, 16)
+                    .font(.inter(10)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 16)
                 Text(active?.title ?? "Your pathway")
                     .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(PW.navy)
                     .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
-                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(Color(hex: 0x68758A)).padding(.top, 4)
+                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 4)
                 HStack(spacing: 8) {
                     PWBar(pct: activePct, height: 6,
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
                           track: PW.navy.opacity(0.10))
                     Text("\(active?.completedModules ?? 0)/\(active?.totalModules ?? 0)")
-                        .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x68758A))
+                        .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
                         .contentTransition(.numericText())
                         .animation(.default, value: active?.completedModules)
                 }.padding(.top, 16)
@@ -886,7 +886,7 @@ struct LevelsMapView: View {
                         Text("Your pathway is unfolding.")
                             .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
                         Text("A calm view of your discipleship journey, saved progress, and what opens next.")
-                            .font(.inter(14)).foregroundStyle(Color(hex: 0x68758A)).lineSpacing(3)
+                            .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
                             .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
                     }
                     Spacer(minLength: 0)
@@ -938,7 +938,7 @@ private struct PWProgressRing: View {
                 Text("\(pct)%").font(.fraunces(18, .medium)).kerning(-0.72).foregroundStyle(PW.navy)
                     .contentTransition(.numericText())
                     .animation(.default, value: pct)
-                Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x74808F))
                     .padding(.top, -1)
             }
         }
@@ -958,7 +958,7 @@ private struct PWStatCard: View {
     let value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(label.uppercased()).font(.inter(10, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x9CA3AF))
+            Text(label.uppercased()).font(.inter(10, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
             Text(value).font(.inter(16, .bold)).kerning(-0.32).foregroundStyle(PW.navy).padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)

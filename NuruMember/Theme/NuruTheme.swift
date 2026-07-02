@@ -36,8 +36,8 @@ enum Nuru {
 
     // MARK: Ink (text)
     static let ink     = Color(hex: 0x0B0B0C)   // primary text on light
-    static let ink600  = Color(hex: 0x68758A)   // secondary text
-    static let ink400  = Color(hex: 0x8B95A5)   // tertiary text
+    static let ink600  = Color(hex: 0x59667C)   // secondary text
+    static let ink400  = Color(hex: 0x6F7E93)   // tertiary text
     static let ink300  = Color(hex: 0xB5BDC9)   // chevrons / faint
     // semantic aliases
     static let foreground = ink

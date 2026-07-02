@@ -255,7 +255,7 @@ struct GivingView: View {
                 .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .padding(.top, 4)
             Text("Generosity is worship — a quiet, joyful act.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x68758A))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
                 .padding(.top, 4)
 
             HStack(spacing: 8) {
@@ -299,7 +299,7 @@ struct GivingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text("\(ksh(g.amountMinor / 100)) · \(g.fund.capitalized) · via \(givingMethodName(g.method))")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280)).lineLimit(1)
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
                 }
                 Spacer(minLength: Nuru.S.sm)
                 Text("Give again")
@@ -343,7 +343,7 @@ struct GivingView: View {
                 Text(f.label).font(.inter(13, .semibold)).kerning(-0.13).foregroundStyle(Nuru.navy)
                     .lineLimit(1).minimumScaleFactor(0.85)
                     .padding(.top, 8)
-                Text(f.tagline).font(.inter(10)).foregroundStyle(Color(hex: 0x6B7280))
+                Text(f.tagline).font(.inter(10)).foregroundStyle(Color(hex: 0x5B6472))
                     .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
@@ -366,14 +366,14 @@ struct GivingView: View {
                 showKeypad = true
             } label: {
                 VStack(spacing: 4) {
-                    Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x9CA3AF))
+                    Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x9CA3AF))
+                        Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
                         Text(amount.formatted(.number.grouping(.automatic)))
                             .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
                             .contentTransition(.numericText(value: Double(amount)))
                     }
-                    Text("\(fund.label) · \(freqLabel)").font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    Text("\(fund.label) · \(freqLabel)").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -430,7 +430,7 @@ struct GivingView: View {
                 } label: {
                     Text(label)
                         .font(.inter(13, .semibold))
-                        .foregroundStyle(on ? Nuru.navy : Color(hex: 0x6B7280))
+                        .foregroundStyle(on ? Nuru.navy : Color(hex: 0x5B6472))
                         .frame(maxWidth: .infinity).frame(height: 40)
                         .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .nuruShadow(on ? 0.6 : 0)
@@ -455,7 +455,7 @@ struct GivingView: View {
                 Text("\(ksh(total)) every \(cadenceWord)")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text("First charge \(giveDateFull(nextCycleISO())) · then every \(cadenceWord). Cancel anytime.")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -482,8 +482,8 @@ struct GivingView: View {
                 overline("CHOOSE HOW TO PAY")
                 Spacer()
                 HStack(spacing: 4) {
-                    Icon(.gripVertical, size: 11, color: Color(hex: 0x9CA3AF))
-                    Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                    Icon(.gripVertical, size: 11, color: Color(hex: 0x74808F))
+                    Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                 }
             }
             VStack(spacing: Nuru.S.sm) {
@@ -510,7 +510,7 @@ struct GivingView: View {
                         Text(m.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                             .lineLimit(1).minimumScaleFactor(0.85)
                         if on {
-                            Text(activeDetail(m)).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280)).lineLimit(1)
+                            Text(activeDetail(m)).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
                         }
                     }
                     Spacer(minLength: Nuru.S.sm)
@@ -577,7 +577,7 @@ struct GivingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Cover the transaction fee").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Adds \(ksh(feeFor(amount))) — 100% reaches the fund")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
             }
         }
         .tint(Nuru.gold)
@@ -618,10 +618,10 @@ struct GivingView: View {
                 .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.top, 5)
-            Text(s.fund.capitalized).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+            Text(s.fund.capitalized).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
-            Text("Next \(giveDateShort(s.nextRunAt))").font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+            Text("Next \(giveDateShort(s.nextRunAt))").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                 .lineLimit(1)
                 .padding(.top, 5)
         }
@@ -658,7 +658,7 @@ struct GivingView: View {
                 HStack(spacing: 8) {
                     Icon(.handHeart, size: 14, color: Nuru.gold)
                     Text("No gifts yet — your first one will appear here the moment it settles.")
-                        .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -682,7 +682,7 @@ struct GivingView: View {
                 Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                     .lineLimit(1)
                 Text("\(giveDateShort(g.createdAt)) · \(givingMethodName(g.method))")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280)).lineLimit(1)
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
             }
             Spacer()
             Text(ksh(g.amountMinor / 100))
@@ -714,9 +714,9 @@ struct GivingView: View {
 
     private var secureNote: some View {
         HStack(spacing: 6) {
-            Icon(.shieldCheck, size: 13, color: Color(hex: 0x9CA3AF))
+            Icon(.shieldCheck, size: 13, color: Color(hex: 0x74808F))
             Text("Secure · M-Pesa & card · Receipt sent instantly")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.top, 2)
@@ -959,14 +959,14 @@ private struct GiveKeypadSheet: View {
         VStack(spacing: Nuru.S.base) {
             HStack {
                 Text("CUSTOM AMOUNT · \(fundLabel.uppercased())")
-                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                 Spacer()
                 Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
             }
             .padding(.top, Nuru.S.lg)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text("KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
                 Text(num.formatted(.number.grouping(.automatic)))
                     .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
             }
@@ -1017,7 +1017,7 @@ private struct GiveKeypadSheet: View {
                     Group {
                         if k == "del" {
                             Image(systemName: "delete.left")
-                                .font(.system(size: 19)).foregroundStyle(Color(hex: 0x6B7280))
+                                .font(.system(size: 19)).foregroundStyle(Color(hex: 0x5B6472))
                         } else {
                             Text(k).font(.inter(18, .semibold)).foregroundStyle(Nuru.navy)
                         }
@@ -1062,14 +1062,14 @@ private struct MobileMoneySheet: View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
                 Text(isMpesa ? "M-PESA NUMBER" : "AIRTEL MONEY NUMBER")
-                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                 Spacer()
                 Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
             }
             .padding(.top, Nuru.S.lg)
 
             Text("We'll send the payment prompt to this number. Your registered number loads by default — edit it for this gift if you like.")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack(spacing: Nuru.S.sm) {
@@ -1108,9 +1108,9 @@ private struct MobileMoneySheet: View {
             .opacity(valid ? 1 : 0.4)
 
             HStack(spacing: 5) {
-                Icon(.lock, size: 12, color: Color(hex: 0x9CA3AF))
+                Icon(.lock, size: 12, color: Color(hex: 0x74808F))
                 Text("Number used only for this transaction prompt")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             .frame(maxWidth: .infinity, alignment: .center)
             Spacer(minLength: 0)
@@ -1157,7 +1157,7 @@ private struct ScheduleDetailSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(ksh(schedule.amountMinor / 100)).font(.inter(17, .bold)).foregroundStyle(Nuru.navy)
                     Text("\(freqLabel) · \(schedule.fund.capitalized)")
-                        .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 }
             }
             .padding(.top, Nuru.S.base)
@@ -1198,7 +1198,7 @@ private struct ScheduleDetailSheet: View {
 
     private func row(_ label: String, _ value: String) -> some View {
         HStack {
-            Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+            Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
             Spacer()
             Text(value).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
         }
@@ -1224,7 +1224,7 @@ private struct ScheduleDetailSheet: View {
             Text("Cancel this recurring gift?")
                 .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xB91C1C))
             Text("Future charges stop. To change the amount, cancel and set up a new schedule.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Nuru.S.sm) {
                 Button { confirming = false } label: {
@@ -1375,7 +1375,7 @@ private struct SuccessStage: View {
                 .padding(.top, Nuru.S.lg).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.08)
             Text(refCode.map { "\(amountLabel) · \(fundLabel) · Ref \($0)" } ?? "\(amountLabel) · \(fundLabel)")
-                .font(.inter(13)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))
                 .padding(.top, Nuru.S.sm)
                 .gentleEntrance(delay: 0.16)
             Spacer()
@@ -1420,7 +1420,7 @@ private struct ScheduledStage: View {
                 .padding(.top, Nuru.S.lg)
                 .gentleEntrance(delay: 0.08)
             Text("\(amountLabel) to \(fundLabel) every \(cadenceWord).")
-                .font(.inter(13)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.16)
@@ -1464,7 +1464,7 @@ private struct FailedStage: View {
                 .font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
             Text(note.isEmpty ? "Your amount and fund are saved. Try again whenever you're ready." : note)
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
             Spacer()

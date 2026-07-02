@@ -95,7 +95,7 @@ private enum QZ {
     static let bg          = Color(hex: 0xF7F9FC)   // question canvas
     static let ink         = Color(hex: 0x0B0B0C)
     static let kicker      = Color(hex: 0xB0B5BF)   // "QUESTION n OF m"
-    static let copy        = Color(hex: 0x6B7280)   // result body copy
+    static let copy        = Color(hex: 0x5B6472)   // result body copy
     static let radioIdle   = Color(hex: 0xD8DAE0)   // unselected radio ring
     static let cardBorder  = Color.black.opacity(0.08)
     static let selectedBg  = Color(hex: 0x0A2540, alpha: 0.06)

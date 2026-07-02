@@ -25,7 +25,7 @@ struct ScoreDetailView: View {
                     componentsCard(b).gentleEntrance(delay: 0.05)
                     if !b.detail.isEmpty { detailCard(b).gentleEntrance(delay: 0.1) }
                     Text("Scores are formative, never a leaderboard — they decay gently when you lapse and grow as you do.")
-                        .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                        .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
                         .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 } else if failed {
                     errorCard
@@ -55,10 +55,10 @@ struct ScoreDetailView: View {
                         if !on { Haptics.selection(); pillar = p }
                     } label: {
                         HStack(spacing: 5) {
-                            Icon(p.icon, size: 12, color: on ? Nuru.navy : Color(hex: 0x68758A))
+                            Icon(p.icon, size: 12, color: on ? Nuru.navy : Color(hex: 0x59667C))
                             Text(p.displayName)
                                 .font(.inter(12, on ? .bold : .semibold))
-                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x68758A))
+                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
                         }
                         .padding(.horizontal, 12).frame(height: 36)
                         .background(on ? Nuru.gold.opacity(0.16) : Nuru.surface, in: Capsule())
@@ -79,7 +79,7 @@ struct ScoreDetailView: View {
                     .font(.fraunces(52, .semibold)).kerning(-1)
                     .foregroundStyle(Nuru.navy)
                     .contentTransition(.numericText())
-                Text("/ 100").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text("/ 100").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x74808F))
             }
             HStack(spacing: 4) {
                 Icon(.sparkles, size: 11, color: Color(hex: 0x8A6D18))
@@ -90,7 +90,7 @@ struct ScoreDetailView: View {
             .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
 
             Text(pillar.blurb)
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 2)
@@ -152,7 +152,7 @@ struct ScoreDetailView: View {
             ForEach(Array(sortedKeys(b.detail).enumerated()), id: \.element) { i, key in
                 if i > 0 { Divider() }
                 HStack {
-                    Text(Self.label(for: key)).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                    Text(Self.label(for: key)).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                     Spacer(minLength: Nuru.S.md)
                     Text(Self.format(b.detail[key] ?? 0, key: key))
                         .font(.inter(13, .bold)).foregroundStyle(Nuru.navy)

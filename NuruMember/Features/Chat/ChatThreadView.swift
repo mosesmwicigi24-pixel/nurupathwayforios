@@ -103,7 +103,7 @@ private enum Aurora {
     static let textDark     = Color(hex: 0x17283D)              // body on light bubbles
     static let meta         = Color(hex: 0x9AA3AF)              // timestamps / ticks
     static let quoteBg      = Color(hex: 0x0B1F33, alpha: 0.05) // QUOTE_BG
-    static let quoteBody    = Color(hex: 0x6B7280)
+    static let quoteBody    = Color(hex: 0x5B6472)
     static let bubbleBorder = Color(hex: 0x0B1F33, alpha: 0.07) // BUBBLE_BORDER
     static let border       = Color(hex: 0x0B1F33, alpha: 0.08) // BORDER
     static let chipBg       = Color(hex: 0x0B1F33, alpha: 0.06) // non-mine reaction chip
@@ -113,7 +113,7 @@ private enum Aurora {
     static let gold         = Color(hex: 0xC89B3C)              // GOLD (= self accent)
     static let goldDeep     = Color(hex: 0xA8761A)              // gold text on light
     static let dayGold      = Color(hex: 0xA8861C)              // day-chip label
-    static let confidence   = Color(hex: 0x8A93A0)
+    static let confidence   = Color(hex: 0x6A7686)
 
     static let storyRing = LinearGradient(
         colors: [Color(hex: 0xE6C068), Color(hex: 0xC89B3C), Color(hex: 0xB07D2E)],
@@ -344,7 +344,7 @@ private struct ThreadHeader: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(title).font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy).lineLimit(1)
             if isSpace {
-                Text(subtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x68758A)).lineLimit(1)
+                Text(subtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C)).lineLimit(1)
             } else {
                 HStack(spacing: 4) {
                     Text("🕊️").font(.system(size: 10))
@@ -370,8 +370,8 @@ private struct ThreadHeader: View {
 
     private func topicStrip(_ topic: String) -> some View {
         HStack(spacing: 6) {
-            Icon(.flag, size: 13, color: Color(hex: 0x68758A))
-            Text(topic).font(.inter(12)).foregroundStyle(Color(hex: 0x68758A)).lineLimit(1)
+            Icon(.flag, size: 13, color: Color(hex: 0x59667C))
+            Text(topic).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineLimit(1)
             Spacer()
         }
         .padding(.horizontal, Nuru.S.base)

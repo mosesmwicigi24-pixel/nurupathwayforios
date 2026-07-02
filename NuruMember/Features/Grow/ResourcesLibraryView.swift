@@ -23,8 +23,8 @@ private enum RES {
     static let surface = Color(hex: 0xFBF8F1)
     static let border  = Color(hex: 0x0A2540, alpha: 0.08)
     static let kicker  = Color(hex: 0x9A7A2A)
-    static let ink2    = Color(hex: 0x68758A)
-    static let hint    = Color(hex: 0x9CA3AF)
+    static let ink2    = Color(hex: 0x59667C)
+    static let hint    = Color(hex: 0x74808F)
     static let headA   = Color(hex: 0xF6F4EF)
     static let headB   = Color(hex: 0xEFE8DA)
 

@@ -190,7 +190,7 @@ struct CalendarView: View {
                 .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
             Text("\(vm.upcomingCount) upcoming · \(vm.headerTitle)")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x68758A))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
                 .padding(.top, 6)
             RoundedRectangle(cornerRadius: 2)
                 .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))

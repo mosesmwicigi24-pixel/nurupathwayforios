@@ -156,7 +156,7 @@ struct MfaEnrollSheet: View {
     private var scanStep: some View {
         VStack(spacing: Nuru.S.md) {
             Text("Scan this QR code with Google Authenticator, Authy or 1Password.")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .multilineTextAlignment(.center)
 
             ZStack {
@@ -206,7 +206,7 @@ struct MfaEnrollSheet: View {
     private var verifyStep: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("Enter the 6-digit code from your authenticator app.")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
 
             TextField("123456", text: Binding(
                 get: { vm.code },

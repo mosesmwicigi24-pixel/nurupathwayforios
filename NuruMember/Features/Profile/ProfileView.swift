@@ -74,7 +74,7 @@ struct ProfileView: View {
                 privacy
                 helpPrivacy
                 actions
-                Text("Nuru Pathway · v1.0").font(.inter(10)).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text("Nuru Pathway · v1.0").font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
                     .padding(.top, Nuru.S.xs)
             }
             .padding(.horizontal, Nuru.S.screen)
@@ -290,7 +290,7 @@ struct ProfileView: View {
                     Text(p?.fullName ?? "—").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
                         .lineLimit(1).minimumScaleFactor(0.8)
                     if let email = p?.email {
-                        Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
+                        Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
                             .lineLimit(1).truncationMode(.middle)
                     }
                     HStack(spacing: 4) {
@@ -395,13 +395,13 @@ struct ProfileView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 3) {
-                    Text("MEMBER ID").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x9CA3AF))
-                    Icon(.lock, size: 9, color: Color(hex: 0x9CA3AF))
+                    Text("MEMBER ID").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                    Icon(.lock, size: 9, color: Color(hex: 0x74808F))
                 }
                 Text(memberIdLabel).font(.fraunces(13, .semibold)).foregroundStyle(Nuru.navy)
             }
             Spacer(minLength: 0)
-            Text("PERMANENT").font(.inter(9, .semibold)).kerning(0.9).foregroundStyle(Color(hex: 0x9CA3AF))
+            Text("PERMANENT").font(.inter(9, .semibold)).kerning(0.9).foregroundStyle(Color(hex: 0x74808F))
         }
         .padding(10)
         .background(
@@ -425,7 +425,7 @@ struct ProfileView: View {
         HStack(spacing: Nuru.S.md) {
             fieldIconTile(.languages)
             VStack(alignment: .leading, spacing: 3) {
-                Text("LANGUAGES SPOKEN").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text("LANGUAGES SPOKEN").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                 HStack(spacing: 4) { langChip(localeLanguageName, isDefault: true) }
             }
             Spacer(minLength: 0)
@@ -457,7 +457,7 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Two-factor authentication").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text(twoFactorOn ? "Active · Authenticator app" : "Not enabled · recommended")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 Spacer(minLength: 0)
                 Toggle("", isOn: Binding(get: { twoFactorOn }, set: { want in
@@ -485,10 +485,10 @@ struct ProfileView: View {
                     iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Notification settings").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                        Text("Manage sounds & toggles in phone settings").font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                        Text("Manage sounds & toggles in phone settings").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                     }
                     Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: Color(hex: 0x9CA3AF))
+                    Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
@@ -507,7 +507,7 @@ struct ProfileView: View {
                     ZStack { Circle().fill(Nuru.goldTint).frame(width: 56, height: 56)
                         .overlay(Circle().stroke(Nuru.gold, lineWidth: 1.5)); Icon(.award, size: 22, color: Nuru.gold) }
                     Text("No badges yet").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                    Text("Badges appear here as you grow.").font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    Text("Badges appear here as you grow.").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.sm)
             } else {
@@ -521,7 +521,7 @@ struct ProfileView: View {
                 }
             }
             Text("Badges celebrate your growth — not competition.")
-                .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm)
         }
@@ -579,7 +579,7 @@ struct ProfileView: View {
                                 }
                                 .frame(height: 5)
                             }
-                            Icon(.chevronRight, size: 16, color: Color(hex: 0x9CA3AF))
+                            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
                         }
                         .padding(.vertical, 8)
                         .contentShape(Rectangle())
@@ -588,7 +588,7 @@ struct ProfileView: View {
                     if pillar != ScorePillar.allCases.last { Divider() }
                 }
                 Text("Tap a score to see why — scores are formative, never a leaderboard.")
-                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                     .padding(.top, Nuru.S.xs)
             } else {
@@ -596,7 +596,7 @@ struct ProfileView: View {
                 HStack(spacing: Nuru.S.md) {
                     fieldIconTile(.trendingUp)
                     Text("Your growth scores appear here once we can reach the server.")
-                        .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -645,7 +645,7 @@ struct ProfileView: View {
                         Icon(.award, size: 22, color: Nuru.gold)
                     }
                     Text("No certificates yet").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                    Text("Complete a level to earn your first.").font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    Text("Complete a level to earn your first.").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(20)
@@ -659,7 +659,7 @@ struct ProfileView: View {
                 }
             }
             Text("The name on a certificate is fixed at issuance and won't change if you edit your profile.")
-                .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm)
         }
@@ -684,7 +684,7 @@ struct ProfileView: View {
                     } label: {
                         Text(opt.label)
                             .font(.inter(opt.preview, on ? .bold : .semibold))
-                            .foregroundStyle(on ? Nuru.navy : Color(hex: 0x68758A))
+                            .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
                             .frame(maxWidth: .infinity).frame(height: 48)
                             .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
@@ -692,7 +692,7 @@ struct ProfileView: View {
                 }
             }
             .padding(.top, Nuru.S.xs)
-            Text("Adjusts text size across the whole app.").font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF)).padding(.top, Nuru.S.xs)
+            Text("Adjusts text size across the whole app.").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
         }
     }
 
@@ -705,7 +705,7 @@ struct ProfileView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Share my approximate location").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text("Helps you connect with believers near you. Approximate only; you can turn this off anytime.")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -817,11 +817,11 @@ struct ProfileView: View {
         HStack(spacing: Nuru.S.md) {
             fieldIconTile(icon)
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text(label).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                 Text(value).font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
             }
             Spacer(minLength: 0)
-            if editable { Icon(.pencil, size: 14, color: Color(hex: 0x9CA3AF)) }
+            if editable { Icon(.pencil, size: 14, color: Color(hex: 0x74808F)) }
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -832,10 +832,10 @@ struct ProfileView: View {
             iconTile(icon, tint: tint, color: color)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
             }
             Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: Color(hex: 0x9CA3AF))
+            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -846,7 +846,7 @@ struct ProfileView: View {
             fieldIconTile(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
             }
             Spacer(minLength: 0)
             Toggle("", isOn: Binding(get: { binding.wrappedValue },
@@ -964,11 +964,11 @@ private struct BadgeMedallion: View {
                     .overlay(Circle().stroke(badge.earned ? badge.style.color : Nuru.border,
                                              lineWidth: badge.earned ? 1.5 : 1))
                     .frame(width: 54, height: 54)
-                Icon(badge.style.icon, size: 20, color: badge.earned ? badge.style.color : Color(hex: 0x9CA3AF))
+                Icon(badge.style.icon, size: 20, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
             }
             Text(badge.name)
                 .font(.inter(9, badge.earned ? .semibold : .medium))
-                .foregroundStyle(badge.earned ? Nuru.navy : Color(hex: 0x9CA3AF))
+                .foregroundStyle(badge.earned ? Nuru.navy : Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
         }
@@ -992,7 +992,7 @@ private struct BadgeDetailSheet: View {
                         .fill(badge.earned ? badge.style.tint : Color(hex: 0xF3F4F6))
                         .overlay(Circle().stroke(badge.earned ? badge.style.color : Nuru.border, lineWidth: badge.earned ? 2 : 1))
                         .frame(width: 96, height: 96)
-                    Icon(badge.style.icon, size: 42, color: badge.earned ? badge.style.color : Color(hex: 0x9CA3AF))
+                    Icon(badge.style.icon, size: 42, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
                 }
                 HStack(spacing: 6) {
                     if badge.earned {
@@ -1005,8 +1005,8 @@ private struct BadgeDetailSheet: View {
                         .background(Color(hex: 0x16A34A).opacity(0.09), in: Capsule())
                     } else {
                         HStack(spacing: 4) {
-                            Icon(.lock, size: 10, color: Color(hex: 0x9CA3AF))
-                            Text("Locked").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9CA3AF))
+                            Icon(.lock, size: 10, color: Color(hex: 0x74808F))
+                            Text("Locked").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x74808F))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Color(hex: 0xF3F4F6), in: Capsule())
@@ -1017,7 +1017,7 @@ private struct BadgeDetailSheet: View {
                         .background(badge.style.color.opacity(0.10), in: Capsule())
                 }
                 Text(badge.name).font(.fraunces(26, .semibold)).kerning(-0.5).foregroundStyle(Nuru.navy)
-                Text(badge.description).font(.inter(13)).foregroundStyle(Color(hex: 0x6B7280))
+                Text(badge.description).font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
                 GoldSheetButton(title: badge.earned ? "Keep going" : "Got it") { dismiss() }
@@ -1056,7 +1056,7 @@ private struct BadgeGallerySheet: View {
                     }
                 }
                 Text("Locked badges unlock as you grow. Keep going.")
-                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             }
         }
@@ -1093,7 +1093,7 @@ private struct MilestoneTimelineRow: View {
                         .frame(width: 28, height: 28)
                     Icon(isDone ? .check : isActive ? .calendar : .heart,
                          size: isDone ? 14 : isActive ? 13 : 12,
-                         color: isDone ? Nuru.navy : isActive ? Nuru.gold : Color(hex: 0x9CA3AF))
+                         color: isDone ? Nuru.navy : isActive ? Nuru.gold : Color(hex: 0x74808F))
                 }
                 if !isLast {
                     Rectangle()
@@ -1105,8 +1105,8 @@ private struct MilestoneTimelineRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(milestone.label)
                     .font(.inter(13, .semibold))
-                    .foregroundStyle(isDone || isActive ? Nuru.navy : Color(hex: 0x9CA3AF))
-                Text(milestone.meta).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    .foregroundStyle(isDone || isActive ? Nuru.navy : Color(hex: 0x74808F))
+                Text(milestone.meta).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
             }
             .padding(.bottom, isLast ? 0 : 12)
             Spacer(minLength: 0)
@@ -1151,7 +1151,7 @@ private struct CertificateCardView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(cert.title).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                     Text("Level \(cert.levelNumber ?? 1) · Issued \(formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10)))")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 Spacer(minLength: 0)
             }
@@ -1167,7 +1167,7 @@ private struct CertificateCardView: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Icon(.fingerprint, size: 13, color: Color(hex: 0x9CA3AF))
+                    Icon(.fingerprint, size: 13, color: Color(hex: 0x74808F))
                     Text(cert.verificationCode)
                         .font(.system(size: 12, weight: .semibold, design: .monospaced))
                         .kerning(0.5).foregroundStyle(Nuru.navy)
@@ -1314,7 +1314,7 @@ private struct VerifyCertificateSheet: View {
                             .font(.inter(15, .bold)).foregroundStyle(color)
                         Text(r.valid ? "This certificate is authentic and was issued by Nuru Place."
                                      : "This certificate is no longer valid.")
-                            .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                            .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                             .multilineTextAlignment(.center)
                     }
                     .frame(maxWidth: .infinity)
@@ -1330,9 +1330,9 @@ private struct VerifyCertificateSheet: View {
                     }
 
                     HStack(spacing: 4) {
-                        Icon(.lock, size: 11, color: Color(hex: 0x9CA3AF))
+                        Icon(.lock, size: 11, color: Color(hex: 0x74808F))
                         Text("Anyone can confirm this at pathway.nuruplace.org/v1/verify/\(cert.verificationCode)")
-                            .font(.inter(10)).foregroundStyle(Color(hex: 0x9CA3AF))
+                            .font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
                     }
                 }
             } else if failed {
@@ -1358,7 +1358,7 @@ private struct VerifyCertificateSheet: View {
 
     private func verifyRow(_ label: String, _ value: String, mono: Bool = false) -> some View {
         HStack {
-            Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+            Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
             Spacer(minLength: Nuru.S.md)
             Text(value)
                 .font(mono ? .system(size: 12, weight: .semibold, design: .monospaced) : .inter(12, .semibold))
@@ -1492,7 +1492,7 @@ private struct PasswordChangeSheet: View {
                 secure("New password", $new1)
                 secure("Confirm new password", $new2)
                 Text("Use at least 8 characters with a mix of letters, numbers and a symbol.")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                     .padding(.top, Nuru.S.xs)
                 if let error {
                     Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
@@ -1555,14 +1555,14 @@ private struct AppLanguageSheet: View {
         PSheetShell(title: "App language") {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("Choose the language for the app interface.")
-                    .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 VStack(spacing: Nuru.S.sm) {
                     ForEach(options, id: \.code) { o in
                         Button { if o.enabled { Haptics.selection(); picked = o.code } } label: {
                             HStack {
                                 VStack(alignment: .leading, spacing: 1) {
                                     Text(o.name).font(.inter(14, .medium)).foregroundStyle(Nuru.navy)
-                                    Text(o.note).font(.inter(11)).foregroundStyle(Color(hex: 0x6B7280))
+                                    Text(o.note).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                                 }
                                 Spacer()
                                 if picked == o.code { Icon(.check, size: 16, color: Nuru.gold) }
@@ -1625,13 +1625,13 @@ private struct HelpSupportSheet: View {
                                 Text(f.q).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: 0)
-                                Icon(.chevronRight, size: 16, color: Color(hex: 0x9CA3AF))
+                                Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
                                     .rotationEffect(.degrees(open == i ? 90 : 0))
                             }
                             .padding(12)
                         }.buttonStyle(.plain)
                         if open == i {
-                            Text(f.a).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                            Text(f.a).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.horizontal, 12).padding(.bottom, 12)
                         }
@@ -1685,16 +1685,16 @@ private struct PrivacyPolicySheet: View {
     var body: some View {
         PSheetShell(title: "Privacy policy") {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
-                Text("Last updated 14 June 2026").font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                Text("Last updated 14 June 2026").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                 ForEach(sections, id: \.h) { s in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(s.h).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                        Text(s.p).font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                        Text(s.p).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Text("Questions about your privacy? Email privacy@nuru.app and we'll respond within 7 days.")
-                    .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x74808F))
                 GoldSheetButton(title: "Got it") { dismiss() }
             }
         }

@@ -169,7 +169,7 @@ struct ChatView: View {
                         .font(.fraunces(30, .semibold)).kerning(-0.6).foregroundStyle(Nuru.navy)
                         .padding(.top, Nuru.S.md)
                     Text(vm.totalUnread > 0 ? "\(vm.totalUnread) unread · \(vm.spaces.count) spaces" : "You’re all caught up")
-                        .font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
+                        .font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
                         .padding(.top, 6)
                 }
                 Spacer(minLength: 0)
@@ -215,8 +215,8 @@ struct ChatView: View {
 
     private var searchBar: some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.search, size: 16, color: Color(hex: 0x9CA3AF))
-            TextField("", text: $query, prompt: Text("Search spaces, people, messages").foregroundColor(Color(hex: 0x9CA3AF)))
+            Icon(.search, size: 16, color: Color(hex: 0x74808F))
+            TextField("", text: $query, prompt: Text("Search spaces, people, messages").foregroundColor(Color(hex: 0x74808F)))
                 .font(.inter(14)).foregroundStyle(Nuru.navy)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -226,7 +226,7 @@ struct ChatView: View {
                     Haptics.tap()
                     query = ""
                 } label: {
-                    Icon(.x, size: 14, color: Color(hex: 0x9CA3AF))
+                    Icon(.x, size: 14, color: Color(hex: 0x74808F))
                         .frame(width: 32, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -353,8 +353,8 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.15)) { segment = .broadcast }
         } label: {
             HStack(spacing: 5) {
-                Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x68758A))
-                Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x68758A))
+                Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C))
+                Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
@@ -376,9 +376,9 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
         } label: {
             HStack(spacing: 5) {
-                Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x68758A))
+                Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 Text("\(count)").font(.inter(10, .bold))
-                    .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x8A93A0))
+                    .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
                     .padding(.horizontal, 6).padding(.vertical, 1)
                     .frame(minWidth: 18)
                     .background(selected ? Nuru.gold : Nuru.surface, in: Capsule())
@@ -443,9 +443,9 @@ struct ChatView: View {
     // Inbox failed to load — warm copy + a real retry, not a dead-end line.
     private var loadFailedCard: some View {
         VStack(spacing: Nuru.S.md) {
-            Icon(.messageCircle, size: 22, color: Color(hex: 0x9CA3AF))
+            Icon(.messageCircle, size: 22, color: Color(hex: 0x74808F))
             Text(vm.error ?? "Couldn't load your chats.")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x9CA3AF))
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
             Button {
                 Haptics.tap()
@@ -602,7 +602,7 @@ struct ChatView: View {
                             .shadow(color: Nuru.gold.opacity(0.5), radius: 5, y: 2)
                             .offset(x: 2, y: 2)
                     }
-                    Text("Your note").font(.inter(10, .medium)).foregroundStyle(Color(hex: 0x8A93A0))
+                    Text("Your note").font(.inter(10, .medium)).foregroundStyle(Color(hex: 0x6A7686))
                 }
                 .frame(width: 60)
                 ForEach(vm.dms) { c in
@@ -734,7 +734,7 @@ struct ChatView: View {
                 .frame(width: 40, height: 40)
                 .background(Nuru.gold.opacity(0.08), in: Circle())
             Text(text)
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x9CA3AF)).lineSpacing(3)
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x74808F)).lineSpacing(3)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -850,9 +850,9 @@ private struct RowPreview: View {
     }
     private var authorText: Text {
         guard showAuthor, let a = c.lastAuthor, !a.isEmpty else { return Text("") }
-        return Text("\(a): ").fontWeight(.semibold).foregroundColor(unread ? Nuru.navy : Color(hex: 0x68758A))
+        return Text("\(a): ").fontWeight(.semibold).foregroundColor(unread ? Nuru.navy : Color(hex: 0x59667C))
     }
-    private var bodyColor: Color { unread ? Color(hex: 0x33445A) : Color(hex: 0x8A93A0) }
+    private var bodyColor: Color { unread ? Color(hex: 0x33445A) : Color(hex: 0x6A7686) }
 }
 
 // MARK: - Space row (# squircle, author preview, member dots, Active pill)
@@ -975,7 +975,7 @@ private struct PersonRow: View {
                         certSeal
                     }
                     Text(subtitle)
-                        .font(.inter(10)).foregroundStyle(Color(hex: 0x8A93A0)).lineLimit(1)
+                        .font(.inter(10)).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if busy {
@@ -1076,7 +1076,7 @@ private struct DiscoverSpaceRow: View {
                     .font(.inter(12, .medium)).kerning(-0.12)
                     .foregroundStyle(Nuru.navy).lineLimit(1)
                 Text(subtitle)
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0x8A93A0)).lineLimit(1)
+                    .font(.inter(10)).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
             }
             Spacer(minLength: 4)
             Button(action: follow) {
@@ -1151,7 +1151,7 @@ private struct BroadcastComposer: View {
             }
             HStack(alignment: .bottom, spacing: 10) {
                 TextField("", text: $text,
-                          prompt: Text("Write the message every member should receive…").foregroundColor(Color(hex: 0x9CA3AF)),
+                          prompt: Text("Write the message every member should receive…").foregroundColor(Color(hex: 0x74808F)),
                           axis: .vertical)
                     .font(.inter(14)).foregroundStyle(Nuru.navy)
                     .lineLimit(5...10)
@@ -1188,7 +1188,7 @@ private struct BroadcastComposer: View {
                 Task { await uploadPicked() }
             }
             Text("Delivers as a personal message to \(peopleCount) member\(peopleCount == 1 ? "" : "s") · replies come back to you individually")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x8A93A0)).lineSpacing(3)
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x6A7686)).lineSpacing(3)
             if let n = sentTo {
                 HStack(spacing: 6) {
                     Icon(.checkCircle2, size: 14, color: Color(hex: 0x15803D))
@@ -1341,7 +1341,7 @@ private struct BroadcastAttachmentThumb: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             Text(uploading ? "Uploading photo…" : "Photo attached · sent with your message")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x8A93A0))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x6A7686))
             Spacer(minLength: 0)
             if !uploading {
                 Button {

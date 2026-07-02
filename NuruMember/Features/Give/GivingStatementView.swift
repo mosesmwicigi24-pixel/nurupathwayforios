@@ -124,7 +124,7 @@ struct GivingStatementView: View {
                         fundTotalsCard.gentleEntrance()
                         historyList
                         Text("Statement reflects records held under Finance · receipts emailed per gift.")
-                            .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                            .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 2)
                     }
@@ -170,7 +170,7 @@ struct GivingStatementView: View {
             }
             Text("No gifts yet").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
             Text("When you give, your full record and receipts live here.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
@@ -253,7 +253,7 @@ struct GivingStatementView: View {
         } label: {
             Text(label)
                 .font(.inter(13, .semibold))
-                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x6B7280))
+                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x5B6472))
                 .frame(maxWidth: .infinity).frame(height: 38)
                 .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .nuruShadow(on ? 0.6 : 0)
@@ -270,7 +270,7 @@ struct GivingStatementView: View {
             let totals = vm.fundTotals(in: year)
             if totals.isEmpty {
                 Text("No settled gifts \(periodLabel).")
-                    .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                     .padding(.vertical, Nuru.S.sm)
             } else {
                 ForEach(Array(totals.enumerated()), id: \.element.fund) { i, t in
@@ -305,7 +305,7 @@ struct GivingStatementView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.fund.capitalized).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text("\(t.count) gift\(t.count == 1 ? "" : "s")")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             Spacer()
             Text(ksh(t.totalMinor / 100)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -348,7 +348,7 @@ struct GivingStatementView: View {
                 Text(g.fund.capitalized)
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x9CA3AF))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                 if let ref = g.providerRef {
                     Text("Ref \(ref)")
                         .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))

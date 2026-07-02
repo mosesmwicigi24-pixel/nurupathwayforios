@@ -107,8 +107,8 @@ private enum EvD {
     static let tile        = Color(hex: 0xFBF8F1)   // inset tiles / secondary buttons
     static let ink         = Color(hex: 0x0A1628)   // primary text
     static let body        = Color(hex: 0x3A4A5F)   // about copy / roster names
-    static let secondary   = Color(hex: 0x68758A)   // inactive RSVP text
-    static let tertiary    = Color(hex: 0x9CA3AF)   // meta labels / faint text
+    static let secondary   = Color(hex: 0x59667C)   // inactive RSVP text
+    static let tertiary    = Color(hex: 0x74808F)   // meta labels / faint text
     static let overline    = Color(hex: 0xA8861C)   // section overlines
     static let gold        = Color(hex: 0xC9A227)
     static let goldDeep    = Color(hex: 0xB6862F)
@@ -116,7 +116,7 @@ private enum EvD {
     static let goingDeep   = Color(hex: 0x15803D)
     static let goingText   = Color(hex: 0x166534)
     static let maybe       = Color(hex: 0xD97706)
-    static let declined    = Color(hex: 0x9CA3AF)
+    static let declined    = Color(hex: 0x74808F)
     static let navyBase    = Color(hex: 0x0A2540)   // scrim / border / shadow base
     static let border      = Color(hex: 0x0A2540, alpha: 0.07)
     static let borderMid   = Color(hex: 0x0A2540, alpha: 0.10)
@@ -921,7 +921,7 @@ private struct EvdCheckInNotice: View {
         HStack(spacing: 8) {
             Icon(.lock, size: 14, color: EvD.gold)
             Text("Check-in opens when the event is live")
-                .font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0x8A93A0))
+                .font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0x6A7686))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)

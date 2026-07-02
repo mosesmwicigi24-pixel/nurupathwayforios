@@ -56,7 +56,7 @@ private enum ML {
     static let track        = Color(hex: 0x0A2540, alpha: 0.10)
     static let overline     = Color(hex: 0x9A7A2A)   // header overline
     static let kicker       = Color(hex: 0xA8861C)   // SECTION / scripture kickers
-    static let secondary    = Color(hex: 0x68758A)
+    static let secondary    = Color(hex: 0x59667C)
     static let lead         = Color(hex: 0x3A4A5F)   // intro paragraph
     static let bodyInk      = Color(hex: 0x1B2733)   // flowing body copy
     static let headerTop    = Color(hex: 0xF6F4EF)

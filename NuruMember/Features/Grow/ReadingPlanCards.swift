@@ -18,8 +18,8 @@ enum PL {
     static let creamLo   = Color(hex: 0xF1ECE1)
     static let surface   = Color(hex: 0xFBF8F1)
     static let border    = Color(hex: 0x0A2540, alpha: 0.08)
-    static let ink2      = Color(hex: 0x68758A)
-    static let ink3      = Color(hex: 0x9CA3AF)
+    static let ink2      = Color(hex: 0x59667C)
+    static let ink3      = Color(hex: 0x74808F)
     static let catText   = Color(hex: 0x9A7A2A)
     static let blurb     = Color(hex: 0x3A4A5F)
     static let highlight = Color(hex: 0xFFF8E6)   // next-day / scripture card bg

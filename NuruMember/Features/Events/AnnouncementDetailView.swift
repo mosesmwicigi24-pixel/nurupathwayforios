@@ -135,7 +135,7 @@ struct AnnouncementDetailView: View {
                 .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
             if let sent = vm.detail?.sentAt {
-                Text(whenString(sent)).font(.inter(12)).foregroundStyle(Color(hex: 0x68758A))
+                Text(whenString(sent)).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
                     .padding(.top, 6)
             }
             RoundedRectangle(cornerRadius: 2)

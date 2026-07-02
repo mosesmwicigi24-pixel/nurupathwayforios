@@ -481,7 +481,7 @@ private struct PrayerTabs: View {
             HStack(spacing: 6) {
                 Text(label)
                     .font(.inter(11, .bold))
-                    .foregroundStyle(on ? .white : Color(hex: 0x68758A))
+                    .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                 Text("\(count)")
                     .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
                     .padding(.horizontal, 6)
@@ -510,7 +510,7 @@ private struct EmptyPrayers: View {
                 Text(tab == .active ? "No active prayers yet" : "No answered prayers yet")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Bring your requests before Him.")
-                    .font(.inter(12, .regular)).foregroundStyle(Color(hex: 0x68758A))
+                    .font(.inter(12, .regular)).foregroundStyle(Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Nuru.S.lg)
@@ -540,9 +540,9 @@ private struct JournalCard: View {
                     .shadow(color: Nuru.gold.opacity(0.4), radius: 6, x: 0, y: 4)
                 HStack(spacing: 6) {
                     Text("You").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-                    Text("·").font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x9CA3AF))
+                    Text("·").font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x74808F))
                     Text(relativeLabel(entry.isAnswered ? (entry.answeredAt ?? entry.createdAt) : entry.createdAt))
-                        .font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x9CA3AF))
+                        .font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x74808F))
                 }
                 Spacer(minLength: 0)
             }
@@ -657,8 +657,8 @@ private struct RowAction: View {
     var body: some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 6) {
-                Icon(icon, size: 15, color: Color(hex: 0x68758A))
-                Text(label).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x68758A))
+                Icon(icon, size: 15, color: Color(hex: 0x59667C))
+                Text(label).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity, minHeight: 44) // proper thumb-sized target
             .contentShape(Rectangle())

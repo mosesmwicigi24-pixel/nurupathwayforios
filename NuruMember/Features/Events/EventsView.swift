@@ -40,7 +40,7 @@ enum Ev {
         case "leaders": return Color(hex: 0x0EA5E9)
         case "cell": return Color(hex: 0x6366F1)
         case "marketplace": return Color(hex: 0xE07B39)
-        default: return Color(hex: 0x68758A)
+        default: return Color(hex: 0x59667C)
         }
     }
     static func weekday(_ iso: String, _ fmt: String) -> String {
@@ -314,7 +314,7 @@ struct EventsView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("📅 EVENTS").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
                     Text("Gathered together").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
-                    Text(vm.headerSubline).font(.inter(11)).foregroundStyle(Color(hex: 0x68758A))
+                    Text(vm.headerSubline).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
                 }
                 Spacer()
                 NavigationLink(value: AppRoute.notifications) {
@@ -360,7 +360,7 @@ struct EventsView: View {
     private func pulseChip(_ text: String, icon: Lucide) -> some View {
         HStack(spacing: 5) {
             Icon(icon, size: 11, color: Nuru.gold)
-            Text(text).font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x68758A))
+            Text(text).font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x59667C))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Color.white, in: Capsule())
@@ -406,7 +406,7 @@ struct EventsView: View {
         } label: {
             VStack(spacing: 3) {
                 Text(d.letter).font(.inter(9, .semibold)).kerning(0.8)
-                    .foregroundStyle(on ? Color.white.opacity(0.65) : Color(hex: 0x9CA3AF))
+                    .foregroundStyle(on ? Color.white.opacity(0.65) : Color(hex: 0x74808F))
                 Text("\(d.day)").font(.fraunces(16, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                 Circle().fill(d.hasEvents ? Nuru.gold : .clear).frame(width: 4, height: 4)
             }
@@ -484,7 +484,7 @@ struct EventsView: View {
 
     private var searchBar: some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.search, size: 15, color: Color(hex: 0x9CA3AF))
+            Icon(.search, size: 15, color: Color(hex: 0x74808F))
             TextField("Search events by name or place", text: $vm.search)
                 .font(.inter(13))
                 .foregroundStyle(Nuru.navy)
@@ -495,7 +495,7 @@ struct EventsView: View {
                     Haptics.tap()
                     vm.search = ""
                 } label: {
-                    Icon(.x, size: 15, color: Color(hex: 0x9CA3AF))
+                    Icon(.x, size: 15, color: Color(hex: 0x74808F))
                         .frame(width: 28, height: 28)          // comfortable tap target
                         .contentShape(Rectangle())
                 }
@@ -1142,7 +1142,7 @@ private struct EvSubHeader: View {
             }
             Text(title).font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy).padding(.top, Nuru.S.base)
             if let subtitle {
-                Text(subtitle).font(.inter(12)).foregroundStyle(Color(hex: 0x68758A)).padding(.top, 6)
+                Text(subtitle).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 6)
             }
             RoundedRectangle(cornerRadius: 2)
                 .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))
