@@ -1,8 +1,9 @@
-// Verse Library — the native port of screens/VerseLibraryScreen.tsx, with the
-// saved-verse cards styled to the Figma make's verse-collection presentation:
-// gold serif reference, version chip, quoted serif verse text, and a gold
-// Practice affordance (type-from-memory sheet). Add a reference (+ optional
-// text/note), practice, and remove. Writes are idempotent on saved_verse_id.
+// Verse Library — the member's saved-verse collection, styled to the Figma
+// MemoryVerseScreen library section (PathwayScreens.tsx): a cream ScreenShell
+// header (back + kicker + title, with "+ add" in the right slot), then bordered
+// white rows — gold bold reference, version chip, quoted 13pt verse text — with
+// a gold Practice affordance (type-from-memory sheet) and remove. Writes are
+// idempotent on saved_verse_id.
 import SwiftUI
 
 @MainActor
@@ -74,34 +75,28 @@ struct VerseLibraryView: View {
     var body: some View {
         ZStack {
             Nuru.paper.ignoresSafeArea()
-            LoadStateView(loading: vm.loading && vm.verses.isEmpty,
-                          isEmpty: vm.verses.isEmpty, error: vm.error,
-                          emptyText: "No saved verses yet. Tap + to add one.", retry: { Task { await vm.load() } }) {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: Nuru.S.md) {
-                        Text("YOUR VERSE LIBRARY")
-                            .font(.inter(10, .bold)).tracking(1.8)
-                            .foregroundStyle(Nuru.muted)
-                            .padding(.horizontal, Nuru.S.xs)
-                        ForEach(vm.verses) { v in
-                            SavedVerseCard(verse: v,
-                                           practice: { practicing = v },
-                                           remove: { Task { await vm.delete(v) } })
+            VStack(spacing: 0) {
+                header
+                LoadStateView(loading: vm.loading && vm.verses.isEmpty,
+                              isEmpty: vm.verses.isEmpty, error: vm.error,
+                              emptyText: "No saved verses yet. Tap + to add one.", retry: { Task { await vm.load() } }) {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                            ForEach(vm.verses) { v in
+                                SavedVerseCard(verse: v,
+                                               practice: { practicing = v },
+                                               remove: { Task { await vm.delete(v) } })
+                            }
                         }
+                        .padding(Nuru.S.screen)
+                        .padding(.bottom, Nuru.tabBarSpace)
                     }
-                    .padding(Nuru.S.screen)
-                    .padding(.bottom, Nuru.tabBarSpace)
+                    .refreshable { await vm.load() }
                 }
-                .refreshable { await vm.load() }
             }
         }
-        .navigationTitle("Verse Library")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button { adding = true } label: { Icon(.plus, size: 18, color: Nuru.gold) }
-            }
-        }
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
         .task { if vm.verses.isEmpty { await vm.load() } }
         .sheet(isPresented: $adding) {
             VerseEditor { reference, version, text, note in
@@ -113,10 +108,62 @@ struct VerseLibraryView: View {
                 .presentationDetents([.medium, .large])
         }
     }
+
+    // Cream Figma ScreenShell header — back on the left, "+ add" in the right slot.
+    private var header: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            HStack {
+                BackButton()
+                Spacer()
+                Button { adding = true } label: {
+                    Icon(.plus, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+            VStack(alignment: .leading, spacing: Nuru.S.xs) {
+                Text("YOUR COLLECTION")
+                    .font(.inter(11, .bold)).tracking(1.4)
+                    .foregroundStyle(Color(hex: 0x9A7A2A))
+                Text("Verse library")
+                    .font(.fraunces(26, .semibold))
+                    .foregroundStyle(Nuru.navy)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Nuru.S.screen)
+        .padding(.top, 60)
+        .padding(.bottom, Nuru.S.lg)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.25)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+                .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+                .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+                .ignoresSafeArea(edges: .top)
+        )
+    }
 }
 
-/// One saved verse, styled to the Figma library card: gold serif reference,
-/// version chip, quoted serif verse text, note, then practice + remove.
+private struct BackButton: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        Button { dismiss() } label: {
+            Icon(.arrowLeft, size: 18, color: Nuru.navy)
+                .frame(width: 40, height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// One saved verse, matching the Figma library-row anatomy: bordered white row,
+/// gold bold reference + chip, quoted 13pt navy text — plus the real practice
+/// and remove affordances this screen has always had.
 private struct SavedVerseCard: View {
     let verse: SavedVerse
     let practice: () -> Void
@@ -125,62 +172,64 @@ private struct SavedVerseCard: View {
     private var hasText: Bool { verse.verseText?.isEmpty == false }
 
     var body: some View {
-        Card {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                HStack(alignment: .top) {
-                    Text(verse.reference)
-                        .font(.fraunces(16, .semibold))
-                        .foregroundStyle(Nuru.gold)
-                    Spacer()
-                    Text(verse.version)
-                        .font(.inter(10, .semibold))
-                        .foregroundStyle(Nuru.muted)
-                        .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
-                        .background(Nuru.surface, in: Capsule())
-                }
-                if let text = verse.verseText, !text.isEmpty {
-                    Text("\u{201C}\(text)\u{201D}")
-                        .font(.fraunces(15, .regular))
-                        .foregroundStyle(Nuru.navy)
-                        .lineSpacing(5)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if let note = verse.note, !note.isEmpty {
-                    Text(note)
-                        .font(.nCaption).foregroundStyle(Nuru.muted)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack {
-                    if hasText {
-                        Button(action: practice) {
-                            HStack(spacing: 6) {
-                                Icon(.penLine, size: 13, color: Nuru.navy)
-                                Text("Practice")
-                                    .font(.inter(12, .bold))
-                                    .foregroundStyle(Nuru.navy)
-                            }
-                            .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.sm)
-                            .background(Nuru.gold, in: Capsule())
+        VStack(alignment: .leading, spacing: Nuru.S.xs) {
+            HStack(alignment: .top) {
+                Text(verse.reference)
+                    .font(.inter(12, .bold))
+                    .foregroundStyle(Nuru.gold)
+                Spacer()
+                Text(verse.version)
+                    .font(.inter(10, .semibold))
+                    .foregroundStyle(Nuru.muted)
+                    .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
+                    .background(Nuru.surface, in: Capsule())
+            }
+            if let text = verse.verseText, !text.isEmpty {
+                Text("\u{201C}\(text)\u{201D}")
+                    .font(.inter(13, .regular))
+                    .foregroundStyle(Nuru.navy)
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let note = verse.note, !note.isEmpty {
+                Text(note)
+                    .font(.nCaption).foregroundStyle(Nuru.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack {
+                if hasText {
+                    Button(action: practice) {
+                        HStack(spacing: 6) {
+                            Icon(.penLine, size: 13, color: Nuru.navy)
+                            Text("Practice")
+                                .font(.inter(12, .bold))
+                                .foregroundStyle(Nuru.navy)
                         }
-                        .buttonStyle(.plain)
-                    }
-                    Spacer()
-                    Button(role: .destructive, action: remove) {
-                        Icon(.trash2, size: 14, color: Nuru.danger)
-                            .frame(width: 32, height: 32)
-                            .background(Nuru.surface, in: Circle())
+                        .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.sm)
+                        .background(Nuru.gold, in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
-                .padding(.top, 2)
+                Spacer()
+                Button(role: .destructive, action: remove) {
+                    Icon(.trash2, size: 14, color: Nuru.danger)
+                        .frame(width: 32, height: 32)
+                        .background(Nuru.surface, in: Circle())
+                }
+                .buttonStyle(.plain)
             }
+            .padding(.top, 2)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.md)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }
 
 /// Type-from-memory practice for a saved verse — the Figma practice sheet
-/// (verse-tint editor, gold match bar, save). Presentation-only: saved verses
-/// have no practice endpoint, so "Save practice" simply closes the sheet.
+/// (serif title + close, editor, gold match bar, save). Presentation-only:
+/// saved verses have no practice endpoint, so "Save practice" simply closes.
 private struct VersePracticeSheet: View {
     let verse: SavedVerse
     @Environment(\.dismiss) private var dismiss
@@ -191,14 +240,21 @@ private struct VersePracticeSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
-                VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                    Text("TYPE FROM MEMORY")
-                        .font(.inter(10, .bold)).tracking(1.2)
-                        .foregroundStyle(Nuru.muted)
-                    Text(verse.reference)
-                        .font(.fraunces(18, .semibold))
-                        .foregroundStyle(Nuru.gold)
+                HStack {
+                    Text("Type from memory")
+                        .font(.fraunces(18, .medium))
+                        .foregroundStyle(Nuru.navy)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Icon(.x, size: 15, color: Nuru.navy)
+                            .frame(width: 32, height: 32)
+                            .background(Nuru.surface, in: Circle())
+                    }
+                    .buttonStyle(.plain)
                 }
+                Text(verse.reference)
+                    .font(.inter(11, .regular))
+                    .foregroundStyle(Nuru.muted)
                 editor
                 matchBar
                 PButton(title: "Save practice", variant: .gold,
@@ -227,7 +283,7 @@ private struct VersePracticeSheet: View {
                 .frame(minHeight: 110)
                 .padding(Nuru.S.sm)
         }
-        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
                 .stroke(Nuru.border, lineWidth: 1)
@@ -236,9 +292,6 @@ private struct VersePracticeSheet: View {
 
     private var matchBar: some View {
         VStack(alignment: .leading, spacing: Nuru.S.xs) {
-            Text("\(matchPct)% match")
-                .font(.inter(12, .medium))
-                .foregroundStyle(Nuru.muted)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Nuru.track)
@@ -246,7 +299,10 @@ private struct VersePracticeSheet: View {
                         .frame(width: Double(matchPct) / 100 * geo.size.width)
                 }
             }
-            .frame(height: 4)
+            .frame(height: 8)
+            Text("\(matchPct)% match")
+                .font(.inter(10, .regular))
+                .foregroundStyle(Nuru.muted)
         }
     }
 

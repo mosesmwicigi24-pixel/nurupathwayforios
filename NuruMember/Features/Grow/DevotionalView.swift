@@ -1,8 +1,10 @@
-// Today's Devotional — the native port of screens/DevotionalScreen.tsx. Reads
-// /growth/devotional and lets the member save a reflection (which also marks the
-// Reflection rhythm for the day). Pixel-matched to the iOS member screenshot:
-// a navy rounded-bottom header, a gold-accented verse card, the devotional body,
-// and a white REFLECTION card with a private save action.
+// Today's Devotional — the native port of the Figma DevotionalScreen
+// (PathwayScreens.tsx). Reads /growth/devotional and lets the member save a
+// reflection (which also marks the Reflection rhythm for the day). Body matches
+// the Figma anatomy: one white card holding the gold-accented verse block +
+// devotional paragraphs, the REFLECTION card (min-length gate, navy submit),
+// a Save/Share action row and the gold encouragement strip. The Figma audio/
+// video players are mock timers, so they are intentionally not ported.
 import SwiftUI
 
 // MARK: - View model
@@ -59,21 +61,24 @@ struct DevotionalView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header(d)
-                VStack(alignment: .leading, spacing: Nuru.S.lg) {
-                    if let ref = d.scriptureRef {
-                        VerseCard(reference: ref, text: d.scriptureText)
+                VStack(alignment: .leading, spacing: Nuru.S.base) {
+                    // Figma: the verse block and the devotional paragraphs share one white card.
+                    Card {
+                        VStack(alignment: .leading, spacing: Nuru.S.md) {
+                            if let ref = d.scriptureRef {
+                                VerseCard(reference: ref, text: d.scriptureText)
+                            }
+                            BodyParagraphs(text: d.body)
+                        }
                     }
-                    Text(d.body)
-                        .font(.inter(15, .regular))
-                        .foregroundStyle(Nuru.muted)
-                        .lineSpacing(5)
-                        .fixedSize(horizontal: false, vertical: true)
                     ReflectionCard(prompt: d.reflectionPrompt,
                                    text: $vm.reflection,
                                    saving: vm.saving,
                                    saved: vm.saved) {
                         Task { await vm.saveReflection() }
                     }
+                    FooterActions(devotional: d)
+                    EncouragementStrip()
                 }
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.lg)
@@ -133,7 +138,7 @@ private struct BackButton: View {
     }
 }
 
-// MARK: - Verse card (gold left accent)
+// MARK: - Verse block (surface tile, gold left accent, inline quote + ref overline)
 
 private struct VerseCard: View {
     let reference: String
@@ -145,23 +150,49 @@ private struct VerseCard: View {
                 .fill(Nuru.gold)
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                Icon(.quote, size: 18, color: Nuru.gold)
-                Text(reference.uppercased())
-                    .font(.inter(11, .bold)).tracking(1.2)
-                    .foregroundStyle(Nuru.gold)
+                HStack(spacing: 6) {
+                    Icon(.quote, size: 12, color: Nuru.gold)
+                    Text(reference.uppercased())
+                        .font(.inter(10, .semibold)).tracking(1.6)
+                        .foregroundStyle(Color(hex: 0xA8861C))
+                }
                 if let text {
-                    Text(text)
-                        .font(.fraunces(17, .regular))
-                        .foregroundStyle(Nuru.ink)
-                        .lineSpacing(4)
+                    Text("\u{201C}\(text)\u{201D}")
+                        .font(.fraunces(16, .regular))
+                        .foregroundStyle(Nuru.navy)
+                        .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(Nuru.S.base)
+            .padding(Nuru.S.md)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(Nuru.verseBg)
+        .background(Nuru.surface)
         .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+    }
+}
+
+// MARK: - Body paragraphs (Figma: 14pt ink on 24pt lines, split on blank lines)
+
+private struct BodyParagraphs: View {
+    let text: String
+
+    private var paragraphs: [String] {
+        text.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
+                Text(p)
+                    .font(.inter(14, .regular))
+                    .foregroundStyle(Nuru.ink)
+                    .lineSpacing(7)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
@@ -174,38 +205,55 @@ private struct ReflectionCard: View {
     let saved: Bool
     let onSave: () -> Void
 
-    private var isEmpty: Bool {
-        text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    /// Figma REFLECT_MIN — a few honest words before submit unlocks.
+    private static let minChars = 20
+
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var canSubmit: Bool { trimmed.count >= Self.minChars }
+    private var wordCount: Int { trimmed.isEmpty ? 0 : trimmed.split(whereSeparator: \.isWhitespace).count }
 
     var body: some View {
-        Card(padding: Nuru.S.lg) {
+        Card(padding: Nuru.S.base) {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
-                Text("REFLECTION")
-                    .font(.inter(11, .bold)).tracking(1.4)
-                    .foregroundStyle(Nuru.gold)
+                HStack {
+                    Text("REFLECTION")
+                        .font(.inter(10, .bold)).tracking(1.8)
+                        .foregroundStyle(Color(hex: 0xA8861C))
+                    Spacer()
+                    if saved {
+                        HStack(spacing: 4) {
+                            Icon(.check, size: 10, color: Nuru.gold)
+                            Text("Submitted").font(.inter(10, .bold)).foregroundStyle(Nuru.gold)
+                        }
+                    }
+                }
                 Text(prompt ?? "What is God saying to you today?")
-                    .font(.inter(15, .semibold))
-                    .foregroundStyle(Nuru.ink)
-                    .lineSpacing(4)
+                    .font(.inter(13, .regular))
+                    .foregroundStyle(Nuru.muted)
+                    .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 field
 
-                HStack(spacing: Nuru.S.md) {
-                    saveButton
-                    Text(saved ? "Saved — stays private to you." : "Stays private to you.")
-                        .font(.inter(12, .regular))
-                        .foregroundStyle(saved ? Nuru.successText : Nuru.faint)
-                }
+                Text(hint)
+                    .font(.inter(11, .regular))
+                    .foregroundStyle(saved ? Nuru.successText : Nuru.muted)
+
+                submitButton
             }
         }
     }
 
+    private var hint: String {
+        if saved { return "\(wordCount) words · saved to your journal" }
+        if canSubmit { return "\(wordCount) words · \(trimmed.count) chars" }
+        return "\(Self.minChars - trimmed.count) more characters before you can submit"
+    }
+
     private var field: some View {
         ZStack(alignment: .topLeading) {
-            if isEmpty {
-                Text("A few honest words…")
+            if trimmed.isEmpty && text.isEmpty {
+                Text("Write your reflection…")
                     .font(.nBody)
                     .foregroundStyle(Nuru.faint)
                     .padding(.horizontal, Nuru.S.base + 5)
@@ -215,7 +263,7 @@ private struct ReflectionCard: View {
                 .font(.nBody)
                 .foregroundStyle(Nuru.ink)
                 .scrollContentBackground(.hidden)
-                .frame(minHeight: 96)
+                .frame(minHeight: 110)
                 .padding(Nuru.S.sm)
         }
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
@@ -225,27 +273,90 @@ private struct ReflectionCard: View {
         )
     }
 
-    private var saveButton: some View {
+    // Figma: full-width navy submit, dimmed navy while below the minimum.
+    private var submitButton: some View {
         Button(action: onSave) {
-            HStack(spacing: Nuru.S.sm) {
+            ZStack {
                 if saving {
                     ProgressView().tint(.white)
                 } else {
-                    Icon(.check, size: 15, color: Nuru.white)
+                    Text(saved ? "Update reflection" : "Submit reflection")
+                        .font(.inter(13, .semibold))
                 }
-                Text("Save reflection")
-                    .font(.inter(14, .semibold))
-                    .foregroundStyle(Nuru.white)
             }
-            .padding(.horizontal, Nuru.S.base)
-            .frame(height: 40)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(canSubmit ? Color.white : Nuru.navy.opacity(0.55))
             .background(
-                (isEmpty ? AnyShapeStyle(Nuru.faint) : AnyShapeStyle(Nuru.goldGradient)),
-                in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous)
+                canSubmit ? AnyShapeStyle(Nuru.navy) : AnyShapeStyle(Nuru.navy.opacity(0.18)),
+                in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
             )
-            .opacity(saving ? 0.7 : 1)
         }
         .buttonStyle(.plain)
-        .disabled(isEmpty || saving)
+        .disabled(!canSubmit || saving)
+    }
+}
+
+// MARK: - Footer actions (Figma Save · Share row; Discuss has no chat target yet)
+
+private struct FooterActions: View {
+    let devotional: Devotional
+    @State private var loved = false   // local, like the Figma bookmark state
+
+    var body: some View {
+        HStack(spacing: 0) {
+            Button { loved.toggle() } label: {
+                column(icon: .heart, label: loved ? "Saved" : "Save",
+                       color: loved ? Nuru.gold : Nuru.navy)
+            }
+            .buttonStyle(.plain)
+
+            ShareLink(item: shareText) {
+                column(icon: .share2, label: "Share", color: Nuru.navy)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, Nuru.S.md)
+        .padding(.vertical, 10)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
+                .stroke(Nuru.border, lineWidth: 1)
+        )
+    }
+
+    private func column(icon: Lucide, label: String, color: Color) -> some View {
+        VStack(spacing: 2) {
+            Icon(icon, size: 16, color: color)
+            Text(label).font(.inter(10, .medium)).foregroundStyle(color)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var shareText: String {
+        var parts: [String] = [devotional.title]
+        if let t = devotional.scriptureText, let r = devotional.scriptureRef {
+            parts.append("\u{201C}\(t)\u{201D} — \(r)")
+        } else if let r = devotional.scriptureRef {
+            parts.append(r)
+        }
+        return parts.joined(separator: "\n\n")
+    }
+}
+
+// MARK: - Encouragement strip (gold tint + HandHeart, straight from the Figma)
+
+private struct EncouragementStrip: View {
+    var body: some View {
+        HStack(alignment: .top, spacing: Nuru.S.sm) {
+            Icon(.handHeart, size: 16, color: Nuru.gold)
+            Text("Every faithful day adds up. There's no rush — just presence.")
+                .font(.inter(12, .regular))
+                .foregroundStyle(Nuru.navy)
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.md)
+        .background(Nuru.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
     }
 }

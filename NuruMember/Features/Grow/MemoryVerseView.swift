@@ -1,7 +1,10 @@
-// Memory Verses — the native port of screens/MemoryVerseScreen.tsx. Lists the
-// member's memory-verse set with a derived WORD SCORE dashboard, a next-milestone
-// nudge, and a per-verse practice flow (a .sheet where the member types the verse
-// from memory; the server bumps status on a strong match).
+// Memory Verses — the native port of the Figma MemoryVerseScreen
+// (PathwayScreens.tsx): a "This week" hero card for the current verse (quoted
+// serif text, week-day goal, gold Practice CTA), then the "YOUR VERSE LIBRARY"
+// section with mastered/week chips. Kept on top: the derived WORD SCORE
+// dashboard and milestone nudge (shipped scoring feature, not in the make).
+// Practicing opens a type-from-memory sheet; the server bumps status on a
+// strong match.
 import SwiftUI
 
 // MARK: - View model
@@ -22,6 +25,14 @@ final class MemoryVerseViewModel: ObservableObject {
     func practice(_ id: String, matchPct: Int) async {
         try? await MemberAPI.practiceVerse(id, matchPct: matchPct)
         await load()
+    }
+
+    // The Figma "This week" hero — first verse still being learned.
+    var currentVerse: MemoryVerseRow? {
+        verses.first(where: { !$0.isMastered }) ?? verses.first
+    }
+    var libraryVerses: [MemoryVerseRow] {
+        verses.filter { $0.memoryVerseId != currentVerse?.memoryVerseId }
     }
 
     // Derived word-score dashboard (no word-score endpoint exists).
@@ -67,14 +78,24 @@ struct MemoryVerseView: View {
                               isEmpty: vm.verses.isEmpty, error: vm.error,
                               emptyText: "No memory verses yet.", retry: { Task { await vm.load() } }) {
                     ScrollView {
-                        VStack(spacing: Nuru.S.md) {
+                        VStack(alignment: .leading, spacing: Nuru.S.md) {
                             WordScoreCard(score: vm.score, band: vm.band,
                                           consistency: vm.consistency,
                                           memorization: vm.memorization,
                                           breadth: vm.breadth)
                             MilestoneCard(remaining: vm.toNextMilestone)
-                            ForEach(vm.verses) { v in
-                                VerseCard(verse: v) { practiceTarget = v }
+                            if let current = vm.currentVerse {
+                                CurrentVerseCard(verse: current) { practiceTarget = current }
+                            }
+                            if !vm.libraryVerses.isEmpty {
+                                Text("YOUR VERSE LIBRARY")
+                                    .font(.inter(10, .semibold)).tracking(1.8)
+                                    .foregroundStyle(Nuru.muted)
+                                    .padding(.horizontal, Nuru.S.xs)
+                                    .padding(.top, Nuru.S.sm)
+                                ForEach(vm.libraryVerses) { v in
+                                    LibraryVerseRow(verse: v) { practiceTarget = v }
+                                }
                             }
                         }
                         .padding(Nuru.S.screen)
@@ -95,7 +116,7 @@ struct MemoryVerseView: View {
         }
     }
 
-    // Navy header with circular back button + titles.
+    // Cream Figma ScreenShell header (done — keep as is).
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             BackButton()
@@ -243,66 +264,110 @@ private struct MilestoneCard: View {
     }
 }
 
-// MARK: - Verse card
+// MARK: - "This week" hero card (Figma: overline + day goal, quoted serif verse, gold Practice)
 
-private struct VerseCard: View {
+private struct CurrentVerseCard: View {
     let verse: MemoryVerseRow
     let practice: () -> Void
+
+    /// Monday-based day of the week, the Figma "Day 4 of 7" goal.
+    private var dayOfWeek: Int {
+        let wd = Calendar.current.component(.weekday, from: Date())  // 1 = Sunday
+        return wd == 1 ? 7 : wd - 1
+    }
 
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                HStack(alignment: .top) {
-                    Text(verse.reference)
-                        .font(.fraunces(16, .semibold))
-                        .foregroundStyle(Nuru.gold)
+                HStack {
+                    Text("THIS WEEK")
+                        .font(.inter(10, .semibold)).tracking(1.8)
+                        .foregroundStyle(Color(hex: 0xA8861C))
                     Spacer()
-                    if verse.isMastered { masteredBadge }
+                    Text("Day \(dayOfWeek) of 7")
+                        .font(.inter(10, .regular))
+                        .foregroundStyle(Nuru.muted)
                 }
-                Text(verse.verseText)
-                    .font(.nBody)
-                    .foregroundStyle(Nuru.ink)
+                Text("\u{201C}\(verse.verseText)\u{201D}")
+                    .font(.fraunces(20, .medium))
+                    .foregroundStyle(Nuru.navy)
+                    .lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
-
-                if verse.isMastered {
-                    outlineButton
-                } else {
-                    PButton(title: "Practice", variant: .gold, action: practice)
-                }
+                    .padding(.top, 2)
+                Text(verse.reference)
+                    .font(.inter(12, .bold))
+                    .foregroundStyle(Nuru.gold)
+                practiceButton
+                    .padding(.top, Nuru.S.xs)
             }
         }
     }
 
-    // No outline variant exists in PButton, so the "Practice again" CTA is built
-    // inline: a bordered, paper-filled, full-width button matching the screenshot.
-    private var outlineButton: some View {
+    // Figma "Listen" twin button is a mock (no verse audio) — Practice goes full width.
+    private var practiceButton: some View {
         Button(action: practice) {
-            Text("Practice again")
-                .font(.inter(16, .semibold))
-                .foregroundStyle(Nuru.ink)
-                .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
-                .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous)
-                        .stroke(Nuru.border, lineWidth: 1)
-                )
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.penLine, size: 14, color: Nuru.navy)
+                Text("Practice").font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .background(Nuru.gold, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Library row (Figma: bordered white row, gold ref, status chip, quoted text)
+
+private struct LibraryVerseRow: View {
+    let verse: MemoryVerseRow
+    let practice: () -> Void
+
+    var body: some View {
+        Button(action: practice) {
+            VStack(alignment: .leading, spacing: Nuru.S.xs) {
+                HStack(alignment: .top) {
+                    Text(verse.reference)
+                        .font(.inter(12, .bold))
+                        .foregroundStyle(Nuru.gold)
+                    Spacer()
+                    chip
+                }
+                Text("\u{201C}\(verse.verseText)\u{201D}")
+                    .font(.inter(13, .regular))
+                    .foregroundStyle(Nuru.navy)
+                    .lineSpacing(4)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(Nuru.S.md)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }
 
-    private var masteredBadge: some View {
-        HStack(spacing: 4) {
-            Icon(.check, size: 11, color: Nuru.successText)
-            Text("Mastered")
-                .font(.inter(11, .semibold))
-                .foregroundStyle(Nuru.successText)
+    @ViewBuilder private var chip: some View {
+        if verse.isMastered {
+            chipView("Mastered", bg: Nuru.successBg, fg: Nuru.successText)
+        } else if let w = verse.weekNumber {
+            chipView("Week \(w)", bg: Nuru.surface, fg: Nuru.muted)
+        } else {
+            chipView("Learning", bg: Nuru.surface, fg: Nuru.muted)
         }
-        .padding(.horizontal, Nuru.S.sm).padding(.vertical, 4)
-        .background(Nuru.successBg, in: Capsule())
+    }
+
+    private func chipView(_ label: String, bg: Color, fg: Color) -> some View {
+        Text(label)
+            .font(.inter(10, .semibold))
+            .foregroundStyle(fg)
+            .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
+            .background(bg, in: Capsule())
     }
 }
 
-// MARK: - Practice sheet
+// MARK: - Practice sheet (Figma: serif title + close, ref caption, editor, gold match bar)
 
 private struct PracticeSheet: View {
     let verse: MemoryVerseRow
@@ -317,14 +382,21 @@ private struct PracticeSheet: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
-                VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                    Text("TYPE FROM MEMORY")
-                        .font(.inter(10, .bold)).tracking(1.2)
-                        .foregroundStyle(Nuru.muted)
-                    Text(verse.reference)
-                        .font(.fraunces(18, .semibold))
-                        .foregroundStyle(Nuru.gold)
+                HStack {
+                    Text("Type from memory")
+                        .font(.fraunces(18, .medium))
+                        .foregroundStyle(Nuru.navy)
+                    Spacer()
+                    Button { dismiss() } label: {
+                        Icon(.x, size: 15, color: Nuru.navy)
+                            .frame(width: 32, height: 32)
+                            .background(Nuru.surface, in: Circle())
+                    }
+                    .buttonStyle(.plain)
                 }
+                Text(verse.reference)
+                    .font(.inter(11, .regular))
+                    .foregroundStyle(Nuru.muted)
 
                 ZStack(alignment: .topLeading) {
                     if typed.isEmpty {
@@ -341,16 +413,13 @@ private struct PracticeSheet: View {
                         .frame(minHeight: 110)
                         .padding(Nuru.S.sm)
                 }
-                .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous)
                         .stroke(Nuru.border, lineWidth: 1)
                 )
 
                 VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                    Text("\(matchPct)% match")
-                        .font(.inter(12, .medium))
-                        .foregroundStyle(Nuru.muted)
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
                             Capsule().fill(Nuru.track)
@@ -358,7 +427,10 @@ private struct PracticeSheet: View {
                                 .frame(width: Double(matchPct) / 100 * geo.size.width)
                         }
                     }
-                    .frame(height: 4)
+                    .frame(height: 8)
+                    Text("\(matchPct)% match")
+                        .font(.inter(10, .regular))
+                        .foregroundStyle(Nuru.muted)
                 }
 
                 PButton(title: "Save practice", variant: .gold, busy: saving,

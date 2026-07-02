@@ -31,10 +31,11 @@ private enum RES {
     struct KindMeta { let label: String; let sf: String; let color: Color; let tint: Color }
     static func meta(_ kind: String) -> KindMeta {
         switch kind {
-        case "audio":   return KindMeta(label: "Audio",   sf: "headphones",         color: gold,               tint: Color(hex: 0xFFF4DA))
-        case "video":   return KindMeta(label: "Video",   sf: "play.rectangle.fill", color: Color(hex: 0xDC2626), tint: Color(hex: 0xFEE2E2))
-        case "article": return KindMeta(label: "Article", sf: "doc.text.fill",       color: Color(hex: 0x16A34A), tint: Color(hex: 0xDCFCE7))
-        default:        return KindMeta(label: "Book",    sf: "book.fill",           color: Color(hex: 0x6366F1), tint: Color(hex: 0xEEF2FF))
+        // Outline symbols — the Figma tiles use stroked Lucide icons, not filled.
+        case "audio":   return KindMeta(label: "Audio",   sf: "headphones",     color: gold,                 tint: Color(hex: 0xFFF4DA))
+        case "video":   return KindMeta(label: "Video",   sf: "play.rectangle", color: Color(hex: 0xDC2626), tint: Color(hex: 0xFEE2E2))
+        case "article": return KindMeta(label: "Article", sf: "doc.text",       color: Color(hex: 0x16A34A), tint: Color(hex: 0xDCFCE7))
+        default:        return KindMeta(label: "Book",    sf: "book",           color: Color(hex: 0x6366F1), tint: Color(hex: 0xEEF2FF))
         }
     }
     static let filters = ["all", "book", "audio", "video", "article"]
@@ -133,7 +134,7 @@ struct ResourcesLibraryView: View {
                     Button { filter = k } label: {
                         Text(k == "all" ? "All" : RES.meta(k).label)
                             .font(.inter(11, .bold)).foregroundStyle(on ? RES.navy : RES.ink2)
-                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
                             .background(on ? RES.gold : Color.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? Color.clear : RES.border, lineWidth: 1))
                     }.buttonStyle(.plain)
@@ -153,7 +154,7 @@ struct ResourcesLibraryView: View {
             }.frame(maxWidth: .infinity).padding(.top, 44)
         } else if filtered.isEmpty {
             VStack(spacing: 8) {
-                Image(systemName: "bookmark").font(.system(size: 30)).foregroundStyle(RES.ink2.opacity(0.5))
+                Icon(.bookMarked, size: 30, color: RES.ink2.opacity(0.5))
                 Text("No resources found").font(.inter(14, .semibold)).foregroundStyle(RES.navy)
                 Text("Try a different filter or search term.").font(.inter(12)).foregroundStyle(RES.ink2)
             }.frame(maxWidth: .infinity).padding(.top, 44)
