@@ -155,14 +155,22 @@ struct GivingStatementView: View {
         .padding(.horizontal, Nuru.S.screen).padding(.top, 54).padding(.bottom, Nuru.S.screen)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            LinearGradient(colors: [Nuru.navy, Color(hex: 0x06182C)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.33)).frame(width: 224, height: 224)
-                        .blur(radius: 48).offset(x: 64, y: -80)
+            ZStack {
+                // Calm, realistic generosity image under a deep navy scrim — sets
+                // the giving tone without competing with the white figures.
+                if let u = URL(string: "https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?auto=format&fit=crop&w=1080&q=80") {
+                    CachedAsyncImage(url: u) { p in
+                        (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
+                    }
+                    .opacity(0.45)
                 }
-                .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24, style: .continuous))
-                .ignoresSafeArea(edges: .top)
+                LinearGradient(colors: [Nuru.navy.opacity(0.88), Color(hex: 0x06182C).opacity(0.94)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                RadialGradient(colors: [Nuru.gold.opacity(0.33), .clear], center: .topTrailing, startRadius: 0, endRadius: 200)
+                    .blur(radius: 30)
+            }
+            .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24, style: .continuous))
+            .ignoresSafeArea(edges: .top)
         )
     }
 
@@ -301,8 +309,9 @@ struct GivingStatementView: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Borderless per the design direction — soft shadow + spacing separate
+        // the gift cards; no hairline.
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow(0.6)
     }
 

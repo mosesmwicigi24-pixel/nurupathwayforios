@@ -620,22 +620,31 @@ struct HomeView: View {
                     Text("Open wall ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                 }.buttonStyle(.plain)
             }
-            TabView {
-                ForEach(vm.prayerPosts) { post in
-                    NavigationLink(value: CommunityRoute.prayer(post.postId)) {
-                        prayerPostView(post)
-                    }.buttonStyle(.plain)
+            // A single post hugs its content (no pager, no dead space); multiple
+            // posts page with a compact fixed height + dots.
+            if vm.prayerPosts.count == 1, let post = vm.prayerPosts.first {
+                NavigationLink(value: CommunityRoute.prayer(post.postId)) {
+                    prayerPostView(post, inPager: false)
+                }.buttonStyle(.plain)
+                .padding(.top, Nuru.S.sm)
+            } else {
+                TabView {
+                    ForEach(vm.prayerPosts) { post in
+                        NavigationLink(value: CommunityRoute.prayer(post.postId)) {
+                            prayerPostView(post, inPager: true)
+                        }.buttonStyle(.plain)
+                    }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .automatic))
+                .frame(height: 168)
+                .padding(.top, Nuru.S.sm)
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .frame(height: 188)
-            .padding(.top, Nuru.S.sm)
         }
         .padding(Nuru.S.base)
         .cardSurface()
     }
 
-    private func prayerPostView(_ post: PrayerWallPost) -> some View {
+    private func prayerPostView(_ post: PrayerWallPost, inPager: Bool = true) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Nuru.S.sm) {
                 Avatar(url: post.authorAvatar, name: post.authorName, size: 32)
@@ -657,10 +666,10 @@ struct HomeView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Nuru.gold.opacity(0.10), in: Capsule())
             .padding(.top, Nuru.S.sm)
-            Spacer(minLength: 0)
+            if inPager { Spacer(minLength: 0) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, Nuru.S.lg)   // clear the page dots
+        .padding(.bottom, inPager ? Nuru.S.lg : 0)   // pager needs page-dot clearance
     }
 
     // MARK: 6 — Reading-plan + Prayer-journal minis
