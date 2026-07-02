@@ -255,13 +255,13 @@ struct LevelDetailView: View {
             HStack(spacing: 6) {
                 Icon(.quote, size: 13, color: Nuru.goldChipText)
                 Text("WALK IN THE LIGHT")
-                    .font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
             }
             Text("“\(vm.verse.text)”")
                 .font(.fraunces(16, .medium)).foregroundStyle(Nuru.ink)
                 .fixedSize(horizontal: false, vertical: true)
             Text(vm.verse.ref)
-                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
+                .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -280,7 +280,7 @@ struct LevelDetailView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WALK IT WITH YOUR DISCIPLER")
-                        .font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.goldChipText)
+                        .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                     Text("A discipler will walk with you")
                         .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                     Text("Tap to learn more")
@@ -523,16 +523,16 @@ private struct ModuleTrailCard: View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(alignment: .firstTextBaseline) {
                 Text("MODULE \(module.moduleSequenceNumber)")
-                    .font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.gold)
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
                 statusBadge
             }
             Text(module.title)
-                .font(.fraunces(17, .semibold)).foregroundStyle(Nuru.ink)
+                .font(.nCardTitle).foregroundStyle(Nuru.ink)
                 .fixedSize(horizontal: false, vertical: true)
             if let summary = module.summary, !summary.isEmpty {
                 Text(summary)
-                    .font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(2)
+                    .font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(2)
             }
             if module.completed {
                 progressBarRow
@@ -647,22 +647,22 @@ private struct EncouragementTrailCard: View {
             HStack(spacing: 6) {
                 Icon(.sparkles, size: 11, color: Nuru.goldChipText)
                 Text(kicker)
-                    .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
             }
             if let title = item.title, !title.isEmpty {
                 Text(title)
-                    .font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink)
+                    .font(.nRowTitle).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let body = item.body, !body.isEmpty {
                 Text(body)
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let ref = item.scriptureRef, !ref.isEmpty {
                 Text(ref)
-                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
+                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
             }
         }
         .padding(Nuru.S.base)
@@ -683,13 +683,13 @@ private struct ExamGateCard: View {
             HStack(spacing: 6) {
                 Icon(.award, size: 12, color: Nuru.goldGlow)
                 Text("THE LEVEL GATE")
-                    .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.goldGlow)
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
             }
             Text("Take the Level \(levelNumber) exam")
-                .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                .font(.nCardTitle).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Every module is complete — the exam draws from the whole level and opens the way forward.")
-                .font(.inter(12)).foregroundStyle(Color.white.opacity(0.65))
+                .font(.nCardBody).foregroundStyle(Color.white.opacity(0.65))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {

@@ -127,7 +127,7 @@ struct GivingReceiptView: View {
                 // Ledger trail
                 if !d.ledger.isEmpty {
                     VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                        Text("LEDGER").font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.gold)
+                        Text("LEDGER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                         ForEach(d.ledger) { e in
                             HStack {
                                 Text(e.side.uppercased()).font(.nMicro).foregroundStyle(e.side == "debit" ? Color(hex: 0x1B5FAE) : Nuru.success)

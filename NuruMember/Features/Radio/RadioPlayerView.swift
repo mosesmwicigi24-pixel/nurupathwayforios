@@ -241,7 +241,7 @@ private struct RadioBackground: View {
 private struct RadioSectionHeader: View {
     let title: String
     var body: some View {
-        Text(title).font(.inter(11, .bold)).kerning(1.4)
+        Text(title).font(.nCardKicker).kerning(1.4)
             .foregroundStyle(Nuru.gold.opacity(0.9))
             .padding(.horizontal, 20).padding(.top, 22).padding(.bottom, 8)
     }
@@ -320,10 +320,10 @@ private struct RadioProgramRow: View {
         HStack(spacing: 12) {
             thumb
             VStack(alignment: .leading, spacing: 3) {
-                Text(program.title).font(.fraunces(15, .semibold)).foregroundStyle(.white)
+                Text(program.title).font(.nRowTitle).foregroundStyle(.white)
                     .lineLimit(1)
                 Text([program.speaker, program.category].compactMap { $0 }.joined(separator: " · "))
-                    .font(.inter(11)).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
+                    .font(.nCardMeta).foregroundStyle(.white.opacity(0.55)).lineLimit(1)
             }
             Spacer(minLength: 8)
             RadioStatusPill(program: program)
@@ -862,7 +862,7 @@ private struct LiveChatSection: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
                 Circle().fill(Color(hex: 0xDC2626)).frame(width: 6, height: 6)
-                Text("LIVE CHAT").font(.inter(11, .bold)).kerning(1.4)
+                Text("LIVE CHAT").font(.nCardKicker).kerning(1.4)
                     .foregroundStyle(Nuru.gold.opacity(0.9))
                 Spacer(minLength: 0)
                 if !vm.comments.isEmpty {

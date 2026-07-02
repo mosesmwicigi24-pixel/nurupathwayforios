@@ -171,6 +171,7 @@ struct HomeView: View {
     @ObservedObject private var radio = RadioCenter.shared
     @State private var path = NavigationPath()
     @State private var playingVideo = false
+    @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
     @State private var showRadio = false
@@ -552,7 +553,7 @@ struct HomeView: View {
                 Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
                 Icon(.badgeCheck, size: 14, color: Nuru.gold)
                 Spacer(minLength: 0)
-                Text("FEATURED").font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(HomeFig.metaGray)
+                Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
             }
             .padding(Nuru.S.base)
 
@@ -590,7 +591,7 @@ struct HomeView: View {
                     Text(cap).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
                 }
                 Text("Start here — what the journey looks like")
-                    .font(.inter(13)).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
+                    .font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {
@@ -680,7 +681,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
-                Text("VERSE FOR TODAY").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
                 Text((vm.verse?.version ?? "WEB").uppercased())
                     .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
@@ -761,29 +762,40 @@ struct HomeView: View {
     private var prayerWallCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("PRAY FOR ONE ANOTHER").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                Text("PRAY FOR ONE ANOTHER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer()
                 NavigationLink(value: CommunityRoute.prayerWall) {
                     Text("Open wall ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                 }.buttonStyle(.plain)
             }
             // A single post hugs its content (no pager, no dead space); multiple
-            // posts page with a compact fixed height + dots.
+            // posts page in a tight frame with OUR page dots below — the system
+            // dots are white (invisible on cream) and forced a tall dead band.
             if vm.prayerPosts.count == 1, let post = vm.prayerPosts.first {
                 NavigationLink(value: CommunityRoute.prayer(post.postId)) {
                     prayerPostView(post, inPager: false)
                 }.buttonStyle(.pressableSubtle)
                 .padding(.top, Nuru.S.sm)
             } else {
-                TabView {
-                    ForEach(vm.prayerPosts) { post in
+                TabView(selection: $prayPage) {
+                    ForEach(Array(vm.prayerPosts.enumerated()), id: \.element.postId) { i, post in
                         NavigationLink(value: CommunityRoute.prayer(post.postId)) {
                             prayerPostView(post, inPager: true)
                         }.buttonStyle(.pressableSubtle)
+                        .tag(i)
                     }
                 }
-                .tabViewStyle(.page(indexDisplayMode: .automatic))
-                .frame(height: 168)
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 138)
+                .padding(.top, Nuru.S.sm)
+                HStack(spacing: 5) {
+                    ForEach(0..<vm.prayerPosts.count, id: \.self) { i in
+                        Capsule().fill(i == prayPage ? Nuru.gold : Nuru.gold.opacity(0.22))
+                            .frame(width: i == prayPage ? 16 : 6, height: 6)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: prayPage)
+                    }
+                }
+                .frame(maxWidth: .infinity)
                 .padding(.top, Nuru.S.sm)
             }
         }
@@ -801,7 +813,7 @@ struct HomeView: View {
             if let t = post.title, !t.isEmpty {
                 Text(t).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).padding(.top, Nuru.S.sm)
             }
-            Text(post.body).font(.inter(12)).foregroundStyle(HomeFig.metaGray).lineLimit(2)
+            Text(post.body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 4)
             // Gold-tinted praying pill (Figma).
@@ -813,10 +825,9 @@ struct HomeView: View {
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Nuru.gold.opacity(0.10), in: Capsule())
             .padding(.top, Nuru.S.sm)
-            if inPager { Spacer(minLength: 0) }
+            if inPager { Spacer(minLength: 0) }   // top-align short posts in the pager
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, inPager ? Nuru.S.lg : 0)   // pager needs page-dot clearance
     }
 
     // MARK: 6 — Reading-plan + Prayer-journal minis
@@ -846,10 +857,10 @@ struct HomeView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color(hex: 0xEEF2FF), in: Capsule())
             }
-            Text("READING PLAN").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Color(hex: 0x6366F1)).padding(.top, 10)
+            Text("READING PLAN").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x6366F1)).padding(.top, 10)
             Text(p?.title ?? "Start a plan").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
-            if let p { Text("Day \(p.currentDay ?? 1) of \(p.dayCount)").font(.inter(11)).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
-            else { Text("Pick a reading plan").font(.inter(11)).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
+            if let p { Text("Day \(p.currentDay ?? 1) of \(p.dayCount)").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
+            else { Text("Pick a reading plan").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 4)
@@ -876,9 +887,9 @@ struct HomeView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color(hex: 0xFEF3C7), in: Capsule())
             }
-            Text("PRAYER JOURNAL").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
+            Text("PRAYER JOURNAL").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
             Text(latest?.title ?? "Your prayers").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
-            Text(latest?.body ?? "Start journaling your prayers").font(.inter(11)).foregroundStyle(HomeFig.faintGray).lineLimit(1).padding(.top, 2)
+            Text(latest?.body ?? "Start journaling your prayers").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).lineLimit(1).padding(.top, 2)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -916,12 +927,12 @@ struct HomeView: View {
                 HStack(spacing: 6) {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 11))
                         .foregroundStyle(HomeFig.eyebrow)
-                    Text("THIS WEEK AT NURU").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(HomeFig.eyebrow)
+                    Text("THIS WEEK AT NURU").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
                     Spacer(minLength: 0)
                 }
-                Text(c.name).font(.fraunces(17, .semibold)).foregroundStyle(HomeFig.navy).padding(.top, 4)
+                Text(c.name).font(.nCardTitle).foregroundStyle(HomeFig.navy).padding(.top, 4)
                 if let d = c.disciplerName {
-                    Text("\(d)\(c.disciplerRole.map { " · \($0)" } ?? "")").font(.inter(11)).foregroundStyle(HomeFig.subGray).padding(.top, 1)
+                    Text("\(d)\(c.disciplerRole.map { " · \($0)" } ?? "")").font(.nCardMeta).foregroundStyle(HomeFig.subGray).padding(.top, 1)
                 }
                 HStack(spacing: 6) {
                     if let f = c.focus { chip(f) }
@@ -932,7 +943,7 @@ struct HomeView: View {
                     HStack(spacing: Nuru.S.sm) {
                         Icon(.calendarDays, size: 15, color: Nuru.gold)
                         (Text(m).font(.inter(11, .semibold)).foregroundStyle(HomeFig.navy)
-                         + Text(c.nextSession.map { " · Next: \($0)" } ?? "").font(.inter(11)).foregroundStyle(HomeFig.faintGray))
+                         + Text(c.nextSession.map { " · Next: \($0)" } ?? "").font(.nCardMeta).foregroundStyle(HomeFig.faintGray))
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 12).padding(.vertical, 10)
@@ -943,7 +954,7 @@ struct HomeView: View {
                 HStack {
                     HStack(spacing: 4) {
                         Icon(.mapPin, size: 11, color: HomeFig.faintGray)
-                        Text(c.room ?? c.name).font(.inter(10)).foregroundStyle(HomeFig.faintGray).lineLimit(1)
+                        Text(c.room ?? c.name).font(.nCardMeta).foregroundStyle(HomeFig.faintGray).lineLimit(1)
                     }
                     Spacer(minLength: 8)
                     HStack(spacing: 4) {
@@ -976,7 +987,7 @@ struct HomeView: View {
     private var disciplersCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text("MEET YOUR DISCIPLER").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(HomeFig.eyebrow)
+                Text("MEET YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
                 Spacer(minLength: 0)
                 NavigationLink(value: AppRoute.mentor) {
                     HStack(spacing: 3) {
@@ -1050,12 +1061,12 @@ struct HomeView: View {
                         .clipped()
                     }
                     VStack(alignment: .leading, spacing: 0) {
-                        Text(a.title).font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
+                        Text(a.title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
                             .fixedSize(horizontal: false, vertical: true)
-                        Text(a.body).font(.inter(13)).foregroundStyle(HomeFig.metaGray).lineLimit(3)
+                        Text(a.body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(3)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
                         HStack {
-                            if let s = a.sentAt { Text(shortDate(s)).font(.inter(11)).foregroundStyle(HomeFig.faintGray) }
+                            if let s = a.sentAt { Text(shortDate(s)).font(.nCardMeta).foregroundStyle(HomeFig.faintGray) }
                             Spacer()
                             HStack(spacing: 3) {
                                 Text("Read more").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
@@ -1092,9 +1103,9 @@ struct HomeView: View {
                     Icon(.play, size: 18, color: HomeFig.navy).offset(x: 1)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("CONTINUE · LEVEL \(a?.levelNumber ?? 1)").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(HomeFig.eyebrow)
-                    Text(a?.title ?? "Foundations of Faith").font(.fraunces(16, .semibold)).foregroundStyle(HomeFig.navy)
-                    Text("\(done) of \(total) modules").font(.inter(11)).foregroundStyle(HomeFig.faintGray)
+                    Text("CONTINUE · LEVEL \(a?.levelNumber ?? 1)").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
+                    Text(a?.title ?? "Foundations of Faith").font(.nRowTitle).foregroundStyle(HomeFig.navy)
+                    Text("\(done) of \(total) modules").font(.nCardMeta).foregroundStyle(HomeFig.faintGray)
                 }
                 Spacer(minLength: 0)
             }
@@ -1120,7 +1131,7 @@ struct HomeView: View {
                 else { path.append(PathwayRoute.level(a?.levelNumber ?? 1)) }
             } label: {
                 HStack(spacing: 6) {
-                    Text("Continue").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
+                    Text("Continue").font(.nCardCTA).foregroundStyle(Nuru.gold)
                     Icon(.chevronRight, size: 15, color: Nuru.gold)
                 }
                 .frame(maxWidth: .infinity, minHeight: 46)
@@ -1163,7 +1174,7 @@ struct HomeView: View {
                 .padding(.top, 14)
             if !complete {
                 Text(vm.rhythm.reflection ? "One more to complete today's rhythm." : "Complete reflection to keep your rhythm.")
-                    .font(.inter(13)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.md)
+                    .font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.md)
             }
         }
         .padding(Nuru.S.base)
@@ -1216,9 +1227,9 @@ struct HomeView: View {
                 }
                 .frame(width: 64, height: 64)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("OVERALL GROWTH").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
-                    Text(s.overall.band).font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
-                    Text("Your rhythm across the disciplines").font(.inter(12)).foregroundStyle(HomeFig.metaGray)
+                    Text("OVERALL GROWTH").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
+                    Text(s.overall.band).font(.nCardTitle).foregroundStyle(HomeFig.navy)
+                    Text("Your rhythm across the disciplines").font(.nCardBody).foregroundStyle(HomeFig.metaGray)
                 }
                 Spacer(minLength: 0)
             }
@@ -1295,7 +1306,7 @@ struct HomeView: View {
                         .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 36, height: 36)
                     VStack(alignment: .leading, spacing: 1) {
-                        Text("YOUR DISCIPLER").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(HomeFig.eyebrow)
+                        Text("YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
                         Text("Meet your discipler").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
                     }
                     Spacer(minLength: 0)
@@ -1332,7 +1343,7 @@ struct HomeView: View {
                 .background(Color(hex: t.tint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 0) {
                 Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
-                Text(t.sub).font(.inter(11)).foregroundStyle(HomeFig.metaGray).lineLimit(1)
+                Text(t.sub).font(.nCardMeta).foregroundStyle(HomeFig.metaGray).lineLimit(1)
             }
             Spacer(minLength: 0)
         }
@@ -1353,7 +1364,7 @@ struct HomeView: View {
     private var upcomingCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
-                Text(monthTitle().uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Nuru.gold)
+                Text(monthTitle().uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
                 Button { Haptics.selection(); tabs.selected = .events } label: {
                     Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
@@ -1477,7 +1488,7 @@ struct HomeView: View {
 
     private var cohortCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(vm.cell?.name ?? "Your discipleship cell").font(.inter(11)).foregroundStyle(HomeFig.faintGray)
+            Text(vm.cell?.name ?? "Your discipleship cell").font(.nCardMeta).foregroundStyle(HomeFig.faintGray)
             if vm.cell == nil {
                 // Cold-start belonging cue — being known is the hook (Figma).
                 NavigationLink(value: AppRoute.cell) { HomeCohortColdStart() }
@@ -1673,7 +1684,7 @@ private struct HomeLoadErrorCard: View {
                 .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Couldn't load your dashboard").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                Text("Check your connection and try again.").font(.inter(11)).foregroundStyle(HomeFig.metaGray)
+                Text("Check your connection and try again.").font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
             }
             Spacer(minLength: 8)
             Button { Haptics.tap(); retry() } label: {

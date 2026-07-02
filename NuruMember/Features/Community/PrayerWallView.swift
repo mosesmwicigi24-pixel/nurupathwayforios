@@ -130,7 +130,7 @@ struct PrayerWallView: View {
     private var emptyState: some View {
         VStack(spacing: Nuru.S.sm) {
             Text("🙏").font(.system(size: 32))
-            Text("No requests yet").font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
+            Text("No requests yet").font(.nCardTitle).foregroundStyle(Nuru.ink)
             Text("Be the first to share a prayer for the family to stand with you.")
                 .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
         }
@@ -187,7 +187,7 @@ private struct PrayerCardView: View {
                 Avatar(url: post.authorAvatar, name: post.authorName, size: 36)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(post.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Text(timeAgo(post.createdAt)).font(.nMicro).foregroundStyle(Nuru.faint)
+                    Text(timeAgo(post.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
                 }
                 Spacer(minLength: 0)
                 if post.isAnswered { answeredChip }
@@ -195,7 +195,7 @@ private struct PrayerCardView: View {
             if let title = post.title, !title.isEmpty {
                 Text(title).font(.nHeading).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
             }
-            Text(post.body).font(.nBody).foregroundStyle(Nuru.muted).lineLimit(3)
+            Text(post.body).font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(3)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
             if post.audioUrl != nil { voiceTag.padding(.top, Nuru.S.sm) }
             HStack(spacing: Nuru.S.base) {
@@ -214,7 +214,7 @@ private struct PrayerCardView: View {
                 .buttonStyle(.pressable)
                 HStack(spacing: 4) {
                     Icon(.messageCircle, size: 14, color: Nuru.faint)
-                    Text("\(post.commentCount ?? 0)").font(.nCaption).foregroundStyle(Nuru.faint)
+                    Text("\(post.commentCount ?? 0)").font(.nCardMeta).foregroundStyle(Nuru.faint)
                 }
                 Spacer(minLength: 0)
             }

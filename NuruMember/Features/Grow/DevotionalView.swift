@@ -162,7 +162,7 @@ private struct VerseCard: View {
                 HStack(spacing: 6) {
                     Icon(.quote, size: 12, color: Nuru.gold)
                     Text(reference.uppercased())
-                        .font(.inter(10, .semibold)).tracking(1.6)
+                        .font(.nCardKicker).kerning(1.4)
                         .foregroundStyle(Color(hex: 0xA8861C))
                 }
                 if let text {
@@ -226,7 +226,7 @@ private struct ReflectionCard: View {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 HStack {
                     Text("REFLECTION")
-                        .font(.inter(10, .bold)).tracking(1.8)
+                        .font(.nCardKicker).kerning(1.4)
                         .foregroundStyle(Color(hex: 0xA8861C))
                     Spacer()
                     if saved {
@@ -238,7 +238,7 @@ private struct ReflectionCard: View {
                     }
                 }
                 Text(prompt ?? "What is God saying to you today?")
-                    .font(.inter(13, .regular))
+                    .font(.nCardBody)
                     .foregroundStyle(Nuru.muted)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -246,7 +246,7 @@ private struct ReflectionCard: View {
                 field
 
                 Text(hint)
-                    .font(.inter(11, .regular))
+                    .font(.nCardMeta)
                     .foregroundStyle(saved ? Nuru.successText : Nuru.muted)
 
                 submitButton
@@ -291,7 +291,7 @@ private struct ReflectionCard: View {
                     ProgressView().tint(.white)
                 } else {
                     Text(saved ? "Update reflection" : "Submit reflection")
-                        .font(.inter(13, .semibold))
+                        .font(.nCardCTA)
                 }
             }
             .frame(maxWidth: .infinity, minHeight: 44)
@@ -365,7 +365,7 @@ private struct EncouragementStrip: View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
             Icon(.handHeart, size: 16, color: Nuru.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
-                .font(.inter(12, .regular))
+                .font(.nCardBody)
                 .foregroundStyle(Nuru.navy)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)

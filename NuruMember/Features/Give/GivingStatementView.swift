@@ -270,7 +270,7 @@ struct GivingStatementView: View {
             let totals = vm.fundTotals(in: year)
             if totals.isEmpty {
                 Text("No settled gifts \(periodLabel).")
-                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                    .font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                     .padding(.vertical, Nuru.S.sm)
             } else {
                 ForEach(Array(totals.enumerated()), id: \.element.fund) { i, t in
@@ -279,7 +279,7 @@ struct GivingStatementView: View {
                 }
             }
             HStack {
-                Text("TOTAL GIVEN").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.navy)
+                Text("TOTAL GIVEN").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.navy)
                 Spacer()
                 Text(ksh(vm.totalMinor(in: year) / 100))
                     .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
@@ -305,7 +305,7 @@ struct GivingStatementView: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.fund.capitalized).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text("\(t.count) gift\(t.count == 1 ? "" : "s")")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
             }
             Spacer()
             Text(ksh(t.totalMinor / 100)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -348,10 +348,10 @@ struct GivingStatementView: View {
                 Text(g.fund.capitalized)
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 if let ref = g.providerRef {
                     Text("Ref \(ref)")
-                        .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         .lineLimit(1)
                 }
             }

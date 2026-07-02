@@ -179,6 +179,17 @@ extension Font {
     static var nCaption: Font  { inter(12, .regular) }
     static var nMicro: Font    { inter(11, .medium) }
     static var nOverline: Font { inter(11, .semibold) }
+
+    // Card scale — ONE typographic voice for every card in the app. Cards had
+    // drifted (kickers 10-12pt, titles 15-19pt, bodies 12-14pt); these are the
+    // canon. Kickers pair with `.kerning(1.4)`; row titles are the serif voice
+    // for list rows, card titles for feature cards.
+    static var nCardKicker: Font { inter(11, .bold) }        // "VERSE FOR TODAY" - gold, kerning 1.4
+    static var nCardTitle: Font  { fraunces(18, .semibold) } // feature-card headline
+    static var nRowTitle: Font   { fraunces(15, .semibold) } // row/list-item headline
+    static var nCardBody: Font   { inter(13, .regular) }     // card body / preview text
+    static var nCardMeta: Font   { inter(11, .regular) }     // timestamps, counts, footnotes
+    static var nCardCTA: Font    { inter(14, .semibold) }    // in-card button labels
 }
 
 private func interFace(_ w: Font.Weight) -> String {

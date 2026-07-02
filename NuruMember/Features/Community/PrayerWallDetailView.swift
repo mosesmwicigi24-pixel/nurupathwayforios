@@ -95,7 +95,7 @@ struct PrayerWallDetailView: View {
                 postCard(d.post)
                 Text(d.comments.isEmpty ? "BE THE FIRST TO ENCOURAGE"
                      : "\(d.comments.count) \(d.comments.count == 1 ? "REPLY" : "REPLIES")")
-                    .font(.nMicro).kerning(0.6).foregroundStyle(Nuru.faint)
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.faint)
                     .padding(.top, Nuru.S.lg).padding(.bottom, Nuru.S.sm)
                 ForEach(d.comments) { cm in
                     commentCard(cm).transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -113,13 +113,13 @@ struct PrayerWallDetailView: View {
                 Avatar(url: post.authorAvatar, name: post.authorName, size: 40)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(post.authorName).font(.nHeading).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Text(whenString(post.createdAt)).font(.nMicro).foregroundStyle(Nuru.faint)
+                    Text(whenString(post.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
                 }
                 Spacer(minLength: 0)
                 if post.isAnswered { answeredChip }
             }
             if let title = post.title, !title.isEmpty {
-                Text(title).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.md)
+                Text(title).font(.nCardTitle).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.md)
             }
             Text(post.body).font(.nBodyLg).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,9 +176,9 @@ struct PrayerWallDetailView: View {
                 Avatar(url: cm.authorAvatar, name: cm.authorName, size: 28)
                 Text(cm.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
                 Spacer(minLength: 0)
-                Text(whenString(cm.createdAt)).font(.nMicro).foregroundStyle(Nuru.faint)
+                Text(whenString(cm.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
             }
-            Text(cm.body).font(.nBody).foregroundStyle(Nuru.ink)
+            Text(cm.body).font(.nCardBody).foregroundStyle(Nuru.ink)
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -216,7 +216,7 @@ struct ResourcesLibraryView: View {
                     .background(m.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(r.title).font(.inter(13, .semibold)).foregroundStyle(RES.navy).lineLimit(1)
-                    Text("\(r.author) · \(r.durationLabel)").font(.inter(11)).foregroundStyle(RES.ink2).lineLimit(1)
+                    Text("\(r.author) · \(r.durationLabel)").font(.nCardMeta).foregroundStyle(RES.ink2).lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Icon(.download, size: 14, color: RES.gold).frame(width: 32, height: 32)

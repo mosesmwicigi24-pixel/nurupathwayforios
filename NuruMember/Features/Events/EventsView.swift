@@ -372,7 +372,7 @@ struct EventsView: View {
     private var weekStrip: some View {
         VStack(spacing: Nuru.S.sm) {
             HStack {
-                Text(vm.monthLabel).font(.inter(10, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
+                Text(vm.monthLabel).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
                 Spacer()
                 Button {
                     Haptics.selection()
@@ -428,9 +428,9 @@ struct EventsView: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text("CALENDAR").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
-                    Text("All events & calendar").font(.fraunces(16, .semibold)).foregroundStyle(Nuru.onNavy)
+                    Text("All events & calendar").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
                     Text("See the whole month at a glance · \(vm.upcomingCount) upcoming")
-                        .font(.inter(10)).foregroundStyle(Nuru.onNavyDim)
+                        .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: .white)
@@ -564,8 +564,8 @@ struct EventsView: View {
             }
         } else if vm.error != nil && vm.occurrences.isEmpty {
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("Couldn't load events").font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink)
-                Text("Check your connection, then try again.").font(.nCaption).foregroundStyle(Nuru.muted)
+                Text("Couldn't load events").font(.nRowTitle).foregroundStyle(Nuru.ink)
+                Text("Check your connection, then try again.").font(.nCardBody).foregroundStyle(Nuru.muted)
                 Button {
                     Haptics.tap()
                     Task { await vm.load() }
@@ -616,7 +616,7 @@ struct EventsView: View {
                 Icon(.calendarDays, size: 20, color: Nuru.gold)
             }
             Text(vm.emptyTitle).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-            Text(vm.emptyCaption).font(.inter(10)).foregroundStyle(Nuru.faint).multilineTextAlignment(.center)
+            Text(vm.emptyCaption).font(.nCardMeta).foregroundStyle(Nuru.faint).multilineTextAlignment(.center)
             NavigationLink(value: EventsNav.calendar) {
                 HStack(spacing: 6) {
                     Icon(.calendarDays, size: 13, color: .white)
@@ -668,7 +668,7 @@ struct EventsView: View {
         HStack {
             HStack(spacing: 6) {
                 Icon(icon, size: 13, color: Color(hex: 0xA8861C))
-                Text(title).font(.inter(10, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
+                Text(title).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
             }
             Spacer()
             NavigationLink(value: nav) {
@@ -749,7 +749,7 @@ private struct LiveHeroCard: View {
     private var footer: some View {
         HStack(spacing: Nuru.S.sm) {
             heroAvatars
-            Text("\(occ.going) worshipping").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.85))
+            Text("\(occ.going) worshipping").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 Icon(.qrCode, size: 14, color: Nuru.navy)
@@ -784,7 +784,7 @@ private struct LiveHeroCard: View {
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 5) {
             Icon(icon, size: 13, color: Nuru.goldLight)
-            Text(text).font(.inter(11)).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
+            Text(text).font(.nCardMeta).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
         }
     }
 }
@@ -812,7 +812,7 @@ private struct SeriesRailRow: View {
                             .background(Nuru.gold.opacity(0.15), in: Capsule())
                     }
                 }
-                Text(series.cadenceLine).font(.inter(10)).foregroundStyle(Nuru.muted).lineLimit(1)
+                Text(series.cadenceLine).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
             }
             Spacer(minLength: Nuru.S.sm)
             FollowButton(following: series.following, onToggle: onToggle)
@@ -879,7 +879,7 @@ private struct AnnouncementRow: View {
                     Text(announcement.title).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                     Icon(.badgeCheck, size: 12, color: Nuru.gold)
                 }
-                Text(announcement.body).font(.inter(10)).foregroundStyle(Nuru.muted).lineLimit(1)
+                Text(announcement.body).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
             }
             Spacer(minLength: Nuru.S.sm)
             VStack(alignment: .trailing, spacing: 5) {
@@ -1014,9 +1014,9 @@ private struct EvCardBody: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(occ.title).font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+            Text(occ.title).font(.nRowTitle).foregroundStyle(Nuru.ink).lineLimit(1)
             if let d = occ.description, !d.isEmpty {
-                Text(d).font(.inter(10)).foregroundStyle(Nuru.muted).lineLimit(2).padding(.top, 4)
+                Text(d).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(2).padding(.top, 4)
             }
             HStack(spacing: Nuru.S.base) {
                 meta(.clock, Ev.timeRange(occ.startAt, occ.endAt))
@@ -1033,7 +1033,7 @@ private struct EvCardBody: View {
     private func meta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
             Icon(icon, size: 12, color: Nuru.ink600)
-            Text(text).font(.inter(10)).foregroundStyle(Nuru.muted).lineLimit(1)
+            Text(text).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
         }
     }
 }
@@ -1049,7 +1049,7 @@ private struct EvCardFooter: View {
         HStack(spacing: Nuru.S.sm) {
             avatars
             Text(occ.going > 0 ? "\(occ.going) going" : "Be the first to RSVP")
-                .font(.inter(10, .semibold)).foregroundStyle(Nuru.ink600)
+                .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
             Spacer(minLength: 0)
             if onRsvp != nil { rsvpButton }
         }
@@ -1270,7 +1270,7 @@ private struct SeriesListPage: View {
             Text(discover ? "You follow every series — amen!" : "You're not following any series yet")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
             Text(discover ? "New series will appear here." : "Browse Discover to follow one.")
-                .font(.inter(10)).foregroundStyle(Nuru.faint)
+                .font(.nCardMeta).foregroundStyle(Nuru.faint)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl)
         .cardSurfaceEv()
@@ -1321,7 +1321,7 @@ private struct SeriesListRow: View {
                             .background(Nuru.gold.opacity(0.15), in: Capsule())
                     }
                 }
-                Text(series.cadenceLine).font(.inter(10)).foregroundStyle(Nuru.muted).lineLimit(1)
+                Text(series.cadenceLine).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
                 if let next = series.nextAt {
                     HStack(spacing: 4) {
                         Icon(.calendarDays, size: 10, color: Nuru.faint)

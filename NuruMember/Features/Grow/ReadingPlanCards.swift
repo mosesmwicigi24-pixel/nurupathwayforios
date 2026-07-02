@@ -140,7 +140,7 @@ struct PLStreakStrip: View {
                     Text("\(count)-day streak").font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
                         .lineLimit(1)
                     Text(count > 0 ? "Read today to keep it alive 🔥" : "Read today to start your streak 🔥")
-                        .font(.inter(11)).foregroundStyle(PL.ink2)
+                        .font(.nCardMeta).foregroundStyle(PL.ink2)
                         .lineLimit(2).minimumScaleFactor(0.9)
                 }
                 Spacer(minLength: 8)
@@ -241,7 +241,7 @@ struct PLContinueRow: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(plan.title).font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy).lineLimit(1)
                 Text("Today · \(plan.subtitle ?? "Day \(day) of \(total)")")
-                    .font(.inter(11)).foregroundStyle(PL.ink2).lineLimit(1).padding(.top, 2)
+                    .font(.nCardMeta).foregroundStyle(PL.ink2).lineLimit(1).padding(.top, 2)
                 HStack(spacing: 8) {
                     GeometryReader { geo in
                         ZStack(alignment: .leading) {
@@ -364,7 +364,7 @@ struct PLFinishEarnCard: View {
                     .font(.inter(13, .bold)).kerning(-0.13).foregroundStyle(.white)
                     .lineLimit(2).truncationMode(.tail)
                 Text("A little gift for your shelf when you complete all \(dayCount) days.")
-                    .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
+                    .font(.nCardMeta).foregroundStyle(.white.opacity(0.55))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -400,7 +400,7 @@ struct PLDetailDayRow: View {
             .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Text(day.title ?? "Reading & reflection").font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text("\(day.reference) · ~5 min read").font(.inter(10)).foregroundStyle(PL.ink3).lineLimit(1)
+                Text("\(day.reference) · ~5 min read").font(.nCardMeta).foregroundStyle(PL.ink3).lineLimit(1)
             }
             Spacer(minLength: 0)
             if isNext {
@@ -440,7 +440,7 @@ struct PLSegmentRow: View {
             .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Text(segment.title).font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text(segment.kind.capitalized).font(.inter(10)).foregroundStyle(PL.ink3).lineLimit(1)
+                Text(segment.kind.capitalized).font(.nCardMeta).foregroundStyle(PL.ink3).lineLimit(1)
             }
             Spacer(minLength: 0)
             if isNext {

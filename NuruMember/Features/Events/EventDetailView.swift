@@ -436,7 +436,7 @@ private struct EvdMetaTile: View {
                     .font(.inter(9, .bold)).kerning(1.3)
                     .foregroundStyle(EvD.tertiary)
                 Text(value)
-                    .font(.inter(12, .semibold))
+                    .font(.inter(11, .semibold))
                     .foregroundStyle(EvD.ink)
                     .lineLimit(1)
             }
@@ -476,7 +476,7 @@ private struct EvdAboutCard: View {
         VStack(alignment: .leading, spacing: 8) {
             EvdOverline("About this gathering")
             Text(text)
-                .font(.inter(13))
+                .font(.nCardBody)
                 .foregroundStyle(EvD.body)
                 .lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
@@ -504,7 +504,7 @@ private struct EvdRosterCard: View {
             }
             if shown.isEmpty {
                 Text("Be the first to RSVP.")
-                    .font(.inter(12)).foregroundStyle(EvD.secondary)
+                    .font(.nCardBody).foregroundStyle(EvD.secondary)
             } else {
                 rail
             }
@@ -651,7 +651,7 @@ private struct EvdBuzzCard: View {
                         onFocus: onComposerFocus)
             if vm.posts.isEmpty {
                 Text("Be the first to share a moment.")
-                    .font(.inter(12)).foregroundStyle(EvD.tertiary)
+                    .font(.nCardBody).foregroundStyle(EvD.tertiary)
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 8)
             } else {
@@ -786,7 +786,7 @@ private struct EvdBuzzPostRow: View {
                 titleLine
                 if let body = post.body, !body.isEmpty {
                     Text(body)
-                        .font(.inter(12.5)).foregroundStyle(EvD.body)
+                        .font(.nCardBody).foregroundStyle(EvD.body)
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -814,7 +814,7 @@ private struct EvdBuzzPostRow: View {
             }
             Spacer(minLength: 0)
             Text(EvdBuzzPostRow.relTime(post.createdAt))
-                .font(.inter(10)).foregroundStyle(EvD.tertiary)
+                .font(.nCardMeta).foregroundStyle(EvD.tertiary)
         }
     }
 
@@ -941,7 +941,7 @@ private struct EvdOverline: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.inter(10, .bold)).kerning(1.8)
+            .font(.nCardKicker).kerning(1.4)
             .foregroundStyle(EvD.overline)
     }
 }

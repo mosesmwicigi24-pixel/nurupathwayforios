@@ -1,44 +1,28 @@
-// Account / Profile — native port of the Figma ProfileTab (current make). Cream
-// header with avatar + gold level chip, then settings cards: Personal Information
-// (Member ID + live /me fields, all editable via PATCH /me except email §5.8),
-// Security & Login (real password change + TOTP 2FA), Notifications, Achievements
-// (real /me/achievements + /badges catalogue), Milestones (real enrollment +
-// baptism flag), Certificates (real GET /certificates + public verify), Display,
-// Privacy (location consent → /me/location), Help & Privacy, Sign out / Delete.
+// Account / Profile — native port of the Figma ProfileTab (current make): who
+// the member IS. Cream header with avatar + gold level chip, then the journey
+// cards: Personal Information (Member ID + live /me fields, all editable via
+// PATCH /me except email §5.8), Achievements (real /me/achievements + /badges
+// catalogue), Growth Scores, Milestones (real enrollment + baptism flag) and
+// Certificates (real GET /certificates + public verify). How the APP BEHAVES
+// (security, notifications, display, language, privacy, help, sign out) moved
+// to SettingsView, pushed from the header's gear button.
 // The Figma's Connected-accounts / Social-links sections were removed from the
 // current design, so they are gone here too.
 import SwiftUI
 import UIKit
 import PhotosUI
-import CoreLocation
-import UserNotifications
 
 struct ProfileView: View {
     @EnvironmentObject private var auth: AuthStore
 
-    // Notification channel prefs — SERVER-BACKED (GET/PUT /me/notification-
-    // preferences) with @AppStorage as the offline cache/fallback so the UI
-    // never blocks. Toggles are optimistic and roll back on a failed PUT; push
-    // additionally requests the real system permission.
-    @AppStorage("nuru.notif.push") private var pushOn = true
-    @AppStorage("nuru.notif.email") private var emailOn = true
-    @AppStorage("nuru.notif.sms") private var smsOn = false
-    /// Approximate-location sharing consent (persisted); wired to /me/location.
-    @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
-    /// Global text scale (persisted); the font helpers read Nuru.textScale from here.
-    @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
-
-    @StateObject private var location = LocationManager()
-    @State private var showMfaEnroll = false
-    @State private var showMfaDisable = false
-    @State private var mfaDisableCode = ""
-    @State private var mfaError: String?
+    /// Pushes SettingsView. @SceneStorage (not @State): RootView re-`.id`s the
+    /// whole tab tree when the text scale changes, and Settings owns the text-
+    /// size control — plain @State would pop the member out of Settings the
+    /// moment they tapped a size. SceneStorage survives that reconstruction.
+    @SceneStorage("nuru.profile.showSettings") private var showSettings = false
 
     // Sheets
     @State private var editingField: PField?
-    @State private var showSignOutConfirm = false
-    @State private var showPasswordSheet = false
-    @State private var helpSheet: PHelpSheet?
     @State private var viewingBadge: PBadgeItem?
     @State private var showAllBadges = false
     @State private var verifyingCert: PCert?
@@ -54,78 +38,43 @@ struct ProfileView: View {
     @State private var avatarUploading = false
     @State private var avatarError: String?
 
-    /// Real 2FA state from the server profile — the toggle reflects the truth.
-    private var twoFactorOn: Bool { auth.profile?.mfaEnabled ?? false }
-
     private var p: UserProfile? { auth.profile }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: Nuru.S.base) {
-                header
-                personalInfo
-                security
-                notifications
-                achievements
-                growthScores
-                milestonesSection
-                certificates
-                display
-                privacy
-                helpPrivacy
-                actions
-                Text("Nuru Pathway · v1.0").font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
-                    .padding(.top, Nuru.S.xs)
+        // The Profile tab owns its own stack (RootView renders tabs bare) so the
+        // gear can PUSH SettingsView like every other drill-down in the app.
+        NavigationStack {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: Nuru.S.base) {
+                    header
+                    personalInfo
+                    achievements
+                    growthScores
+                    milestonesSection
+                    certificates
+                }
+                .padding(.horizontal, Nuru.S.screen)
+                .padding(.bottom, Nuru.tabBarSpace)
             }
-            .padding(.horizontal, Nuru.S.screen)
-            .padding(.bottom, Nuru.tabBarSpace)
-        }
-        .background(Nuru.paper.ignoresSafeArea(edges: .bottom))
-        .ignoresSafeArea(edges: .top)
-        .task { await loadExtras() }
-        .sheet(isPresented: $showMfaEnroll) {
-            MfaEnrollSheet(onEnabled: { Task { await auth.loadProfile() } })
-        }
-        .sheet(item: $editingField) { f in
-            EditFieldSheet(field: f, current: currentValue(for: f), rowVersion: p?.rowVersion ?? 1) {
-                Task { await auth.loadProfile() }
-            }
-        }
-        .sheet(isPresented: $showPasswordSheet) { PasswordChangeSheet() }
-        .sheet(item: $helpSheet) { which in
-            switch which {
-            case .language:
-                AppLanguageSheet(current: p?.locale ?? "en", rowVersion: p?.rowVersion ?? 1) {
+            .background(Nuru.paper.ignoresSafeArea(edges: .bottom))
+            .ignoresSafeArea(edges: .top)
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showSettings) { SettingsView() }
+            .task { await loadExtras() }
+            .sheet(item: $editingField) { f in
+                EditFieldSheet(field: f, current: currentValue(for: f), rowVersion: p?.rowVersion ?? 1) {
                     Task { await auth.loadProfile() }
                 }
-            case .support: HelpSupportSheet()
-            case .privacyPolicy: PrivacyPolicySheet()
             }
+            .sheet(item: $viewingBadge) { b in BadgeDetailSheet(badge: b) }
+            .sheet(isPresented: $showAllBadges) { BadgeGallerySheet(badges: badges) }
+            .sheet(item: $verifyingCert) { c in VerifyCertificateSheet(cert: c) }
+            .sheet(item: $scoreDetailPillar) { p in ScoreDetailView(pillar: p) }
+            .alert("Profile photo", isPresented: Binding(get: { avatarError != nil }, set: { if !$0 { avatarError = nil } })) {
+                Button("OK") { avatarError = nil }
+            } message: { Text(avatarError ?? "") }
+            .onChange(of: avatarPick) { _, item in if let item { Task { await uploadAvatar(item) } } }
         }
-        .sheet(item: $viewingBadge) { b in BadgeDetailSheet(badge: b) }
-        .sheet(isPresented: $showAllBadges) { BadgeGallerySheet(badges: badges) }
-        .sheet(item: $verifyingCert) { c in VerifyCertificateSheet(cert: c) }
-        .sheet(item: $scoreDetailPillar) { p in ScoreDetailView(pillar: p) }
-        .alert("Turn off two-factor?", isPresented: $showMfaDisable) {
-            TextField("6-digit code", text: $mfaDisableCode).keyboardType(.numberPad)
-            Button("Turn off", role: .destructive) {
-                Task {
-                    do { try await MemberAPI.disableMfa(code: mfaDisableCode); Haptics.success(); await auth.loadProfile() }
-                    catch { Haptics.error(); mfaError = (error as? APIError)?.errorDescription ?? "Couldn't turn off two-factor." }
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("Enter a current code from your authenticator app to confirm.")
-        }
-        .alert("Two-factor authentication", isPresented: Binding(get: { mfaError != nil }, set: { if !$0 { mfaError = nil } })) {
-            Button("OK") { mfaError = nil }
-        } message: { Text(mfaError ?? "") }
-        .alert("Profile photo", isPresented: Binding(get: { avatarError != nil }, set: { if !$0 { avatarError = nil } })) {
-            Button("OK") { avatarError = nil }
-        } message: { Text(avatarError ?? "") }
-        .onChange(of: avatarPick) { _, item in if let item { Task { await uploadAvatar(item) } } }
-        .onChange(of: shareLocation) { _, on in Task { await applyLocationSharing(on) } }
     }
 
     // MARK: Data — real achievements + certificates
@@ -135,7 +84,6 @@ struct ProfileView: View {
         async let mine = try? await APIClient.shared.get("me/achievements", as: PMyAchievements.self)
         async let certificates = try? await APIClient.shared.get("certificates", as: Envelope<PCert>.self).data
         async let scoresSummary = try? await MemberAPI.scores()
-        async let serverPrefs = try? await MemberAPI.notificationPreferences()
 
         let cat = await catalogue ?? []
         let earned = await mine?.badges ?? []
@@ -152,42 +100,6 @@ struct ProfileView: View {
         badges = merged.sorted { ($0.earned ? 0 : 1, $0.name) < ($1.earned ? 0 : 1, $1.name) }
         certs = await certificates ?? []
         scores = await scoresSummary
-
-        // Server is the source of truth for channel prefs; the @AppStorage values
-        // stand in until (and unless) it answers. Direct assignment — the custom
-        // toggle bindings (and their PUT) only run on user interaction.
-        if let prefs = await serverPrefs {
-            pushOn = prefs.pushEnabled
-            emailOn = prefs.emailEnabled
-            smsOn = prefs.smsEnabled
-        }
-    }
-
-    // MARK: Settings side-effects
-
-    /// Ask iOS for notification permission when the member turns push on.
-    private func requestPushPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
-    }
-
-    // MARK: Notification prefs (optimistic write-through to the server)
-
-    /// Optimistic toggle: flip the local (@AppStorage-cached) value immediately,
-    /// PUT all three channels, and roll back + error-haptic if the save fails.
-    private func prefBinding(_ value: Binding<Bool>, isPush: Bool = false) -> Binding<Bool> {
-        Binding(get: { value.wrappedValue }, set: { on in
-            let old = value.wrappedValue
-            value.wrappedValue = on
-            if isPush, on { requestPushPermission() }
-            Task {
-                do {
-                    try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn)
-                } catch {
-                    Haptics.error()
-                    value.wrappedValue = old
-                }
-            }
-        })
     }
 
     // MARK: Avatar upload (PhotosPicker → ~512px JPEG → POST /me/avatar)
@@ -229,38 +141,24 @@ struct ProfileView: View {
         return resized.jpegData(compressionQuality: 0.85)
     }
 
-    /// Share or stop sharing an approximate location fix (§proximity). If permission
-    /// is denied or a fix can't be obtained, revert the toggle so it never lies.
-    private func applyLocationSharing(_ on: Bool) async {
-        if on {
-            if let c = await location.requestCoarseFix() {
-                try? await MemberAPI.shareLocation(lat: c.latitude, lng: c.longitude)
-            } else {
-                shareLocation = false
-            }
-        } else {
-            try? await MemberAPI.stopSharingLocation()
-        }
-    }
-
-    private func openSystemSettings() {
-        guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
-        UIApplication.shared.open(url)
-    }
-
     // MARK: Header
 
     // Cream Figma header (ProfileTab) — navy-on-light "Account", white settings
-    // gear, avatar (gold ring + edit pencil), name, email, level chip.
+    // gear (→ pushes SettingsView), avatar (gold ring + edit pencil), name,
+    // email, level chip.
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
                 Text("ACCOUNT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A))
                 Spacer()
-                Icon(.settings, size: 18, color: Nuru.navy)
-                    .frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                Button { Haptics.tap(); showSettings = true } label: {
+                    Icon(.settings, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Settings")
             }
             HStack(spacing: 16) {
                 // Tap anywhere on the avatar (incl. the pencil) to pick a new photo.
@@ -433,68 +331,7 @@ struct ProfileView: View {
         .padding(.vertical, 10)
     }
 
-    private var localeLanguageName: String {
-        switch String((p?.locale ?? "en").prefix(2)).lowercased() {
-        case "sw": return "Swahili"
-        case "fr": return "French"
-        default: return "English"
-        }
-    }
-
-    // MARK: Security
-
-    private var security: some View {
-        sectionCard("SECURITY & LOGIN", icon: .lock) {
-            Button { Haptics.tap(); showPasswordSheet = true } label: {
-                actionRow(.key, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
-                          "Change password", "Keep your account secure")
-            }.buttonStyle(.pressableSubtle)
-            Divider()
-            HStack(spacing: Nuru.S.md) {
-                iconTile(.fingerprint,
-                         tint: twoFactorOn ? Color(hex: 0x16A34A).opacity(0.13) : Color(hex: 0xFEF3C7),
-                         color: twoFactorOn ? Color(hex: 0x16A34A) : Color(hex: 0xD97706))
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Two-factor authentication").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                    Text(twoFactorOn ? "Active · Authenticator app" : "Not enabled · recommended")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                }
-                Spacer(minLength: 0)
-                Toggle("", isOn: Binding(get: { twoFactorOn }, set: { want in
-                    Haptics.selection()
-                    if want, !twoFactorOn { showMfaEnroll = true }
-                    else if !want, twoFactorOn { mfaDisableCode = ""; showMfaDisable = true }
-                })).labelsHidden().tint(Nuru.gold)
-            }
-            .padding(.vertical, 10)
-            Divider()
-            actionRow(.smartphone, tint: Color(hex: 0xFCE7F3), color: Color(hex: 0xDB2777),
-                      "Active sessions", "This device")
-        }
-    }
-
-    // MARK: Notifications
-
-    private var notifications: some View {
-        sectionCard("NOTIFICATIONS", icon: .bell) {
-            toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", prefBinding($pushOn, isPush: true)); Divider()
-            toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
-            toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
-            Button { Haptics.tap(); openSystemSettings() } label: {
-                HStack(spacing: Nuru.S.md) {
-                    iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text("Notification settings").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                        Text("Manage sounds & toggles in phone settings").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                    }
-                    Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
-                }
-                .padding(.vertical, 10)
-                .contentShape(Rectangle())
-            }.buttonStyle(.pressableSubtle)
-        }
-    }
+    private var localeLanguageName: String { nuruLanguageName(p?.locale) }
 
     // MARK: Achievements (real earned badges + catalogue)
 
@@ -521,7 +358,7 @@ struct ProfileView: View {
                 }
             }
             Text("Badges celebrate your growth — not competition.")
-                .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                .font(.nCardMeta).italic().foregroundStyle(Color(hex: 0x74808F))
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm)
         }
@@ -588,7 +425,7 @@ struct ProfileView: View {
                     if pillar != ScorePillar.allCases.last { Divider() }
                 }
                 Text("Tap a score to see why — scores are formative, never a leaderboard.")
-                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                    .font(.nCardMeta).italic().foregroundStyle(Color(hex: 0x74808F))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                     .padding(.top, Nuru.S.xs)
             } else {
@@ -659,159 +496,13 @@ struct ProfileView: View {
                 }
             }
             Text("The name on a certificate is fixed at issuance and won't change if you edit your profile.")
-                .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                .font(.nCardMeta).italic().foregroundStyle(Color(hex: 0x74808F))
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm)
         }
     }
 
-    // MARK: Display
-
-    /// Text-size options → the global scale the font helpers apply (Nuru.textScale).
-    private static let textSizes: [(label: String, scale: Double, preview: CGFloat)] = [
-        ("Small", 0.90, 13), ("Default", 1.0, 15), ("Large", 1.15, 18),
-    ]
-
-    private var display: some View {
-        sectionCard("DISPLAY", icon: .sun) {
-            Text("Text size").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-            HStack(spacing: Nuru.S.sm) {
-                ForEach(Self.textSizes, id: \.label) { opt in
-                    let on = abs(textScale - opt.scale) < 0.001
-                    Button {
-                        if !on { Haptics.selection() }
-                        withAnimation(.easeInOut(duration: 0.15)) { textScale = opt.scale }
-                    } label: {
-                        Text(opt.label)
-                            .font(.inter(opt.preview, on ? .bold : .semibold))
-                            .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
-                            .frame(maxWidth: .infinity).frame(height: 48)
-                            .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
-                }
-            }
-            .padding(.top, Nuru.S.xs)
-            Text("Adjusts text size across the whole app.").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
-        }
-    }
-
-    // MARK: Privacy
-
-    private var privacy: some View {
-        sectionCard("PRIVACY", icon: .mapPin) {
-            HStack(spacing: Nuru.S.md) {
-                fieldIconTile(.mapPin)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Share my approximate location").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                    Text("Helps you connect with believers near you. Approximate only; you can turn this off anytime.")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 0)
-                Toggle("", isOn: $shareLocation).labelsHidden().tint(Nuru.gold)
-            }
-        }
-    }
-
-    // MARK: Help & privacy
-
-    private var helpPrivacy: some View {
-        sectionCard("HELP & PRIVACY", icon: .lifeBuoy) {
-            Button { Haptics.tap(); helpSheet = .language } label: {
-                actionRow(.languages, tint: Color(hex: 0xE0F2FE), color: Color(hex: 0x0EA5E9),
-                          "Language", "App language · \(localeLanguageName)")
-            }.buttonStyle(.pressableSubtle)
-            Divider()
-            Button { Haptics.tap(); helpSheet = .support } label: {
-                actionRow(.lifeBuoy, tint: Nuru.successBg, color: Color(hex: 0x16A34A),
-                          "Help & support", "FAQs, contact us")
-            }.buttonStyle(.pressableSubtle)
-            Divider()
-            Button { Haptics.tap(); helpSheet = .privacyPolicy } label: {
-                actionRow(.shieldCheck, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
-                          "Privacy policy", "How we handle your data")
-            }.buttonStyle(.pressableSubtle)
-        }
-    }
-
-    // MARK: Danger zone
-
-    private var actions: some View {
-        HStack(spacing: Nuru.S.sm) {
-            Button { Haptics.tap(); showSignOutConfirm = true } label: {
-                HStack(spacing: 6) { Icon(.logOut, size: 15, color: Nuru.navy); Text("Sign out").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
-                    .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-            // Calm confirm — signing out is reversible, so no destructive red.
-            .confirmationDialog("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
-                Button("Sign out") {
-                    // Revoke the refresh-token family server-side FIRST (the token
-                    // is captured synchronously, the call is fire-and-forget), then
-                    // clear local state — the sign-out never waits on the network.
-                    MemberAPI.revokeSessionBestEffort()
-                    auth.signOut()
-                }
-                Button("Stay signed in", role: .cancel) {}
-            } message: {
-                Text("Your progress is saved — you can pick up right where you left off.")
-            }
-            Button { } label: {
-                HStack(spacing: 6) { Icon(.trash2, size: 15, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
-                    .frame(maxWidth: .infinity).frame(height: 46)
-                    .background(Color(hex: 0xFEF2F2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(hex: 0xFECACA), lineWidth: 1))
-            }.buttonStyle(.plain)
-        }
-    }
-
     // MARK: building blocks
-
-    private func sectionCard<C: View>(_ title: String, icon: Lucide,
-                                      action: String? = nil, onAction: (() -> Void)? = nil,
-                                      @ViewBuilder content: () -> C) -> some View {
-        VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            HStack {
-                HStack(spacing: 6) {
-                    Icon(icon, size: 12, color: Color(hex: 0xA8861C))
-                    Text(title).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
-                }
-                Spacer()
-                if let action, let onAction {
-                    Button(action: onAction) {
-                        Text(action).font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
-                    }.buttonStyle(.plain)
-                }
-            }
-            content()
-        }
-        .padding(Nuru.S.base)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
-    }
-
-    /// Neutral 36pt icon tile (personal-info / notification-pref rows).
-    private func fieldIconTile(_ icon: Lucide) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.surface)
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .frame(width: 36, height: 36)
-            Icon(icon, size: 15, color: Nuru.navy)
-        }
-    }
-
-    /// Tinted 36pt icon tile (security / help rows).
-    private func iconTile(_ icon: Lucide, tint: Color, color: Color) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint).frame(width: 36, height: 36)
-            Icon(icon, size: 16, color: color)
-        }
-    }
 
     private func infoRow(_ icon: Lucide, _ label: String, _ value: String, editable: Bool = false) -> some View {
         HStack(spacing: Nuru.S.md) {
@@ -825,35 +516,6 @@ struct ProfileView: View {
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
-    }
-
-    private func actionRow(_ icon: Lucide, tint: Color, color: Color, _ title: String, _ sub: String) -> some View {
-        HStack(spacing: Nuru.S.md) {
-            iconTile(icon, tint: tint, color: color)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-            }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
-        }
-        .padding(.vertical, 10)
-        .contentShape(Rectangle())
-    }
-
-    private func toggleRow(_ icon: Lucide, _ title: String, _ sub: String, _ binding: Binding<Bool>) -> some View {
-        HStack(spacing: Nuru.S.md) {
-            fieldIconTile(icon)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text(sub).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-            }
-            Spacer(minLength: 0)
-            Toggle("", isOn: Binding(get: { binding.wrappedValue },
-                                     set: { binding.wrappedValue = $0; Haptics.selection() }))
-                .labelsHidden().tint(Nuru.gold)
-        }
-        .padding(.vertical, 10)
     }
 
     private func langChip(_ text: String, isDefault: Bool) -> some View {
@@ -882,6 +544,63 @@ struct ProfileView: View {
     }
 }
 
+// MARK: - Shared card building blocks (ProfileView + SettingsView)
+
+/// The account surfaces' card: white rounded card with a gold kicker header
+/// (and optional trailing action). File-scope so SettingsView shares the exact
+/// same visual language.
+func sectionCard<C: View>(_ title: String, icon: Lucide,
+                          action: String? = nil, onAction: (() -> Void)? = nil,
+                          @ViewBuilder content: () -> C) -> some View {
+    VStack(alignment: .leading, spacing: Nuru.S.sm) {
+        HStack {
+            HStack(spacing: 6) {
+                Icon(icon, size: 12, color: Color(hex: 0xA8861C))
+                Text(title).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
+            }
+            Spacer()
+            if let action, let onAction {
+                Button(action: onAction) {
+                    Text(action).font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                }.buttonStyle(.plain)
+            }
+        }
+        content()
+    }
+    .padding(Nuru.S.base)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+    .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    .nuruShadow()
+}
+
+/// Neutral 36pt icon tile (personal-info / notification-pref / privacy rows).
+func fieldIconTile(_ icon: Lucide) -> some View {
+    ZStack {
+        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.surface)
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .frame(width: 36, height: 36)
+        Icon(icon, size: 15, color: Nuru.navy)
+    }
+}
+
+/// Tinted 36pt icon tile (security / help rows).
+func iconTile(_ icon: Lucide, tint: Color, color: Color) -> some View {
+    ZStack {
+        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint).frame(width: 36, height: 36)
+        Icon(icon, size: 16, color: color)
+    }
+}
+
+/// Locale code → display language name (Profile's languages row + Settings' language row).
+func nuruLanguageName(_ locale: String?) -> String {
+    switch String((locale ?? "en").prefix(2)).lowercased() {
+    case "sw": return "Swahili"
+    case "fr": return "French"
+    default: return "English"
+    }
+}
+
 /// "yyyy-MM-dd" (or ISO timestamp) → "18 Apr 1992"-style display date.
 func formatISODay(_ iso: String) -> String? {
     let out = DateFormatter(); out.dateFormat = "d MMM yyyy"
@@ -904,11 +623,6 @@ private struct PField: Identifiable {
     var options: [POption] = []
 }
 
-private enum PHelpSheet: String, Identifiable {
-    case language, support, privacyPolicy
-    var id: String { rawValue }
-}
-
 /// PATCH /me body — snake_cased by the client encoder; nil fields are omitted.
 /// `rowVersion` drives the server's optimistic-concurrency check.
 private struct UpdateMeBody: Encodable {
@@ -918,7 +632,6 @@ private struct UpdateMeBody: Encodable {
     var city: String?
     var countryCode: String?
     var dateOfBirth: String?
-    var locale: String?
     let rowVersion: Int
     init(rowVersion: Int) { self.rowVersion = rowVersion }
 }
@@ -1471,232 +1184,6 @@ private struct EditFieldSheet: View {
         } catch {
             Haptics.error()
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
-        }
-    }
-}
-
-// MARK: - Change password sheet (POST /me/password)
-
-private struct PasswordChangeSheet: View {
-    @Environment(\.dismiss) private var dismiss
-    @State private var current = ""
-    @State private var new1 = ""
-    @State private var new2 = ""
-    @State private var saving = false
-    @State private var error: String?
-
-    var body: some View {
-        PSheetShell(title: "Change password") {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                secure("Current password", $current)
-                secure("New password", $new1)
-                secure("Confirm new password", $new2)
-                Text("Use at least 8 characters with a mix of letters, numbers and a symbol.")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                    .padding(.top, Nuru.S.xs)
-                if let error {
-                    Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                GoldSheetButton(title: "Update password", busy: saving) { Task { await save() } }
-                    .padding(.top, Nuru.S.xs)
-            }
-        }
-        .presentationDetents([.medium])
-    }
-
-    private func secure(_ placeholder: String, _ binding: Binding<String>) -> some View {
-        SecureField(placeholder, text: binding)
-            .font(.inter(14)).foregroundStyle(Nuru.navy)
-            .padding(.horizontal, Nuru.S.base).frame(height: 48)
-            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-    }
-
-    private func save() async {
-        guard !current.isEmpty else { error = "Enter your current password."; return }
-        guard new1.count >= 8 else { error = "New password must be at least 8 characters."; return }
-        guard new1 == new2 else { error = "New passwords don't match."; return }
-        saving = true; error = nil
-        defer { saving = false }
-        struct Body: Encodable { let currentPassword: String; let newPassword: String }
-        do {
-            _ = try await APIClient.shared.post("me/password",
-                                                body: Body(currentPassword: current, newPassword: new1),
-                                                as: EmptyResponse.self)
-            Haptics.success()
-            dismiss()
-        } catch {
-            Haptics.error()
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't change the password — check your current one."
-        }
-    }
-}
-
-// MARK: - App language sheet (PATCH /me locale)
-
-private struct AppLanguageSheet: View {
-    let current: String
-    let rowVersion: Int
-    let onSaved: () -> Void
-
-    @Environment(\.dismiss) private var dismiss
-    @State private var picked = "en"
-    @State private var saving = false
-    @State private var error: String?
-
-    private let options: [(code: String, name: String, note: String, enabled: Bool)] = [
-        ("en", "English", "Available", true),
-        ("sw", "Swahili", "Available", true),
-        ("fr", "French", "Coming soon", false),
-    ]
-
-    var body: some View {
-        PSheetShell(title: "App language") {
-            VStack(alignment: .leading, spacing: Nuru.S.md) {
-                Text("Choose the language for the app interface.")
-                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
-                VStack(spacing: Nuru.S.sm) {
-                    ForEach(options, id: \.code) { o in
-                        Button { if o.enabled { Haptics.selection(); picked = o.code } } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 1) {
-                                    Text(o.name).font(.inter(14, .medium)).foregroundStyle(Nuru.navy)
-                                    Text(o.note).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                                }
-                                Spacer()
-                                if picked == o.code { Icon(.check, size: 16, color: Nuru.gold) }
-                            }
-                            .padding(12)
-                            .background(picked == o.code ? Nuru.gold.opacity(0.09) : Nuru.surface,
-                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(picked == o.code ? Nuru.gold : Nuru.border, lineWidth: 1))
-                            .opacity(o.enabled ? 1 : 0.5)
-                        }.buttonStyle(.plain).disabled(!o.enabled)
-                    }
-                }
-                if let error { Text(error).font(.inter(12)).foregroundStyle(Nuru.danger) }
-                GoldSheetButton(title: "Save", busy: saving) { Task { await save() } }
-            }
-        }
-        .presentationDetents([.medium])
-        .onAppear { picked = String(current.prefix(2)).lowercased() == "sw" ? "sw" : "en" }
-    }
-
-    private func save() async {
-        saving = true; error = nil
-        defer { saving = false }
-        var body = UpdateMeBody(rowVersion: rowVersion)
-        body.locale = picked
-        do {
-            _ = try await APIClient.shared.patch("me", body: body, as: EmptyResponse.self)
-            onSaved()
-            dismiss()
-        } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
-        }
-    }
-}
-
-// MARK: - Help & support / privacy policy sheets
-
-private struct HelpSupportSheet: View {
-    @State private var open: Int? = 0
-
-    private let faqs: [(q: String, a: String)] = [
-        ("How do I track my pathway progress?",
-         "Open the Pathway tab to see your current level, completed lessons and upcoming milestones. Progress saves automatically."),
-        ("How do reflections work?",
-         "After each lesson you can submit a written reflection. Your mentor reviews it and may leave encouragement before you move on."),
-        ("How do I give or manage my contributions?",
-         "Head to the Give tab to make a one-off gift or set up recurring giving. Receipts appear under Email notifications."),
-        ("Can I use the app offline?",
-         "Downloaded devotionals and lessons are available offline. Reflections and giving sync once you're back online."),
-    ]
-
-    var body: some View {
-        PSheetShell(title: "Help & support") {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                ForEach(Array(faqs.enumerated()), id: \.offset) { i, f in
-                    VStack(alignment: .leading, spacing: 0) {
-                        Button { Haptics.tap(); withAnimation(.easeInOut(duration: 0.2)) { open = open == i ? nil : i } } label: {
-                            HStack(spacing: Nuru.S.sm) {
-                                Text(f.q).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                                    .multilineTextAlignment(.leading)
-                                Spacer(minLength: 0)
-                                Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
-                                    .rotationEffect(.degrees(open == i ? 90 : 0))
-                            }
-                            .padding(12)
-                        }.buttonStyle(.plain)
-                        if open == i {
-                            Text(f.a).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.horizontal, 12).padding(.bottom, 12)
-                        }
-                    }
-                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-
-                Text("STILL NEED HELP?")
-                    .font(.inter(10, .semibold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
-                    .padding(.top, Nuru.S.md)
-                HStack(spacing: Nuru.S.sm) {
-                    Button { openURL("mailto:support@nuru.app") } label: {
-                        HStack(spacing: 6) { Icon(.mail, size: 15, color: Nuru.navy); Text("Email us").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
-                            .frame(maxWidth: .infinity).frame(height: 46)
-                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                    }.buttonStyle(.plain)
-                    Button { openURL("tel:+254700000000") } label: {
-                        HStack(spacing: 6) { Icon(.phone, size: 15, color: Nuru.navy); Text("Call us").font(.inter(13, .bold)).foregroundStyle(Nuru.navy) }
-                            .frame(maxWidth: .infinity).frame(height: 46)
-                            .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    }.buttonStyle(.plain)
-                }
-            }
-        }
-    }
-
-    private func openURL(_ s: String) {
-        guard let url = URL(string: s) else { return }
-        UIApplication.shared.open(url)
-    }
-}
-
-private struct PrivacyPolicySheet: View {
-    @Environment(\.dismiss) private var dismiss
-
-    private let sections: [(h: String, p: String)] = [
-        ("What we collect",
-         "We collect the details you provide — name, contact information, country, languages and pathway activity — to personalise your discipleship journey."),
-        ("How we use it",
-         "Your data powers progress tracking, reflections, reminders and giving receipts. We never sell your personal information to third parties."),
-        ("Who can see it",
-         "Your mentor and cell leader can view your pathway progress and reflections. Personal contact details remain private to you and the Nuru team."),
-        ("Your choices",
-         "You can edit or delete your information at any time from this profile, manage notification preferences, or request full account deletion."),
-        ("Data security",
-         "Information is encrypted in transit and at rest. Access is restricted to authorised staff bound by confidentiality agreements."),
-    ]
-
-    var body: some View {
-        PSheetShell(title: "Privacy policy") {
-            VStack(alignment: .leading, spacing: Nuru.S.base) {
-                Text("Last updated 14 June 2026").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
-                ForEach(sections, id: \.h) { s in
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(s.h).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                        Text(s.p).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                Text("Questions about your privacy? Email privacy@nuru.app and we'll respond within 7 days.")
-                    .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x74808F))
-                GoldSheetButton(title: "Got it") { dismiss() }
-            }
         }
     }
 }

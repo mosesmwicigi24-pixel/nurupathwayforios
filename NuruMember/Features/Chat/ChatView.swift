@@ -262,14 +262,14 @@ struct ChatView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text("Quick help from Nuru")
-                            .font(.fraunces(16, .semibold)).kerning(-0.16).foregroundStyle(.white)
+                            .font(.nRowTitle).kerning(-0.16).foregroundStyle(.white)
                         Text("AI").font(.inter(8, .heavy)).kerning(1.1).foregroundStyle(Color(hex: 0x0A1628))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0x34D399)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
                     }
                     Text("The AI assistant · \(vm.totalUnread) updates across \(vm.spaces.count) spaces")
-                        .font(.inter(10)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                        .font(.nCardMeta).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: .white)
@@ -307,7 +307,7 @@ struct ChatView: View {
                 .frame(width: 32, height: 32)
                 .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
-                Text("VERSE FOR TODAY").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
                 Text(vm.verse?.text ?? "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”")
                     .font(.fraunces(13).italic()).foregroundStyle(Nuru.navy).lineSpacing(4)
                 Text(vm.verse?.reference ?? "Galatians 6:2")
@@ -445,7 +445,7 @@ struct ChatView: View {
         VStack(spacing: Nuru.S.md) {
             Icon(.messageCircle, size: 22, color: Color(hex: 0x74808F))
             Text(vm.error ?? "Couldn't load your chats.")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x74808F))
+                .font(.nCardBody).foregroundStyle(Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
             Button {
                 Haptics.tap()
@@ -651,7 +651,7 @@ struct ChatView: View {
                 .onTapGesture { composeOpen = false }
             VStack(spacing: 8) {
                 HStack {
-                    Text("Start something").font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                    Text("Start something").font(.nCardTitle).foregroundStyle(.white)
                     Spacer(minLength: 0)
                     Button { composeOpen = false } label: {
                         Icon(.x, size: 16, color: .white)
@@ -696,8 +696,8 @@ struct ChatView: View {
                     .frame(width: 44, height: 44)
                     .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(title).font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
-                    Text(sub).font(.inter(11.5)).foregroundStyle(Color(hex: 0x9AA3AF))
+                    Text(title).font(.nCardCTA).foregroundStyle(Nuru.navy)
+                    Text(sub).font(.nCardMeta).foregroundStyle(Color(hex: 0x9AA3AF))
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 16, color: Color(hex: 0xCBD5E1))
@@ -714,7 +714,7 @@ struct ChatView: View {
         HStack(spacing: 6) {
             if hash { Text("#").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB08A1E)) }
             else if let icon { Icon(icon, size: 12, color: Color(hex: 0xB08A1E)) }
-            Text(text).font(.inter(10, .bold)).kerning(2).foregroundStyle(Color(hex: 0xB08A1E))
+            Text(text).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
@@ -734,7 +734,7 @@ struct ChatView: View {
                 .frame(width: 40, height: 40)
                 .background(Nuru.gold.opacity(0.08), in: Circle())
             Text(text)
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x74808F)).lineSpacing(3)
+                .font(.nCardBody).foregroundStyle(Color(hex: 0x74808F)).lineSpacing(3)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
@@ -879,7 +879,7 @@ private struct SpaceRow: View {
                         .foregroundStyle(Nuru.navy).lineLimit(1)
                     Spacer(minLength: 4)
                     Text(chatTime(c.lastAt))
-                        .font(.inter(10, unread ? .bold : .medium))
+                        .font(unread ? .inter(11, .semibold) : .nCardMeta)
                         .foregroundStyle(unread ? Nuru.gold : Color(hex: 0x9AA3AF))
                 }
                 HStack(spacing: 8) {
@@ -936,7 +936,7 @@ private struct ConversationRow: View {
                         .foregroundStyle(Nuru.navy).lineLimit(1)
                     Spacer(minLength: 4)
                     Text(chatTime(c.lastAt))
-                        .font(.inter(10, unread ? .bold : .medium))
+                        .font(unread ? .inter(11, .semibold) : .nCardMeta)
                         .foregroundStyle(unread ? Nuru.gold : Color(hex: 0x9AA3AF))
                 }
                 HStack(spacing: 8) {
@@ -975,7 +975,7 @@ private struct PersonRow: View {
                         certSeal
                     }
                     Text(subtitle)
-                        .font(.inter(10)).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if busy {
@@ -1076,7 +1076,7 @@ private struct DiscoverSpaceRow: View {
                     .font(.inter(12, .medium)).kerning(-0.12)
                     .foregroundStyle(Nuru.navy).lineLimit(1)
                 Text(subtitle)
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
             }
             Spacer(minLength: 4)
             Button(action: follow) {
@@ -1139,9 +1139,9 @@ private struct BroadcastComposer: View {
                     .shadow(color: Nuru.gold.opacity(0.45), radius: 7, y: 4)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Reach every member")
-                        .font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
+                        .font(.nCardTitle).kerning(-0.3).foregroundStyle(Nuru.navy)
                     Text("BROADCAST · STAFF ONLY")
-                        .font(.inter(9, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                        .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
             }
             if uploading || attachmentImage != nil {
@@ -1188,7 +1188,7 @@ private struct BroadcastComposer: View {
                 Task { await uploadPicked() }
             }
             Text("Delivers as a personal message to \(peopleCount) member\(peopleCount == 1 ? "" : "s") · replies come back to you individually")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x6A7686)).lineSpacing(3)
+                .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineSpacing(3)
             if let n = sentTo {
                 HStack(spacing: 6) {
                     Icon(.checkCircle2, size: 14, color: Color(hex: 0x15803D))
@@ -1201,7 +1201,7 @@ private struct BroadcastComposer: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
             if let e = errorText {
-                Text(e).font(.inter(11)).foregroundStyle(Color(hex: 0xB91C1C))
+                Text(e).font(.nCardMeta).foregroundStyle(Color(hex: 0xB91C1C))
                     .transition(.opacity)
             }
             Button {
@@ -1214,7 +1214,7 @@ private struct BroadcastComposer: View {
                     } else {
                         HStack(spacing: 6) {
                             Icon(.send, size: 13, color: .white)
-                            Text("Send to all").font(.inter(13, .bold)).foregroundStyle(.white)
+                            Text("Send to all").font(.nCardCTA).foregroundStyle(.white)
                         }
                     }
                 }
@@ -1341,7 +1341,7 @@ private struct BroadcastAttachmentThumb: View {
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             Text(uploading ? "Uploading photo…" : "Photo attached · sent with your message")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x6A7686))
+                .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686))
             Spacer(minLength: 0)
             if !uploading {
                 Button {

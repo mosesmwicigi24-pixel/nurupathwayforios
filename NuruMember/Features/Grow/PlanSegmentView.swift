@@ -436,7 +436,7 @@ private struct PullQuoteCard: View {
                     .lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(caption.uppercased())
-                    .font(.inter(11, .semibold)).kerning(1.6)
+                    .font(.nCardKicker).kerning(1.4)
                     .foregroundStyle(Nuru.muted)
             }
             .padding(Nuru.S.base)
@@ -455,7 +455,7 @@ private struct ReaderReflectionCard: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("REFLECTION")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.nCardKicker).kerning(1.4)
                     .foregroundStyle(Nuru.goldLo)
                 Text(prompt)
                     .font(.fraunces(15, .regular))
@@ -473,7 +473,7 @@ private struct EncouragementRow: View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
             Icon(.handHeart, size: 16, color: Nuru.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
-                .font(.inter(12, .regular))
+                .font(.nCardBody)
                 .foregroundStyle(Nuru.navy)
                 .fixedSize(horizontal: false, vertical: true)
         }

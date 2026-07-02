@@ -207,7 +207,7 @@ private struct SavedVerseCard: View {
             }
             if let text = verse.verseText, !text.isEmpty {
                 Text("\u{201C}\(text)\u{201D}")
-                    .font(.inter(13, .regular))
+                    .font(.nCardBody)
                     .foregroundStyle(Nuru.navy)
                     .lineSpacing(4)
                     .fixedSize(horizontal: false, vertical: true)

@@ -504,7 +504,7 @@ private struct PathwaySelectedModules: View {
                 if loading {
                     skeletonRows
                 } else if ordered.isEmpty {
-                    Text("Modules open as you progress.").font(.inter(12)).foregroundStyle(PW.ink3)
+                    Text("Modules open as you progress.").font(.nCardBody).foregroundStyle(PW.ink3)
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
@@ -998,7 +998,7 @@ private struct PWContinueCard: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("CONTINUE YOUR JOURNEY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.goldDeep)
                         Text("Level \(level.levelNumber): \(level.title)")
-                            .font(.fraunces(18, .medium)).kerning(-0.54).foregroundStyle(PW.ink)
+                            .font(.nCardTitle).kerning(-0.54).foregroundStyle(PW.ink)
                             .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
                         PWBar(pct: pct, height: 8, fill: .linearGradient(colors: [Color(hex: 0xB8911F), Color(hex: 0xD8B84D)], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
                             .padding(.top, 12)
@@ -1053,16 +1053,16 @@ private struct PWLevelCard: View {
                         Spacer(minLength: 0)
                         statusPill
                     }
-                    Text(level.title).font(.fraunces(15, .medium)).kerning(-0.3).foregroundStyle(PW.ink)
+                    Text(level.title).font(.nRowTitle).kerning(-0.3).foregroundStyle(PW.ink)
                         .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 6)
                     if !subtitle.isEmpty {
-                        Text(subtitle).font(.inter(12)).foregroundStyle(PW.ink2).lineSpacing(2)
+                        Text(subtitle).font(.nCardBody).foregroundStyle(PW.ink2).lineSpacing(2)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
                     }
                     if isLocked {
                         HStack(spacing: 6) {
                             Icon(.lock, size: 12, color: PW.ink3)
-                            Text("Complete Level \(level.levelNumber - 1) to unlock").font(.inter(12)).foregroundStyle(PW.ink3)
+                            Text("Complete Level \(level.levelNumber - 1) to unlock").font(.nCardMeta).foregroundStyle(PW.ink3)
                         }
                         .padding(.top, 12)
                     } else {
@@ -1070,7 +1070,7 @@ private struct PWLevelCard: View {
                             HStack {
                                 HStack(spacing: 4) {
                                     Icon(.bookOpen, size: 12, color: PW.ink2)
-                                    Text("\(level.completedModules)/\(level.totalModules) modules").font(.inter(11)).foregroundStyle(PW.ink2)
+                                    Text("\(level.completedModules)/\(level.totalModules) modules").font(.nCardMeta).foregroundStyle(PW.ink2)
                                 }
                                 Spacer(minLength: 0)
                                 Text("\(pct)%").font(.inter(11, .medium)).foregroundStyle(PW.navy)

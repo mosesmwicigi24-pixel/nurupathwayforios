@@ -217,7 +217,7 @@ struct CalendarView: View {
             // the make is a single-month mock).
             HStack(spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
-                    Text(vm.monthTitle).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
+                    Text(vm.monthTitle).font(.nCardTitle).foregroundStyle(Nuru.navy)
                     Text(vm.yearTitle).font(.fraunces(18, .regular)).foregroundStyle(Color(hex: 0xB8C0CC))
                 }
                 Spacer(minLength: 0)
@@ -399,7 +399,7 @@ struct CalendarView: View {
                 .buttonStyle(.plain)
             } else {
                 Text("Check back soon — new gatherings land here.")
-                    .font(.inter(10)).foregroundStyle(Nuru.faint)
+                    .font(.nCardMeta).foregroundStyle(Nuru.faint)
             }
         }
         .frame(maxWidth: .infinity)

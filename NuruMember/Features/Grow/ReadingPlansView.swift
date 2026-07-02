@@ -209,7 +209,7 @@ struct ReadingPlansView: View {
                         .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     HStack(spacing: 4) {
                         Icon(.clock, size: 12, color: .white.opacity(0.8))
-                        Text("\(plan.dayCount) days").font(.inter(11)).foregroundStyle(.white.opacity(0.8))
+                        Text("\(plan.dayCount) days").font(.nCardMeta).foregroundStyle(.white.opacity(0.8))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -324,7 +324,7 @@ struct ReadingPlansView: View {
             }.frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
-                Text("Invite your cell to a plan and keep each other going.").font(.inter(11)).foregroundStyle(PL.ink2)
+                Text("Invite your cell to a plan and keep each other going.").font(.nCardMeta).foregroundStyle(PL.ink2)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -536,9 +536,9 @@ struct PlanDetailView: View {
 
     private func aboutCard(_ d: ReadingPlanDetail) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("ABOUT THIS PLAN").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+            Text("ABOUT THIS PLAN").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
             Text(d.description ?? d.subtitle ?? "A guided plan — Scripture and a short devotional each day.")
-                .font(.inter(13)).lineSpacing(4).foregroundStyle(PL.blurb)
+                .font(.nCardBody).lineSpacing(4).foregroundStyle(PL.blurb)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 8)
         }
         .padding(16)
@@ -553,7 +553,7 @@ struct PlanDetailView: View {
         let visible = showAllDays ? d.days : Array(d.days.prefix(4))
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("WHAT YOU'LL READ").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+                Text("WHAT YOU'LL READ").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
                 Spacer(minLength: 0)
                 if done > 0 {
                     Text("\(Int((Double(done) / Double(max(d.days.count, 1)) * 100).rounded()))% done")
@@ -835,7 +835,7 @@ struct PlanDayView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Icon(.bookOpen, size: 12, color: PL.refInk)
-                Text(ref.day.reference.uppercased()).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.refInk)
+                Text(ref.day.reference.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(PL.refInk)
             }
             if let content = ref.day.content, !content.isEmpty {
                 Text(content)
@@ -858,7 +858,7 @@ struct PlanDayView: View {
         let planTitle = ref.day.title ?? "Reading plan"
         let nextId = vm.dayCompleted ? nil : segments.first(where: { !vm.completedSegments.contains($0.segmentId) })?.segmentId
         return VStack(alignment: .leading, spacing: 0) {
-            Text("WORK THROUGH TODAY").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+            Text("WORK THROUGH TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
             VStack(spacing: 6) {
                 ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
                     NavigationLink(value: PlanSegmentRef(planTitle: planTitle,
@@ -898,7 +898,7 @@ struct PlanDayView: View {
     private var reflectionCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("REFLECTION").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+                Text("REFLECTION").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
                 Spacer(minLength: 0)
                 if vm.reflectionJustSaved {
                     HStack(spacing: 4) {

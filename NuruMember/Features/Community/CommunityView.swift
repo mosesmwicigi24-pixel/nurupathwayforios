@@ -58,7 +58,7 @@ struct CommunityView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title).font(.nHeading).foregroundStyle(Nuru.ink)
-                    Text(subtitle).font(.nCaption).foregroundStyle(Nuru.muted)
+                    Text(subtitle).font(.nCardBody).foregroundStyle(Nuru.muted)
                 }
                 Spacer(minLength: 0)
                 if live {

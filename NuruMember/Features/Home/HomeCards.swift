@@ -71,7 +71,7 @@ struct HomeLiveNowCard: View {
             media
             VStack(alignment: .leading, spacing: 0) {
                 Text(title)
-                    .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                    .font(.nCardTitle).foregroundStyle(.white)
                     .lineLimit(3).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true)
                 metaRow.padding(.top, 4)
@@ -80,7 +80,7 @@ struct HomeLiveNowCard: View {
                         if isLive { Icon(.play, size: 15, color: HomeFig.navy) }
                         else { Image(systemName: "bell.badge.fill").font(.system(size: 14)).foregroundStyle(HomeFig.navy) }
                         Text(isLive ? "Watch live" : "Set reminder")
-                            .font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                            .font(.nCardCTA).foregroundStyle(HomeFig.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(HomeFig.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -184,11 +184,11 @@ struct HomeLiveNowCard: View {
         HStack(spacing: 6) {
             if let location, !location.isEmpty {
                 Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4)
-                Text(location).font(.inter(12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                Text(location).font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
             if let m = startsInMin {
                 Icon(.clock, size: 11, color: .white.opacity(0.7)).padding(.leading, location == nil ? 0 : 6)
-                Text("Starts in \(m) min").font(.inter(12)).foregroundStyle(.white.opacity(0.7))
+                Text("Starts in \(m) min").font(.nCardMeta).foregroundStyle(.white.opacity(0.7))
             }
         }
     }
@@ -211,7 +211,7 @@ struct HomePriorityStrip: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
                         .lineLimit(2).truncationMode(.tail)
-                    Text(meta).font(.inter(11)).foregroundStyle(HomeFig.metaGray).lineLimit(1)
+                    Text(meta).font(.nCardMeta).foregroundStyle(HomeFig.metaGray).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 Text(cta)
@@ -266,13 +266,13 @@ struct HomeResumeHero: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("FOR YOU TODAY").font(.inter(10, .bold)).kerning(2).foregroundStyle(HomeFig.gold)
+            Text("FOR YOU TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.gold)
             Text(title)
-                .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                .font(.nCardTitle).foregroundStyle(.white)
                 .lineLimit(3).truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
-            Text(meta).font(.inter(12.5)).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
+            Text(meta).font(.nCardBody).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
             HStack(spacing: 8) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -290,10 +290,10 @@ struct HomeResumeHero: View {
                 Text("Almost there — finish strong 🎉")
                     .font(.inter(11, .semibold)).foregroundStyle(HomeFig.goldSoft).padding(.top, 6)
             } else if let note, !note.isEmpty {
-                Text(note).font(.inter(11)).foregroundStyle(.white.opacity(0.45)).lineLimit(2).padding(.top, 6)
+                Text(note).font(.nCardMeta).foregroundStyle(.white.opacity(0.45)).lineLimit(2).padding(.top, 6)
             }
             HStack(spacing: 6) {
-                Text(ctaLabel).font(.inter(13, .bold)).foregroundStyle(HomeFig.navy)
+                Text(ctaLabel).font(.nCardCTA).foregroundStyle(HomeFig.navy)
                 Icon(.chevronRight, size: 15, color: HomeFig.navy)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
@@ -452,7 +452,7 @@ struct HomeCohortColdStart: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("You're not in a cell yet").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
                 Text("Find your people — grow where your absence is noticed.")
-                    .font(.inter(10)).foregroundStyle(HomeFig.subGray)
+                    .font(.nCardMeta).foregroundStyle(HomeFig.subGray)
             }
             Spacer(minLength: 0)
             Icon(.chevronRight, size: 15, color: HomeFig.faintGray)
@@ -556,20 +556,20 @@ struct HomeGiveCard: View {
                         Icon(.handHeart, size: 24, color: HomeFig.navy)
                     }
                     Text("SUPPORT GOD'S WORK")
-                        .font(.inter(10, .bold)).kerning(1.8).foregroundStyle(HomeFig.gold)
+                        .font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.gold)
                         .padding(.top, 12)
                     Text("Sow into something eternal")
                         .font(.fraunces(20, .semibold)).foregroundStyle(.white)
                         .padding(.top, 4)
                     Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
-                        .font(.inter(12.5)).foregroundStyle(.white.opacity(0.65))
+                        .font(.nCardBody).foregroundStyle(.white.opacity(0.65))
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: 280)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 6)
                     HStack(spacing: 8) {
                         Icon(.handHeart, size: 16, color: HomeFig.navy)
-                        Text("Give now").font(.inter(14, .bold)).foregroundStyle(HomeFig.navy)
+                        Text("Give now").font(.nCardCTA).foregroundStyle(HomeFig.navy)
                         Icon(.chevronRight, size: 16, color: HomeFig.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -578,7 +578,7 @@ struct HomeGiveCard: View {
                                 in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .padding(.top, 16)
                     Text("Tithe & offering · M-Pesa, card and more")
-                        .font(.inter(11)).foregroundStyle(.white.opacity(0.45))
+                        .font(.nCardMeta).foregroundStyle(.white.opacity(0.45))
                         .padding(.top, 10)
                 }
                 .frame(maxWidth: .infinity)
@@ -621,7 +621,7 @@ struct HomeOnAirCard: View {
                 Button(action: onOpen) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(title)
-                            .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                            .font(.nCardTitle).foregroundStyle(.white)
                             .lineLimit(3).truncationMode(.tail)
                             .fixedSize(horizontal: false, vertical: true)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -634,10 +634,10 @@ struct HomeOnAirCard: View {
                     HStack(spacing: 8) {
                         if isPlayingThis {
                             EqualizerWave(color: HomeFig.navy, barHeight: 14)
-                            Text("Pause radio").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                            Text("Pause radio").font(.nCardCTA).foregroundStyle(HomeFig.navy)
                         } else {
                             Icon(.play, size: 15, color: HomeFig.navy)
-                            Text("Listen live").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
+                            Text("Listen live").font(.nCardCTA).foregroundStyle(HomeFig.navy)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -771,12 +771,12 @@ struct HomeOnAirCard: View {
             if isPlayingThis { EqualizerWave(color: HomeFig.gold, barHeight: 12) }
             ForEach(Array(bits.enumerated()), id: \.offset) { i, bit in
                 if i > 0 { Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4) }
-                Text(bit).font(.inter(12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                Text(bit).font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
             if let n = program.peakListeners, n > 0 {
                 Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4)
                 Icon(.eye, size: 12, color: .white.opacity(0.7))
-                Text("\(n) listening").font(.inter(12)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                Text("\(n) listening").font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
         }
     }

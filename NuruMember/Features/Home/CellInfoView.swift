@@ -120,7 +120,7 @@ struct CellInfoView: View {
         HStack(spacing: Nuru.S.base) {
             Avatar(url: vm.cell?.leader?.avatarUrl, name: leaderName ?? vm.name, size: 56)
             VStack(alignment: .leading, spacing: 3) {
-                Text("CELL LEADER").font(.inter(11, .semibold)).tracking(1.2).foregroundStyle(Nuru.gold)
+                Text("CELL LEADER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Text(leaderName ?? "Not assigned yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
                 if let r = leaderRole { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
             }
@@ -141,7 +141,7 @@ struct CellInfoView: View {
 
     private var rhythmCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
-            Text("MEETING RHYTHM").font(.inter(11, .bold)).tracking(1.2).foregroundStyle(Nuru.muted)
+            Text("MEETING RHYTHM").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.muted)
             if let m = vm.featured?.meets { rhythmRow(.calendarClock, "Meets", m) }
             if let n = vm.featured?.nextSession { rhythmRow(.calendarDays, "Next session", n) }
             if let r = vm.featured?.room { rhythmRow(.mapPin, "Where", r) }
@@ -176,7 +176,7 @@ struct CellInfoView: View {
                 Icon(.calendarClock, size: 20, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("NEXT GATHERING").font(.inter(11, .semibold)).tracking(1.2).foregroundStyle(Nuru.gold)
+                Text("NEXT GATHERING").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Text(Self.longDate(n.startAt)).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
                 if let loc = n.location { Text(loc).font(.nMicro).foregroundStyle(Nuru.muted) }
             }
@@ -232,7 +232,7 @@ struct CellInfoView: View {
         NavigationLink(value: CommunityRoute.prayerWall) {
             HStack {
                 Spacer()
-                Text("Open community ›").font(.inter(14, .bold)).foregroundStyle(Nuru.white)
+                Text("Open community ›").font(.nCardCTA).foregroundStyle(Nuru.white)
                 Spacer()
             }
             .frame(maxWidth: .infinity, minHeight: 48)
@@ -259,7 +259,7 @@ struct CellInfoView: View {
             // Also the recovery path when the fetch failed (both cell endpoints
             // swallow errors, so "empty" and "offline" look the same here).
             Button { Haptics.tap(); Task { await vm.load() } } label: {
-                Text("Refresh").font(.inter(13, .semibold)).foregroundStyle(Nuru.gold)
+                Text("Refresh").font(.nCardCTA).foregroundStyle(Nuru.gold)
             }
             .buttonStyle(.pressable)
         }

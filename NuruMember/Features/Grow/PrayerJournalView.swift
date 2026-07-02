@@ -510,7 +510,7 @@ private struct EmptyPrayers: View {
                 Text(tab == .active ? "No active prayers yet" : "No answered prayers yet")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Bring your requests before Him.")
-                    .font(.inter(12, .regular)).foregroundStyle(Color(hex: 0x59667C))
+                    .font(.nCardBody).foregroundStyle(Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Nuru.S.lg)
@@ -540,9 +540,9 @@ private struct JournalCard: View {
                     .shadow(color: Nuru.gold.opacity(0.4), radius: 6, x: 0, y: 4)
                 HStack(spacing: 6) {
                     Text("You").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-                    Text("·").font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x74808F))
+                    Text("·").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                     Text(relativeLabel(entry.isAnswered ? (entry.answeredAt ?? entry.createdAt) : entry.createdAt))
-                        .font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x74808F))
+                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 }
                 Spacer(minLength: 0)
             }
@@ -552,9 +552,9 @@ private struct JournalCard: View {
             // Serif title + body
             VStack(alignment: .leading, spacing: 6) {
                 Text(entry.title?.isEmpty == false ? entry.title! : "Prayer")
-                    .font(.fraunces(15, .medium)).foregroundStyle(Nuru.navy)
+                    .font(.nRowTitle).foregroundStyle(Nuru.navy)
                 Text(entry.body)
-                    .font(.inter(12, .regular)).foregroundStyle(Color(hex: 0x3A4A5F))
+                    .font(.nCardBody).foregroundStyle(Color(hex: 0x3A4A5F))
                     .lineSpacing(4)
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -611,7 +611,7 @@ private struct JournalCard: View {
                     .font(.inter(9, .medium)).foregroundStyle(Color(hex: 0x16A34A))
                 if let note = entry.answeredNote, !note.isEmpty {
                     Text(note)
-                        .font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x166534))
+                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x166534))
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 2)
                 }

@@ -299,7 +299,7 @@ struct GivingView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text("\(ksh(g.amountMinor / 100)) · \(g.fund.capitalized) · via \(givingMethodName(g.method))")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
                 }
                 Spacer(minLength: Nuru.S.sm)
                 Text("Give again")
@@ -455,7 +455,7 @@ struct GivingView: View {
                 Text("\(ksh(total)) every \(cadenceWord)")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text("First charge \(giveDateFull(nextCycleISO())) · then every \(cadenceWord). Cancel anytime.")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -510,7 +510,7 @@ struct GivingView: View {
                         Text(m.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                             .lineLimit(1).minimumScaleFactor(0.85)
                         if on {
-                            Text(activeDetail(m)).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                            Text(activeDetail(m)).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
                         }
                     }
                     Spacer(minLength: Nuru.S.sm)
@@ -577,7 +577,7 @@ struct GivingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Cover the transaction fee").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Adds \(ksh(feeFor(amount))) — 100% reaches the fund")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
             }
         }
         .tint(Nuru.gold)
@@ -612,16 +612,16 @@ struct GivingView: View {
             HStack(spacing: 5) {
                 Icon(.repeat, size: 12, color: Nuru.gold)
                 Text(s.frequency == "weekly" ? "WEEKLY" : "MONTHLY")
-                    .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Color(hex: 0xA8861C))
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
             }
             Text(ksh(s.amountMinor / 100))
                 .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.top, 5)
-            Text(s.fund.capitalized).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+            Text(s.fund.capitalized).font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                 .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
-            Text("Next \(giveDateShort(s.nextRunAt))").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+            Text("Next \(giveDateShort(s.nextRunAt))").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 .lineLimit(1)
                 .padding(.top, 5)
         }
@@ -658,7 +658,7 @@ struct GivingView: View {
                 HStack(spacing: 8) {
                     Icon(.handHeart, size: 14, color: Nuru.gold)
                     Text("No gifts yet — your first one will appear here the moment it settles.")
-                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                        .font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -682,7 +682,7 @@ struct GivingView: View {
                 Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                     .lineLimit(1)
                 Text("\(giveDateShort(g.createdAt)) · \(givingMethodName(g.method))")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
             }
             Spacer()
             Text(ksh(g.amountMinor / 100))

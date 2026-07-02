@@ -174,7 +174,7 @@ struct DiscussionsView: View {
     private var emptyState: some View {
         VStack(spacing: Nuru.S.sm) {
             Icon(.users, size: 32, color: Nuru.gold)
-            Text("Nothing here yet").font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
+            Text("Nothing here yet").font(.nCardTitle).foregroundStyle(Nuru.ink)
             Text("Start the first conversation in your cell.")
                 .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
             Button { Haptics.tap(); composing = true } label: {
@@ -241,20 +241,20 @@ private struct ThreadCardView: View {
                 if thread.isPinned { pinnedChip }
                 if queued { queuedChip }
             }
-            Text(thread.body).font(.nBody).foregroundStyle(Nuru.muted).lineLimit(2)
+            Text(thread.body).font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(2)
                 .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
             HStack(spacing: Nuru.S.sm) {
                 Avatar(url: nil, name: thread.authorName, size: 24)
                 Text(thread.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink600).lineLimit(1)
-                Text("·").font(.nMicro).foregroundStyle(Nuru.faint)
-                Text(timeAgo(thread.createdAt)).font(.nMicro).foregroundStyle(Nuru.faint)
+                Text("·").font(.nCardMeta).foregroundStyle(Nuru.faint)
+                Text(timeAgo(thread.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
                 Spacer(minLength: 0)
                 if thread.isLocked {
                     Icon(.lock, size: 13, color: Nuru.faint)
                 }
                 HStack(spacing: 4) {
                     Icon(.messageCircle, size: 14, color: Nuru.faint)
-                    Text("\(thread.commentCount ?? 0)").font(.nCaption).foregroundStyle(Nuru.faint)
+                    Text("\(thread.commentCount ?? 0)").font(.nCardMeta).foregroundStyle(Nuru.faint)
                 }
             }
             .padding(.top, Nuru.S.md)
@@ -474,7 +474,7 @@ struct DiscussionThreadView: View {
                 threadCard(d)
                 Text(vm.comments.isEmpty ? "BE THE FIRST TO REPLY"
                      : "\(vm.comments.count) \(vm.comments.count == 1 ? "REPLY" : "REPLIES")")
-                    .font(.nMicro).kerning(0.6).foregroundStyle(Nuru.faint)
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.faint)
                     .padding(.top, Nuru.S.lg).padding(.bottom, Nuru.S.sm)
                 ForEach(vm.comments) { cm in
                     commentCard(cm).transition(.opacity.combined(with: .move(edge: .bottom)))
@@ -493,7 +493,7 @@ struct DiscussionThreadView: View {
                 Avatar(url: nil, name: d.authorName, size: 40)
                 VStack(alignment: .leading, spacing: 0) {
                     Text(d.authorName).font(.nHeading).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Text(whenString(d.createdAt)).font(.nMicro).foregroundStyle(Nuru.faint)
+                    Text(whenString(d.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
                 }
                 Spacer(minLength: 0)
                 if d.isPinned {
@@ -506,7 +506,7 @@ struct DiscussionThreadView: View {
                     .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
                 }
             }
-            Text(d.title).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.md)
+            Text(d.title).font(.nCardTitle).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.md)
             Text(d.body).font(.nBodyLg).foregroundStyle(Nuru.ink).padding(.top, Nuru.S.sm)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -522,9 +522,9 @@ struct DiscussionThreadView: View {
                 Avatar(url: nil, name: cm.authorName, size: 28)
                 Text(cm.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
                 Spacer(minLength: 0)
-                Text(whenString(cm.createdAt)).font(.nMicro).foregroundStyle(Nuru.faint)
+                Text(whenString(cm.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
             }
-            Text(cm.body).font(.nBody).foregroundStyle(Nuru.ink)
+            Text(cm.body).font(.nCardBody).foregroundStyle(Nuru.ink)
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)

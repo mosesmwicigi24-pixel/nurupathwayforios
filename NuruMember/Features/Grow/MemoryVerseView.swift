@@ -174,10 +174,10 @@ private struct WordScoreCard: View {
                 VStack(alignment: .leading, spacing: Nuru.S.sm) {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("WORD SCORE")
-                            .font(.inter(10, .bold)).tracking(1.2)
+                            .font(.nCardKicker).kerning(1.4)
                             .foregroundStyle(Nuru.gold)
                         Text(band)
-                            .font(.fraunces(18, .semibold))
+                            .font(.nCardTitle)
                             .foregroundStyle(Nuru.ink)
                     }
                     VStack(spacing: 6) {
@@ -277,7 +277,7 @@ private struct MilestoneCard: View {
                     .font(.inter(13, .semibold))
                     .foregroundStyle(Nuru.ink)
                 Text(subtitle)
-                    .font(.inter(12, .regular))
+                    .font(.nCardBody)
                     .foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -309,11 +309,11 @@ private struct CurrentVerseCard: View {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack {
                     Text("THIS WEEK")
-                        .font(.inter(10, .semibold)).tracking(1.8)
+                        .font(.nCardKicker).kerning(1.4)
                         .foregroundStyle(Color(hex: 0xA8861C))
                     Spacer()
                     Text("Day \(dayOfWeek) of 7")
-                        .font(.inter(10, .regular))
+                        .font(.nCardMeta)
                         .foregroundStyle(Nuru.muted)
                 }
                 Text("\u{201C}\(verse.verseText)\u{201D}")
@@ -364,7 +364,7 @@ private struct LibraryVerseRow: View {
                     chip.layoutPriority(1)
                 }
                 Text("\u{201C}\(verse.verseText)\u{201D}")
-                    .font(.inter(13, .regular))
+                    .font(.nCardBody)
                     .foregroundStyle(Nuru.navy)
                     .lineSpacing(4)
                     .multilineTextAlignment(.leading)
