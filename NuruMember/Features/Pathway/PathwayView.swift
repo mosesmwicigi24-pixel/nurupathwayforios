@@ -12,6 +12,7 @@ enum PathwayRoute: Hashable {
     case level(Int)
     case module(String)   // moduleId
     case quiz(String)     // moduleId
+    case exam(Int)        // levelNumber — the level gate (§1.9 rule 2)
     case map              // the full levels map ("Map view")
 }
 
@@ -175,6 +176,7 @@ struct PathwayView: View {
                 case .level(let n): LevelDetailView(levelNumber: n)
                 case .module(let id): ModuleView(moduleId: id)
                 case .quiz(let id): QuizView(moduleId: id)
+                case .exam(let n): LevelExamView(levelNumber: n)
                 case .map: LevelsMapView(vm: vm) { path.append(PathwayRoute.level($0)) }
                 }
             }
@@ -210,7 +212,8 @@ struct PathwayView: View {
                         level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
-                        openModule: { path.append(PathwayRoute.module($0)) })
+                        openModule: { path.append(PathwayRoute.module($0)) },
+                        openExam: { path.append(PathwayRoute.exam($0)) })
                         .gentleEntrance(delay: 0.05)
                 }
 
@@ -460,6 +463,14 @@ private struct PathwaySelectedModules: View {
     let loading: Bool
     let resume: LevelModule?
     let openModule: (String) -> Void
+    let openExam: (Int) -> Void
+
+    /// Trail walked, level not yet passed → the exam gate row shows. Built only
+    /// from fields the pathway/levels API already returns; the server remains
+    /// the eligibility authority and answers politely if the gate isn't open.
+    private var examReady: Bool {
+        !modules.isEmpty && modules.allSatisfy(\.completed) && level.status != .completed
+    }
 
     // Progression order — completed, then the one in progress, then locked (each
     // by sequence). Identical to raw sequence for a clean curriculum; for real
@@ -497,9 +508,13 @@ private struct PathwaySelectedModules: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
-                        PWModuleRow(module: m, last: i == ordered.count - 1) { if m.status != .locked { openModule(m.moduleId) } }
+                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady) { if m.status != .locked { openModule(m.moduleId) } }
                         // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
                         if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
+                    }
+                    // The level gate — every module done, the exam opens the way.
+                    if examReady {
+                        PWExamGateRow(levelNumber: level.levelNumber) { openExam(level.levelNumber) }
                     }
                 }
             }
@@ -591,6 +606,42 @@ private struct PWModuleRow: View {
             try? await Task.sleep(nanoseconds: 2_200_000_000)
             withAnimation(.easeInOut(duration: 0.2)) { lockHint = false }
         }
+    }
+}
+
+/// The exam gate row at the foot of a fully-walked trail — "Take the Level N
+/// exam". Visibility is derived from the API's own module/level fields; taking
+/// the exam is still gated server-side (§1.9), so this row is only a doorway.
+private struct PWExamGateRow: View {
+    let levelNumber: Int
+    let onTap: () -> Void
+
+    var body: some View {
+        Button { Haptics.action(); onTap() } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 32, height: 32)
+                    Icon(.award, size: 16, color: PW.navy)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Take the Level \(levelNumber) exam")
+                        .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
+                    Text("Every module is done — the gate is open")
+                        .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
+                }
+                Spacer(minLength: 0)
+                Text("Begin").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                    .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            .background(PW.gold.opacity(0.10))
+            .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
+        }
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens the Level \(levelNumber) exam.")
     }
 }
 

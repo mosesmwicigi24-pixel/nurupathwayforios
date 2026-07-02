@@ -1,11 +1,14 @@
-// Community tab — hosts the congregation's shared spaces. The Prayer Wall is
-// fully ported; Chat (DMs + spaces) and Cohort Discussions are the next screens
-// in this phase (see PORT_STATUS.md). Owns the navigation stack for the area.
+// Community tab — hosts the congregation's shared spaces. The Prayer Wall and
+// Cohort Discussions (the cell's board) are fully ported; Chat (DMs + spaces)
+// is the next screen in this phase (see PORT_STATUS.md). Owns the navigation
+// stack for the area.
 import SwiftUI
 
 enum CommunityRoute: Hashable {
     case prayerWall
-    case prayer(String)   // postId
+    case prayer(String)      // postId
+    case discussions
+    case discussion(String)  // threadId
 }
 
 struct CommunityView: View {
@@ -23,8 +26,12 @@ struct CommunityView: View {
                         .gentleEntrance()
                         hubRow("Chat", "Direct messages & spaces", "bubble.left.and.bubble.right.fill", live: false)
                             .gentleEntrance(delay: 0.06)
-                        hubRow("Cohort Discussions", "Your cell's board", "person.3.fill", live: false)
-                            .gentleEntrance(delay: 0.12)
+                        NavigationLink(value: CommunityRoute.discussions) {
+                            hubRow("Cohort Discussions", "Your cell's board", "person.3.fill", live: true)
+                        }
+                        .buttonStyle(.pressableSubtle)
+                        .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                        .gentleEntrance(delay: 0.12)
                     }
                     .padding(Nuru.S.screen)
                     .padding(.bottom, Nuru.tabBarSpace)
@@ -35,6 +42,8 @@ struct CommunityView: View {
                 switch route {
                 case .prayerWall: PrayerWallView()
                 case .prayer(let id): PrayerWallDetailView(postId: id)
+                case .discussions: DiscussionsView()
+                case .discussion(let id): DiscussionThreadView(threadId: id)
                 }
             }
         }

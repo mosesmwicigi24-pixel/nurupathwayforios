@@ -51,14 +51,16 @@ struct RadioReactionCounts: Decodable, Sendable {
     }
 }
 
-/// One comment row. The backend select (radio service listComments) returns
-/// id/program_id/member_id/body/created_at only — NO author-name join yet, so
-/// the UI renders comments anonymously ("Member"; own rows show "You").
+/// One comment row. The backend join now carries the author's name/avatar;
+/// both stay optional so older payloads (and optimistic local rows) still
+/// decode — the UI falls back to "Member" only when the name is absent.
 struct RadioComment: Decodable, Sendable, Identifiable {
     let id: String
     let memberId: String
     let body: String
     let createdAt: String
+    var authorName: String?
+    var authorAvatarUrl: String?
 }
 
 // MARK: - Station model (the directory screen)
@@ -916,18 +918,26 @@ private struct LiveChatSection: View {
     }
 }
 
-/// One chat line: monogram circle · name ("You" for own rows) · relative time · body.
+/// One chat line: monogram circle · real author name ("You" for own rows,
+/// "Member" only when the payload predates the author join) · time · body.
 private struct StudioChatRow: View {
     let comment: RadioComment
     let mine: Bool
+
+    private var displayName: String {
+        if mine { return "You" }
+        return comment.authorName?.trimmingCharacters(in: .whitespaces).isEmpty == false
+            ? comment.authorName! : "Member"
+    }
 
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             monogram
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(mine ? "You" : "Member").font(.inter(11, .semibold))
+                    Text(displayName).font(.inter(11, .semibold))
                         .foregroundStyle(mine ? Nuru.gold : .white.opacity(0.7))
+                        .lineLimit(1)
                     Text(timeAgo(comment.createdAt)).font(.inter(10)).foregroundStyle(.white.opacity(0.35))
                 }
                 Text(comment.body).font(.inter(13)).foregroundStyle(.white.opacity(0.92))
@@ -939,11 +949,24 @@ private struct StudioChatRow: View {
     }
 
     private var monogram: some View {
-        Text(mine ? "Y" : "M")
+        ZStack {
+            Circle().fill(mine ? AnyShapeStyle(Nuru.gold) : AnyShapeStyle(Color.white.opacity(0.10)))
+            if !mine, let s = comment.authorAvatarUrl, let u = URL(string: s) {
+                CachedAsyncImage(url: u) { ph in
+                    if let img = ph.image { img.resizable().scaledToFill() } else { initialText }
+                }
+            } else {
+                initialText
+            }
+        }
+        .frame(width: 28, height: 28)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
+    }
+
+    private var initialText: some View {
+        Text(mine ? "Y" : String(displayName.prefix(1)))
             .font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.navy : Nuru.gold)
-            .frame(width: 28, height: 28)
-            .background(mine ? AnyShapeStyle(Nuru.gold) : AnyShapeStyle(Color.white.opacity(0.10)), in: Circle())
-            .overlay(Circle().stroke(Color.white.opacity(0.12), lineWidth: 1))
     }
 }
 

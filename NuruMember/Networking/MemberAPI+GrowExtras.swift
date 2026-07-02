@@ -1,0 +1,53 @@
+// Grow extras — plan-day reflections + sharing a journal prayer to the public
+// prayer wall. Same typed-facade pattern as MemberAPI.swift: screens call these
+// statics, never APIClient directly. Wire JSON is snake_case; APIClient's
+// encoder/decoder convert to/from camelCase automatically.
+import Foundation
+
+/// One saved plan-day reflection row, as returned by both the POST (201) and
+/// the GET (`{ "data": row-or-null }`) reflection endpoints.
+struct PlanDayReflection: Decodable, Sendable {
+    let id: String
+    let planId: String
+    let dayNumber: Int
+    let body: String
+    let createdAt: String
+    let updatedAt: String
+}
+
+extension MemberAPI {
+    // MARK: Plan-day reflections (growth module)
+
+    /// GET /growth/plans/{planId}/days/{dayNumber}/reflection → `{ data: row-or-null }`.
+    /// Null means the member hasn't written one for this day yet.
+    static func planDayReflection(planId: String, dayNumber: Int) async throws -> PlanDayReflection? {
+        struct Env: Decodable { let data: PlanDayReflection? }
+        return try await APIClient.shared.get(
+            "growth/plans/\(planId)/days/\(dayNumber)/reflection", as: Env.self).data
+    }
+
+    /// POST /growth/plans/{planId}/days/{dayNumber}/reflection — body 1..4000
+    /// chars. UPSERT semantics: resubmitting the same day updates the existing
+    /// row. A fresh lowercase-UUID client_mutation_id is minted per submit so
+    /// replays are idempotent server-side (§2.1/§3.6).
+    @discardableResult
+    static func savePlanDayReflection(planId: String, dayNumber: Int, body: String) async throws -> PlanDayReflection {
+        struct Body: Encodable { let body: String; let clientMutationId: String }
+        return try await APIClient.shared.post(
+            "growth/plans/\(planId)/days/\(dayNumber)/reflection",
+            body: Body(body: body, clientMutationId: UUID().uuidString.lowercased()),
+            as: PlanDayReflection.self)
+    }
+
+    // MARK: Prayer journal → prayer wall
+
+    /// POST /me/prayers/{id}/share-to-wall → 201 `{ post_id }` — copies one of
+    /// MY private journal prayers onto the congregation's public wall.
+    /// Idempotent server-side: re-sharing the same entry returns the existing
+    /// wall post instead of creating a duplicate.
+    @discardableResult
+    static func sharePrayerToWall(_ entryId: String) async throws -> String {
+        struct Res: Decodable { let postId: String }
+        return try await APIClient.shared.postEmpty("me/prayers/\(entryId)/share-to-wall", as: Res.self).postId
+    }
+}

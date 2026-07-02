@@ -671,20 +671,75 @@ final class PlanDayViewModel: ObservableObject {
         }
     }
 
-    func completeDay() async {
-        busy = true; defer { busy = false }
-        try? await MemberAPI.completePlanDay(planId, dayNumber: dayNumber)
-        dayCompleted = true
+    @Published var completeError: String?
+
+    /// True only when the server actually recorded the completion — the
+    /// caller keys the confetti/haptic off this, so a failed save never
+    /// celebrates a day that didn't land.
+    @discardableResult
+    func completeDay() async -> Bool {
+        busy = true; completeError = nil
+        defer { busy = false }
+        do {
+            try await MemberAPI.completePlanDay(planId, dayNumber: dayNumber)
+            dayCompleted = true
+            return true
+        } catch {
+            completeError = "Couldn't save today — check your connection and try again."
+            return false
+        }
+    }
+
+    // MARK: Reflection (server-backed; UPSERT on resubmit)
+
+    @Published var reflectionText = ""
+    @Published var savedReflection: PlanDayReflection?
+    @Published var reflectionSaving = false
+    @Published var reflectionJustSaved = false
+    @Published var reflectionError: String?
+
+    /// Pre-fill from GET — never clobbers text the member is already typing.
+    func loadReflection() async {
+        // `try?` flattens the optional-returning throwing call (SE-0230):
+        // nil here means "failed OR no reflection yet" — both mean do nothing.
+        guard let row = try? await MemberAPI.planDayReflection(planId: planId, dayNumber: dayNumber) else { return }
+        savedReflection = row
+        if reflectionText.isEmpty { reflectionText = row.body }
+    }
+
+    func saveReflection() async {
+        let text = String(reflectionText.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000))
+        guard !text.isEmpty, !reflectionSaving else { return }
+        reflectionSaving = true; reflectionError = nil
+        do {
+            savedReflection = try await MemberAPI.savePlanDayReflection(
+                planId: planId, dayNumber: dayNumber, body: text)
+            Haptics.success()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { reflectionJustSaved = true }
+            Task { [weak self] in
+                try? await Task.sleep(nanoseconds: 2_200_000_000)
+                withAnimation(.easeOut(duration: 0.25)) { self?.reflectionJustSaved = false }
+            }
+        } catch {
+            Haptics.error()
+            let api = error as? APIError
+            reflectionError = (api?.isNetwork == true)
+                ? "You're offline — your reflection needs a connection to save."
+                : (api?.errorDescription ?? "Couldn't save your reflection. Try again.")
+        }
+        reflectionSaving = false
     }
 }
 
 // Day screen — rebuilt from the FRESH Figma DayReader: navy gradient header
 // (back, "DAY N", day title, gold progress bar), a scripture-style content
 // card, the day's real segments as highlighted rows (they push the existing
-// PlanSegmentView), and a sticky gold "Mark day complete" bar that celebrates
-// with a native confetti burst. The mock's local-only reflection textarea and
-// prev/next-day arrows are omitted (no reflection binding for plan days; the
-// day ref carries no sibling days).
+// PlanSegmentView), the Figma reflection textarea (now REAL — backed by
+// GET/POST /growth/plans/{id}/days/{n}/reflection with upsert semantics, so
+// it pre-fills on return visits and the button flips to "Update"), and a
+// sticky gold "Mark day complete" bar that celebrates with a native confetti
+// burst. The mock's prev/next-day arrows are still omitted (the day ref
+// carries no sibling days).
 struct PlanDayView: View {
     let ref: PlanDayRef
     @StateObject private var vm: PlanDayViewModel
@@ -713,6 +768,7 @@ struct PlanDayView: View {
                         VStack(alignment: .leading, spacing: 16) {
                             scriptureCard
                             segmentsSection
+                            reflectionCard
                         }
                         .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 24)
                     }
@@ -724,6 +780,7 @@ struct PlanDayView: View {
         .ignoresSafeArea(edges: [.top, .bottom])
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .task { await vm.loadReflection() }
     }
 
     // MARK: navy header (fresh DayReader)
@@ -834,9 +891,94 @@ struct PlanDayView: View {
         }
     }
 
+    // MARK: reflection — the Figma textarea, now backed by the real endpoint.
+    // Pre-filled from GET; Submit upserts (the button reads "Update" once a
+    // reflection exists) and lands a brief "Saved" check.
+
+    private var reflectionCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("REFLECTION").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+                Spacer(minLength: 0)
+                if vm.reflectionJustSaved {
+                    HStack(spacing: 4) {
+                        Icon(.check, size: 11, color: Color(hex: 0x16A34A))
+                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+                }
+            }
+            Text("What is God showing you today?")
+                .font(.fraunces(16, .medium)).italic().kerning(-0.16).foregroundStyle(PL.navy)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+            ZStack(alignment: .topLeading) {
+                if vm.reflectionText.isEmpty {
+                    Text("Write it down while it's fresh…").font(.inter(13)).foregroundStyle(PL.ink3)
+                        .padding(.horizontal, 14).padding(.vertical, 12)
+                }
+                TextField("", text: $vm.reflectionText, axis: .vertical)
+                    .lineLimit(4...10)
+                    .font(.inter(13)).foregroundStyle(PL.navy).tint(PL.gold)
+                    .padding(.horizontal, 14).padding(.vertical, 12)
+            }
+            .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
+            .padding(.top, 10)
+            if let err = vm.reflectionError {
+                Text(err).font(.inter(11)).foregroundStyle(Color(hex: 0xB42318))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
+            }
+            reflectionSubmit.padding(.top, 10)
+        }
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+
+    private var reflectionSubmit: some View {
+        let empty = vm.reflectionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return Button {
+            Haptics.action()
+            Task { await vm.saveReflection() }
+        } label: {
+            HStack(spacing: 6) {
+                if vm.reflectionSaving { ProgressView().tint(PL.refInk) }
+                else { Icon(.pencil, size: 13, color: PL.refInk) }
+                Text(vm.savedReflection == nil ? "Save reflection" : "Update")
+                    .font(.inter(12, .bold)).foregroundStyle(PL.refInk)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(PL.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(PL.gold.opacity(0.27), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .disabled(empty || vm.reflectionSaving)
+        .opacity(empty ? 0.5 : 1)
+        .animation(.easeInOut(duration: 0.2), value: empty)
+    }
+
     // MARK: sticky footer — mark complete → confetti → tap to go back
 
     private var footerBar: some View {
+        VStack(spacing: 8) {
+            if let e = vm.completeError {
+                Text(e).font(.inter(11)).foregroundStyle(Color(hex: 0xB91C1C))
+                    .frame(maxWidth: .infinity, alignment: .center)
+                    .transition(.opacity)
+            }
+            footerButton
+        }
+        .animation(.easeInOut(duration: 0.2), value: vm.completeError == nil)
+        .padding(.horizontal, 20).padding(.top, 12)
+        .padding(.bottom, Nuru.tabBarSpace)
+        .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+    }
+
+    @ViewBuilder private var footerButton: some View {
         HStack {
             if vm.dayCompleted || justDone {
                 Button { dismiss() } label: {
@@ -850,9 +992,15 @@ struct PlanDayView: View {
             } else {
                 Button {
                     Task {
-                        await vm.completeDay()
-                        Haptics.success() // land the confetti with a felt "done"
-                        withAnimation { justDone = true }
+                        if await vm.completeDay() {
+                            Haptics.success() // land the confetti with a felt "done"
+                            // No withAnimation here — inserting the burst inside a
+                            // transaction coalesced its flight to the end state
+                            // (confetti never visibly fired). It animates itself.
+                            justDone = true
+                        } else {
+                            Haptics.error()
+                        }
                     }
                 } label: {
                     HStack(spacing: 8) {

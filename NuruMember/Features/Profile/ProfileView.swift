@@ -9,14 +9,17 @@
 // current design, so they are gone here too.
 import SwiftUI
 import UIKit
+import PhotosUI
 import CoreLocation
 import UserNotifications
 
 struct ProfileView: View {
     @EnvironmentObject private var auth: AuthStore
 
-    // Notification channel prefs — persisted on device (no backend channel-pref
-    // endpoint yet); push additionally requests the real system permission.
+    // Notification channel prefs — SERVER-BACKED (GET/PUT /me/notification-
+    // preferences) with @AppStorage as the offline cache/fallback so the UI
+    // never blocks. Toggles are optimistic and roll back on a failed PUT; push
+    // additionally requests the real system permission.
     @AppStorage("nuru.notif.push") private var pushOn = true
     @AppStorage("nuru.notif.email") private var emailOn = true
     @AppStorage("nuru.notif.sms") private var smsOn = false
@@ -43,6 +46,13 @@ struct ProfileView: View {
     // Real backend extras (loaded once; tolerate offline with empty state).
     @State private var badges: [PBadgeItem] = []
     @State private var certs: [PCert] = []
+    @State private var scores: ScoresSummary?
+    @State private var scoreDetailPillar: ScorePillar?
+
+    // Avatar upload (PhotosPicker → downscaled JPEG → POST /me/avatar).
+    @State private var avatarPick: PhotosPickerItem?
+    @State private var avatarUploading = false
+    @State private var avatarError: String?
 
     /// Real 2FA state from the server profile — the toggle reflects the truth.
     private var twoFactorOn: Bool { auth.profile?.mfaEnabled ?? false }
@@ -57,6 +67,7 @@ struct ProfileView: View {
                 security
                 notifications
                 achievements
+                growthScores
                 milestonesSection
                 certificates
                 display
@@ -94,6 +105,7 @@ struct ProfileView: View {
         .sheet(item: $viewingBadge) { b in BadgeDetailSheet(badge: b) }
         .sheet(isPresented: $showAllBadges) { BadgeGallerySheet(badges: badges) }
         .sheet(item: $verifyingCert) { c in VerifyCertificateSheet(cert: c) }
+        .sheet(item: $scoreDetailPillar) { p in ScoreDetailView(pillar: p) }
         .alert("Turn off two-factor?", isPresented: $showMfaDisable) {
             TextField("6-digit code", text: $mfaDisableCode).keyboardType(.numberPad)
             Button("Turn off", role: .destructive) {
@@ -109,7 +121,10 @@ struct ProfileView: View {
         .alert("Two-factor authentication", isPresented: Binding(get: { mfaError != nil }, set: { if !$0 { mfaError = nil } })) {
             Button("OK") { mfaError = nil }
         } message: { Text(mfaError ?? "") }
-        .onChange(of: pushOn) { _, on in if on { requestPushPermission() } }
+        .alert("Profile photo", isPresented: Binding(get: { avatarError != nil }, set: { if !$0 { avatarError = nil } })) {
+            Button("OK") { avatarError = nil }
+        } message: { Text(avatarError ?? "") }
+        .onChange(of: avatarPick) { _, item in if let item { Task { await uploadAvatar(item) } } }
         .onChange(of: shareLocation) { _, on in Task { await applyLocationSharing(on) } }
     }
 
@@ -119,6 +134,8 @@ struct ProfileView: View {
         async let catalogue = try? await APIClient.shared.get("badges", as: Envelope<PBadgeCat>.self).data
         async let mine = try? await APIClient.shared.get("me/achievements", as: PMyAchievements.self)
         async let certificates = try? await APIClient.shared.get("certificates", as: Envelope<PCert>.self).data
+        async let scoresSummary = try? await MemberAPI.scores()
+        async let serverPrefs = try? await MemberAPI.notificationPreferences()
 
         let cat = await catalogue ?? []
         let earned = await mine?.badges ?? []
@@ -134,6 +151,16 @@ struct ProfileView: View {
         }
         badges = merged.sorted { ($0.earned ? 0 : 1, $0.name) < ($1.earned ? 0 : 1, $1.name) }
         certs = await certificates ?? []
+        scores = await scoresSummary
+
+        // Server is the source of truth for channel prefs; the @AppStorage values
+        // stand in until (and unless) it answers. Direct assignment — the custom
+        // toggle bindings (and their PUT) only run on user interaction.
+        if let prefs = await serverPrefs {
+            pushOn = prefs.pushEnabled
+            emailOn = prefs.emailEnabled
+            smsOn = prefs.smsEnabled
+        }
     }
 
     // MARK: Settings side-effects
@@ -141,6 +168,65 @@ struct ProfileView: View {
     /// Ask iOS for notification permission when the member turns push on.
     private func requestPushPermission() {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+    }
+
+    // MARK: Notification prefs (optimistic write-through to the server)
+
+    /// Optimistic toggle: flip the local (@AppStorage-cached) value immediately,
+    /// PUT all three channels, and roll back + error-haptic if the save fails.
+    private func prefBinding(_ value: Binding<Bool>, isPush: Bool = false) -> Binding<Bool> {
+        Binding(get: { value.wrappedValue }, set: { on in
+            let old = value.wrappedValue
+            value.wrappedValue = on
+            if isPush, on { requestPushPermission() }
+            Task {
+                do {
+                    try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn)
+                } catch {
+                    Haptics.error()
+                    value.wrappedValue = old
+                }
+            }
+        })
+    }
+
+    // MARK: Avatar upload (PhotosPicker → ~512px JPEG → POST /me/avatar)
+
+    private func uploadAvatar(_ item: PhotosPickerItem) async {
+        defer { avatarPick = nil }
+        guard !avatarUploading else { return }
+        avatarUploading = true
+        defer { avatarUploading = false }
+        do {
+            guard let raw = try await item.loadTransferable(type: Data.self),
+                  let jpeg = Self.downscaledJPEG(raw) else {
+                Haptics.error()
+                avatarError = "Couldn't read that photo — please pick another."
+                return
+            }
+            _ = try await MemberAPI.uploadAvatar(jpeg: jpeg)
+            Haptics.success()
+            await auth.loadProfile()   // the header re-renders with the new avatar_url
+        } catch {
+            Haptics.error()
+            avatarError = (error as? APIError)?.errorDescription ?? "Couldn't upload your photo — please try again."
+        }
+    }
+
+    /// Downscale to a sane avatar size (longest edge ≤512px) and JPEG-encode —
+    /// well inside the server's 5 MB limit and quick even on poor connections.
+    private static func downscaledJPEG(_ data: Data, maxDimension: CGFloat = 512) -> Data? {
+        guard let img = UIImage(data: data), img.size.width > 0, img.size.height > 0 else { return nil }
+        let pixelW = img.size.width * img.scale
+        let pixelH = img.size.height * img.scale
+        let scale = min(1, maxDimension / max(pixelW, pixelH))
+        let size = CGSize(width: floor(pixelW * scale), height: floor(pixelH * scale))
+        let fmt = UIGraphicsImageRendererFormat.default()
+        fmt.scale = 1
+        let resized = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in
+            img.draw(in: CGRect(origin: .zero, size: size))
+        }
+        return resized.jpegData(compressionQuality: 0.85)
     }
 
     /// Share or stop sharing an approximate location fix (§proximity). If permission
@@ -177,16 +263,29 @@ struct ProfileView: View {
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
             HStack(spacing: 16) {
-                ZStack(alignment: .bottomTrailing) {
-                    Avatar(url: p?.avatarUrl, name: p?.fullName ?? "?", size: 72)
-                        .overlay(Circle().stroke(Nuru.gold, lineWidth: 2))
-                    ZStack {
-                        Circle().fill(Nuru.gold).frame(width: 28, height: 28)
-                        Icon(.pencil, size: 11, color: Nuru.navy)
+                // Tap anywhere on the avatar (incl. the pencil) to pick a new photo.
+                PhotosPicker(selection: $avatarPick, matching: .images, photoLibrary: .shared()) {
+                    ZStack(alignment: .bottomTrailing) {
+                        Avatar(url: p?.avatarUrl, name: p?.fullName ?? "?", size: 72)
+                            .overlay(Circle().stroke(Nuru.gold, lineWidth: 2))
+                            .overlay {
+                                if avatarUploading {
+                                    ZStack {
+                                        Circle().fill(Nuru.navy.opacity(0.45))
+                                        ProgressView().tint(.white)
+                                    }
+                                }
+                            }
+                        ZStack {
+                            Circle().fill(Nuru.gold).frame(width: 28, height: 28)
+                            Icon(.pencil, size: 11, color: Nuru.navy)
+                        }
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                        .offset(x: 3, y: 3)
                     }
-                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    .offset(x: 3, y: 3)
                 }
+                .buttonStyle(.pressable)
+                .disabled(avatarUploading)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(p?.fullName ?? "—").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
                         .lineLimit(1).minimumScaleFactor(0.8)
@@ -378,9 +477,9 @@ struct ProfileView: View {
 
     private var notifications: some View {
         sectionCard("NOTIFICATIONS", icon: .bell) {
-            toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", $pushOn); Divider()
-            toggleRow(.mail, "Email", "Weekly summary & receipts", $emailOn); Divider()
-            toggleRow(.phone, "SMS", "Critical updates only", $smsOn); Divider()
+            toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", prefBinding($pushOn, isPush: true)); Divider()
+            toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
+            toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
             Button { Haptics.tap(); openSystemSettings() } label: {
                 HStack(spacing: Nuru.S.md) {
                     iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
@@ -425,6 +524,84 @@ struct ProfileView: View {
                 .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm)
+        }
+    }
+
+    // MARK: Growth scores (real GET /me/scores → "Why this score?" drill-downs)
+
+    private func pillarScore(_ s: ScoresSummary, _ p: ScorePillar) -> GrowthScore {
+        switch p {
+        case .word: return s.word
+        case .prayer: return s.prayer
+        case .habits: return s.habits
+        case .curriculum: return s.curriculum
+        case .attendance: return s.attendance
+        }
+    }
+
+    private var growthScores: some View {
+        sectionCard("GROWTH SCORES", icon: .trendingUp) {
+            if let s = scores {
+                // Overall — the weighted composite the server computes.
+                HStack(spacing: Nuru.S.md) {
+                    ZStack {
+                        Circle().fill(Nuru.goldTint).frame(width: 44, height: 44)
+                            .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1.5))
+                        Text("\(s.overall.score)").font(.fraunces(16, .semibold)).foregroundStyle(Nuru.navy)
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text("Overall").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        Text(s.overall.band).font(.inter(11)).foregroundStyle(Color(hex: 0x8A6D18))
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 6)
+                Divider()
+                ForEach(ScorePillar.allCases) { pillar in
+                    let g = pillarScore(s, pillar)
+                    Button { Haptics.tap(); scoreDetailPillar = pillar } label: {
+                        HStack(spacing: Nuru.S.md) {
+                            fieldIconTile(pillar.icon)
+                            VStack(alignment: .leading, spacing: 5) {
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(pillar.displayName).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                                    Spacer(minLength: Nuru.S.sm)
+                                    Text("\(g.score)").font(.inter(13, .bold)).foregroundStyle(Color(hex: 0xA8861C))
+                                }
+                                GeometryReader { geo in
+                                    ZStack(alignment: .leading) {
+                                        Capsule().fill(Nuru.surface)
+                                        if g.score > 0 {
+                                            Capsule().fill(Nuru.gold)
+                                                .frame(width: max(6, geo.size.width * CGFloat(min(g.score, 100)) / 100))
+                                        }
+                                    }
+                                }
+                                .frame(height: 5)
+                            }
+                            Icon(.chevronRight, size: 16, color: Color(hex: 0x9CA3AF))
+                        }
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressableSubtle)
+                    if pillar != ScorePillar.allCases.last { Divider() }
+                }
+                Text("Tap a score to see why — scores are formative, never a leaderboard.")
+                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x9CA3AF))
+                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                    .padding(.top, Nuru.S.xs)
+            } else {
+                // Real data only: offline / not loaded yet — no invented numbers.
+                HStack(spacing: Nuru.S.md) {
+                    fieldIconTile(.trendingUp)
+                    Text("Your growth scores appear here once we can reach the server.")
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x6B7280))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 6)
+            }
         }
     }
 
@@ -571,7 +748,13 @@ struct ProfileView: View {
             .buttonStyle(.pressable)
             // Calm confirm — signing out is reversible, so no destructive red.
             .confirmationDialog("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
-                Button("Sign out") { auth.signOut() }
+                Button("Sign out") {
+                    // Revoke the refresh-token family server-side FIRST (the token
+                    // is captured synchronously, the call is fire-and-forget), then
+                    // clear local state — the sign-out never waits on the network.
+                    MemberAPI.revokeSessionBestEffort()
+                    auth.signOut()
+                }
                 Button("Stay signed in", role: .cancel) {}
             } message: {
                 Text("Your progress is saved — you can pick up right where you left off.")
@@ -949,6 +1132,11 @@ private struct CertificateCardView: View {
     let onVerify: () -> Void
     @State private var copied = false
 
+    // PDF download (GET /media/certificates/{code} — authed stream → temp file).
+    @State private var downloading = false
+    @State private var savedPdfURL: URL?
+    @State private var downloadError: String?
+
     var body: some View {
         VStack(spacing: Nuru.S.sm) {
             HStack(spacing: Nuru.S.md) {
@@ -996,20 +1184,104 @@ private struct CertificateCardView: View {
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }.buttonStyle(.plain)
 
-            // Trust chip → live verification against the public endpoint.
-            Button { Haptics.tap(); onVerify() } label: {
-                HStack(spacing: 4) {
-                    Icon(.shieldCheck, size: 13, color: Color(hex: 0x8A6D18))
-                    Text("Signed · Verify").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
+            HStack(spacing: Nuru.S.sm) {
+                // Trust chip → live verification against the public endpoint.
+                Button { Haptics.tap(); onVerify() } label: {
+                    HStack(spacing: 4) {
+                        Icon(.shieldCheck, size: 13, color: Color(hex: 0x8A6D18))
+                        Text("Signed · Verify").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 36)
+                    .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
+                }.buttonStyle(.plain)
+
+                // Download → save the authed PDF to a temp file, then share.
+                // After the first fetch the button becomes a ShareLink re-share.
+                if let saved = savedPdfURL {
+                    ShareLink(item: saved) {
+                        downloadLabel(icon: .check, text: "Share PDF")
+                    }.buttonStyle(.plain)
+                } else {
+                    Button { downloadPdf() } label: {
+                        if downloading {
+                            HStack(spacing: 5) {
+                                ProgressView().tint(Nuru.navy).scaleEffect(0.7)
+                                Text("Downloading…").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                            }
+                            .frame(maxWidth: .infinity).frame(height: 36)
+                            .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
+                        } else {
+                            downloadLabel(icon: .download, text: "Download PDF")
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(downloading)
                 }
-                .frame(maxWidth: .infinity).frame(height: 36)
-                .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
-            }.buttonStyle(.plain)
+            }
+
+            if let downloadError {
+                Text(downloadError)
+                    .font(.inter(10)).foregroundStyle(Color(hex: 0xDC2626))
+                    .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+            }
         }
         .padding(12)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private func downloadLabel(icon: Lucide, text: String) -> some View {
+        HStack(spacing: 4) {
+            Icon(icon, size: 13, color: Nuru.navy)
+            Text(text).font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+        }
+        .frame(maxWidth: .infinity).frame(height: 36)
+        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    private func downloadPdf() {
+        guard !downloading else { return }
+        Haptics.tap()
+        downloading = true
+        downloadError = nil
+        Task {
+            defer { downloading = false }
+            do {
+                let data = try await MemberAPI.downloadCertificatePdf(code: cert.verificationCode)
+                let name = "Nuru-\(cert.title.replacingOccurrences(of: " ", with: "-"))-\(cert.verificationCode).pdf"
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent(name)
+                try data.write(to: url, options: .atomic)
+                savedPdfURL = url
+                Haptics.success()
+                presentShare(url)
+            } catch {
+                Haptics.error()
+                if case APIError.http(let status, _, _) = error, status == 404 {
+                    downloadError = "The PDF isn't ready yet — check back soon."
+                } else {
+                    downloadError = (error as? APIError)?.errorDescription ?? "Couldn't download the certificate."
+                }
+            }
+        }
+    }
+
+    /// Present the saved PDF in the system share sheet right after download
+    /// (the ShareLink the button becomes covers re-shares).
+    private func presentShare(_ url: URL) {
+        guard let scene = UIApplication.shared.connectedScenes
+                .compactMap({ $0 as? UIWindowScene })
+                .first(where: { $0.activationState == .foregroundActive }),
+              let root = scene.keyWindow?.rootViewController else { return }
+        var top = root
+        while let presented = top.presentedViewController { top = presented }
+        let avc = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+        // iPad needs an anchor for the popover presentation.
+        avc.popoverPresentationController?.sourceView = top.view
+        avc.popoverPresentationController?.sourceRect = CGRect(
+            x: top.view.bounds.midX, y: top.view.bounds.midY, width: 1, height: 1)
+        top.present(avc, animated: true)
     }
 }
 

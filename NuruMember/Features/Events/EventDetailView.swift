@@ -3,10 +3,12 @@
 // serif title), a white content card overlapping the hero with the 2x2 meta grid
 // and add-to-calendar/share actions, the "About this gathering" card, the
 // "Who's going" avatar rail, the going/maybe/can't RSVP selector, the
-// "Who's coming" buzz card with the visual hype composer, and a dashed
-// "check-in opens when live" notice for scheduled events. Bound to the real
-// /events/{id} + RSVP endpoints; Figma's hardcoded roster drawer, buzz feed and
-// QR scanner are mock-only and intentionally not reproduced.
+// "Who's coming" buzz card with the visual hype composer, a "Check in" button
+// for today's/live occurrences that opens the real QR scanner
+// (CheckInScannerView → POST /events/{id}/attendance), and a dashed "check-in
+// opens when live" notice for future scheduled events. Bound to the real
+// /events/{id} + RSVP endpoints; Figma's hardcoded roster drawer and buzz feed
+// are mock-only and intentionally not reproduced.
 import SwiftUI
 
 @MainActor
@@ -139,6 +141,7 @@ private enum EvD {
 struct EventDetailView: View {
     @StateObject private var vm: EventDetailViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showScanner = false
 
     init(occurrence: CalendarOccurrence) {
         _vm = StateObject(wrappedValue: EventDetailViewModel(occurrence: occurrence))
@@ -154,6 +157,10 @@ struct EventDetailView: View {
     private var imageUrl: String? { vm.detail?.primaryImageUrl ?? occ.primaryImageUrl }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
     private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
+    private var isToday: Bool { Calendar.current.isDateInToday(Ev.date(occ.startAt)) }
+    /// QR check-in shows for live or same-day occurrences; the server still
+    /// enforces qr_enabled / checkin_opens_at, so this is presentation only.
+    private var canCheckIn: Bool { (isLive || isToday) && !isCompleted }
 
     /// What the hero share button and the Share action send.
     private var shareText: String {
@@ -183,6 +190,10 @@ struct EventDetailView: View {
             if vm.detail == nil { await vm.load() }
             await vm.loadPosts()
         }
+        .fullScreenCover(isPresented: $showScanner) {
+            CheckInScannerView(eventId: vm.detail?.eventId ?? occ.occurrenceId,
+                               eventTitle: title)
+        }
     }
 
     private func content(_ proxy: ScrollViewProxy) -> some View {
@@ -204,7 +215,16 @@ struct EventDetailView: View {
                 }
             }
             .id("buzzCard")
-            if !isLive && !isCompleted { EvdCheckInNotice().padding(.top, 4) }
+            if canCheckIn {
+                EvdCheckInButton {
+                    Haptics.action()
+                    showScanner = true
+                }
+                .padding(.top, 4)
+                .gentleEntrance(delay: 0.2)
+            } else if !isLive && !isCompleted {
+                EvdCheckInNotice().padding(.top, 4)
+            }
         }
         .padding(.horizontal, 16)
         .padding(.bottom, Nuru.tabBarSpace)
@@ -871,8 +891,30 @@ private struct EvdBuzzAvatar: View {
     }
 }
 
-// MARK: - Check-in notice — the dashed locked state for scheduled events.
-// (The live "Scan to check in" QR flow is mock-only in the make — not built.)
+// MARK: - Check in — the gold scan CTA for today's/live occurrences. Opens
+// CheckInScannerView (AVFoundation QR → POST /events/{id}/attendance).
+
+private struct EvdCheckInButton: View {
+    var onTap: () -> Void
+
+    var body: some View {
+        Button(action: onTap) {
+            HStack(spacing: 8) {
+                Icon(.qrCode, size: 16, color: EvD.ink)
+                Text("Check in").font(.inter(13, .bold)).foregroundStyle(EvD.ink)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+            .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
+        }
+        .buttonStyle(.pressable)
+    }
+}
+
+// MARK: - Check-in notice — the dashed locked state for future scheduled events.
 
 private struct EvdCheckInNotice: View {
     var body: some View {

@@ -4,10 +4,11 @@
 //
 // Data honesty vs the Figma comp: PrayerEntry (/me/prayers) carries only
 // title/body/answered/notes/dates, so the comp's social layer (category tag,
-// interceding counts, loves, comments, Love/Comment/Share row) has no backing
+// interceding counts, loves, comments, Love/Comment row) has no backing
 // fields and is omitted — the card keeps the design's layout language with the
-// real actions (mark answered / edit / delete) instead. There is also no
-// MemberAPI.sharePrayerToWall, so no Share affordance is rendered. The navy
+// real actions (mark answered / edit / delete) instead. Share IS real now:
+// POST /me/prayers/{id}/share-to-wall copies an entry onto the congregation's
+// public prayer wall (idempotent server-side), behind a confirmation. The navy
 // "this week" card is driven from real entry created-at days: distinct days
 // journaled this week, the current daily journaling streak, and live
 // active / this-week / answered counts.
@@ -73,6 +74,37 @@ final class PrayerJournalViewModel: ObservableObject {
         }
         await cacheAll(entries)
         await sync.enqueue(domain: domain, op: "delete", payload: ["entry_id": AnyCodable(e.entryId)])
+    }
+
+    // MARK: Share to the public prayer wall (online-only — it's a server-side
+    // copy into another member-visible surface, so it is NOT queued offline).
+    // The server is idempotent: re-sharing returns the existing wall post, so
+    // "already shared" simply succeeds.
+
+    /// Entry ids shared during this session — drives the "On the wall 🙏" state.
+    @Published var sharedToWall: Set<String> = []
+    @Published var shareError: String?
+
+    func shareToWall(_ e: PrayerEntry) async {
+        do {
+            _ = try await MemberAPI.sharePrayerToWall(e.entryId)
+            Haptics.success()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
+                _ = sharedToWall.insert(e.entryId)
+            }
+        } catch {
+            Haptics.error()
+            let api = error as? APIError
+            if case .http(let status, _, _)? = api, status == 404 {
+                // Offline-created entries live in the mutation queue until the
+                // next sync — the server can't share what it hasn't seen yet.
+                shareError = "This prayer hasn't finished syncing yet. Give it a moment and try again."
+            } else if api?.isNetwork == true {
+                shareError = "You're offline — sharing to the wall needs a connection."
+            } else {
+                shareError = api?.errorDescription ?? "Couldn't share this prayer right now. Try again."
+            }
+        }
     }
 
     // MARK: encrypted-cache mirror (round-trips via the DTO's own keys)
@@ -173,6 +205,7 @@ struct PrayerJournalView: View {
     @State private var editing: PrayerDraft?
     @State private var tab: PrayerTab = .active
     @State private var pendingDelete: PrayerEntry?
+    @State private var pendingShare: PrayerEntry?
 
     var body: some View {
         ZStack {
@@ -201,8 +234,10 @@ struct PrayerJournalView: View {
                             } else {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, e in
                                     JournalCard(entry: e,
+                                                shared: vm.sharedToWall.contains(e.entryId),
                                                 toggle: { Task { await vm.toggleAnswered(e) } },
                                                 edit: { Haptics.tap(); editing = PrayerDraft(entry: e) },
+                                                share: { pendingShare = e },
                                                 remove: { pendingDelete = e })
                                         .gentleEntrance(delay: 0.1 + min(Double(idx), 3) * 0.05)
                                 }
@@ -215,6 +250,30 @@ struct PrayerJournalView: View {
                     .refreshable { await vm.load() }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            // Sharing publishes a private entry to the whole cell — confirm
+            // first. (Attached to the inner VStack so it never collides with
+            // the delete dialog on the outer ZStack.)
+            .confirmationDialog(
+                "Share to the prayer wall?",
+                isPresented: Binding(get: { pendingShare != nil },
+                                     set: { if !$0 { pendingShare = nil } }),
+                titleVisibility: .visible
+            ) {
+                Button("Share to wall") {
+                    if let e = pendingShare { Task { await vm.shareToWall(e) } }
+                    pendingShare = nil
+                }
+                Button("Keep it private", role: .cancel) { pendingShare = nil }
+            } message: {
+                Text("Your cell will see this and pray with you.")
+            }
+            .alert("Couldn't share",
+                   isPresented: Binding(get: { vm.shareError != nil },
+                                        set: { if !$0 { vm.shareError = nil } })) {
+                Button("OK", role: .cancel) { vm.shareError = nil }
+            } message: {
+                Text(vm.shareError ?? "")
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -463,8 +522,10 @@ private struct EmptyPrayers: View {
 
 private struct JournalCard: View {
     let entry: PrayerEntry
+    let shared: Bool
     let toggle: () -> Void
     let edit: () -> Void
+    let share: () -> Void
     let remove: () -> Void
 
     var body: some View {
@@ -511,10 +572,21 @@ private struct JournalCard: View {
                     .padding(.top, Nuru.S.md)
             }
 
-            // Hairline + real action row (design slot for Love/Comment/Share)
+            // Hairline + real action row (design slot for Love/Comment/Share).
+            // Share swaps to a quiet "On the wall 🙏" note once it lands.
             Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.md)
             HStack(spacing: 0) {
                 RowAction(icon: .pencil, label: "Edit", action: edit)
+                if shared {
+                    HStack(spacing: 6) {
+                        Icon(.handHeart, size: 15, color: Color(hex: 0x16A34A))
+                        Text("On the wall 🙏").font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x15803D))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                } else {
+                    RowAction(icon: .share2, label: "Share", action: share)
+                }
                 if entry.isAnswered { RowAction(icon: .repeat, label: "Reopen", action: toggle) }
                 RowAction(icon: .trash2, label: "Delete", action: remove)
             }

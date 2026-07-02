@@ -43,6 +43,8 @@ extension View {
                 switch r {
                 case .prayerWall: PrayerWallView()
                 case .prayer(let id): PrayerWallDetailView(postId: id)
+                case .discussions: DiscussionsView()
+                case .discussion(let id): DiscussionThreadView(threadId: id)
                 }
             }
             .navigationDestination(for: PathwayRoute.self) { r in
@@ -50,6 +52,7 @@ extension View {
                 case .level(let n): LevelDetailView(levelNumber: n)
                 case .module(let id): ModuleView(moduleId: id)
                 case .quiz(let id): QuizView(moduleId: id)
+                case .exam(let n): LevelExamView(levelNumber: n)
                 case .map: EmptyView()   // only ever pushed from the Pathway tab
                 }
             }

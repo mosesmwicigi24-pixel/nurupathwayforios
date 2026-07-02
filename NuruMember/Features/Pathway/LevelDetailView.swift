@@ -3,12 +3,30 @@
 // a "walk it with your discipler" prompt, then THE MODULE TRAIL — a vertical list
 // of module cards strung on a gold rail. Completed modules are checked; the next
 // one is numbered/open; locked modules are dimmed and non-tappable (server is
-// authoritative, §1.9).
+// authoritative, §1.9). Authored level encouragements are woven between the rows
+// in trail order, and when every module is done (and the level itself isn't) the
+// trail ends at THE LEVEL GATE — the CTA into the level exam. Eligibility stays
+// the server's: the CTA is a doorway, and the exam endpoint answers politely if
+// the gate isn't actually open.
 import SwiftUI
+
+/// One row of the trail — module cards and encouragement cards interleave on the
+/// same gold rail (encouragements slot in by their after_module_sequence).
+enum LevelTrailItem: Identifiable {
+    case module(LevelModule)
+    case encouragement(LevelEncouragement)
+    var id: String {
+        switch self {
+        case .module(let m): return "m-\(m.moduleId)"
+        case .encouragement(let e): return "e-\(e.encouragementId)"
+        }
+    }
+}
 
 @MainActor
 final class LevelDetailViewModel: ObservableObject {
     @Published var modules: [LevelModule] = []
+    @Published var encouragements: [LevelEncouragement] = []
     @Published var level: PathwayLevel?
     @Published var totalLevels = 7
     @Published var loading = true
@@ -21,6 +39,7 @@ final class LevelDetailViewModel: ObservableObject {
         loading = true; error = nil
         async let mods = try? MemberAPI.levelModules(levelNumber)
         async let path = try? MemberAPI.pathway()
+        async let enc = try? MemberAPI.levelEncouragements(levelNumber)
         let loaded = await mods
         if let summary = await path {
             level = summary.levels.first { $0.levelNumber == levelNumber }
@@ -28,7 +47,38 @@ final class LevelDetailViewModel: ObservableObject {
         }
         if let loaded { modules = loaded }
         else if level == nil { error = "Couldn't load this level." }
+        // Best-effort: no encouragements (unauthored or failed fetch) renders nothing.
+        encouragements = (await enc) ?? []
         loading = false
+    }
+
+    /// Modules with encouragements woven in at their after_module_sequence slot.
+    /// Each encouragement lands after the LAST module whose sequence ≤ its slot
+    /// (tolerates sequence gaps and entry floors); 0 — or a slot below every
+    /// visible module — surfaces at the head of the trail; a slot past the last
+    /// module trails it. Order within a slot is the server's.
+    var trailItems: [LevelTrailItem] {
+        guard !encouragements.isEmpty else { return modules.map { .module($0) } }
+        var slots: [Int: [LevelEncouragement]] = [:]   // module index (-1 = trail head)
+        for e in encouragements {
+            let idx = e.afterModuleSequence <= 0
+                ? -1
+                : (modules.lastIndex { $0.moduleSequenceNumber <= e.afterModuleSequence } ?? -1)
+            slots[idx, default: []].append(e)
+        }
+        var items: [LevelTrailItem] = (slots[-1] ?? []).map { .encouragement($0) }
+        for (i, m) in modules.enumerated() {
+            items.append(.module(m))
+            items += (slots[i] ?? []).map { .encouragement($0) }
+        }
+        return items
+    }
+
+    /// The trail is fully walked but the level isn't passed — surface the exam
+    /// gate. The fields here are the pathway API's own (module `completed`,
+    /// level `status`); the true eligibility answer stays the server's (§1.9).
+    var examAvailable: Bool {
+        !modules.isEmpty && modules.allSatisfy(\.completed) && level?.status != .completed
     }
 
     // Derived stats for the strip card.
@@ -58,6 +108,7 @@ struct LevelDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var barShown = false
+    @State private var hasAppeared = false
 
     init(levelNumber: Int) {
         self.levelNumber = levelNumber
@@ -109,6 +160,13 @@ struct LevelDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.modules.isEmpty && vm.level == nil { await vm.load() } }
         .refreshable { await vm.load() }
+        // Coming back from a pushed screen (quiz, exam) may have changed progress
+        // or the level's status — refresh quietly so the trail and the exam gate
+        // reflect the server's latest answer.
+        .onAppear {
+            if hasAppeared { Task { await vm.load() } }
+            else { hasAppeared = true }
+        }
     }
 
     // MARK: - Hero (parallax-style image with dark gradient + overline + title)
@@ -259,14 +317,76 @@ struct LevelDetailView: View {
         .padding(.top, Nuru.S.sm)
     }
 
-    // MARK: - Module trail (cards strung on a gold rail)
+    // MARK: - Module trail (cards strung on a gold rail, encouragements woven in,
+    // and — once every module is done — the level gate at the end)
 
     private var moduleTrail: some View {
-        VStack(spacing: 0) {
-            ForEach(Array(vm.modules.enumerated()), id: \.element.id) { idx, m in
-                moduleRow(m, isLast: idx == vm.modules.count - 1)
+        let items = vm.trailItems
+        let showGate = vm.examAvailable
+        return VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                // The rail runs on into the exam gate when it's showing.
+                let isLast = idx == items.count - 1 && !showGate
+                switch item {
+                case .module(let m): moduleRow(m, isLast: isLast)
+                case .encouragement(let e): encouragementRow(e, isLast: isLast)
+                }
             }
+            if showGate { examGateRow }
         }
+    }
+
+    // MARK: - Encouragement row (a small gold moment strung on the same rail)
+
+    private func encouragementRow(_ e: LevelEncouragement, isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: Nuru.S.md) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(Nuru.goldTint).frame(width: 28, height: 28)
+                        .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
+                    if let emoji = e.emoji, !emoji.isEmpty {
+                        Text(emoji).font(.system(size: 12))
+                    } else {
+                        Icon(.sparkles, size: 12, color: Nuru.gold)
+                    }
+                }
+                .padding(.top, 4)
+                if !isLast {
+                    Rectangle()
+                        .fill(Nuru.gold.opacity(0.35))
+                        .frame(width: 2)
+                        .frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 36)
+
+            EncouragementTrailCard(item: e)
+                .padding(.bottom, Nuru.S.base)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - The level gate (exam CTA — the trail's final node)
+
+    private var examGateRow: some View {
+        HStack(alignment: .top, spacing: Nuru.S.md) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(Nuru.gold).frame(width: 36, height: 36)
+                    Icon(.award, size: 16, color: .white)
+                }
+            }
+            .frame(width: 36)
+
+            NavigationLink(value: PathwayRoute.exam(vm.levelNumber)) {
+                ExamGateCard(levelNumber: vm.levelNumber)
+            }
+            .buttonStyle(.pressable)
+            .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
+            .padding(.bottom, Nuru.S.base)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .gentleEntrance()
     }
 
     /// Shimmering placeholder trail while the real modules are fetched — same
@@ -496,4 +616,98 @@ private struct ModuleTrailCard: View {
 
 private extension LevelModule {
     var requiresQuiz: Bool { evaluationKind.lowercased().contains("quiz") }
+}
+
+// MARK: - Encouragement card (gold-accented moment between module rows)
+
+private struct EncouragementTrailCard: View {
+    let item: LevelEncouragement
+
+    /// Kicker per authored kind — splash/cheer/sticker/note/celebration/nudge/verse.
+    private var kicker: String {
+        switch (item.kind ?? "").lowercased() {
+        case "celebration", "cheer": return "CELEBRATE"
+        case "nudge":                return "KEEP GOING"
+        case "verse":                return "A VERSE FOR YOU"
+        case "note":                 return "A NOTE FOR YOU"
+        default:                     return "ENCOURAGEMENT"
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            if let img = item.imageUrl, !img.isEmpty, let url = URL(string: img) {
+                CachedAsyncImage(url: url) { p in
+                    (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
+                }
+                .frame(height: 120)
+                .frame(maxWidth: .infinity)
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            HStack(spacing: 6) {
+                Icon(.sparkles, size: 11, color: Nuru.goldChipText)
+                Text(kicker)
+                    .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+            }
+            if let title = item.title, !title.isEmpty {
+                Text(title)
+                    .font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let body = item.body, !body.isEmpty {
+                Text(body)
+                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let ref = item.scriptureRef, !ref.isEmpty {
+                Text(ref)
+                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
+            }
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+            .stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+    }
+}
+
+// MARK: - Exam gate card (navy + gold — the trail's ceremonial final door)
+
+private struct ExamGateCard: View {
+    let levelNumber: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            HStack(spacing: 6) {
+                Icon(.award, size: 12, color: Nuru.goldGlow)
+                Text("THE LEVEL GATE")
+                    .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.goldGlow)
+            }
+            Text("Take the Level \(levelNumber) exam")
+                .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Every module is complete — the exam draws from the whole level and opens the way forward.")
+                .font(.inter(12)).foregroundStyle(Color.white.opacity(0.65))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 6) {
+                Text("Begin the exam").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                Icon(.arrowRight, size: 13, color: Nuru.navyDeep)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 10)
+            .background(Nuru.goldGradient, in: Capsule())
+            .padding(.top, 4)
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [Nuru.navy700, Nuru.navyCeremony],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous)
+            .stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+        .shadow(color: Nuru.navyCeremony.opacity(0.35), radius: 12, y: 6)
+    }
 }

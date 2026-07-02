@@ -67,6 +67,7 @@ struct RootView: View {
     @State private var loaded: Set<AppTab> = [AppTab.initialTab]
     @EnvironmentObject private var sync: SyncCoordinator
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
+    @Environment(\.scenePhase) private var scenePhase
 
     /// Height of the top safe-area inset (status-bar / Dynamic Island band) so the
     /// cream stripe covers exactly that region. Falls back to 59 (Dynamic Island).
@@ -112,7 +113,15 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: tabs.chromeHidden)
-        .onChange(of: tabs.selected) { _, t in loaded.insert(t) }
+        .onChange(of: tabs.selected) { _, t in
+            loaded.insert(t)
+            // Screen telemetry (POST /me/activity/screens) — silent by contract.
+            ScreenTracker.record(screen: t.label.lowercased())
+        }
+        .onAppear { ScreenTracker.record(screen: tabs.selected.label.lowercased()) }
+        .onChange(of: scenePhase) { _, p in
+            if p == .background { ScreenTracker.appDidEnterBackground() }
+        }
     }
 
     // Type-ERASED per tab (AnyView): otherwise RootView.body's type embeds all

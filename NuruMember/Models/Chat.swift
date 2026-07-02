@@ -16,6 +16,10 @@ struct ChatConversation: Codable, Sendable, Identifiable, Hashable {
     let lastAuthor: String?
     let unread: Int
     let avatarUrl: String?
+    /// DM rows only: the other participant's user id (backend is adding
+    /// `peer_user_id` to GET /chat/conversations). Optional + defaulted so rows
+    /// from older servers — and existing memberwise-init call sites — still work.
+    var peerUserId: String? = nil
 
     var id: String { conversationId }
     static func == (a: ChatConversation, b: ChatConversation) -> Bool { a.conversationId == b.conversationId }

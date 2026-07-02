@@ -141,6 +141,7 @@ final class GivingViewModel: ObservableObject {
 
 struct GivingView: View {
     @StateObject private var vm = GivingViewModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     @State private var fundCode = "tithe"
     @State private var amount = 1000
@@ -160,6 +161,10 @@ struct GivingView: View {
     @State private var successRef: String?
     @State private var scheduledNextAt = ""
     @State private var pollTask: Task<Void, Never>?
+    /// PayPal order id (the intent's provider_ref) for the in-flight gift —
+    /// captured after the member approves on PayPal, then cleared.
+    @State private var paypalOrderId: String?
+    @State private var paypalCaptureTask: Task<Void, Never>?
 
     private var fund: Fund { funds.first { $0.code == fundCode } ?? funds[0] }
     private var fee: Int { coverFee ? feeFor(amount) : 0 }
@@ -207,6 +212,10 @@ struct GivingView: View {
             .navigationDestination(for: GiveRoute.self) { _ in GivingStatementView() }
         }
         .task { if vm.history.isEmpty { await vm.load() } }
+        // Returning from the PayPal approval in Safari → nudge the capture.
+        .onChange(of: scenePhase) { _, p in
+            if p == .active { attemptPayPalCapture() }
+        }
         .sheet(isPresented: $showKeypad) {
             GiveKeypadSheet(initial: amount, fundLabel: fund.label) { amount = $0 }
         }
@@ -811,12 +820,16 @@ struct GivingView: View {
     private func submitIntent(provider: String, currency: String, phone: String?) async {
         guard amount > 0 else { return }
         submitting = true; defer { submitting = false }
+        paypalOrderId = nil
         do {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
                                                  currency: currency, method: provider, phoneNumber: phone)
             pendingTxId = res.transactionId
             successRef = res.providerRef
             if provider == "paypal", let url = res.approveUrl.flatMap(URL.init) {
+                // The intent's provider_ref IS the PayPal order id — we capture it
+                // once the member approves and comes back (see attemptPayPalCapture).
+                paypalOrderId = res.providerRef
                 await UIApplication.shared.open(url)
                 ceremonyNote = "Approve in PayPal, then return to the app."
             } else {
@@ -853,7 +866,10 @@ struct GivingView: View {
                 Haptics.error()
                 return
             default:
-                break   // still processing — keep waiting
+                // Still processing. For a PayPal gift the money only moves when WE
+                // capture the approved order (§5.6) — nudge that along each tick;
+                // the ceremony still keys off the polled status above.
+                attemptPayPalCapture()
             }
         }
         if ceremony == "stk" {
@@ -861,8 +877,34 @@ struct GivingView: View {
         }
     }
 
+    /// POST /giving/paypal/capture for the pending order — fired on return to
+    /// foreground and on poll ticks while still processing. One attempt in
+    /// flight at a time; a terminal server answer ("succeeded" — which is also
+    /// what an already-captured replay returns — or "failed") stops further
+    /// attempts. Errors (member hasn't approved yet, transient network) are
+    /// swallowed and simply retried on the next trigger. The success ceremony
+    /// fires ONLY from the polled transaction status — never from here.
+    private func attemptPayPalCapture() {
+        guard let orderId = paypalOrderId, ceremony == "stk", paypalCaptureTask == nil else { return }
+        paypalCaptureTask = Task {
+            defer { paypalCaptureTask = nil }
+            if let r = try? await MemberAPI.capturePayPal(orderId: orderId),
+               r.status == "succeeded" || r.status == "failed" {
+                paypalOrderId = nil   // settled either way — the poll reports the truth
+                // If the 60s poll already lapsed (long PayPal detour), restart it so
+                // the ceremony can resolve from the server's status.
+                if let tx = pendingTxId, ceremony == "stk" {
+                    pollTask?.cancel()
+                    pollTask = Task { await watchOutcome(tx) }
+                }
+            }
+        }
+    }
+
     private func endCeremony() {
         pollTask?.cancel(); pollTask = nil
+        paypalCaptureTask?.cancel(); paypalCaptureTask = nil
+        paypalOrderId = nil
         ceremony = nil; ceremonyNote = ""
         scheduledNextAt = ""
         Task { await vm.load() }

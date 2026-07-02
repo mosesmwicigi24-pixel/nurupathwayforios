@@ -8,5 +8,8 @@
 	<array>
 		<string>audio</string>
 	</array>
+	<!-- QR event check-in (CheckInScannerView) — shown on the first camera ask. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Nuru uses the camera to scan the event check-in code.</string>
 </dict>
 </plist>

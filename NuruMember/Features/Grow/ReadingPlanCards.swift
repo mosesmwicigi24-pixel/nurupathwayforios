@@ -469,6 +469,8 @@ struct PLConfettiBurst: View {
     }
 
     @State private var fly = false
+    @State private var fade = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let pieces: [Piece] = {
         let palette: [Color] = [PL.gold, PL.goldLight, PL.navy, .white]
         return (0..<28).map { i in
@@ -491,10 +493,24 @@ struct PLConfettiBurst: View {
                     .rotationEffect(.degrees(fly ? p.spin : 0))
                     .position(x: geo.size.width / 2 + (fly ? p.dx : 0),
                               y: fly ? p.dy : geo.size.height * 0.18)
-                    .opacity(fly ? 0 : 1)
+                    .opacity(fade ? 0 : 1)
             }
         }
         .allowsHitTesting(false)
-        .onAppear { withAnimation(.easeOut(duration: 1.6)) { fly = true } }
+        .onAppear {
+            guard !fly else { return }
+            // Celebration is decoration — under Reduce Motion, settle silently.
+            if reduceMotion { fly = true; fade = true; return }
+            // The burst is inserted by the completion state change; starting the
+            // animation in that same transaction gets coalesced and the pieces
+            // render at their end state (no visible confetti). Kick it on the
+            // next frame so the flight actually plays.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                withAnimation(.easeOut(duration: 1.6)) { fly = true }
+                // Stay visible for most of the flight; only fade at the end.
+                withAnimation(.easeIn(duration: 0.45).delay(1.15)) { fade = true }
+            }
+        }
     }
 }

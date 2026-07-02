@@ -12,10 +12,13 @@ final class MentorViewModel: ObservableObject {
     @Published var info: MentorInfo?
     @Published var loading = true
     @Published var error: String?
-    /// The DM thread with the discipler, when the chat inbox has one — the
-    /// conversations contract carries no peer user id, so we match the DM title
-    /// (the peer's name) against the mentor's full name.
+    /// The DM thread with the discipler, when the chat inbox has one — matched
+    /// by the row's `peer_user_id` against the mentor's user id where the server
+    /// provides it, falling back to matching the DM title (the peer's name)
+    /// against the mentor's full name for rows from older servers.
     @Published var mentorDm: ChatConversation?
+    /// True while POST /chat/dms is creating the discipler DM.
+    @Published var startingDm = false
 
     func load() async {
         loading = true; error = nil
@@ -23,19 +26,47 @@ final class MentorViewModel: ObservableObject {
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your mentorship." }
         loading = false
 
-        if let name = info?.mentor?.fullName,
+        if let mentor = info?.mentor,
            let inbox = try? await MemberAPI.chatInbox() {
-            mentorDm = inbox.conversations.first {
-                $0.kind == "dm" &&
-                $0.title?.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-            }
+            mentorDm = Self.findDm(for: mentor, in: inbox.conversations)
         }
+    }
+
+    /// Prefer the authoritative peer-user-id match; name match is the fallback.
+    static func findDm(for mentor: MentorInfo.Mentor, in conversations: [ChatConversation]) -> ChatConversation? {
+        let dms = conversations.filter { $0.kind == "dm" }
+        return dms.first { $0.peerUserId == mentor.mentorUserId }
+            ?? dms.first {
+                $0.title?.compare(mentor.fullName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }
+    }
+
+    /// No DM yet → create (or fetch — the server dedupes) the 1:1 with the
+    /// discipler via POST /chat/dms, then return the conversation to open.
+    func startMentorDm() async -> ChatConversation? {
+        guard let mentor = info?.mentor, !startingDm else { return nil }
+        startingDm = true
+        defer { startingDm = false }
+        guard let id = try? await MemberAPI.createDm(peerUserId: mentor.mentorUserId) else { return nil }
+        // Prefer the real inbox row (preview, unread); fall back to a stub the
+        // thread screen hydrates from GET /chat/conversations/{id}.
+        let inbox = try? await MemberAPI.chatInbox()
+        let dm = inbox?.conversations.first { $0.conversationId == id } ?? ChatConversation(
+            conversationId: id, kind: "dm", isPublic: false, title: mentor.fullName,
+            topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+            lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: mentor.avatarUrl,
+            peerUserId: mentor.mentorUserId)
+        mentorDm = dm
+        return dm
     }
 }
 
 struct MentorView: View {
     @StateObject private var vm = MentorViewModel()
     @Environment(\.dismiss) private var dismiss
+    /// Programmatic push of the freshly created discipler DM.
+    @State private var openCreatedDm = false
+    @State private var dmError = false
 
     var body: some View {
         ZStack {
@@ -68,6 +99,10 @@ struct MentorView: View {
         // Lets the Message CTA push the discipler's DM thread from this stack
         // (only the Chat tab's own stack registers this destination otherwise).
         .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
+        // Programmatic push for the just-created DM (POST /chat/dms on tap).
+        .navigationDestination(isPresented: $openCreatedDm) {
+            if let dm = vm.mentorDm { ChatThreadView(conversation: dm) }
+        }
         .task { if vm.info == nil { await vm.load() } }
     }
 
@@ -171,26 +206,49 @@ struct MentorView: View {
     }
 
     // The Figma Message quick button — a real deep link into the discipler's DM
-    // when the inbox has one; otherwise an honest pointer to Nuru Connect.
+    // when the inbox has one; otherwise the tap CREATES the 1:1 (POST /chat/dms,
+    // server-deduped) and pushes the new thread.
     // (Call / Reschedule from the make are omitted: the mentor contract carries
     // no phone number and there is no rescheduling endpoint.)
     @ViewBuilder private func messageCTA(_ m: MentorInfo.Mentor) -> some View {
         if let dm = vm.mentorDm {
-            NavigationLink(value: dm) { messageLabel }
+            NavigationLink(value: dm) { messageLabel(busy: false) }
                 .buttonStyle(.pressable)
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
         } else {
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                messageLabel.opacity(0.45)
-                Text("No chat with \(firstName(m.fullName)) yet — start one from Nuru Connect.")
-                    .font(.nMicro).foregroundStyle(Nuru.faint)
+                Button {
+                    Haptics.tap()
+                    dmError = false
+                    Task {
+                        if await vm.startMentorDm() != nil {
+                            Haptics.success()
+                            openCreatedDm = true
+                        } else {
+                            Haptics.error()
+                            dmError = true
+                        }
+                    }
+                } label: {
+                    messageLabel(busy: vm.startingDm)
+                }
+                .buttonStyle(.pressable)
+                .disabled(vm.startingDm)
+                if dmError {
+                    Text("Couldn't start the chat with \(firstName(m.fullName)) — please try again.")
+                        .font(.nMicro).foregroundStyle(Nuru.faint)
+                }
             }
         }
     }
 
-    private var messageLabel: some View {
+    private func messageLabel(busy: Bool) -> some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.messageCircle, size: 15, color: Nuru.navy)
+            if busy {
+                ProgressView().tint(Nuru.navy).scaleEffect(0.8)
+            } else {
+                Icon(.messageCircle, size: 15, color: Nuru.navy)
+            }
             Text("Message").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity, minHeight: 44)
