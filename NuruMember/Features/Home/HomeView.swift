@@ -375,8 +375,10 @@ struct HomeView: View {
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
                 .lineLimit(1).minimumScaleFactor(0.8)   // long first names shrink, never wrap
                 .padding(.top, 10)
-            Text(vm.greetingLine).font(.inter(13)).foregroundStyle(Color(hex: 0x68758A))
-                .fixedSize(horizontal: false, vertical: true)
+            // Nuru's daily word — a blessing written for THIS member (grounded in
+            // their streak/level/prayers server-side, cached per day). It deserves
+            // more than flat gray: a hanging gold quote and a settled serif voice.
+            HomePersonalWord(text: vm.greetingLine)
                 .padding(.top, 6)
             if let a = active {
                 Text("Level \(a.levelNumber) · \(a.completedModules) of \(a.totalModules) modules · \(vm.streak > 0 ? "\(vm.streak)d streak" : "Begin today")")
@@ -392,9 +394,9 @@ struct HomeView: View {
         .padding(.top, 60)   // clears the status bar / Dynamic Island (header is full-bleed)
         .padding(.bottom, 16)
         .background(
-            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            LinearGradient(colors: [headerPalette.top, headerPalette.bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 40, y: -60)
+                    Circle().fill(Nuru.gold.opacity(headerPalette.glow)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 40, y: -60)
                 }
         )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
@@ -648,10 +650,19 @@ struct HomeView: View {
             Text("\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")")
                 .font(.inter(13, .semibold)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.sm)
             if let reason = vm.verseReason, !reason.isEmpty {
-                HStack(spacing: 5) {
+                // The season ribbon — Nuru discerned this from THEIR recent
+                // prayers and reactions, so it reads as a personal choosing,
+                // not an algorithm's footnote.
+                HStack(spacing: 6) {
                     Icon(.sparkles, size: 12, color: Nuru.goldChipText)
-                    Text("Chosen for you · \(reason)").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
-                }.padding(.top, 6)
+                    Text("Chosen for your season — \(reason)")
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+                .padding(.top, 8)
             }
             // One row (Figma): reactions left, Save + Share pushed right.
             HStack(spacing: 5) {
@@ -1400,7 +1411,16 @@ struct HomeView: View {
     // MARK: 16 — Encouragement ("one reflection away" / "beautifully done")
 
     private var oneReflectionBanner: some View {
-        HomeEncouragementCard(rhythmComplete: vm.rhythm.doneCount == 3)
+        HomeEncouragementCard(
+            firstName: firstName,
+            streak: vm.streak,
+            rhythmDone: vm.rhythm.doneCount,
+            wordDone: vm.rhythm.word,
+            prayerDone: vm.rhythm.prayer,
+            modulesLeft: active.map { max(0, $0.totalModules - $0.completedModules) },
+            levelNumber: active?.levelNumber,
+            cellPrayerCount: vm.prayerPosts.count
+        )
     }
 
     // MARK: 17 — Your cohort (label outside; belonging cue when not in a cell)
@@ -1508,13 +1528,32 @@ struct HomeView: View {
         return total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
     }
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
+    private var isSunday: Bool { Calendar.current.component(.weekday, from: Date()) == 1 }
     private var greeting: String {
+        if isSunday { return "Happy Lord's Day" }
         let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
+        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Rest well"
     }
     private func todayKicker() -> String {
+        if isSunday {
+            let f = DateFormatter(); f.dateFormat = "MMM d"
+            return "SUNDAY · THE LORD'S DAY · \(f.string(from: Date()).uppercased())"
+        }
         let f = DateFormatter(); f.dateFormat = "EEEE · MMM d"
         return f.string(from: Date()).uppercased() + " · EAT"
+    }
+    /// The header breathes with the day — dawn rose-gold, plain daylight cream,
+    /// a deeper golden hour, and a quieter dusk. Same palette family as the
+    /// Figma header, just tilted by the hour; Sundays glow a touch warmer.
+    private var headerPalette: (top: Color, bottom: Color, glow: Double) {
+        let h = Calendar.current.component(.hour, from: Date())
+        let base: (UInt32, UInt32, Double) =
+            h < 5  ? (0xEFEDEA, 0xE5E0D6, 0.16) :   // deep night — quiet
+            h < 9  ? (0xF9F1E7, 0xF3E3CC, 0.34) :   // dawn — rose-gold
+            h < 16 ? (0xF6F4EF, 0xEFE8DA, 0.27) :   // daylight — the Figma cream
+            h < 19 ? (0xF7EFDD, 0xEEDFC2, 0.40) :   // golden hour
+                     (0xF1EEE8, 0xE7E1D4, 0.20)     // dusk
+        return (Color(hex: base.0), Color(hex: base.1), base.2 + (isSunday ? 0.08 : 0))
     }
     private func durationLabel(_ sec: Int) -> String {
         let m = sec / 60, s = sec % 60

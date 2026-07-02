@@ -353,23 +353,84 @@ struct HomeWeekChain: View {
 
 // MARK: - Encouragement ("You're one reflection away…" / "Beautifully done today.")
 
+/// Nuru's daily word in the header — the AI blessing written for this member.
+/// A hanging gold quote mark + settled italic serif so it reads as a spoken
+/// word, not UI copy. Settles in gently once per appearance.
+struct HomePersonalWord: View {
+    let text: String
+    var body: some View {
+        HStack(alignment: .top, spacing: 7) {
+            Text("“").font(.fraunces(24, .semibold)).foregroundStyle(HomeFig.gold)
+                .offset(y: -2).accessibilityHidden(true)
+            Text(text)
+                .font(.fraunces(14)).italic()
+                .foregroundStyle(Color(hex: 0x475569))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .gentleEntrance()
+    }
+}
+
+/// The daily exhortation — grounded ONLY in the member's real walk (streak,
+/// rhythm, module distance, their cell's prayers) and rotated deterministically
+/// by day-of-year so it stays fresh across days but steady within one.
 struct HomeEncouragementCard: View {
-    let rhythmComplete: Bool
+    let firstName: String
+    let streak: Int
+    let rhythmDone: Int        // 0–3 of prayer/word/reflection met today
+    let wordDone: Bool
+    let prayerDone: Bool
+    let modulesLeft: Int?      // remaining in the active level (nil = no enrollment)
+    let levelNumber: Int?
+    let cellPrayerCount: Int   // prayer-wall posts currently on the member's wall feed
+
+    private var line: String {
+        var candidates: [String] = []
+        if rhythmDone == 3 {
+            candidates.append("Beautifully done today, \(firstName) — prayer, word and reflection, all met.")
+        }
+        if streak >= 2 {
+            candidates.append("Day \(streak) of your walk, \(firstName). Small faithfulness is building something eternal.")
+        }
+        if let left = modulesLeft, let lvl = levelNumber, (1...3).contains(left) {
+            candidates.append("Only \(left) module\(left == 1 ? "" : "s") between you and the Level \(lvl) gate, \(firstName).")
+        }
+        if !wordDone {
+            candidates.append("A single verse can reset the whole day — yours is waiting above.")
+        }
+        if !prayerDone {
+            candidates.append("Two quiet minutes with the Father change the next twelve hours.")
+        }
+        if cellPrayerCount > 0 {
+            candidates.append("Your community lifted \(cellPrayerCount) prayer\(cellPrayerCount == 1 ? "" : "s") — stand with one of them today.")
+        }
+        if candidates.isEmpty {
+            candidates.append("You're one reflection away from completing this week's rhythm.")
+        }
+        let day = Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0
+        return candidates[day % candidates.count]
+    }
+
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Icon(.sparkles, size: 16, color: HomeFig.gold)
                 .frame(width: 32, height: 32)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            Text(rhythmComplete
-                 ? "Beautifully done today."
-                 : "You're one reflection away from completing this week's rhythm.")
+            Text(line)
                 .font(.fraunces(14)).italic().foregroundStyle(Color(hex: 0x1F2937))
+                .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(14)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .overlay(alignment: .leading) {
+            // A whisper of gold along the spine — this card speaks, not lists.
+            RoundedRectangle(cornerRadius: 2).fill(HomeFig.gold.opacity(0.55))
+                .frame(width: 3).padding(.vertical, 12)
+        }
     }
 }
 
