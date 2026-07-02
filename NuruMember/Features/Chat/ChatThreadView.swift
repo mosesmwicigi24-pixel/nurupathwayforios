@@ -6,6 +6,7 @@
 // (plus · message · gold sparkle · smile · navy mic / gold send).
 // All data is real (MemberAPI). The make's voice recorder, attachment and
 // emoji pickers are mock-only and deliberately not reproduced here.
+import Combine
 import SwiftUI
 import UIKit
 
@@ -207,6 +208,9 @@ struct ChatThreadView: View {
     @StateObject private var vm: ChatThreadViewModel
     @EnvironmentObject var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
+    /// Tracked via keyboardWillShow/Hide so the composer's tab-bar clearance is
+    /// dropped while typing (the keyboard covers the tab bar anyway).
+    @State private var keyboardVisible = false
 
     init(conversation: ChatConversation) { _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation)) }
 
@@ -220,6 +224,12 @@ struct ChatThreadView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.thread == nil { await vm.load() } }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            keyboardVisible = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            keyboardVisible = false
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -228,13 +238,36 @@ struct ChatThreadView: View {
         } else if let error = vm.error, vm.thread == nil {
             ThreadErrorState(message: error) { Task { await vm.load() } }
         } else {
-            MessagesList(rows: buildRows(vm.allMessages, multi: vm.isSpace)) { m, emoji in
+            // Quick replies + composer live in the scroll's bottom safe-area
+            // inset: keyboard avoidance is automatic (the bar floats directly on
+            // top of the keyboard while typing), and when the keyboard is closed
+            // we pad past RootView's overlaid navy tab bar so both stay visible.
+            MessagesList(rows: buildRows(vm.allMessages, multi: vm.isSpace),
+                         keyboardVisible: keyboardVisible) { m, emoji in
                 Task { await vm.react(m, emoji) }
             }
+            .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
+        }
+    }
+
+    private var bottomBar: some View {
+        VStack(spacing: 0) {
             QuickReplyRow { reply in Task { await vm.send(reply) } }
             ComposerBar(draft: $vm.draft, sending: vm.sending,
                         myName: auth.profile?.fullName ?? "You") { Task { await vm.send() } }
         }
+        .padding(.bottom, keyboardVisible ? 0 : Self.tabBarClearance)
+        .background(Aurora.sectionBg)
+        .animation(.easeOut(duration: 0.22), value: keyboardVisible)
+    }
+
+    /// Height of the custom navy tab bar (drawn by RootView over pushed screens)
+    /// above the bottom safe area — Nuru.tabBarSpace minus the home-indicator
+    /// inset the safe-area inset already clears.
+    private static var tabBarClearance: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
+        return max(Nuru.tabBarSpace - inset, 56)
     }
 }
 
@@ -328,6 +361,7 @@ private struct ThreadHeader: View {
 
 private struct MessagesList: View {
     let rows: [ThreadRow]
+    let keyboardVisible: Bool
     var onReact: (ChatMessage, String) -> Void
 
     var body: some View {
@@ -349,7 +383,12 @@ private struct MessagesList: View {
                 .padding(.vertical, Nuru.S.screen)
             }
             .background(Aurora.canvas)
+            .scrollDismissesKeyboard(.interactively)
             .onChange(of: rows.count) { _, _ in scrollToEnd(proxy) }
+            // Keep the latest messages in view when the keyboard slides up.
+            .onChange(of: keyboardVisible) { _, visible in
+                if visible { scrollToEnd(proxy) }
+            }
             .onAppear { scrollToEnd(proxy, animated: false) }
         }
     }

@@ -109,8 +109,16 @@ struct NuruAssistantView: View {
                     }
                     .padding(.horizontal, 16).padding(.vertical, 16)
                 }
+                .scrollDismissesKeyboard(.interactively)
                 .onChange(of: vm.messages.count) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
                 .onChange(of: vm.typing) { _, _ in withAnimation { proxy.scrollTo("bottom", anchor: .bottom) } }
+                // Keep the latest turns visible when the keyboard slides up
+                // (the composer itself already rides the keyboard: it sits at
+                // the bottom of the screen VStack and nothing disables SwiftUI's
+                // keyboard safe-area avoidance on this fullScreenCover).
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                    withAnimation { proxy.scrollTo("bottom", anchor: .bottom) }
+                }
             }
             composer
         }
