@@ -492,7 +492,10 @@ private struct PWModuleRow: View {
                     else { Icon(.lock, size: 13, color: PW.ink3) }
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(module.title).font(.inter(13, active ? .bold : .medium)).foregroundStyle(locked ? PW.ink3 : PW.navy).lineLimit(1)
+                    // Locked titles stay legible ink (only the caption goes faint) —
+                    // #8B95A5-on-white washed the whole card out on device.
+                    Text(module.title).font(.inter(13, active ? .bold : .medium))
+                        .foregroundStyle(locked ? PW.ink2 : PW.navy).lineLimit(1)
                     Text(done ? "Completed" : active ? "In progress · tap to continue" : "Locked")
                         .font(.inter(9, active ? .bold : .medium)).foregroundStyle(active ? PW.goldDeep : PW.ink3)
                 }
