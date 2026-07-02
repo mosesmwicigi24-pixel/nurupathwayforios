@@ -43,16 +43,25 @@ struct GivingReceiptView: View {
         .task { if vm.detail == nil { await vm.load() } }
     }
 
+    // Cream Figma header — consistent with the rest of the ScreenShell chrome.
     private var header: some View {
         HStack(spacing: Nuru.S.md) {
             Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: .white).frame(width: 40, height: 40).background(Color.white.opacity(0.10), in: Circle())
+                Icon(.arrowLeft, size: 18, color: Nuru.navy).frame(width: 40, height: 40)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
-            Text("Receipt").font(.fraunces(20, .semibold)).foregroundStyle(.white)
+            Text("Receipt").font(.fraunces(20, .semibold)).foregroundStyle(Nuru.navy)
             Spacer()
         }
-        .padding(.horizontal, Nuru.S.lg).padding(.top, 54).padding(.bottom, Nuru.S.lg)
-        .background(Nuru.navy)
+        .padding(.horizontal, Nuru.S.lg).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.22)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 40, y: -60)
+                }
+        )
+        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
     private func content(_ d: GivingDetail) -> some View {

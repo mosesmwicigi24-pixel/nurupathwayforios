@@ -49,6 +49,24 @@ Still navy/other (image-hero or Figma "E6 placeholder", left intentionally):
 EventDetail, AnnouncementDetail, CellInfo, LevelDetail, Module, Calendar,
 PrayerWall (deliberate gradient hero).
 
+### Multi-agent parity sprint (2026-07-02, six parallel tracks)
+All build-verified in one integration pass; committed per track:
+- **EventDetail** → exact Figma (16:11 hero + real covers, category meta tiles,
+  Figma RSVP palette, LIVE/Completed pills, ShareLink; mock roster/QR skipped).
+- **ChatThread** → full "Aurora" (light bubbles, 8-color sender-accent hash, run
+  grouping, in-bubble reaction footers, day separators, prayer chip; cream header).
+- **Module + Quiz** → Figma one-question pager + ceremonies, server-authoritative
+  scoring preserved; parchment lesson page, mock audio removed.
+- **Give** → compose flow + annual statement from real history (receipt got the
+  cream header; full receipt-ceremony restyle = open follow-up).
+- **Day reader / Verse library / Gifts assessment** → ReadingDayReader serif
+  passage + pull-quote; practice sheet; one-question Likert flow, server scoring.
+- **Security/speed sweep** → ThisDeviceOnly keychain (no iCloud sync), dedicated
+  URLSession (fail-fast, no cookies), ImageIO downsampling >2400px, WAL/SHM file
+  protection; verified single-flight refresh, zero logging, no ATS exceptions.
+- Also: Login brand mark exact; Notifications rows exact (reward gold tiles,
+  unread accent bar, category tones).
+
 ### Closed this session
 - **Pathway** was the wrong Figma component (levels-overview). Rebuilt to `PathwayHub`
   (hero for current level → journey rail → inline real module trail → milestones →
