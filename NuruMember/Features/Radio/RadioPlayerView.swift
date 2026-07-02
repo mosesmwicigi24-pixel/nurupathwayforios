@@ -70,6 +70,12 @@ final class RadioStationModel: ObservableObject {
     }
     /// Ended shows WITH a hosted recording — playable anytime (server order kept).
     var recordedShows: [RadioProgram] { programs.filter { $0.recorded } }
+    /// Everything else — aired shows with no recording (and any unknown status).
+    /// Still listed so the station never looks empty while programs exist; members
+    /// can open them to read/leave comments even though there's nothing to play.
+    var pastShows: [RadioProgram] {
+        programs.filter { !$0.live && $0.status != "scheduled" && !$0.recorded }
+    }
 
     func load() async {
         loading = programs.isEmpty
@@ -146,6 +152,10 @@ struct RadioPlayerView: View {
                 if !vm.recordedShows.isEmpty {
                     RadioSectionHeader(title: "RECORDED SHOWS")
                     ForEach(vm.recordedShows) { p in row(p) }
+                }
+                if !vm.pastShows.isEmpty {
+                    RadioSectionHeader(title: "PAST SHOWS")
+                    ForEach(vm.pastShows) { p in row(p) }
                 }
             }
             .padding(.bottom, 32)
@@ -232,9 +242,12 @@ private struct RadioStatusPill: View {
                 Icon(.clock, size: 10, color: .white)
                 Text("UP NEXT\(program.scheduledAt.map { " · " + radioDate($0) } ?? "")")
                     .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(.white)
-            } else {
+            } else if program.recorded {
                 Icon(.play, size: 10, color: Nuru.gold)
                 Text("RECORDED").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.gold)
+            } else {
+                Text("AIRED").font(.inter(10, .bold)).kerning(1.2)
+                    .foregroundStyle(.white.opacity(0.7))
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 5)
@@ -243,7 +256,7 @@ private struct RadioStatusPill: View {
     private var pillBackground: Color {
         if program.live { return Color(hex: 0xDC2626) }
         if program.status == "scheduled" { return Color.white.opacity(0.14) }
-        return Nuru.gold.opacity(0.16)
+        return program.recorded ? Nuru.gold.opacity(0.16) : Color.white.opacity(0.10)
     }
 }
 
