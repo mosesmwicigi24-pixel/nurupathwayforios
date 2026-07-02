@@ -1,7 +1,16 @@
-// Prayer Journal — the native port of screens/PrayerJournalScreen.tsx. A private
-// list of prayers the member can add, edit, mark answered, and delete. Entries
-// are user-scoped server-side; writes are idempotent on entry_id. There is no
-// prayer-score endpoint, so the score is computed client-side from the entries.
+// Prayer Journal — the native port of the UPDATED Figma PrayerJournalScreen.
+// A private list of prayers the member can add, edit, mark answered, and delete.
+// Entries are user-scoped server-side; writes are idempotent on entry_id.
+//
+// Data honesty vs the Figma comp: PrayerEntry (/me/prayers) carries only
+// title/body/answered/notes/dates, so the comp's social layer (category tag,
+// interceding counts, loves, comments, Love/Comment/Share row) has no backing
+// fields and is omitted — the card keeps the design's layout language with the
+// real actions (mark answered / edit / delete) instead. There is also no
+// MemberAPI.sharePrayerToWall, so no Share affordance is rendered. The navy
+// "this week" card is driven from real entry created-at days: distinct days
+// journaled this week, the current daily journaling streak, and live
+// active / this-week / answered counts.
 import SwiftUI
 
 @MainActor
@@ -77,44 +86,117 @@ final class PrayerJournalViewModel: ObservableObject {
             .sorted { $0.createdAt > $1.createdAt }
     }
 
-    // MARK: Computed prayer score (no endpoint) — grows as you pray and journal.
-    var answeredCount: Int { entries.filter(\.isAnswered).count }
-    var score: Int { min(entries.count * 8 + answeredCount * 6, 100) }
-    var band: String {
-        switch score {
-        case ..<25: return "Just beginning"
-        case ..<50: return "Growing"
-        case ..<75: return "Faithful"
-        default:    return "Devoted"
+    // MARK: Derived stats — all computed from real entry timestamps (no endpoint).
+
+    var active: [PrayerEntry] { entries.filter { !$0.isAnswered } }
+    var answered: [PrayerEntry] { entries.filter(\.isAnswered) }
+
+    /// Start-of-day for every day the member wrote an entry.
+    private var journaledDays: Set<Date> {
+        let cal = Calendar.current
+        return Set(entries.compactMap { prayerDate($0.createdAt).map(cal.startOfDay(for:)) })
+    }
+
+    /// Distinct days with at least one entry in the last 7 days (incl. today).
+    var daysJournaledThisWeek: Int {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        let days = journaledDays
+        return (0..<7).reduce(0) { acc, off in
+            guard let d = cal.date(byAdding: .day, value: -off, to: today) else { return acc }
+            return acc + (days.contains(d) ? 1 : 0)
         }
     }
+
+    /// Entries written in the last 7 days.
+    var thisWeekCount: Int {
+        let cal = Calendar.current
+        guard let cutoff = cal.date(byAdding: .day, value: -6, to: cal.startOfDay(for: Date())) else { return 0 }
+        return entries.filter { (prayerDate($0.createdAt) ?? .distantPast) >= cutoff }.count
+    }
+
+    /// Consecutive days journaled, ending today (or yesterday if today is still open).
+    var streak: Int {
+        let cal = Calendar.current
+        let days = journaledDays
+        var cursor = cal.startOfDay(for: Date())
+        if !days.contains(cursor) {
+            guard let y = cal.date(byAdding: .day, value: -1, to: cursor), days.contains(y) else { return 0 }
+            cursor = y
+        }
+        var n = 0
+        while days.contains(cursor) {
+            n += 1
+            guard let prev = cal.date(byAdding: .day, value: -1, to: cursor) else { break }
+            cursor = prev
+        }
+        return n
+    }
 }
+
+// MARK: - Date helpers (tolerate fractional-second and plain ISO stamps)
+
+private func prayerDate(_ iso: String) -> Date? {
+    ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+}
+
+/// "today" / "2 days ago" / "1 week ago" / "Mar 12" — the comp's casual stamp.
+private func relativeLabel(_ iso: String) -> String {
+    guard let d = prayerDate(iso) else { return "" }
+    let cal = Calendar.current
+    let days = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: Date())).day ?? 0
+    switch days {
+    case ..<1:  return "today"
+    case 1:     return "1 day ago"
+    case ..<7:  return "\(days) days ago"
+    case ..<14: return "1 week ago"
+    case ..<31: return "\(days / 7) weeks ago"
+    default:    return shortDate(d)
+    }
+}
+
+private func shortDate(_ d: Date) -> String {
+    let f = DateFormatter(); f.dateFormat = "MMM d"
+    return f.string(from: d)
+}
+
+// MARK: - Screen
+
+private enum PrayerTab { case active, answered }
 
 struct PrayerJournalView: View {
     @StateObject private var vm = PrayerJournalViewModel()
     @State private var editing: PrayerDraft?
-    @Environment(\.dismiss) private var dismiss
+    @State private var tab: PrayerTab = .active
 
     var body: some View {
-        ZStack(alignment: .top) {
+        ZStack {
             Nuru.paper.ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    header
-                    LoadStateView(loading: vm.loading && vm.entries.isEmpty,
-                                  isEmpty: false, error: vm.error,
-                                  emptyText: "", retry: { Task { await vm.load() } }) {
+            VStack(spacing: 0) {
+                header
+                // isEmpty gates only the error branch: an empty-but-loaded journal
+                // falls through to the designed per-tab empty card below.
+                LoadStateView(loading: vm.loading && vm.entries.isEmpty,
+                              isEmpty: vm.error != nil && vm.entries.isEmpty,
+                              error: vm.error, emptyText: "",
+                              retry: { Task { await vm.load() } }) {
+                    ScrollView(showsIndicators: false) {
                         VStack(spacing: Nuru.S.base) {
-                            scoreCard
-                            PButton(title: "New prayer", variant: .gold) { editing = PrayerDraft() }
-                            if vm.entries.isEmpty {
-                                emptyState
+                            PrayerPulseCard(streak: vm.streak,
+                                            daysThisWeek: vm.daysJournaledThisWeek,
+                                            activeCount: vm.active.count,
+                                            weekCount: vm.thisWeekCount,
+                                            answeredCount: vm.answered.count)
+                            PrayerTabs(tab: $tab, activeCount: vm.active.count, answeredCount: vm.answered.count)
+                            let list = tab == .active ? vm.active : vm.answered
+                            if list.isEmpty {
+                                EmptyPrayers(tab: tab)
                             } else {
-                                ForEach(vm.entries) { e in
-                                    PrayerCard(entry: e,
-                                               toggle: { Task { await vm.toggleAnswered(e) } },
-                                               edit: { editing = PrayerDraft(entry: e) },
-                                               remove: { Task { await vm.delete(e) } })
+                                ForEach(list) { e in
+                                    JournalCard(entry: e,
+                                                toggle: { Task { await vm.toggleAnswered(e) } },
+                                                edit: { editing = PrayerDraft(entry: e) },
+                                                remove: { Task { await vm.delete(e) } })
                                 }
                             }
                         }
@@ -122,37 +204,43 @@ struct PrayerJournalView: View {
                         .padding(.top, Nuru.S.base)
                         .padding(.bottom, Nuru.tabBarSpace)
                     }
+                    .refreshable { await vm.load() }
                 }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .refreshable { await vm.load() }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.entries.isEmpty { await vm.load() } }
         .sheet(item: $editing) { draft in
-            PrayerEditor(draft: draft) { title, body, answered in
+            PrayerComposerSheet(draft: draft) { title, body, answered in
                 Task { await vm.upsert(entryId: draft.entryId, title: title, body: body, answered: answered) }
             }
         }
     }
 
-    // MARK: Navy header
-
+    // Cream Figma ScreenShell header: back · tracked kicker · gold compose, serif title.
     private var header: some View {
-        HStack(alignment: .center, spacing: Nuru.S.md) {
-            Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.navy)
-                    .frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            HStack(alignment: .center, spacing: Nuru.S.sm) {
+                BackButton()
+                Spacer(minLength: 0)
+                Text("\(vm.active.count) ACTIVE · \(vm.answered.count) ANSWERED")
+                    .font(.inter(11, .bold)).tracking(1.8)
+                    .foregroundStyle(Color(hex: 0x9A7A2A))
+                    .lineLimit(1).minimumScaleFactor(0.75)
+                Spacer(minLength: 0)
+                Button { editing = PrayerDraft() } label: {
+                    Icon(.plus, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("New prayer")
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Prayer journal")
-                    .font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
-                Text("Only you can read this — always.")
-                    .font(.nMicro).foregroundStyle(Color(hex: 0x68758A))
-            }
-            Spacer(minLength: 0)
+            Text("Prayer journal")
+                .font(.fraunces(24, .semibold))
+                .foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
@@ -163,170 +251,395 @@ struct PrayerJournalView: View {
                 .overlay(alignment: .topTrailing) {
                     Circle().fill(Nuru.gold.opacity(0.25)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
                 }
+                .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+                .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
                 .ignoresSafeArea(edges: .top)
         )
-        .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
+}
 
-    // MARK: Prayer score card
+private struct BackButton: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        Button { dismiss() } label: {
+            Icon(.arrowLeft, size: 18, color: Nuru.navy)
+                .frame(width: 40, height: 40)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
 
-    private var scoreCard: some View {
-        Card(padding: Nuru.S.base) {
-            HStack(alignment: .center, spacing: Nuru.S.base) {
-                ScoreRing(score: vm.score)
+// MARK: - Navy "this week" stats card (real data: journaled days, streak, counts)
+
+private struct PrayerPulseCard: View {
+    let streak: Int
+    let daysThisWeek: Int
+    let activeCount: Int
+    let weekCount: Int
+    let answeredCount: Int
+    @State private var grown = false
+
+    private let gold = Color(hex: 0xC9A227)
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            HStack(alignment: .top, spacing: Nuru.S.sm) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("PRAYER SCORE")
-                        .font(.inter(11, .semibold)).kerning(1.2)
-                        .foregroundStyle(Nuru.gold)
-                    Text(vm.band)
-                        .font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
-                    Text("Grows as you pray and journal — private to you")
-                        .font(.nCaption).foregroundStyle(Nuru.faint)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: Nuru.S.sm) {
+                        Text("THIS WEEK")
+                            .font(.inter(10, .bold)).tracking(2.2)
+                            .foregroundStyle(gold)
+                        if streak > 0 { streakChip }
+                    }
+                    Text("Your prayer rhythm")
+                        .font(.fraunces(21, .medium))
+                        .foregroundStyle(.white)
                 }
                 Spacer(minLength: 0)
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(gold.opacity(0.18))
+                    .frame(width: 48, height: 48)
+                    .overlay(Icon(.handHeart, size: 22, color: gold))
+            }
+
+            // Weekly goal bar — days journaled out of 7, honest to created-at data.
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Journaled \(daysThisWeek) of 7 days")
+                        .font(.inter(10, .semibold))
+                        .foregroundStyle(Color.white.opacity(0.7))
+                    Spacer(minLength: Nuru.S.sm)
+                    Text(daysThisWeek >= 7 ? "A full week 🙌" : "\(7 - daysThisWeek) to a full week 🙌")
+                        .font(.inter(10, .semibold))
+                        .foregroundStyle(gold)
+                }
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(Color.white.opacity(0.16))
+                        Capsule()
+                            .fill(LinearGradient(colors: [gold, Color(hex: 0xE6C068)],
+                                                 startPoint: .leading, endPoint: .trailing))
+                            .frame(width: grown ? geo.size.width * CGFloat(min(daysThisWeek, 7)) / 7 : 0)
+                    }
+                }
+                .frame(height: 6)
+            }
+
+            HStack(spacing: Nuru.S.sm) {
+                StatTile(value: activeCount, label: "active")
+                StatTile(value: weekCount, label: "this week")
+                StatTile(value: answeredCount, label: "answered")
             }
         }
+        .padding(Nuru.S.base)
+        .background(
+            LinearGradient(colors: [Color(hex: 0x060F1C), Color(hex: 0x0A1628), Color(hex: 0x11365A)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .shadow(color: Color(hex: 0x0A2540).opacity(0.35), radius: 14, x: 0, y: 8)
+        .onAppear { withAnimation(.easeOut(duration: 0.9)) { grown = true } }
     }
 
-    // MARK: Empty state
+    private var streakChip: some View {
+        HStack(spacing: 4) {
+            Icon(.flame, size: 9, color: gold)
+            Text("\(streak)-day streak").font(.inter(9, .bold)).foregroundStyle(gold)
+        }
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .background(Color.white.opacity(0.10), in: Capsule())
+        .overlay(Capsule().stroke(Color.white.opacity(0.15), lineWidth: 1))
+    }
+}
 
-    private var emptyState: some View {
-        Card {
-            VStack(spacing: Nuru.S.sm) {
-                Icon(.handHeart, size: 28, color: Nuru.gold)
-                Text("No prayers yet")
-                    .font(.nHeading).foregroundStyle(Nuru.ink)
-                Text("Tap “New prayer” to write your first one. Only you can read it.")
-                    .font(.nCaption).foregroundStyle(Nuru.muted)
-                    .multilineTextAlignment(.center)
+private struct StatTile: View {
+    let value: Int
+    let label: String
+    var body: some View {
+        VStack(spacing: 2) {
+            Text("\(value)").font(.fraunces(18, .medium)).foregroundStyle(Color(hex: 0xC9A227))
+            Text(label).font(.inter(9, .medium)).foregroundStyle(Color.white.opacity(0.65))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, Nuru.S.sm)
+        .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+}
+
+// MARK: - Active / Answered segmented control
+
+private struct PrayerTabs: View {
+    @Binding var tab: PrayerTab
+    let activeCount: Int
+    let answeredCount: Int
+
+    var body: some View {
+        HStack(spacing: 4) {
+            tabButton(.active, "Active", activeCount)
+            tabButton(.answered, "Answered", answeredCount)
+        }
+        .padding(4)
+        .background(Color.white, in: Capsule())
+        .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow(0.6)
+    }
+
+    private func tabButton(_ t: PrayerTab, _ label: String, _ count: Int) -> some View {
+        let on = tab == t
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) { tab = t }
+        } label: {
+            HStack(spacing: 6) {
+                Text(label)
+                    .font(.inter(11, .bold))
+                    .foregroundStyle(on ? .white : Color(hex: 0x68758A))
+                Text("\(count)")
+                    .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 18, minHeight: 16)
+                    .background(on ? Color(hex: 0xC9A227) : Nuru.surface, in: Capsule())
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, Nuru.S.base)
+            .padding(.vertical, Nuru.S.sm)
+            .background(on ? Nuru.navy : Color.clear, in: Capsule())
         }
+        .buttonStyle(.plain)
     }
 }
 
-/// The gold progress ring on the left of the score card: "{score}/100" stacked.
-private struct ScoreRing: View {
-    let score: Int
+// MARK: - Empty state (per tab)
+
+private struct EmptyPrayers: View {
+    let tab: PrayerTab
     var body: some View {
-        ZStack {
-            Circle().stroke(Nuru.goldTint, lineWidth: 4)
-            Circle()
-                .trim(from: 0, to: CGFloat(score) / 100)
-                .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                .rotationEffect(.degrees(-90))
-            VStack(spacing: -1) {
-                Text("\(score)").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.ink)
-                Text("/100").font(.inter(9, .medium)).foregroundStyle(Nuru.faint)
+        Card {
+            VStack(spacing: Nuru.S.sm) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Nuru.surface)
+                    .frame(width: 48, height: 48)
+                    .overlay(Icon(.handHeart, size: 20, color: Nuru.gold))
+                Text(tab == .active ? "No active prayers yet" : "No answered prayers yet")
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Text("Bring your requests before Him.")
+                    .font(.inter(12, .regular)).foregroundStyle(Color(hex: 0x68758A))
             }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Nuru.S.lg)
         }
-        .frame(width: 64, height: 64)
     }
 }
 
-/// A new-or-existing prayer being edited in the sheet.
-struct PrayerDraft: Identifiable {
-    let entryId: String
-    var title: String
-    var body: String
-    var answered: Bool
-    var id: String { entryId }
+// MARK: - Prayer card
 
-    init() { entryId = UUID().uuidString; title = ""; body = ""; answered = false }
-    init(entry: PrayerEntry) {
-        entryId = entry.entryId; title = entry.title ?? ""; body = entry.body; answered = entry.isAnswered
-    }
-}
-
-private struct PrayerCard: View {
+private struct JournalCard: View {
     let entry: PrayerEntry
     let toggle: () -> Void
     let edit: () -> Void
     let remove: () -> Void
 
     var body: some View {
-        Card(padding: Nuru.S.base) {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(entry.title?.isEmpty == false ? entry.title! : "Prayer")
-                        .font(.inter(16, .bold)).foregroundStyle(Nuru.ink)
-                    Spacer(minLength: Nuru.S.sm)
-                    Text(prayerDate)
-                        .font(.nMicro).foregroundStyle(Nuru.gold)
+        VStack(alignment: .leading, spacing: 0) {
+            // Header: avatar disc + "You · 2 days ago"
+            HStack(alignment: .center, spacing: Nuru.S.md) {
+                Circle()
+                    .fill(LinearGradient(colors: [Nuru.gold, Nuru.goldLo],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 44, height: 44)
+                    .overlay(Text("ME").font(.inter(12, .bold)).foregroundStyle(.white))
+                    .shadow(color: Nuru.gold.opacity(0.4), radius: 6, x: 0, y: 4)
+                HStack(spacing: 6) {
+                    Text("You").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                    Text("·").font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x9CA3AF))
+                    Text(relativeLabel(entry.isAnswered ? (entry.answeredAt ?? entry.createdAt) : entry.createdAt))
+                        .font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x9CA3AF))
                 }
-                Text(entry.body)
-                    .font(.nBody).foregroundStyle(Nuru.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                if entry.isAnswered, let note = entry.answeredNote, !note.isEmpty {
-                    Text(note).font(.nCaption).foregroundStyle(Nuru.successText)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                HStack(spacing: Nuru.S.base) {
-                    Button(action: toggle) {
-                        HStack(spacing: 4) {
-                            if entry.isAnswered {
-                                Icon(.checkCircle2, size: 13, color: Nuru.success)
-                                Text("Answered").font(.inter(13, .semibold)).foregroundStyle(Nuru.success)
-                            } else {
-                                Text("Mark answered").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                            }
-                        }
-                    }
-                    .buttonStyle(.plain)
-
-                    Button(action: edit) {
-                        Text("Share to wall ›").font(.inter(13, .semibold)).foregroundStyle(Nuru.gold)
-                    }
-                    .buttonStyle(.plain)
-
-                    Spacer(minLength: 0)
-
-                    Button(role: .destructive, action: remove) {
-                        Icon(.trash2, size: 15, color: Nuru.ink300)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.top, 2)
+                Spacer(minLength: 0)
             }
+            .padding(.horizontal, Nuru.S.base)
+            .padding(.top, Nuru.S.base)
+
+            // Serif title + body
+            VStack(alignment: .leading, spacing: 6) {
+                Text(entry.title?.isEmpty == false ? entry.title! : "Prayer")
+                    .font(.fraunces(15, .medium)).foregroundStyle(Nuru.navy)
+                Text(entry.body)
+                    .font(.inter(12, .regular)).foregroundStyle(Color(hex: 0x3A4A5F))
+                    .lineSpacing(4)
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Nuru.S.base)
+            .padding(.top, Nuru.S.md)
+
+            if entry.isAnswered {
+                answeredBanner
+                    .padding(.horizontal, Nuru.S.base)
+                    .padding(.top, Nuru.S.md)
+            } else {
+                markAnsweredButton
+                    .padding(.horizontal, Nuru.S.base)
+                    .padding(.top, Nuru.S.md)
+            }
+
+            // Hairline + real action row (design slot for Love/Comment/Share)
+            Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.md)
+            HStack(spacing: 0) {
+                RowAction(icon: .pencil, label: "Edit", action: edit)
+                if entry.isAnswered { RowAction(icon: .repeat, label: "Reopen", action: toggle) }
+                RowAction(icon: .trash2, label: "Delete", action: remove)
+            }
+            .padding(.horizontal, 4)
+            .padding(.vertical, 4)
         }
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
     }
 
-    private var prayerDate: String {
-        guard let date = ISO8601DateFormatter.nuru.date(from: entry.createdAt)
-                ?? ISO8601DateFormatter().date(from: entry.createdAt) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"
-        return f.string(from: date)
+    /// Green celebration banner for answered prayers (real: is_answered + answered_at/_note).
+    private var answeredBanner: some View {
+        HStack(alignment: .top, spacing: Nuru.S.sm) {
+            Circle().fill(Color(hex: 0x16A34A))
+                .frame(width: 28, height: 28)
+                .overlay(Icon(.check, size: 13, color: .white))
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Answered prayer 🎉")
+                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                Text(answeredSub)
+                    .font(.inter(9, .medium)).foregroundStyle(Color(hex: 0x16A34A))
+                if let note = entry.answeredNote, !note.isEmpty {
+                    Text(note)
+                        .font(.inter(10, .regular)).foregroundStyle(Color(hex: 0x166534))
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xDCFCE7), Color(hex: 0xBBF7D0)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+
+    private var answeredSub: String {
+        if let at = entry.answeredAt, let d = prayerDate(at) { return "He is faithful · \(shortDate(d))" }
+        return "He is faithful"
+    }
+
+    /// Full-width gold-outline action (the comp's "I'm praying" slot → real toggle).
+    private var markAnsweredButton: some View {
+        Button(action: toggle) {
+            HStack(spacing: 6) {
+                Icon(.checkCircle2, size: 13, color: Color(hex: 0x7A5A14))
+                Text("Mark answered").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+            .background(Color(hex: 0xC9A227).opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color(hex: 0xC9A227).opacity(0.27), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 }
 
-private struct PrayerEditor: View {
+private struct RowAction: View {
+    let icon: Lucide
+    let label: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Icon(icon, size: 15, color: Color(hex: 0x68758A))
+                Text(label).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x68758A))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, Nuru.S.sm)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Compose / edit sheet
+
+/// A new-or-existing prayer being edited in the sheet.
+struct PrayerDraft: Identifiable {
+    let entryId: String
+    let isNew: Bool
+    var title: String
+    var body: String
+    var answered: Bool
+    var id: String { entryId }
+
+    init() { entryId = UUID().uuidString; isNew = true; title = ""; body = ""; answered = false }
+    init(entry: PrayerEntry) {
+        entryId = entry.entryId; isNew = false
+        title = entry.title ?? ""; body = entry.body; answered = entry.isAnswered
+    }
+}
+
+private struct PrayerComposerSheet: View {
     @State var draft: PrayerDraft
     let onSave: (_ title: String, _ body: String, _ answered: Bool) -> Void
     @Environment(\.dismiss) private var dismiss
 
+    private var bodyEmpty: Bool { draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     var body: some View {
-        NavigationStack {
-            Form {
-                Section("Title (optional)") { TextField("Title", text: $draft.title) }
-                Section("Prayer") {
-                    TextField("What are you praying for?", text: $draft.body, axis: .vertical).lineLimit(3...10)
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            HStack {
+                Text(draft.isNew ? "New prayer" : "Edit prayer")
+                    .font(.fraunces(18, .medium)).foregroundStyle(Nuru.navy)
+                Spacer(minLength: 0)
+                Button { dismiss() } label: {
+                    Circle().fill(Nuru.surface)
+                        .frame(width: 32, height: 32)
+                        .overlay(Icon(.x, size: 15, color: Nuru.navy))
                 }
-                Section { Toggle("Answered", isOn: $draft.answered) }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Close")
             }
-            .navigationTitle(draft.body.isEmpty ? "New prayer" : "Edit prayer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
-                        onSave(draft.title, draft.body, draft.answered); dismiss()
-                    }
-                    .disabled(draft.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
+            TextField("Title (e.g. Wisdom for the new role)", text: $draft.title)
+                .font(.inter(14, .regular)).foregroundStyle(Nuru.navy)
+                .padding(Nuru.S.md)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            TextField("What are you asking for?", text: $draft.body, axis: .vertical)
+                .lineLimit(4...10)
+                .font(.inter(14, .regular)).foregroundStyle(Nuru.navy)
+                .padding(Nuru.S.md)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            HStack {
+                Text("Answered").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                Spacer(minLength: 0)
+                Toggle("", isOn: $draft.answered).labelsHidden().tint(Color(hex: 0xC9A227))
             }
+            .padding(Nuru.S.md)
+            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            Button {
+                onSave(draft.title, draft.body, draft.answered)
+                dismiss()
+            } label: {
+                Text(draft.isNew ? "Save prayer" : "Save changes")
+                    .font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain)
+            .disabled(bodyEmpty)
+            .opacity(bodyEmpty ? 0.5 : 1)
+            Spacer(minLength: 0)
         }
+        .padding(Nuru.S.screen)
+        .padding(.top, Nuru.S.sm)
+        .background(Color.white)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
