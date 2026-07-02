@@ -783,19 +783,10 @@ private struct EvdBuzzPostRow: View {
         }
     }
 
+    /// Natural-aspect thumb (height capped ~280), tap → full-screen lightbox.
     @ViewBuilder private var postImage: some View {
         if let s = post.imageUrl, let url = URL(string: s) {
-            CachedAsyncImage(url: url) { phase in
-                if let img = phase.image {
-                    img.resizable().scaledToFill()
-                } else {
-                    Rectangle().fill(Color(hex: 0x0A2540, alpha: 0.05))
-                        .overlay(Icon(.image, size: 22, color: EvD.tertiary))
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 150)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            NaturalImageThumb(url: url, maxWidth: .infinity, maxHeight: 280)
         }
     }
 

@@ -586,7 +586,7 @@ private struct AuroraBubble: View {
     @ViewBuilder private var contentView: some View {
         switch m.msgType {
         case "image":
-            BubbleImage(m: m)
+            BubbleImage(m: m, onReact: onReact)
         case "voice":
             VoicePill()
         default:
@@ -643,6 +643,7 @@ private struct QuotedReply: View {
 
 private struct BubbleImage: View {
     let m: ChatMessage
+    var onReact: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -656,16 +657,14 @@ private struct BubbleImage: View {
         }
     }
 
+    /// WhatsApp-style thumb: rendered at the image's own aspect (width ≤ 240,
+    /// aspect clamped 0.5…2.0), tap → full-screen lightbox. The double-tap ❤️
+    /// is re-declared on the thumb itself so it keeps working over the image
+    /// (the bubble-level recognizer can't see through the thumb's single tap).
     @ViewBuilder private var imageView: some View {
         if let url = m.attachmentUrl, let u = URL(string: url) {
-            CachedAsyncImage(url: u) { phase in
-                if let img = phase.image { img.resizable().scaledToFill() }
-                else if phase.error != nil { placeholder }
-                else { ZStack { placeholder; ProgressView().tint(Nuru.gold) } }
-            }
-            .frame(maxWidth: 240, maxHeight: 220)
-            .frame(minHeight: 160)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+            NaturalImageThumb(url: u, maxWidth: 240, maxHeight: 480,
+                              onDoubleTap: { onReact("❤️") })
         } else {
             placeholder
                 .frame(width: 200, height: 160)
