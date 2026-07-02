@@ -1,10 +1,12 @@
-// Event detail — the native port of screens/EventDetailScreen.tsx. A full-bleed
-// parallax image hero (category chip + live pill + serif title overlaid), a 2x2
-// chip grid of date/time/where/going, add-to-calendar + share actions, the
-// "about this gathering" copy, the who's-going roster, the RSVP segmented control,
-// and a "who's coming" buzz section with a visual-only hype composer. Bound to the
-// real /events/{id} + RSVP endpoints; the buzz feed has no API yet, so it shows a
-// tasteful compose-and-be-first state.
+// Event detail — Figma-parity port of the EventDetail make. A full-bleed 16:11
+// cover photo hero (parallax stretch, navy scrim, category/live/completed pills,
+// serif title), a white content card overlapping the hero with the 2x2 meta grid
+// and add-to-calendar/share actions, the "About this gathering" card, the
+// "Who's going" avatar rail, the going/maybe/can't RSVP selector, the
+// "Who's coming" buzz card with the visual hype composer, and a dashed
+// "check-in opens when live" notice for scheduled events. Bound to the real
+// /events/{id} + RSVP endpoints; Figma's hardcoded roster drawer, buzz feed and
+// QR scanner are mock-only and intentionally not reproduced.
 import SwiftUI
 
 @MainActor
@@ -40,6 +42,44 @@ final class EventDetailViewModel: ObservableObject {
     }
 }
 
+// MARK: - Figma palette for this screen (exact make hexes)
+
+private enum EvD {
+    static let paper       = Color(hex: 0xF6F4EE)   // screen background
+    static let tile        = Color(hex: 0xFBF8F1)   // inset tiles / secondary buttons
+    static let ink         = Color(hex: 0x0A1628)   // primary text
+    static let body        = Color(hex: 0x3A4A5F)   // about copy / roster names
+    static let secondary   = Color(hex: 0x68758A)   // inactive RSVP text
+    static let tertiary    = Color(hex: 0x9CA3AF)   // meta labels / faint text
+    static let overline    = Color(hex: 0xA8861C)   // section overlines
+    static let gold        = Color(hex: 0xC9A227)
+    static let goldDeep    = Color(hex: 0xB6862F)
+    static let going       = Color(hex: 0x16A34A)
+    static let goingDeep   = Color(hex: 0x15803D)
+    static let goingText   = Color(hex: 0x166534)
+    static let maybe       = Color(hex: 0xD97706)
+    static let declined    = Color(hex: 0x9CA3AF)
+    static let navyBase    = Color(hex: 0x0A2540)   // scrim / border / shadow base
+    static let border      = Color(hex: 0x0A2540, alpha: 0.07)
+    static let borderMid   = Color(hex: 0x0A2540, alpha: 0.10)
+    static let composerTop = Color(hex: 0xFFF8E6)
+    static let placeholder = Color(hex: 0x9A8C6A)
+
+    /// Deterministic avatar accent for members without a photo (port of colorFor).
+    static let avatarPalette: [Color] = [
+        Color(hex: 0x0A1628), Color(hex: 0xC9A227), Color(hex: 0x16A34A),
+        Color(hex: 0x0EA5E9), Color(hex: 0xA855F7), Color(hex: 0xDC2626),
+        Color(hex: 0xD97706),
+    ]
+    static func avatarAccent(_ seed: String) -> Color {
+        var h: UInt32 = 0
+        for u in seed.unicodeScalars { h = h &* 31 &+ u.value }
+        return avatarPalette[Int(h % UInt32(avatarPalette.count))]
+    }
+}
+
+// MARK: - Screen
+
 struct EventDetailView: View {
     @StateObject private var vm: EventDetailViewModel
     @Environment(\.dismiss) private var dismiss
@@ -49,362 +89,367 @@ struct EventDetailView: View {
     }
 
     private var occ: CalendarOccurrence { vm.occurrence }
-
     private var title: String { vm.detail?.title ?? occ.title }
     private var category: String? { vm.detail?.category ?? occ.category }
     private var location: String? { vm.detail?.location ?? occ.location }
     private var aboutText: String? { vm.detail?.description ?? occ.description }
     private var going: Int { vm.detail?.rsvpCounts.going ?? occ.going }
     private var attendees: [EventAttendee] { vm.detail?.attendees ?? occ.attendees ?? [] }
+    private var imageUrl: String? { vm.detail?.primaryImageUrl ?? occ.primaryImageUrl }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
+    private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
+
+    /// What the hero share button and the Share action send.
+    private var shareText: String {
+        var lines = [title, "\(Ev.weekday(occ.startAt, "EEEE, MMMM d")) · \(Ev.timeRange(occ.startAt, occ.endAt))"]
+        if let location, !location.isEmpty { lines.append(location) }
+        return lines.joined(separator: "\n")
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
-            VStack(spacing: Nuru.S.base) {
-                hero
-                VStack(spacing: Nuru.S.base) {
-                    detailsCard
-                    actionRow
-                    aboutSection
-                    whoIsGoing
-                    rsvpControl
-                    whoIsComing
-                }
-                .padding(.horizontal, Nuru.S.screen)
-                .padding(.top, Nuru.S.xs)
-                .padding(.bottom, Nuru.tabBarSpace)
+            // The content column overlaps the hero by 16 (Figma -mt-4).
+            VStack(spacing: -16) {
+                EvdHero(title: title, category: category, imageUrl: imageUrl,
+                        isLive: isLive, isCompleted: isCompleted,
+                        shareText: shareText, onBack: { dismiss() })
+                content
             }
         }
-        .background(Nuru.paper.ignoresSafeArea())
+        .background(EvD.paper.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
     }
 
-    // MARK: Hero — full-bleed parallax image with overlaid chrome + title.
+    private var content: some View {
+        VStack(spacing: 12) {
+            EvdMetaCard(occ: occ, location: location, going: going,
+                        accent: Ev.categoryColor(category), shareText: shareText)
+            if let d = aboutText, !d.isEmpty { EvdAboutCard(text: d) }
+            if !attendees.isEmpty || going > 0 {
+                EvdRosterCard(attendees: attendees, going: going)
+            }
+            EvdRsvpCard(vm: vm)
+            EvdBuzzCard()
+            if !isLive && !isCompleted { EvdCheckInNotice().padding(.top, 4) }
+        }
+        .padding(.horizontal, 16)
+        .padding(.bottom, Nuru.tabBarSpace)
+    }
+}
 
-    private var hero: some View {
+// MARK: - Hero — 16:11 cover with parallax stretch, scrim, chrome, pills + title.
+
+private struct EvdHero: View {
+    let title: String
+    let category: String?
+    let imageUrl: String?
+    let isLive: Bool
+    let isCompleted: Bool
+    let shareText: String
+    let onBack: () -> Void
+
+    var body: some View {
         GeometryReader { geo in
             let minY = geo.frame(in: .global).minY
-            let stretch = max(0, minY)           // parallax overscroll
-            let h = heroHeight + stretch
+            let stretch = max(0, minY)          // parallax overscroll
+            let h = geo.size.height + stretch
             ZStack(alignment: .bottomLeading) {
-                heroImage
+                cover
                     .frame(width: geo.size.width, height: h)
                     .clipped()
                     .offset(y: -stretch)
-                // legibility scrims (top for chrome, bottom for title)
-                LinearGradient(colors: [Color.black.opacity(0.34), .clear],
-                               startPoint: .top, endPoint: .center)
+                scrim
                     .frame(width: geo.size.width, height: h)
                     .offset(y: -stretch)
                     .allowsHitTesting(false)
-                LinearGradient(colors: [.clear, Color(hex: 0x081C36, alpha: 0.78)],
-                               startPoint: .center, endPoint: .bottom)
-                    .frame(width: geo.size.width, height: h)
-                    .offset(y: -stretch)
-                    .allowsHitTesting(false)
-
-                heroOverlay
+                overlay
             }
             .frame(width: geo.size.width, height: h, alignment: .bottom)
         }
-        .frame(height: heroHeight)
+        .aspectRatio(16.0 / 11.0, contentMode: .fit)
     }
 
-    private var heroHeight: CGFloat { 280 }
+    /// Real cover photo when the event has one; brand navy→category gradient otherwise.
+    @ViewBuilder private var cover: some View {
+        if let s = imageUrl, let url = URL(string: s) {
+            CachedAsyncImage(url: url) { phase in
+                if let img = phase.image { img.resizable().scaledToFill() }
+                else { fallback }
+            }
+        } else {
+            fallback
+        }
+    }
 
-    // Hero images removed by design — the header is always a brand navy→category
-    // gradient behind the overlaid chrome + title (no photo).
-    private var heroImage: some View {
+    private var fallback: some View {
         LinearGradient(colors: [Nuru.navy700, Nuru.navy, Ev.categoryColor(category)],
                        startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
-    private var heroOverlay: some View {
+    // Figma: linear-gradient(180deg, navy .55 → navy .10 @35% → navy .85)
+    private var scrim: some View {
+        LinearGradient(stops: [
+            .init(color: EvD.navyBase.opacity(0.55), location: 0),
+            .init(color: EvD.navyBase.opacity(0.10), location: 0.35),
+            .init(color: EvD.navyBase.opacity(0.85), location: 1),
+        ], startPoint: .top, endPoint: .bottom)
+    }
+
+    private var overlay: some View {
         VStack(alignment: .leading, spacing: 0) {
             // top chrome — back (left) + share (right)
             HStack {
-                circleButton(.arrowLeft) { dismiss() }
+                Button(action: onBack) { EvdCircleGlyph(icon: .chevronLeft, size: 20) }
+                    .buttonStyle(.plain)
                 Spacer()
-                circleButton(.share2) { }
+                ShareLink(item: shareText) { EvdCircleGlyph(icon: .share2, size: 17) }
+                    .buttonStyle(.plain)
             }
-            .padding(.horizontal, Nuru.S.lg)
-            .padding(.top, 54)
+            .padding(.horizontal, 16)
+            .padding(.top, 54)   // Figma frames 42; nudged for the real status bar
 
             Spacer(minLength: 0)
 
-            // bottom — chips + title
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                HStack(spacing: Nuru.S.sm) {
-                    if let c = category {
-                        Text(c.uppercased())
-                            .font(.inter(10, .bold)).kerning(1.2)
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 10).padding(.vertical, 5)
-                            .background(Color.black.opacity(0.40), in: Capsule())
-                    }
-                    if isLive {
-                        HStack(spacing: 4) {
-                            Icon(.flame, size: 11, color: Nuru.navy)
-                            Text("Happening now!").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
-                        }
-                        .padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(Nuru.goldGradient, in: Capsule())
-                    }
-                }
+            // bottom — pills + serif title
+            VStack(alignment: .leading, spacing: 8) {
+                pills
                 Text(title)
-                    .font(.fraunces(28, .semibold))
+                    .font(.fraunces(24, .semibold))
+                    .kerning(-0.72)                       // -0.03em
                     .foregroundStyle(.white)
-                    .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, Nuru.S.lg)
-            .padding(.bottom, Nuru.S.lg)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
     }
 
-    private func circleButton(_ icon: Lucide, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            ZStack {
-                Circle().fill(.ultraThinMaterial)
-                Circle().fill(Color.black.opacity(0.22))
-                Icon(icon, size: 18, color: .white)
+    private var pills: some View {
+        HStack(spacing: 6) {
+            if let c = category {
+                Text(c.uppercased())
+                    .font(.inter(10, .bold)).kerning(1.4)
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Ev.categoryColor(c).opacity(0.9), in: Capsule())
             }
-            .frame(width: 40, height: 40)
-            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-
-    // MARK: Details — 2x2 chip grid.
-
-    private var detailsCard: some View {
-        VStack(spacing: Nuru.S.sm) {
-            HStack(spacing: Nuru.S.sm) {
-                detailTile(.calendar, "Date", Ev.weekday(occ.startAt, "EEEE, MMMM d"))
-                detailTile(.clock, "Time", Ev.timeRange(occ.startAt, occ.endAt))
-            }
-            HStack(spacing: Nuru.S.sm) {
-                detailTile(.mapPin, "Where", location ?? "To be announced")
-                detailTile(.users, "Going", going == 1 ? "1 person" : "\(going) people")
+            if isLive {
+                HStack(spacing: 4) {
+                    EvdPulseDot(size: 4)
+                    Text("LIVE").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 2)
+                .background(EvD.going, in: Capsule())
+            } else if isCompleted {
+                Text("COMPLETED")
+                    .font(.inter(10, .bold)).kerning(1.4)
+                    .foregroundStyle(.white.opacity(0.8))
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(Color.white.opacity(0.2), in: Capsule())
             }
         }
-        .padding(Nuru.S.base)
-        .cardSurfaceEvD()
+    }
+}
+
+/// 40pt frosted circle for the hero chrome (Figma bg-white/15 + backdrop-blur).
+private struct EvdCircleGlyph: View {
+    let icon: Lucide
+    let size: CGFloat
+
+    var body: some View {
+        ZStack {
+            Circle().fill(.ultraThinMaterial)
+            Circle().fill(Color.white.opacity(0.15))
+            Icon(icon, size: size, color: .white)
+        }
+        .frame(width: 40, height: 40)
+    }
+}
+
+/// Small white dot that pulses forever (the Live / Buzzing indicator).
+private struct EvdPulseDot: View {
+    var size: CGFloat = 4
+    @State private var dim = false
+
+    var body: some View {
+        Circle().fill(.white)
+            .frame(width: size, height: size)
+            .opacity(dim ? 0.3 : 1)
+            .scaleEffect(dim ? 0.8 : 1)
+            .onAppear { withAnimation(.easeInOut(duration: 1.4).repeatForever()) { dim = true } }
+    }
+}
+
+// MARK: - Meta card — 2x2 grid + add-to-calendar / share actions (one card).
+
+private struct EvdMetaCard: View {
+    let occ: CalendarOccurrence
+    let location: String?
+    let going: Int
+    let accent: Color
+    let shareText: String
+
+    var body: some View {
+        VStack(spacing: 12) {
+            grid
+            actions
+        }
+        .evdCard(shadow: true)
     }
 
-    private func detailTile(_ icon: Lucide, _ label: String, _ value: String) -> some View {
-        HStack(alignment: .top, spacing: Nuru.S.sm) {
-            Icon(icon, size: 16, color: Nuru.gold)
-                .frame(width: 16)
-                .padding(.top, 1)
+    private var grid: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 8) {
+                EvdMetaTile(icon: .calendarDays, label: "Date",
+                            value: Ev.weekday(occ.startAt, "EEEE, MMMM d"), accent: accent)
+                EvdMetaTile(icon: .clock, label: "Time",
+                            value: Ev.timeRange(occ.startAt, occ.endAt), accent: accent)
+            }
+            HStack(spacing: 8) {
+                EvdMetaTile(icon: .mapPin, label: "Where",
+                            value: location ?? "To be announced", accent: accent)
+                EvdMetaTile(icon: .users, label: "Going",
+                            value: going == 1 ? "1 person" : "\(going) people", accent: accent)
+            }
+        }
+    }
+
+    private var actions: some View {
+        HStack(spacing: 8) {
+            // Native calendar write needs an EventKit entitlement — visual for now.
+            Button {} label: { EvdActionLabel(icon: .calendarDays, text: "Add to calendar") }
+                .buttonStyle(.plain)
+            ShareLink(item: shareText) { EvdActionLabel(icon: .share2, text: "Share") }
+                .buttonStyle(.plain)
+        }
+    }
+}
+
+private struct EvdMetaTile: View {
+    let icon: Lucide
+    let label: String
+    let value: String
+    let accent: Color
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 8) {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(accent.opacity(0.12))
+                .frame(width: 32, height: 32)
+                .overlay(Icon(icon, size: 15, color: accent))
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(.inter(9, .bold)).kerning(0.8)
-                    .foregroundStyle(Nuru.ink400)
+                    .font(.inter(9, .bold)).kerning(1.3)
+                    .foregroundStyle(EvD.tertiary)
                 Text(value)
-                    .font(.inter(13, .semibold))
-                    .foregroundStyle(Nuru.ink)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+                    .font(.inter(12, .semibold))
+                    .foregroundStyle(EvD.ink)
+                    .lineLimit(1)
             }
             Spacer(minLength: 0)
         }
+        .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.md)
-        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .background(EvD.tile, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(Color(hex: 0x0A2540, alpha: 0.06), lineWidth: 1))
     }
+}
 
-    // MARK: Action row — Add to calendar / Share (outline).
+private struct EvdActionLabel: View {
+    let icon: Lucide
+    let text: String
 
-    private var actionRow: some View {
-        HStack(spacing: Nuru.S.sm) {
-            outlineButton(.calendar, "Add to calendar") { }
-            outlineButton(.share2, "Share") { }
+    var body: some View {
+        HStack(spacing: 6) {
+            Icon(icon, size: 14, color: EvD.gold)
+            Text(text).font(.inter(12, .bold)).foregroundStyle(EvD.ink)
         }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 10)
+        .background(EvD.tile, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(EvD.borderMid, lineWidth: 1))
     }
+}
 
-    private func outlineButton(_ icon: Lucide, _ label: String, _ action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                Icon(icon, size: 14, color: Nuru.ink600)
-                Text(label).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 13)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+// MARK: - About this gathering.
+
+private struct EvdAboutCard: View {
+    let text: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EvdOverline("About this gathering")
+            Text(text)
+                .font(.inter(13))
+                .foregroundStyle(EvD.body)
+                .lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .buttonStyle(.plain)
+        .evdCard()
     }
+}
 
-    // MARK: About this gathering.
+// MARK: - Who's going — horizontal avatar rail + count.
 
-    @ViewBuilder
-    private var aboutSection: some View {
-        if let d = aboutText, !d.isEmpty {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                overline("ABOUT THIS GATHERING")
-                Text(d)
-                    .font(.nBody).foregroundStyle(Nuru.muted)
-                    .lineSpacing(4)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Nuru.S.base)
-            .cardSurfaceEvD()
-        }
-    }
+private struct EvdRosterCard: View {
+    let attendees: [EventAttendee]
+    let going: Int
 
-    // MARK: Who's going — avatars + count.
+    private var shown: [EventAttendee] { Array(attendees.prefix(8)) }
+    private var extra: Int { max(0, going - shown.count) }
 
-    @ViewBuilder
-    private var whoIsGoing: some View {
-        if !attendees.isEmpty || going > 0 {
-            VStack(alignment: .leading, spacing: Nuru.S.md) {
-                HStack {
-                    overline("WHO'S GOING")
-                    Spacer(minLength: 0)
-                    Text(going == 1 ? "1 going" : "\(going) going")
-                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
-                }
-                if attendees.isEmpty {
-                    Text("Be the first to RSVP.")
-                        .font(.nCaption).foregroundStyle(Nuru.muted)
-                } else {
-                    HStack(alignment: .top, spacing: Nuru.S.base) {
-                        ForEach(attendees.prefix(6)) { a in
-                            VStack(spacing: 6) {
-                                Avatar(url: a.avatarUrl, name: a.fullName, size: 46)
-                                    .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
-                                Text(firstName(a.fullName))
-                                    .font(.inter(10, .medium)).foregroundStyle(Nuru.ink600)
-                                    .lineLimit(1)
-                            }
-                            .frame(width: 56)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Nuru.S.base)
-            .cardSurfaceEvD()
-        }
-    }
-
-    // MARK: RSVP segmented control.
-
-    private var rsvpControl: some View {
-        let mine = vm.myRsvpOverride ?? vm.detail?.myRsvp
-        return VStack(alignment: .leading, spacing: Nuru.S.md) {
-            overline("WILL YOU BE THERE?")
-            HStack(spacing: Nuru.S.sm) {
-                rsvpButton("Going", "going", on: mine == "going", icon: .check, tint: Nuru.success)
-                rsvpButton("Maybe", "maybe", on: mine == "maybe", icon: nil, tint: Nuru.gold)
-                rsvpButton("Can't", "declined", on: mine == "declined", icon: nil, tint: Nuru.ink400)
-            }
-            if let mine, !mine.isEmpty {
-                HStack(spacing: 5) {
-                    Icon(.check, size: 12, color: Nuru.success)
-                    Text("Saved · we'll remind you the day before.")
-                        .font(.nCaption).foregroundStyle(Nuru.muted)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.base)
-        .cardSurfaceEvD()
-    }
-
-    private func rsvpButton(_ label: String, _ status: String, on: Bool, icon: Lucide?, tint: Color) -> some View {
-        Button { Task { await vm.setRsvp(status) } } label: {
-            HStack(spacing: 5) {
-                if on, let icon { Icon(icon, size: 13, color: .white) }
-                Text(label).font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.ink)
-            }
-            .frame(maxWidth: .infinity).padding(.vertical, 12)
-            .background(on ? tint : Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).stroke(on ? .clear : Nuru.border, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-        .disabled(vm.rsvpBusy)
-        .opacity(vm.rsvpBusy ? 0.7 : 1)
-    }
-
-    // MARK: Who's coming — buzz header, hype composer (visual), empty state.
-
-    private var whoIsComing: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                HStack(spacing: 5) {
-                    overline("WHO'S COMING")
-                    Icon(.flame, size: 12, color: Nuru.gold)
-                }
+                EvdOverline("Who's going")
                 Spacer(minLength: 0)
-                HStack(spacing: 5) {
-                    Circle().fill(.white).frame(width: 5, height: 5)
-                    Text("Buzzing").font(.inter(11, .bold)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Nuru.success, in: Capsule())
+                Text(going == 1 ? "1 going" : "\(going) going")
+                    .font(.inter(11, .bold)).foregroundStyle(EvD.ink)
             }
-
-            hypeComposer
-
-            Text("Be the first to share a moment.")
-                .font(.nCaption).foregroundStyle(Nuru.faint)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, Nuru.S.md)
-        }
-    }
-
-    private var hypeComposer: some View {
-        VStack(spacing: Nuru.S.md) {
-            HStack(spacing: Nuru.S.sm) {
-                ZStack {
-                    Circle().fill(Nuru.navy).frame(width: 36, height: 36)
-                    Text("You").font(.inter(10, .bold)).foregroundStyle(.white)
-                }
-                Text("Hype the room — say you're coming 🔥")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink400)
-                    .lineLimit(1)
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: Nuru.S.sm) {
-                composerIcon(.image)
-                composerIcon(.camera)
-                composerIcon(.smile)
-                Spacer(minLength: 0)
-                HStack(spacing: 6) {
-                    Text("Post").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                    Icon(.send, size: 13, color: Nuru.navyDeep)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .background(Nuru.goldChipBg, in: Capsule())
-                .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+            if shown.isEmpty {
+                Text("Be the first to RSVP.")
+                    .font(.inter(12)).foregroundStyle(EvD.secondary)
+            } else {
+                rail
             }
         }
-        .padding(Nuru.S.base)
-        .background(Nuru.goldChipBg.opacity(0.45), in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+        .evdCard()
     }
 
-    private func composerIcon(_ icon: Lucide) -> some View {
-        Icon(icon, size: 16, color: Nuru.ink600)
-            .frame(width: 36, height: 36)
-            .background(Nuru.white, in: Circle())
-            .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+    /// Bleeds to the card edges (Figma -mx-4 px-4) and scrolls horizontally.
+    private var rail: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 14) {
+                ForEach(shown) { a in
+                    VStack(spacing: 6) {
+                        EvdRosterAvatar(attendee: a)
+                        Text(firstName(a.fullName))
+                            .font(.inter(10, .semibold)).foregroundStyle(EvD.body)
+                            .lineLimit(1)
+                    }
+                    .frame(width: 52)
+                }
+                if extra > 0 { extraTile }
+            }
+            .padding(.horizontal, 16)
+        }
+        .padding(.horizontal, -16)
     }
 
-    // MARK: Bits.
-
-    private func overline(_ text: String) -> some View {
-        Text(text)
-            .font(.inter(11, .bold)).kerning(1.2)
-            .foregroundStyle(Nuru.goldLo)
+    private var extraTile: some View {
+        VStack(spacing: 6) {
+            Circle().fill(EvD.tile)
+                .frame(width: 46, height: 46)
+                .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.12), lineWidth: 1))
+                .overlay(Text("+\(extra)").font(.inter(12, .bold)).foregroundStyle(EvD.ink))
+            Text("more").font(.inter(10, .semibold)).foregroundStyle(EvD.tertiary)
+        }
+        .frame(width: 52)
     }
 
     private func firstName(_ full: String) -> String {
@@ -412,11 +457,220 @@ struct EventDetailView: View {
     }
 }
 
+/// 46pt roster avatar — real photo when present, otherwise initials on the
+/// member's deterministic gradient disc (Figma colorFor palette).
+private struct EvdRosterAvatar: View {
+    let attendee: EventAttendee
+
+    private var accent: Color { EvD.avatarAccent(attendee.fullName) }
+
+    var body: some View {
+        ZStack {
+            Circle().fill(LinearGradient(colors: [accent, accent.opacity(0.71)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+            if let s = attendee.avatarUrl, let url = URL(string: s) {
+                CachedAsyncImage(url: url) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() }
+                    else { initials }
+                }
+            } else {
+                initials
+            }
+        }
+        .frame(width: 46, height: 46)
+        .clipShape(Circle())
+        .shadow(color: accent.opacity(0.4), radius: 4, x: 0, y: 4)
+    }
+
+    private var initials: some View {
+        Text(Avatar.initials(attendee.fullName))
+            .font(.inter(14, .bold)).foregroundStyle(.white)
+    }
+}
+
+// MARK: - RSVP — going / maybe / can't selector.
+
+private struct EvdRsvpCard: View {
+    @ObservedObject var vm: EventDetailViewModel
+
+    private var mine: String? { vm.myRsvpOverride ?? vm.detail?.myRsvp }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            EvdOverline("Will you be there?")
+            HStack(spacing: 6) {
+                option("Going", "going", tint: EvD.going)
+                option("Maybe", "maybe", tint: EvD.maybe)
+                option("Can't", "declined", tint: EvD.declined)
+            }
+            .padding(.top, 12)
+            if mine == "going" {
+                HStack(spacing: 6) {
+                    Icon(.check, size: 13, color: EvD.goingText)
+                    Text("Saved · we'll remind you the day before.")
+                        .font(.inter(11, .semibold)).foregroundStyle(EvD.goingText)
+                }
+                .padding(.top, 10)
+            }
+        }
+        .evdCard()
+    }
+
+    private func option(_ label: String, _ status: String, tint: Color) -> some View {
+        let on = mine == status
+        return Button { Task { await vm.setRsvp(status) } } label: {
+            Text(label)
+                .font(.inter(12, .bold))
+                .foregroundStyle(on ? .white : EvD.secondary)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(on ? tint : .clear,
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(on ? .clear : EvD.borderMid, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(vm.rsvpBusy)
+        .opacity(vm.rsvpBusy ? 0.7 : 1)
+    }
+}
+
+// MARK: - Who's coming — buzz header + visual hype composer + empty state.
+// The buzz feed has no API yet, so this shows a tasteful compose-and-be-first
+// state; the Figma seed posts / reactions are mock-only.
+
+private struct EvdBuzzCard: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            header
+            EvdComposer()
+            Text("Be the first to share a moment.")
+                .font(.inter(12)).foregroundStyle(EvD.tertiary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 8)
+        }
+        .evdCard()
+    }
+
+    private var header: some View {
+        HStack {
+            HStack(spacing: 6) {
+                Icon(.users, size: 12, color: EvD.overline)
+                EvdOverline("Who's coming")
+            }
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                EvdPulseDot(size: 6)
+                Text("Buzzing").font(.inter(10, .bold)).foregroundStyle(.white)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: Capsule())
+            .shadow(color: EvD.going.opacity(0.35), radius: 5, x: 0, y: 3)
+        }
+    }
+}
+
+private struct EvdComposer: View {
+    var body: some View {
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                youDisc
+                Text("Hype the room — say you're coming 🔥")
+                    .font(.inter(13)).foregroundStyle(EvD.placeholder)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: 6) {
+                iconDisc(.image, color: EvD.going)
+                iconDisc(.camera, color: EvD.ink)
+                iconDisc(.smile, color: EvD.gold)
+                Spacer(minLength: 0)
+                postPill
+            }
+        }
+        .padding(10)
+        .background(LinearGradient(colors: [EvD.composerTop, EvD.tile],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(EvD.gold.opacity(0.28), lineWidth: 1))
+        .shadow(color: EvD.navyBase.opacity(0.10), radius: 8, x: 0, y: 5)
+    }
+
+    private var youDisc: some View {
+        Circle()
+            .fill(LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x163655)],
+                                 startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: 36, height: 36)
+            .overlay(Text("You").font(.inter(10, .bold)).foregroundStyle(.white))
+            .shadow(color: EvD.navyBase.opacity(0.3), radius: 5, x: 0, y: 3)
+    }
+
+    private func iconDisc(_ icon: Lucide, color: Color) -> some View {
+        Circle().fill(.white)
+            .frame(width: 36, height: 36)
+            .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.08), lineWidth: 1))
+            .overlay(Icon(icon, size: 17, color: color))
+    }
+
+    private var postPill: some View {
+        HStack(spacing: 6) {
+            Text("Post").font(.inter(12, .bold)).foregroundStyle(EvD.ink)
+            Icon(.send, size: 15, color: EvD.ink)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 40)
+        .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: Capsule())
+        .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
+    }
+}
+
+// MARK: - Check-in notice — the dashed locked state for scheduled events.
+// (The live "Scan to check in" QR flow is mock-only in the make — not built.)
+
+private struct EvdCheckInNotice: View {
+    var body: some View {
+        HStack(spacing: 8) {
+            Icon(.lock, size: 14, color: EvD.gold)
+            Text("Check-in opens when the event is live")
+                .font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0x8A93A0))
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 14)
+        .background(EvD.tile, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(Color(hex: 0x0A2540, alpha: 0.18),
+                    style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+    }
+}
+
+// MARK: - Bits shared across sections.
+
+/// Section overline — 10pt uppercase, 0.18em tracking, muted gold.
+private struct EvdOverline: View {
+    let text: String
+    init(_ text: String) { self.text = text }
+
+    var body: some View {
+        Text(text.uppercased())
+            .font(.inter(10, .bold)).kerning(1.8)
+            .foregroundStyle(EvD.overline)
+    }
+}
+
 private extension View {
-    func cardSurfaceEvD() -> some View {
+    /// Figma card chrome — white, radius 22, p-4, hairline navy border; the meta
+    /// card floats on one soft shadow, the rest sit flat.
+    func evdCard(shadow: Bool = false) -> some View {
         frame(maxWidth: .infinity, alignment: .leading)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            .nuruShadow()
+            .padding(16)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .stroke(EvD.border, lineWidth: 1))
+            .shadow(color: shadow ? EvD.navyBase.opacity(0.16) : .clear, radius: 12, x: 0, y: 7)
     }
 }
