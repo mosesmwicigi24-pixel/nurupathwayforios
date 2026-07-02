@@ -23,7 +23,15 @@ final class RadioCenter: ObservableObject {
     /// Scrubber state for RECORDED shows (seconds). Live streams keep these 0.
     @Published private(set) var currentTime: Double = 0
     @Published private(set) var duration: Double = 0
+    /// Soft-mute (the studio's volume glass button) — audio keeps flowing so the
+    /// live edge stays current; only the output is silenced.
+    @Published private(set) var muted = false
+    /// Sleep timer — when set, playback pauses at this moment (studio moon button).
+    @Published private(set) var sleepAt: Date?
+    /// When the current LIVE tune-in began — drives the studio's elapsed clock.
+    @Published private(set) var tunedAt: Date?
 
+    private var sleepTask: Task<Void, Never>?
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
@@ -79,10 +87,36 @@ final class RadioCenter: ObservableObject {
         observe(item: item, of: avPlayer, live: p.live)
         registerRemoteCommandsIfNeeded()
         UIApplication.shared.beginReceivingRemoteControlEvents()
+        avPlayer.isMuted = muted
         avPlayer.play()
         playing = true
+        tunedAt = p.live ? Date() : nil
         pushNowPlaying()
         loadArtwork(p)
+    }
+
+    /// Soft mute — silences output without stopping the stream.
+    func toggleMute() {
+        muted.toggle()
+        player?.isMuted = muted
+    }
+
+    /// Sleep timer: pause after `minutes` (nil cancels). One timer at a time.
+    func setSleepTimer(minutes: Int?) {
+        sleepTask?.cancel()
+        sleepTask = nil
+        guard let minutes else { sleepAt = nil; return }
+        let target = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        sleepAt = target
+        sleepTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(minutes) * 60 * 1_000_000_000)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                guard let self, self.sleepAt != nil else { return }
+                self.pause()
+                self.sleepAt = nil
+            }
+        }
     }
 
     func togglePlay() { playing ? pause() : play() }
@@ -115,6 +149,10 @@ final class RadioCenter: ObservableObject {
         program = nil
         playing = false
         artwork = nil
+        tunedAt = nil
+        sleepTask?.cancel()
+        sleepTask = nil
+        sleepAt = nil
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }

@@ -591,15 +591,15 @@ struct HomeGiveCard: View {
     }
 }
 
-// MARK: - Nuru Radio ON AIR hero (pinned FIRST on Home while a broadcast is live)
+// MARK: - Nuru Radio ON AIR bar (pinned FIRST on Home while a broadcast is live)
 
-/// Figma LiveNowCard adapted for radio — full-width navy media card: 16:9 artwork
-/// (a warm on-air studio photo when the show has none) with LIVE badge, studio
-/// lights and the gold disc. The card IS the remote: the disc and the gold CTA
-/// start/pause the station through RadioCenter (so audio keeps going app-wide and
-/// the Dynamic Island / Lock Screen show the system playback wave, Apple-Music
-/// style), an equalizer wave animates on the card while it plays, and tapping the
-/// poster or title opens the live studio.
+/// Figma RadioBar — the thin "on air" strip: navy gradient pill with the show's
+/// artwork, glowing studio lights + "ON AIR · Nuru Radio", a listeners/loves
+/// line, and a gold play-pause disc. The bar IS the remote (RadioCenter powers
+/// playback so the Dynamic Island / Lock Screen wave appears on play); tapping
+/// anywhere else opens the live studio. Real data only: the listener count only
+/// renders when the backend reports one — otherwise the line carries the show's
+/// real title.
 struct HomeOnAirCard: View {
     let program: RadioProgram
     let onOpen: () -> Void
@@ -607,180 +607,96 @@ struct HomeOnAirCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
-    private var title: String { program.title }
     private var isPlayingThis: Bool { radio.program?.id == program.id && radio.playing }
-
-    /// Warm on-air studio microphone — shown only when the program has no artwork.
-    private static let studioFallbackUrl =
-        URL(string: "https://images.unsplash.com/photo-1478737270239-2f02b77fc618?w=1200&q=80")
+    /// Warm on-air studio art — only when the program carries none of its own.
+    private static let fallbackArt =
+        URL(string: "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?w=400&q=80")
 
     var body: some View {
-        VStack(spacing: 0) {
-            poster
-            VStack(alignment: .leading, spacing: 0) {
-                Button(action: onOpen) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(title)
-                            .font(.nCardTitle).foregroundStyle(.white)
-                            .lineLimit(3).truncationMode(.tail)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        metaRow
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                Button(action: togglePlay) {
-                    HStack(spacing: 8) {
-                        if isPlayingThis {
-                            EqualizerWave(color: HomeFig.navy, barHeight: 14)
-                            Text("Pause radio").font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                        } else {
-                            Icon(.play, size: 15, color: HomeFig.navy)
-                            Text("Listen live").font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                        }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(HomeFig.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 12)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 16)
-        }
-        .background(HomeFig.navy)
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .onAppear {
-            guard !reduceMotion else { return }   // pulses are decoration only
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
-        }
-    }
-
-    private func togglePlay() {
-        Haptics.tap()
-        if isPlayingThis { radio.pause() } else { radio.tune(program) }
-    }
-
-    // 16:9 artwork with LIVE badge, studio lights, provider chip and gold disc.
-    // The poster opens the studio; the disc starts/pauses playback.
-    private var poster: some View {
-        ZStack {
+        HStack(spacing: 10) {
             Button(action: onOpen) {
-                ZStack {
-                    Rectangle().fill(HomeFig.navy)
-                    // Contained fill image — oversized artwork must never inflate
-                    // the 16:9 media box (same overflow class as the live-event card).
-                    if let u = (program.artworkUrl.flatMap(URL.init(string:))) ?? Self.studioFallbackUrl {
-                        Color.clear.overlay {
-                            CachedAsyncImage(url: u) { phase in
-                                if let img = phase.image { img.resizable().scaledToFill().opacity(0.9) }
-                                else { posterFallback }
-                            }
+                HStack(spacing: 10) {
+                    art
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            studioLights
+                            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
+                            Text("· Nuru Radio").font(.inter(10, .bold)).foregroundStyle(HomeFig.gold)
                         }
-                    } else {
-                        posterFallback
+                        HStack(spacing: 8) {
+                            if let n = program.peakListeners, n > 0 {
+                                HStack(spacing: 4) {
+                                    Icon(.users, size: 11, color: HomeFig.goldSoft)
+                                    Text("\(n) listening").font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+                                }
+                            } else {
+                                Text(program.title).font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+                                    .lineLimit(1)
+                            }
+                            Text("❤️ 🙏 🙌").font(.system(size: 11))
+                        }
                     }
-                    LinearGradient(colors: [.black.opacity(0.05), .black.opacity(0.55)],
-                                   startPoint: .top, endPoint: .bottom)
+                    Spacer(minLength: 4)
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            playDisc
+            Button {
+                Haptics.tap()
+                if isPlayingThis { radio.pause() } else { radio.tune(program) }
+            } label: {
+                Image(systemName: isPlayingThis ? "pause.fill" : "play.fill")
+                    .font(.system(size: 14, weight: .bold)).foregroundStyle(HomeFig.navy)
+                    .frame(width: 36, height: 36)
+                    .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep],
+                                               startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
+            }
+            .buttonStyle(.pressable)
         }
-        .aspectRatio(16.0 / 9.0, contentMode: .fill)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .overlay(alignment: .topLeading) { liveBadge.padding(12) }
-        .overlay(alignment: .topTrailing) { studioLights.padding(12) }
-        .overlay(alignment: .bottomTrailing) { providerChip.padding(12) }
+        .padding(8)
+        .background(
+            LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(Color.white.opacity(0.06), lineWidth: 1))
+        .shadow(color: Color(hex: 0x0A1628).opacity(0.35), radius: 12, y: 7)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 
-    // Navy fill with the gold radial studio glow (Figma: 120% 80% at 30% 20%).
-    private var posterFallback: some View {
+    private var art: some View {
         ZStack {
-            HomeFig.navy
-            RadialGradient(colors: [HomeFig.gold.opacity(0.25), .clear],
-                           center: UnitPoint(x: 0.3, y: 0.2), startRadius: 0, endRadius: 260)
-        }
-    }
-
-    private var playDisc: some View {
-        Button(action: togglePlay) {
-            ZStack {
-                Circle().fill(HomeFig.gold).frame(width: 64, height: 64)
-                    .shadow(color: HomeFig.gold.opacity(0.65), radius: 14, y: 7)
-                Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
-                if isPlayingThis {
-                    Image(systemName: "pause.fill")
-                        .font(.system(size: 24)).foregroundStyle(HomeFig.navy)
-                } else {
-                    Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2)
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(LinearGradient(colors: [Color(hex: 0x16273F), HomeFig.navyDark],
+                                     startPoint: .topLeading, endPoint: .bottomTrailing))
+            if let u = (program.artworkUrl.flatMap(URL.init(string:))) ?? Self.fallbackArt {
+                CachedAsyncImage(url: u) { ph in
+                    if let img = ph.image { HomeFadeInImage(image: img) }
+                    else { Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 14)).foregroundStyle(HomeFig.gold) }
                 }
             }
         }
-        .buttonStyle(.plain)
+        .frame(width: 40, height: 40)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private var liveBadge: some View {
-        HStack(spacing: 6) {
-            Circle().fill(.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
-            Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
-        }
-        .padding(.horizontal, 8).padding(.vertical, 4)
-        .background(HomeFig.liveRed, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
-    // Studio-light trio (red pulses, amber + green glow) + "ON AIR".
+    // Red pulses; amber + green glow steady — the studio lamp trio.
     private var studioLights: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Circle().fill(HomeFig.liveRed).frame(width: 8, height: 8)
-                    .shadow(color: HomeFig.liveRed, radius: 4)
-                    .opacity(pulse ? 0.25 : 1)
-                Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
-                    .shadow(color: Color(hex: 0xF59E0B), radius: 3)
-                Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
-                    .shadow(color: Color(hex: 0x22C55E), radius: 3)
-            }
-            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(Color.black.opacity(0.45), in: Capsule())
-        .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-    }
-
-    private var providerChip: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 11)).foregroundStyle(.white)
-            Text("Nuru Radio").font(.inter(10, .semibold)).foregroundStyle(.white)
-        }
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .background(Color.black.opacity(0.55), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-    }
-
-    // Speaker · category with a dot separator — missing parts are omitted. The
-    // listener count only appears when the backend reports a real number, and a
-    // small gold equalizer joins the row while this station is actually playing.
-    private var metaRow: some View {
-        let bits = [program.speaker, program.category].compactMap { $0 }.filter { !$0.isEmpty }
-        return HStack(spacing: 6) {
-            if isPlayingThis { EqualizerWave(color: HomeFig.gold, barHeight: 12) }
-            ForEach(Array(bits.enumerated()), id: \.offset) { i, bit in
-                if i > 0 { Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4) }
-                Text(bit).font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
-            }
-            if let n = program.peakListeners, n > 0 {
-                Circle().fill(Color.white.opacity(0.5)).frame(width: 4, height: 4)
-                Icon(.eye, size: 12, color: .white.opacity(0.7))
-                Text("\(n) listening").font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
-            }
+        HStack(spacing: 4) {
+            Circle().fill(Color(hex: 0xEF4444)).frame(width: 8, height: 8)
+                .shadow(color: Color(hex: 0xEF4444), radius: 4)
+                .opacity(pulse ? 0.25 : 1)
+            Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
+                .shadow(color: Color(hex: 0xF59E0B), radius: 3)
+            Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
+                .shadow(color: Color(hex: 0x22C55E), radius: 3)
         }
     }
 }
+
 
 // MARK: - Equalizer wave (Apple-Music-style dancing bars while radio plays)
 

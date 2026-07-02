@@ -68,6 +68,9 @@ struct RootView: View {
     @EnvironmentObject private var sync: SyncCoordinator
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
     @Environment(\.scenePhase) private var scenePhase
+    // The app-wide station — drives the floating island pill on every tab.
+    @ObservedObject private var radio = RadioCenter.shared
+    @State private var radioOpen = false
 
     /// Height of the top safe-area inset (status-bar / Dynamic Island band) so the
     /// cream stripe covers exactly that region. Falls back to 59 (Dynamic Island).
@@ -105,6 +108,20 @@ struct RootView: View {
                 .ignoresSafeArea(edges: .top)
         }
         .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
+        // Nuru Radio island — while the station is tuned, a black capsule with a
+        // living waveform floats just under the Dynamic Island on EVERY tab (the
+        // Figma "island" mini player). Tap the wave to reopen the studio; the
+        // gold button pauses/resumes. When the app backgrounds or the phone
+        // locks, the REAL island takes over via RadioCenter's Now Playing.
+        .overlay(alignment: .top) {
+            if radio.program != nil && !radioOpen {
+                RadioMiniPlayer { radioOpen = true }
+                    .padding(.top, 6)
+                    .transition(.move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: radio.program == nil)
+        .fullScreenCover(isPresented: $radioOpen) { RadioPlayerView() }
         .overlay(alignment: .bottom) {
             if !tabs.chromeHidden {
                 NuruTabBar(selection: $tabs.selected)

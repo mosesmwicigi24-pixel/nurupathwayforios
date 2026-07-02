@@ -1,110 +1,138 @@
-// Floating now-playing capsule — shown on Home (just above the tab bar) while
-// Nuru Radio is tuned and the full player page is closed. Driven entirely by
-// RadioCenter.shared, so it reflects the same stream the Dynamic Island shows:
-// artwork/glyph · LIVE dot + title · play/pause · ✕ (stop). Tapping the body
-// reopens the full player. Small standalone struct per the Home-cards rule.
+// Floating now-playing ISLAND — the design's Dynamic-Island-style capsule shown
+// by the shell while Nuru Radio is tuned and the full player page is closed.
+// Driven entirely by RadioCenter.shared: pulsing red dot · 10-bar gold wave
+// (dances while playing, settles to half-height when paused) · gold play/pause.
+// Tapping the dot/wave area calls `onOpen` (the shell reopens the full player);
+// the parent owns placement — this file only builds the capsule itself, with
+// its own spring-in/out transition when the station tunes/powers down.
 import SwiftUI
+
+// MARK: - MiniWave — small animated waveform (island + recordings rows)
+
+/// The design's MiniWave: `count` slim bars whose base heights follow a fixed
+/// sin/cos contour; while playing each bar loops scaleY 0.4→1 on its own
+/// staggered period, paused they all settle at half height. Deterministic
+/// TimelineView drive (no fire-and-forget repeatForever), so pausing never
+/// strands a bar mid-loop; holds still under Reduce Motion.
+struct RadioMiniWave: View {
+    let playing: Bool
+    var count: Int = 9
+    var height: CGFloat = 16
+    var color: Color = Nuru.gold
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var active: Bool { playing && !reduceMotion }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !active)) { ctx in
+            let t = ctx.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .center, spacing: 2) {
+                ForEach(0..<count, id: \.self) { i in
+                    Capsule()
+                        .fill(color)
+                        .frame(width: 2, height: baseHeight(i))
+                        .scaleEffect(y: scaleY(i, t), anchor: .center)
+                }
+            }
+            .frame(height: height)
+        }
+        .accessibilityHidden(true)
+    }
+
+    /// Design contour: 0.35 + 0.65·|sin(i·1.5)·0.6 + cos(i·0.7)·0.4|, min 3pt.
+    private func baseHeight(_ i: Int) -> CGFloat {
+        let base = 0.35 + 0.65 * abs(sin(Double(i) * 1.5) * 0.6 + cos(Double(i) * 0.7) * 0.4)
+        return max(3, height * base)
+    }
+
+    /// Playing: loop between 0.4 and 1 with the design's staggered periods
+    /// (0.55 + (i%5)·0.1 per half-cycle). Paused/Reduce Motion: 0.5.
+    private func scaleY(_ i: Int, _ t: Double) -> CGFloat {
+        guard active else { return 0.5 }
+        let halfCycle = 0.55 + Double(i % 5) * 0.1
+        let phase = sin((t / halfCycle) * .pi + Double(i) * 1.7)   // -1…1, offset per bar
+        return 0.4 + 0.6 * CGFloat((phase + 1) / 2)
+    }
+}
+
+// MARK: - The island capsule
 
 struct RadioMiniPlayer: View {
     @ObservedObject private var center = RadioCenter.shared
-    let open: () -> Void
+    let onOpen: () -> Void
 
-    init(open: @escaping () -> Void) { self.open = open }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var dotDim = false
+
+    init(onOpen: @escaping () -> Void) { self.onOpen = onOpen }
 
     var body: some View {
-        // The `if let` lives inside a container so the slide-up/away transition
+        // The `if let` lives inside a container so the spring transition
         // actually runs when the radio is tuned/stopped (attached to conditional
         // content directly, SwiftUI would pop it in with no animation).
         ZStack {
-            if let p = center.program {
-                capsule(p)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            if center.program != nil {
+                capsule
+                    .transition(.offset(y: -24)
+                        .combined(with: .opacity)
+                        .combined(with: .scale(scale: 0.9)))
             }
         }
-        .animation(.spring(response: 0.38, dampingFraction: 0.85), value: center.program?.id)
+        .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    private func capsule(_ p: RadioProgram) -> some View {
-        Button {
-            Haptics.tap()
-            open()
-        } label: {
-            HStack(spacing: 10) {
-                thumb(p)
-                VStack(alignment: .leading, spacing: 1) {
-                    HStack(spacing: 5) {
-                        if p.live {
-                            Circle().fill(Color(hex: 0xF87171)).frame(width: 5, height: 5)
-                            Text("LIVE · NURU RADIO").font(.inter(8, .bold)).kerning(1.2)
-                                .foregroundStyle(Color(hex: 0xF87171))
-                        } else {
-                            Text("NURU RADIO").font(.inter(8, .bold)).kerning(1.2)
-                                .foregroundStyle(Nuru.gold.opacity(0.9))
-                        }
-                    }
-                    Text(p.title).font(.inter(12, .semibold)).foregroundStyle(.white)
-                        .lineLimit(1).truncationMode(.tail)
+    private var capsule: some View {
+        HStack(spacing: 8) {
+            // Dot + wave — the "open the player" surface.
+            Button {
+                Haptics.tap()
+                onOpen()
+            } label: {
+                HStack(spacing: 8) {
+                    pulsingDot
+                    RadioMiniWave(playing: center.playing, count: 10, height: 16)
                 }
-                Spacer(minLength: 6)
-                Button {
-                    Haptics.tap()
-                    center.togglePlay()
-                } label: {
-                    Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 13, weight: .bold)).foregroundStyle(Nuru.navy)
-                        .contentTransition(.symbolEffect(.replace))
-                        .offset(x: center.playing ? 0 : 1)
-                        .frame(width: 34, height: 34)
-                        .background(Nuru.gold, in: Circle())
-                        .shadow(color: Nuru.gold.opacity(0.45), radius: 6, y: 3)
-                }
-                .buttonStyle(.pressable)
-                .animation(.easeInOut(duration: 0.2), value: center.playing)
-                .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
-                Button {
-                    Haptics.tap()
-                    center.stop()
-                } label: {
-                    Icon(.x, size: 13, color: .white.opacity(0.7))
-                        .frame(width: 28, height: 28)
-                        .background(Color.white.opacity(0.10), in: Circle())
-                }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("Stop radio")
             }
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(
-                LinearGradient(colors: [Color(hex: 0x142743), Color(hex: 0x0A1628)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: Capsule())
-            .overlay(Capsule().stroke(Color.white.opacity(0.14), lineWidth: 1))
-            .contentShape(Capsule())
-        }
-        .buttonStyle(.pressableSubtle)
-        .shadow(color: .black.opacity(0.35), radius: 14, y: 8)
-        .accessibilityHint("Opens the radio player")
-    }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Open Nuru Radio")
 
-    private func thumb(_ p: RadioProgram) -> some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(LinearGradient(colors: [Color(hex: 0x1B3050), Color(hex: 0x0E1E35)],
-                                     startPoint: .topLeading, endPoint: .bottomTrailing))
-            if let a = p.artworkUrl, let u = URL(string: a) {
-                CachedAsyncImage(url: u) { ph in
-                    if let img = ph.image { img.resizable().scaledToFill() }
-                    else { glyph }
-                }
-            } else {
-                glyph
+            // 28pt gold play/pause.
+            Button {
+                Haptics.tap()
+                center.togglePlay()
+            } label: {
+                Image(systemName: center.playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(Nuru.gold)
+                    .contentTransition(.symbolEffect(.replace))
+                    .offset(x: center.playing ? 0 : 1)
+                    .frame(width: 28, height: 28)
+                    .contentShape(Circle())
             }
+            .buttonStyle(.pressable)
+            .animation(.easeInOut(duration: 0.2), value: center.playing)
+            .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
-        .frame(width: 36, height: 36)
-        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.vertical, 6)
+        .padding(.leading, 12)
+        .padding(.trailing, 6)
+        .background(Color.black, in: Capsule())
+        .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
+        .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
 
-    private var glyph: some View {
-        Image(systemName: "dot.radiowaves.left.and.right")
-            .font(.system(size: 15)).foregroundStyle(Nuru.gold.opacity(0.9))
+    /// 6pt red dot, breathing 1→0.2→1 over ~1s (static under Reduce Motion).
+    private var pulsingDot: some View {
+        Circle()
+            .fill(Color(hex: 0xEF4444))
+            .frame(width: 6, height: 6)
+            .opacity(dotDim ? 0.2 : 1)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) {
+                    dotDim = true
+                }
+            }
     }
 }
