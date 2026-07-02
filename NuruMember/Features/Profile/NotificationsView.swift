@@ -52,6 +52,14 @@ struct NotificationsView: View {
         .task { if vm.rows.isEmpty { await vm.load() } }
     }
 
+    /// Unread reward rows (badge / certificate / level) get the Figma "gift" cue.
+    private var rewardUnread: Int {
+        vm.rows.filter { $0.isUnread && Self.isReward($0.template) }.count
+    }
+    fileprivate static func isReward(_ t: String) -> Bool {
+        t.hasPrefix("badge") || t.hasPrefix("certificate") || t.hasPrefix("level")
+    }
+
     private var topBar: some View {
         HStack(spacing: Nuru.S.md) {
             Button { dismiss() } label: {
@@ -60,12 +68,28 @@ struct NotificationsView: View {
             }
             VStack(alignment: .leading, spacing: 0) {
                 Text("Notifications").font(.nHeading).foregroundStyle(Nuru.ink)
-                Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up").font(.nMicro).foregroundStyle(Nuru.faint)
+                HStack(spacing: 6) {
+                    Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up ✨").font(.nMicro).foregroundStyle(Nuru.faint)
+                    if rewardUnread > 0 {
+                        HStack(spacing: 3) {
+                            Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
+                            Text("\(rewardUnread) \(rewardUnread == 1 ? "gift" : "gifts")")
+                                .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        }
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(Nuru.gold.opacity(0.12), in: Capsule())
+                    }
+                }
             }
             Spacer()
             Button { Task { await vm.markAll() } } label: {
                 HStack(spacing: 4) {
-                    Icon(.check, size: 14, color: Nuru.gold)
+                    // Figma's CheckCheck (double tick) — composed from two check glyphs.
+                    ZStack {
+                        Icon(.check, size: 13, color: Nuru.gold).offset(x: -3)
+                        Icon(.check, size: 13, color: Nuru.gold).offset(x: 3)
+                    }
+                    .frame(width: 18)
                     Text("Mark all read").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 7).background(Nuru.navy, in: Capsule())
@@ -79,8 +103,26 @@ struct NotificationsView: View {
 
     private func row(_ n: NotificationRow) -> some View {
         let meta = metaFor(n.template)
+        let reward = Self.isReward(n.template)
         return HStack(alignment: .top, spacing: Nuru.S.md) {
-            ZStack { RoundedRectangle(cornerRadius: 12).fill(meta.bg).frame(width: 40, height: 40); Icon(meta.icon, size: 18, color: meta.fg) }
+            // Reward rows get the celebratory gold-gradient tile + sparkle (Figma "gift" cue).
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(reward
+                              ? AnyShapeStyle(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : AnyShapeStyle(meta.bg))
+                        .frame(width: 40, height: 40)
+                    Icon(meta.icon, size: 18, color: reward ? Nuru.navy : meta.fg)
+                }
+                if reward {
+                    Icon(.sparkles, size: 9, color: Nuru.gold)
+                        .frame(width: 16, height: 16)
+                        .background(Color.white, in: Circle())
+                        .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
+                        .offset(x: 4, y: -4)
+                }
+            }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: Nuru.S.sm) {
                     Text(titleFor(n)).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
@@ -88,11 +130,27 @@ struct NotificationsView: View {
                     Text(ago(n.sentAt ?? n.scheduledFor)).font(.nMicro).foregroundStyle(Nuru.faint)
                 }
                 if let b = bodyFor(n) { Text(b).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(2) }
+                if reward && n.isUnread {
+                    HStack(spacing: 4) {
+                        Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
+                        Text("Tap to open your gift").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Nuru.gold.opacity(0.10), in: Capsule())
+                    .padding(.top, 4)
+                }
             }
             if n.isUnread { Circle().fill(Nuru.gold).frame(width: 8, height: 8).padding(.top, 6) }
         }
         .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
         .background(n.isUnread ? Nuru.white : .clear)
+        .overlay(alignment: .leading) {
+            // Figma: unread rows carry a gold accent bar on the leading edge.
+            if n.isUnread {
+                UnevenRoundedRectangle(bottomTrailingRadius: 3, topTrailingRadius: 3, style: .continuous)
+                    .fill(Nuru.gold).frame(width: 4).padding(.vertical, 8)
+            }
+        }
     }
 
     private var emptyState: some View {
@@ -107,15 +165,17 @@ struct NotificationsView: View {
 
     // MARK: template mapping (port of metaFor/titleFor/bodyFor)
 
+    // Figma CATEGORY_TONE — info / success / warning / security. Reward templates
+    // (badge/certificate/level) override the tile with the gold gradient above.
     private struct Meta { let icon: Lucide; let bg, fg: Color }
     private func metaFor(_ t: String) -> Meta {
-        if t.hasPrefix("reflection") { return Meta(icon: .messageSquareText, bg: Color(hex: 0xFEF3C7), fg: Color(hex: 0x92400E)) }
-        if t.hasPrefix("level") { return Meta(icon: .sparkles, bg: Nuru.successBg, fg: Nuru.successText) }
-        if t.hasPrefix("certificate") { return Meta(icon: .badgeCheck, bg: Color(hex: 0xFFF8DD), fg: Nuru.goldLo) }
-        if t.hasPrefix("badge") { return Meta(icon: .badgeCheck, bg: Color(hex: 0xE0E7FF), fg: Color(hex: 0x4338CA)) }
-        if t.hasPrefix("event") { return Meta(icon: .calendarDays, bg: Nuru.tintBlue, fg: Nuru.navy) }
-        if t.hasPrefix("announcement") { return Meta(icon: .megaphone, bg: Nuru.tintBlue, fg: Nuru.navy) }
-        return Meta(icon: .bell, bg: Nuru.mutedBg, fg: Nuru.ink600)
+        if t.hasPrefix("reflection") { return Meta(icon: .messageSquareText, bg: Color(hex: 0xFEF3C7), fg: Color(hex: 0xD97706)) }   // warning
+        if t.hasPrefix("level") { return Meta(icon: .trendingUp, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }               // success
+        if t.hasPrefix("certificate") { return Meta(icon: .award, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }              // success
+        if t.hasPrefix("badge") { return Meta(icon: .badgeCheck, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }               // success
+        if t.hasPrefix("event") { return Meta(icon: .calendarDays, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }             // info
+        if t.hasPrefix("announcement") { return Meta(icon: .megaphone, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }         // info
+        return Meta(icon: .settings, bg: Color(hex: 0xE2E8F0), fg: Color(hex: 0x475569))                                             // security/system
     }
 
     private let titles: [String: String] = [

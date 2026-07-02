@@ -70,25 +70,28 @@ struct LoginView: View {
                     .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
                         .stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
                     .frame(width: 72, height: 72)
-                // The gold cross.
+                // The gold cross (exact Figma mark: upright + arm + faded top cap).
                 ZStack {
                     RoundedRectangle(cornerRadius: 2).fill(Nuru.gold).frame(width: 4, height: 26)
-                    RoundedRectangle(cornerRadius: 2).fill(Nuru.gold).frame(width: 22, height: 4)
+                    RoundedRectangle(cornerRadius: 2).fill(Nuru.gold).frame(width: 22, height: 4).offset(y: -2)
+                    RoundedRectangle(cornerRadius: 2).fill(Nuru.gold.opacity(0.5)).frame(width: 8, height: 4).offset(y: -13)
                 }
             }
             Text("Nuru Place")
-                .font(.fraunces(34, .bold)).foregroundStyle(.white)
+                .font(.fraunces(36, .semibold)).kerning(-1.08).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             HStack(spacing: Nuru.S.sm) {
-                Rectangle().fill(Nuru.gold.opacity(0.6)).frame(width: 28, height: 1)
-                Circle().fill(Nuru.gold).frame(width: 4, height: 4)
-                Rectangle().fill(Nuru.gold.opacity(0.6)).frame(width: 28, height: 1)
+                LinearGradient(colors: [.clear, Nuru.gold], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 28, height: 1).opacity(0.6)
+                Circle().fill(Nuru.gold.opacity(0.7)).frame(width: 4, height: 4)
+                LinearGradient(colors: [Nuru.gold, .clear], startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 28, height: 1).opacity(0.6)
             }
-            .padding(.top, Nuru.S.sm)
+            .padding(.top, 14)
             Text("A MISSIONARY SENDING CHURCH")
-                .font(.inter(11, .semibold)).kerning(2.2)
-                .foregroundStyle(Nuru.onNavyDim)
-                .padding(.top, Nuru.S.md)
+                .font(.inter(10, .medium)).kerning(1.8)
+                .foregroundStyle(Color.white.opacity(0.45))
+                .padding(.top, 12)
         }
     }
 

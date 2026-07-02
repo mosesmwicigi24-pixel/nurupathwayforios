@@ -253,6 +253,7 @@ struct HomeView: View {
         case "gifts": path.append(GrowDestination.gifts)
         case "giftsAssessment": path.append(GrowDestination.giftsAssessment)
         case "resources": path.append(GrowDestination.resources)
+        case "notifications": path.append(AppRoute.notifications)
         case "mentor": path.append(AppRoute.mentor)
         case "cell": path.append(AppRoute.cell)
         case "planSegment":
