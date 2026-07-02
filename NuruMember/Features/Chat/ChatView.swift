@@ -1,10 +1,11 @@
-// Chat — "Nuru Connect" inbox, the native port of screens/ChatScreen.tsx. A navy
-// gradient header (time-based greeting overline, serif title, bell + unread badge),
-// a translucent search bar, the "Quick help from Nuru" AI card, the "Verse for today"
-// card, and a three-way segmented control (#My Space · DM · My Groups). Spaces render
-// as white cards (# avatar, last-message preview, member dots, Active pill, day); DMs
-// lead with a stories row then message rows; Groups show an empty hint when none. A
-// gold pencil FAB floats bottom-right. Taps open the thread.
+// Chat — "Nuru Connect" inbox, the native port of the Figma ChatTab. A cream
+// header (time-based greeting overline, serif title, bell → notifications), a
+// white search bar, the "Quick help from Nuru" AI launcher (gradient ring, orb,
+// live dot), the italic "Verse for today" ribbon, and a capsule segment control
+// (#My Space · DM · My Groups with counts). Each segment renders one grouped
+// white card of rows: spaces (# avatar, author preview, member dots, Active
+// pill), DMs (stories row, real-or-initials avatars, unread badges, read ticks)
+// and groups. A gold pen FAB opens the "Start something" compose sheet.
 import SwiftUI
 
 @MainActor
@@ -37,6 +38,30 @@ final class ChatInboxViewModel: ObservableObject {
 }
 
 private enum ChatSegment: Int, CaseIterable { case space, dm, group }
+private enum ChatDest: Hashable { case notifications }
+
+// Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
+private let storyRing = LinearGradient(
+    colors: [Color(hex: 0xE6C068), Color(hex: 0xC89B3C), Color(hex: 0xB07D2E)],
+    startPoint: .topLeading, endPoint: .bottomTrailing)
+
+// Per-row tint cycle (backend sends no space colour) — mirrors the mock palette.
+private let rowTints: [UInt32] = [0xC89B3C, 0x6366F1, 0x0EA5E9, 0x16A34A, 0xDB2777, 0x0D9488]
+private func rowTint(_ index: Int) -> Color { Color(hex: rowTints[index % rowTints.count]) }
+
+// "9:42 AM" today · "Yesterday" · "Tue" within the week · "4 Jun" beyond.
+private func chatTime(_ iso: String?) -> String {
+    guard let iso,
+          let d = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+    else { return "" }
+    let cal = Calendar.current
+    let f = DateFormatter()
+    if cal.isDateInToday(d) { f.dateFormat = "h:mm a" }
+    else if cal.isDateInYesterday(d) { return "Yesterday" }
+    else if let days = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: Date())).day, days < 7 { f.dateFormat = "EEE" }
+    else { f.dateFormat = "d MMM" }
+    return f.string(from: d)
+}
 
 struct ChatView: View {
     @EnvironmentObject private var auth: AuthStore
@@ -44,6 +69,7 @@ struct ChatView: View {
     @State private var path = NavigationPath()
     @State private var segment: ChatSegment = .space
     @State private var query = ""
+    @State private var composeOpen = false
     @State private var showNuru = ProcessInfo.processInfo.environment["NURU_SCREEN"] == "nuru"  // debug screenshot hook
 
     var body: some View {
@@ -52,32 +78,35 @@ struct ChatView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 0) {
                         header
-                        VStack(spacing: Nuru.S.base) {
+                        VStack(spacing: Nuru.S.screen) {
                             aiCard
-                            verseCard
+                            if query.isEmpty { verseCard }
                             segmentControl
                             segmentBody
                         }
                         .padding(.horizontal, Nuru.S.screen)
-                        .padding(.top, Nuru.S.base)
+                        .padding(.top, Nuru.S.screen)
                         .padding(.bottom, Nuru.tabBarSpace)
                     }
                 }
                 .ignoresSafeArea(edges: .top)
                 .background(Nuru.paper.ignoresSafeArea())
                 fab
+                if composeOpen { composeSheet }
             }
+            .animation(.spring(response: 0.35, dampingFraction: 0.85), value: composeOpen)
             .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
+            .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
         }
         .task { if vm.inbox == nil { await vm.load() } }
     }
 
     // MARK: Header
 
-    // Cream Figma header (ChatTab) — navy-on-light "Nuru Connect".
+    // Cream Figma header (ChatTab) — navy-on-light "Nuru Connect". Done — keep stable.
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
@@ -95,19 +124,7 @@ struct ChatView: View {
                         .padding(.top, 6)
                 }
                 Spacer(minLength: 0)
-                ZStack(alignment: .topTrailing) {
-                    Icon(.bell, size: 19, color: Nuru.navy)
-                        .frame(width: 44, height: 44)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                    if vm.totalUnread > 0 {
-                        Text(vm.totalUnread > 9 ? "9+" : "\(vm.totalUnread)")
-                            .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
-                            .frame(minWidth: 18, minHeight: 18)
-                            .background(Nuru.gold, in: Circle())
-                            .offset(x: 4, y: -4)
-                    }
-                }
+                bellButton
             }
             searchBar.padding(.top, Nuru.S.lg)
         }
@@ -123,6 +140,25 @@ struct ChatView: View {
         )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+    }
+
+    // White tile bell → NotificationsView; glowing gold dot when anything is unread.
+    private var bellButton: some View {
+        Button { path.append(ChatDest.notifications) } label: {
+            Icon(.bell, size: 19, color: Nuru.navy)
+                .frame(width: 44, height: 44)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .overlay(alignment: .topTrailing) {
+                    if vm.totalUnread > 0 {
+                        Circle().fill(Nuru.gold)
+                            .frame(width: 8, height: 8)
+                            .shadow(color: Nuru.gold.opacity(0.9), radius: 4)
+                            .padding(10)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
     }
 
     private var searchBar: some View {
@@ -142,70 +178,88 @@ struct ChatView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: AI card ("Quick help from Nuru")
+    // MARK: AI card ("Quick help from Nuru" — gradient ring, glows, orb, live dot)
 
     private var aiCard: some View {
         Button { showNuru = true } label: {
-            HStack(spacing: Nuru.S.md) {
+            HStack(spacing: 14) {
                 ZStack(alignment: .topTrailing) {
-                    Icon(.sparkles, size: 22, color: .white)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .fill(RadialGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
+                                             center: UnitPoint(x: 0.32, y: 0.28), startRadius: 2, endRadius: 46))
                         .frame(width: 48, height: 48)
-                        .background(
-                            LinearGradient(colors: [Color(hex: 0x7C3AED), Color(hex: 0x6D28D9)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    Circle().fill(Nuru.online).frame(width: 11, height: 11)
-                        .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 1.5))
-                        .offset(x: 3, y: -3)
+                        .overlay(Icon(.sparkles, size: 20, color: .white))
+                        .shadow(color: Color(hex: 0x7C3AED).opacity(0.65), radius: 8, y: 5)
+                    Circle().fill(Color(hex: 0x34D399)).frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(Color(hex: 0x0A1628), lineWidth: 2))
+                        .shadow(color: Color(hex: 0x34D399).opacity(0.9), radius: 4)
+                        .offset(x: 2, y: -2)
                 }
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
-                        Text("Quick help from Nuru").font(.inter(15, .semibold)).foregroundStyle(.white)
-                        Text("AI").font(.inter(9, .bold)).kerning(0.5).foregroundStyle(.white)
+                        Text("Quick help from Nuru")
+                            .font(.fraunces(16, .semibold)).kerning(-0.16).foregroundStyle(.white)
+                        Text("AI").font(.inter(8, .heavy)).kerning(1.1).foregroundStyle(Color(hex: 0x0A1628))
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Color.white.opacity(0.18), in: Capsule())
+                            .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0x34D399)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
                     }
-                    Text("The AI assistant · 0 updates across \(vm.spaces.count) spaces")
-                        .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                    Text("The AI assistant · \(vm.totalUnread) updates across \(vm.spaces.count) spaces")
+                        .font(.inter(10)).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: .white.opacity(0.85))
-                    .frame(width: 30, height: 30)
-                    .background(Color.white.opacity(0.12), in: Circle())
+                Icon(.chevronRight, size: 18, color: .white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.white.opacity(0.10), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
             }
             .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                LinearGradient(colors: [Color(hex: 0x4C1D95), Color(hex: 0x2A2255), Color(hex: 0x103B3A)],
-                               startPoint: .leading, endPoint: .trailing),
-                in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .nuruShadow()
+                LinearGradient(colors: [Color(hex: 0x2A1259), Color(hex: 0x0A1628), Color(hex: 0x053F30)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                    .overlay(alignment: .topLeading) {
+                        Circle().fill(Color(hex: 0x7C3AED).opacity(0.5)).frame(width: 160, height: 160).blur(radius: 40).offset(x: -40, y: -48)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        Circle().fill(Color(hex: 0x10B981).opacity(0.4)).frame(width: 160, height: 160).blur(radius: 40).offset(x: 8, y: 56)
+                    }
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 24.5, style: .continuous))
+            .padding(1.5)
+            .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0xC89B3C), Color(hex: 0x34D399)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
+            .shadow(color: Color(hex: 0x4C1D95).opacity(0.45), radius: 18, y: 10)
         }
         .buttonStyle(.plain)
     }
 
-    // MARK: Verse for today
+    // MARK: Verse for today (gold ribbon, italic serif verse)
 
     private var verseCard: some View {
         HStack(alignment: .top, spacing: Nuru.S.md) {
-            Icon(.quote, size: 16, color: Nuru.gold)
-                .frame(width: 30, height: 30)
-                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-            VStack(alignment: .leading, spacing: 6) {
-                Text("VERSE FOR TODAY").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+            Icon(.quote, size: 15, color: Nuru.gold)
+                .frame(width: 32, height: 32)
+                .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text("VERSE FOR TODAY").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
                 Text(vm.verse?.text ?? "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”")
-                    .font(.fraunces(15)).foregroundStyle(Nuru.ink).lineSpacing(3)
+                    .font(.fraunces(13).italic()).foregroundStyle(Nuru.navy).lineSpacing(4)
                 Text(vm.verse?.reference ?? "Galatians 6:2")
-                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
             }
             Spacer(minLength: 0)
         }
-        .padding(Nuru.S.base)
+        .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+        .background(
+            LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
     }
 
-    // MARK: Segmented control
+    // MARK: Segmented control (capsule pills, navy gradient active)
 
     private var segmentControl: some View {
         HStack(spacing: 4) {
@@ -213,26 +267,31 @@ struct ChatView: View {
             segmentButton(.dm, "DM", vm.dms.count)
             segmentButton(.group, "My Groups", vm.groups.count)
         }
-        .padding(5)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        .padding(4)
+        .background(Color.white.opacity(0.7), in: Capsule())
+        .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
 
     private func segmentButton(_ seg: ChatSegment, _ label: String, _ count: Int) -> some View {
         let selected = segment == seg
         return Button { withAnimation(.easeInOut(duration: 0.15)) { segment = seg } } label: {
-            HStack(spacing: 6) {
-                Text(label).font(.inter(13, .semibold)).foregroundStyle(selected ? Nuru.onNavy : Nuru.ink600)
-                Text("\(count)").font(.inter(11, .bold))
-                    .foregroundStyle(selected ? Nuru.navy : Nuru.ink600)
-                    .frame(minWidth: 20, minHeight: 20)
-                    .background(selected ? Nuru.gold : Nuru.mutedBg,
-                                in: selected ? AnyShape(Circle()) : AnyShape(RoundedRectangle(cornerRadius: 7, style: .continuous)))
+            HStack(spacing: 5) {
+                Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x68758A))
+                Text("\(count)").font(.inter(10, .bold))
+                    .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x8A93A0))
+                    .padding(.horizontal, 6).padding(.vertical, 1)
+                    .frame(minWidth: 18)
+                    .background(selected ? Nuru.gold : Nuru.surface, in: Capsule())
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
-            .background(selected ? Nuru.navy : Color.clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .padding(.vertical, 10)
+            .background(
+                selected
+                    ? AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x16273F)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+                    : AnyShapeStyle(Color.clear),
+                in: Capsule())
+            .shadow(color: selected ? Color(hex: 0x0B1F33).opacity(0.35) : .clear, radius: 8, y: 4)
         }
         .buttonStyle(.plain)
     }
@@ -264,13 +323,17 @@ struct ChatView: View {
 
     private var spaceList: some View {
         let items = vm.spaces.filter(matches)
-        return VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            hashOverline("YOUR SPACES")
+        return VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(hash: true, "YOUR SPACES")
             if items.isEmpty {
-                emptyCard("No spaces yet — they’ll appear as your cell gets set up.")
+                emptyCard(query.isEmpty
+                    ? "No spaces yet — they’ll appear as your cell gets set up."
+                    : "No spaces match your search.")
             } else {
-                ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
-                    NavigationLink(value: c) { SpaceRow(c: c, index: idx) }.buttonStyle(.plain)
+                groupedCard {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
+                        NavigationLink(value: c) { SpaceRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -278,14 +341,18 @@ struct ChatView: View {
 
     private var dmList: some View {
         let items = vm.dms.filter(matches)
-        return VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            storiesRow
-            overline(.messageCircle, "DIRECT MESSAGES").padding(.top, 6)
+        return VStack(alignment: .leading, spacing: 10) {
+            if query.isEmpty && !vm.dms.isEmpty { storiesRow.padding(.bottom, 10) }
+            sectionLabel(icon: .users, "DIRECT MESSAGES")
             if items.isEmpty {
-                emptyCard("No direct messages yet — start a conversation with someone in your space.")
+                emptyCard(query.isEmpty
+                    ? "No direct messages yet — start a conversation with someone in your space."
+                    : "No people match your search.")
             } else {
-                ForEach(items) { c in
-                    NavigationLink(value: c) { DMRow(c: c) }.buttonStyle(.plain)
+                groupedCard {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
+                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.plain)
+                    }
                 }
             }
         }
@@ -293,41 +360,53 @@ struct ChatView: View {
 
     private var groupList: some View {
         let items = vm.groups.filter(matches)
-        return VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            overline(.users, "YOUR GROUPS")
+        return VStack(alignment: .leading, spacing: 10) {
+            sectionLabel(icon: .users, "YOUR GROUPS")
             if items.isEmpty {
-                emptyCard("You’re not in any group rooms yet — they appear when your cell is set up.")
+                emptyCard(query.isEmpty
+                    ? "You’re not in any group rooms yet — they appear when your cell is set up."
+                    : "No groups match your search.")
             } else {
-                ForEach(items) { c in
-                    NavigationLink(value: c) { DMRow(c: c) }.buttonStyle(.plain)
+                groupedCard {
+                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
+                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.plain)
+                    }
                 }
             }
         }
     }
 
-    // MARK: DM stories row
+    // MARK: DM stories row (gold gradient rings — presence dots omitted: no data)
 
     private var storiesRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(alignment: .top, spacing: Nuru.S.base) {
-                VStack(spacing: 6) {
+                VStack(spacing: 8) {
                     ZStack(alignment: .bottomTrailing) {
-                        ZStack { Circle().fill(Nuru.navy); Text("ME").font(.inter(13, .bold)).foregroundStyle(Nuru.onNavy) }
-                            .frame(width: 56, height: 56)
-                        ZStack { Circle().fill(Nuru.gold); Icon(.plus, size: 11, color: Nuru.navy) }
-                            .frame(width: 20, height: 20)
-                            .overlay(Circle().stroke(Nuru.paper, lineWidth: 2))
+                        ZStack {
+                            Circle().fill(LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1628)],
+                                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                            Text(myInitials).font(.inter(14, .semibold)).foregroundStyle(.white)
+                        }
+                        .frame(width: 58, height: 58)
+                        ZStack { Circle().fill(storyRing); Icon(.plus, size: 13, color: .white) }
+                            .frame(width: 24, height: 24)
+                            .overlay(Circle().stroke(Nuru.paper, lineWidth: 3))
+                            .shadow(color: Nuru.gold.opacity(0.5), radius: 5, y: 2)
                             .offset(x: 2, y: 2)
                     }
-                    Text("Your note").font(.inter(10, .medium)).foregroundStyle(Nuru.muted)
+                    Text("Your note").font(.inter(10, .medium)).foregroundStyle(Color(hex: 0x8A93A0))
                 }
+                .frame(width: 60)
                 ForEach(vm.dms) { c in
                     NavigationLink(value: c) {
-                        VStack(spacing: 6) {
+                        VStack(spacing: 8) {
                             Avatar(url: c.avatarUrl, name: c.title ?? "?", size: 52)
-                                .padding(3)
-                                .overlay(Circle().stroke(Nuru.gold, lineWidth: 2))
-                            Text(firstWord(c.title)).font(.inter(10, .medium)).foregroundStyle(Nuru.muted).lineLimit(1)
+                                .padding(2)
+                                .background(Circle().fill(Nuru.paper))
+                                .padding(2.5)
+                                .background(storyRing, in: Circle())
+                            Text(firstWord(c.title)).font(.inter(10, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                         }
                         .frame(width: 60)
                     }.buttonStyle(.plain)
@@ -337,53 +416,120 @@ struct ChatView: View {
         }
     }
 
-    // MARK: FAB
+    // MARK: FAB + compose sheet
 
     private var fab: some View {
-        Button { /* compose not wired yet */ } label: {
-            Icon(.pencil, size: 20, color: Nuru.navy)
+        Button { composeOpen = true } label: {
+            Icon(.pencil, size: 22, color: .white)
                 .frame(width: 56, height: 56)
-                .background(Nuru.goldGradient, in: Circle())
-                .overlay(Circle().stroke(.white.opacity(0.25), lineWidth: 1))
-                .shadow(color: Nuru.gold.opacity(0.45), radius: 12, y: 6)
+                .background(storyRing, in: Circle())
+                .shadow(color: Nuru.gold.opacity(0.55), radius: 12, y: 8)
+                .shadow(color: Color(hex: 0x0B1F33, alpha: 0.25), radius: 5, y: 3)
         }
         .buttonStyle(.plain)
         .padding(.trailing, Nuru.S.screen)
         .padding(.bottom, Nuru.tabBarSpace - 18)
     }
 
-    // MARK: Shared bits
-
-    private func overline(_ icon: Lucide, _ text: String) -> some View {
-        HStack(spacing: 6) {
-            Icon(icon, size: 12, color: Nuru.gold)
-            Text(text).font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.gold)
+    // Figma ComposeSheet — dark scrim, "Start something", three segment shortcuts.
+    // (No create-DM/group endpoint yet, so actions jump to the matching segment.)
+    private var composeSheet: some View {
+        ZStack(alignment: .bottom) {
+            Color(hex: 0x0B1F33, alpha: 0.45)
+                .ignoresSafeArea()
+                .onTapGesture { composeOpen = false }
+            VStack(spacing: 8) {
+                HStack {
+                    Text("Start something").font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                    Spacer(minLength: 0)
+                    Button { composeOpen = false } label: {
+                        Icon(.x, size: 16, color: .white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.white.opacity(0.15), in: Circle())
+                    }.buttonStyle(.plain)
+                }
+                .padding(.horizontal, 8)
+                VStack(spacing: 0) {
+                    composeAction("New direct message", "Message a person 1:1", divider: false) {
+                        Icon(.pencil, size: 19, color: Nuru.gold)
+                    } action: { segment = .dm }
+                    composeAction("New group", "Start a private group chat", divider: true) {
+                        Icon(.users, size: 19, color: Nuru.gold)
+                    } action: { segment = .group }
+                    composeAction("Browse spaces", "Find & join a community space", divider: true) {
+                        Image(systemName: "safari").font(.system(size: 18)).foregroundStyle(Nuru.gold)
+                    } action: { segment = .space }
+                }
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .nuruShadow()
+            }
+            .padding(.horizontal, Nuru.S.md)
+            .padding(.bottom, Nuru.S.md)
+            .transition(.move(edge: .bottom).combined(with: .opacity))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, Nuru.S.xs)
+        .zIndex(2)
     }
 
-    private func hashOverline(_ text: String) -> some View {
+    private func composeAction(_ title: String, _ sub: String, divider: Bool,
+                               @ViewBuilder icon: () -> some View, action: @escaping () -> Void) -> some View {
+        Button { action(); composeOpen = false } label: {
+            HStack(spacing: 14) {
+                icon()
+                    .frame(width: 44, height: 44)
+                    .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(title).font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                    Text(sub).font(.inter(11.5)).foregroundStyle(Color(hex: 0x9AA3AF))
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 16, color: Color(hex: 0xCBD5E1))
+            }
+            .padding(Nuru.S.base)
+            .overlay(alignment: .top) { if divider { Rectangle().fill(Nuru.border).frame(height: 1) } }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Shared bits
+
+    private func sectionLabel(hash: Bool = false, icon: Lucide? = nil, _ text: String) -> some View {
         HStack(spacing: 6) {
-            Text("#").font(.inter(12, .bold)).foregroundStyle(Nuru.gold)
-            Text(text).font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.gold)
+            if hash { Text("#").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB08A1E)) }
+            else if let icon { Icon(icon, size: 12, color: Color(hex: 0xB08A1E)) }
+            Text(text).font(.inter(10, .bold)).kerning(2).foregroundStyle(Color(hex: 0xB08A1E))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.top, Nuru.S.xs)
+        .padding(.horizontal, 4)
+    }
+
+    private func groupedCard(@ViewBuilder _ content: () -> some View) -> some View {
+        VStack(spacing: 0, content: content)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
     }
 
     private func emptyCard(_ text: String) -> some View {
         Text(text)
-            .font(.nCaption).foregroundStyle(Nuru.muted).lineSpacing(3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Nuru.S.base)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .font(.inter(12)).foregroundStyle(Color(hex: 0x9CA3AF)).lineSpacing(3)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 32).padding(.horizontal, Nuru.S.base)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     // MARK: Derived
 
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
+    private var myInitials: String {
+        let parts = (auth.profile?.fullName ?? "").split(separator: " ")
+        guard let f = parts.first?.first else { return "ME" }
+        if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
+        return String(f).uppercased()
+    }
     private var greeting: String {
         let h = Calendar.current.component(.hour, from: Date())
         return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
@@ -391,126 +537,226 @@ struct ChatView: View {
     private func firstWord(_ s: String?) -> String { (s ?? "—").split(separator: " ").first.map(String.init) ?? "—" }
 }
 
-// MARK: - Space row (white card with # avatar, preview, member dots, Active pill, day)
+// MARK: - Row chrome shared by space/DM/group rows
+
+// WhatsApp-style double tick shown on rows that are fully read.
+private struct DoubleCheck: View {
+    var body: some View {
+        ZStack {
+            Icon(.check, size: 12, color: Color(hex: 0xBCC4CE)).offset(x: -3)
+            Icon(.check, size: 12, color: Color(hex: 0xBCC4CE)).offset(x: 3)
+        }
+        .frame(width: 20, height: 14)
+    }
+}
+
+// Tiny gold-gradient unread pill.
+private struct UnreadBadge: View {
+    let count: Int
+    var body: some View {
+        Text("\(count)").font(.inter(9, .bold)).foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 17, minHeight: 17)
+            .background(storyRing, in: Capsule())
+            .shadow(color: Nuru.gold.opacity(0.65), radius: 5, y: 3)
+    }
+}
+
+// Left gold accent bar + warm tint that mark an unread row.
+private struct RowChrome: ViewModifier {
+    let unread: Bool
+    let divider: Bool
+    func body(content: Content) -> some View {
+        content
+            .padding(.horizontal, Nuru.S.base)
+            .padding(.vertical, 14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(unread ? Color(hex: 0xFFFDF6) : Color.white)
+            .overlay(alignment: .leading) {
+                if unread {
+                    UnevenRoundedRectangle(bottomTrailingRadius: 2, topTrailingRadius: 2)
+                        .fill(storyRing).frame(width: 3)
+                        .padding(.vertical, 10)
+                }
+            }
+            .overlay(alignment: .top) { if divider { Rectangle().fill(Nuru.border).frame(height: 1) } }
+    }
+}
+
+// Overlapping member dots + count chip (Figma MemberStack).
+private struct MemberStack: View {
+    let tint: Color
+    let count: Int
+    var body: some View {
+        HStack(spacing: -8) {
+            ForEach(0..<min(3, max(1, count)), id: \.self) { i in
+                Circle()
+                    .fill(LinearGradient(colors: [tint, tint.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 22, height: 22)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                    .zIndex(Double(3 - i))
+            }
+            Text(count > 999 ? String(format: "%.1fk", Double(count) / 1000) : "\(count)")
+                .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                .padding(.horizontal, 6)
+                .frame(height: 22)
+                .background(Color.white, in: Capsule())
+                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+        }
+    }
+}
+
+// One-line preview — voice/photo affordances, author prefix for multi rooms.
+private struct RowPreview: View {
+    let c: ChatConversation
+    let showAuthor: Bool
+    private var unread: Bool { c.unread > 0 }
+    var body: some View {
+        HStack(spacing: 4) {
+            if c.lastType == "voice" {
+                Icon(.mic, size: 11, color: Nuru.gold)
+                Text("Voice message").font(.inter(10)).foregroundStyle(bodyColor)
+            } else if c.lastType == "image" {
+                Icon(.image, size: 11, color: Nuru.gold)
+                Text("Photo").font(.inter(10)).foregroundStyle(bodyColor)
+            } else {
+                (authorText + Text(c.lastBody ?? "No messages yet"))
+                    .font(.inter(10)).foregroundStyle(bodyColor)
+            }
+        }
+        .lineLimit(1)
+    }
+    private var authorText: Text {
+        guard showAuthor, let a = c.lastAuthor, !a.isEmpty else { return Text("") }
+        return Text("\(a): ").fontWeight(.semibold).foregroundColor(unread ? Nuru.navy : Color(hex: 0x68758A))
+    }
+    private var bodyColor: Color { unread ? Color(hex: 0x33445A) : Color(hex: 0x8A93A0) }
+}
+
+// MARK: - Space row (# squircle, author preview, member dots, Active pill)
 
 private struct SpaceRow: View {
     let c: ChatConversation
     let index: Int
-
-    private static let tints: [(bg: UInt32, fg: UInt32)] = [
-        (0x14B8A6, 0xFFFFFF), // teal
-        (0xEC4899, 0xFFFFFF), // pink
-        (0xF59E0B, 0xFFFFFF), // amber
-        (0x6366F1, 0xFFFFFF), // indigo
-        (0x10B981, 0xFFFFFF), // emerald
-    ]
-    private var tint: (bg: UInt32, fg: UInt32) { Self.tints[index % Self.tints.count] }
+    let divider: Bool
+    private var tint: Color { rowTint(index) }
+    private var unread: Bool { c.unread > 0 }
 
     var body: some View {
-        HStack(alignment: .top, spacing: Nuru.S.md) {
-            Text("#").font(.inter(22, .bold)).foregroundStyle(Color(hex: tint.fg))
-                .frame(width: 48, height: 48)
-                .background(Color(hex: tint.bg), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(c.title ?? "Space").font(.inter(15, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Spacer(minLength: 6)
-                    Text(dayLabel).font(.inter(11, .medium)).foregroundStyle(Nuru.faint)
+        HStack(alignment: .top, spacing: 14) {
+            Text("#").font(.inter(22, .bold)).foregroundStyle(.white)
+                .frame(width: 52, height: 52)
+                .background(
+                    LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .shadow(color: tint.opacity(0.35), radius: 7, y: 5)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(c.title ?? "Space")
+                        .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
+                        .foregroundStyle(Nuru.navy).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(chatTime(c.lastAt))
+                        .font(.inter(10, unread ? .bold : .medium))
+                        .foregroundStyle(unread ? Nuru.gold : Color(hex: 0x9AA3AF))
                 }
-                Text(preview).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(1)
-                HStack(spacing: Nuru.S.sm) {
-                    memberDots
+                HStack(spacing: 8) {
+                    RowPreview(c: c, showAuthor: true)
+                    Spacer(minLength: 4)
+                    if unread { UnreadBadge(count: c.unread) } else { DoubleCheck() }
+                }
+                HStack {
+                    MemberStack(tint: tint, count: c.memberCount)
                     Spacer(minLength: 0)
-                    HStack(spacing: 4) {
-                        Circle().fill(Nuru.success).frame(width: 6, height: 6)
-                        Text("Active").font(.inter(10, .semibold)).foregroundStyle(Nuru.activeBadgeText)
-                    }
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Nuru.activeBadgeBg, in: Capsule())
+                    activePill
                 }
-                .padding(.top, 2)
+                .padding(.top, 6)
             }
         }
-        .padding(Nuru.S.md)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        .modifier(RowChrome(unread: unread, divider: divider))
     }
 
-    private static let dotTints: [UInt32] = [0x14B8A6, 0x6366F1, 0xEC4899, 0xF59E0B]
-    private var memberDots: some View {
-        let n = min(3, max(1, c.memberCount))
-        return HStack(spacing: -6) {
-            ForEach(0..<n, id: \.self) { i in
-                Circle().fill(Color(hex: Self.dotTints[(index + i) % Self.dotTints.count]))
-                    .frame(width: 18, height: 18)
-                    .overlay(Circle().stroke(Nuru.white, lineWidth: 1.5))
-            }
-            if c.memberCount > 0 {
-                Text("\(c.memberCount)").font(.inter(10, .semibold)).foregroundStyle(Nuru.muted).padding(.leading, 10)
-            }
+    private var activePill: some View {
+        HStack(spacing: 5) {
+            Circle().fill(Color(hex: 0x16A34A)).frame(width: 6, height: 6)
+            Text("Active").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
         }
-    }
-
-    private var preview: String {
-        if c.lastType == "voice" { return "🎤 Voice note" }
-        if c.lastType == "image" { return "📷 Photo" }
-        let prefix = c.lastAuthor.map { "\($0): " } ?? ""
-        return prefix + (c.lastBody ?? "No messages yet")
-    }
-
-    private var dayLabel: String {
-        guard let iso = c.lastAt,
-              let d = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-        else { return "" }
-        let f = DateFormatter(); f.dateFormat = "EEE"
-        return f.string(from: d)
+        .padding(.horizontal, 8).padding(.vertical, 4)
+        .background(Color(hex: 0x16A34A, alpha: 0.09), in: Capsule())
     }
 }
 
-// MARK: - DM / group row (avatar, name, preview, time, reply count)
+// MARK: - DM / group row (real-or-initials squircle avatar, unread badge, read ticks)
 
-private struct DMRow: View {
+private struct ConversationRow: View {
     let c: ChatConversation
+    let index: Int
+    let divider: Bool
+    private var tint: Color { rowTint(index + 3) }
+    private var unread: Bool { c.unread > 0 }
+
     var body: some View {
-        HStack(alignment: .top, spacing: Nuru.S.md) {
+        HStack(spacing: 14) {
             if c.kind == "dm" {
-                Avatar(url: c.avatarUrl, name: c.title ?? "?", size: 44)
+                SquircleAvatar(url: c.avatarUrl, name: c.title ?? "?", tint: tint)
             } else {
-                Icon(.users, size: 18, color: Nuru.gold)
-                    .frame(width: 44, height: 44)
-                    .background(Nuru.goldChipBg, in: Circle())
+                Icon(.users, size: 21, color: .white)
+                    .frame(width: 52, height: 52)
+                    .background(
+                        LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .shadow(color: tint.opacity(0.35), radius: 7, y: 5)
             }
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(c.title ?? "Conversation").font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Spacer(minLength: 6)
-                    if let at = c.lastAt { Text(timeAgo(at)).font(.inter(11, .medium)).foregroundStyle(Nuru.faint) }
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 6) {
+                    Text(c.title ?? "Conversation")
+                        .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
+                        .foregroundStyle(Nuru.navy).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(chatTime(c.lastAt))
+                        .font(.inter(10, unread ? .bold : .medium))
+                        .foregroundStyle(unread ? Nuru.gold : Color(hex: 0x9AA3AF))
                 }
-                Text(preview).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(1)
-                HStack(spacing: Nuru.S.md) {
-                    HStack(spacing: 4) {
-                        Icon(.messageCircle, size: 12, color: Nuru.faint)
-                        Text("\(max(0, c.memberCount))").font(.inter(11, .medium)).foregroundStyle(Nuru.faint)
-                    }
-                    Spacer(minLength: 0)
-                    if c.unread > 0 {
-                        Text("\(c.unread)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
-                            .frame(minWidth: 20, minHeight: 20).background(Nuru.gold, in: Circle())
-                    }
+                HStack(spacing: 8) {
+                    RowPreview(c: c, showAuthor: c.kind != "dm")
+                    Spacer(minLength: 4)
+                    if unread { UnreadBadge(count: c.unread) } else { DoubleCheck() }
                 }
-                .padding(.top, 2)
             }
         }
-        .padding(Nuru.S.md)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        .modifier(RowChrome(unread: unread, divider: divider))
+    }
+}
+
+// Rounded-square avatar: real photo when available, tinted-gradient initials otherwise.
+private struct SquircleAvatar: View {
+    let url: String?
+    let name: String
+    let tint: Color
+
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            if let url, let u = URL(string: url) {
+                CachedAsyncImage(url: u) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() } else { initialsText }
+                }
+            } else {
+                initialsText
+            }
+        }
+        .frame(width: 52, height: 52)
+        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: tint.opacity(0.35), radius: 7, y: 5)
     }
 
-    private var preview: String {
-        if c.lastType == "voice" { return "🎤 Voice note" }
-        if c.lastType == "image" { return "📷 Photo" }
-        return c.lastBody ?? "No messages yet"
+    private var initialsText: some View {
+        Text(initials).font(.inter(15, .semibold)).foregroundStyle(.white)
+    }
+    private var initials: String {
+        let parts = name.split(separator: " ").filter { $0.first?.isLetter == true }
+        guard let f = parts.first?.first else { return "?" }
+        if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
+        return String(name.prefix(2)).uppercased()
     }
 }

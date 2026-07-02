@@ -1,9 +1,12 @@
 // Nuru Assistant — the AI companion, rebuilt from the Figma NuruAssistant.
-// The purple/green gradient header (orb + "Nuru AI" + status), suggestion chips,
-// a message transcript (you = ink bubble, Nuru = white bubble + orb), a typing
+// The purple/green gradient header (glows, orb, "Nuru AI", rotating status
+// taglines), wrapping suggestion chips, a message transcript (you = ink bubble
+// + your initials, Nuru = white bubble + orb, role captions), a typing
 // indicator, and a composer. Wired to the real POST /assistant/chat (+ history).
-// The decorative attachment tray / voice / stickers from the mock are omitted —
-// they aren't backed by real functionality. Gracefully surfaces provider outages.
+// The mock's attachment tray / voice / stickers / emoji bar and the canned
+// CatchUp/Attention cards are omitted — they aren't backed by real data.
+// Gracefully surfaces provider outages.
+import Combine
 import SwiftUI
 
 /// One assistant transcript turn — matches the /assistant contract ({role,text}).
@@ -36,6 +39,13 @@ private enum NUR {
         Suggestion(label: "Draft an encouragement", color: purple),
         Suggestion(label: "Find prayer requests", color: green),
         Suggestion(label: "Plan my quiet time", color: Color(hex: 0x0EA5E9)),
+    ]
+    static let taglines = [
+        "Online · ready when you are",
+        "Summarize a conversation ✨",
+        "Draft a warm reply 💛",
+        "Find prayer requests 🙏",
+        "Plan your quiet time 🌅",
     ]
     static let welcome = "Hi, I'm Nuru ✨ your AI companion. I can summarize chats, draft an encouragement, surface prayer requests, or simply talk it through. How can I help today?"
 }
@@ -78,8 +88,11 @@ final class NuruAssistantViewModel: ObservableObject {
 }
 
 struct NuruAssistantView: View {
+    @EnvironmentObject private var auth: AuthStore
     @StateObject private var vm = NuruAssistantViewModel()
     @Environment(\.dismiss) private var dismiss
+    @State private var taglineIndex = 0
+    private let taglineTimer = Timer.publish(every: 3.2, on: .main, in: .common).autoconnect()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -127,10 +140,7 @@ struct NuruAssistantView: View {
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(NUR.sendG, in: Capsule())
                 }
-                HStack(spacing: 6) {
-                    Circle().fill(NUR.green).frame(width: 6, height: 6)
-                    Text("Online · ready when you are").font(.inter(10)).foregroundStyle(.white.opacity(0.7))
-                }
+                statusTicker
             }
             Spacer(minLength: 0)
             Button { dismiss() } label: {
@@ -141,42 +151,73 @@ struct NuruAssistantView: View {
         }
         .padding(.horizontal, 12).padding(.top, 56).padding(.bottom, 16)
         .frame(maxWidth: .infinity)
-        .background(NUR.header)
+        .background(
+            NUR.header
+                .overlay(alignment: .topLeading) {
+                    Circle().fill(NUR.purple.opacity(0.55)).frame(width: 176, height: 176).blur(radius: 44).offset(x: -40, y: -40)
+                }
+                .overlay(alignment: .bottomTrailing) {
+                    Circle().fill(NUR.green.opacity(0.45)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 20, y: 64)
+                }
+        )
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous))
         .shadow(color: Color(hex: 0x2A1259).opacity(0.5), radius: 24, y: 14)
     }
 
+    // Live, rotating status line under the title (Figma NuruStatus).
+    private var statusTicker: some View {
+        HStack(spacing: 6) {
+            Circle().fill(NUR.green).frame(width: 6, height: 6)
+                .shadow(color: NUR.green.opacity(0.9), radius: 3)
+            Text(NUR.taglines[taglineIndex])
+                .font(.inter(10)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                .id(taglineIndex)
+                .transition(.asymmetric(
+                    insertion: .move(edge: .bottom).combined(with: .opacity),
+                    removal: .move(edge: .top).combined(with: .opacity)))
+        }
+        .frame(height: 13, alignment: .leading)
+        .clipped()
+        .onReceive(taglineTimer) { _ in
+            withAnimation(.easeOut(duration: 0.32)) { taglineIndex = (taglineIndex + 1) % NUR.taglines.count }
+        }
+    }
+
     private var suggestions: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                ForEach(NUR.suggestions, id: \.label) { s in
-                    Button { Task { await vm.suggest(s.label) } } label: {
-                        Text(s.label).font(.inter(10, .semibold)).foregroundStyle(NUR.navy)
-                            .padding(.horizontal, 12).padding(.vertical, 7)
-                            .background(Color.white, in: Capsule())
-                            .overlay(Capsule().stroke(s.color.opacity(0.33), lineWidth: 1))
-                    }.buttonStyle(.plain).disabled(vm.typing)
-                }
-            }.padding(.horizontal, 1)
+        ChipFlow(spacing: 6) {
+            ForEach(NUR.suggestions, id: \.label) { s in
+                Button { Task { await vm.suggest(s.label) } } label: {
+                    Text(s.label).font(.inter(10, .semibold)).foregroundStyle(NUR.navy)
+                        .padding(.horizontal, 12).padding(.vertical, 7)
+                        .background(Color.white, in: Capsule())
+                        .overlay(Capsule().stroke(s.color.opacity(0.33), lineWidth: 1))
+                        .shadow(color: s.color.opacity(0.35), radius: 6, y: 4)
+                }.buttonStyle(.plain).disabled(vm.typing)
+            }
         }
     }
 
     private func bubble(_ m: AssistantMessage) -> some View {
         HStack(alignment: .bottom, spacing: 6) {
-            if m.mine { Spacer(minLength: 40) } else { orbAvatar }
-            Text(m.text)
-                .font(.inter(12)).lineSpacing(3)
-                .foregroundStyle(m.mine ? .white : NUR.navy)
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(
-                    m.mine ? AnyShapeStyle(NUR.ink) : AnyShapeStyle(Color.white),
-                    in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: m.mine ? 18 : 6, bottomTrailingRadius: m.mine ? 6 : 18, topTrailingRadius: 18, style: .continuous)
-                )
-                .overlay(
-                    UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: m.mine ? 18 : 6, bottomTrailingRadius: m.mine ? 6 : 18, topTrailingRadius: 18, style: .continuous)
-                        .stroke(m.mine ? Color.clear : NUR.border, lineWidth: 1)
-                )
-            if m.mine { meAvatar } else { Spacer(minLength: 40) }
+            if m.mine { Spacer(minLength: 48) } else { orbAvatar }
+            VStack(alignment: m.mine ? .trailing : .leading, spacing: 2) {
+                Text(m.text)
+                    .font(.inter(12)).lineSpacing(3)
+                    .foregroundStyle(m.mine ? .white : NUR.navy)
+                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .background(
+                        m.mine ? AnyShapeStyle(NUR.ink) : AnyShapeStyle(Color.white),
+                        in: UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: m.mine ? 18 : 6, bottomTrailingRadius: m.mine ? 6 : 18, topTrailingRadius: 18, style: .continuous)
+                    )
+                    .overlay(
+                        UnevenRoundedRectangle(topLeadingRadius: 18, bottomLeadingRadius: m.mine ? 18 : 6, bottomTrailingRadius: m.mine ? 6 : 18, topTrailingRadius: 18, style: .continuous)
+                            .stroke(m.mine ? Color.clear : NUR.border, lineWidth: 1)
+                    )
+                    .shadow(color: m.mine ? Color(hex: 0x0B1F33).opacity(0.25) : NUR.purple.opacity(0.12), radius: 8, y: 5)
+                Text(m.mine ? "You" : "Nuru")
+                    .font(.inter(8)).foregroundStyle(NUR.hint)
+            }
+            if m.mine { meAvatar } else { Spacer(minLength: 48) }
         }
     }
 
@@ -187,8 +228,14 @@ struct NuruAssistantView: View {
     }
     private var meAvatar: some View {
         Circle().fill(NUR.ink).frame(width: 28, height: 28)
-            .overlay(Text("ME").font(.inter(8, .bold)).foregroundStyle(.white))
+            .overlay(Text(myInitials).font(.inter(8, .bold)).foregroundStyle(.white))
             .overlay(Circle().stroke(Color.white, lineWidth: 2))
+    }
+    private var myInitials: String {
+        let parts = (auth.profile?.fullName ?? "").split(separator: " ")
+        guard let f = parts.first?.first else { return "ME" }
+        if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
+        return String(f).uppercased()
     }
 
     private var typingRow: some View {
@@ -211,11 +258,11 @@ struct NuruAssistantView: View {
                     .onSubmit { Task { await vm.send() } }
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
-            .background(NUR.cream, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(NUR.border, lineWidth: 1))
+            .background(NUR.cream, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(NUR.border, lineWidth: 1))
 
             Button { Task { await vm.send() } } label: {
-                Image(systemName: "paperplane.fill").font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                Icon(.send, size: 17, color: .white)
                     .frame(width: 44, height: 44).background(NUR.sendG, in: Circle())
                     .shadow(color: NUR.purple.opacity(0.5), radius: 8, y: 4)
             }
@@ -226,5 +273,34 @@ struct NuruAssistantView: View {
         .padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 10)
         .background(Color.white.opacity(0.92))
         .overlay(alignment: .top) { Rectangle().fill(NUR.border).frame(height: 1) }
+    }
+}
+
+// MARK: - ChipFlow (wrapping chip layout, mirrors Figma flex-wrap)
+
+private struct ChipFlow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowHeight: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > 0, x + s.width > maxWidth { x = 0; y += rowHeight + spacing; rowHeight = 0 }
+            x += s.width + spacing
+            rowHeight = max(rowHeight, s.height)
+        }
+        return CGSize(width: maxWidth == .infinity ? max(0, x - spacing) : maxWidth, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowHeight: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + s.width > bounds.maxX { x = bounds.minX; y += rowHeight + spacing; rowHeight = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing
+            rowHeight = max(rowHeight, s.height)
+        }
     }
 }
