@@ -1,41 +1,35 @@
-// Plans tab — rebuilt line-by-line from the Figma Make source of truth
-// (components/PlansTab.tsx). A reading-plan discovery page: navy-gradient header
-// with a search field, a "Continue reading" progress list, a "Plan of the day"
-// hero, topic pills, horizontal collection carousels (or a filtered grid while
-// searching), and a "Read with a friend" invite. Exact Figma palette; bound to
-// the real ReadingPlanRow catalogue. The plan-detail day list (PlanDetailView /
-// PlanDayView) below is unchanged and reached via the existing navigation.
+// Plans tab — rebuilt line-by-line from the UPDATED Figma Make source of truth
+// (components/PlansTab.tsx). The fresh design moved to a light-cream header
+// (white search field + bell), added a streak/reward strip (flame, week dots,
+// badge progress), a shimmering "Plan of the day" badge, a pulsing play ring on
+// continue rows, a "Finish & earn" trophy card and highlighted next-day rows in
+// the detail slide-over, and a navy day header + confetti on day completion.
+// Everything binds to REAL data: the ReadingPlanRow catalogue (MemberAPI.plans),
+// plan detail (MemberAPI.plan), enrollment (startPlan), day/segment completion
+// (completePlanDay / PlanDayRef navigation), streak (me/achievements) and the
+// Word rhythm (me/rhythm/today). Mock-only Figma fields (audio flags, intro
+// video/audio players, friends-on-plan avatars) are omitted — no fake data.
+// Shared card structs + the PL palette live in ReadingPlanCards.swift.
 import SwiftUI
-
-// Exact Figma palette (PlansTab.tsx) — kept local so the page is 1:1 with the design.
-private enum PL {
-    static let navy      = Color(hex: 0x0A2540)
-    static let navyDeep  = Color(hex: 0x081C36)
-    static let gold      = Color(hex: 0xC9A227)
-    static let goldLight = Color(hex: 0xE6C068)
-    static let goldDeep  = Color(hex: 0xA8861C)
-    static let cream     = Color(hex: 0xF4F0E8)
-    static let creamLo   = Color(hex: 0xF1ECE1)
-    static let surface   = Color(hex: 0xFBF8F1)
-    static let border    = Color(hex: 0x0A2540, alpha: 0.08)
-    static let ink2      = Color(hex: 0x68758A)
-    static let ink3      = Color(hex: 0x9CA3AF)
-    static let catText   = Color(hex: 0x9A7A2A)
-    static let blurb     = Color(hex: 0x3A4A5F)
-}
 
 // MARK: - Plans list (discovery)
 
 @MainActor
 final class ReadingPlansViewModel: ObservableObject {
     @Published var plans: [ReadingPlanRow] = []
+    @Published var streak = 0
+    @Published var todayWordDone = false
     @Published var loading = true
     @Published var error: String?
 
     func load() async {
         loading = true; error = nil
+        async let ach = try? MemberAPI.achievements()
+        async let rhythm = try? MemberAPI.rhythmToday()
         do { plans = try await MemberAPI.plans() }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
+        streak = (await ach)?.streak.current ?? 0
+        todayWordDone = (await rhythm)?.word ?? false
         loading = false
     }
 }
@@ -92,6 +86,7 @@ struct ReadingPlansView: View {
                               isEmpty: vm.plans.isEmpty, error: vm.error,
                               emptyText: "No reading plans yet.", retry: { Task { await vm.load() } }) {
                     VStack(alignment: .leading, spacing: 24) {
+                        if !searching { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, let pod = planOfDay { planOfDayCard(pod) }
                         categoriesSection
@@ -113,60 +108,71 @@ struct ReadingPlansView: View {
         .refreshable { await vm.load() }
     }
 
-    // MARK: header (navy gradient + search)
+    // MARK: header — light cream (fresh design) with white search + bell
 
     private var header: some View {
-        ZStack(alignment: .topTrailing) {
-            RadialGradient(colors: [PL.gold.opacity(0.33), .clear], center: .center, startRadius: 0, endRadius: 120)
-                .frame(width: 224, height: 224).blur(radius: 40).offset(x: 40, y: -70)
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(alignment: .top) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.goldLight)
-                        Text("Grow in the Word").font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
-                            .padding(.top, 4)
-                        Text("A little every day — with the whole family of God.")
-                            .font(.inter(12)).foregroundStyle(.white.opacity(0.6)).padding(.top, 4)
-                    }
-                    Spacer(minLength: 8)
-                    ZStack(alignment: .topTrailing) {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white.opacity(0.10))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.15), lineWidth: 1))
-                        Icon(.bell, size: 18, color: .white)
-                        Circle().fill(PL.gold).frame(width: 8, height: 8).offset(x: -8, y: 8)
-                    }
-                    .frame(width: 40, height: 40)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.catText)
+                    Text("Grow in the Word").font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(PL.navy)
+                        .padding(.top, 4)
+                    Text("A little every day — with the whole family of God.")
+                        .font(.inter(12)).foregroundStyle(PL.ink2).padding(.top, 4)
                 }
-                searchBar.padding(.top, 16)
+                Spacer(minLength: 8)
+                bellButton
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 64)
-            .padding(.bottom, 20)
+            searchBar.padding(.top, 16)
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 64)
+        .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .background(alignment: .topTrailing) {
+            RadialGradient(colors: [PL.gold.opacity(0.27), .clear], center: .center, startRadius: 0, endRadius: 112)
+                .frame(width: 224, height: 224).blur(radius: 40).opacity(0.4).offset(x: 64, y: -80)
+        }
+        .background(LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
         .clipShape(.rect(bottomLeadingRadius: 28, bottomTrailingRadius: 28))
-        .shadow(color: PL.navyDeep.opacity(0.55), radius: 22, y: 14)
+        .overlay(alignment: .bottom) { Rectangle().fill(PL.border).frame(height: 1) }
+        .shadow(color: Color(hex: 0x0A1628).opacity(0.16), radius: 12, y: 7)
+    }
+
+    private var bellButton: some View {
+        NavigationLink(value: AppRoute.notifications) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)
+                RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1)
+                Icon(.bell, size: 18, color: PL.navy)
+            }
+            .overlay(alignment: .topTrailing) {
+                Circle().fill(PL.gold).frame(width: 8, height: 8).padding(8)
+            }
+            .frame(width: 40, height: 40)
+        }
+        .buttonStyle(.plain)
     }
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            Icon(.search, size: 16, color: .white.opacity(0.45))
+            Icon(.search, size: 16, color: PL.ink3)
             ZStack(alignment: .leading) {
                 if query.isEmpty {
-                    Text("Search plans, topics, books…").font(.inter(14)).foregroundStyle(.white.opacity(0.40))
+                    Text("Search plans, topics, books…").font(.inter(14)).foregroundStyle(PL.ink3)
                 }
                 TextField("", text: $query)
-                    .font(.inter(14)).foregroundStyle(.white).tint(PL.gold)
+                    .font(.inter(14)).foregroundStyle(PL.navy).tint(PL.gold)
                     .textInputAutocapitalization(.never).autocorrectionDisabled()
             }
             if !query.isEmpty {
-                Button { query = "" } label: { Icon(.x, size: 15, color: .white.opacity(0.45)) }.buttonStyle(.plain)
+                Button { query = "" } label: { Icon(.x, size: 15, color: PL.ink3) }.buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 16).padding(.vertical, 13)
-        .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(0.10), lineWidth: 1))
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
     }
 
     // MARK: continue reading
@@ -180,7 +186,7 @@ struct ReadingPlansView: View {
         }
     }
 
-    // MARK: plan of the day
+    // MARK: plan of the day (shimmering badge + sparkles)
 
     private func planOfDayCard(_ plan: ReadingPlanRow) -> some View {
         NavigationLink(value: plan) {
@@ -191,11 +197,7 @@ struct ReadingPlansView: View {
             }
             .frame(height: 192).frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-            .overlay(alignment: .topLeading) {
-                Text("PLAN OF THE DAY").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(PL.gold, in: Capsule()).padding(14)
-            }
+            .overlay(alignment: .topLeading) { planOfDayBadge.padding(14) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(plan.title).font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(.white)
@@ -210,6 +212,16 @@ struct ReadingPlansView: View {
             .shadow(color: PL.navyDeep.opacity(0.5), radius: 22, y: 12)
         }
         .buttonStyle(.plain)
+    }
+
+    private var planOfDayBadge: some View {
+        HStack(spacing: 4) {
+            Icon(.sparkles, size: 9, color: PL.navy)
+            Text("PLAN OF THE DAY").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 4)
+        .background(PL.gold, in: Capsule())
+        .overlay(PLShimmer().clipShape(Capsule()))
     }
 
     // MARK: categories
@@ -254,6 +266,7 @@ struct ReadingPlansView: View {
                             ForEach(col.plans) { plan in PLPlanCard(plan: plan) }
                         }
                         .padding(.horizontal, 20)
+                        .padding(.bottom, 4)
                     }
                     .padding(.horizontal, -20)
                 }
@@ -317,127 +330,7 @@ struct ReadingPlansView: View {
     }
 }
 
-// MARK: - plan cover (image with brand-gradient fallback)
-
-private struct PLCover: View {
-    let plan: ReadingPlanRow
-    var body: some View {
-        ZStack {
-            LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
-            if let u = plan.imageUrl.flatMap(URL.init) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill() } else { Color.clear }
-                }
-            }
-        }
-        .clipped()
-    }
-}
-
-// MARK: - continue-reading row
-
-private struct PLContinueRow: View {
-    let plan: ReadingPlanRow
-    private var total: Int { max(plan.dayCount, 1) }
-    private var day: Int { plan.currentDay ?? ((plan.completedDays?.count ?? 0) + 1) }
-    private var pct: Double { min(max(Double(day) / Double(total), 0), 1) }
-
-    var body: some View {
-        HStack(spacing: 12) {
-            PLCover(plan: plan).frame(width: 56, height: 56).clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 0) {
-                Text(plan.title).font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy).lineLimit(1)
-                Text("Today · \(plan.subtitle ?? "Day \(day) of \(total)")").font(.inter(11)).foregroundStyle(PL.ink2).lineLimit(1)
-                    .padding(.top, 2)
-                HStack(spacing: 8) {
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            Capsule().fill(PL.navy.opacity(0.08))
-                            Capsule().fill(PL.gold).frame(width: max(6, geo.size.width * pct))
-                        }
-                    }.frame(height: 6)
-                    Text("Day \(day)/\(total)").font(.inter(9, .semibold)).foregroundStyle(PL.ink2)
-                }
-                .padding(.top, 8)
-            }
-            ZStack {
-                Circle().fill(PL.gold.opacity(0.10))
-                Icon(.play, size: 16, color: PL.gold)
-            }
-            .frame(width: 36, height: 36)
-        }
-        .padding(12)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.border, lineWidth: 1))
-        .shadow(color: PL.navy.opacity(0.10), radius: 10, y: 6)
-    }
-}
-
-// MARK: - portrait plan card (collection carousels)
-
-private struct PLPlanCard: View {
-    let plan: ReadingPlanRow
-    var body: some View {
-        NavigationLink(value: plan) {
-            ZStack(alignment: .bottomLeading) {
-                PLCover(plan: plan)
-                LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.05), Color(hex: 0x081424, alpha: 0.85)],
-                               startPoint: .init(x: 0.5, y: 0.4), endPoint: .bottom)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plan.title).font(.fraunces(13, .semibold)).foregroundStyle(.white)
-                        .lineLimit(2).multilineTextAlignment(.leading)
-                    if let c = plan.category, !c.isEmpty {
-                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
-                    }
-                }
-                .padding(10)
-            }
-            .overlay(alignment: .topLeading) { daysBadge(plan.dayCount) }
-            .frame(width: 150, height: 200)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .shadow(color: PL.navy.opacity(0.5), radius: 14, y: 10)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-// MARK: - grid tile (search results)
-
-private struct PLPlanTile: View {
-    let plan: ReadingPlanRow
-    var body: some View {
-        NavigationLink(value: plan) {
-            VStack(alignment: .leading, spacing: 0) {
-                ZStack(alignment: .topLeading) {
-                    PLCover(plan: plan).aspectRatio(16.0 / 10.0, contentMode: .fill).frame(maxWidth: .infinity).clipped()
-                    daysBadge(plan.dayCount)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy).lineLimit(2).multilineTextAlignment(.leading)
-                    if let c = plan.category, !c.isEmpty {
-                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.catText)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(10)
-            }
-            .background(Color.white)
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.border, lineWidth: 1))
-        }
-        .buttonStyle(.plain)
-    }
-}
-
-@ViewBuilder
-private func daysBadge(_ days: Int) -> some View {
-    Text("\(days) DAYS").font(.inter(8, .bold)).kerning(0.96).foregroundStyle(PL.navy)
-        .padding(.horizontal, 8).padding(.vertical, 2)
-        .background(Color.white.opacity(0.9), in: Capsule())
-        .padding(8)
-}
-
-// MARK: - Plan detail (days)
+// MARK: - Plan detail (slide-over)
 
 @MainActor
 final class PlanDetailViewModel: ObservableObject {
@@ -463,14 +356,18 @@ final class PlanDetailViewModel: ObservableObject {
     }
 }
 
-// Plan detail — rebuilt from the Figma PlanDetail slide-over: cover hero (back +
-// save), category/title/meta, "About this plan", "What you'll read" day rows, a
-// consistency nudge, and a sticky Start-plan / Invite bar.
+// Plan detail — rebuilt from the FRESH Figma PlanDetail: stretchy cover hero
+// (back + save), category/title/meta, "About this plan", "What you'll read"
+// (first 4 days, next-day highlight + Start pill, % done, expandable "+N more
+// days"), the "Finish & earn" trophy card, the consistency nudge, and a sticky
+// gold Continue/Start CTA + Invite bar. Intro video/audio players and the
+// friends-on-plan avatar row from the mock are omitted (no real fields).
 struct PlanDetailView: View {
     let plan: ReadingPlanRow
     @StateObject private var vm: PlanDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var saved = false
+    @State private var showAllDays = false
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -491,10 +388,16 @@ struct PlanDetailView: View {
                 }
             }
         }
-        .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea(edges: [.top, .bottom])
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
+    }
+
+    // Real completion state, derived from the day rows the server returns.
+    private func completedCount(_ d: ReadingPlanDetail) -> Int { d.days.filter { $0.completed == true }.count }
+    private func firstIncomplete(_ d: ReadingPlanDetail) -> ReadingPlanDay? {
+        d.days.first { $0.completed != true } ?? d.days.first
     }
 
     private func content(_ d: ReadingPlanDetail) -> some View {
@@ -505,6 +408,7 @@ struct PlanDetailView: View {
                     VStack(spacing: 16) {
                         aboutCard(d)
                         whatYoullRead(d)
+                        PLFinishEarnCard(category: d.category, dayCount: d.dayCount)
                         nudge
                     }
                     .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 20)
@@ -514,7 +418,19 @@ struct PlanDetailView: View {
         }
     }
 
+    // Cover hero — stretches on pull-down (native stand-in for the mock's
+    // scroll parallax translate/scale).
     private func coverHero(_ d: ReadingPlanDetail) -> some View {
+        GeometryReader { geo in
+            let stretch = max(0, geo.frame(in: .global).minY)
+            heroContent(d)
+                .frame(width: geo.size.width, height: 256 + stretch)
+                .offset(y: -stretch)
+        }
+        .frame(height: 256)
+    }
+
+    private func heroContent(_ d: ReadingPlanDetail) -> some View {
         ZStack(alignment: .bottomLeading) {
             ZStack {
                 LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -522,7 +438,7 @@ struct PlanDetailView: View {
                     CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
                 }
             }
-            .frame(height: 264).frame(maxWidth: .infinity).clipped()
+            .clipped()
             .overlay(LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.40), Color(hex: 0x081424, alpha: 0.10), Color(hex: 0x081424, alpha: 0.92)], startPoint: .top, endPoint: .bottom))
 
             VStack(alignment: .leading, spacing: 6) {
@@ -540,15 +456,29 @@ struct PlanDetailView: View {
             }
             .padding(.horizontal, 20).padding(.bottom, 16)
         }
-        .frame(height: 264)
         .overlay(alignment: .topLeading) {
             HStack {
                 circleBtn(.chevronLeft, tint: .white) { dismiss() }
                 Spacer()
-                circleBtn(.heart, tint: saved ? PL.gold : .white) { saved.toggle() }
+                saveButton
             }
             .padding(.horizontal, 16).padding(.top, 60)
         }
+    }
+
+    private var saveButton: some View {
+        Button { saved.toggle() } label: {
+            Group {
+                if saved {
+                    Image(systemName: "heart.fill").font(.system(size: 15)).foregroundStyle(PL.gold)
+                } else {
+                    Icon(.heart, size: 17, color: .white)
+                }
+            }
+            .frame(width: 40, height: 40)
+            .background(Color.black.opacity(0.35), in: Circle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
@@ -560,7 +490,7 @@ struct PlanDetailView: View {
 
     private func circleBtn(_ icon: Lucide, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: icon == .heart ? 17 : 20, color: tint)
+            Icon(icon, size: 20, color: tint)
                 .frame(width: 40, height: 40)
                 .background(Color.black.opacity(0.35), in: Circle())
         }
@@ -580,12 +510,32 @@ struct PlanDetailView: View {
     }
 
     private func whatYoullRead(_ d: ReadingPlanDetail) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("WHAT YOU'LL READ").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+        let done = completedCount(d)
+        let next = firstIncomplete(d)?.dayNumber
+        let allDone = !d.days.isEmpty && done >= d.days.count
+        let visible = showAllDays ? d.days : Array(d.days.prefix(4))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("WHAT YOU'LL READ").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+                Spacer(minLength: 0)
+                if done > 0 {
+                    Text("\(Int((Double(done) / Double(max(d.days.count, 1)) * 100).rounded()))% done")
+                        .font(.inter(10, .bold)).foregroundStyle(PL.catText)
+                }
+            }
             VStack(spacing: 6) {
-                ForEach(d.days) { day in
-                    NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) { dayRow(day) }
-                        .buttonStyle(.plain)
+                ForEach(visible) { day in
+                    NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) {
+                        PLDetailDayRow(day: day, isNext: !allDone && day.dayNumber == next)
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !showAllDays, d.days.count > 4 {
+                    Button { withAnimation(.easeOut(duration: 0.25)) { showAllDays = true } } label: {
+                        Text("+ \(d.days.count - 4) more days").font(.inter(10)).foregroundStyle(PL.ink3)
+                            .frame(maxWidth: .infinity).padding(.top, 4)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
             .padding(.top, 10)
@@ -593,26 +543,6 @@ struct PlanDetailView: View {
         .padding(16)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
-    }
-
-    private func dayRow(_ day: ReadingPlanDay) -> some View {
-        HStack(spacing: 12) {
-            VStack(spacing: 0) {
-                Text("DAY").font(.inter(7, .bold)).foregroundStyle(PL.gold)
-                Text("\(day.dayNumber)").font(.fraunces(14, .semibold)).foregroundStyle(PL.navy)
-            }
-            .frame(width: 36, height: 36)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(PL.border, lineWidth: 1))
-            VStack(alignment: .leading, spacing: 1) {
-                Text(day.title ?? "Reading & reflection").font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text(day.reference).font(.inter(10)).foregroundStyle(PL.ink3).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
-        }
-        .padding(10)
-        .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private var nudge: some View {
@@ -629,17 +559,22 @@ struct PlanDetailView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
     }
 
+    // Sticky CTA — Start plan (enroll) when not enrolled; once enrolled it
+    // deep-links straight into the first incomplete day (or day 1 to review).
     private func ctaBar(_ d: ReadingPlanDetail) -> some View {
-        HStack(spacing: 10) {
-            Button { Task { await vm.start() } } label: {
-                HStack(spacing: 8) {
-                    if vm.busy { ProgressView().tint(PL.navy) }
-                    else { Icon(.check, size: 16, color: PL.navy) }
-                    Text(d.enrolled ? "Continue reading" : "Start plan").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+        let done = completedCount(d)
+        let allDone = !d.days.isEmpty && done >= d.days.count
+        let target = allDone ? d.days.first : firstIncomplete(d)
+        let label: String = done > 0
+            ? (allDone ? "Review plan" : "Continue · Day \(target?.dayNumber ?? 1)")
+            : "Start plan"
+        return HStack(spacing: 10) {
+            Group {
+                if d.enrolled, let target {
+                    NavigationLink(value: PlanDayRef(planId: d.planId, day: target)) { ctaLabel(label) }
+                } else {
+                    Button { Task { await vm.start() } } label: { ctaLabel(label) }
                 }
-                .frame(maxWidth: .infinity, minHeight: 48)
-                .background(LinearGradient(colors: [PL.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.plain)
             Button { } label: {
@@ -651,13 +586,20 @@ struct PlanDetailView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 20).padding(.top, 12)
-        .padding(.bottom, Self.safeBottom + 12)
+        .padding(.bottom, Nuru.tabBarSpace)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
     }
 
-    private static var safeBottom: CGFloat {
-        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
-        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
+    private func ctaLabel(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            if vm.busy { ProgressView().tint(PL.navy) }
+            else { Icon(.bookOpen, size: 16, color: PL.navy) }
+            Text(text).font(.inter(14, .bold)).foregroundStyle(PL.navy)
+        }
+        .frame(maxWidth: .infinity, minHeight: 48)
+        .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
     }
 }
 
@@ -692,73 +634,148 @@ final class PlanDayViewModel: ObservableObject {
     }
 }
 
+// Day screen — rebuilt from the FRESH Figma DayReader: navy gradient header
+// (back, "DAY N", day title, gold progress bar), a scripture-style content
+// card, the day's real segments as highlighted rows (they push the existing
+// PlanSegmentView), and a sticky gold "Mark day complete" bar that celebrates
+// with a native confetti burst. The mock's local-only reflection textarea and
+// prev/next-day arrows are omitted (no reflection binding for plan days; the
+// day ref carries no sibling days).
 struct PlanDayView: View {
     let ref: PlanDayRef
     @StateObject private var vm: PlanDayViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var justDone = false
 
     init(ref: PlanDayRef) {
         self.ref = ref
         _vm = StateObject(wrappedValue: PlanDayViewModel(ref: ref))
     }
 
-    var body: some View {
-        ZStack {
-            Nuru.paper.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: Nuru.S.base) {
-                    Text(ref.day.reference).font(.inter(13, .semibold)).foregroundStyle(Nuru.gold)
-                    if let content = ref.day.content, !content.isEmpty {
-                        Text(content).font(.nBody).foregroundStyle(Nuru.ink).fixedSize(horizontal: false, vertical: true)
-                    }
-                    let segments = ref.day.segments ?? []
-                    // PlanDayRef carries no plan title, so fall back to the day title.
-                    let planTitle = ref.day.title ?? "Reading plan"
-                    ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
-                        NavigationLink(value: PlanSegmentRef(planTitle: planTitle,
-                                                             dayNumber: ref.day.dayNumber,
-                                                             segments: segments,
-                                                             index: idx)) {
-                            segmentCard(seg)
-                        }
-                        .buttonStyle(.plain)
-                    }
-
-                    if vm.dayCompleted {
-                        Label("Day complete", systemImage: "checkmark.circle.fill")
-                            .font(.nHeading).foregroundStyle(Nuru.success)
-                    } else {
-                        PButton(title: "Mark day complete", variant: .gold, busy: vm.busy) {
-                            Task { await vm.completeDay(); dismiss() }
-                        }
-                    }
-                }
-                .padding(Nuru.S.screen)
-                .padding(.bottom, Nuru.tabBarSpace)
-            }
-        }
-        .navigationTitle(ref.day.title ?? "Day \(ref.day.dayNumber)")
-        .navigationBarTitleDisplayMode(.inline)
+    private var segments: [PlanSegment] { ref.day.segments ?? [] }
+    private var progress: Double {
+        if vm.dayCompleted { return 1 }
+        guard !segments.isEmpty else { return 0 }
+        return Double(vm.completedSegments.count) / Double(segments.count)
     }
 
-    // A tappable row that pushes the full-screen PlanSegmentView (watch / read /
-    // devotional / talk). Completion + watching now live on that screen.
-    private func segmentCard(_ seg: PlanSegment) -> some View {
-        let done = vm.completedSegments.contains(seg.segmentId)
-        return Card {
-            HStack(spacing: Nuru.S.base) {
-                ZStack {
-                    Circle().fill(done ? Nuru.success : Nuru.goldTint).frame(width: 36, height: 36)
-                    Icon(segmentIcon(seg.kind), size: 15, color: done ? .white : Nuru.gold)
+    var body: some View {
+        ZStack {
+            PL.cream.ignoresSafeArea()
+            VStack(spacing: 0) {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        dayHeader
+                        VStack(alignment: .leading, spacing: 16) {
+                            scriptureCard
+                            segmentsSection
+                        }
+                        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 24)
+                    }
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(seg.title).font(.nHeading).foregroundStyle(Nuru.ink)
-                    Text(seg.kind.capitalized).font(.nCaption).foregroundStyle(Nuru.muted)
+                footerBar
+            }
+            if justDone { PLConfettiBurst().ignoresSafeArea() }
+        }
+        .ignoresSafeArea(edges: [.top, .bottom])
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+    }
+
+    // MARK: navy header (fresh DayReader)
+
+    private var dayHeader: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    Icon(.chevronLeft, size: 18, color: .white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.10), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
-                Spacer(minLength: 0)
-                Icon(.chevronRight, size: 13, color: Nuru.ink300)
+                .buttonStyle(.plain)
+                Spacer()
+                Text("DAY \(ref.day.dayNumber)").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
+                Spacer()
+                Color.clear.frame(width: 36, height: 36)
+            }
+            Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.6)).padding(.top, 12)
+            Text(ref.day.title ?? "Day \(ref.day.dayNumber)")
+                .font(.fraunces(23, .semibold)).kerning(-0.46).foregroundStyle(.white)
+                .lineLimit(2).padding(.top, 2)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.2))
+                    Capsule()
+                        .fill(LinearGradient(colors: [PL.gold, PL.goldLight], startPoint: .leading, endPoint: .trailing))
+                        .frame(width: max(progress > 0 ? 8 : 0, geo.size.width * progress))
+                }
+            }
+            .frame(height: 4)
+            .padding(.top, 12)
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 60)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(alignment: .topTrailing) {
+            RadialGradient(colors: [PL.gold.opacity(0.27), .clear], center: .center, startRadius: 0, endRadius: 96)
+                .frame(width: 192, height: 192).blur(radius: 40).opacity(0.5).offset(x: 56, y: -64)
+        }
+        .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+    }
+
+    // MARK: scripture / day content card
+
+    @ViewBuilder
+    private var scriptureCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Icon(.bookOpen, size: 12, color: PL.refInk)
+                Text(ref.day.reference.uppercased()).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.refInk)
+            }
+            if let content = ref.day.content, !content.isEmpty {
+                Text(content)
+                    .font(.fraunces(17)).italic().foregroundStyle(PL.navy).kerning(-0.17)
+                    .lineSpacing(8)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 8)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .background(PL.highlight, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.gold.opacity(0.25), lineWidth: 1))
+    }
+
+    // MARK: segments (real day flow → PlanSegmentView)
+
+    private var segmentsSection: some View {
+        // PlanDayRef carries no plan title, so fall back to the day title.
+        let planTitle = ref.day.title ?? "Reading plan"
+        let nextId = vm.dayCompleted ? nil : segments.first(where: { !vm.completedSegments.contains($0.segmentId) })?.segmentId
+        return VStack(alignment: .leading, spacing: 0) {
+            Text("WORK THROUGH TODAY").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep)
+            VStack(spacing: 6) {
+                ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
+                    NavigationLink(value: PlanSegmentRef(planTitle: planTitle,
+                                                         dayNumber: ref.day.dayNumber,
+                                                         segments: segments,
+                                                         index: idx)) {
+                        PLSegmentRow(segment: seg,
+                                     icon: segmentIcon(seg.kind),
+                                     done: vm.completedSegments.contains(seg.segmentId),
+                                     isNext: seg.segmentId == nextId)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 10)
+        }
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
     }
 
     private func segmentIcon(_ kind: String) -> Lucide {
@@ -770,5 +787,43 @@ struct PlanDayView: View {
         case "scripture":  return .quote
         default:           return .book
         }
+    }
+
+    // MARK: sticky footer — mark complete → confetti → tap to go back
+
+    private var footerBar: some View {
+        HStack {
+            if vm.dayCompleted || justDone {
+                Button { dismiss() } label: {
+                    Text("Day complete 🎉").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    Task {
+                        await vm.completeDay()
+                        withAnimation { justDone = true }
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if vm.busy { ProgressView().tint(PL.navy) }
+                        else { Icon(.check, size: 16, color: PL.navy) }
+                        Text("Mark day complete").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 20).padding(.top, 12)
+        .padding(.bottom, Nuru.tabBarSpace)
+        .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
     }
 }
