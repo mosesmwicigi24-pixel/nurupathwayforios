@@ -834,10 +834,16 @@ private struct PersonRow: View {
         Button(action: action) {
             HStack(spacing: 14) {
                 SquircleAvatar(url: person.avatarUrl, name: person.fullName, tint: tint)
+                    .overlay(alignment: .bottomTrailing) { levelChip }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(person.fullName)
-                        .font(.inter(12, .medium)).kerning(-0.12)
-                        .foregroundStyle(Nuru.navy).lineLimit(1)
+                    HStack(spacing: 5) {
+                        Text(person.fullName)
+                            .font(.inter(12, .medium)).kerning(-0.12)
+                            .foregroundStyle(Nuru.navy).lineLimit(1)
+                            .layoutPriority(1)
+                        badgeMedallions
+                        certSeal
+                    }
                     Text(subtitle)
                         .font(.inter(10)).foregroundStyle(Color(hex: 0x8A93A0)).lineLimit(1)
                 }
@@ -860,6 +866,59 @@ private struct PersonRow: View {
         let role = (person.role?.isEmpty == false) ? person.role! : "Member"
         if let c = person.congregation, !c.isEmpty { return "\(role) · \(c)" }
         return role
+    }
+
+    // MARK: Achievement flair — public aggregates only; every piece disappears
+    // gracefully when the server doesn't send it (old servers / no data).
+
+    /// Micro game-rank frame docked on the avatar's bottom-trailing corner.
+    @ViewBuilder private var levelChip: some View {
+        if let lvl = person.level, lvl > 0 {
+            Text("L\(lvl)")
+                .font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                .padding(.horizontal, 4.5).padding(.vertical, 1.5)
+                .background(
+                    LinearGradient(colors: [Nuru.goldHi, Nuru.goldLo],
+                                   startPoint: .top, endPoint: .bottom),
+                    in: Capsule()
+                )
+                .overlay(Capsule().strokeBorder(.white, lineWidth: 1.5))
+                .offset(x: 4, y: 4)
+        }
+    }
+
+    /// Up to 3 overlapping badge medallions + a "+N" mini chip for the rest.
+    @ViewBuilder private var badgeMedallions: some View {
+        if let count = person.badgeCount, count > 0 {
+            let icons = Array((person.badgeIcons ?? []).prefix(3))
+            HStack(spacing: -4) {
+                ForEach(icons.indices, id: \.self) { i in
+                    Text(icons[i]).font(.system(size: 10)).lineLimit(1)
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(.white))
+                        .overlay(Circle().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
+                }
+                if count > icons.count {
+                    Text("+\(count - icons.count)")
+                        .font(.inter(7, .semibold)).foregroundStyle(Color(hex: 0xA8761A))
+                        .frame(width: 16, height: 16)
+                        .background(Circle().fill(Nuru.goldTint))
+                        .overlay(Circle().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
+                }
+            }
+            .fixedSize()
+        }
+    }
+
+    /// The "certified" mark — a tiny gold rosette seal.
+    @ViewBuilder private var certSeal: some View {
+        if let certs = person.certCount, certs > 0 {
+            ZStack {
+                Circle().fill(Nuru.goldTint).frame(width: 16, height: 16)
+                Icon(.award, size: 9, color: Nuru.gold)
+            }
+            .fixedSize()
+        }
     }
 }
 

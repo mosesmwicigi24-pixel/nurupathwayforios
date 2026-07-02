@@ -37,12 +37,18 @@ struct ChatInbox: Codable, Sendable {
 }
 
 /// One row of GET /chat/people — a congregation member the caller may DM.
+/// Achievement flair (level / badges / certs) is public aggregates only, and
+/// every field is a tolerant optional so rows from older servers still decode.
 struct ChatPerson: Codable, Sendable, Identifiable, Hashable {
     let userId: String
     let fullName: String
     let role: String?
     let avatarUrl: String?
     let congregation: String?   // present only for portal-staff callers
+    let level: Int?             // pathway level (1 when not enrolled)
+    let badgeCount: Int?        // unrevoked badges — count only
+    let badgeIcons: [String]?   // up to 3 most-recent badge icon strings
+    let certCount: Int?         // issued certificates — count only
 
     var id: String { userId }
 }
