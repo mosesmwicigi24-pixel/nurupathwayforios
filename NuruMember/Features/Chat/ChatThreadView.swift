@@ -550,15 +550,17 @@ private struct AuroraBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             if showAuthor { authorLine }
-            if let replyBody = m.replyBody { QuotedReply(author: m.replyAuthor, text: replyBody) }
+            if let replyBody = m.replyBody { QuotedReply(author: m.replyAuthor, text: replyBody, dark: m.mine) }
             contentView
             BubbleFooter(m: m, onReact: onReact)
         }
         .padding(.horizontal, Nuru.S.base)
         .padding(.vertical, Nuru.S.md)
-        .background(Aurora.bubble, in: shape)
-        .overlay(shape.stroke(celebrated ? Aurora.gold.opacity(0.33) : Aurora.bubbleBorder, lineWidth: 1))
-        .shadow(color: Aurora.shadowInk.opacity(0.16), radius: 6, x: 0, y: 5)
+        // Your own messages ride the navy ink card; incoming stays light Aurora.
+        .background(m.mine ? AnyShapeStyle(Aurora.inkBubble) : AnyShapeStyle(Aurora.bubble), in: shape)
+        .overlay(shape.stroke(celebrated ? Aurora.gold.opacity(0.33)
+                              : (m.mine ? Color.white.opacity(0.08) : Aurora.bubbleBorder), lineWidth: 1))
+        .shadow(color: Aurora.shadowInk.opacity(m.mine ? 0.35 : 0.16), radius: 6, x: 0, y: 5)
         .shadow(color: celebrated ? Aurora.gold.opacity(0.35) : .clear, radius: 10, x: 0, y: 7)
         .onTapGesture(count: 2) { onReact("❤️") }
         .contextMenu { menu }
@@ -590,7 +592,7 @@ private struct AuroraBubble: View {
         default:
             mentionText(m.body)
                 .font(.inter(13))
-                .foregroundStyle(Aurora.textDark)
+                .foregroundStyle(m.mine ? Color.white : Aurora.textDark)
                 .lineSpacing(2.5)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -609,10 +611,12 @@ private struct AuroraBubble: View {
     }
 }
 
-/// Quoted reply on a faint navy wash, tinted by the quoted author's accent.
+/// Quoted reply on a faint wash, tinted by the quoted author's accent.
+/// `dark` = rendered inside the navy outgoing bubble.
 private struct QuotedReply: View {
     let author: String?
     let text: String
+    var dark = false
 
     private var accent: Color {
         guard let author, !author.isEmpty else { return Aurora.gold }
@@ -621,17 +625,18 @@ private struct QuotedReply: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            Rectangle().fill(accent).frame(width: 3)
+            Rectangle().fill(dark ? Aurora.gold : accent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 if let author, !author.isEmpty {
-                    Text(author).font(.inter(11, .bold)).foregroundStyle(accent)
+                    Text(author).font(.inter(11, .bold)).foregroundStyle(dark ? Aurora.gold : accent)
                 }
-                Text(text).font(.inter(11)).foregroundStyle(Aurora.quoteBody).lineLimit(2)
+                Text(text).font(.inter(11))
+                    .foregroundStyle(dark ? Color.white.opacity(0.75) : Aurora.quoteBody).lineLimit(2)
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
-        .background(Aurora.quoteBg)
+        .background(dark ? Color.white.opacity(0.10) : Aurora.quoteBg)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
@@ -644,7 +649,7 @@ private struct BubbleImage: View {
             imageView
             if !m.body.isEmpty {
                 mentionText(m.body)
-                    .font(.inter(13)).foregroundStyle(Aurora.textDark)
+                    .font(.inter(13)).foregroundStyle(m.mine ? Color.white : Aurora.textDark)
                     .lineSpacing(2.5)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -702,10 +707,13 @@ private struct BubbleFooter: View {
         .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
+    /// Inside the navy outgoing card, the footer furniture flips to light inks.
+    private var dark: Bool { m.mine }
+
     private var reactionChips: some View {
         HStack(spacing: 4) {
             ForEach(m.reactions, id: \.emoji) { r in
-                ReactionChip(r: r) { onReact(r.emoji) }
+                ReactionChip(r: r, dark: dark) { onReact(r.emoji) }
             }
         }
     }
@@ -713,27 +721,32 @@ private struct BubbleFooter: View {
     private var meta: some View {
         HStack(spacing: 4) {
             if m.isEdited {
-                Text("edited").font(.inter(9)).italic().foregroundStyle(Aurora.meta)
+                Text("edited").font(.inter(9)).italic()
+                    .foregroundStyle(dark ? Color.white.opacity(0.55) : Aurora.meta)
             }
-            Text(timeShort(m.createdAt)).font(.inter(10)).foregroundStyle(Aurora.meta)
-            if m.mine { ReadTicksView(read: (m.readCount ?? 0) > 0) }
+            Text(timeShort(m.createdAt)).font(.inter(10))
+                .foregroundStyle(dark ? Color.white.opacity(0.6) : Aurora.meta)
+            if m.mine { ReadTicksView(read: (m.readCount ?? 0) > 0, dark: dark) }
         }
     }
 }
 
 private struct ReactionChip: View {
     let r: ChatReaction
+    var dark = false
     var onTap: () -> Void
 
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 2) {
                 Text(r.emoji).font(.system(size: 11))
-                Text("\(r.count)").font(.inter(9.5, .bold)).foregroundStyle(Aurora.navy)
+                Text("\(r.count)").font(.inter(9.5, .bold))
+                    .foregroundStyle(dark ? Color.white : Aurora.navy)
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(r.mine ? Aurora.gold.opacity(0.14) : Aurora.chipBg, in: Capsule())
+            .background(r.mine ? Aurora.gold.opacity(dark ? 0.28 : 0.14)
+                        : (dark ? Color.white.opacity(0.12) : Aurora.chipBg), in: Capsule())
             .overlay(Capsule().stroke(r.mine ? Aurora.gold.opacity(0.4) : .clear, lineWidth: 1))
         }
         .buttonStyle(.plain)
@@ -742,12 +755,13 @@ private struct ReactionChip: View {
 
 private struct ReadTicksView: View {
     let read: Bool
+    var dark = false
 
     var body: some View {
         Text("✓✓")
             .font(.inter(9.5, .semibold))
             .kerning(-1)
-            .foregroundStyle(read ? Aurora.gold : Aurora.meta)
+            .foregroundStyle(read ? Aurora.gold : (dark ? Color.white.opacity(0.55) : Aurora.meta))
     }
 }
 
