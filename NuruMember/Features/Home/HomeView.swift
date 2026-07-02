@@ -296,10 +296,10 @@ struct HomeView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 NavigationLink(value: AppRoute.notifications) {
                     ZStack(alignment: .topTrailing) {
-                        Icon(.bell, size: 18, color: Nuru.navy)
+                        Icon(.bell, size: 18, color: Color(hex: 0xA8861C))
                             .frame(width: 40, height: 40)
-                            .background(Color.white, in: Circle())
-                            .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+                            .background(Color(hex: 0xFFF4DA), in: Circle())
+                            .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
                         if vm.unread > 0 {
                             Text(vm.unread > 9 ? "9+" : "\(vm.unread)")
                                 .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
@@ -314,9 +314,9 @@ struct HomeView: View {
                 // backend radio module, or the next scheduled program).
                 Button { showRadio = true } label: {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
-                        .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
-                        .background(Color.white, in: Circle())
-                        .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+                        .foregroundStyle(Color(hex: 0xDC2626)).frame(width: 40, height: 40)
+                        .background(Color(hex: 0xFEE2E2), in: Circle())
+                        .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.plain).padding(.leading, 8)
                 .fullScreenCover(isPresented: $showRadio) { RadioPlayerView() }
@@ -354,12 +354,15 @@ struct HomeView: View {
     // MiniRing (Figma) — 42px, navy track, gold progress, navy pct.
     private var progressRing: some View {
         ZStack {
-            Circle().stroke(Nuru.navy.opacity(0.12), lineWidth: 3)
+            Circle().fill(Color(hex: 0xDCFCE7).opacity(0.6))
+            Circle().stroke(Color(hex: 0x16A34A).opacity(0.15), lineWidth: 3)
             Circle()
                 .trim(from: 0, to: CGFloat(overallPct) / 100)
-                .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                .stroke(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
+                                       startPoint: .top, endPoint: .bottom),
+                        style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            Text("\(overallPct)%").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+            Text("\(overallPct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
         }
         .frame(width: 42, height: 42)
     }
