@@ -622,46 +622,57 @@ private struct LiveHeroCard: View {
     let occ: CalendarOccurrence
 
     var body: some View {
-        content
-            .padding(Nuru.S.base)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background { coverBackground }
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .nuruShadow()
-    }
-
-    private var coverBackground: some View {
-        ZStack(alignment: .topTrailing) {
-            if let url = occ.primaryImageUrl.flatMap(URL.init) {
-                CachedAsyncImage(url: url) { p in
-                    if let img = p.image { img.resizable().scaledToFill() } else { Nuru.navyGradient }
-                }
-            } else {
-                Nuru.navyGradient
-            }
-            LinearGradient(colors: [Color(hex: 0x0B1F33, alpha: 0.55),
-                                    Color(hex: 0x0B1F33, alpha: 0.62),
-                                    Color(hex: 0x081424, alpha: 0.92)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-            Circle().fill(Nuru.gold.opacity(0.4)).frame(width: 160, height: 160).blur(radius: 40).offset(x: 40, y: -48)
+        // Media-first hero: the poster keeps its NATURAL aspect (the card grows
+        // to fit it — no crop, no letterbox), with the live chrome overlaid;
+        // title/meta/footer sit on navy beneath.
+        VStack(spacing: 0) {
+            media
+            content
+                .padding(.horizontal, Nuru.S.base)
+                .padding(.top, Nuru.S.md)
+                .padding(.bottom, Nuru.S.base)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            ZStack(alignment: .topTrailing) {
+                LinearGradient(colors: [Color(hex: 0x0B1F33), Color(hex: 0x081424)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                Circle().fill(Nuru.gold.opacity(0.4)).frame(width: 160, height: 160).blur(radius: 40).offset(x: 40, y: -48)
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .nuruShadow()
     }
 
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
+    private var media: some View {
+        FitImage(url: occ.primaryImageUrl.flatMap(URL.init),
+                 fallback: LinearGradient(colors: [Color(hex: 0x0B1F33), Nuru.navy, Color(hex: 0x081424)],
+                                          startPoint: .topLeading, endPoint: .bottomTrailing))
+            .overlay {
+                LinearGradient(colors: [Color(hex: 0x0B1F33, alpha: 0.15),
+                                        Color(hex: 0x0B1F33, alpha: 0.0),
+                                        Color(hex: 0x081424, alpha: 0.55)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .overlay(alignment: .topLeading) {
                 HStack(spacing: 8) {
                     livePill
                     Text((occ.category ?? "Gathering").uppercased())
                         .font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
                 }
-                Spacer()
+                .padding(Nuru.S.base)
+            }
+            .overlay(alignment: .topTrailing) {
                 Icon(.qrCode, size: 18, color: .white)
                     .frame(width: 36, height: 36)
                     .background(Color.white.opacity(0.16), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .padding(Nuru.S.base)
             }
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
             Text(occ.title).font(.fraunces(21, .semibold)).foregroundStyle(.white).lineLimit(2)
-                .padding(.top, Nuru.S.xl)
             HStack(spacing: Nuru.S.base) {
                 heroMeta(.clock, Ev.timeRange(occ.startAt, occ.endAt))
                 if let loc = occ.location, !loc.isEmpty { heroMeta(.mapPin, loc) }
@@ -861,32 +872,25 @@ private struct EvCardCover: View {
     let live: Bool
 
     var body: some View {
-        ZStack {
-            cover
-            LinearGradient(colors: [.clear, .clear, Color(hex: 0x0B1F33, alpha: 0.62)],
-                           startPoint: .top, endPoint: .bottom)
-        }
-        .frame(height: 170)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .overlay(alignment: .topLeading) { dateChip.padding(Nuru.S.md) }
-        .overlay(alignment: .topTrailing) { statusPill.padding(Nuru.S.md) }
-        .overlay(alignment: .bottomLeading) { countdownChip.padding(.horizontal, Nuru.S.md).padding(.bottom, 10) }
-        .overlay(alignment: .bottomTrailing) { categoryTag.padding(.horizontal, Nuru.S.md).padding(.bottom, 10) }
+        // The cover grows to the artwork's natural aspect (16:9 placeholder
+        // while loading) — the image fills it exactly, no crop, no letterbox.
+        cover
+            .overlay {
+                LinearGradient(colors: [.clear, .clear, Color(hex: 0x0B1F33, alpha: 0.62)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .overlay(alignment: .topLeading) { dateChip.padding(Nuru.S.md) }
+            .overlay(alignment: .topTrailing) { statusPill.padding(Nuru.S.md) }
+            .overlay(alignment: .bottomLeading) { countdownChip.padding(.horizontal, Nuru.S.md).padding(.bottom, 10) }
+            .overlay(alignment: .bottomTrailing) { categoryTag.padding(.horizontal, Nuru.S.md).padding(.bottom, 10) }
     }
 
-    @ViewBuilder private var cover: some View {
-        if let url = occ.primaryImageUrl.flatMap(URL.init) {
-            CachedAsyncImage(url: url) { p in
-                if let img = p.image { img.resizable().scaledToFill() } else { fallback }
-            }
-        } else {
-            fallback
-        }
+    private var cover: some View {
+        FitImage(url: occ.primaryImageUrl.flatMap(URL.init), fallback: fallback)
     }
 
     // Branded fallback — never a blank gray slab.
-    private var fallback: some View {
+    private var fallback: LinearGradient {
         LinearGradient(colors: [Nuru.navy700, Nuru.navy, accent], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 

@@ -27,6 +27,7 @@ final class AnnouncementDetailViewModel: ObservableObject {
 struct AnnouncementDetailView: View {
     @StateObject private var vm: AnnouncementDetailViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var showVideo = false
 
     init(announcementId: String) { _vm = StateObject(wrappedValue: AnnouncementDetailViewModel(announcementId: announcementId)) }
 
@@ -64,6 +65,17 @@ struct AnnouncementDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
+        // Every video opens the ONE universal full-bleed player page.
+        .fullScreenCover(isPresented: $showVideo) {
+            if let d = vm.detail, let v = d.videoUrl, !v.isEmpty {
+                VideoPlayerPage(
+                    urlString: v,
+                    title: d.title,
+                    summary: d.body,
+                    quickNote: d.sentAt.map { "Sent \(whenString($0))" },
+                    posterUrl: d.primaryImageUrl)
+            }
+        }
     }
 
     // MARK: cream sub-page header (make's CommunityPage chrome)
@@ -111,20 +123,18 @@ struct AnnouncementDetailView: View {
 
     // MARK: media
 
-    // Primary image — real URL with a branded gradient while loading / on failure.
+    // Primary image — grows to the picture's natural aspect (16:9 while it
+    // loads, branded gradient on failure) and fills the card edge-to-edge.
     private func heroImage(_ url: URL) -> some View {
-        CachedAsyncImage(url: url) { p in
-            if let img = p.image { img.resizable().scaledToFill() } else { Nuru.heroGradient }
-        }
-        .frame(height: 200)
-        .frame(maxWidth: .infinity)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        FitImage(url: url)
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
+    // Video tile — poster-backed, opens the universal full-bleed player page
+    // (never Safari).
     private func videoTile(_ url: URL) -> some View {
-        Button { UIApplication.shared.open(url) } label: {
+        Button { showVideo = true } label: {
             ZStack {
                 Nuru.navyGradient.frame(height: 180)
                 Icon(.playCircle, size: 48, color: .white)
@@ -134,17 +144,15 @@ struct AnnouncementDetailView: View {
         .buttonStyle(.plain)
     }
 
+    // Gallery rail — a fixed-height strip where each photo keeps its own
+    // natural width (no crop, no letterbox).
     private var gallery: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Nuru.S.sm) {
                 ForEach(images, id: \.self) { s in
                     if let url = URL(string: s) {
-                        CachedAsyncImage(url: url) { p in
-                            if let img = p.image { img.resizable().scaledToFill() } else { Nuru.heroGradient }
-                        }
-                        .frame(width: 240, height: 150)
-                        .clipped()
-                        .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                        FitImage(url: url, fixedHeight: 170)
+                            .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                     }
                 }
             }
