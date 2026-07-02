@@ -195,8 +195,8 @@ struct HomeView: View {
     // forced the runtime to decode several cards' types together and overflowed.
     // Section order mirrors the fresh Figma HomeTab return block exactly (with the
     // radio ON AIR hero pinned first whenever a broadcast is live):
-    // Radio ON AIR → LiveNow → Priority → continue hero → video → verse → pray → plans/journal →
-    // this week → disciplers → announcement → continue level → rhythm → Priority
+    // Radio ON AIR → LiveNow → Priority → continue hero → rhythm → video → verse → pray →
+    // plans/journal → this week → disciplers → announcement → continue level → Priority
     // (repeat) → progress → Grow → Upcoming → encouragement → cohort → give.
     private var feedSections: [AnyView] {
         // TRUE first load only (refreshes keep the live content in place) —
@@ -214,6 +214,7 @@ struct HomeView: View {
         if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
+        s.append(AnyView(rhythmCard))                                                   // 2b · Today's rhythm (right under For-you-today)
         if let v = vm.welcomeVideo { s.append(AnyView(welcomeVideoCard(v))) }           // 3
         s.append(AnyView(verseCard))                                                    // 4
         if !vm.prayerPosts.isEmpty { s.append(AnyView(prayerWallCard)) }                // 5
@@ -232,7 +233,6 @@ struct HomeView: View {
         if !vm.disciplers.isEmpty { s.append(AnyView(disciplersCard)) }                 // 8
         if let a = vm.featuredAnnouncement { s.append(AnyView(featuredAnnouncementCard(a))) } // 9
         s.append(AnyView(continueLevelCard))                                            // 10
-        s.append(AnyView(rhythmCard))                                                   // 11
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(AnyView(progressCard(sc))) }                   // 13
         s.append(AnyView(growSection))                                                  // 14
