@@ -37,6 +37,11 @@ final class ModuleViewModel: ObservableObject {
     // the Listen control + its thin progress line reflect real playback state.
     @Published var audioPlaying = false
     @Published var audioProgress: Double = 0   // 0…1 of the track (0 until known)
+    // Completion signals for the quiz gate: the video embed watched-seconds and
+    // the furthest point reached in the audio. The quiz can't start until the
+    // read, the watch (≥90%) and the listen (≥90%) are all satisfied.
+    @Published var videoWatchedSec: Double = 0
+    @Published var audioMaxProgress: Double = 0
 
     private let moduleId: String
     init(moduleId: String) { self.moduleId = moduleId }
@@ -94,6 +99,7 @@ final class ModuleViewModel: ObservableObject {
 
     deinit {
         heartbeat?.cancel()
+        videoTick?.cancel()
         if let audioObserver { audioPlayer?.removeTimeObserver(audioObserver) }
         if let audioEndObserver { NotificationCenter.default.removeObserver(audioEndObserver) }
         audioPlayer?.pause()
@@ -126,12 +132,24 @@ final class ModuleViewModel: ObservableObject {
     /// WKWebView (InlineVideoPlayer) with no play/pause callbacks, so "embed
     /// open on screen" is the best signal we can actually observe — we count
     /// that as video time and nothing more.
+    private var videoTick: Task<Void, Never>?
     func setVideoOpen(_ open: Bool) {
         if open {
             if videoSince == nil { videoSince = Date() }
+            // Grow the watched-seconds live (1s cadence) so the quiz gate can
+            // clear the ≥90% bar the moment the video has genuinely been seen.
+            videoTick?.cancel()
+            videoTick = Task { @MainActor [weak self] in
+                while !Task.isCancelled {
+                    try? await Task.sleep(nanoseconds: 1_000_000_000)
+                    guard let self, !Task.isCancelled else { return }
+                    self.videoWatchedSec += 1
+                }
+            }
         } else {
             if let s = videoSince { pendingVideo += Date().timeIntervalSince(s) }
             videoSince = nil
+            videoTick?.cancel(); videoTick = nil
         }
     }
 
@@ -168,6 +186,7 @@ final class ModuleViewModel: ObservableObject {
                     guard let self, let dur = self.audioPlayer?.currentItem?.duration.seconds,
                           dur.isFinite, dur > 0 else { return }
                     self.audioProgress = min(1, max(0, time.seconds / dur))
+                    self.audioMaxProgress = max(self.audioMaxProgress, self.audioProgress)
                 }
             }
             audioEndObserver = NotificationCenter.default.addObserver(
@@ -331,6 +350,28 @@ struct ModuleView: View {
     private var overallProgress: Double {
         let n = Double(max(pageCountNow, 1))
         return min(1, max(0, (Double(currentPage) + pageFraction) / n))
+    }
+
+    // MARK: - Content-completion gate (read + watch ≥90% + listen ≥90%)
+
+    /// Video satisfied when there's no video, or it's been watched ~90% (or,
+    /// when no duration is set, genuinely opened for a spell).
+    private var watchDone: Bool {
+        guard let d = vm.detail, d.videoUrl != nil else { return true }
+        if let dur = d.videoDurationSec, dur > 0 { return vm.videoWatchedSec >= Double(dur) * 0.9 }
+        return vm.videoWatchedSec >= 20
+    }
+    /// Audio satisfied when there's no audio, or the playhead reached ~90%.
+    private var listenDone: Bool { vm.hasAudio ? vm.audioMaxProgress >= 0.9 : true }
+    /// The quiz / mark-complete only unlocks when ALL present steps are done.
+    private var contentComplete: Bool { reachedEnd && watchDone && listenDone }
+    /// The honest reason the gate is still locked (in step order).
+    private func gateLockReason(requiresQuiz: Bool) -> String {
+        let tail = requiresQuiz ? "unlock the quiz" : "continue"
+        if !reachedEnd { return "Read to the end to \(tail)" }
+        if !watchDone  { return "Finish the video to \(tail)" }
+        if !listenDone { return "Finish the audio to \(tail)" }
+        return ""
     }
 
     var body: some View {
@@ -536,7 +577,8 @@ struct ModuleView: View {
                     .transition(.opacity)
                 }
                 if !chromeHidden {
-                    MLBottomGate(reachedEnd: reachedEnd,
+                    MLBottomGate(complete: contentComplete,
+                                 lockReason: gateLockReason(requiresQuiz: d.requiresQuiz),
                                  requiresQuiz: d.requiresQuiz,
                                  moduleId: d.moduleId,
                                  busy: vm.completing,
@@ -1681,7 +1723,8 @@ private struct MLReflectionCard: View {
 // MARK: - Bottom gate (progress strip + locked / quiz / mark-complete CTA)
 
 private struct MLBottomGate: View {
-    let reachedEnd: Bool
+    let complete: Bool          // read + watch(≥90%) + listen(≥90%) all done
+    let lockReason: String      // why it's still locked, in step order
     let requiresQuiz: Bool
     let moduleId: String
     let busy: Bool
@@ -1695,9 +1738,9 @@ private struct MLBottomGate: View {
         VStack(spacing: 10) {
             HStack(spacing: 10) {
                 progressBar
-                Text(reachedEnd ? "All steps done 🎉" : "Keep reading")
+                Text(complete ? "All steps done 🎉" : "Keep going")
                     .font(.inter(10, .bold))
-                    .foregroundStyle(reachedEnd ? ML.overline : ML.secondary)
+                    .foregroundStyle(complete ? ML.overline : ML.secondary)
             }
             if let error {
                 Text(error)
@@ -1714,7 +1757,7 @@ private struct MLBottomGate: View {
                 .overlay(alignment: .top) { Rectangle().fill(ML.border).frame(height: 1) }
                 .ignoresSafeArea(edges: .bottom)
         )
-        .animation(.easeInOut(duration: 0.25), value: reachedEnd)
+        .animation(.easeInOut(duration: 0.25), value: complete)
     }
 
     private var progressBar: some View {
@@ -1722,19 +1765,19 @@ private struct MLBottomGate: View {
             ZStack(alignment: .leading) {
                 Capsule().fill(ML.track)
                 Capsule().fill(ML.gold)
-                    .frame(width: max(8, geo.size.width * (reachedEnd ? 1 : 0.12)))
+                    .frame(width: max(8, geo.size.width * (complete ? 1 : 0.12)))
             }
         }
         .frame(height: 6)
-        .animation(.easeOut(duration: 0.4), value: reachedEnd)
+        .animation(.easeOut(duration: 0.4), value: complete)
     }
 
     @ViewBuilder
     private var cta: some View {
-        if !reachedEnd {
+        if !complete {
             HStack(spacing: 8) {
                 Icon(.lock, size: 13, color: ML.secondary)
-                Text(requiresQuiz ? "Read to the end to unlock the quiz" : "Read to the end to continue")
+                Text(lockReason)
                     .font(.inter(14, .bold))
             }
             .foregroundStyle(ML.secondary)
