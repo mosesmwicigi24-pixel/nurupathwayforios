@@ -84,7 +84,7 @@ struct RadioMiniPlayer: View {
     /// cutout and the chin below it, the card now floats FREE of the island —
     /// a detached black capsule dropped well below the status area, where it
     /// neither fights the hardware nor crowds the clock.
-    static var dockTop: CGFloat { topInset + 16 }
+    static var dockTop: CGFloat { topInset + 1 }   // lifted — snug under the status area
     static let dockHeight: CGFloat = 30
     static let dockWidth: CGFloat = 96
 
@@ -133,8 +133,8 @@ struct RadioMiniPlayer: View {
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
         .padding(.vertical, 4)
-        .padding(.leading, 14)
-        .padding(.trailing, 6)
+        .padding(.leading, 12)
+        .padding(.trailing, 4)
         .background(Color.black, in: Capsule())
         .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
         .transition(.offset(y: -24).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
