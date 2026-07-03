@@ -80,20 +80,17 @@ struct RadioMiniPlayer: View {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
-    /// BROW geometry: the island is a physical HOLE in the display — no pixels
-    /// exist inside it, so content can never sit "in front" of it. What DOES
-    /// exist is the thin strip of live screen between the phone's top edge and
-    /// the cutout (top edge ≈ y 8–12 on island devices). The dock is a black
-    /// brow riding that strip: body from y=0 down INTO the cutout region (the
-    /// hole swallows whatever overlaps it, so the merge is seamless on every
-    /// island geometry), with the miniature wave row TOP-aligned in the
-    /// visible sliver above the island.
-    static var dockTop: CGFloat { isIslandDevice ? 0 : topInset + 4 }
-    static let dockHeight: CGFloat = 30     // 0…30 — bottom half swallowed by the cutout
-    /// Device photo: the brow must MATCH the island's width (~124pt on the
-    /// 17 Pro Max) — narrower reads as a mushroom step; equal widths fuse
-    /// brow + cutout into one taller pill.
-    static let dockWidth: CGFloat = 124
+    /// CHIN geometry (the settled design after trying the brow): the island is
+    /// a physical HOLE — nothing renders inside it, and the strip above it is
+    /// a razor-thin sliver. The wave therefore lives BELOW the cutout: the
+    /// dock's black body starts at y=8 (above any island top) and runs down
+    /// behind the hole; whatever it covers is swallowed, so the merge is
+    /// seamless on every island geometry, and the miniature wave row sits in
+    /// the slim visible chin under the island's bottom edge (≈44pt on the
+    /// 17 Pro Max, measured from the device photo).
+    static var dockTop: CGFloat { isIslandDevice ? 8 : topInset + 4 }
+    static let dockHeight: CGFloat = 52     // 8…60 — ~16pt visible chin
+    static let dockWidth: CGFloat = 96      // narrower than the cutout — a neat tab
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -107,9 +104,10 @@ struct RadioMiniPlayer: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    // ── Island brow (wave rides the strip ABOVE the cutout) ────────────
+    // ── Island chin (wave hangs BELOW the cutout) ──────────────────────
     private var islandDock: some View {
         VStack(spacing: 0) {
+            Spacer(minLength: 0)
             HStack(spacing: 5) {
                 Button {
                     Haptics.tap()
@@ -140,16 +138,12 @@ struct RadioMiniPlayer: View {
                 .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .padding(.top, 8)   // dropped toward the cutout's top edge — any lower
-                                // and the hole swallows the wave (no pixels there)
-            Spacer(minLength: 0)
+            .padding(.bottom, 4)   // the visible chin — snug under the cutout
         }
         .frame(width: Self.dockWidth, height: Self.dockHeight)
-        // Corner curvature matches the island's own, so the union reads as one
-        // continuous taller pill rather than a cap sitting on a wider base.
         .background(Color.black, in: UnevenRoundedRectangle(
-            topLeadingRadius: 15, bottomLeadingRadius: 18,
-            bottomTrailingRadius: 18, topTrailingRadius: 15, style: .continuous))
+            topLeadingRadius: 18, bottomLeadingRadius: 12,
+            bottomTrailingRadius: 12, topTrailingRadius: 18, style: .continuous))
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
         .onAppear {
