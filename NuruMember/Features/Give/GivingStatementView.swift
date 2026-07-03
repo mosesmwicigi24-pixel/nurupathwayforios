@@ -284,9 +284,7 @@ struct GivingStatementView: View {
                 Text(ksh(vm.totalMinor(in: year) / 100))
                     .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
             }
-            .padding(.top, 10)
-            .overlay(alignment: .top) { Rectangle().fill(Nuru.navy).frame(height: 2) }
-            .padding(.top, 6)
+            .padding(.top, 14)   // spacing separates the grand total — no ruled line
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -349,7 +347,9 @@ struct GivingStatementView: View {
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
-                if let ref = g.providerRef {
+                // Show the M-Pesa SMS receipt code (UG3J29U3OL) once settled;
+                // never the internal checkout id — hide the line if absent.
+                if let ref = g.receiptCode, !ref.isEmpty {
                     Text("Ref \(ref)")
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         .lineLimit(1)

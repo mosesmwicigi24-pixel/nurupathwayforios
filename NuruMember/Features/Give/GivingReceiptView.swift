@@ -118,7 +118,9 @@ struct GivingReceiptView: View {
                     Divider()
                     if let m = d.method { detailRow("Method", m.capitalized); Divider() }
                     detailRow("Currency", d.currency.uppercased())
-                    if let ref = d.providerRef { Divider(); detailRow("Reference", ref) }
+                    // Prefer the M-Pesa SMS receipt code; the internal checkout
+                    // id is only a last resort on a formal receipt page.
+                    if let ref = d.receiptCode ?? d.providerRef { Divider(); detailRow("Reference", ref) }
                     Divider(); detailRow("Transaction", String(d.transactionId.prefix(8)) + "…")
                 }
                 .padding(.horizontal, Nuru.S.base).receiptCard()

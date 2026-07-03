@@ -11,6 +11,10 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     let fund: String
     let method: String?
     let providerRef: String?
+    /// The M-Pesa receipt number (the 10-char code in the confirmation SMS,
+    /// e.g. UG3J29U3OL). Present once a mobile-money gift settles; null for
+    /// older gifts / non-mobile-money methods.
+    var receiptCode: String? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -50,6 +54,7 @@ struct GivingDetail: Codable, Sendable {
     let fund: String
     let method: String?
     let providerRef: String?
+    var receiptCode: String? = nil   // M-Pesa SMS receipt code (e.g. UG3J29U3OL)
     let createdAt: String
     let settledAt: String?
     let scheduleId: String?

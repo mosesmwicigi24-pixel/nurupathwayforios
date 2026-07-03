@@ -855,7 +855,9 @@ struct GivingView: View {
             guard let d = try? await MemberAPI.givingDetail(txId) else { continue }
             switch d.status {
             case "succeeded", "settled", "completed":
-                successRef = d.providerRef ?? String(d.transactionId.prefix(8)).uppercased()
+                // Show the M-Pesa SMS receipt code when it's landed with the
+                // settlement; fall back to a short transaction id, never ws_CO_.
+                successRef = d.receiptCode ?? String(d.transactionId.prefix(8)).uppercased()
                 ceremony = "success"
                 Haptics.success()   // only on the server's confirmed outcome
                 await vm.load()
