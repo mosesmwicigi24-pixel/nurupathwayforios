@@ -236,21 +236,25 @@ private struct NuruTabBar: View {
                     Haptics.selection()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selection = t }
                 } label: {
-                    VStack(spacing: 2) {
-                        Icon(t.icon, size: 21, color: focused ? Nuru.gold : Nuru.onNavyFaint)
+                    VStack(spacing: 3) {
+                        Icon(t.icon, size: 21, color: focused ? Nuru.navy : Self.inactive)
                             // One subtle bounce on arrival: each selection change runs
                             // the phase cycle once, and only the newly-focused icon
                             // actually scales (others stay at 1).
                             .phaseAnimator([false, true], trigger: selection) { icon, bouncing in
                                 icon.scaleEffect(bouncing && focused && !reduceMotion ? 1.12 : 1)
                             } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
-                        Text(t.label).font(.inter(10.5, .medium)).foregroundStyle(focused ? Nuru.gold : Nuru.onNavyFaint)
+                        Text(t.label).font(.inter(10.5, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
                     }
                     .frame(maxWidth: .infinity)
-                    .frame(height: 42)
-                    .overlay(alignment: .top) {
+                    .frame(height: 44)
+                    .background {
+                        // The active tab sits on a warm cream pill (matches the
+                        // member app) that slides between tabs.
                         if focused {
-                            Capsule().fill(Nuru.gold).frame(width: 28, height: 3).offset(y: -3)
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(Self.pill)
+                                .padding(.horizontal, 10)
                                 .matchedGeometryEffect(id: "nuru-tab-indicator", in: indicator)
                         }
                     }
@@ -260,11 +264,16 @@ private struct NuruTabBar: View {
                 .accessibilityAddTraits(focused ? [.isSelected] : [])
             }
         }
-        .padding(.top, 5)
+        .padding(.top, 6)
         .padding(.bottom, Self.safeBottom)
-        .background(Nuru.navy)
-        .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1) }
+        .background(Nuru.paper)
+        .overlay(alignment: .top) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
+
+    // Cream tab-bar palette (member-app look): navy active, muted-gray inactive,
+    // warm gold-tinted cream pill behind the selected tab.
+    private static let inactive = Color(hex: 0x7E8894)
+    private static let pill = Nuru.gold.opacity(0.16)
 
     /// Bottom clearance: labels sit flush against the home indicator — it
     /// overlays content harmlessly, so we reclaim essentially the whole inset
