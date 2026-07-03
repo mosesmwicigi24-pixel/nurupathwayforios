@@ -35,6 +35,13 @@ final class RadioCenter: ObservableObject {
     private var player: AVPlayer?
     private var timeObserver: Any?
     private var endObserver: NSObjectProtocol?
+    // Live-stream auto-reconnect: engine restarts / network blips kill the HTTP
+    // stream and AVPlayer just sits there "playing" silence. We re-tune with
+    // backoff; user actions (play/stop/tune) reset the attempt counter.
+    private var failObserver: NSObjectProtocol?
+    private var stallObserver: NSObjectProtocol?
+    private var reconnectTask: Task<Void, Never>?
+    private var reconnectAttempts = 0
     private var commandsRegistered = false
     private var artworkTask: Task<Void, Never>?
     private var artwork: MPMediaItemArtwork?
@@ -131,6 +138,7 @@ final class RadioCenter: ObservableObject {
     func togglePlay() { playing ? pause() : play() }
 
     func play() {
+        reconnectAttempts = 0
         guard let player else {
             if let program { tune(program) }   // stream was torn down — rebuild
             return
@@ -147,6 +155,8 @@ final class RadioCenter: ObservableObject {
     }
 
     func pause() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
         player?.pause()
         playing = false
         pushNowPlaying()
@@ -154,6 +164,9 @@ final class RadioCenter: ObservableObject {
 
     /// Fully power the station down (mini-player ✕). Clears the Now Playing entry.
     func stop() {
+        reconnectTask?.cancel()
+        reconnectTask = nil
+        reconnectAttempts = 0
         teardownPlayer()
         program = nil
         playing = false
@@ -184,9 +197,27 @@ final class RadioCenter: ObservableObject {
         ) { [weak self] _ in
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.playing = false
-                if self.duration > 0 { self.currentTime = self.duration }
-                self.pushNowPlaying()
+                if live {
+                    // A live Icecast stream "ending" = the server dropped us
+                    // (engine restart, network blip). Reconnect, don't stop.
+                    self.scheduleLiveReconnect()
+                } else {
+                    self.playing = false
+                    if self.duration > 0 { self.currentTime = self.duration }
+                    self.pushNowPlaying()
+                }
+            }
+        }
+        if live {
+            failObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleLiveReconnect() }
+            }
+            stallObserver = NotificationCenter.default.addObserver(
+                forName: AVPlayerItem.playbackStalledNotification, object: item, queue: .main
+            ) { [weak self] _ in
+                Task { @MainActor [weak self] in self?.scheduleLiveReconnect() }
             }
         }
         guard !live else { return }
@@ -211,10 +242,32 @@ final class RadioCenter: ObservableObject {
         timeObserver = nil
         if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
         endObserver = nil
+        if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
+        failObserver = nil
+        if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
+        stallObserver = nil
         player?.pause()
         player = nil
         currentTime = 0
         duration = 0
+    }
+
+    /// Rebuild the live player after the stream drops. Backoff 2/3/5/8s, up to
+    /// 8 tries; any explicit user action (tune/play/stop) resets the counter.
+    private func scheduleLiveReconnect() {
+        guard let p = program, p.live, playing else { return }
+        guard reconnectTask == nil, reconnectAttempts < 8 else { return }
+        reconnectAttempts += 1
+        let delays: [Double] = [2, 3, 5, 8]
+        let delay = delays[min(reconnectAttempts - 1, delays.count - 1)]
+        reconnectTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            guard let self, !Task.isCancelled else { return }
+            self.reconnectTask = nil
+            guard let current = self.program, current.id == p.id, self.playing else { return }
+            self.teardownPlayer()
+            self.tune(current)   // player == nil → tune rebuilds fresh
+        }
     }
 
     // MARK: - Now Playing (Dynamic Island / Lock Screen)
