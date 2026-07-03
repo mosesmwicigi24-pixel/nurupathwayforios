@@ -45,8 +45,22 @@ final class RadioCenter: ObservableObject {
     private var commandsRegistered = false
     private var artworkTask: Task<Void, Never>?
     private var artwork: MPMediaItemArtwork?
+    // Adaptive live-stream buffer (AIMD): +3s on every underrun (cap 15s),
+    // −1s per clean 4-minute stretch (floor 4s). Persisted so each device
+    // converges on the smallest buffer that plays clean on ITS network.
+    private static let adaptiveBufferKey = "radio.adaptiveBuffer"
+    private var adaptiveBuffer: Double {
+        didSet { UserDefaults.standard.set(adaptiveBuffer, forKey: Self.adaptiveBufferKey) }
+    }
+    /// Shared debounce across all underrun paths (stall/fail/end/buffer-empty)
+    /// and the yardstick for the stability task's "clean window" check.
+    private var lastUnderrunAt: Date?
+    private var bufferEmptyObservation: NSKeyValueObservation?
+    private var stabilityTask: Task<Void, Never>?
 
     private init() {
+        let stored = UserDefaults.standard.object(forKey: Self.adaptiveBufferKey) as? Double
+        adaptiveBuffer = min(15, max(4, stored ?? 5.0))
         // Keep `playing` honest across phone calls / Siri / other-app takeovers.
         NotificationCenter.default.addObserver(
             forName: AVAudioSession.interruptionNotification,
@@ -92,12 +106,15 @@ final class RadioCenter: ObservableObject {
         if p.live {
             // Live radio: hug the live edge. AVPlayer's default anti-stall
             // buffering is VOD-tuned and parks listeners 5-15s behind the
-            // broadcast; a ~5s forward buffer balances latency against dropout-free playback
-            // on real-world networks (2s underran audibly in the field).
+            // broadcast. The forward buffer ADAPTS per device (AIMD): every
+            // underrun adds 3s (cap 15s), every clean 4-minute stretch shaves
+            // 1s (floor 4s), so each device converges on the smallest buffer
+            // that plays dropout-free on its own network. A reconnect's
+            // rebuilt item lands here and inherits the grown buffer.
             // NOTE: automaticallyWaitsToMinimizeStalling must stay ON for an
             // Icecast HTTP stream — disabling it made playback start against
             // an empty buffer and render silence (field-reported).
-            item.preferredForwardBufferDuration = 5
+            item.preferredForwardBufferDuration = adaptiveBuffer
         }
         let avPlayer = AVPlayer(playerItem: item)
         player = avPlayer
@@ -107,6 +124,7 @@ final class RadioCenter: ObservableObject {
         avPlayer.isMuted = muted
         avPlayer.play()
         playing = true
+        if p.live { startStabilityTask() }
         tunedAt = p.live ? Date() : nil
         pushNowPlaying()
         loadArtwork(p)
@@ -152,12 +170,15 @@ final class RadioCenter: ObservableObject {
         }
         player.play()
         playing = true
+        if program?.live == true { startStabilityTask() }
         pushNowPlaying()
     }
 
     func pause() {
         reconnectTask?.cancel()
         reconnectTask = nil
+        stabilityTask?.cancel()
+        stabilityTask = nil
         player?.pause()
         playing = false
         pushNowPlaying()
@@ -200,7 +221,10 @@ final class RadioCenter: ObservableObject {
                 guard let self else { return }
                 if live {
                     // A live Icecast stream "ending" = the server dropped us
-                    // (engine restart, network blip). Reconnect, don't stop.
+                    // (engine restart, network blip). Count it as an underrun
+                    // (the rebuilt item then starts with the grown buffer),
+                    // then reconnect — don't stop.
+                    self.recordUnderrun()
                     self.scheduleLiveReconnect()
                 } else {
                     self.playing = false
@@ -213,12 +237,28 @@ final class RadioCenter: ObservableObject {
             failObserver = NotificationCenter.default.addObserver(
                 forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.scheduleLiveReconnect() }
+                Task { @MainActor [weak self] in
+                    self?.recordUnderrun()
+                    self?.scheduleLiveReconnect()
+                }
             }
             stallObserver = NotificationCenter.default.addObserver(
                 forName: AVPlayerItem.playbackStalledNotification, object: item, queue: .main
             ) { [weak self] _ in
-                Task { @MainActor [weak self] in self?.scheduleLiveReconnect() }
+                Task { @MainActor [weak self] in
+                    self?.recordUnderrun()
+                    self?.scheduleLiveReconnect()
+                }
+            }
+            // Soft underruns: the forward buffer draining mid-play is trouble
+            // even when no stall notification fires — count it too (the shared
+            // 5s debounce in recordUnderrun stops double-counting when both fire).
+            bufferEmptyObservation = item.observe(\.isPlaybackBufferEmpty, options: [.new]) { [weak self] _, change in
+                guard change.newValue == true else { return }
+                Task { @MainActor [weak self] in
+                    guard let self, self.playing else { return }
+                    self.recordUnderrun()
+                }
             }
         }
         guard !live else { return }
@@ -247,6 +287,10 @@ final class RadioCenter: ObservableObject {
         failObserver = nil
         if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
         stallObserver = nil
+        bufferEmptyObservation?.invalidate()
+        bufferEmptyObservation = nil
+        stabilityTask?.cancel()
+        stabilityTask = nil
         player?.pause()
         player = nil
         currentTime = 0
@@ -268,6 +312,40 @@ final class RadioCenter: ObservableObject {
             guard let current = self.program, current.id == p.id, self.playing else { return }
             self.teardownPlayer()
             self.tune(current)   // player == nil → tune rebuilds fresh
+        }
+    }
+
+    // MARK: - Adaptive buffer (AIMD)
+
+    /// Additive increase: any live-stream trouble (stall, failure, dropout,
+    /// buffer drain) grows the forward buffer +3s toward the 15s cap and
+    /// applies it to the current item immediately. One real dropout tends to
+    /// fire several of those signals back-to-back, so a shared 5s debounce
+    /// makes them count once.
+    private func recordUnderrun() {
+        let now = Date()
+        if let last = lastUnderrunAt, now.timeIntervalSince(last) < 5 { return }
+        lastUnderrunAt = now
+        adaptiveBuffer = min(15, adaptiveBuffer + 3)
+        player?.currentItem?.preferredForwardBufferDuration = adaptiveBuffer
+    }
+
+    /// Decrease when stable: while live audio plays, every 4-minute window
+    /// with zero underruns shaves 1s off the buffer (floor 4s), so devices on
+    /// good networks drift back toward the live edge. Cancelled by
+    /// pause/stop/teardown; tune/play restart it for live programs.
+    private func startStabilityTask() {
+        stabilityTask?.cancel()
+        stabilityTask = Task { [weak self] in
+            while !Task.isCancelled {
+                let windowStart = Date()
+                try? await Task.sleep(nanoseconds: 240 * 1_000_000_000)
+                guard let self, !Task.isCancelled else { return }
+                guard self.playing, self.program?.live == true else { return }
+                if let last = self.lastUnderrunAt, last >= windowStart { continue }
+                self.adaptiveBuffer = max(4, self.adaptiveBuffer - 1)
+                self.player?.currentItem?.preferredForwardBufferDuration = self.adaptiveBuffer
+            }
         }
     }
 
