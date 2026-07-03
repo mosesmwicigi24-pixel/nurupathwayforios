@@ -201,6 +201,14 @@ struct PathwayView: View {
                 case .map: LevelsMapView(vm: vm) { path.append(PathwayRoute.level($0)) }
                 }
             }
+            // The Pathway stack registers only PathwayRoute; the Discipleship Hub
+            // is an AppRoute, so register it here too (the tab has no .nuruDestinations()).
+            .navigationDestination(for: AppRoute.self) { r in
+                switch r {
+                case .discipleshipHub: DiscipleshipHubView()
+                default: EmptyView()
+                }
+            }
         }
         .task { if vm.summary == nil { await vm.load() } }
         .task(id: selectedLevel?.levelNumber) {
@@ -244,6 +252,12 @@ struct PathwayView: View {
                         openExam: { path.append(PathwayRoute.exam($0)) })
                         .gentleEntrance(delay: 0.05)
                 }
+
+                // Discipleship Hub link — a warm door into the relationship home
+                // (discipler, feedback, meeting notes). Sits naturally beside the
+                // "awaiting your discipler's blessing" flow above.
+                PathwayDisciplershipRow { path.append(AppRoute.discipleshipHub) }
+                    .gentleEntrance(delay: 0.08)
 
                 PathwayMilestones(
                     levels: s.levels, reward: nextReward(s),
@@ -445,6 +459,41 @@ private struct PathwayAwaitingBanner: View {
         .shadow(color: PW.navyDeep.opacity(0.5), radius: 16, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Level \(level.levelNumber) complete. Awaiting your discipler's blessing to continue.")
+    }
+}
+
+// MARK: - PathwayHub · Discipleship Hub link (walk with your discipler)
+
+/// A single navy-avatar row that opens the student's Discipleship Hub — the fuller
+/// home for the discipleship relationship. Purely a doorway (the Hub loads its own
+/// data); styled to sit calmly among the pathway cards.
+private struct PathwayDisciplershipRow: View {
+    let onTap: () -> Void
+    var body: some View {
+        Button { Haptics.tap(); onTap() } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                    Icon(.heartHandshake, size: 20, color: PW.navy)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("WALK WITH YOUR DISCIPLER").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
+                    Text("Your Discipleship Hub").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
+                    Text("Message, feedback & meeting notes").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: PW.chevron)
+            }
+            .padding(14)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.border, lineWidth: 1))
+            .shadow(color: PW.navy.opacity(0.05), radius: 8, y: 3)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens your Discipleship Hub.")
     }
 }
 

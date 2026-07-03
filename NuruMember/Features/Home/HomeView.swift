@@ -989,7 +989,9 @@ struct HomeView: View {
             HStack(spacing: 6) {
                 Text("MEET YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
                 Spacer(minLength: 0)
-                NavigationLink(value: AppRoute.mentor) {
+                // Opens the Discipleship Hub — the fuller student home for the
+                // discipleship relationship (supersedes the bare mentor view).
+                NavigationLink(value: AppRoute.discipleshipHub) {
                     HStack(spacing: 3) {
                         Text("View").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                         Icon(.chevronRight, size: 12, color: Nuru.goldLo)
@@ -998,7 +1000,7 @@ struct HomeView: View {
             }
             TabView {
                 ForEach(vm.disciplers) { d in
-                    NavigationLink(value: AppRoute.mentor) { disciplerView(d) }
+                    NavigationLink(value: AppRoute.discipleshipHub) { disciplerView(d) }
                         .buttonStyle(.pressableSubtle)
                 }
             }
