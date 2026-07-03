@@ -107,7 +107,8 @@ struct RadioMiniPlayer: View {
             Spacer(minLength: 0)
             capsuleRow.padding(.bottom, 2)
         }
-        .frame(height: 46)   // upper half swallowed by the island; row stays visible
+        .frame(height: 56)   // body swallowed behind the cutout; the row clears the
+                             // island's bottom edge and rides fully in front of it
         .padding(.leading, 8)
         .padding(.trailing, 3)
         .background(Color.black, in: Capsule())
