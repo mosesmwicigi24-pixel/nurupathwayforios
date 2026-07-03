@@ -132,6 +132,22 @@ final class PathwayViewModel: ObservableObject {
         return mods.first { $0.status == .next } ?? mods.first { !$0.completed } ?? mods.last
     }
 
+    /// After passing a level's exam the server unlocks the next level. Refresh
+    /// the summary (authoritative), force-refetch the next level's real trail,
+    /// and return its first open module to jump straight into. nil when there's
+    /// no next module (the final level was just cleared).
+    func nextModuleAfterExam(passedLevel: Int) async -> String? {
+        summary = (try? await MemberAPI.pathway()) ?? summary
+        let next = passedLevel + 1
+        // Force-refresh: the level may have been cached empty while locked.
+        modulesByLevel[next] = (try? await MemberAPI.levelModules(next)) ?? []
+        let mods = modulesByLevel[next]
+        let target = mods?.first { $0.status == .next }
+            ?? mods?.first { !$0.completed }
+            ?? mods?.first
+        return target?.moduleId
+    }
+
     var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }
     var doneModules: Int { summary?.levels.reduce(0) { $0 + $1.completedModules } ?? 0 }
     var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.totalModules } ?? 0 }
@@ -176,7 +192,15 @@ struct PathwayView: View {
                 case .level(let n): LevelDetailView(levelNumber: n)
                 case .module(let id): ModuleView(moduleId: id)
                 case .quiz(let id): QuizView(moduleId: id)
-                case .exam(let n): LevelExamView(levelNumber: n)
+                case .exam(let n):
+                    LevelExamView(levelNumber: n, onPassContinue: {
+                        Task { @MainActor in
+                            let nextId = await vm.nextModuleAfterExam(passedLevel: n)
+                            if !path.isEmpty { path.removeLast() }   // pop the exam
+                            if let nextId { path.append(PathwayRoute.module(nextId)) }
+                            // else: final level cleared — land back on the hub.
+                        }
+                    })
                 case .map: LevelsMapView(vm: vm) { path.append(PathwayRoute.level($0)) }
                 }
             }

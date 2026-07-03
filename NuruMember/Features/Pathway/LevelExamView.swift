@@ -130,13 +130,17 @@ private let examGoldGradient = LinearGradient(
 
 struct LevelExamView: View {
     let levelNumber: Int
+    /// Passed from PathwayView — advances into the next module after a pass.
+    /// nil (e.g. from the Grow stack) falls back to just dismissing.
+    var onPassContinue: (() -> Void)? = nil
     @StateObject private var vm: LevelExamViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var idx = 0   // current question
 
-    init(levelNumber: Int) {
+    init(levelNumber: Int, onPassContinue: (() -> Void)? = nil) {
         self.levelNumber = levelNumber
+        self.onPassContinue = onPassContinue
         _vm = StateObject(wrappedValue: LevelExamViewModel(levelNumber: levelNumber))
     }
 
@@ -146,6 +150,7 @@ struct LevelExamView: View {
             if let result = vm.result {
                 ExamResultScreen(levelNumber: levelNumber, result: result,
                                  onDone: { dismiss() },
+                                 onPassContinue: { (onPassContinue ?? { dismiss() })() },
                                  onRetry: { vm.retry(); idx = 0 })
             } else if vm.loading && vm.exam == nil {
                 examSkeleton
@@ -558,6 +563,7 @@ private struct ExamResultScreen: View {
     let levelNumber: Int
     let result: ExamResult
     let onDone: () -> Void
+    let onPassContinue: () -> Void
     let onRetry: () -> Void
 
     var body: some View {
@@ -565,7 +571,7 @@ private struct ExamResultScreen: View {
             ExamPassScreen(levelNumber: levelNumber,
                            score: result.scoreAchieved,
                            mentorReview: result.requiresManualReview,
-                           onContinue: onDone)
+                           onContinue: onPassContinue)
         } else if result.requiresManualReview {
             ExamReviewScreen(onDone: onDone)
         } else {
@@ -589,6 +595,7 @@ private struct ExamPassScreen: View {
     let onContinue: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
+    @State private var advancing = false   // Continue tapped — loading the next module
 
     var body: some View {
         ZStack {
@@ -598,9 +605,15 @@ private struct ExamPassScreen: View {
                 rings
                     .scaleEffect(bloomed ? 1 : 0.82)
                     .opacity(bloomed ? 1 : 0)
+                // The verdict number — labelled so it reads plainly as the score.
+                Text("MARKS SCORED")
+                    .font(.inter(12, .bold)).kerning(2)
+                    .foregroundStyle(EX.gold.opacity(0.7))
+                    .padding(.top, 26)
+                    .gentleEntrance(delay: 0.06)
                 Text("\(score)%")
                     .font(.inter(56, .bold)).foregroundStyle(EX.gold)
-                    .padding(.top, 28)
+                    .padding(.top, 4)
                     .gentleEntrance(delay: 0.1)
                 Text("Level \(levelNumber) Exam Passed")
                     .font(.fraunces(24, .semibold)).foregroundStyle(.white)
@@ -617,16 +630,31 @@ private struct ExamPassScreen: View {
                     .gentleEntrance(delay: 0.26)
                 divider.padding(.top, 24)
                 Spacer()
-                Button { Haptics.tap(); onContinue() } label: {
-                    Text("Continue Pathway")
-                        .font(.inter(16, .bold)).foregroundStyle(EX.navy)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                Button {
+                    guard !advancing else { return }
+                    advancing = true
+                    Haptics.tap()
+                    onContinue()   // PathwayView loads + opens the next module
+                } label: {
+                    Group {
+                        if advancing {
+                            HStack(spacing: 8) {
+                                ProgressView().tint(EX.navy)
+                                Text("Opening next module…").font(.inter(16, .bold)).foregroundStyle(EX.navy)
+                            }
+                        } else {
+                            Text("Continue Pathway").font(.inter(16, .bold)).foregroundStyle(EX.navy)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.lg)
             }
+            // Confetti over the whole ceremony — fires on arrival, once.
+            ExamConfetti().allowsHitTesting(false)
         }
         .onAppear {
             Haptics.success()
@@ -681,9 +709,13 @@ private struct ExamFailScreen: View {
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
                     .overlay(Text("📖").font(.system(size: 44)))
+                Text("MARKS SCORED")
+                    .font(.inter(11, .bold)).kerning(2)
+                    .foregroundStyle(EX.copy)
+                    .padding(.top, 22)
                 Text("\(score)%")
                     .font(.inter(44, .bold)).foregroundStyle(EX.ink)
-                    .padding(.top, 24)
+                    .padding(.top, 4)
                 Text("Not yet — and that's okay")
                     .font(.inter(22, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 6)
@@ -754,5 +786,71 @@ private struct ExamReviewScreen: View {
             }
         }
         .onAppear { Haptics.success() }   // the submission itself landed safely
+    }
+}
+
+// MARK: - Confetti (gold/white burst over the pass ceremony)
+
+/// A one-shot confetti burst tuned for the deep-navy pass screen. Learns from
+/// the plans-confetti bug: the flight is kicked on the NEXT runloop (never in
+/// the same state transaction that inserts the view, which SwiftUI would
+/// coalesce to the end state → invisible), and pieces stay opaque through most
+/// of the fall, fading only at the tail. Honors Reduce Motion (renders nothing).
+private struct ExamConfetti: View {
+    private struct Piece: Identifiable {
+        let id: Int
+        let x: CGFloat        // 0…1 horizontal origin
+        let dx: CGFloat, dy: CGFloat, w: CGFloat, h: CGFloat
+        let spin: Double
+        let color: Color
+        let delay: Double
+    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var fly = false
+    @State private var fade = false
+
+    // Gold family + white + amber — all legible on navy (no dark pieces).
+    private let pieces: [Piece] = {
+        let palette: [Color] = [Color(hex: 0xC9A227), Color(hex: 0xE6C068),
+                                .white, Color(hex: 0xF5D77A)]
+        return (0..<44).map { i in
+            Piece(id: i,
+                  x: CGFloat.random(in: 0.05...0.95),
+                  dx: CGFloat.random(in: -60...60),
+                  dy: CGFloat.random(in: 520...920),
+                  w: CGFloat.random(in: 5...8),
+                  h: CGFloat.random(in: 9...15),
+                  spin: Double.random(in: -720...720),
+                  color: palette[i % palette.count],
+                  delay: Double.random(in: 0...0.35))
+        }
+    }()
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                ForEach(pieces) { p in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(p.color)
+                        .frame(width: p.w, height: p.h)
+                        .rotationEffect(.degrees(fly ? p.spin : 0))
+                        .position(x: geo.size.width * p.x + (fly ? p.dx : 0),
+                                  y: fly ? p.dy : -20)
+                        .opacity(fade ? 0 : 1)
+                        .animation(.easeOut(duration: 1.7).delay(p.delay), value: fly)
+                        .animation(.easeIn(duration: 0.5).delay(1.25 + p.delay), value: fade)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            guard !reduceMotion else { return }
+            // Kick on the next runloop so the fall actually animates.
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 60_000_000)
+                fly = true
+                fade = true
+            }
+        }
     }
 }
