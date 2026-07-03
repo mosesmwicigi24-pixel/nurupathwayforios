@@ -132,21 +132,10 @@ final class PathwayViewModel: ObservableObject {
         return mods.first { $0.status == .next } ?? mods.first { !$0.completed } ?? mods.last
     }
 
-    /// After passing a level's exam the server unlocks the next level. Refresh
-    /// the summary (authoritative), force-refetch the next level's real trail,
-    /// and return its first open module to jump straight into. nil when there's
-    /// no next module (the final level was just cleared).
-    func nextModuleAfterExam(passedLevel: Int) async -> String? {
-        summary = (try? await MemberAPI.pathway()) ?? summary
-        let next = passedLevel + 1
-        // Force-refresh: the level may have been cached empty while locked.
-        modulesByLevel[next] = (try? await MemberAPI.levelModules(next)) ?? []
-        let mods = modulesByLevel[next]
-        let target = mods?.first { $0.status == .next }
-            ?? mods?.first { !$0.completed }
-            ?? mods?.first
-        return target?.moduleId
-    }
+    /// The level (if any) the member just passed and is now waiting to be ushered
+    /// past — surfaced by the pathway API's `awaitingReview` flag. Drives the
+    /// "awaiting your discipler" banner; the next level stays locked while set.
+    var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.awaitingReview } }
 
     var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }
     var doneModules: Int { summary?.levels.reduce(0) { $0 + $1.completedModules } ?? 0 }
@@ -191,14 +180,22 @@ struct PathwayView: View {
                 switch r {
                 case .level(let n): LevelDetailView(levelNumber: n)
                 case .module(let id): ModuleView(moduleId: id)
-                case .quiz(let id): QuizView(moduleId: id)
+                case .quiz(let id):
+                    QuizView(moduleId: id, onPassAdvance: { nextId in
+                        // Pop the quiz; open the server-unlocked next module (if any).
+                        if !path.isEmpty { path.removeLast() }
+                        if let nextId { path.append(PathwayRoute.module(nextId)) }
+                    })
                 case .exam(let n):
+                    // §1.9 (new): passing the exam NO LONGER auto-advances. The
+                    // member now waits to be ushered by a discipler — so Continue
+                    // just refreshes the (authoritative) pathway and pops back to the
+                    // hub, where the level shows its "awaiting your discipler" state
+                    // and the next level stays LOCKED until awaitingReview clears.
                     LevelExamView(levelNumber: n, onPassContinue: {
                         Task { @MainActor in
-                            let nextId = await vm.nextModuleAfterExam(passedLevel: n)
-                            if !path.isEmpty { path.removeLast() }   // pop the exam
-                            if let nextId { path.append(PathwayRoute.module(nextId)) }
-                            // else: final level cleared — land back on the hub.
+                            await vm.load()   // pull the fresh awaiting-review / status
+                            if !path.isEmpty { path.removeLast() }   // pop the exam → the hub
                         }
                     })
                 case .map: LevelsMapView(vm: vm) { path.append(PathwayRoute.level($0)) }
@@ -222,6 +219,13 @@ struct PathwayView: View {
                 openModule: { path.append(PathwayRoute.module($0)) })
 
             VStack(alignment: .leading, spacing: 24) {
+                // Awaiting your discipler — the level exam is passed; the member waits
+                // to be ushered (the next level stays LOCKED until awaitingReview
+                // clears server-side). Server-authoritative: purely reflects state.
+                if let a = vm.awaitingLevel {
+                    PathwayAwaitingBanner(level: a).gentleEntrance()
+                }
+
                 PathwayJourneyRail(
                     levels: s.levels, selected: selectedLevel?.levelNumber ?? -1,
                     onSelect: { n in
@@ -406,6 +410,44 @@ private struct PWHeaderRing: View {
     }
 }
 
+// MARK: - PathwayHub · "awaiting your discipler" waiting state
+
+/// A dignified waiting card: the level exam is passed and the member is waiting to
+/// be ushered onward by a discipler. Purely reflects the server's awaitingReview
+/// flag; it never advances anything (§1.9). The next level stays locked meanwhile.
+private struct PathwayAwaitingBanner: View {
+    let level: PathwayLevel
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle().fill(PW.gold.opacity(0.16))
+                    .overlay(Circle().stroke(PW.gold.opacity(0.4), lineWidth: 1))
+                Text("🌿").font(.system(size: 22))
+            }
+            .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("AWAITING YOUR DISCIPLER")
+                    .font(.inter(9, .bold)).kerning(1.4).foregroundStyle(PW.goldLight)
+                Text("Level \(level.levelNumber) complete")
+                    .font(.inter(14, .bold)).foregroundStyle(.white)
+                Text("Awaiting your discipler's blessing to continue.")
+                    .font(.inter(11)).foregroundStyle(.white.opacity(0.7))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.gold.opacity(0.35), lineWidth: 1))
+        .shadow(color: PW.navyDeep.opacity(0.5), radius: 16, y: 8)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Level \(level.levelNumber) complete. Awaiting your discipler's blessing to continue.")
+    }
+}
+
 // MARK: - PathwayHub · journey rail
 
 private struct PathwayJourneyRail: View {
@@ -489,12 +531,16 @@ private struct PathwaySelectedModules: View {
     let openModule: (String) -> Void
     let openExam: (Int) -> Void
 
-    /// Trail walked, level not yet passed → the exam gate row shows. Built only
-    /// from fields the pathway/levels API already returns; the server remains
-    /// the eligibility authority and answers politely if the gate isn't open.
+    /// Trail walked, level not yet passed, and not already awaiting a discipler's
+    /// usher → the exam gate row shows. Built only from fields the pathway/levels
+    /// API already returns; the server remains the eligibility authority and answers
+    /// politely if the gate isn't open. Once the exam is passed the level flips to
+    /// awaitingReview and the gate is replaced by the waiting row.
     private var examReady: Bool {
-        !modules.isEmpty && modules.allSatisfy(\.completed) && level.status != .completed
+        !modules.isEmpty && modules.allSatisfy(\.completed)
+            && level.status != .completed && !level.awaitingReview
     }
+    private var awaitingReview: Bool { level.awaitingReview }
 
     // Progression order — completed, then the one in progress, then locked (each
     // by sequence). Identical to raw sequence for a clean curriculum; for real
@@ -532,12 +578,15 @@ private struct PathwaySelectedModules: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
-                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady) { if m.status != .locked { openModule(m.moduleId) } }
+                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady && !awaitingReview) { if m.status != .locked { openModule(m.moduleId) } }
                         // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
                         if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
                     }
-                    // The level gate — every module done, the exam opens the way.
-                    if examReady {
+                    // Exam passed → waiting to be ushered by a discipler (§1.9); else
+                    // every module done → the exam gate opens the way.
+                    if awaitingReview {
+                        PWAwaitingRow(levelNumber: level.levelNumber)
+                    } else if examReady {
                         PWExamGateRow(levelNumber: level.levelNumber) { openExam(level.levelNumber) }
                     }
                 }
@@ -666,6 +715,38 @@ private struct PWExamGateRow: View {
         }
         .buttonStyle(.pressable)
         .accessibilityHint("Opens the Level \(levelNumber) exam.")
+    }
+}
+
+/// The waiting node at the foot of a fully-passed level — the exam is done and the
+/// member is awaiting a discipler's usher (§1.9). Not tappable; purely reflects the
+/// awaitingReview flag. Replaces the exam gate row once the exam has been passed.
+private struct PWAwaitingRow: View {
+    let levelNumber: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 11, style: .continuous)
+                    .fill(PW.gold.opacity(0.16))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(PW.gold.opacity(0.4), lineWidth: 1))
+                    .frame(width: 32, height: 32)
+                Text("🌿").font(.system(size: 15))
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("Level \(levelNumber) complete")
+                    .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
+                Text("Awaiting your discipler's blessing to continue")
+                    .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(PW.gold.opacity(0.08))
+        .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Level \(levelNumber) complete. Awaiting your discipler's blessing to continue.")
     }
 }
 

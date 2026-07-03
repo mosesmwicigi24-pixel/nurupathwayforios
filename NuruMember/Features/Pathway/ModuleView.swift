@@ -39,9 +39,17 @@ final class ModuleViewModel: ObservableObject {
     @Published var audioProgress: Double = 0   // 0…1 of the track (0 until known)
     // Completion signals for the quiz gate: the video embed watched-seconds and
     // the furthest point reached in the audio. The quiz can't start until the
-    // read, the watch (≥90%) and the listen (≥90%) are all satisfied.
+    // read, the watch (≥90%), the listen (≥90%) AND the reflection are satisfied.
     @Published var videoWatchedSec: Double = 0
     @Published var audioMaxProgress: Double = 0
+
+    // Reflection is now a REQUIRED content step BEFORE the quiz — a standalone
+    // POST /modules/{id}/reflection, NOT completion. `reflectDone` gates the quiz;
+    // `savedReflection` pre-fills the card on open (fetched via GET).
+    @Published var reflectDone = false
+    @Published var savedReflection: String?
+    @Published var submittingReflection = false
+    @Published var reflectionError: String?
 
     private let moduleId: String
     init(moduleId: String) { self.moduleId = moduleId }
@@ -110,6 +118,39 @@ final class ModuleViewModel: ObservableObject {
     /// GET the accumulated totals — silent (`try?`): resume is a nicety, never a blocker.
     func fetchEngagement() async -> ModuleEngagement? {
         try? await MemberAPI.moduleEngagement(moduleId)
+    }
+
+    // MARK: Reflection step (standalone, required BEFORE the quiz)
+
+    /// Pre-fill the reflection card and mark the Reflect step done if the member
+    /// already wrote one. Silent (`try?`) — a missing/failed fetch just leaves the
+    /// step not-yet-done; it never blocks the reader.
+    func loadReflection() async {
+        // `try?` on an Optional-returning call yields a double Optional — flatten it.
+        let fetched = (try? await MemberAPI.moduleReflection(moduleId)) ?? nil
+        guard let saved = fetched,
+              !saved.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        savedReflection = saved.body
+        reflectDone = true
+    }
+
+    /// Submit the standalone reflection (optimistic: the Reflect step lights up the
+    /// moment the server confirms). This does NOT complete the module — the quiz /
+    /// mark-complete path stays server-authoritative (§1.9).
+    func submitReflection(_ text: String) async {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        submittingReflection = true; reflectionError = nil
+        defer { submittingReflection = false }
+        do {
+            _ = try await MemberAPI.submitModuleReflection(moduleId, body: trimmed)
+            savedReflection = trimmed
+            reflectDone = true
+            Haptics.success()
+        } catch {
+            reflectionError = (error as? APIError)?.errorDescription ?? "Couldn't save your reflection. Please try again."
+            Haptics.error()
+        }
     }
 
     /// Seed the page bookkeeping from the server's totals so an unchanged page
@@ -317,6 +358,39 @@ enum ML {
     static let reflectMinChars = 20   // Figma REFLECT_MIN_MOD
 }
 
+// MARK: - Gate step model (the incremental "N of M steps done")
+
+/// One applicable content step. `fraction` (0…1) is the REAL progress toward it —
+/// read scroll, watched-seconds vs 90%, audio playhead vs 0.9, or 0/1 for reflect;
+/// it drives the partial fill of the in-progress step. `done` is fraction ≥ 1.
+enum GateStepKind: String {
+    case read, watch, listen, reflect
+    var label: String {
+        switch self {
+        case .read:    return "Read"
+        case .watch:   return "Watch"
+        case .listen:  return "Listen"
+        case .reflect: return "Reflect"
+        }
+    }
+    var icon: Lucide {
+        switch self {
+        case .read:    return .bookOpen
+        case .watch:   return .play
+        case .listen:  return .audioLines
+        case .reflect: return .quote
+        }
+    }
+}
+
+struct GateStep: Identifiable {
+    let kind: GateStepKind
+    let fraction: Double
+    var id: String { kind.rawValue }
+    var done: Bool { fraction >= 1 }
+    var clamped: Double { min(1, max(0, fraction)) }
+}
+
 struct ModuleView: View {
     let moduleId: String
     @StateObject private var vm: ModuleViewModel
@@ -330,6 +404,7 @@ struct ModuleView: View {
     @State private var reachedEnd = false        // latched at the LAST page's end
     @State private var startingQuiz = false       // flushing engagement before the quiz
     @State private var quizTarget: String?        // pushes QuizView once the flush lands
+    @State private var nextModuleTarget: String?  // the server-unlocked next module (post-quiz-pass)
 
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
@@ -378,7 +453,13 @@ struct ModuleView: View {
         return min(1, max(0, (Double(currentPage) + pageFraction) / n))
     }
 
-    // MARK: - Content-completion gate (read + watch ≥90% + listen ≥90%)
+    // MARK: - Content-completion gate (read + watch ≥90% + listen ≥90% + reflect)
+    //
+    // The gate is an INCREMENTAL "N of M steps done": the applicable steps are
+    // Read (always) + Watch (only with a video) + Listen (only with audio) +
+    // Reflect (always). Each carries a live fraction (0…1) so the bottom gate can
+    // partially fill the in-progress step; the quiz/mark-complete unlocks ONLY when
+    // every applicable step's fraction is 1 (server still re-checks, §1.9).
 
     /// Video satisfied when there's no video, or it's been watched ~90% (or,
     /// when no duration is set, genuinely opened for a spell).
@@ -389,14 +470,40 @@ struct ModuleView: View {
     }
     /// Audio satisfied when there's no audio, or the playhead reached ~90%.
     private var listenDone: Bool { vm.hasAudio ? vm.audioMaxProgress >= 0.9 : true }
-    /// The quiz / mark-complete only unlocks when ALL present steps are done.
-    private var contentComplete: Bool { reachedEnd && watchDone && listenDone }
-    /// The honest reason the gate is still locked (in step order).
+
+    /// Live read fraction — whole-module scroll progress, latched to 1 once the
+    /// end sentinel has been reached (so a scroll-back doesn't un-fill Read).
+    private var readFraction: Double { reachedEnd ? 1 : min(1, max(0, overallProgress)) }
+    /// Live watch fraction — watched-seconds vs the 90% target (or the 20s floor).
+    private var watchFraction: Double {
+        guard let d = vm.detail, d.videoUrl != nil else { return 1 }
+        let target = (d.videoDurationSec.map { Double($0) * 0.9 }).flatMap { $0 > 0 ? $0 : nil } ?? 20
+        return min(1, max(0, vm.videoWatchedSec / target))
+    }
+    /// Live listen fraction — playhead vs the 0.9 target.
+    private var listenFraction: Double { vm.hasAudio ? min(1, max(0, vm.audioMaxProgress / 0.9)) : 1 }
+
+    /// The applicable steps, in fixed order, each with its live fraction. Watch is
+    /// omitted with no video; Listen is omitted with no audio; Read + Reflect always
+    /// show. This is the single source for the "N of M" chips + segmented bar.
+    private var gateSteps: [GateStep] {
+        var steps: [GateStep] = [GateStep(kind: .read, fraction: readFraction)]
+        if let d = vm.detail, d.videoUrl != nil { steps.append(GateStep(kind: .watch, fraction: watchFraction)) }
+        if vm.hasAudio { steps.append(GateStep(kind: .listen, fraction: listenFraction)) }
+        steps.append(GateStep(kind: .reflect, fraction: vm.reflectDone ? 1 : 0))
+        return steps
+    }
+    private var stepsDone: Int { gateSteps.filter(\.done).count }
+    private var stepsTotal: Int { gateSteps.count }
+    /// The quiz / mark-complete only unlocks when EVERY applicable step is done.
+    private var contentComplete: Bool { reachedEnd && watchDone && listenDone && vm.reflectDone }
+    /// The honest reason the gate is still locked — names the FIRST unmet step.
     private func gateLockReason(requiresQuiz: Bool) -> String {
         let tail = requiresQuiz ? "unlock the quiz" : "continue"
-        if !reachedEnd { return "Read to the end to \(tail)" }
-        if !watchDone  { return "Finish the video to \(tail)" }
-        if !listenDone { return "Finish the audio to \(tail)" }
+        if !reachedEnd     { return "Read to the end to \(tail)" }
+        if !watchDone      { return "Finish the video to \(tail)" }
+        if !listenDone     { return "Finish the audio to \(tail)" }
+        if !vm.reflectDone { return "Add a reflection to \(tail)" }
         return ""
     }
 
@@ -469,7 +576,9 @@ struct ModuleView: View {
         // fills the rail behind it to show how far you've read.
         .overlay(alignment: .trailing) {
             if vm.detail != nil {
-                MLPaceRail(progress: pageFraction)
+                // Bind the dot to `overallProgress` — the SAME whole-module signal
+                // the top reading bar uses — so the dot and the bar move in lockstep.
+                MLPaceRail(progress: overallProgress)
                     .transition(.opacity)
             }
         }
@@ -485,7 +594,12 @@ struct ModuleView: View {
         .task {
             guard vm.detail == nil else { return }
             async let totals = vm.fetchEngagement()   // resume data, in parallel
+            async let _reflection: Void = vm.loadReflection()   // pre-fill Reflect step
             await vm.load()
+            await _reflection
+            // Pre-fill the reflection card with the saved text (only if the member
+            // hasn't started typing) so it reads as already-done on return.
+            if reflection.isEmpty, let saved = vm.savedReflection { reflection = saved }
             applyResume(await totals)
         }
         .onAppear {
@@ -508,8 +622,17 @@ struct ModuleView: View {
             if phase != .active { vm.flushEngagement() }   // keep the tail on background
         }
         // The quiz opens only after the engagement flush lands (so the server's
-        // content gate sees the final read/watch/listen seconds).
-        .navigationDestination(item: $quizTarget) { QuizView(moduleId: $0) }
+        // content gate sees the final read/watch/listen seconds). On a PASS the quiz
+        // hands back the server-unlocked next module: pop the quiz and push it, so
+        // the member flows straight into the next lesson (§1.9 — the id is the
+        // server's; a nil just returns to this module).
+        .navigationDestination(item: $quizTarget) { id in
+            QuizView(moduleId: id, onPassAdvance: { nextId in
+                quizTarget = nil          // pop the quiz
+                if let nextId { nextModuleTarget = nextId }
+            })
+        }
+        .navigationDestination(item: $nextModuleTarget) { ModuleView(moduleId: $0) }
         .onChange(of: playingVideo) { _, _ in syncEngagementSignals() }
         .onChange(of: currentPage) { _, _ in syncEngagementSignals() }
         // A short beat after the server confirms, so the success haptic and the
@@ -606,7 +729,8 @@ struct ModuleView: View {
                     .transition(.opacity)
                 }
                 if !chromeHidden {
-                    MLBottomGate(complete: contentComplete,
+                    MLBottomGate(steps: gateSteps,
+                                 complete: contentComplete,
                                  lockReason: gateLockReason(requiresQuiz: d.requiresQuiz),
                                  requiresQuiz: d.requiresQuiz,
                                  moduleId: d.moduleId,
@@ -750,9 +874,15 @@ struct ModuleView: View {
                 MLScriptureCard(line: verse).padding(.top, 20)
             }
             if isLastPage {
-                MLReflectionCard(text: $reflection, busy: vm.completing, error: vm.completionError) {
+                // Reflection is a REQUIRED content step BEFORE the quiz — it POSTs
+                // through /modules/{id}/reflection (NOT completion). On success the
+                // Reflect step lights up and the quiz gate can clear.
+                MLReflectionCard(text: $reflection,
+                                 busy: vm.submittingReflection,
+                                 done: vm.reflectDone,
+                                 error: vm.reflectionError) {
                     Haptics.action()
-                    Task { await vm.markComplete(reflection: reflection) }
+                    Task { await vm.submitReflection(reflection) }
                 }
                 .padding(.top, 32)
                 .id("reflect")
@@ -780,7 +910,7 @@ struct ModuleView: View {
     private func headerActions(hasVideo: Bool, hasAudio: Bool, pageCount: Int, proxy: ScrollViewProxy) -> MLHeaderActions {
         MLHeaderActions(
             readDone: reachedEnd,
-            reflectDone: vm.completed,
+            reflectDone: vm.reflectDone,
             hasVideo: hasVideo,
             watchDone: playingVideo,
             hasAudio: hasAudio,
@@ -1404,31 +1534,42 @@ private struct MLSquareLabel: View {
 /// Purely a guide that observes nothing. Spans the mid-height so it never
 /// collides with the top full-screen handle or the bottom page whisper.
 private struct MLPaceRail: View {
-    let progress: Double   // 0…1, the live scroll fraction within the section
+    let progress: Double   // 0…1, the live whole-module reading progress
+
+    private var p: CGFloat { CGFloat(min(1, max(0, progress))) }
 
     var body: some View {
+        // DIAGNOSIS: the old rail placed the track/fill/dot in a `ZStack(.top)` and
+        // positioned the dot with `.offset(y:)` where `y` folded in the OVERLAY's
+        // `geo.safeAreaInsets.top`. Because the host view `.ignoresSafeArea(edges:
+        // .top)`, those insets resolve differently for the overlay than for the top
+        // bar, and the mixed `.padding` + `.offset` layout wasn't re-resolving the
+        // dot's position on every `progress` change → the dot sat still while the
+        // top bar (a plain width-driven fill) moved. FIX: one GeometryReader that
+        // owns a fixed rail rect in ITS OWN coordinate space, and place the dot with
+        // absolute `.position(y:)` computed purely from `progress` — so it re-lays
+        // out on every scroll tick and tracks the top bar exactly.
         GeometryReader { geo in
-            let top = geo.safeAreaInsets.top + 66
-            let bottom = geo.size.height - 92
-            let span = max(1, bottom - top)
-            let y = top + CGFloat(min(1, max(0, progress))) * span
-            ZStack(alignment: .top) {
-                // Faint full track.
+            let top: CGFloat = 66
+            let bottom = max(top + 1, geo.size.height - 92)
+            let span = bottom - top
+            let y = top + p * span
+            let railX = geo.size.width - 8.5   // 7pt trailing inset + half the 3pt rail
+            ZStack {
+                // Faint full track (top → bottom).
                 Capsule().fill(ML.gold.opacity(0.12))
-                    .frame(width: 3)
-                    .padding(.top, top).padding(.bottom, geo.size.height - bottom)
-                // Read-so-far fill, top → dot.
+                    .frame(width: 3, height: span)
+                    .position(x: railX, y: (top + bottom) / 2)
+                // Read-so-far fill (top → dot) — grows with progress.
                 Capsule().fill(ML.gold.opacity(0.55))
                     .frame(width: 3, height: max(0, y - top))
-                    .offset(y: top)
-                // The scroll dot.
+                    .position(x: railX, y: top + max(0, y - top) / 2)
+                // The scroll dot — absolute position, purely a function of progress.
                 Circle().fill(ML.gold)
                     .frame(width: 9, height: 9)
                     .shadow(color: ML.gold.opacity(0.6), radius: 4)
-                    .offset(y: y - 4.5)
+                    .position(x: railX, y: y)
             }
-            .frame(maxWidth: .infinity, alignment: .trailing)
-            .padding(.trailing, 7)
         }
         .allowsHitTesting(false)
     }
@@ -1681,6 +1822,7 @@ private struct MLSectionHeader: View {
 private struct MLReflectionCard: View {
     @Binding var text: String
     let busy: Bool
+    let done: Bool          // the reflection has been saved server-side
     let error: String?
     let onSubmit: () -> Void
 
@@ -1690,9 +1832,21 @@ private struct MLReflectionCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("REFLECTION")
-                .font(.inter(10, .bold)).kerning(1.8)
-                .foregroundStyle(ML.kicker)
+            HStack(spacing: 6) {
+                Text("REFLECTION · STEP")
+                    .font(.inter(10, .bold)).kerning(1.8)
+                    .foregroundStyle(ML.kicker)
+                Spacer(minLength: 0)
+                if done {
+                    HStack(spacing: 4) {
+                        Icon(.check, size: 10, color: ML.navy)
+                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(ML.navy)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(ML.gold.opacity(0.9), in: Capsule())
+                    .transition(.opacity)
+                }
+            }
             Text("What is one thing from this module the Spirit is asking you to practice this week?")
                 .font(.fraunces(15, .regular)).foregroundStyle(ML.navy)
                 .lineSpacing(3)
@@ -1700,7 +1854,7 @@ private struct MLReflectionCard: View {
                 .padding(.top, 6)
             editor.padding(.top, 12)
             Text(counterLine)
-                .font(.inter(11)).foregroundStyle(ML.secondary)
+                .font(.inter(11)).foregroundStyle(done ? ML.overline : ML.secondary)
                 .contentTransition(.numericText())
                 .animation(.default, value: trimmed.count)
                 .padding(.top, 6)
@@ -1715,11 +1869,13 @@ private struct MLReflectionCard: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(ML.border, lineWidth: 1))
+            .stroke(done ? ML.gold.opacity(0.5) : ML.border, lineWidth: 1))
+        .animation(.easeInOut(duration: 0.2), value: done)
     }
 
     private var counterLine: String {
-        canSubmit
+        if done { return "Reflection saved — you can revise it any time." }
+        return canSubmit
             ? "\(words) words · \(trimmed.count) chars"
             : "\(ML.reflectMinChars - trimmed.count) more characters before you can submit"
     }
@@ -1746,7 +1902,7 @@ private struct MLReflectionCard: View {
         Button(action: onSubmit) {
             ZStack {
                 if busy { ProgressView().tint(.white) }
-                else { Text("Submit reflection").font(.inter(13, .semibold)) }
+                else { Text(done ? "Update reflection" : "Submit reflection").font(.inter(13, .semibold)) }
             }
             .foregroundStyle(canSubmit ? Color.white : Color(hex: 0x0A2540, alpha: 0.55))
             .frame(maxWidth: .infinity, minHeight: 48)
@@ -1762,8 +1918,9 @@ private struct MLReflectionCard: View {
 // MARK: - Bottom gate (progress strip + locked / quiz / mark-complete CTA)
 
 private struct MLBottomGate: View {
-    let complete: Bool          // read + watch(≥90%) + listen(≥90%) all done
-    let lockReason: String      // why it's still locked, in step order
+    let steps: [GateStep]       // the applicable steps, in order, each with a live fraction
+    let complete: Bool          // every applicable step done
+    let lockReason: String      // why it's still locked (names the first unmet step)
     let requiresQuiz: Bool
     let moduleId: String
     let busy: Bool
@@ -1775,14 +1932,24 @@ private struct MLBottomGate: View {
     let onStartQuiz: () -> Void
     let onComplete: () -> Void
 
+    private var doneCount: Int { steps.filter(\.done).count }
+
     var body: some View {
         VStack(spacing: 10) {
+            // Header — the live "N of M steps done" tally.
             HStack(spacing: 10) {
-                progressBar
-                Text(complete ? "All steps done 🎉" : "Keep going")
-                    .font(.inter(10, .bold))
-                    .foregroundStyle(complete ? ML.overline : ML.secondary)
+                Text(complete ? "All steps done 🎉" : "\(doneCount) of \(steps.count) steps done")
+                    .font(.inter(11, .bold))
+                    .foregroundStyle(complete ? ML.overline : ML.navy)
+                    .contentTransition(.numericText())
+                    .animation(.easeInOut(duration: 0.25), value: doneCount)
+                Spacer(minLength: 0)
             }
+            // Segmented progress bar — one segment per step, partial-filling the
+            // in-progress one from its real fraction.
+            segmentedBar
+            // The compact chip row — check when done, a partial ring while in progress.
+            chipRow
             if let error {
                 Text(error)
                     .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
@@ -1801,16 +1968,30 @@ private struct MLBottomGate: View {
         .animation(.easeInOut(duration: 0.25), value: complete)
     }
 
-    private var progressBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(ML.track)
-                Capsule().fill(ML.gold)
-                    .frame(width: max(8, geo.size.width * (complete ? 1 : 0.12)))
+    /// One filling segment per applicable step. A done segment is solid gold; the
+    /// in-progress segment fills gold to its real fraction; not-yet steps stay track.
+    private var segmentedBar: some View {
+        HStack(spacing: 5) {
+            ForEach(steps) { step in
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Capsule().fill(ML.track)
+                        Capsule().fill(step.done ? AnyShapeStyle(ML.goldGradient) : AnyShapeStyle(ML.gold.opacity(0.85)))
+                            .frame(width: max(0, geo.size.width * step.clamped))
+                    }
+                }
+                .frame(height: 6)
+                .animation(.easeOut(duration: 0.35), value: step.clamped)
             }
         }
-        .frame(height: 6)
-        .animation(.easeOut(duration: 0.4), value: complete)
+    }
+
+    /// A compact row of labelled step chips.
+    private var chipRow: some View {
+        HStack(spacing: 6) {
+            ForEach(steps) { MLStepChip(step: $0) }
+            Spacer(minLength: 0)
+        }
     }
 
     @ViewBuilder
@@ -1863,6 +2044,50 @@ private struct MLBottomGate: View {
             .buttonStyle(.pressable)
             .disabled(busy)
         }
+    }
+}
+
+// MARK: - Gate step chip (labelled; check when done, partial ring in progress)
+
+/// One step in the bottom gate's chip row. Done → gold fill + check. In progress
+/// (0 < fraction < 1) → a subtle gold partial ring around the icon. Not started →
+/// a quiet white chip. The ring reads the step's REAL fraction so it grows live.
+private struct MLStepChip: View {
+    let step: GateStep
+
+    private var inProgress: Bool { step.clamped > 0.001 && !step.done }
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ZStack {
+                if step.done {
+                    Icon(.check, size: 10, color: ML.navy)
+                } else {
+                    // A partial ring that fills to the live fraction while in progress.
+                    Circle().stroke(ML.track, lineWidth: 1.5).frame(width: 14, height: 14)
+                    if inProgress {
+                        Circle().trim(from: 0, to: step.clamped)
+                            .stroke(ML.gold, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                            .frame(width: 14, height: 14)
+                            .animation(.easeOut(duration: 0.35), value: step.clamped)
+                    }
+                    Icon(step.kind.icon, size: 8, color: inProgress ? ML.overline : ML.secondary)
+                }
+            }
+            .frame(width: 16, height: 16)
+            Text(step.kind.label)
+                .font(.inter(11, .bold))
+                .foregroundStyle(step.done ? ML.navy : (inProgress ? ML.navy : ML.secondary))
+        }
+        .padding(.horizontal, 10).padding(.vertical, 6)
+        .background(step.done ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+                    in: Capsule())
+        .overlay(Capsule().stroke(step.done ? Color.clear : (inProgress ? ML.gold.opacity(0.5) : ML.border), lineWidth: 1))
+        .animation(.easeInOut(duration: 0.2), value: step.done)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(step.kind.label) step")
+        .accessibilityValue(step.done ? "done" : "\(Int((step.clamped * 100).rounded())) percent")
     }
 }
 

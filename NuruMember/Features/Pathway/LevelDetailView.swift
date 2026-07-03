@@ -74,11 +74,16 @@ final class LevelDetailViewModel: ObservableObject {
         return items
     }
 
-    /// The trail is fully walked but the level isn't passed — surface the exam
-    /// gate. The fields here are the pathway API's own (module `completed`,
-    /// level `status`); the true eligibility answer stays the server's (§1.9).
+    /// The member passed the exam and is waiting to be ushered onward by a
+    /// discipler (§1.9). While set, the exam gate is replaced by the waiting card.
+    var awaitingReview: Bool { level?.awaitingReview ?? false }
+
+    /// The trail is fully walked but the level isn't passed (and not already awaiting
+    /// a discipler's usher) — surface the exam gate. The fields here are the pathway
+    /// API's own (module `completed`, level `status`, `awaitingReview`); the true
+    /// eligibility answer stays the server's (§1.9).
     var examAvailable: Bool {
-        !modules.isEmpty && modules.allSatisfy(\.completed) && level?.status != .completed
+        !modules.isEmpty && modules.allSatisfy(\.completed) && level?.status != .completed && !awaitingReview
     }
 
     // Derived stats for the strip card.
@@ -323,17 +328,57 @@ struct LevelDetailView: View {
     private var moduleTrail: some View {
         let items = vm.trailItems
         let showGate = vm.examAvailable
+        let showWaiting = vm.awaitingReview
         return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
-                // The rail runs on into the exam gate when it's showing.
-                let isLast = idx == items.count - 1 && !showGate
+                // The rail runs on into the exam gate / waiting node when showing.
+                let isLast = idx == items.count - 1 && !showGate && !showWaiting
                 switch item {
                 case .module(let m): moduleRow(m, isLast: isLast)
                 case .encouragement(let e): encouragementRow(e, isLast: isLast)
                 }
             }
-            if showGate { examGateRow }
+            if showWaiting { awaitingRow }
+            else if showGate { examGateRow }
         }
+    }
+
+    // MARK: - Awaiting-discipler node (exam passed — waiting to be ushered onward)
+
+    private var awaitingRow: some View {
+        HStack(alignment: .top, spacing: Nuru.S.md) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(Nuru.goldTint).frame(width: 36, height: 36)
+                        .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
+                    Text("🌿").font(.system(size: 16))
+                }
+            }
+            .frame(width: 36)
+
+            VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                HStack(spacing: 6) {
+                    Icon(.handHeart, size: 12, color: Nuru.goldChipText)
+                    Text("AWAITING YOUR DISCIPLER")
+                        .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                }
+                Text("Level \(vm.levelNumber) complete")
+                    .font(.nCardTitle).foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("You've passed the exam. Awaiting your discipler's blessing to continue to the next level.")
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+            .padding(.bottom, Nuru.S.base)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .gentleEntrance()
     }
 
     // MARK: - Encouragement row (a small gold moment strung on the same rail)

@@ -24,8 +24,33 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     let completedModules: Int
     let minutes: Int
     let status: LevelStatus
+    /// The member finished this level's exam and is now waiting to be ushered into
+    /// the next level by a discipler (§1.9 — advancement is server-authoritative and
+    /// no longer auto-advances on an exam pass). Optional + defaulted so payloads
+    /// from servers that predate the waiting state still decode; the next level stays
+    /// LOCKED while this is true. Cleared (→ false) once the discipler ushers and the
+    /// member's current level advances.
+    var awaitingReview: Bool = false
 
     var id: Int { levelNumber }
+
+    private enum CodingKeys: String, CodingKey {
+        case levelNumber, title, theme, description, totalModules
+        case completedModules, minutes, status, awaitingReview
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        levelNumber = try c.decode(Int.self, forKey: .levelNumber)
+        title = try c.decode(String.self, forKey: .title)
+        theme = try c.decodeIfPresent(String.self, forKey: .theme)
+        description = try c.decodeIfPresent(String.self, forKey: .description)
+        totalModules = try c.decode(Int.self, forKey: .totalModules)
+        completedModules = try c.decode(Int.self, forKey: .completedModules)
+        minutes = try c.decode(Int.self, forKey: .minutes)
+        status = try c.decode(LevelStatus.self, forKey: .status)
+        awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
+    }
 }
 
 struct PathwaySummary: Codable, Sendable {

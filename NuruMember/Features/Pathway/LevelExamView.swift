@@ -615,18 +615,20 @@ private struct ExamPassScreen: View {
                     .font(.inter(56, .bold)).foregroundStyle(EX.gold)
                     .padding(.top, 4)
                     .gentleEntrance(delay: 0.1)
-                Text("Level \(levelNumber) Exam Passed")
+                Text("Level \(levelNumber) Complete")
                     .font(.fraunces(24, .semibold)).foregroundStyle(.white)
                     .padding(.top, 6)
                     .gentleEntrance(delay: 0.18)
+                // §1.9 (new): passing no longer auto-advances — the member now waits
+                // to be ushered by a discipler. The copy is a dignified handoff.
                 Text(mentorReview
-                     ? "A true milestone. Some written answers were also sent to your mentor to read."
-                     : "A true milestone on your pathway — the gate to what's next is opening.")
-                    .font(.inter(15)).foregroundStyle(Color.white.opacity(0.4))
+                     ? "A true milestone. Some written answers went to your mentor to read — and your discipler will usher you onward. 🌿"
+                     : "A true milestone. Awaiting your discipler's blessing to continue to the next level. 🌿")
+                    .font(.inter(15)).foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
                     .padding(.top, 10)
-                    .padding(.horizontal, 44)
+                    .padding(.horizontal, 40)
                     .gentleEntrance(delay: 0.26)
                 divider.padding(.top, 24)
                 Spacer()
@@ -634,16 +636,16 @@ private struct ExamPassScreen: View {
                     guard !advancing else { return }
                     advancing = true
                     Haptics.tap()
-                    onContinue()   // PathwayView loads + opens the next module
+                    onContinue()   // refresh the pathway + return to the hub (no jump)
                 } label: {
                     Group {
                         if advancing {
                             HStack(spacing: 8) {
                                 ProgressView().tint(EX.navy)
-                                Text("Opening next module…").font(.inter(16, .bold)).foregroundStyle(EX.navy)
+                                Text("Returning to your pathway…").font(.inter(16, .bold)).foregroundStyle(EX.navy)
                             }
                         } else {
-                            Text("Continue Pathway").font(.inter(16, .bold)).foregroundStyle(EX.navy)
+                            Text("Back to your pathway").font(.inter(16, .bold)).foregroundStyle(EX.navy)
                         }
                     }
                     .frame(maxWidth: .infinity, minHeight: 56)
@@ -813,16 +815,16 @@ private struct ExamConfetti: View {
     private let pieces: [Piece] = {
         let palette: [Color] = [Color(hex: 0xC9A227), Color(hex: 0xE6C068),
                                 .white, Color(hex: 0xF5D77A)]
-        return (0..<44).map { i in
+        return (0..<90).map { i in
             Piece(id: i,
-                  x: CGFloat.random(in: 0.05...0.95),
-                  dx: CGFloat.random(in: -60...60),
-                  dy: CGFloat.random(in: 520...920),
-                  w: CGFloat.random(in: 5...8),
-                  h: CGFloat.random(in: 9...15),
-                  spin: Double.random(in: -720...720),
+                  x: CGFloat.random(in: 0.03...0.97),
+                  dx: CGFloat.random(in: -80...80),
+                  dy: CGFloat.random(in: 560...980),
+                  w: CGFloat.random(in: 5...9),
+                  h: CGFloat.random(in: 9...16),
+                  spin: Double.random(in: -900...900),
                   color: palette[i % palette.count],
-                  delay: Double.random(in: 0...0.35))
+                  delay: Double.random(in: 0...0.6))
         }
     }()
 
@@ -837,8 +839,8 @@ private struct ExamConfetti: View {
                         .position(x: geo.size.width * p.x + (fly ? p.dx : 0),
                                   y: fly ? p.dy : -20)
                         .opacity(fade ? 0 : 1)
-                        .animation(.easeOut(duration: 1.7).delay(p.delay), value: fly)
-                        .animation(.easeIn(duration: 0.5).delay(1.25 + p.delay), value: fade)
+                        .animation(.easeOut(duration: 3.4).delay(p.delay), value: fly)
+                        .animation(.easeIn(duration: 0.7).delay(3.0 + p.delay), value: fade)
                 }
             }
         }

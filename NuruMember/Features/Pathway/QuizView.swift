@@ -104,13 +104,19 @@ private enum QZ {
 
 struct QuizView: View {
     let moduleId: String
+    /// On a PASS, advance the pathway: the parent pops the quiz and (when the server
+    /// unlocked one) opens the next module. nil (e.g. reached from a context without
+    /// a pathway stack) falls back to just dismissing. §1.9 — the next module id is
+    /// the SERVER's; the client only navigates to what it was handed.
+    var onPassAdvance: ((_ nextModuleId: String?) -> Void)? = nil
     @StateObject private var vm: QuizViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var idx = 0   // current question
 
-    init(moduleId: String) {
+    init(moduleId: String, onPassAdvance: ((_ nextModuleId: String?) -> Void)? = nil) {
         self.moduleId = moduleId
+        self.onPassAdvance = onPassAdvance
         _vm = StateObject(wrappedValue: QuizViewModel(moduleId: moduleId))
     }
 
@@ -120,6 +126,9 @@ struct QuizView: View {
             if let result = vm.result {
                 QuizResultScreen(result: result,
                                  onDone: { dismiss() },
+                                 onAdvance: { nextId in
+                                     if let onPassAdvance { onPassAdvance(nextId) } else { dismiss() }
+                                 },
                                  onRetry: { vm.retry(); idx = 0 })
             } else if vm.loading && vm.quiz == nil {
                 quizSkeleton
@@ -471,11 +480,76 @@ private let quizGoldGradient = LinearGradient(
     colors: [Color(hex: 0xC9A227), Color(hex: 0xB6862F)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
+// MARK: - Confetti (gold/white burst over the module-quiz pass ceremony)
+
+/// The module-quiz counterpart of LevelExamView's ExamConfetti (private there, so
+/// mirrored here). Same one-shot pattern: the flight is kicked on the NEXT runloop
+/// (never in the same transaction that inserts the view — SwiftUI would coalesce it
+/// to the end state → invisible), pieces stay opaque through most of the fall and
+/// fade only at the tail, and Reduce Motion renders nothing.
+private struct QuizConfetti: View {
+    private struct Piece: Identifiable {
+        let id: Int
+        let x: CGFloat
+        let dx: CGFloat, dy: CGFloat, w: CGFloat, h: CGFloat
+        let spin: Double
+        let color: Color
+        let delay: Double
+    }
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var fly = false
+    @State private var fade = false
+
+    private let pieces: [Piece] = {
+        let palette: [Color] = [Color(hex: 0xC9A227), Color(hex: 0xE6C068),
+                                .white, Color(hex: 0xF5D77A)]
+        return (0..<90).map { i in
+            Piece(id: i,
+                  x: CGFloat.random(in: 0.03...0.97),
+                  dx: CGFloat.random(in: -80...80),
+                  dy: CGFloat.random(in: 560...980),
+                  w: CGFloat.random(in: 5...9),
+                  h: CGFloat.random(in: 9...16),
+                  spin: Double.random(in: -900...900),
+                  color: palette[i % palette.count],
+                  delay: Double.random(in: 0...0.6))
+        }
+    }()
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .top) {
+                ForEach(pieces) { p in
+                    RoundedRectangle(cornerRadius: 2)
+                        .fill(p.color)
+                        .frame(width: p.w, height: p.h)
+                        .rotationEffect(.degrees(fly ? p.spin : 0))
+                        .position(x: geo.size.width * p.x + (fly ? p.dx : 0),
+                                  y: fly ? p.dy : -20)
+                        .opacity(fade ? 0 : 1)
+                        .animation(.easeOut(duration: 3.4).delay(p.delay), value: fly)
+                        .animation(.easeIn(duration: 0.7).delay(3.0 + p.delay), value: fade)
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            guard !reduceMotion else { return }
+            Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 60_000_000)
+                fly = true
+                fade = true
+            }
+        }
+    }
+}
+
 // MARK: - Result screens (server-scored, §3.7)
 
 private struct QuizResultScreen: View {
     let result: QuizResult
     let onDone: () -> Void
+    let onAdvance: (_ nextModuleId: String?) -> Void
     let onRetry: () -> Void
 
     var body: some View {
@@ -483,8 +557,8 @@ private struct QuizResultScreen: View {
             QuizReviewScreen(onDone: onDone)
         } else if result.isPassed {
             QuizPassScreen(score: result.scoreAchieved,
-                           unlockedNext: result.unlockedNextModuleId != nil,
-                           onContinue: onDone)
+                           nextModuleId: result.unlockedNextModuleId,
+                           onContinue: { onAdvance(result.unlockedNextModuleId) })
         } else {
             QuizFailScreen(score: result.scoreAchieved,
                            passMark: result.passMark,
@@ -494,15 +568,20 @@ private struct QuizResultScreen: View {
     }
 }
 
-/// Pass — full navy-deep ceremony screen with concentric gold rings + medal.
-/// The rings bloom in once (scale + fade) and a success haptic lands on arrival;
-/// the layout, copy and server score are untouched.
+/// Pass — full navy-deep ceremony screen with concentric gold rings + medal, now
+/// crowned with the SAME gold confetti burst as the level-exam pass. The rings
+/// bloom in once, a success haptic lands on arrival, confetti falls, and Continue
+/// auto-loads the server-unlocked next module (showing a brief "Opening next
+/// module…" while the parent navigates). Server score + verdict are untouched.
 private struct QuizPassScreen: View {
     let score: Int
-    let unlockedNext: Bool
+    let nextModuleId: String?
     let onContinue: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
+    @State private var advancing = false   // Continue tapped — loading the next module
+
+    private var unlockedNext: Bool { nextModuleId != nil }
 
     var body: some View {
         ZStack {
@@ -530,16 +609,32 @@ private struct QuizPassScreen: View {
                     .gentleEntrance(delay: 0.26)
                 divider.padding(.top, 24)
                 Spacer()
-                Button { Haptics.tap(); onContinue() } label: {
-                    Text("Continue Pathway")
-                        .font(.inter(16, .bold)).foregroundStyle(QZ.navy)
-                        .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(quizGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                Button {
+                    guard !advancing else { return }
+                    advancing = true
+                    Haptics.tap()
+                    onContinue()   // parent pops the quiz + opens the next module
+                } label: {
+                    Group {
+                        if advancing, unlockedNext {
+                            HStack(spacing: 8) {
+                                ProgressView().tint(QZ.navy)
+                                Text("Opening next module…").font(.inter(16, .bold)).foregroundStyle(QZ.navy)
+                            }
+                        } else {
+                            Text(unlockedNext ? "Continue to next module" : "Continue Pathway")
+                                .font(.inter(16, .bold)).foregroundStyle(QZ.navy)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .background(quizGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
                 .padding(.bottom, Nuru.S.lg)
             }
+            // The same gold ceremony confetti as the level-exam pass — fires once.
+            QuizConfetti().allowsHitTesting(false)
         }
         .onAppear {
             Haptics.success()
