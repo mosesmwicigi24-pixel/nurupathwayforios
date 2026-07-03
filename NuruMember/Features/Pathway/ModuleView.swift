@@ -1,12 +1,22 @@
-// Module (lesson) — the native port of the Figma ModuleLearn content screen.
-// Cream canvas under a parchment-gradient header (back · "LEVEL n · MODULE m"
-// overline · serif title · meta pills · Read/Watch/Reflect step chips), then one
-// flowing lesson page: a real inline video card (only when the module carries a
-// videoUrl), a lead paragraph, "SECTION n" blocks with serif headings, a
-// gold-edged scripture pull-quote, and an inline reflection card that submits
-// through completeModule. A bottom gate keeps the CTA locked until the reader
-// nears the end, then it becomes "Start the quiz" or "Mark complete". The server
-// enforces gating + scoring; the client only reflects state (§1.9/§3.7).
+// Module (lesson) — the native port of the Figma ModuleLearn content screen,
+// rebuilt as an immersive, paged, engagement-tracked reader. Cream canvas under
+// a parchment-gradient header (back · "LEVEL n · MODULE m" overline · serif
+// title · meta pills · Read/Watch/Reflect step chips), then the lesson: a real
+// inline video card (only when the module carries a videoUrl), a lead
+// paragraph, "SECTION n" blocks with serif headings, a gold-edged scripture
+// pull-quote, and an inline reflection card that submits through completeModule.
+//
+// When the server pre-splits the lesson into `content_pages`, ONE page renders
+// at a time behind a pill pager + horizontal swipes; the read-completion gate
+// then requires reaching the LAST page's end. A 3pt gold bar at the very top
+// tracks scroll progress across the whole module, reading/video seconds are
+// heartbeat-POSTed to /modules/{id}/engagement (deltas, ≤600s each, fire-and-
+// forget), and the reader goes immersive: 7s after open the header, pager, gate
+// and app tab bar fade away (tabs.chromeHidden — the mechanism RootView already
+// animates); any tap brings them back and re-arms a 3-minute hide. A bottom
+// gate keeps the CTA locked until the reader nears the end, then it becomes
+// "Start the quiz" or "Mark complete". The server enforces gating + scoring;
+// the client only reflects state (§1.9/§3.7).
 import SwiftUI
 
 @MainActor
@@ -43,6 +53,105 @@ final class ModuleViewModel: ObservableObject {
             Haptics.error()
         }
     }
+
+    // MARK: Engagement (reading/video seconds + resume page — server accumulates)
+    //
+    // The view feeds this tracker pure OBSERVED signals: reading runs only while
+    // the reader is on screen with the scene active; video runs only while the
+    // embed is actually open on screen. A 30s heartbeat (plus a flush on
+    // disappear/background) drains the accumulators into fire-and-forget POSTs.
+    // Audio is never sent — this reader hosts no audio-only player to observe.
+
+    /// Deinit-safe chrome restore: if the reader is ever torn down without a
+    /// final onDisappear, the app tab bar must never stay hidden.
+    weak var chromeRouter: TabRouter?
+
+    private var readingSince: Date?
+    private var videoSince: Date?
+    private var pendingReading: TimeInterval = 0
+    private var pendingVideo: TimeInterval = 0
+    private var lastSentPage: Int?       // 1-based page the server already knows
+    private var currentPageNumber: Int?  // 1-based page awaiting report
+    private var heartbeat: Task<Void, Never>?
+
+    deinit {
+        heartbeat?.cancel()
+        let router = chromeRouter
+        Task { @MainActor in router?.chromeHidden = false }
+    }
+
+    /// GET the accumulated totals — silent (`try?`): resume is a nicety, never a blocker.
+    func fetchEngagement() async -> ModuleEngagement? {
+        try? await MemberAPI.moduleEngagement(moduleId)
+    }
+
+    /// Seed the page bookkeeping from the server's totals so an unchanged page
+    /// is never re-reported.
+    func baselinePage(_ pageNumber: Int) {
+        lastSentPage = pageNumber
+        currentPageNumber = pageNumber
+    }
+
+    /// The member turned to a page (1-based); the next heartbeat reports it.
+    func pageChanged(to pageNumber: Int) { currentPageNumber = pageNumber }
+
+    func beginReading() { if readingSince == nil { readingSince = Date() } }
+    func pauseReading() {
+        if let s = readingSince { pendingReading += Date().timeIntervalSince(s) }
+        readingSince = nil
+    }
+
+    /// "Open" == the video embed is mounted and visible. The embed is a
+    /// WKWebView (InlineVideoPlayer) with no play/pause callbacks, so "embed
+    /// open on screen" is the best signal we can actually observe — we count
+    /// that as video time and nothing more.
+    func setVideoOpen(_ open: Bool) {
+        if open {
+            if videoSince == nil { videoSince = Date() }
+        } else {
+            if let s = videoSince { pendingVideo += Date().timeIntervalSince(s) }
+            videoSince = nil
+        }
+    }
+
+    func startHeartbeat() {
+        guard heartbeat == nil else { return }
+        heartbeat = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 30_000_000_000)
+                guard !Task.isCancelled else { break }
+                self?.flushEngagement()
+            }
+        }
+    }
+
+    func stopHeartbeat() {
+        heartbeat?.cancel()
+        heartbeat = nil
+    }
+
+    /// Drain observed time (and a changed page) into ONE fire-and-forget POST.
+    /// Deltas are wall-clock capped at 600s each per the wire contract; any
+    /// excess carries to the next beat. Never blocks UI, never surfaces errors.
+    func flushEngagement() {
+        let now = Date()
+        if let s = readingSince { pendingReading += now.timeIntervalSince(s); readingSince = now }
+        if let s = videoSince { pendingVideo += now.timeIntervalSince(s); videoSince = now }
+        let reading = min(Int(pendingReading), 600)
+        let video = min(Int(pendingVideo), 600)
+        let page = currentPageNumber != lastSentPage ? currentPageNumber : nil
+        guard reading > 0 || video > 0 || page != nil else { return }
+        pendingReading -= TimeInterval(reading)
+        pendingVideo -= TimeInterval(video)
+        if let page { lastSentPage = page }
+        let id = moduleId
+        Task.detached {
+            try? await MemberAPI.reportModuleEngagement(id,
+                                                        readingSeconds: reading > 0 ? reading : nil,
+                                                        videoSeconds: video > 0 ? video : nil,
+                                                        lastPage: page)
+        }
+    }
 }
 
 // Exact Figma palette (ModuleLearn.tsx) — local so this page is 1:1 with the design.
@@ -70,14 +179,44 @@ struct ModuleView: View {
     let moduleId: String
     @StateObject private var vm: ModuleViewModel
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @State private var reflection: String = ""
     @State private var playingVideo = false      // real inline player started
-    @State private var reachedEnd = false        // latched once the reader nears the end
+    @State private var reachedEnd = false        // latched at the LAST page's end
+
+    // Paged reading
+    @State private var currentPage = 0           // 0-based page index
+    @State private var pageFraction: Double = 0  // scroll progress within the page
+
+    // Immersive chrome (header + pager + gate + app tab bar)
+    @State private var chromeHidden = false
+    @State private var chromeTask: Task<Void, Never>?
+    @State private var viewOnScreen = false
+    @State private var resumeNote: String?       // "Welcome back — …", fades away
 
     init(moduleId: String) {
         self.moduleId = moduleId
         _vm = StateObject(wrappedValue: ModuleViewModel(moduleId: moduleId))
+    }
+
+    /// Height of the top safe-area inset (status-bar / Dynamic Island band) —
+    /// RootView paints exactly this band in cream, so overlays dock just below
+    /// it. Same fallback as RootView (59 = Dynamic Island).
+    private static var safeAreaTop: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
+    }
+
+    private var pageCountNow: Int { vm.detail.map { mlPages($0).count } ?? 1 }
+
+    /// Whole-module reading progress: completed pages + the current page's
+    /// scroll fraction, over the page count. Single page → plain scroll fraction.
+    private var overallProgress: Double {
+        let n = Double(max(pageCountNow, 1))
+        return min(1, max(0, (Double(currentPage) + pageFraction) / n))
     }
 
     var body: some View {
@@ -107,7 +246,56 @@ struct ModuleView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
-        .task { if vm.detail == nil { await vm.load() } }
+        // Reading progress — orientation, not chrome: it survives immersion.
+        .overlay(alignment: .top) {
+            if vm.detail != nil {
+                MLReadingProgressBar(progress: overallProgress)
+                    .padding(.top, Self.safeAreaTop)
+                    .allowsHitTesting(false)
+            }
+        }
+        // One-line "Welcome back — picking up on page N" that fades after a beat.
+        .overlay(alignment: .top) {
+            if let resumeNote {
+                MLResumeNote(text: resumeNote)
+                    .padding(.top, Self.safeAreaTop + 14)
+            }
+        }
+        // Whisper-small page indicator while the reader is immersed.
+        .overlay(alignment: .bottom) {
+            if chromeHidden, pageCountNow > 1 {
+                MLPageWhisper(page: currentPage + 1, count: pageCountNow)
+                    .padding(.bottom, 12)
+                    .transition(.opacity)
+            }
+        }
+        .task {
+            guard vm.detail == nil else { return }
+            async let totals = vm.fetchEngagement()   // resume data, in parallel
+            await vm.load()
+            applyResume(await totals)
+        }
+        .onAppear {
+            viewOnScreen = true
+            vm.chromeRouter = tabs      // deinit-safe tab-bar restore backstop
+            vm.startHeartbeat()
+            syncEngagementSignals()
+        }
+        .onDisappear {
+            viewOnScreen = false
+            syncEngagementSignals()     // stops the reading/video clocks
+            vm.flushEngagement()        // final beat — fire-and-forget
+            vm.stopHeartbeat()
+            chromeTask?.cancel(); chromeTask = nil
+            chromeHidden = false
+            tabs.chromeHidden = false   // ALWAYS restore the app chrome
+        }
+        .onChange(of: scenePhase) { _, phase in
+            syncEngagementSignals()
+            if phase != .active { vm.flushEngagement() }   // keep the tail on background
+        }
+        .onChange(of: playingVideo) { _, _ in syncEngagementSignals() }
+        .onChange(of: currentPage) { _, _ in syncEngagementSignals() }
         // A short beat after the server confirms, so the success haptic and the
         // button's confirmation register before the screen goes away.
         .onChange(of: vm.completed) { _, done in
@@ -156,42 +344,114 @@ struct ModuleView: View {
         .accessibilityLabel("Loading this lesson")
     }
 
-    // MARK: - Loaded layout (sticky header + one flowing lesson page + gate)
+    // MARK: - Loaded layout (header + paged reader + pager + gate; all fade when immersed)
 
     private func loaded(_ d: ModuleDetail) -> some View {
-        let parsed = mlParse(d.lessonContent)
+        let pages = mlPages(d)
+        let pageIndex = min(max(currentPage, 0), pages.count - 1)   // defensive clamp
+        let parsedAll = pages.map { mlParse($0) }
+        let sectionTotal = parsedAll.reduce(0) { $0 + $1.sections.count }
+        let sectionOffset = parsedAll[..<pageIndex].reduce(0) { $0 + $1.sections.count }
         let video = mlVideo(d)
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
-                MLHeader(levelNumber: d.levelNumber,
-                         moduleNumber: d.moduleSequenceNumber,
-                         title: d.title,
-                         minutes: d.estimatedMinutes,
-                         sectionCount: parsed.sections.count,
-                         chips: chips(hasVideo: video != nil, proxy: proxy),
-                         onBack: { dismiss() })
+                if !chromeHidden {
+                    MLHeader(levelNumber: d.levelNumber,
+                             moduleNumber: d.moduleSequenceNumber,
+                             title: d.title,
+                             minutesLabel: "≈ \(mlReadMinutes(pages)) min read",
+                             sectionCount: sectionTotal,
+                             chips: chips(hasVideo: video != nil, pageCount: pages.count, proxy: proxy),
+                             onBack: { dismiss() })
+                        .transition(.opacity)
+                }
+                reader(d, pages: pages, parsed: parsedAll[pageIndex],
+                       sectionOffset: sectionOffset, video: video, pageIndex: pageIndex)
+                if pages.count > 1 && !chromeHidden {
+                    MLPagerBar(pageCount: pages.count, current: pageIndex) {
+                        goToPage($0, pageCount: pages.count)
+                    }
+                    .transition(.opacity)
+                }
+                if !chromeHidden {
+                    MLBottomGate(reachedEnd: reachedEnd,
+                                 requiresQuiz: d.requiresQuiz,
+                                 moduleId: d.moduleId,
+                                 busy: vm.completing,
+                                 error: vm.completionError) {
+                        Haptics.action()
+                        Task { await vm.markComplete() }
+                    }
+                    .transition(.opacity)
+                }
+            }
+            // The lesson is on screen: start the reading clock and arm the
+            // 7-second slide into immersive reading.
+            .onAppear {
+                syncEngagementSignals()
+                armChromeHide(after: 7)
+            }
+        }
+    }
+
+    /// One page of the lesson in its own ScrollView. `.id(pageIndex)` recreates
+    /// the scroll on every turn — position resets to top — and the `.opacity`
+    /// transition crossfades old→new inside the ZStack, so turns feel instant
+    /// but never snap.
+    private func reader(_ d: ModuleDetail, pages: [String],
+                        parsed: (lead: String?, sections: [MLSection]),
+                        sectionOffset: Int, video: WelcomeVideo?,
+                        pageIndex: Int) -> some View {
+        GeometryReader { viewport in
+            ZStack {
                 ScrollView(showsIndicators: false) {
-                    lessonBody(d, parsed: parsed, video: video)
+                    lessonBody(d, parsed: parsed, sectionOffset: sectionOffset,
+                               video: pageIndex == 0 ? video : nil,
+                               isFirstPage: pageIndex == 0,
+                               isLastPage: pageIndex == pages.count - 1)
                         .id("top")
                         .padding(.horizontal, Nuru.S.screen)
-                        .padding(.top, Nuru.S.base)
+                        .padding(.top, chromeHidden ? Self.safeAreaTop + 8 : Nuru.S.base)
                         .padding(.bottom, Nuru.S.lg)
+                        .background(
+                            // Scroll metrics for the top progress bar: content
+                            // offset + height in the scroll's coordinate space.
+                            GeometryReader { g in
+                                Color.clear.preference(
+                                    key: MLScrollMetricsKey.self,
+                                    value: MLScrollMetrics(offset: -g.frame(in: .named("mlScroll")).minY,
+                                                           contentHeight: g.size.height))
+                            }
+                        )
                 }
-                MLBottomGate(reachedEnd: reachedEnd,
-                             requiresQuiz: d.requiresQuiz,
-                             moduleId: d.moduleId,
-                             busy: vm.completing,
-                             error: vm.completionError) {
-                    Haptics.action()
-                    Task { await vm.markComplete() }
-                }
+                .coordinateSpace(name: "mlScroll")
+                // Taps summon the chrome (simultaneous, so links/buttons still work).
+                .simultaneousGesture(TapGesture().onEnded { handleContentTap() })
+                // Horizontal swipes turn pages; the dominance check leaves
+                // vertical scrolling untouched.
+                .simultaneousGesture(
+                    DragGesture(minimumDistance: 24).onEnded { v in
+                        let dx = v.translation.width
+                        guard pages.count > 1, abs(dx) > 60,
+                              abs(dx) > abs(v.translation.height) * 1.4 else { return }
+                        goToPage(pageIndex + (dx < 0 ? 1 : -1), pageCount: pages.count)
+                    }
+                )
+                .id(pageIndex)
+                .transition(.opacity)
+            }
+            .onPreferenceChange(MLScrollMetricsKey.self) { m in
+                updatePageFraction(m, viewport: viewport.size.height)
             }
         }
     }
 
     private func lessonBody(_ d: ModuleDetail,
                             parsed: (lead: String?, sections: [MLSection]),
-                            video: WelcomeVideo?) -> some View {
+                            sectionOffset: Int,
+                            video: WelcomeVideo?,
+                            isFirstPage: Bool,
+                            isLastPage: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             if let video {
                 MLVideoCard(video: video, playing: $playingVideo)
@@ -204,49 +464,274 @@ struct ModuleView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, video == nil ? 0 : 20)
             }
-            if let verse = d.keyVerses?.first(where: { !$0.isEmpty }) {
+            if isFirstPage, let verse = d.keyVerses?.first(where: { !$0.isEmpty }) {
                 MLScriptureCard(line: verse).padding(.top, 20)
             }
             ForEach(parsed.sections) { s in
-                MLSectionBlock(number: s.id + 1, section: s, showDivider: s.id > 0)
+                // Section numbers run ACROSS pages (offset = sections on earlier pages).
+                MLSectionBlock(number: sectionOffset + s.id + 1, section: s, showDivider: s.id > 0)
                     .padding(.top, 28)
             }
-            MLReflectionCard(text: $reflection, busy: vm.completing, error: vm.completionError) {
-                Haptics.action()
-                Task { await vm.markComplete(reflection: reflection) }
-            }
-            .padding(.top, 32)
-            .id("reflect")
-            // Invisible sentinel — when it scrolls into the lower viewport we
-            // latch `reachedEnd`, unlocking the CTA (a whisper of haptic marks it).
-            Color.clear.frame(height: 1)
-                .onAppear {
-                    guard !reachedEnd else { return }
-                    withAnimation(.easeInOut(duration: 0.25)) { reachedEnd = true }
-                    Haptics.tap()
+            if isLastPage {
+                MLReflectionCard(text: $reflection, busy: vm.completing, error: vm.completionError) {
+                    Haptics.action()
+                    Task { await vm.markComplete(reflection: reflection) }
                 }
+                .padding(.top, 32)
+                .id("reflect")
+                // Invisible sentinel — when it scrolls into the lower viewport we
+                // latch `reachedEnd`, unlocking the CTA (a whisper of haptic marks
+                // it). Lives only on the LAST page, so the gate now requires
+                // reaching the last page's end.
+                Color.clear.frame(height: 1)
+                    .onAppear {
+                        guard !reachedEnd else { return }
+                        withAnimation(.easeInOut(duration: 0.25)) { reachedEnd = true }
+                        Haptics.tap()
+                        // The CTA is the next step — if immersed, surface it.
+                        if chromeHidden { setChrome(hidden: false) }
+                        armChromeHide(after: 180)
+                    }
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Read / Watch / Reflect step chips — jump to the matching part of the lesson.
-    private func chips(hasVideo: Bool, proxy: ScrollViewProxy) -> [MLChipModel] {
+    private func chips(hasVideo: Bool, pageCount: Int, proxy: ScrollViewProxy) -> [MLChipModel] {
         var out = [MLChipModel(label: "Read", done: reachedEnd) {
             Haptics.selection()
+            goToPage(0, pageCount: pageCount)
             withAnimation { proxy.scrollTo("top", anchor: .top) }
         }]
         if hasVideo {
             out.append(MLChipModel(label: "Watch", done: playingVideo) {
                 Haptics.selection()
                 playingVideo = true
+                goToPage(0, pageCount: pageCount)
                 withAnimation { proxy.scrollTo("video", anchor: .top) }
             })
         }
         out.append(MLChipModel(label: "Reflect", done: vm.completed) {
             Haptics.selection()
-            withAnimation { proxy.scrollTo("reflect", anchor: .center) }
+            let last = pageCount - 1
+            if currentPage != last {
+                goToPage(last, pageCount: pageCount)
+                // Let the new page mount before scrolling to the card.
+                Task {
+                    try? await Task.sleep(nanoseconds: 250_000_000)
+                    withAnimation { proxy.scrollTo("reflect", anchor: .center) }
+                }
+            } else {
+                withAnimation { proxy.scrollTo("reflect", anchor: .center) }
+            }
         })
         return out
+    }
+
+    // MARK: - Page turning
+
+    private func goToPage(_ p: Int, pageCount: Int) {
+        guard p != currentPage, (0..<pageCount).contains(p) else { return }
+        Haptics.selection()
+        pageFraction = 0
+        if reduceMotion { currentPage = p }
+        else { withAnimation(.easeInOut(duration: 0.18)) { currentPage = p } }
+        vm.pageChanged(to: p + 1)   // 1-based page number on the wire
+        // A page turn is engagement, not idleness — rebuild the pending hide.
+        if !chromeHidden { armChromeHide(after: 180) }
+    }
+
+    /// Fraction scrolled within the current page (spring-smoothed). A page
+    /// shorter than the viewport has nothing to scroll and counts as read.
+    private func updatePageFraction(_ m: MLScrollMetrics, viewport: CGFloat) {
+        let scrollable = m.contentHeight - viewport
+        let f = scrollable > 1 ? min(1, max(0, Double(m.offset / scrollable))) : 1
+        if reduceMotion { pageFraction = f }
+        else { withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) { pageFraction = f } }
+    }
+
+    // MARK: - Immersive chrome (7s in, tap back, 3-minute re-hide)
+
+    private func setChrome(hidden: Bool) {
+        if reduceMotion { chromeHidden = hidden }
+        else { withAnimation(.easeInOut(duration: 0.3)) { chromeHidden = hidden } }
+        tabs.chromeHidden = hidden   // RootView animates the tab bar itself
+    }
+
+    /// One live hide-timer at a time — cancelled and rebuilt on every tap/page
+    /// turn so a stale timer can never yank the chrome mid-interaction.
+    private func armChromeHide(after seconds: Double) {
+        chromeTask?.cancel()
+        chromeTask = Task {
+            try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            guard !Task.isCancelled else { return }
+            setChrome(hidden: true)
+        }
+    }
+
+    private func handleContentTap() {
+        if chromeHidden { setChrome(hidden: false) }
+        armChromeHide(after: 180)
+    }
+
+    // MARK: - Engagement plumbing
+
+    /// Single choke point for the observed-time signals. Reading counts while
+    /// the reader is on screen with the scene active; video counts only while
+    /// the embed is open on its page (see setVideoOpen for why that's the
+    /// strongest available signal).
+    private func syncEngagementSignals() {
+        let active = viewOnScreen && scenePhase == .active && vm.detail != nil
+        if active { vm.beginReading() } else { vm.pauseReading() }
+        vm.setVideoOpen(active && playingVideo && currentPage == 0)
+    }
+
+    /// Silent resume: jump straight to the server's last_page and greet the
+    /// returning reader with a note that fades on its own.
+    private func applyResume(_ totals: ModuleEngagement?) {
+        guard let d = vm.detail, let totals else { return }
+        let pageCount = mlPages(d).count
+        let page = min(max(totals.lastPage, 1), pageCount)
+        vm.baselinePage(page)
+        guard pageCount > 1, page > 1 else { return }
+        currentPage = page - 1      // no animation — the reader opens here
+        pageFraction = 0
+        showResumeNote("Welcome back — picking up on page \(page)")
+    }
+
+    private func showResumeNote(_ text: String) {
+        if reduceMotion { resumeNote = text }
+        else { withAnimation(.easeInOut(duration: 0.3)) { resumeNote = text } }
+        Task {
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if reduceMotion { resumeNote = nil }
+            else { withAnimation(.easeInOut(duration: 0.5)) { resumeNote = nil } }
+        }
+    }
+}
+
+// MARK: - Scroll metrics (content offset + height → the top progress bar)
+
+private struct MLScrollMetrics: Equatable {
+    var offset: CGFloat = 0
+    var contentHeight: CGFloat = 1
+}
+
+private struct MLScrollMetricsKey: PreferenceKey {
+    static var defaultValue = MLScrollMetrics()
+    static func reduce(value: inout MLScrollMetrics, nextValue: () -> MLScrollMetrics) {
+        value = nextValue()
+    }
+}
+
+// MARK: - Reading progress bar (3pt gold, pinned at the very top of the reader)
+
+private struct MLReadingProgressBar: View {
+    let progress: Double
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(ML.track.opacity(0.5))
+                Rectangle().fill(ML.goldGradient)
+                    .frame(width: max(0, geo.size.width * progress))
+            }
+        }
+        .frame(height: 3)
+        .accessibilityElement()
+        .accessibilityLabel("Reading progress")
+        .accessibilityValue("\(Int((progress * 100).rounded())) percent")
+    }
+}
+
+// MARK: - Resume note + whisper page indicator (immersive-mode companions)
+
+private struct MLResumeNote: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Icon(.sparkles, size: 12, color: ML.gold)
+            Text(text).font(.inter(12, .medium)).foregroundStyle(ML.navy)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(ML.surface, in: Capsule())
+        .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+        .shadow(color: Color(hex: 0x0A1628).opacity(0.10), radius: 8, y: 4)
+        .transition(.opacity)
+        .allowsHitTesting(false)
+    }
+}
+
+private struct MLPageWhisper: View {
+    let page: Int
+    let count: Int
+    var body: some View {
+        Text("\(page) / \(count)")
+            .font(.inter(11, .medium)).kerning(0.5)
+            .foregroundStyle(ML.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(ML.surface.opacity(0.92), in: Capsule())
+            .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+            .allowsHitTesting(false)
+            .accessibilityLabel("Page \(page) of \(count)")
+    }
+}
+
+// MARK: - Pager bar (chevrons + number pills, current = gold gradient)
+
+private struct MLPagerBar: View {
+    let pageCount: Int
+    let current: Int
+    let onSelect: (Int) -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            arrow(.chevronLeft, enabled: current > 0) { onSelect(current - 1) }
+            Group {
+                if pageCount <= 7 {
+                    HStack(spacing: 6) {
+                        ForEach(0..<pageCount, id: \.self) { pill($0) }
+                    }
+                } else {
+                    // Too many pills to fit — a compact label keeps orientation.
+                    Text("Page \(current + 1) of \(pageCount)")
+                        .font(.inter(12, .semibold)).foregroundStyle(ML.navy)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            arrow(.chevronRight, enabled: current < pageCount - 1) { onSelect(current + 1) }
+        }
+        .padding(.horizontal, Nuru.S.screen)
+        .padding(.vertical, 8)
+    }
+
+    private func pill(_ i: Int) -> some View {
+        Button { onSelect(i) } label: {
+            Text("\(i + 1)")
+                .font(.inter(12, .bold))
+                .foregroundStyle(i == current ? ML.navy : ML.secondary)
+                .frame(width: 30, height: 30)
+                .background(i == current ? AnyShapeStyle(ML.goldGradient) : AnyShapeStyle(Color.white),
+                            in: Circle())
+                .overlay(Circle().stroke(i == current ? Color.clear : ML.border, lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Page \(i + 1) of \(pageCount)")
+        .accessibilityAddTraits(i == current ? [.isSelected] : [])
+    }
+
+    private func arrow(_ icon: Lucide, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Icon(icon, size: 15, color: enabled ? ML.navy : ML.secondary.opacity(0.4))
+                .frame(width: 34, height: 34)
+                .background(Color.white, in: Circle())
+                .overlay(Circle().stroke(ML.border, lineWidth: 1))
+                .contentShape(Circle())
+        }
+        .buttonStyle(.pressable)
+        .disabled(!enabled)
     }
 }
 
@@ -263,7 +748,7 @@ private struct MLHeader: View {
     let levelNumber: Int
     let moduleNumber: Int
     let title: String
-    let minutes: Int?
+    let minutesLabel: String?
     let sectionCount: Int
     let chips: [MLChipModel]
     let onBack: () -> Void
@@ -288,7 +773,7 @@ private struct MLHeader: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 12)
             HStack(spacing: 8) {
-                if let minutes { MLMetaPill(icon: .clock, label: "\(minutes) min read") }
+                if let minutesLabel { MLMetaPill(icon: .clock, label: minutesLabel) }
                 if sectionCount > 0 {
                     MLMetaPill(icon: .bookOpen,
                                label: "\(sectionCount) section\(sectionCount == 1 ? "" : "s")")
@@ -671,6 +1156,24 @@ private struct MLBottomGate: View {
             .disabled(busy)
         }
     }
+}
+
+// MARK: - Lesson pages + read-time (real data only)
+
+/// The reader's pages: the server's author-inserted splits when present,
+/// otherwise the whole lesson as one page.
+private func mlPages(_ d: ModuleDetail) -> [String] {
+    let pages = (d.contentPages ?? [])
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+    return pages.isEmpty ? [d.lessonContent] : pages
+}
+
+/// ≈ read time from the REAL word count of what's actually rendered, at a
+/// standard 200 wpm — a computation, never an invented number.
+private func mlReadMinutes(_ pages: [String]) -> Int {
+    let words = pages.joined(separator: " ").split(whereSeparator: \.isWhitespace).count
+    return max(1, Int((Double(words) / 200.0).rounded()))
 }
 
 // MARK: - Lesson parsing (lead paragraph · numbered headings → sections · bullets)

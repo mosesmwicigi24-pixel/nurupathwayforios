@@ -85,6 +85,10 @@ struct ModuleDetail: Codable, Sendable {
     let moduleSequenceNumber: Int
     let title: String
     let lessonContent: String
+    /// Lesson content pre-split into pages by author-inserted breaks; a
+    /// single-element array when unpaginated. Optional + defaulted so payloads
+    /// from servers that predate pagination still decode.
+    var contentPages: [String]? = nil
     let summary: String?
     let keyVerses: [String]?
     let videoUrl: String?
