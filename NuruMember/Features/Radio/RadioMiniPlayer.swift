@@ -101,53 +101,55 @@ struct RadioMiniPlayer: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    // ── The capsule — body tucks behind the cutout, controls ride in front ──
-    private var floatingCapsule: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            capsuleRow.padding(.bottom, 2)
-        }
-        .frame(height: 56)   // body swallowed behind the cutout; the row clears the
-                             // island's bottom edge and rides fully in front of it
-        .padding(.leading, 10)
-        .padding(.trailing, 3)
-        .background(Color.black, in: Capsule())
-        .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
-        .transition(.offset(y: -24).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
-        .accessibilityHint("Nuru Radio is playing — opens the full player")
-    }
+    // ── The wings — content at the TIPS, the hole owns the middle ───────
+    // The island is a HOLE: anything centered vanishes into it. So the capsule
+    // spans the cutout with the living wave on the left tip and the gold
+    // play/pause on the right tip; the empty middle sits behind the hardware
+    // and black meets black. Wing width is capped so the tips clear the clock
+    // (~100pt) and the wifi/battery cluster (~345pt+) on the Pro Max.
+    private static let wingWidth: CGFloat = 48
+    private static let holeSpan: CGFloat = 126
 
-    private var capsuleRow: some View {
-        HStack(spacing: 8) {
+    private var floatingCapsule: some View {
+        HStack(spacing: 0) {
             Button {
                 Haptics.tap()
                 onOpen()
             } label: {
-                HStack(spacing: 8) {
+                HStack(spacing: 4) {
                     pulsingDot
-                    // Half the height, twice the breadth — a low, wide ribbon.
-                    RadioMiniWave(playing: center.playing, count: 20, height: 8)
+                    RadioMiniWave(playing: center.playing, count: 9, height: 8)
                 }
+                .frame(width: Self.wingWidth, height: 37)
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.pressable)
+            .buttonStyle(.plain)
             .accessibilityLabel("Open Nuru Radio")
+
+            // The hardware island lives here.
+            Color.clear.frame(width: Self.holeSpan, height: 37)
 
             Button {
                 Haptics.tap()
                 center.togglePlay()
             } label: {
                 Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: center.playing ? 0 : 1)
-                    .frame(width: 24, height: 24)
-                    .contentShape(Circle())
+                    .frame(width: Self.wingWidth, height: 37)
+                    .contentShape(Rectangle())
             }
-            .buttonStyle(.pressable)
+            .buttonStyle(.plain)
             .animation(.easeInOut(duration: 0.2), value: center.playing)
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
+        .frame(height: 37)
+        .background(Color.black, in: Capsule())
+        .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
+        .transition(.scale(scale: 0.7).combined(with: .opacity))
+        .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
 
     /// 6pt red dot, breathing 1→0.2→1 over ~1s (static under Reduce Motion).
