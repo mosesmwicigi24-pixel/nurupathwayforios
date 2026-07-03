@@ -257,6 +257,18 @@ struct RadioPlayerView: View {
     /// Audio is actually flowing — drives the glow, shimmer and play rings.
     private var spinning: Bool { center.playing }
 
+    /// Real top / bottom safe-area insets — the screen is full-bleed (the
+    /// backdrop must reach every edge), so the header pads itself past the
+    /// Dynamic Island and the content clears the home indicator explicitly.
+    private var safeTop: CGFloat {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+            .windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
+    }
+    private var safeBottom: CGFloat {
+        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
+            .windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 34
+    }
+
     var body: some View {
         ZStack {
             LiveRadioBackdrop(artwork: backdropArtwork)
@@ -265,6 +277,7 @@ struct RadioPlayerView: View {
                 content
             }
         }
+        .ignoresSafeArea()   // full-bleed; header/content pad for the insets below
         .preferredColorScheme(.dark)
         .task { await vm.start() }                                // 45s program poll
         .task(id: live?.id) {                                     // chat follows the live show
@@ -318,7 +331,7 @@ struct RadioPlayerView: View {
             .allowsHitTesting(false)
         }
         .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .padding(.top, safeTop + 4)   // clears the Dynamic Island / status bar
         .padding(.bottom, 8)
     }
 
@@ -346,7 +359,7 @@ struct RadioPlayerView: View {
                     tabContent.padding(.top, 16)
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 32)
+                .padding(.bottom, safeBottom + 24)   // clears the home indicator
             }
             .scrollDismissesKeyboard(.interactively)
         }
