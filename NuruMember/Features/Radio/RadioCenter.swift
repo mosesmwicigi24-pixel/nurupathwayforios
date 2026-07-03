@@ -86,10 +86,12 @@ final class RadioCenter: ObservableObject {
             // Live radio: hug the live edge. AVPlayer's default anti-stall
             // buffering is VOD-tuned and parks listeners 5-15s behind the
             // broadcast; a ~2s forward buffer keeps latency radio-grade.
+            // NOTE: automaticallyWaitsToMinimizeStalling must stay ON for an
+            // Icecast HTTP stream — disabling it made playback start against
+            // an empty buffer and render silence (field-reported).
             item.preferredForwardBufferDuration = 2
         }
         let avPlayer = AVPlayer(playerItem: item)
-        if p.live { avPlayer.automaticallyWaitsToMinimizeStalling = false }
         player = avPlayer
         observe(item: item, of: avPlayer, live: p.live)
         registerRemoteCommandsIfNeeded()
