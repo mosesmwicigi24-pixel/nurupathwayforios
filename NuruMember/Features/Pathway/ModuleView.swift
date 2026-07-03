@@ -199,6 +199,12 @@ struct ModuleView: View {
     @State private var resumeNote: String?       // "Welcome back — …", fades away
     @State private var lastScrollOffset: CGFloat = 0   // to detect scroll-into-immersion
     @State private var didAutoImmerse = false          // one auto-hide per opening
+    // Reading-pace guardrails — a gentle "slow down" when someone blows past the
+    // text faster than anyone could read it (real scroll velocity, no camera).
+    @State private var lastScrollAt: Date?
+    @State private var fastScrollRun: CGFloat = 0      // accumulated blow-through distance
+    @State private var lastNudgeAt: Date?
+    @State private var showSlowDown = false
 
     init(moduleId: String) {
         self.moduleId = moduleId
@@ -291,6 +297,23 @@ struct ModuleView: View {
                     .padding(.trailing, 14)
                     .padding(.top, Self.safeAreaTop + 8)
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+        }
+        // The eye-pacer: a calm gold dot descending the left rail at reading
+        // pace while immersed — a guide for where to be looking, no camera.
+        .overlay(alignment: .leading) {
+            if chromeHidden, vm.detail != nil, !reduceMotion {
+                MLPaceRail()
+                    .transition(.opacity)
+            }
+        }
+        // Gentle "slow down and take in the Word" when the scroll blows past
+        // the text faster than anyone could read it.
+        .overlay(alignment: .top) {
+            if showSlowDown {
+                MLSlowDownNudge()
+                    .padding(.top, chromeHidden ? Self.safeAreaTop + 12 : Self.safeAreaTop + 70)
+                    .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
         .task {
@@ -620,6 +643,7 @@ struct ModuleView: View {
         // not force the chrome back — a tap does that.
         let delta = m.offset - lastScrollOffset
         lastScrollOffset = m.offset
+        trackReadingPace(delta: delta, viewport: viewport)
         if !chromeHidden, !didAutoImmerse, m.offset > 32, delta > 4 {
             didAutoImmerse = true
             chromeTask?.cancel(); chromeTask = nil
@@ -653,6 +677,42 @@ struct ModuleView: View {
             didAutoImmerse = false   // re-arm scroll-into-immersion
         }
         armChromeHide(after: 180)
+    }
+
+    // MARK: - Reading-pace guardrail (honest, camera-free)
+
+    /// Watch the real scroll velocity. A downward flick faster than any human
+    /// could read (≈1800 pt/s) that sustains past ~2 screens of text is
+    /// skimming — we accumulate that blow-through and, once it crosses the bar,
+    /// surface a gentle "slow down and take in the Word" nudge (cooldown-limited
+    /// so it encourages, never nags). Slowing down decays the accumulator.
+    private func trackReadingPace(delta: CGFloat, viewport: CGFloat) {
+        let now = Date()
+        defer { lastScrollAt = now }
+        guard let last = lastScrollAt else { return }
+        let dt = now.timeIntervalSince(last)
+        guard dt > 0.001, dt < 0.4 else { fastScrollRun = 0; return }   // a pause resets
+        let velocity = Double(delta) / dt                              // pt/s, +down
+        if velocity > 1800 {
+            fastScrollRun += delta
+        } else if velocity < 700 {
+            fastScrollRun = max(0, fastScrollRun - abs(delta))
+        }
+        if fastScrollRun > viewport * 2 {
+            fastScrollRun = 0
+            nudgeSlowDown()
+        }
+    }
+
+    private func nudgeSlowDown() {
+        if let t = lastNudgeAt, Date().timeIntervalSince(t) < 45 { return }   // don't nag
+        lastNudgeAt = Date()
+        Haptics.tap()
+        withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) { showSlowDown = true }
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: 4_400_000_000)
+            withAnimation(.easeOut(duration: 0.4)) { showSlowDown = false }
+        }
     }
 
     /// The explicit fullscreen toggle (hero + floating button). Manual control
@@ -1009,6 +1069,55 @@ private struct MLSquareLabel: View {
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(ML.border, lineWidth: 1))
+    }
+}
+
+/// The eye-pacer — a small gold dot that descends a faint left rail at a calm
+/// reading pace (~26s per screenful), looping, to give the eye a rhythm and a
+/// sense of "where to be". Purely a guide; it observes nothing. Shown only in
+/// immersive (focused) reading and skipped under Reduce Motion.
+private struct MLPaceRail: View {
+    @State private var down = false
+    var body: some View {
+        GeometryReader { geo in
+            let top = geo.safeAreaInsets.top + 80
+            let bottom = geo.size.height - 120
+            ZStack(alignment: .top) {
+                Capsule().fill(ML.gold.opacity(0.10)).frame(width: 2)
+                    .padding(.top, top).padding(.bottom, geo.size.height - bottom)
+                Circle().fill(ML.gold)
+                    .frame(width: 7, height: 7)
+                    .shadow(color: ML.gold.opacity(0.6), radius: 4)
+                    .offset(y: down ? bottom : top)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.leading, 7)
+            .onAppear {
+                withAnimation(.easeInOut(duration: 26).repeatForever(autoreverses: false)) { down = true }
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// The "slow down" nudge — a soft cream card with a dove, surfaced when the
+/// reader blows past the text. Encouragement, not a scold; auto-dismisses.
+private struct MLSlowDownNudge: View {
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("🕊️").font(.system(size: 20))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Slow down — take in the Word")
+                    .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
+                Text("Let it speak. Read at the pace of the soul.")
+                    .font(.inter(11)).foregroundStyle(ML.secondary)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay(Capsule().stroke(ML.gold.opacity(0.35), lineWidth: 1))
+        .shadow(color: Color(hex: 0x0A1628).opacity(0.16), radius: 12, y: 6)
+        .padding(.horizontal, 24)
     }
 }
 
