@@ -269,6 +269,30 @@ final class ModuleViewModel: ObservableObject {
                                                         lastPage: page)
         }
     }
+
+    /// AWAIT a final engagement report before starting the quiz, so the server's
+    /// content gate sees the latest read/watch/listen seconds (the 30s heartbeat
+    /// could otherwise lag the just-finished last chunk and wrongly block).
+    func flushEngagementAwaiting() async {
+        let now = Date()
+        if let s = readingSince { pendingReading += now.timeIntervalSince(s); readingSince = now }
+        if let s = videoSince { pendingVideo += now.timeIntervalSince(s); videoSince = now }
+        if let s = audioSince { pendingAudio += now.timeIntervalSince(s); audioSince = now }
+        let reading = min(Int(pendingReading), 600)
+        let video = min(Int(pendingVideo), 600)
+        let audio = min(Int(pendingAudio), 600)
+        let page = currentPageNumber != lastSentPage ? currentPageNumber : nil
+        guard reading > 0 || video > 0 || audio > 0 || page != nil else { return }
+        pendingReading -= TimeInterval(reading)
+        pendingVideo -= TimeInterval(video)
+        pendingAudio -= TimeInterval(audio)
+        if let page { lastSentPage = page }
+        _ = try? await MemberAPI.reportModuleEngagement(moduleId,
+                                                        readingSeconds: reading > 0 ? reading : nil,
+                                                        audioSeconds: audio > 0 ? audio : nil,
+                                                        videoSeconds: video > 0 ? video : nil,
+                                                        lastPage: page)
+    }
 }
 
 // Exact Figma palette (ModuleLearn.tsx) — module-internal (not `private`) so the
@@ -304,6 +328,8 @@ struct ModuleView: View {
     @State private var reflection: String = ""
     @State private var playingVideo = false      // real inline player started
     @State private var reachedEnd = false        // latched at the LAST page's end
+    @State private var startingQuiz = false       // flushing engagement before the quiz
+    @State private var quizTarget: String?        // pushes QuizView once the flush lands
 
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
@@ -481,6 +507,9 @@ struct ModuleView: View {
             syncEngagementSignals()
             if phase != .active { vm.flushEngagement() }   // keep the tail on background
         }
+        // The quiz opens only after the engagement flush lands (so the server's
+        // content gate sees the final read/watch/listen seconds).
+        .navigationDestination(item: $quizTarget) { QuizView(moduleId: $0) }
         .onChange(of: playingVideo) { _, _ in syncEngagementSignals() }
         .onChange(of: currentPage) { _, _ in syncEngagementSignals() }
         // A short beat after the server confirms, so the success haptic and the
@@ -583,7 +612,17 @@ struct ModuleView: View {
                                  moduleId: d.moduleId,
                                  busy: vm.completing,
                                  error: vm.completionError,
-                                 bottomInset: Nuru.tabBarSpace) {
+                                 bottomInset: Nuru.tabBarSpace,
+                                 startingQuiz: startingQuiz,
+                                 onStartQuiz: {
+                                     guard !startingQuiz else { return }
+                                     startingQuiz = true
+                                     Task {
+                                         await vm.flushEngagementAwaiting()   // server gets the latest first
+                                         startingQuiz = false
+                                         quizTarget = d.moduleId
+                                     }
+                                 }) {
                         Haptics.action()
                         Task { await vm.markComplete() }
                     }
@@ -1732,6 +1771,8 @@ private struct MLBottomGate: View {
     /// Extra bottom clearance so the CTA is never hidden behind the app tab bar
     /// (which RootView overlays on top of this view while chrome is visible).
     let bottomInset: CGFloat
+    let startingQuiz: Bool
+    let onStartQuiz: () -> Void
     let onComplete: () -> Void
 
     var body: some View {
@@ -1786,10 +1827,20 @@ private struct MLBottomGate: View {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(ML.border, lineWidth: 1))
         } else if requiresQuiz {
-            NavigationLink(value: PathwayRoute.quiz(moduleId)) {
-                HStack(spacing: 8) {
-                    Text("Start the quiz").font(.inter(14, .bold))
-                    Icon(.arrowRight, size: 15, color: ML.navy)
+            // Flush the latest read/watch/listen seconds before navigating, so
+            // the server's content gate never wrongly blocks a real finisher.
+            Button {
+                Haptics.action()
+                onStartQuiz()
+            } label: {
+                ZStack {
+                    if startingQuiz { ProgressView().tint(ML.navy) }
+                    else {
+                        HStack(spacing: 8) {
+                            Text("Start the quiz").font(.inter(14, .bold))
+                            Icon(.arrowRight, size: 15, color: ML.navy)
+                        }
+                    }
                 }
                 .foregroundStyle(ML.navy)
                 .frame(maxWidth: .infinity, minHeight: 52)
@@ -1797,7 +1848,7 @@ private struct MLBottomGate: View {
                 .shadow(color: ML.gold.opacity(0.45), radius: 12, y: 8)
             }
             .buttonStyle(.pressable)
-            .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
+            .disabled(startingQuiz)
         } else {
             Button(action: onComplete) {
                 ZStack {
