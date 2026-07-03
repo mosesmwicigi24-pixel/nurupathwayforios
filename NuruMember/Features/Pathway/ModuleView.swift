@@ -282,6 +282,17 @@ struct ModuleView: View {
                     .transition(.opacity)
             }
         }
+        // Floating "exit fullscreen" button while immersed — the always-there
+        // handle to bring the header + tab bar back (the same toggle as the
+        // hero's, just relocated since the hero is gone).
+        .overlay(alignment: .topTrailing) {
+            if chromeHidden, vm.detail != nil {
+                MLImmerseButton(expanded: true, floating: true, action: toggleImmersion)
+                    .padding(.trailing, 14)
+                    .padding(.top, Self.safeAreaTop + 8)
+                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
+            }
+        }
         .task {
             guard vm.detail == nil else { return }
             async let totals = vm.fetchEngagement()   // resume data, in parallel
@@ -381,7 +392,8 @@ struct ModuleView: View {
                              sectionCount: sectionTotal,
                              actions: headerActions(hasVideo: video != nil,
                                                     pageCount: pages.count, proxy: proxy),
-                             onBack: { dismiss() })
+                             onBack: { dismiss() },
+                             onToggleImmersion: { toggleImmersion() })
                         .transition(.opacity)
                 }
                 reader(d, pages: pages, parsed: parsedAll[pageIndex],
@@ -643,6 +655,21 @@ struct ModuleView: View {
         armChromeHide(after: 180)
     }
 
+    /// The explicit fullscreen toggle (hero + floating button). Manual control
+    /// wins: cancel any pending auto-hide, and once the member uses it, hold the
+    /// state until they toggle again (don't let scroll re-immerse under them).
+    private func toggleImmersion() {
+        Haptics.tap()
+        chromeTask?.cancel(); chromeTask = nil
+        if chromeHidden {
+            didAutoImmerse = false
+            setChrome(hidden: false)
+        } else {
+            didAutoImmerse = true      // stop scroll auto-immersion fighting the tap
+            setChrome(hidden: true)
+        }
+    }
+
     // MARK: - Engagement plumbing
 
     /// Single choke point for the observed-time signals. Reading counts while
@@ -829,17 +856,20 @@ private struct MLHeader: View {
     let sectionCount: Int
     let actions: MLHeaderActions
     let onBack: () -> Void
+    let onToggleImmersion: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            // Row 1 — back · centred overline · share.
+            // Row 1 — back · centred overline · fullscreen · share.
             ZStack {
                 Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
                     .font(.inter(11, .bold)).kerning(2)
                     .foregroundStyle(ML.overline)
-                HStack(spacing: 0) {
+                HStack(spacing: 8) {
                     MLSquareButton(icon: .arrowLeft, action: onBack)
                     Spacer(minLength: 0)
+                    // Hide the header + tab bar for a full-screen read.
+                    MLImmerseButton(expanded: false, action: onToggleImmersion)
                     ShareLink(item: "\(title) — Nuru Pathway") {
                         MLSquareLabel(icon: .share2)
                     }
@@ -979,6 +1009,43 @@ private struct MLSquareLabel: View {
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(ML.border, lineWidth: 1))
+    }
+}
+
+/// Fullscreen toggle — hide/show the header + tab bar for a bigger read area.
+/// `expanded == false` (chrome visible) shows the diverging arrows ("go
+/// fullscreen"); `expanded == true` (immersed) shows the converging arrows
+/// ("exit fullscreen"). The `floating` variant is the frosted round handle
+/// that lives in the immersive top-right corner; otherwise it matches the
+/// header's square chrome buttons.
+private struct MLImmerseButton: View {
+    let expanded: Bool
+    var floating = false
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: expanded
+                  ? "arrow.down.right.and.arrow.up.left"
+                  : "arrow.up.left.and.arrow.down.right")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(floating ? .white : ML.navy)
+                .frame(width: 40, height: 40)
+                .background {
+                    if floating {
+                        Circle().fill(ML.navy.opacity(0.82))
+                            .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                            .shadow(color: .black.opacity(0.28), radius: 8, y: 4)
+                    } else {
+                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                                .stroke(ML.border, lineWidth: 1))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(expanded ? "Exit full-screen reading" : "Full-screen reading")
     }
 }
 
