@@ -109,7 +109,7 @@ struct RadioMiniPlayer: View {
         }
         .frame(height: 56)   // body swallowed behind the cutout; the row clears the
                              // island's bottom edge and rides fully in front of it
-        .padding(.leading, 8)
+        .padding(.leading, 10)
         .padding(.trailing, 3)
         .background(Color.black, in: Capsule())
         .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
@@ -126,7 +126,7 @@ struct RadioMiniPlayer: View {
                 HStack(spacing: 8) {
                     pulsingDot
                     // Half the height, twice the breadth — a low, wide ribbon.
-                    RadioMiniWave(playing: center.playing, count: 18, height: 8)
+                    RadioMiniWave(playing: center.playing, count: 20, height: 8)
                 }
             }
             .buttonStyle(.pressable)
