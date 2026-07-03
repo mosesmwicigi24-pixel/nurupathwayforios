@@ -90,7 +90,10 @@ struct RadioMiniPlayer: View {
     /// visible sliver above the island.
     static var dockTop: CGFloat { isIslandDevice ? 0 : topInset + 4 }
     static let dockHeight: CGFloat = 30     // 0…30 — bottom half swallowed by the cutout
-    static let dockWidth: CGFloat = 96      // narrower than every island (~120–140)
+    /// Device photo: the brow must MATCH the island's width (~124pt on the
+    /// 17 Pro Max) — narrower reads as a mushroom step; equal widths fuse
+    /// brow + cutout into one taller pill.
+    static let dockWidth: CGFloat = 124
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -137,13 +140,15 @@ struct RadioMiniPlayer: View {
                 .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .padding(.top, 1)   // the visible brow — the sliver above the cutout
+            .padding(.top, 2)   // the visible brow — the sliver above the cutout
             Spacer(minLength: 0)
         }
         .frame(width: Self.dockWidth, height: Self.dockHeight)
+        // Corner curvature matches the island's own, so the union reads as one
+        // continuous taller pill rather than a cap sitting on a wider base.
         .background(Color.black, in: UnevenRoundedRectangle(
-            topLeadingRadius: 10, bottomLeadingRadius: 18,
-            bottomTrailingRadius: 18, topTrailingRadius: 10, style: .continuous))
+            topLeadingRadius: 15, bottomLeadingRadius: 18,
+            bottomTrailingRadius: 18, topTrailingRadius: 15, style: .continuous))
         .transition(.move(edge: .top).combined(with: .opacity))
         .accessibilityHint("Nuru Radio is playing — opens the full player")
         .onAppear {
