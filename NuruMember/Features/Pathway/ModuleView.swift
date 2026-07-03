@@ -1,14 +1,18 @@
 // Module (lesson) — the native port of the Figma ModuleLearn content screen,
 // rebuilt as an immersive, paged, engagement-tracked reader. Cream canvas under
 // a parchment-gradient header (back · "LEVEL n · MODULE m" overline · serif
-// title · meta pills · Read/Watch/Reflect step chips), then the lesson: a real
-// inline video card (only when the module carries a videoUrl), a lead
-// paragraph, "SECTION n" blocks with serif headings, a gold-edged scripture
-// pull-quote, and an inline reflection card that submits through completeModule.
+// title · meta row [read · sections · Watch · Listen] · a tappable section index
+// · Read/Reflect/Watch/Listen actions), then the lesson: a real inline video card
+// and/or a light audio narration card (each only when that medium exists), a lead
+// paragraph, the section's Markdown body (headings render as headings), a
+// gold-edged scripture pull-quote, and an inline reflection card that submits
+// through completeModule.
 //
-// When the server pre-splits the lesson into `content_pages`, ONE page renders
-// at a time behind a pill pager + horizontal swipes; the read-completion gate
-// then requires reaching the LAST page's end. A 3pt gold bar at the very top
+// A SECTION is ONE author-defined content page: the portal splits the lesson into
+// `content_pages` at author-inserted breaks, and each entry is one section (the
+// default is a single section = the whole lesson). ONE section renders at a time
+// behind the pager + horizontal swipes; the read-completion gate then requires
+// reaching the LAST section's end. A 3pt gold bar at the very top
 // tracks scroll progress across the whole module, reading/video seconds are
 // heartbeat-POSTed to /modules/{id}/engagement (deltas, ≤600s each, fire-and-
 // forget), and the reader goes immersive: 7s after open the header, pager, gate
@@ -18,6 +22,7 @@
 // "Start the quiz" or "Mark complete". The server enforces gating + scoring;
 // the client only reflects state (§1.9/§3.7).
 import SwiftUI
+import AVFoundation
 
 @MainActor
 final class ModuleViewModel: ObservableObject {
@@ -27,6 +32,11 @@ final class ModuleViewModel: ObservableObject {
     @Published var completing = false
     @Published var completed = false
     @Published var completionError: String?
+
+    // Light audio player — the lesson's narration (detail.audioUrl). Published so
+    // the Listen control + its thin progress line reflect real playback state.
+    @Published var audioPlaying = false
+    @Published var audioProgress: Double = 0   // 0…1 of the track (0 until known)
 
     private let moduleId: String
     init(moduleId: String) { self.moduleId = moduleId }
@@ -58,9 +68,9 @@ final class ModuleViewModel: ObservableObject {
     //
     // The view feeds this tracker pure OBSERVED signals: reading runs only while
     // the reader is on screen with the scene active; video runs only while the
-    // embed is actually open on screen. A 30s heartbeat (plus a flush on
-    // disappear/background) drains the accumulators into fire-and-forget POSTs.
-    // Audio is never sent — this reader hosts no audio-only player to observe.
+    // embed is actually open on screen; audio runs only while the narration is
+    // actually playing. A 30s heartbeat (plus a flush on disappear/background)
+    // drains the accumulators into fire-and-forget POSTs.
 
     /// Deinit-safe chrome restore: if the reader is ever torn down without a
     /// final onDisappear, the app tab bar must never stay hidden.
@@ -68,14 +78,25 @@ final class ModuleViewModel: ObservableObject {
 
     private var readingSince: Date?
     private var videoSince: Date?
+    private var audioSince: Date?
     private var pendingReading: TimeInterval = 0
     private var pendingVideo: TimeInterval = 0
+    private var pendingAudio: TimeInterval = 0
     private var lastSentPage: Int?       // 1-based page the server already knows
     private var currentPageNumber: Int?  // 1-based page awaiting report
     private var heartbeat: Task<Void, Never>?
 
+    // AVPlayer for the lesson narration + its periodic time observer. Owned here
+    // so playback and the counted seconds survive page turns / immersion toggles.
+    private var audioPlayer: AVPlayer?
+    private var audioObserver: Any?
+    private var audioEndObserver: NSObjectProtocol?
+
     deinit {
         heartbeat?.cancel()
+        if let audioObserver { audioPlayer?.removeTimeObserver(audioObserver) }
+        if let audioEndObserver { NotificationCenter.default.removeObserver(audioEndObserver) }
+        audioPlayer?.pause()
         let router = chromeRouter
         Task { @MainActor in router?.chromeHidden = false }
     }
@@ -114,6 +135,79 @@ final class ModuleViewModel: ObservableObject {
         }
     }
 
+    // MARK: Audio narration (light AVPlayer — play/pause + counted seconds)
+    //
+    // Unlike the video embed (a WKWebView with no callbacks), AVPlayer gives us
+    // real play/pause, so audio time is counted only while it's actually playing.
+    // The seconds ride the SAME engagement heartbeat as reading/video — no new
+    // contract, just the existing `audioSeconds` field.
+
+    /// True once the module carries a usable audio narration URL.
+    var hasAudio: Bool {
+        guard let raw = detail?.audioUrl?.trimmingCharacters(in: .whitespacesAndNewlines) else { return false }
+        return !raw.isEmpty && URL(string: raw) != nil
+    }
+
+    func toggleAudio() { audioPlaying ? pauseAudio() : playAudio() }
+
+    /// Start (or resume) the narration. Lazily builds the AVPlayer on first play,
+    /// wiring a periodic observer that drives the progress line and a
+    /// play-to-end handler that resets to the start.
+    func playAudio() {
+        guard let raw = detail?.audioUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !raw.isEmpty, let url = URL(string: raw) else { return }
+        // Narration should be heard even with the ring switch on silent.
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if audioPlayer == nil {
+            let player = AVPlayer(url: url)
+            audioPlayer = player
+            let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
+            audioObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
+                Task { @MainActor [weak self] in
+                    guard let self, let dur = self.audioPlayer?.currentItem?.duration.seconds,
+                          dur.isFinite, dur > 0 else { return }
+                    self.audioProgress = min(1, max(0, time.seconds / dur))
+                }
+            }
+            audioEndObserver = NotificationCenter.default.addObserver(
+                forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { [weak self] _ in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        self.audioPlaying = false
+                        self.audioProgress = 0
+                        self.player_seekToStart()
+                        self.pauseAudioClock()
+                    }
+                }
+        }
+        audioPlayer?.play()
+        audioPlaying = true
+        if audioSince == nil { audioSince = Date() }
+    }
+
+    func pauseAudio() {
+        audioPlayer?.pause()
+        audioPlaying = false
+        pauseAudioClock()
+    }
+
+    /// Drain any in-flight audio interval into the pending accumulator and stop
+    /// the clock — called on pause, on end, and when the reader leaves.
+    private func pauseAudioClock() {
+        if let s = audioSince { pendingAudio += Date().timeIntervalSince(s) }
+        audioSince = nil
+    }
+
+    /// The reader left the screen / backgrounded: stop hearing (and counting)
+    /// audio, but keep the player around so returning can resume mid-track.
+    func suspendAudioIfNeeded() {
+        guard audioPlaying else { pauseAudioClock(); return }
+        pauseAudio()
+    }
+
+    private func player_seekToStart() { audioPlayer?.seek(to: .zero) }
+
     func startHeartbeat() {
         guard heartbeat == nil else { return }
         heartbeat = Task { [weak self] in
@@ -137,17 +231,21 @@ final class ModuleViewModel: ObservableObject {
         let now = Date()
         if let s = readingSince { pendingReading += now.timeIntervalSince(s); readingSince = now }
         if let s = videoSince { pendingVideo += now.timeIntervalSince(s); videoSince = now }
+        if let s = audioSince { pendingAudio += now.timeIntervalSince(s); audioSince = now }
         let reading = min(Int(pendingReading), 600)
         let video = min(Int(pendingVideo), 600)
+        let audio = min(Int(pendingAudio), 600)
         let page = currentPageNumber != lastSentPage ? currentPageNumber : nil
-        guard reading > 0 || video > 0 || page != nil else { return }
+        guard reading > 0 || video > 0 || audio > 0 || page != nil else { return }
         pendingReading -= TimeInterval(reading)
         pendingVideo -= TimeInterval(video)
+        pendingAudio -= TimeInterval(audio)
         if let page { lastSentPage = page }
         let id = moduleId
         Task.detached {
             try? await MemberAPI.reportModuleEngagement(id,
                                                         readingSeconds: reading > 0 ? reading : nil,
+                                                        audioSeconds: audio > 0 ? audio : nil,
                                                         videoSeconds: video > 0 ? video : nil,
                                                         lastPage: page)
         }
@@ -299,11 +397,12 @@ struct ModuleView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
             }
         }
-        // The eye-pacer: a calm gold dot descending the left rail at reading
-        // pace while immersed — a guide for where to be looking, no camera.
-        .overlay(alignment: .leading) {
-            if chromeHidden, vm.detail != nil, !reduceMotion {
-                MLPaceRail()
+        // The eye-pacer: a gold dot on the RIGHT rail whose position is tied to
+        // your actual scroll — it moves as you scroll, stops when you stop, and
+        // fills the rail behind it to show how far you've read.
+        .overlay(alignment: .trailing) {
+            if vm.detail != nil {
+                MLPaceRail(progress: pageFraction)
                     .transition(.opacity)
             }
         }
@@ -396,14 +495,18 @@ struct ModuleView: View {
     private func loaded(_ d: ModuleDetail) -> some View {
         let pages = mlPages(d)
         let pageIndex = min(max(currentPage, 0), pages.count - 1)   // defensive clamp
-        // Each page is a titled SECTION: derive its title from a leading Markdown
-        // heading and parse the heading-stripped BODY so the title never renders
-        // twice. The server's page split is untouched — this is display-only.
+        // A SECTION is ONE author-defined content page (contentPages entry) — NOT
+        // a Markdown heading. Derive each page's title from its FIRST heading (or
+        // "Section N"), and parse the heading-stripped BODY so the title never
+        // renders twice. The server's page split is untouched — display-only.
         let titledAll = pages.map { pageTitleAndBody($0) }
-        let parsedAll = titledAll.map { mlParse($0.body) }
-        let sectionTotal = parsedAll.reduce(0) { $0 + $1.sections.count }
-        let sectionOffset = parsedAll[..<pageIndex].reduce(0) { $0 + $1.sections.count }
-        let pageTitle = sectionLabel(titledAll[pageIndex].title, pageIndex)
+        // Section titles for the hero's tappable index — one per page.
+        let sectionTitles = titledAll.enumerated().map { sectionLabel($0.element.title, $0.offset) }
+        // The section's body, rendered as normal Markdown — its headings stay
+        // headings (they are NOT relabeled "SECTION n"). The page's title heading
+        // was already stripped by pageTitleAndBody, so it never renders twice.
+        let bodyBlocks = MLMarkdown.parse(titledAll[pageIndex].body)
+        let pageTitle = sectionTitles[pageIndex]
         let video = mlVideo(d)
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
@@ -411,17 +514,21 @@ struct ModuleView: View {
                     MLHeader(levelNumber: d.levelNumber,
                              moduleNumber: d.moduleSequenceNumber,
                              title: d.title,
-                             minutesLabel: "≈ \(mlReadMinutes(pages)) min read",
-                             sectionCount: sectionTotal,
+                             readMinutes: mlReadMinutes(pages),
+                             sectionCount: pages.count,
+                             sectionTitles: sectionTitles,
+                             currentSection: pageIndex,
+                             media: headerMedia(d),
+                             onSelectSection: { goToPage($0, pageCount: pages.count) },
                              actions: headerActions(hasVideo: video != nil,
+                                                    hasAudio: vm.hasAudio,
                                                     pageCount: pages.count, proxy: proxy),
                              onBack: { dismiss() },
                              onToggleImmersion: { toggleImmersion() })
                         .transition(.opacity)
                 }
-                reader(d, pages: pages, parsed: parsedAll[pageIndex],
-                       sectionTitle: pageTitle, sectionOffset: sectionOffset,
-                       video: video, pageIndex: pageIndex)
+                reader(d, pages: pages, bodyBlocks: bodyBlocks,
+                       sectionTitle: pageTitle, video: video, pageIndex: pageIndex)
                 if pages.count > 1 && !chromeHidden {
                     MLPagerBar(pageCount: pages.count, current: pageIndex) {
                         goToPage($0, pageCount: pages.count)
@@ -455,14 +562,13 @@ struct ModuleView: View {
     /// transition crossfades old→new inside the ZStack, so turns feel instant
     /// but never snap.
     private func reader(_ d: ModuleDetail, pages: [String],
-                        parsed: (lead: [MLBlock], sections: [MLSection]),
-                        sectionTitle: String, sectionOffset: Int,
+                        bodyBlocks: [MLBlock],
+                        sectionTitle: String,
                         video: WelcomeVideo?, pageIndex: Int) -> some View {
         GeometryReader { viewport in
             ZStack {
                 ScrollView(showsIndicators: false) {
-                    lessonBody(d, parsed: parsed, sectionTitle: sectionTitle,
-                               sectionOffset: sectionOffset,
+                    lessonBody(d, bodyBlocks: bodyBlocks, sectionTitle: sectionTitle,
                                pageIndex: pageIndex, pageCount: pages.count,
                                video: pageIndex == 0 ? video : nil,
                                isFirstPage: pageIndex == 0,
@@ -507,23 +613,22 @@ struct ModuleView: View {
     }
 
     private func lessonBody(_ d: ModuleDetail,
-                            parsed: (lead: [MLBlock], sections: [MLSection]),
+                            bodyBlocks: [MLBlock],
                             sectionTitle: String,
-                            sectionOffset: Int,
                             pageIndex: Int,
                             pageCount: Int,
                             video: WelcomeVideo?,
                             isFirstPage: Bool,
                             isLastPage: Bool) -> some View {
-        // The lead run: give a genuine opening paragraph the larger "lead" voice;
-        // render the remainder (and any non-paragraph lead) through the real
-        // Markdown renderer so nothing shows raw.
+        // Give a genuine opening paragraph the larger "lead" voice; render the
+        // rest of the section — headings, lists, quotes, tables — through the
+        // real Markdown renderer, where headings stay headings.
         let leadParagraph: String? = {
-            if case let .paragraph(text)? = parsed.lead.first { return text }
+            if case let .paragraph(text)? = bodyBlocks.first { return text }
             return nil
         }()
-        let leadRest: [MLBlock] = leadParagraph == nil ? parsed.lead : Array(parsed.lead.dropFirst())
-        let hasLead = !parsed.lead.isEmpty
+        let bodyRest: [MLBlock] = leadParagraph == nil ? bodyBlocks : Array(bodyBlocks.dropFirst())
+        let hasLead = !bodyBlocks.isEmpty
         return VStack(alignment: .leading, spacing: 0) {
             // Titled SECTION headline — the derived heading (or "Section N"), with
             // an unobtrusive "n of m" for navigation context. The generic
@@ -535,6 +640,19 @@ struct ModuleView: View {
                 MLVideoCard(video: video, playing: $playingVideo)
                     .id("video")
             }
+            // Audio narration — a light play/pause card with a thin progress
+            // line; only on the first page and only when the module has audio.
+            if isFirstPage, vm.hasAudio {
+                MLAudioCard(playing: vm.audioPlaying,
+                            progress: vm.audioProgress,
+                            minutes: mlMinutes(d.audioDurationSec)) {
+                    Haptics.tap()
+                    vm.toggleAudio()
+                    syncEngagementSignals()
+                }
+                .id("audio")
+                .padding(.top, video == nil ? 0 : 16)
+            }
             if let leadParagraph {
                 Text(MLMarkdown.inline(leadParagraph))
                     .font(.inter(16, .medium)).foregroundStyle(ML.lead)
@@ -543,17 +661,12 @@ struct ModuleView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, video == nil ? 0 : 20)
             }
-            if !leadRest.isEmpty {
-                MLMarkdownView(blocks: leadRest)
+            if !bodyRest.isEmpty {
+                MLMarkdownView(blocks: bodyRest)
                     .padding(.top, leadParagraph == nil ? (video == nil ? 0 : 20) : 14)
             }
             if isFirstPage, let verse = d.keyVerses?.first(where: { !$0.isEmpty }) {
                 MLScriptureCard(line: verse).padding(.top, 20)
-            }
-            ForEach(parsed.sections) { s in
-                // Section numbers run ACROSS pages (offset = sections on earlier pages).
-                MLSectionBlock(number: sectionOffset + s.id + 1, section: s, showDivider: s.id > 0)
-                    .padding(.top, 28)
             }
             if isLastPage {
                 MLReflectionCard(text: $reflection, busy: vm.completing, error: vm.completionError) {
@@ -580,14 +693,17 @@ struct ModuleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // Read / Reflect (+ Watch when a video exists) — jump to the matching part
-    // of the lesson. Behaviour is preserved from the old step chips.
-    private func headerActions(hasVideo: Bool, pageCount: Int, proxy: ScrollViewProxy) -> MLHeaderActions {
+    // Read / Reflect (+ Watch when a video exists, + Listen when audio exists) —
+    // jump to the matching part of the lesson. Behaviour preserved from the old
+    // step chips; Listen additionally toggles the narration player.
+    private func headerActions(hasVideo: Bool, hasAudio: Bool, pageCount: Int, proxy: ScrollViewProxy) -> MLHeaderActions {
         MLHeaderActions(
             readDone: reachedEnd,
             reflectDone: vm.completed,
             hasVideo: hasVideo,
             watchDone: playingVideo,
+            hasAudio: hasAudio,
+            audioPlaying: vm.audioPlaying,
             onRead: {
                 Haptics.selection()
                 goToPage(0, pageCount: pageCount)
@@ -612,7 +728,29 @@ struct ModuleView: View {
                 playingVideo = true
                 goToPage(0, pageCount: pageCount)
                 withAnimation { proxy.scrollTo("video", anchor: .top) }
+            },
+            onListen: {
+                Haptics.selection()
+                goToPage(0, pageCount: pageCount)
+                withAnimation { proxy.scrollTo("audio", anchor: .top) }
+                vm.toggleAudio()
+                syncEngagementSignals()
             })
+    }
+
+    // MARK: - Header media pills (real data only)
+
+    /// The Watch / Listen meta pills. Each is nil unless the module actually
+    /// carries that medium; a duration is shown ONLY when the server sent one
+    /// (round(sec/60) → "Xm") — never invented.
+    private func headerMedia(_ d: ModuleDetail) -> MLHeaderMedia {
+        let watch: MLMediaPillModel? = mlVideo(d) != nil
+            ? MLMediaPillModel(icon: .play, verb: "Watch", minutes: mlMinutes(d.videoDurationSec))
+            : nil
+        let listen: MLMediaPillModel? = vm.hasAudio
+            ? MLMediaPillModel(icon: .audioLines, verb: "Listen", minutes: mlMinutes(d.audioDurationSec))
+            : nil
+        return MLHeaderMedia(watch: watch, listen: listen)
     }
 
     // MARK: - Page turning
@@ -740,6 +878,8 @@ struct ModuleView: View {
         let active = viewOnScreen && scenePhase == .active && vm.detail != nil
         if active { vm.beginReading() } else { vm.pauseReading() }
         vm.setVideoOpen(active && playingVideo && currentPage == 0)
+        // Leaving / backgrounding: stop hearing (and counting) the narration.
+        if !active { vm.suspendAudioIfNeeded() }
     }
 
     /// Silent resume: jump straight to the server's last_page and greet the
@@ -892,28 +1032,51 @@ private struct MLPagerBar: View {
 
 // MARK: - Header (parchment gradient, rounded bottom, gold glow)
 //
-// A tidy, centred hero: overline · serif title · one aligned meta row (≈ min
-// read · N sections) · one balanced action row (a segmented Read/Reflect control
-// plus a Watch button only when the module carries a video — never a control for
-// media that isn't there).
+// A tidy, centred hero: overline · serif title · a tappable SECTION INDEX (one
+// chip per author-defined content page, current = gold) · one meta row (≈ min
+// read · N sections · a Watch pill only with a video · a Listen pill only with
+// audio — never a pill for media that isn't there) · one action row (a segmented
+// Read/Reflect control plus Watch/Listen buttons for whatever media exists).
 
-/// The header's tab actions, tri-stated (done shows a check + gold fill).
+/// One Watch/Listen meta pill's content. `minutes` is nil unless the server sent
+/// a real duration (round(sec/60)); the pill then shows just its verb.
+private struct MLMediaPillModel {
+    let icon: Lucide
+    let verb: String        // "Watch" | "Listen"
+    let minutes: Int?       // real duration in minutes, or nil
+    var label: String { minutes.map { "\(verb) · \($0)m" } ?? verb }
+}
+
+/// The header's media pills — each present only when that medium actually exists.
+private struct MLHeaderMedia {
+    let watch: MLMediaPillModel?
+    let listen: MLMediaPillModel?
+}
+
+/// The header's tab actions, tri-stated (done/active shows a check + gold fill).
 private struct MLHeaderActions {
     var readDone: Bool
     var reflectDone: Bool
     var hasVideo: Bool
     var watchDone: Bool
+    var hasAudio: Bool
+    var audioPlaying: Bool
     let onRead: () -> Void
     let onReflect: () -> Void
     let onWatch: () -> Void
+    let onListen: () -> Void
 }
 
 private struct MLHeader: View {
     let levelNumber: Int
     let moduleNumber: Int
     let title: String
-    let minutesLabel: String?
+    let readMinutes: Int
     let sectionCount: Int
+    let sectionTitles: [String]
+    let currentSection: Int
+    let media: MLHeaderMedia
+    let onSelectSection: (Int) -> Void
     let actions: MLHeaderActions
     let onBack: () -> Void
     let onToggleImmersion: () -> Void
@@ -944,16 +1107,14 @@ private struct MLHeader: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 14)
-            // Meta row — evenly spaced, centred.
-            HStack(spacing: 10) {
-                if let minutesLabel { MLMetaPill(icon: .clock, label: minutesLabel) }
-                if sectionCount > 0 {
-                    MLMetaPill(icon: .bookOpen,
-                               label: "\(sectionCount) section\(sectionCount == 1 ? "" : "s")")
-                }
+            // Meta row — read · sections · watch · listen, evenly spaced.
+            metaRow
+                .padding(.top, 12)
+            // Section index — one tappable chip per section (only when >1).
+            if sectionCount > 1 {
+                MLSectionIndex(titles: sectionTitles, current: currentSection, onSelect: onSelectSection)
+                    .padding(.top, 12)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.top, 12)
             // Action row — balanced, equal-width.
             actionRow
                 .padding(.top, 14)
@@ -966,8 +1127,21 @@ private struct MLHeader: View {
         .shadow(color: Color(hex: 0x0A1628).opacity(0.12), radius: 10, y: 6)
     }
 
-    /// A segmented Read | Reflect control, and — only when a video exists — a
-    /// matching Watch button beside it. All segments share equal width.
+    /// ≈ min read · N sections · Watch · Listen. The read + section pills always
+    /// show; Watch/Listen appear only for media that's actually present.
+    private var metaRow: some View {
+        HStack(spacing: 10) {
+            MLMetaPill(icon: .clock, label: "≈ \(readMinutes) min read")
+            MLMetaPill(icon: .bookOpen,
+                       label: "\(sectionCount) section\(sectionCount == 1 ? "" : "s")")
+            if let watch = media.watch { MLMetaPill(icon: watch.icon, label: watch.label) }
+            if let listen = media.listen { MLMetaPill(icon: listen.icon, label: listen.label) }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// A segmented Read | Reflect control, and — for whatever media exists — a
+    /// matching Watch and/or Listen button beside it. All share equal width.
     private var actionRow: some View {
         HStack(spacing: 8) {
             HStack(spacing: 0) {
@@ -981,7 +1155,13 @@ private struct MLHeader: View {
             .overlay(Capsule().stroke(ML.border, lineWidth: 1))
             .frame(maxWidth: .infinity)
             if actions.hasVideo {
-                MLWatchButton(done: actions.watchDone, action: actions.onWatch)
+                MLMediaButton(icon: actions.watchDone ? .check : .play, label: "Watch",
+                              active: actions.watchDone, action: actions.onWatch)
+                    .frame(maxWidth: .infinity)
+            }
+            if actions.hasAudio {
+                MLMediaButton(icon: .audioLines, label: "Listen",
+                              active: actions.audioPlaying, action: actions.onListen)
                     .frame(maxWidth: .infinity)
             }
         }
@@ -1028,27 +1208,91 @@ private struct MLSegment: View {
     }
 }
 
-/// The Watch button — matches the segmented control's height and voice; only
-/// shown when the module has a video.
-private struct MLWatchButton: View {
-    let done: Bool
+/// A Watch or Listen button — matches the segmented control's height and voice;
+/// each only shown when the module carries that medium. `active` fills gold (the
+/// video has been opened / the audio is playing).
+private struct MLMediaButton: View {
+    let icon: Lucide
+    let label: String
+    let active: Bool
     let action: () -> Void
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Icon(done ? .check : .play, size: 12, color: done ? ML.navy : ML.secondary)
-                Text("Watch").font(.inter(12, .bold))
+                Icon(icon, size: 12, color: active ? ML.navy : ML.secondary)
+                Text(label).font(.inter(12, .bold))
             }
-            .foregroundStyle(done ? ML.navy : ML.secondary)
+            .foregroundStyle(active ? ML.navy : ML.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(done ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+            .background(active ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
                         in: Capsule())
-            .overlay(Capsule().stroke(done ? Color.clear : ML.border, lineWidth: 1))
+            .overlay(Capsule().stroke(active ? Color.clear : ML.border, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.pressable)
-        .animation(.easeInOut(duration: 0.2), value: done)
+        .animation(.easeInOut(duration: 0.2), value: active)
+    }
+}
+
+// MARK: - Section index (tappable chips — one per author-defined section)
+
+/// A compact, tappable index of the lesson's sections. One chip per content
+/// page, titled from that page's first heading (or "Section N"); the current
+/// chip is gold. Tapping jumps the reader to that section. Kept to one clean
+/// row that scrolls horizontally when the chips don't all fit, and it keeps the
+/// current chip in view as the reader turns pages. Chip text is truncated to one
+/// line so a long heading never blows out the row.
+private struct MLSectionIndex: View {
+    let titles: [String]
+    let current: Int
+    let onSelect: (Int) -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(titles.enumerated()), id: \.offset) { idx, title in
+                        chip(idx, title).id(idx)
+                    }
+                }
+                .padding(.horizontal, 2)   // so the gold ring isn't clipped
+            }
+            // Keep the active chip centred as pages turn (still under Reduce Motion).
+            .onChange(of: current) { _, c in
+                if reduceMotion { proxy.scrollTo(c, anchor: .center) }
+                else { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(c, anchor: .center) } }
+            }
+        }
+    }
+
+    private func chip(_ idx: Int, _ title: String) -> some View {
+        let isCurrent = idx == current
+        return Button {
+            Haptics.selection()
+            onSelect(idx)
+        } label: {
+            HStack(spacing: 5) {
+                Text("\(idx + 1)")
+                    .font(.inter(10, .bold))
+                    .foregroundStyle(isCurrent ? ML.navy.opacity(0.7) : ML.secondary.opacity(0.7))
+                Text(title)
+                    .font(.inter(12, .semibold))
+                    .lineLimit(1)
+                    .foregroundStyle(isCurrent ? ML.navy : ML.secondary)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(isCurrent ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+                        in: Capsule())
+            .overlay(Capsule().stroke(isCurrent ? Color.clear : ML.border, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .frame(maxWidth: 180, alignment: .leading)
+        .accessibilityLabel("Section \(idx + 1): \(title)")
+        .accessibilityAddTraits(isCurrent ? [.isSelected] : [])
     }
 }
 
@@ -1072,29 +1316,38 @@ private struct MLSquareLabel: View {
     }
 }
 
-/// The eye-pacer — a small gold dot that descends a faint left rail at a calm
-/// reading pace (~26s per screenful), looping, to give the eye a rhythm and a
-/// sense of "where to be". Purely a guide; it observes nothing. Shown only in
-/// immersive (focused) reading and skipped under Reduce Motion.
+/// The eye-pacer — a gold dot on the right rail whose vertical position is bound
+/// to the reader's real scroll fraction. It moves exactly with your scroll
+/// (already spring-smoothed upstream), stops the instant you stop, and speeds up
+/// when you do; the rail behind the dot fills gold to show how far you've read.
+/// Purely a guide that observes nothing. Spans the mid-height so it never
+/// collides with the top full-screen handle or the bottom page whisper.
 private struct MLPaceRail: View {
-    @State private var down = false
+    let progress: Double   // 0…1, the live scroll fraction within the section
+
     var body: some View {
         GeometryReader { geo in
-            let top = geo.safeAreaInsets.top + 80
-            let bottom = geo.size.height - 120
+            let top = geo.safeAreaInsets.top + 66
+            let bottom = geo.size.height - 92
+            let span = max(1, bottom - top)
+            let y = top + CGFloat(min(1, max(0, progress))) * span
             ZStack(alignment: .top) {
-                Capsule().fill(ML.gold.opacity(0.10)).frame(width: 2)
+                // Faint full track.
+                Capsule().fill(ML.gold.opacity(0.12))
+                    .frame(width: 3)
                     .padding(.top, top).padding(.bottom, geo.size.height - bottom)
+                // Read-so-far fill, top → dot.
+                Capsule().fill(ML.gold.opacity(0.55))
+                    .frame(width: 3, height: max(0, y - top))
+                    .offset(y: top)
+                // The scroll dot.
                 Circle().fill(ML.gold)
-                    .frame(width: 7, height: 7)
+                    .frame(width: 9, height: 9)
                     .shadow(color: ML.gold.opacity(0.6), radius: 4)
-                    .offset(y: down ? bottom : top)
+                    .offset(y: y - 4.5)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.leading, 7)
-            .onAppear {
-                withAnimation(.easeInOut(duration: 26).repeatForever(autoreverses: false)) { down = true }
-            }
+            .frame(maxWidth: .infinity, alignment: .trailing)
+            .padding(.trailing, 7)
         }
         .allowsHitTesting(false)
     }
@@ -1214,6 +1467,73 @@ private struct MLVideoCard: View {
     }
 }
 
+// MARK: - Audio narration card (light AVPlayer transport — real playback only)
+
+/// A tasteful play/pause narration tile: a gold-filled round transport, a
+/// "Narration" label (with the real "· Xm" duration when the server sent one),
+/// and a thin gold progress line bound to actual playback. No scrubber, no fake
+/// timecodes — it plays and it counts seconds; that's the whole job here.
+private struct MLAudioCard: View {
+    let playing: Bool
+    let progress: Double        // 0…1 of the track
+    let minutes: Int?           // real duration in minutes, or nil
+    let onToggle: () -> Void
+
+    var body: some View {
+        Button(action: onToggle) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 12) {
+                    transport
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("LISTEN")
+                            .font(.inter(10, .bold)).kerning(1.8)
+                            .foregroundStyle(ML.kicker)
+                        Text(minutes.map { "Narration · \($0)m" } ?? "Narration")
+                            .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
+                    }
+                    Spacer(minLength: 0)
+                    Icon(.audioLines, size: 18, color: ML.gold.opacity(0.9))
+                }
+                progressLine
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ML.surface)
+            .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(playing ? ML.gold : ML.border, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .buttonStyle(.pressableSubtle)
+        .accessibilityLabel(playing ? "Pause narration" : "Play narration")
+        .accessibilityValue("\(Int((progress * 100).rounded())) percent")
+    }
+
+    private var transport: some View {
+        ZStack {
+            Circle().fill(ML.goldGradient).frame(width: 44, height: 44)
+            // No Lucide "pause" glyph — SF Symbols, as MLImmerseButton already does.
+            Image(systemName: playing ? "pause.fill" : "play.fill")
+                .font(.system(size: 16, weight: .bold))
+                .foregroundStyle(ML.navy)
+                .offset(x: playing ? 0 : 1)
+        }
+        .shadow(color: ML.gold.opacity(0.4), radius: 6, y: 3)
+    }
+
+    private var progressLine: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(ML.track)
+                Capsule().fill(ML.goldGradient)
+                    .frame(width: max(0, geo.size.width * min(1, max(0, progress))))
+            }
+        }
+        .frame(height: 3)
+    }
+}
+
 // MARK: - Scripture pull-quote (surface tile with a gold left edge)
 
 private struct MLScriptureCard: View {
@@ -1272,47 +1592,6 @@ private struct MLSectionHeader: View {
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isHeader)
         .accessibilityLabel(a11y)
-    }
-}
-
-// MARK: - Sections ("SECTION n" kicker · serif heading · Markdown body)
-
-/// A titled section of the lesson: a heading (from a Markdown `#`/`##` line) and
-/// the Markdown blocks that follow it, up to the next heading. A section without
-/// a heading (e.g. lead copy before the first heading) renders body-only.
-struct MLSection: Identifiable {
-    let id: Int
-    let heading: String?
-    let blocks: [MLBlock]
-}
-
-/// A rendered section: "SECTION n" kicker, the serif heading, then the section's
-/// Markdown body via the real renderer (tables, quotes, lists all resolved).
-private struct MLSectionBlock: View {
-    let number: Int
-    let section: MLSection
-    let showDivider: Bool
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if showDivider {
-                Rectangle().fill(ML.border).frame(height: 1).padding(.bottom, 24)
-            }
-            if let heading = section.heading {
-                Text("SECTION \(number)")
-                    .font(.inter(10, .bold)).kerning(1.8)
-                    .foregroundStyle(ML.kicker)
-                Text(heading)
-                    .font(.fraunces(21, .semibold)).kerning(-0.4)
-                    .foregroundStyle(ML.navy)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 6)
-            }
-            if !section.blocks.isEmpty {
-                MLMarkdownView(blocks: section.blocks)
-                    .padding(.top, section.heading == nil ? 0 : 16)
-            }
-        }
     }
 }
 
@@ -1511,6 +1790,14 @@ private func mlReadMinutes(_ pages: [String]) -> Int {
     return max(1, Int((Double(words) / 200.0).rounded()))
 }
 
+/// A media duration in whole minutes for a "Xm" pill suffix — REAL data only:
+/// nil (server sent none) → nil (the pill shows just its verb, no duration).
+/// A sub-30s clip rounds up to "1m" so a present duration never reads "0m".
+private func mlMinutes(_ seconds: Int?) -> Int? {
+    guard let seconds, seconds > 0 else { return nil }
+    return max(1, Int((Double(seconds) / 60.0).rounded()))
+}
+
 // MARK: - Section titles (client-derived — each page is a titled SECTION)
 
 /// A page's first line is treated as its section title when it's a Markdown ATX
@@ -1547,44 +1834,6 @@ private func pageTitleAndBody(_ page: String) -> (title: String?, body: String) 
 /// numbered fallback when the page carries no heading.
 private func sectionLabel(_ title: String?, _ index0: Int) -> String {
     title ?? "Section \(index0 + 1)"
-}
-
-// MARK: - Lesson parsing (Markdown blocks → lead + titled sections)
-
-/// Parse a page's Markdown body into a lead run (blocks before the first
-/// section heading) and a list of titled sections. A section begins at each
-/// `#`/`##`/`###` heading; its title is the heading text and its body is every
-/// block up to the next heading, rendered through the real Markdown renderer.
-/// A page with no headings yields all its blocks as the lead (no sections),
-/// which the reader then flows as one continuous body — still fully rendered.
-private func mlParse(_ content: String) -> (lead: [MLBlock], sections: [MLSection]) {
-    let blocks = MLMarkdown.parse(content)
-    var lead: [MLBlock] = []
-    var sections: [MLSection] = []
-    var currentHeading: String?
-    var currentBlocks: [MLBlock] = []
-    var inSection = false
-
-    func flush() {
-        if inSection {
-            sections.append(MLSection(id: sections.count, heading: currentHeading, blocks: currentBlocks))
-        }
-        currentHeading = nil; currentBlocks = []; inSection = false
-    }
-
-    for block in blocks {
-        if case let .heading(_, text) = block {
-            flush()
-            currentHeading = text
-            inSection = true
-        } else if inSection {
-            currentBlocks.append(block)
-        } else {
-            lead.append(block)
-        }
-    }
-    flush()
-    return (lead, sections)
 }
 
 /// Wrap the module's real videoUrl for the shared inline player (source inferred

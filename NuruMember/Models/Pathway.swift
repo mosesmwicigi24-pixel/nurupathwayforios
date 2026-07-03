@@ -92,6 +92,13 @@ struct ModuleDetail: Codable, Sendable {
     let summary: String?
     let keyVerses: [String]?
     let videoUrl: String?
+    /// Media durations + the lesson's audio narration. All optional + defaulted
+    /// so payloads from servers that predate this contract still decode. Durations
+    /// drive the "Watch · Xm" / "Listen · Ym" pill labels (omitted → no duration
+    /// shown); `audioUrl` is what gates the Listen pill/player existing at all.
+    var videoDurationSec: Int? = nil
+    var audioUrl: String? = nil
+    var audioDurationSec: Int? = nil
     let evaluationKind: String
     let estimatedMinutes: Int?
     @FlexInt var quizPassMark: Int
