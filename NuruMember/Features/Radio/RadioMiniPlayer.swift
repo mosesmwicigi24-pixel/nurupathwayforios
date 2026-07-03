@@ -84,7 +84,8 @@ struct RadioMiniPlayer: View {
     /// cutout and the chin below it, the card now floats FREE of the island —
     /// a detached black capsule dropped well below the status area, where it
     /// neither fights the hardware nor crowds the clock.
-    static var dockTop: CGFloat { topInset - 24 }  // kissing the island's bottom curve
+    static var dockTop: CGFloat { topInset - 34 }  // tucked up under the island — its top
+                                                   // corners vanish into the cutout, chin shows
     static let dockHeight: CGFloat = 30
     static let dockWidth: CGFloat = 96
 
@@ -110,7 +111,7 @@ struct RadioMiniPlayer: View {
                 HStack(spacing: 8) {
                     pulsingDot
                     // Half the height, twice the breadth — a low, wide ribbon.
-                    RadioMiniWave(playing: center.playing, count: 20, height: 8)
+                    RadioMiniWave(playing: center.playing, count: 19, height: 8)
                 }
             }
             .buttonStyle(.pressable)
@@ -133,7 +134,7 @@ struct RadioMiniPlayer: View {
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
         .padding(.vertical, 4)
-        .padding(.leading, 10)
+        .padding(.leading, 8)
         .padding(.trailing, 3)
         .background(Color.black, in: Capsule())
         .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
