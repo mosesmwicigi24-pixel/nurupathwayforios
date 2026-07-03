@@ -108,7 +108,7 @@ struct RadioMiniPlayer: View {
     // and black meets black. Wing width is capped so the tips clear the clock
     // (~100pt) and the wifi/battery cluster (~345pt+) on the Pro Max.
     private static let wingWidth: CGFloat = 48
-    private static let holeSpan: CGFloat = 116
+    private static let holeSpan: CGFloat = 102
 
     private var floatingCapsule: some View {
         HStack(spacing: 0) {
