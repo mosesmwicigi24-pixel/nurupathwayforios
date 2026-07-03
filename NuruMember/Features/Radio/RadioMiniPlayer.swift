@@ -84,7 +84,7 @@ struct RadioMiniPlayer: View {
     /// cutout and the chin below it, the card now floats FREE of the island —
     /// a detached black capsule dropped well below the status area, where it
     /// neither fights the hardware nor crowds the clock.
-    static var dockTop: CGFloat { topInset - 54 }  // tucked up under the island — its top
+    static var dockTop: CGFloat { topInset - 49 }  // tucked up under the island — its top
                                                    // corners vanish into the cutout, chin shows
     static let dockHeight: CGFloat = 30
     static let dockWidth: CGFloat = 96
@@ -108,7 +108,7 @@ struct RadioMiniPlayer: View {
     // and black meets black. Wing width is capped so the tips clear the clock
     // (~100pt) and the wifi/battery cluster (~345pt+) on the Pro Max.
     private static let wingWidth: CGFloat = 48
-    private static let holeSpan: CGFloat = 126
+    private static let holeSpan: CGFloat = 121
 
     private var floatingCapsule: some View {
         HStack(spacing: 0) {
@@ -120,14 +120,14 @@ struct RadioMiniPlayer: View {
                     pulsingDot
                     RadioMiniWave(playing: center.playing, count: 9, height: 8)
                 }
-                .frame(width: Self.wingWidth, height: 37)
+                .frame(width: Self.wingWidth, height: 40)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Open Nuru Radio")
 
             // The hardware island lives here.
-            Color.clear.frame(width: Self.holeSpan, height: 37)
+            Color.clear.frame(width: Self.holeSpan, height: 40)
 
             Button {
                 Haptics.tap()
@@ -138,14 +138,14 @@ struct RadioMiniPlayer: View {
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: center.playing ? 0 : 1)
-                    .frame(width: Self.wingWidth, height: 37)
+                    .frame(width: Self.wingWidth, height: 40)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .animation(.easeInOut(duration: 0.2), value: center.playing)
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
-        .frame(height: 37)
+        .frame(height: 40)
         .background(Color.black, in: Capsule())
         .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
         .transition(.scale(scale: 0.7).combined(with: .opacity))
