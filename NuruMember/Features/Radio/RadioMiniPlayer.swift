@@ -80,17 +80,13 @@ struct RadioMiniPlayer: View {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
-    /// CHIN geometry (the settled design after trying the brow): the island is
-    /// a physical HOLE — nothing renders inside it, and the strip above it is
-    /// a razor-thin sliver. The wave therefore lives BELOW the cutout: the
-    /// dock's black body starts at y=8 (above any island top) and runs down
-    /// behind the hole; whatever it covers is swallowed, so the merge is
-    /// seamless on every island geometry, and the miniature wave row sits in
-    /// the slim visible chin under the island's bottom edge (≈44pt on the
-    /// 17 Pro Max, measured from the device photo).
-    static var dockTop: CGFloat { isIslandDevice ? 8 : topInset + 4 }
-    static let dockHeight: CGFloat = 52     // 8…60 — ~16pt visible chin
-    static let dockWidth: CGFloat = 96      // narrower than the cutout — a neat tab
+    /// FLOATING geometry (the settled design): after trying the brow above the
+    /// cutout and the chin below it, the card now floats FREE of the island —
+    /// a detached black capsule dropped well below the status area, where it
+    /// neither fights the hardware nor crowds the clock.
+    static var dockTop: CGFloat { topInset + 16 }
+    static let dockHeight: CGFloat = 30
+    static let dockWidth: CGFloat = 96
 
     var body: some View {
         // The `if let` lives inside a container so the spring transition
@@ -98,58 +94,10 @@ struct RadioMiniPlayer: View {
         // content directly, SwiftUI would pop it in with no animation).
         ZStack {
             if center.program != nil {
-                if Self.isIslandDevice { islandDock } else { floatingCapsule }
+                floatingCapsule
             }
         }
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
-    }
-
-    // ── Island chin (wave hangs BELOW the cutout) ──────────────────────
-    private var islandDock: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 0)
-            HStack(spacing: 5) {
-                Button {
-                    Haptics.tap()
-                    onOpen()
-                } label: {
-                    HStack(spacing: 3) {
-                        Circle().fill(Color(hex: 0xEF4444)).frame(width: 3, height: 3)
-                            .opacity(dotDim ? 0.2 : 1)
-                        RadioMiniWave(playing: center.playing, count: 6, height: 6)
-                    }
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Open Nuru Radio")
-
-                Button {
-                    Haptics.tap()
-                    center.togglePlay()
-                } label: {
-                    Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 6, weight: .bold))
-                        .foregroundStyle(Nuru.gold)
-                        .contentTransition(.symbolEffect(.replace))
-                        .frame(width: 12, height: 8)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .animation(.easeInOut(duration: 0.2), value: center.playing)
-                .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
-            }
-            .padding(.bottom, 4)   // the visible chin — snug under the cutout
-        }
-        .frame(width: Self.dockWidth, height: Self.dockHeight)
-        .background(Color.black, in: UnevenRoundedRectangle(
-            topLeadingRadius: 18, bottomLeadingRadius: 12,
-            bottomTrailingRadius: 12, topTrailingRadius: 18, style: .continuous))
-        .transition(.move(edge: .top).combined(with: .opacity))
-        .accessibilityHint("Nuru Radio is playing — opens the full player")
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 0.5).repeatForever(autoreverses: true)) { dotDim = true }
-        }
     }
 
     // ── Free-floating capsule (notch / older devices) ──────────────────
