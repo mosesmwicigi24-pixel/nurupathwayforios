@@ -140,7 +140,8 @@ struct RadioMiniPlayer: View {
                 .animation(.easeInOut(duration: 0.2), value: center.playing)
                 .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
             }
-            .padding(.top, 2)   // the visible brow — the sliver above the cutout
+            .padding(.top, 8)   // dropped toward the cutout's top edge — any lower
+                                // and the hole swallows the wave (no pixels there)
             Spacer(minLength: 0)
         }
         .frame(width: Self.dockWidth, height: Self.dockHeight)
