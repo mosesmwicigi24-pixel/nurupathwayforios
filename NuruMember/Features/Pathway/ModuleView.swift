@@ -154,8 +154,9 @@ final class ModuleViewModel: ObservableObject {
     }
 }
 
-// Exact Figma palette (ModuleLearn.tsx) — local so this page is 1:1 with the design.
-private enum ML {
+// Exact Figma palette (ModuleLearn.tsx) — module-internal (not `private`) so the
+// Markdown renderer in LessonMarkdown.swift shares this exact palette.
+enum ML {
     static let navy         = Color(hex: 0x0A1628)
     static let cream        = Color(hex: 0xF4F0E8)   // canvas
     static let surface      = Color(hex: 0xFBF8F1)   // inset tiles / scripture
@@ -196,6 +197,8 @@ struct ModuleView: View {
     @State private var chromeTask: Task<Void, Never>?
     @State private var viewOnScreen = false
     @State private var resumeNote: String?       // "Welcome back — …", fades away
+    @State private var lastScrollOffset: CGFloat = 0   // to detect scroll-into-immersion
+    @State private var didAutoImmerse = false          // one auto-hide per opening
 
     init(moduleId: String) {
         self.moduleId = moduleId
@@ -208,6 +211,13 @@ struct ModuleView: View {
     private static var safeAreaTop: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
+    }
+
+    /// Bottom safe-area inset (home indicator band) — used to pad the immersive
+    /// scroll so the last content clears the indicator when the gate is gone.
+    private static var safeAreaBottom: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 34
     }
 
     private var pageCountNow: Int { vm.detail.map { mlPages($0).count } ?? 1 }
@@ -247,11 +257,14 @@ struct ModuleView: View {
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
         // Reading progress — orientation, not chrome: it survives immersion.
+        // Pinned FLUSH to the physical top edge of the screen (the ZStack ignores
+        // the top safe area, so `.top` is the true top). A 3pt hairline that
+        // never crosses the title or any content.
         .overlay(alignment: .top) {
             if vm.detail != nil {
                 MLReadingProgressBar(progress: overallProgress)
-                    .padding(.top, Self.safeAreaTop)
                     .allowsHitTesting(false)
+                    .ignoresSafeArea(edges: .top)
             }
         }
         // One-line "Welcome back — picking up on page N" that fades after a beat.
@@ -265,7 +278,7 @@ struct ModuleView: View {
         .overlay(alignment: .bottom) {
             if chromeHidden, pageCountNow > 1 {
                 MLPageWhisper(page: currentPage + 1, count: pageCountNow)
-                    .padding(.bottom, 12)
+                    .padding(.bottom, Self.safeAreaBottom + 8)
                     .transition(.opacity)
             }
         }
@@ -366,7 +379,8 @@ struct ModuleView: View {
                              title: d.title,
                              minutesLabel: "≈ \(mlReadMinutes(pages)) min read",
                              sectionCount: sectionTotal,
-                             chips: chips(hasVideo: video != nil, pageCount: pages.count, proxy: proxy),
+                             actions: headerActions(hasVideo: video != nil,
+                                                    pageCount: pages.count, proxy: proxy),
                              onBack: { dismiss() })
                         .transition(.opacity)
                 }
@@ -384,7 +398,8 @@ struct ModuleView: View {
                                  requiresQuiz: d.requiresQuiz,
                                  moduleId: d.moduleId,
                                  busy: vm.completing,
-                                 error: vm.completionError) {
+                                 error: vm.completionError,
+                                 bottomInset: Nuru.tabBarSpace) {
                         Haptics.action()
                         Task { await vm.markComplete() }
                     }
@@ -392,10 +407,10 @@ struct ModuleView: View {
                 }
             }
             // The lesson is on screen: start the reading clock and arm the
-            // 7-second slide into immersive reading.
+            // slide into immersive reading (a scroll gets there sooner).
             .onAppear {
                 syncEngagementSignals()
-                armChromeHide(after: 7)
+                if !didAutoImmerse { armChromeHide(after: 6) }
             }
         }
     }
@@ -405,7 +420,7 @@ struct ModuleView: View {
     /// transition crossfades old→new inside the ZStack, so turns feel instant
     /// but never snap.
     private func reader(_ d: ModuleDetail, pages: [String],
-                        parsed: (lead: String?, sections: [MLSection]),
+                        parsed: (lead: [MLBlock], sections: [MLSection]),
                         sectionTitle: String, sectionOffset: Int,
                         video: WelcomeVideo?, pageIndex: Int) -> some View {
         GeometryReader { viewport in
@@ -420,7 +435,9 @@ struct ModuleView: View {
                         .id("top")
                         .padding(.horizontal, Nuru.S.screen)
                         .padding(.top, chromeHidden ? Self.safeAreaTop + 8 : Nuru.S.base)
-                        .padding(.bottom, Nuru.S.lg)
+                        // Clear the home indicator when immersive (no gate below);
+                        // a smaller cushion when the gate sits beneath the scroll.
+                        .padding(.bottom, chromeHidden ? Self.safeAreaBottom + 40 : Nuru.S.lg)
                         .background(
                             // Scroll metrics for the top progress bar: content
                             // offset + height in the scroll's coordinate space.
@@ -455,7 +472,7 @@ struct ModuleView: View {
     }
 
     private func lessonBody(_ d: ModuleDetail,
-                            parsed: (lead: String?, sections: [MLSection]),
+                            parsed: (lead: [MLBlock], sections: [MLSection]),
                             sectionTitle: String,
                             sectionOffset: Int,
                             pageIndex: Int,
@@ -463,23 +480,37 @@ struct ModuleView: View {
                             video: WelcomeVideo?,
                             isFirstPage: Bool,
                             isLastPage: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        // The lead run: give a genuine opening paragraph the larger "lead" voice;
+        // render the remainder (and any non-paragraph lead) through the real
+        // Markdown renderer so nothing shows raw.
+        let leadParagraph: String? = {
+            if case let .paragraph(text)? = parsed.lead.first { return text }
+            return nil
+        }()
+        let leadRest: [MLBlock] = leadParagraph == nil ? parsed.lead : Array(parsed.lead.dropFirst())
+        let hasLead = !parsed.lead.isEmpty
+        return VStack(alignment: .leading, spacing: 0) {
             // Titled SECTION headline — the derived heading (or "Section N"), with
             // an unobtrusive "n of m" for navigation context. The generic
             // "Page N of M" chrome is retired in favour of this title.
             MLSectionHeader(title: sectionTitle,
                             index0: pageIndex, count: pageCount)
-                .padding(.bottom, video == nil && parsed.lead == nil ? 20 : 16)
+                .padding(.bottom, video == nil && !hasLead ? 20 : 16)
             if let video {
                 MLVideoCard(video: video, playing: $playingVideo)
                     .id("video")
             }
-            if let lead = parsed.lead {
-                Text(lead)
+            if let leadParagraph {
+                Text(MLMarkdown.inline(leadParagraph))
                     .font(.inter(16, .medium)).foregroundStyle(ML.lead)
                     .lineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.top, video == nil ? 0 : 20)
+            }
+            if !leadRest.isEmpty {
+                MLMarkdownView(blocks: leadRest)
+                    .padding(.top, leadParagraph == nil ? (video == nil ? 0 : 20) : 14)
             }
             if isFirstPage, let verse = d.keyVerses?.first(where: { !$0.isEmpty }) {
                 MLScriptureCard(line: verse).padding(.top, 20)
@@ -506,7 +537,7 @@ struct ModuleView: View {
                         withAnimation(.easeInOut(duration: 0.25)) { reachedEnd = true }
                         Haptics.tap()
                         // The CTA is the next step — if immersed, surface it.
-                        if chromeHidden { setChrome(hidden: false) }
+                        if chromeHidden { setChrome(hidden: false); didAutoImmerse = false }
                         armChromeHide(after: 180)
                     }
             }
@@ -514,36 +545,39 @@ struct ModuleView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // Read / Watch / Reflect step chips — jump to the matching part of the lesson.
-    private func chips(hasVideo: Bool, pageCount: Int, proxy: ScrollViewProxy) -> [MLChipModel] {
-        var out = [MLChipModel(label: "Read", done: reachedEnd) {
-            Haptics.selection()
-            goToPage(0, pageCount: pageCount)
-            withAnimation { proxy.scrollTo("top", anchor: .top) }
-        }]
-        if hasVideo {
-            out.append(MLChipModel(label: "Watch", done: playingVideo) {
+    // Read / Reflect (+ Watch when a video exists) — jump to the matching part
+    // of the lesson. Behaviour is preserved from the old step chips.
+    private func headerActions(hasVideo: Bool, pageCount: Int, proxy: ScrollViewProxy) -> MLHeaderActions {
+        MLHeaderActions(
+            readDone: reachedEnd,
+            reflectDone: vm.completed,
+            hasVideo: hasVideo,
+            watchDone: playingVideo,
+            onRead: {
+                Haptics.selection()
+                goToPage(0, pageCount: pageCount)
+                withAnimation { proxy.scrollTo("top", anchor: .top) }
+            },
+            onReflect: {
+                Haptics.selection()
+                let last = pageCount - 1
+                if currentPage != last {
+                    goToPage(last, pageCount: pageCount)
+                    // Let the new page mount before scrolling to the card.
+                    Task {
+                        try? await Task.sleep(nanoseconds: 250_000_000)
+                        withAnimation { proxy.scrollTo("reflect", anchor: .center) }
+                    }
+                } else {
+                    withAnimation { proxy.scrollTo("reflect", anchor: .center) }
+                }
+            },
+            onWatch: {
                 Haptics.selection()
                 playingVideo = true
                 goToPage(0, pageCount: pageCount)
                 withAnimation { proxy.scrollTo("video", anchor: .top) }
             })
-        }
-        out.append(MLChipModel(label: "Reflect", done: vm.completed) {
-            Haptics.selection()
-            let last = pageCount - 1
-            if currentPage != last {
-                goToPage(last, pageCount: pageCount)
-                // Let the new page mount before scrolling to the card.
-                Task {
-                    try? await Task.sleep(nanoseconds: 250_000_000)
-                    withAnimation { proxy.scrollTo("reflect", anchor: .center) }
-                }
-            } else {
-                withAnimation { proxy.scrollTo("reflect", anchor: .center) }
-            }
-        })
-        return out
     }
 
     // MARK: - Page turning
@@ -561,11 +595,24 @@ struct ModuleView: View {
 
     /// Fraction scrolled within the current page (spring-smoothed). A page
     /// shorter than the viewport has nothing to scroll and counts as read.
+    /// The first meaningful downward scroll also slides the reader into
+    /// immersive mode (before the 7s timer would) — reading IS the signal.
     private func updatePageFraction(_ m: MLScrollMetrics, viewport: CGFloat) {
         let scrollable = m.contentHeight - viewport
         let f = scrollable > 1 ? min(1, max(0, Double(m.offset / scrollable))) : 1
         if reduceMotion { pageFraction = f }
         else { withAnimation(.spring(response: 0.35, dampingFraction: 0.9)) { pageFraction = f } }
+
+        // Scroll-triggered immersion: a downward scroll past a small threshold
+        // hides the chrome immediately (once). Scrolling back near the top does
+        // not force the chrome back — a tap does that.
+        let delta = m.offset - lastScrollOffset
+        lastScrollOffset = m.offset
+        if !chromeHidden, !didAutoImmerse, m.offset > 32, delta > 4 {
+            didAutoImmerse = true
+            chromeTask?.cancel(); chromeTask = nil
+            setChrome(hidden: true)
+        }
     }
 
     // MARK: - Immersive chrome (7s in, tap back, 3-minute re-hide)
@@ -583,12 +630,16 @@ struct ModuleView: View {
         chromeTask = Task {
             try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
             guard !Task.isCancelled else { return }
+            didAutoImmerse = true
             setChrome(hidden: true)
         }
     }
 
     private func handleContentTap() {
-        if chromeHidden { setChrome(hidden: false) }
+        if chromeHidden {
+            setChrome(hidden: false)
+            didAutoImmerse = false   // re-arm scroll-into-immersion
+        }
         armChromeHide(after: 180)
     }
 
@@ -753,12 +804,21 @@ private struct MLPagerBar: View {
 }
 
 // MARK: - Header (parchment gradient, rounded bottom, gold glow)
+//
+// A tidy, centred hero: overline · serif title · one aligned meta row (≈ min
+// read · N sections) · one balanced action row (a segmented Read/Reflect control
+// plus a Watch button only when the module carries a video — never a control for
+// media that isn't there).
 
-private struct MLChipModel: Identifiable {
-    let label: String
-    let done: Bool
-    let action: () -> Void
-    var id: String { label }
+/// The header's tab actions, tri-stated (done shows a check + gold fill).
+private struct MLHeaderActions {
+    var readDone: Bool
+    var reflectDone: Bool
+    var hasVideo: Bool
+    var watchDone: Bool
+    let onRead: () -> Void
+    let onReflect: () -> Void
+    let onWatch: () -> Void
 }
 
 private struct MLHeader: View {
@@ -767,47 +827,74 @@ private struct MLHeader: View {
     let title: String
     let minutesLabel: String?
     let sectionCount: Int
-    let chips: [MLChipModel]
+    let actions: MLHeaderActions
     let onBack: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 0) {
-                MLSquareButton(icon: .arrowLeft, action: onBack)
-                Spacer(minLength: 0)
+        VStack(spacing: 0) {
+            // Row 1 — back · centred overline · share.
+            ZStack {
                 Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
                     .font(.inter(11, .bold)).kerning(2)
                     .foregroundStyle(ML.overline)
-                Spacer(minLength: 0)
-                ShareLink(item: "\(title) — Nuru Pathway") {
-                    MLSquareLabel(icon: .share2)
+                HStack(spacing: 0) {
+                    MLSquareButton(icon: .arrowLeft, action: onBack)
+                    Spacer(minLength: 0)
+                    ShareLink(item: "\(title) — Nuru Pathway") {
+                        MLSquareLabel(icon: .share2)
+                    }
+                    .buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
+            // Title — centred serif.
             Text(title)
                 .font(.fraunces(24, .medium)).kerning(-0.7)
                 .foregroundStyle(ML.navy)
+                .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 12)
-            HStack(spacing: 8) {
+                .frame(maxWidth: .infinity)
+                .padding(.top, 14)
+            // Meta row — evenly spaced, centred.
+            HStack(spacing: 10) {
                 if let minutesLabel { MLMetaPill(icon: .clock, label: minutesLabel) }
                 if sectionCount > 0 {
                     MLMetaPill(icon: .bookOpen,
                                label: "\(sectionCount) section\(sectionCount == 1 ? "" : "s")")
                 }
             }
+            .frame(maxWidth: .infinity)
             .padding(.top, 12)
-            HStack(spacing: 6) {
-                ForEach(chips) { MLChipView(chip: $0) }
-            }
-            .padding(.top, 12)
+            // Action row — balanced, equal-width.
+            actionRow
+                .padding(.top, 14)
         }
         .padding(.horizontal, Nuru.S.screen)
         .padding(.top, 56)
         .padding(.bottom, Nuru.S.screen)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity)
         .background(headerBackground)
         .shadow(color: Color(hex: 0x0A1628).opacity(0.12), radius: 10, y: 6)
+    }
+
+    /// A segmented Read | Reflect control, and — only when a video exists — a
+    /// matching Watch button beside it. All segments share equal width.
+    private var actionRow: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 0) {
+                MLSegment(label: "Read", icon: .bookOpen, done: actions.readDone,
+                          action: actions.onRead)
+                Rectangle().fill(ML.border).frame(width: 1, height: 22)
+                MLSegment(label: "Reflect", icon: .quote, done: actions.reflectDone,
+                          action: actions.onReflect)
+            }
+            .background(Color.white, in: Capsule())
+            .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+            .frame(maxWidth: .infinity)
+            if actions.hasVideo {
+                MLWatchButton(done: actions.watchDone, action: actions.onWatch)
+                    .frame(maxWidth: .infinity)
+            }
+        }
     }
 
     private var headerBackground: some View {
@@ -822,6 +909,56 @@ private struct MLHeader: View {
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24,
                                           style: .continuous))
         .ignoresSafeArea(edges: .top)
+    }
+}
+
+/// One segment of the Read | Reflect control. The active/done state fills gold
+/// with a check; otherwise a quiet white pill segment.
+private struct MLSegment: View {
+    let label: String
+    let icon: Lucide
+    let done: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                if done { Icon(.check, size: 11, color: ML.navy) }
+                else { Icon(icon, size: 12, color: ML.secondary) }
+                Text(label).font(.inter(12, .bold))
+            }
+            .foregroundStyle(done ? ML.navy : ML.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(done ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.clear),
+                        in: Capsule())
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .animation(.easeInOut(duration: 0.2), value: done)
+    }
+}
+
+/// The Watch button — matches the segmented control's height and voice; only
+/// shown when the module has a video.
+private struct MLWatchButton: View {
+    let done: Bool
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Icon(done ? .check : .play, size: 12, color: done ? ML.navy : ML.secondary)
+                Text("Watch").font(.inter(12, .bold))
+            }
+            .foregroundStyle(done ? ML.navy : ML.secondary)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(done ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+                        in: Capsule())
+            .overlay(Capsule().stroke(done ? Color.clear : ML.border, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .animation(.easeInOut(duration: 0.2), value: done)
     }
 }
 
@@ -858,26 +995,6 @@ private struct MLMetaPill: View {
         .padding(.vertical, 4)
         .background(Color.white, in: Capsule())
         .overlay(Capsule().stroke(ML.border, lineWidth: 1))
-    }
-}
-
-private struct MLChipView: View {
-    let chip: MLChipModel
-    var body: some View {
-        Button(action: chip.action) {
-            HStack(spacing: 4) {
-                if chip.done { Icon(.check, size: 10, color: ML.navy) }
-                Text(chip.label).font(.inter(10, .bold))
-            }
-            .foregroundStyle(chip.done ? ML.navy : ML.secondary)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 7)
-            .background(chip.done ? AnyShapeStyle(ML.gold) : AnyShapeStyle(Color.white),
-                        in: Capsule())
-            .overlay(Capsule().stroke(chip.done ? Color.clear : ML.border, lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
-        .animation(.easeInOut(duration: 0.2), value: chip.done)
     }
 }
 
@@ -982,14 +1099,19 @@ private struct MLSectionHeader: View {
     }
 }
 
-// MARK: - Sections ("SECTION n" kicker · serif heading · flowing body)
+// MARK: - Sections ("SECTION n" kicker · serif heading · Markdown body)
 
-private struct MLSection: Identifiable {
+/// A titled section of the lesson: a heading (from a Markdown `#`/`##` line) and
+/// the Markdown blocks that follow it, up to the next heading. A section without
+/// a heading (e.g. lead copy before the first heading) renders body-only.
+struct MLSection: Identifiable {
     let id: Int
     let heading: String?
-    let lines: [String]
+    let blocks: [MLBlock]
 }
 
+/// A rendered section: "SECTION n" kicker, the serif heading, then the section's
+/// Markdown body via the real renderer (tables, quotes, lists all resolved).
 private struct MLSectionBlock: View {
     let number: Int
     let section: MLSection
@@ -1010,32 +1132,10 @@ private struct MLSectionBlock: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 6)
             }
-            VStack(alignment: .leading, spacing: 14) {
-                ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
-                    MLBodyLine(line: line)
-                }
+            if !section.blocks.isEmpty {
+                MLMarkdownView(blocks: section.blocks)
+                    .padding(.top, section.heading == nil ? 0 : 16)
             }
-            .padding(.top, section.heading == nil ? 0 : 14)
-        }
-    }
-}
-
-private struct MLBodyLine: View {
-    let line: String
-    var body: some View {
-        if let bullet = mlBullet(line) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle().fill(ML.navy).frame(width: 5, height: 5).offset(y: -2)
-                Text(bullet)
-                    .font(.inter(15)).foregroundStyle(ML.bodyInk)
-                    .lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        } else {
-            Text(line)
-                .font(.inter(15)).foregroundStyle(ML.bodyInk)
-                .lineSpacing(6)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -1131,6 +1231,9 @@ private struct MLBottomGate: View {
     let moduleId: String
     let busy: Bool
     let error: String?
+    /// Extra bottom clearance so the CTA is never hidden behind the app tab bar
+    /// (which RootView overlays on top of this view while chrome is visible).
+    let bottomInset: CGFloat
     let onComplete: () -> Void
 
     var body: some View {
@@ -1150,8 +1253,12 @@ private struct MLBottomGate: View {
         }
         .padding(.horizontal, Nuru.S.screen)
         .padding(.top, Nuru.S.md)
-        .padding(.bottom, Nuru.S.screen)
-        .background(ML.cream.ignoresSafeArea(edges: .bottom))
+        .padding(.bottom, bottomInset)
+        .background(
+            ML.cream
+                .overlay(alignment: .top) { Rectangle().fill(ML.border).frame(height: 1) }
+                .ignoresSafeArea(edges: .bottom)
+        )
         .animation(.easeInOut(duration: 0.25), value: reachedEnd)
     }
 
@@ -1266,65 +1373,38 @@ private func sectionLabel(_ title: String?, _ index0: Int) -> String {
     title ?? "Section \(index0 + 1)"
 }
 
-// MARK: - Lesson parsing (lead paragraph · numbered headings → sections · bullets)
+// MARK: - Lesson parsing (Markdown blocks → lead + titled sections)
 
-/// Split lesson content into display paragraphs (blank-line or single-newline).
-private func mlParagraphs(_ s: String) -> [String] {
-    let lines = s.replacingOccurrences(of: "\r\n", with: "\n")
-        .components(separatedBy: "\n\n")
-        .flatMap { $0.components(separatedBy: "\n") }
-        .map { $0.trimmingCharacters(in: .whitespaces) }
-        .filter { !$0.isEmpty }
-    return lines.isEmpty ? [s] : lines
-}
-
-/// Recognise a leading "1. " / "12) " heading; returns (number, remainder).
-private func mlNumberedHeading(_ s: String) -> (Int, String)? {
-    var idx = s.startIndex
-    var digits = ""
-    while idx < s.endIndex, s[idx].isNumber { digits.append(s[idx]); idx = s.index(after: idx) }
-    guard !digits.isEmpty, let n = Int(digits), idx < s.endIndex else { return nil }
-    let sep = s[idx]
-    guard sep == "." || sep == ")" else { return nil }
-    let rest = s[s.index(after: idx)...].trimmingCharacters(in: .whitespaces)
-    // Treat as a heading only when it's a short title line, not a sentence.
-    guard !rest.isEmpty, rest.count <= 60 else { return nil }
-    return (n, rest)
-}
-
-/// Recognise a bullet line ("• …" or "- …"); returns the body without the marker.
-private func mlBullet(_ s: String) -> String? {
-    for marker in ["• ", "- ", "● ", "* "] where s.hasPrefix(marker) {
-        return String(s.dropFirst(marker.count))
-    }
-    return nil
-}
-
-/// Group the flat paragraphs into a lead paragraph + numbered sections.
-private func mlParse(_ content: String) -> (lead: String?, sections: [MLSection]) {
-    let paras = mlParagraphs(content)
-    var lead: String?
+/// Parse a page's Markdown body into a lead run (blocks before the first
+/// section heading) and a list of titled sections. A section begins at each
+/// `#`/`##`/`###` heading; its title is the heading text and its body is every
+/// block up to the next heading, rendered through the real Markdown renderer.
+/// A page with no headings yields all its blocks as the lead (no sections),
+/// which the reader then flows as one continuous body — still fully rendered.
+private func mlParse(_ content: String) -> (lead: [MLBlock], sections: [MLSection]) {
+    let blocks = MLMarkdown.parse(content)
+    var lead: [MLBlock] = []
     var sections: [MLSection] = []
-    var heading: String?
-    var lines: [String] = []
-    var open = false
+    var currentHeading: String?
+    var currentBlocks: [MLBlock] = []
+    var inSection = false
 
     func flush() {
-        if open, heading != nil || !lines.isEmpty {
-            sections.append(MLSection(id: sections.count, heading: heading, lines: lines))
+        if inSection {
+            sections.append(MLSection(id: sections.count, heading: currentHeading, blocks: currentBlocks))
         }
-        heading = nil; lines = []; open = false
+        currentHeading = nil; currentBlocks = []; inSection = false
     }
 
-    for (i, p) in paras.enumerated() {
-        if let (_, rest) = mlNumberedHeading(p) {
+    for block in blocks {
+        if case let .heading(_, text) = block {
             flush()
-            heading = rest; open = true
-        } else if i == 0 {
-            lead = p
+            currentHeading = text
+            inSection = true
+        } else if inSection {
+            currentBlocks.append(block)
         } else {
-            open = true
-            lines.append(p)
+            lead.append(block)
         }
     }
     flush()
