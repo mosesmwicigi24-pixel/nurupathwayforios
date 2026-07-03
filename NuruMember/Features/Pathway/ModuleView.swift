@@ -349,9 +349,14 @@ struct ModuleView: View {
     private func loaded(_ d: ModuleDetail) -> some View {
         let pages = mlPages(d)
         let pageIndex = min(max(currentPage, 0), pages.count - 1)   // defensive clamp
-        let parsedAll = pages.map { mlParse($0) }
+        // Each page is a titled SECTION: derive its title from a leading Markdown
+        // heading and parse the heading-stripped BODY so the title never renders
+        // twice. The server's page split is untouched — this is display-only.
+        let titledAll = pages.map { pageTitleAndBody($0) }
+        let parsedAll = titledAll.map { mlParse($0.body) }
         let sectionTotal = parsedAll.reduce(0) { $0 + $1.sections.count }
         let sectionOffset = parsedAll[..<pageIndex].reduce(0) { $0 + $1.sections.count }
+        let pageTitle = sectionLabel(titledAll[pageIndex].title, pageIndex)
         let video = mlVideo(d)
         return ScrollViewReader { proxy in
             VStack(spacing: 0) {
@@ -366,7 +371,8 @@ struct ModuleView: View {
                         .transition(.opacity)
                 }
                 reader(d, pages: pages, parsed: parsedAll[pageIndex],
-                       sectionOffset: sectionOffset, video: video, pageIndex: pageIndex)
+                       sectionTitle: pageTitle, sectionOffset: sectionOffset,
+                       video: video, pageIndex: pageIndex)
                 if pages.count > 1 && !chromeHidden {
                     MLPagerBar(pageCount: pages.count, current: pageIndex) {
                         goToPage($0, pageCount: pages.count)
@@ -400,12 +406,14 @@ struct ModuleView: View {
     /// but never snap.
     private func reader(_ d: ModuleDetail, pages: [String],
                         parsed: (lead: String?, sections: [MLSection]),
-                        sectionOffset: Int, video: WelcomeVideo?,
-                        pageIndex: Int) -> some View {
+                        sectionTitle: String, sectionOffset: Int,
+                        video: WelcomeVideo?, pageIndex: Int) -> some View {
         GeometryReader { viewport in
             ZStack {
                 ScrollView(showsIndicators: false) {
-                    lessonBody(d, parsed: parsed, sectionOffset: sectionOffset,
+                    lessonBody(d, parsed: parsed, sectionTitle: sectionTitle,
+                               sectionOffset: sectionOffset,
+                               pageIndex: pageIndex, pageCount: pages.count,
                                video: pageIndex == 0 ? video : nil,
                                isFirstPage: pageIndex == 0,
                                isLastPage: pageIndex == pages.count - 1)
@@ -448,11 +456,20 @@ struct ModuleView: View {
 
     private func lessonBody(_ d: ModuleDetail,
                             parsed: (lead: String?, sections: [MLSection]),
+                            sectionTitle: String,
                             sectionOffset: Int,
+                            pageIndex: Int,
+                            pageCount: Int,
                             video: WelcomeVideo?,
                             isFirstPage: Bool,
                             isLastPage: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Titled SECTION headline — the derived heading (or "Section N"), with
+            // an unobtrusive "n of m" for navigation context. The generic
+            // "Page N of M" chrome is retired in favour of this title.
+            MLSectionHeader(title: sectionTitle,
+                            index0: pageIndex, count: pageCount)
+                .padding(.bottom, video == nil && parsed.lead == nil ? 20 : 16)
             if let video {
                 MLVideoCard(video: video, playing: $playingVideo)
                     .id("video")
@@ -597,7 +614,7 @@ struct ModuleView: View {
         guard pageCount > 1, page > 1 else { return }
         currentPage = page - 1      // no animation — the reader opens here
         pageFraction = 0
-        showResumeNote("Welcome back — picking up on page \(page)")
+        showResumeNote("Welcome back — picking up on section \(page)")
     }
 
     private func showResumeNote(_ text: String) {
@@ -675,7 +692,7 @@ private struct MLPageWhisper: View {
             .background(ML.surface.opacity(0.92), in: Capsule())
             .overlay(Capsule().stroke(ML.border, lineWidth: 1))
             .allowsHitTesting(false)
-            .accessibilityLabel("Page \(page) of \(count)")
+            .accessibilityLabel("Section \(page) of \(count)")
     }
 }
 
@@ -696,7 +713,7 @@ private struct MLPagerBar: View {
                     }
                 } else {
                     // Too many pills to fit — a compact label keeps orientation.
-                    Text("Page \(current + 1) of \(pageCount)")
+                    Text("Section \(current + 1) of \(pageCount)")
                         .font(.inter(12, .semibold)).foregroundStyle(ML.navy)
                 }
             }
@@ -718,7 +735,7 @@ private struct MLPagerBar: View {
                 .overlay(Circle().stroke(i == current ? Color.clear : ML.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
-        .accessibilityLabel("Page \(i + 1) of \(pageCount)")
+        .accessibilityLabel("Section \(i + 1) of \(pageCount)")
         .accessibilityAddTraits(i == current ? [.isSelected] : [])
     }
 
@@ -927,6 +944,41 @@ private struct MLScriptureCard: View {
         .background(ML.surface)
         .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+}
+
+// MARK: - Section header (the titled headline that replaces "Page N of M")
+
+/// The headline for the current page-as-section: a small "SECTION · n of m"
+/// kicker for navigation context, then the derived title as a prominent serif
+/// heading. When there are multiple pages the kicker carries the "n of m";
+/// a single page shows just "SECTION".
+private struct MLSectionHeader: View {
+    let title: String
+    let index0: Int
+    let count: Int
+
+    private var kicker: String {
+        count > 1 ? "SECTION · \(index0 + 1) OF \(count)" : "SECTION"
+    }
+    private var a11y: String {
+        count > 1 ? "Section \(index0 + 1) of \(count): \(title)" : title
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(kicker)
+                .font(.inter(10, .bold)).kerning(1.8)
+                .foregroundStyle(ML.kicker)
+            Text(title)
+                .font(.fraunces(23, .semibold)).kerning(-0.5)
+                .foregroundStyle(ML.navy)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityLabel(a11y)
     }
 }
 
@@ -1174,6 +1226,44 @@ private func mlPages(_ d: ModuleDetail) -> [String] {
 private func mlReadMinutes(_ pages: [String]) -> Int {
     let words = pages.joined(separator: " ").split(whereSeparator: \.isWhitespace).count
     return max(1, Int((Double(words) / 200.0).rounded()))
+}
+
+// MARK: - Section titles (client-derived — each page is a titled SECTION)
+
+/// A page's first line is treated as its section title when it's a Markdown ATX
+/// heading (`#`…`######` + space(s) + text). That heading line — and one blank
+/// line immediately after it — is stripped from the returned body, so the title
+/// isn't rendered twice. Otherwise `title == nil` and the body is the page
+/// verbatim (internal spacing preserved). Display-only; the server's page split
+/// is untouched.
+private let mlHeadingRegex = try! NSRegularExpression(pattern: "^#{1,6}[ \\t]+(.+?)[ \\t]*$")
+
+private func pageTitleAndBody(_ page: String) -> (title: String?, body: String) {
+    let trimmed = page.trimmingCharacters(in: .whitespacesAndNewlines)
+    // Isolate the first non-empty line without disturbing the rest of the page.
+    let lines = trimmed.components(separatedBy: "\n")
+    guard let firstIdx = lines.firstIndex(where: { !$0.trimmingCharacters(in: .whitespaces).isEmpty }) else {
+        return (nil, page)
+    }
+    let firstLine = lines[firstIdx].trimmingCharacters(in: .whitespaces)
+    let range = NSRange(firstLine.startIndex..<firstLine.endIndex, in: firstLine)
+    guard let match = mlHeadingRegex.firstMatch(in: firstLine, range: range),
+          let capture = Range(match.range(at: 1), in: firstLine) else {
+        return (nil, page)
+    }
+    let title = String(firstLine[capture])
+    // Drop the heading line, then one immediately-following blank line.
+    var rest = Array(lines[(firstIdx + 1)...])
+    if let first = rest.first, first.trimmingCharacters(in: .whitespaces).isEmpty {
+        rest.removeFirst()
+    }
+    return (title, rest.joined(separator: "\n"))
+}
+
+/// The section's headline for page `index0` (0-based) — the derived title, or a
+/// numbered fallback when the page carries no heading.
+private func sectionLabel(_ title: String?, _ index0: Int) -> String {
+    title ?? "Section \(index0 + 1)"
 }
 
 // MARK: - Lesson parsing (lead paragraph · numbered headings → sections · bullets)
