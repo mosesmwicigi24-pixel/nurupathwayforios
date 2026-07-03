@@ -266,13 +266,13 @@ private struct NuruTabBar: View {
         .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1) }
     }
 
-    /// Bottom clearance: tuck the labels right up to the home indicator — it
-    /// overlays content harmlessly, so we reclaim nearly all of that inset
-    /// instead of stacking a fat band of dead navy under the labels.
+    /// Bottom clearance: labels sit flush against the home indicator — it
+    /// overlays content harmlessly, so we reclaim essentially the whole inset
+    /// and leave no dead navy under the names.
     static var safeBottom: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
-        return inset > 0 ? max(inset - 26, 4) : Nuru.S.sm
+        return inset > 0 ? 2 : Nuru.S.xs
     }
 }
 
