@@ -82,7 +82,14 @@ final class RadioCenter: ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
         let item = AVPlayerItem(url: url)
+        if p.live {
+            // Live radio: hug the live edge. AVPlayer's default anti-stall
+            // buffering is VOD-tuned and parks listeners 5-15s behind the
+            // broadcast; a ~2s forward buffer keeps latency radio-grade.
+            item.preferredForwardBufferDuration = 2
+        }
         let avPlayer = AVPlayer(playerItem: item)
+        if p.live { avPlayer.automaticallyWaitsToMinimizeStalling = false }
         player = avPlayer
         observe(item: item, of: avPlayer, live: p.live)
         registerRemoteCommandsIfNeeded()
