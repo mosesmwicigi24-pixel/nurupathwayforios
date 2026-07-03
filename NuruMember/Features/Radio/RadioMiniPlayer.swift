@@ -84,7 +84,7 @@ struct RadioMiniPlayer: View {
     /// cutout and the chin below it, the card now floats FREE of the island —
     /// a detached black capsule dropped well below the status area, where it
     /// neither fights the hardware nor crowds the clock.
-    static var dockTop: CGFloat { topInset - 34 }  // tucked up under the island — its top
+    static var dockTop: CGFloat { topInset - 38 }  // tucked up under the island — its top
                                                    // corners vanish into the cutout, chin shows
     static let dockHeight: CGFloat = 30
     static let dockWidth: CGFloat = 96
@@ -101,8 +101,22 @@ struct RadioMiniPlayer: View {
         .animation(.spring(response: 0.34, dampingFraction: 0.65), value: center.program?.id)
     }
 
-    // ── Free-floating capsule (notch / older devices) ──────────────────
+    // ── The capsule — body tucks behind the cutout, controls ride in front ──
     private var floatingCapsule: some View {
+        VStack(spacing: 0) {
+            Spacer(minLength: 0)
+            capsuleRow.padding(.bottom, 2)
+        }
+        .frame(height: 46)   // upper half swallowed by the island; row stays visible
+        .padding(.leading, 8)
+        .padding(.trailing, 3)
+        .background(Color.black, in: Capsule())
+        .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
+        .transition(.offset(y: -24).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
+        .accessibilityHint("Nuru Radio is playing — opens the full player")
+    }
+
+    private var capsuleRow: some View {
         HStack(spacing: 8) {
             Button {
                 Haptics.tap()
@@ -111,7 +125,7 @@ struct RadioMiniPlayer: View {
                 HStack(spacing: 8) {
                     pulsingDot
                     // Half the height, twice the breadth — a low, wide ribbon.
-                    RadioMiniWave(playing: center.playing, count: 19, height: 8)
+                    RadioMiniWave(playing: center.playing, count: 18, height: 8)
                 }
             }
             .buttonStyle(.pressable)
@@ -133,13 +147,6 @@ struct RadioMiniPlayer: View {
             .animation(.easeInOut(duration: 0.2), value: center.playing)
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
-        .padding(.vertical, 4)
-        .padding(.leading, 8)
-        .padding(.trailing, 3)
-        .background(Color.black, in: Capsule())
-        .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
-        .transition(.offset(y: -24).combined(with: .opacity).combined(with: .scale(scale: 0.9)))
-        .accessibilityHint("Nuru Radio is playing — opens the full player")
     }
 
     /// 6pt red dot, breathing 1→0.2→1 over ~1s (static under Reduce Motion).
