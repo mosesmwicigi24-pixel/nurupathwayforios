@@ -108,7 +108,7 @@ struct RadioMiniPlayer: View {
     // and black meets black. Wing width is capped so the tips clear the clock
     // (~100pt) and the wifi/battery cluster (~345pt+) on the Pro Max.
     private static let wingWidth: CGFloat = 48
-    private static let holeSpan: CGFloat = 102
+    private static let holeSpan: CGFloat = 82
 
     private var floatingCapsule: some View {
         HStack(spacing: 0) {
@@ -120,7 +120,8 @@ struct RadioMiniPlayer: View {
                     pulsingDot
                     RadioMiniWave(playing: center.playing, count: 9, height: 8)
                 }
-                .frame(width: Self.wingWidth, height: 40)
+                .padding(.leading, 10)
+                .frame(width: Self.wingWidth, height: 40, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -138,7 +139,8 @@ struct RadioMiniPlayer: View {
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: center.playing ? 0 : 1)
-                    .frame(width: Self.wingWidth, height: 40)
+                    .padding(.trailing, 10)
+                    .frame(width: Self.wingWidth, height: 40, alignment: .trailing)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
