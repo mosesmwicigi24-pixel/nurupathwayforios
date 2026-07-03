@@ -109,7 +109,8 @@ struct RadioMiniPlayer: View {
             } label: {
                 HStack(spacing: 8) {
                     pulsingDot
-                    RadioMiniWave(playing: center.playing, count: 10, height: 16)
+                    // Half the height, twice the breadth — a low, wide ribbon.
+                    RadioMiniWave(playing: center.playing, count: 20, height: 8)
                 }
             }
             .buttonStyle(.pressable)
@@ -120,19 +121,19 @@ struct RadioMiniPlayer: View {
                 center.togglePlay()
             } label: {
                 Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: center.playing ? 0 : 1)
-                    .frame(width: 28, height: 28)
+                    .frame(width: 24, height: 24)
                     .contentShape(Circle())
             }
             .buttonStyle(.pressable)
             .animation(.easeInOut(duration: 0.2), value: center.playing)
             .accessibilityLabel(center.playing ? "Pause radio" : "Play radio")
         }
-        .padding(.vertical, 6)
-        .padding(.leading, 12)
+        .padding(.vertical, 4)
+        .padding(.leading, 14)
         .padding(.trailing, 6)
         .background(Color.black, in: Capsule())
         .shadow(color: .black.opacity(0.7), radius: 14, y: 12)
