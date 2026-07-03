@@ -260,19 +260,19 @@ private struct NuruTabBar: View {
                 .accessibilityAddTraits(focused ? [.isSelected] : [])
             }
         }
-        .padding(.top, 6)
+        .padding(.top, 5)
         .padding(.bottom, Self.safeBottom)
         .background(Nuru.navy)
         .overlay(alignment: .top) { Rectangle().fill(Color.white.opacity(0.10)).frame(height: 1) }
     }
 
-    /// Bottom clearance: tuck the labels close to the home indicator — the
-    /// indicator overlays content harmlessly, so we reclaim most of that inset
-    /// instead of stacking a full 34pt of dead navy under the labels.
+    /// Bottom clearance: tuck the labels right up to the home indicator — it
+    /// overlays content harmlessly, so we reclaim nearly all of that inset
+    /// instead of stacking a fat band of dead navy under the labels.
     static var safeBottom: CGFloat {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         let inset = scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
-        return inset > 0 ? max(inset - 16, 10) : Nuru.S.md
+        return inset > 0 ? max(inset - 26, 4) : Nuru.S.sm
     }
 }
 
