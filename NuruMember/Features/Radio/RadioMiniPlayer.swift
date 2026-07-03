@@ -84,7 +84,7 @@ struct RadioMiniPlayer: View {
     /// cutout and the chin below it, the card now floats FREE of the island —
     /// a detached black capsule dropped well below the status area, where it
     /// neither fights the hardware nor crowds the clock.
-    static var dockTop: CGFloat { topInset + 1 }   // lifted — snug under the status area
+    static var dockTop: CGFloat { topInset - 14 }  // lifted into the status band, right under the island
     static let dockHeight: CGFloat = 30
     static let dockWidth: CGFloat = 96
 
