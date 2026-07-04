@@ -158,6 +158,21 @@ extension MemberAPI {
     static func scoreDetail(_ pillar: ScorePillar) async throws -> ScoreBreakdown {
         try await APIClient.shared.get("me/scores/\(pillar.rawValue)", as: ScoreBreakdown.self)
     }
+
+    // MARK: Change password (POST /me/password)
+
+    /// Change the account password. The server verifies the CURRENT password
+    /// (argon2id) before accepting the new one, and revokes every refresh-token
+    /// family on success — so other signed-in devices are logged out (identity/
+    /// service.ts changePassword). A wrong current password comes back as 403.
+    /// Body is snake_cased by APIClient's encoder: current_password / new_password.
+    static func changePassword(current: String, new: String) async throws {
+        struct Body: Encodable { let currentPassword: String; let newPassword: String }
+        _ = try await APIClient.shared.post(
+            "me/password",
+            body: Body(currentPassword: current, newPassword: new),
+            as: EmptyResponse.self)
+    }
 }
 
 // MARK: - Environment mirror

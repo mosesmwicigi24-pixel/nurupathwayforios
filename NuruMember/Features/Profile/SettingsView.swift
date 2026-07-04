@@ -400,58 +400,115 @@ private enum SHelpSheet: String, Identifiable {
 // MARK: - Change password sheet (POST /me/password)
 
 private struct PasswordChangeSheet: View {
+    private static let minLength = 8
+
     @Environment(\.dismiss) private var dismiss
     @State private var current = ""
     @State private var new1 = ""
     @State private var new2 = ""
     @State private var saving = false
     @State private var error: String?
+    @State private var succeeded = false
 
     var body: some View {
         PSheetShell(title: "Change password") {
-            VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                secure("Current password", $current)
-                secure("New password", $new1)
-                secure("Confirm new password", $new2)
-                Text("Use at least 8 characters with a mix of letters, numbers and a symbol.")
-                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
-                    .padding(.top, Nuru.S.xs)
-                if let error {
-                    Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                GoldSheetButton(title: "Update password", busy: saving) { Task { await save() } }
-                    .padding(.top, Nuru.S.xs)
+            if succeeded {
+                successView
+            } else {
+                formView
             }
         }
         .presentationDetents([.medium])
     }
 
+    // Clear confirmation — the member sees exactly what happened before dismissing.
+    private var successView: some View {
+        VStack(spacing: Nuru.S.sm) {
+            Icon(.checkCircle2, size: 40, color: Nuru.success)
+                .padding(.top, Nuru.S.sm)
+            Text("Your password has been changed.")
+                .font(.fraunces(19, .medium)).foregroundStyle(Nuru.navy)
+                .multilineTextAlignment(.center)
+            Text("Use your new password next time you sign in.")
+                .font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))
+                .multilineTextAlignment(.center)
+            GoldSheetButton(title: "Done", busy: false) { dismiss() }
+                .padding(.top, Nuru.S.xs)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var formView: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            secure("Current password", $current)
+            secure("New password", $new1)
+            secure("Confirm new password", $new2)
+            Text("Use at least \(Self.minLength) characters with a mix of letters, numbers and a symbol.")
+                .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                .padding(.top, Nuru.S.xs)
+            if let error {
+                Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            GoldSheetButton(title: "Change password", busy: saving) { Task { await save() } }
+                .padding(.top, Nuru.S.xs)
+        }
+    }
+
     private func secure(_ placeholder: String, _ binding: Binding<String>) -> some View {
-        SecureField(placeholder, text: binding)
-            .font(.inter(14)).foregroundStyle(Nuru.navy)
-            .padding(.horizontal, Nuru.S.base).frame(height: 48)
-            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        PasswordField(placeholder: placeholder, text: binding) { error = nil }
     }
 
     private func save() async {
         guard !current.isEmpty else { error = "Enter your current password."; return }
-        guard new1.count >= 8 else { error = "New password must be at least 8 characters."; return }
+        guard new1.count >= Self.minLength else {
+            error = "New password must be at least \(Self.minLength) characters."; return
+        }
         guard new1 == new2 else { error = "New passwords don't match."; return }
         saving = true; error = nil
         defer { saving = false }
-        struct Body: Encodable { let currentPassword: String; let newPassword: String }
         do {
-            _ = try await APIClient.shared.post("me/password",
-                                                body: Body(currentPassword: current, newPassword: new1),
-                                                as: EmptyResponse.self)
+            try await MemberAPI.changePassword(current: current, new: new1)
             Haptics.success()
-            dismiss()
+            succeeded = true
         } catch {
             Haptics.error()
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't change the password — check your current one."
         }
+    }
+}
+
+/// Secure text field with a show/hide toggle — matches the sheet's field styling.
+private struct PasswordField: View {
+    let placeholder: String
+    @Binding var text: String
+    var onEdit: () -> Void = {}
+    @State private var revealed = false
+
+    var body: some View {
+        HStack(spacing: Nuru.S.xs) {
+            Group {
+                if revealed {
+                    TextField(placeholder, text: $text)
+                } else {
+                    SecureField(placeholder, text: $text)
+                }
+            }
+            .font(.inter(14)).foregroundStyle(Nuru.navy)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled(true)
+            .onChange(of: text) { _, _ in onEdit() }
+
+            Button {
+                revealed.toggle()
+            } label: {
+                Icon(revealed ? .eyeOff : .eye, size: 18, color: Color(hex: 0x5B6472))
+            }
+            .accessibilityLabel(revealed ? "Hide password" : "Show password")
+        }
+        .padding(.horizontal, Nuru.S.base).frame(height: 48)
+        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }
 
