@@ -343,7 +343,7 @@ private struct PathwayHubHeader: View {
                 continueCard.padding(.top, 16)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 20)
+            .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 20)
         }
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
         .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
@@ -894,8 +894,15 @@ private struct PWSurrenderFigure: View {
     private let img = "https://images.unsplash.com/photo-1510590337019-5ef8d3d32116?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
     var body: some View {
         ZStack(alignment: .bottomLeading) {
+            // Overlay-on-Color.clear: a bare scaledToFill reports the image's
+            // own fill width and inflates the whole screen column past the
+            // phone's edges (the radio-screen bug, same family).
             if let u = URL(string: img) {
-                CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                Color.clear
+                    .overlay {
+                        CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                    }
+                    .clipped()
             }
             LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.15), Color(hex: 0x081424, alpha: 0.55), Color(hex: 0x081424, alpha: 0.90)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 2) {
@@ -944,8 +951,14 @@ private struct PathwaySummitCard: View {
 
     private var card: some View {
         ZStack {
+            // Overlay-on-Color.clear so the artwork's fill width can't inflate
+            // the card (and with it the whole Pathway column) past the screen.
             if let u = URL(string: img) {
-                CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                Color.clear
+                    .overlay {
+                        CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
+                    }
+                    .clipped()
             }
             // Navy scrim: 0x26 → 0x73 → 0xF2 of 0A1628, top → bottom.
             LinearGradient(colors: [Color(hex: 0x0A1628, alpha: 0.15), Color(hex: 0x0A1628, alpha: 0.45), Color(hex: 0x0A1628, alpha: 0.95)], startPoint: .top, endPoint: .bottom)
@@ -1085,7 +1098,7 @@ struct LevelsMapView: View {
                     PWStatCard(label: "Offline", value: "Ready")
                 }.padding(.top, 24)
             }
-            .padding(.horizontal, 20).padding(.top, 60).padding(.bottom, 24)
+            .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 24)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing))

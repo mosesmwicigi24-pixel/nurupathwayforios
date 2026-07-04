@@ -449,7 +449,7 @@ struct HomeView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.top, 60)   // clears the status bar / Dynamic Island (header is full-bleed)
+        .padding(.top, NuruSafeArea.top + 8)   // past the paper status stripe on EVERY phone
         .padding(.bottom, 16)
         .background(
             LinearGradient(colors: [headerPalette.top, headerPalette.bottom], startPoint: .topLeading, endPoint: .bottomTrailing)
