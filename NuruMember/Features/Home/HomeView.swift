@@ -1524,7 +1524,7 @@ struct HomeView: View {
 
     private var cohortSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HomeSectionLabel(text: "Your cohort")
+            HomeSectionLabel(text: "Your cell")
             cohortCard
         }
     }

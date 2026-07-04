@@ -357,7 +357,7 @@ struct GivingStatementView: View {
             }
             Spacer(minLength: Nuru.S.sm)
             VStack(alignment: .trailing, spacing: 5) {
-                Text(ksh(g.amountMinor / 100))
+                Text(money(g.amountMinor, g.currency))
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 statusChip(g.status)
             }
@@ -498,6 +498,17 @@ private enum StatementPDF {
 // MARK: - Shared giving atoms (used by the receipt screen too)
 
 func ksh(_ n: Int) -> String { "KSh \(n.formatted(.number.grouping(.automatic)))" }
+
+/// Currency-AWARE amount from minor units — PayPal gifts settle in USD
+/// server-side; formatting everything as "KSh" printed the wrong symbol on
+/// USD gifts while the Currency detail row said USD. Mirrors Android money().
+func money(_ minor: Int, _ currency: String?) -> String {
+    switch currency?.uppercased() {
+    case nil, "", "KES": return ksh(minor / 100)
+    case "USD": return "$" + String(format: "%.2f", Double(minor) / 100.0)
+    case let c?: return c + " " + String(format: "%.2f", Double(minor) / 100.0)
+    }
+}
 
 @ViewBuilder
 func statusChip(_ status: String) -> some View {

@@ -35,7 +35,7 @@ private enum NUR {
 
     struct Suggestion { let label: String; let color: Color }
     static let suggestions = [
-        Suggestion(label: "Summarize my cohort", color: gold),
+        Suggestion(label: "Summarize my cell", color: gold),
         Suggestion(label: "Draft an encouragement", color: purple),
         Suggestion(label: "Find prayer requests", color: green),
         Suggestion(label: "Plan my quiet time", color: Color(hex: 0x0EA5E9)),

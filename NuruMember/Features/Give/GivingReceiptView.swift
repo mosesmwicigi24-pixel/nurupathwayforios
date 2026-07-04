@@ -105,7 +105,7 @@ struct GivingReceiptView: View {
                 // Amount ceremony
                 VStack(spacing: Nuru.S.sm) {
                     ZStack { Circle().fill(Nuru.successBg).frame(width: 64, height: 64); Icon(.badgeCheck, size: 30, color: Nuru.success) }
-                    Text(ksh(d.amountMinor / 100)).font(.fraunces(36, .bold)).foregroundStyle(Nuru.ink)
+                    Text(money(d.amountMinor, d.currency)).font(.fraunces(36, .bold)).foregroundStyle(Nuru.ink)
                     Text("to \(d.fund.capitalized)").font(.nBody).foregroundStyle(Nuru.muted)
                     statusChip(d.status)
                 }
@@ -136,7 +136,7 @@ struct GivingReceiptView: View {
                                     .frame(width: 56, alignment: .leading)
                                 Text(e.account).font(.nCaption).foregroundStyle(Nuru.ink)
                                 Spacer()
-                                Text(ksh(e.amountMinor / 100)).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                                Text(money(e.amountMinor, d.currency)).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
                             }
                             .padding(.vertical, 4)
                         }
