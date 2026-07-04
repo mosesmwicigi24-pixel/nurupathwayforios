@@ -70,7 +70,8 @@ final class HomeViewModel: ObservableObject {
         async let radio = try? MemberAPI.radioNowPlaying()
 
         self.pathway = await pathway
-        self.streak = await ach?.streak.current ?? 0
+        let achievements = await ach
+        self.streak = achievements?.streak.current ?? 0
         self.unread = await unread ?? 0
         if let g = await greet, !g.isEmpty { greetingLine = g }
         self.nextAction = await next ?? nil
@@ -102,6 +103,43 @@ final class HomeViewModel: ObservableObject {
 
         if self.pathway == nil { error = "Couldn't load your dashboard." }
         loading = false
+
+        celebrateMilestones(achievements)
+    }
+
+    // MARK: Celebrations — server-truth milestones only (mirrors Android).
+    // Every fact below came back from the API this load; the CelebrationCenter
+    // keys make each moment once-only across launches.
+    private func celebrateMilestones(_ ach: Achievements?) {
+        // All three rhythm disciplines done today (server ticks each from real acts).
+        if rhythm.doneCount == 3 {
+            CelebrationCenter.shared.fire(
+                key: "rhythm-\(Self.isoDay(Date()))",
+                title: "Today's rhythm complete",
+                subtitle: "Prayer, Word and reflection — all three, today. 🎉")
+        }
+        // Streak milestones — the server's current streak, exact marks only.
+        if [3, 7, 14, 21, 30, 50, 100].contains(streak) {
+            CelebrationCenter.shared.fire(
+                key: "streak-\(streak)",
+                title: "\(streak)-day streak!",
+                subtitle: "Day by day, grace upon grace. Keep walking.")
+        }
+        // Newly-awarded badges — diff earned codes against what we've celebrated.
+        // The FIRST observation seeds silently so a fresh install doesn't replay
+        // the member's whole badge history.
+        if let earned = ach?.badges {
+            let defaults = UserDefaults.standard
+            if let seen = defaults.stringArray(forKey: "seen-badges") {
+                for badge in earned where !seen.contains(badge.code) {
+                    CelebrationCenter.shared.fire(
+                        key: "badge-\(badge.code)",
+                        title: "\(badge.name) earned!",
+                        subtitle: "A new badge marks real growth — well done.")
+                }
+            }
+            defaults.set(earned.map(\.code), forKey: "seen-badges")
+        }
     }
 
     // Rhythm — read-only on this surface: the server ticks each rhythm from

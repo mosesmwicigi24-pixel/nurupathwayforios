@@ -904,6 +904,16 @@ struct GivingView: View {
     }
 
     private func endCeremony() {
+        // A server-confirmed gift gets its warm moment as the ceremony closes
+        // (the fullScreenCover would sit over the root-mounted CelebrationHost,
+        // so we fire on the way out). Keyed by the real transaction/receipt ref
+        // so each gift celebrates exactly once.
+        if ceremony == "success", let ref = pendingTxId ?? successRef {
+            CelebrationCenter.shared.fire(
+                key: "gift-\(ref)",
+                title: "Thank you for sowing",
+                subtitle: "Every gift carries the gospel further.")
+        }
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil
         paypalOrderId = nil

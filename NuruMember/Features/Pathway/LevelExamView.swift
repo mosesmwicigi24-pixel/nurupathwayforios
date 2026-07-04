@@ -656,7 +656,7 @@ private struct ExamPassScreen: View {
                 .padding(.bottom, Nuru.S.lg)
             }
             // Confetti over the whole ceremony — fires on arrival, once.
-            ExamConfetti().allowsHitTesting(false)
+            CelebrationConfetti().allowsHitTesting(false)
         }
         .onAppear {
             Haptics.success()
@@ -791,68 +791,5 @@ private struct ExamReviewScreen: View {
     }
 }
 
-// MARK: - Confetti (gold/white burst over the pass ceremony)
-
-/// A one-shot confetti burst tuned for the deep-navy pass screen. Learns from
-/// the plans-confetti bug: the flight is kicked on the NEXT runloop (never in
-/// the same state transaction that inserts the view, which SwiftUI would
-/// coalesce to the end state → invisible), and pieces stay opaque through most
-/// of the fall, fading only at the tail. Honors Reduce Motion (renders nothing).
-private struct ExamConfetti: View {
-    private struct Piece: Identifiable {
-        let id: Int
-        let x: CGFloat        // 0…1 horizontal origin
-        let dx: CGFloat, dy: CGFloat, w: CGFloat, h: CGFloat
-        let spin: Double
-        let color: Color
-        let delay: Double
-    }
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var fly = false
-    @State private var fade = false
-
-    // Gold family + white + amber — all legible on navy (no dark pieces).
-    private let pieces: [Piece] = {
-        let palette: [Color] = [Color(hex: 0xC9A227), Color(hex: 0xE6C068),
-                                .white, Color(hex: 0xF5D77A)]
-        return (0..<90).map { i in
-            Piece(id: i,
-                  x: CGFloat.random(in: 0.03...0.97),
-                  dx: CGFloat.random(in: -80...80),
-                  dy: CGFloat.random(in: 560...980),
-                  w: CGFloat.random(in: 5...9),
-                  h: CGFloat.random(in: 9...16),
-                  spin: Double.random(in: -900...900),
-                  color: palette[i % palette.count],
-                  delay: Double.random(in: 0...0.6))
-        }
-    }()
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .top) {
-                ForEach(pieces) { p in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(p.color)
-                        .frame(width: p.w, height: p.h)
-                        .rotationEffect(.degrees(fly ? p.spin : 0))
-                        .position(x: geo.size.width * p.x + (fly ? p.dx : 0),
-                                  y: fly ? p.dy : -20)
-                        .opacity(fade ? 0 : 1)
-                        .animation(.easeOut(duration: 3.4).delay(p.delay), value: fly)
-                        .animation(.easeIn(duration: 0.7).delay(3.0 + p.delay), value: fade)
-                }
-            }
-        }
-        .ignoresSafeArea()
-        .onAppear {
-            guard !reduceMotion else { return }
-            // Kick on the next runloop so the fall actually animates.
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 60_000_000)
-                fly = true
-                fade = true
-            }
-        }
-    }
-}
+// (Confetti: the pass ceremony reuses the ONE shared emitter —
+// CelebrationConfetti in Features/Shared/CelebrationCenter.swift.)

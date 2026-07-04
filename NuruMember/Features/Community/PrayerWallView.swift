@@ -300,6 +300,13 @@ private struct PrayerComposeSheet: View {
             try await MemberAPI.createPrayerWallPost(title: title.trimmed.isEmpty ? nil : title.trimmed, body: text)
             Haptics.success()
             await onPosted(); dismiss()
+            // Quiet gold banner (no confetti) once the server accepted the post —
+            // unique key per post so every prayer gets its moment.
+            CelebrationCenter.shared.fire(
+                key: "prayer-\(UUID().uuidString)",
+                title: "Your prayer is on the wall",
+                subtitle: "Your cell is standing with you 🙏",
+                confetti: false)
         } catch {
             Haptics.error()
             err = (error as? APIError)?.errorDescription ?? "Couldn't post. Try again."; busy = false

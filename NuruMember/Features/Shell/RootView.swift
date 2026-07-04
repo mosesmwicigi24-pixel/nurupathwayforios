@@ -140,6 +140,10 @@ struct RootView: View {
             }
         }
         .animation(.easeInOut(duration: 0.22), value: tabs.chromeHidden)
+        // Celebration layer — server-milestone confetti cards + gold banners
+        // (rhythm complete, streak marks, new badges, prayer posted, gift
+        // confirmed). Mounted ONCE here, above every tab and the tab bar.
+        .overlay { CelebrationHost() }
         .onChange(of: tabs.selected) { _, t in
             loaded.insert(t)
             // Screen telemetry (POST /me/activity/screens) — silent by contract.

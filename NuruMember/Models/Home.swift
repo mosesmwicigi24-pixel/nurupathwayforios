@@ -2,10 +2,13 @@
 // packages/mobile/src/api/types.ts. Decoded with `.convertFromSnakeCase`.
 import Foundation
 
-/// GET /me/achievements — badges + streak (only the streak is used on Home).
+/// GET /me/achievements — badges + streak. Home uses the streak count and
+/// diffs the earned badge codes to celebrate newly-awarded badges.
 struct Achievements: Codable, Sendable {
     struct Streak: Codable, Sendable { let current: Int; let longest: Int }
+    struct Badge: Codable, Sendable { let code: String; let name: String }
     let streak: Streak
+    let badges: [Badge]?
 }
 
 /// GET /me/home/verse — the tailored "Verse for today".

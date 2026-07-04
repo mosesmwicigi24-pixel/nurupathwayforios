@@ -480,69 +480,8 @@ private let quizGoldGradient = LinearGradient(
     colors: [Color(hex: 0xC9A227), Color(hex: 0xB6862F)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
-// MARK: - Confetti (gold/white burst over the module-quiz pass ceremony)
-
-/// The module-quiz counterpart of LevelExamView's ExamConfetti (private there, so
-/// mirrored here). Same one-shot pattern: the flight is kicked on the NEXT runloop
-/// (never in the same transaction that inserts the view — SwiftUI would coalesce it
-/// to the end state → invisible), pieces stay opaque through most of the fall and
-/// fade only at the tail, and Reduce Motion renders nothing.
-private struct QuizConfetti: View {
-    private struct Piece: Identifiable {
-        let id: Int
-        let x: CGFloat
-        let dx: CGFloat, dy: CGFloat, w: CGFloat, h: CGFloat
-        let spin: Double
-        let color: Color
-        let delay: Double
-    }
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var fly = false
-    @State private var fade = false
-
-    private let pieces: [Piece] = {
-        let palette: [Color] = [Color(hex: 0xC9A227), Color(hex: 0xE6C068),
-                                .white, Color(hex: 0xF5D77A)]
-        return (0..<90).map { i in
-            Piece(id: i,
-                  x: CGFloat.random(in: 0.03...0.97),
-                  dx: CGFloat.random(in: -80...80),
-                  dy: CGFloat.random(in: 560...980),
-                  w: CGFloat.random(in: 5...9),
-                  h: CGFloat.random(in: 9...16),
-                  spin: Double.random(in: -900...900),
-                  color: palette[i % palette.count],
-                  delay: Double.random(in: 0...0.6))
-        }
-    }()
-
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .top) {
-                ForEach(pieces) { p in
-                    RoundedRectangle(cornerRadius: 2)
-                        .fill(p.color)
-                        .frame(width: p.w, height: p.h)
-                        .rotationEffect(.degrees(fly ? p.spin : 0))
-                        .position(x: geo.size.width * p.x + (fly ? p.dx : 0),
-                                  y: fly ? p.dy : -20)
-                        .opacity(fade ? 0 : 1)
-                        .animation(.easeOut(duration: 3.4).delay(p.delay), value: fly)
-                        .animation(.easeIn(duration: 0.7).delay(3.0 + p.delay), value: fade)
-                }
-            }
-        }
-        .ignoresSafeArea()
-        .onAppear {
-            guard !reduceMotion else { return }
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 60_000_000)
-                fly = true
-                fade = true
-            }
-        }
-    }
-}
+// (Confetti: the pass ceremony reuses the ONE shared emitter —
+// CelebrationConfetti in Features/Shared/CelebrationCenter.swift.)
 
 // MARK: - Result screens (server-scored, §3.7)
 
@@ -634,7 +573,7 @@ private struct QuizPassScreen: View {
                 .padding(.bottom, Nuru.S.lg)
             }
             // The same gold ceremony confetti as the level-exam pass — fires once.
-            QuizConfetti().allowsHitTesting(false)
+            CelebrationConfetti().allowsHitTesting(false)
         }
         .onAppear {
             Haptics.success()
