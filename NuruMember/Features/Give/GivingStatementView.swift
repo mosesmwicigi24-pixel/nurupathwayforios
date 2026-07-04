@@ -207,10 +207,18 @@ struct GivingStatementView: View {
                 // Calm, realistic generosity image under a deep navy scrim — sets
                 // the giving tone without competing with the white figures.
                 if let u = URL(string: "https://images.unsplash.com/photo-1532629345422-7515f3d16bb6?auto=format&fit=crop&w=1080&q=80") {
-                    CachedAsyncImage(url: u) { p in
-                        (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
-                    }
-                    .opacity(0.45)
+                    // Color.clear owns the layout size; the fill image lives in
+                    // an overlay so its oversized "fill" size can never inflate
+                    // the header ZStack or bleed past the rounded clip (the
+                    // radio-screen edge-spill bug family).
+                    Color.clear
+                        .overlay {
+                            CachedAsyncImage(url: u) { p in
+                                (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
+                            }
+                        }
+                        .clipped()
+                        .opacity(0.45)
                 }
                 LinearGradient(colors: [Nuru.navy.opacity(0.88), Color(hex: 0x06182C).opacity(0.94)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)

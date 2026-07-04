@@ -56,19 +56,23 @@ struct VideoPlayerPage: View {
 
     @ViewBuilder
     private var poster: some View {
-        Group {
-            if let u = posterUrl.flatMap(URL.init) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill() }
-                    else { Nuru.navyGradient }
+        // Color.clear owns the layout size; the fill image lives in an overlay
+        // so its oversized "fill" size can never inflate the page ZStack (the
+        // radio-screen edge-spill bug family — a flexible max-infinity frame
+        // still adopts an oversized child's size as its lower bound).
+        Color.clear
+            .overlay {
+                if let u = posterUrl.flatMap(URL.init) {
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill() }
+                        else { Nuru.navyGradient }
+                    }
+                } else {
+                    Nuru.navyGradient
                 }
-            } else {
-                Nuru.navyGradient
             }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
-        .ignoresSafeArea()
+            .clipped()
+            .ignoresSafeArea()
     }
 
     // MARK: lower third — kicker · serif title · summary · quick note · CTA

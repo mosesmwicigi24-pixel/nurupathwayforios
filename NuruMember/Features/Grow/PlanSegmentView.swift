@@ -163,14 +163,21 @@ struct PlanSegmentView: View {
     @ViewBuilder
     private var mediaBackground: some View {
         if let url = segment.imageUrl.flatMap(URL.init) {
-            CachedAsyncImage(url: url) { phase in
-                if let img = phase.image {
-                    img.resizable().scaledToFill()
-                        .transition(.opacity.animation(.easeOut(duration: 0.25))) // no pop
-                } else {
-                    Rectangle().fill(Nuru.navyGradient)
+            // Color.clear owns the layout size; the fill image lives in an
+            // overlay so its oversized "fill" size can never inflate the 16:9
+            // video card (the radio-screen edge-spill bug family).
+            Color.clear
+                .overlay {
+                    CachedAsyncImage(url: url) { phase in
+                        if let img = phase.image {
+                            img.resizable().scaledToFill()
+                                .transition(.opacity.animation(.easeOut(duration: 0.25))) // no pop
+                        } else {
+                            Rectangle().fill(Nuru.navyGradient)
+                        }
+                    }
                 }
-            }
+                .clipped()
         } else {
             Rectangle().fill(Nuru.navyGradient)
         }

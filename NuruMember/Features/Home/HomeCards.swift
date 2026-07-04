@@ -26,13 +26,23 @@ enum HomeFig {
 /// Wraps the success image of a `CachedAsyncImage` phase closure so freshly
 /// loaded artwork fades in over ~0.25s. Warm-cache hits fade too — fast enough
 /// to read as "settling", never as "loading".
+///
+/// Layout-safe by construction: `Color.clear` owns the layout size and the
+/// fill image lives in an overlay, so its oversized "fill" size can never
+/// inflate the container (the radio-screen edge-spill bug family). Every call
+/// site either sits in an overlay position or gets an explicit frame, so
+/// reporting the proposed size (not an intrinsic one) is always correct.
 struct HomeFadeInImage: View {
     let image: Image
     var maxOpacity: Double = 1
     @State private var shown = false
     var body: some View {
-        image.resizable().scaledToFill()
-            .opacity(shown ? maxOpacity : 0)
+        Color.clear
+            .overlay {
+                image.resizable().scaledToFill()
+                    .opacity(shown ? maxOpacity : 0)
+            }
+            .clipped()
             .onAppear {
                 guard !shown else { return }
                 withAnimation(.easeOut(duration: 0.25)) { shown = true }

@@ -686,10 +686,17 @@ struct HomeView: View {
         ZStack {
             Rectangle().fill(Color(hex: 0xD6DADE))
             if let s = v.thumbnailUrl, let u = URL(string: s) {
-                CachedAsyncImage(url: u) { phase in
-                    if let img = phase.image { img.resizable().scaledToFill().opacity(0.95) }
-                    else { Rectangle().fill(Color(hex: 0xD6DADE)) }
-                }
+                // Color.clear owns the layout size; the fill image lives in an
+                // overlay so its oversized "fill" size can never inflate the
+                // 16:9 thumb ZStack (the radio-screen edge-spill bug family).
+                Color.clear
+                    .overlay {
+                        CachedAsyncImage(url: u) { phase in
+                            if let img = phase.image { img.resizable().scaledToFill().opacity(0.95) }
+                            else { Rectangle().fill(Color(hex: 0xD6DADE)) }
+                        }
+                    }
+                    .clipped()
             }
             LinearGradient(colors: [Color(hex: 0x0F141E).opacity(0), Color(hex: 0x0F141E).opacity(0.45)],
                            startPoint: .top, endPoint: .bottom)

@@ -682,12 +682,20 @@ private struct EncouragementTrailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             if let img = item.imageUrl, !img.isEmpty, let url = URL(string: img) {
-                CachedAsyncImage(url: url) { p in
-                    (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
-                }
-                .frame(height: 120)
-                .frame(maxWidth: .infinity)
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                // Color.clear owns the layout size; the fill image lives in an
+                // overlay so its oversized "fill" width can never inflate the
+                // card column (the radio-screen edge-spill bug family —
+                // `.frame(height:)` alone left the width unclamped).
+                Color.clear
+                    .overlay {
+                        CachedAsyncImage(url: url) { p in
+                            (p.image ?? Image(systemName: "photo")).resizable().scaledToFill()
+                        }
+                    }
+                    .clipped()
+                    .frame(height: 120)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             HStack(spacing: 6) {
                 Icon(.sparkles, size: 11, color: Nuru.goldChipText)
