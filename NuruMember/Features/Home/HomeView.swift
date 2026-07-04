@@ -39,6 +39,8 @@ final class HomeViewModel: ObservableObject {
     /// The radio broadcast that is live RIGHT NOW (nil = off air). The now-playing
     /// endpoint also returns the next scheduled show — that must stay off Home.
     @Published var onAir: RadioProgram?
+    /// The ONE admin-featured event (portal homepage toggle) — nil when unset.
+    @Published var featuredEvent: FeaturedEvent?
 
     @Published var loading = true
     @Published var error: String?
@@ -64,6 +66,7 @@ final class HomeViewModel: ObservableObject {
         async let anns = try? MemberAPI.myAnnouncements()
         async let summary = try? MemberAPI.cellSummary()
         async let cal = try? MemberAPI.calendar(from: Self.calFrom, to: Self.calTo)
+        async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
 
         self.pathway = await pathway
@@ -95,6 +98,7 @@ final class HomeViewModel: ObservableObject {
         self.cell = (await summary)?.cell
         self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
         self.onAir = Self.liveOnly((await radio) ?? nil)
+        self.featuredEvent = (await fev) ?? nil
 
         if self.pathway == nil { error = "Couldn't load your dashboard." }
         loading = false
@@ -235,6 +239,7 @@ struct HomeView: View {
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(AnyView(progressCard(sc))) }                   // 13
         s.append(AnyView(growSection))                                                  // 14
+        if let fe = vm.featuredEvent { s.append(AnyView(featuredGatheringCard(fe))) }   // 14b · admin-featured event
         s.append(AnyView(upcomingSection))                                              // 15
         s.append(AnyView(oneReflectionBanner))                                          // 16
         s.append(AnyView(cohortSection))                                                // 17
@@ -1361,6 +1366,42 @@ struct HomeView: View {
             HomeSectionLabel(text: "Upcoming")
             upcomingCard
         }
+    }
+
+    // The ONE admin-featured event (portal "feature on homepage" toggle) —
+    // GET /home/featured-event was declared but rendered by no client until now.
+    private func featuredGatheringCard(_ fe: FeaturedEvent) -> some View {
+        Button {
+            Haptics.selection(); tabs.selected = .events
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                if let u = fe.primaryImageUrl.flatMap(URL.init) {
+                    FitImage(url: u)
+                }
+                VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                    Text("⭐ FEATURED GATHERING").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
+                    Text(fe.title).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
+                        .multilineTextAlignment(.leading)
+                    if let d = fe.description, !d.isEmpty {
+                        Text(d).font(.nCaption).foregroundStyle(Nuru.ink600)
+                            .lineLimit(2).multilineTextAlignment(.leading)
+                    }
+                    Text([featuredWhen(fe.dtstartLocal), fe.location].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "  ·  "))
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                }
+                .padding(Nuru.S.base)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardSurface()
+        }
+        .buttonStyle(.pressableSubtle)
+    }
+
+    private func featuredWhen(_ dtstartLocal: String) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        guard let d = f.date(from: String(dtstartLocal.prefix(19))) else { return dtstartLocal }
+        let out = DateFormatter(); out.dateFormat = "EEE, MMM d · h:mm a"
+        return out.string(from: d)
     }
 
     private var upcomingCard: some View {
