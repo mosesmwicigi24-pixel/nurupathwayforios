@@ -523,16 +523,24 @@ private struct LiveRadioBackdrop: View {
     var body: some View {
         ZStack {
             RadioUX.navyDeep
-            CachedAsyncImage(url: artwork) { ph in
-                if let img = ph.image {
-                    img.resizable().scaledToFill()
-                } else {
-                    Color.clear
+            // Color.clear owns the layout size; the fill image lives in an
+            // overlay so its oversized "fill" width can NEVER inflate the
+            // ZStack (a bare scaledToFill here blew the whole screen up to
+            // the image's width — content 2–3× the phone, gaps everywhere).
+            Color.clear
+                .overlay {
+                    CachedAsyncImage(url: artwork) { ph in
+                        if let img = ph.image {
+                            img.resizable().scaledToFill()
+                        } else {
+                            Color.clear
+                        }
+                    }
+                    .scaleEffect(1.25)
+                    .blur(radius: 44)
                 }
-            }
-            .scaleEffect(1.25)
-            .blur(radius: 44)
-            .overlay(Color.black.opacity(0.35))   // brightness(0.4) darken
+                .clipped()
+                .overlay(Color.black.opacity(0.35))   // brightness(0.4) darken
             LinearGradient(stops: [
                 .init(color: RadioUX.navyDeep.opacity(0.55), location: 0),
                 .init(color: RadioUX.navyDeep.opacity(0.82), location: 0.45),
@@ -656,8 +664,8 @@ private struct LiveCenterpiece: View {
 
             panel
         }
-        .frame(maxWidth: 300)
         .aspectRatio(5.0 / 3.0, contentMode: .fit)
+        .frame(maxWidth: 300)
         .onAppear {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) {
@@ -668,18 +676,24 @@ private struct LiveCenterpiece: View {
 
     private var panel: some View {
         ZStack {
-            CachedAsyncImage(url: artwork) { ph in
-                if let img = ph.image {
-                    img.resizable().scaledToFill()
-                } else {
-                    LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1628)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .overlay {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.system(size: 44)).foregroundStyle(RadioUX.gold.opacity(0.8))
+            // Same overlay-on-Color.clear trick as the backdrop — the artwork's
+            // fill size must not dictate the panel's layout size.
+            Color.clear
+                .overlay {
+                    CachedAsyncImage(url: artwork) { ph in
+                        if let img = ph.image {
+                            img.resizable().scaledToFill()
+                        } else {
+                            LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1628)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                                .overlay {
+                                    Image(systemName: "dot.radiowaves.left.and.right")
+                                        .font(.system(size: 44)).foregroundStyle(RadioUX.gold.opacity(0.8))
+                                }
                         }
+                    }
                 }
-            }
+                .clipped()
             .grayscale(live ? 0 : 0.7)
             .overlay(Color.black.opacity(live ? 0 : 0.5))   // brightness(0.4) off-air
 
