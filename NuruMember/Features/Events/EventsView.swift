@@ -978,6 +978,12 @@ private struct EvCardCover: View {
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color(hex: 0x16A34A), in: Capsule())
+        } else if occ.rescheduled == true {
+            // Wire truth: a moved occurrence arrives with rescheduled=true and the
+            // NEW start/end applied — the pill is the member's only cue it changed.
+            Text("RESCHEDULED").font(.inter(8, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Nuru.goldGradient, in: Capsule())
         } else if occ.going >= 120 {
             Text("🔥 Filling fast").font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 8).padding(.vertical, 4)

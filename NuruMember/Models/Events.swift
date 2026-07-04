@@ -20,6 +20,11 @@ struct CalendarOccurrence: Codable, Sendable, Identifiable, Hashable {
     let primaryImageUrl: String?
     let startAt: String
     let endAt: String
+    // Wire truth (calendar/service.ts projectRange): cancelled occurrences are
+    // dropped server-side; a moved one arrives with rescheduled=true and the new
+    // start/end already applied. status is the series status (draft|active).
+    let status: String?
+    let rescheduled: Bool?
     let going: Int
     let attendees: [EventAttendee]?
 
@@ -30,7 +35,7 @@ struct CalendarOccurrence: Codable, Sendable, Identifiable, Hashable {
 
     private enum CodingKeys: String, CodingKey {
         case occurrenceId, seriesId, title, description, location, category
-        case primaryImageUrl, startAt, endAt, going, attendees
+        case primaryImageUrl, startAt, endAt, status, rescheduled, going, attendees
     }
 }
 
@@ -76,6 +81,9 @@ struct EventDetail: Codable, Sendable {
     let location: String?
     let category: String?
     let primaryImageUrl: String?
+    /// Wire truth (calendar/service.ts getEvent): [primary, …gallery] — feeds the
+    /// detail gallery. primaryImageUrl stays for the hero fallback.
+    let images: [String]?
     let videoUrl: String?
     let rsvpCounts: RsvpCounts
     let myRsvp: String?

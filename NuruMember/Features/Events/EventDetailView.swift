@@ -142,6 +142,7 @@ struct EventDetailView: View {
     @StateObject private var vm: EventDetailViewModel
     @Environment(\.dismiss) private var dismiss
     @State private var showScanner = false
+    @State private var showVideo = false
 
     init(occurrence: CalendarOccurrence) {
         _vm = StateObject(wrappedValue: EventDetailViewModel(occurrence: occurrence))
@@ -194,6 +195,17 @@ struct EventDetailView: View {
             CheckInScannerView(eventId: vm.detail?.eventId ?? occ.occurrenceId,
                                eventTitle: title)
         }
+        // Every video opens the ONE universal full-bleed player page.
+        .fullScreenCover(isPresented: $showVideo) {
+            if let d = vm.detail, let v = d.videoUrl, !v.isEmpty {
+                VideoPlayerPage(
+                    urlString: v,
+                    title: d.title,
+                    summary: d.description,
+                    quickNote: nil,
+                    posterUrl: d.primaryImageUrl)
+            }
+        }
     }
 
     private func content(_ proxy: ScrollViewProxy) -> some View {
@@ -202,6 +214,14 @@ struct EventDetailView: View {
                         accent: Ev.categoryColor(category), shareText: shareText)
                 .gentleEntrance()
             if let d = aboutText, !d.isEmpty { EvdAboutCard(text: d).gentleEntrance(delay: 0.05) }
+            // Video + gallery — wire serves video_url and images=[primary,…gallery];
+            // the hero already shows images[0], so only extra shots earn the rail.
+            if let v = vm.detail?.videoUrl, !v.isEmpty {
+                videoTile.gentleEntrance(delay: 0.08)
+            }
+            if let imgs = vm.detail?.images, imgs.count > 1 {
+                EvdGalleryCard(urls: Array(imgs.dropFirst())).gentleEntrance(delay: 0.1)
+            }
             if !attendees.isEmpty || going > 0 {
                 EvdRosterCard(attendees: attendees, going: going)
                     .gentleEntrance(delay: 0.1)
@@ -228,6 +248,47 @@ struct EventDetailView: View {
         }
         .padding(.horizontal, 16)
         .padding(.bottom, Nuru.tabBarSpace)
+    }
+
+    // Video tile — poster-backed, opens the universal full-bleed player page
+    // (never Safari). Mirrors AnnouncementDetailView.
+    private var videoTile: some View {
+        Button {
+            Haptics.tap()
+            showVideo = true
+        } label: {
+            ZStack {
+                Nuru.navyGradient.frame(height: 180)
+                Icon(.playCircle, size: 48, color: .white)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        }
+        .buttonStyle(.pressableSubtle)
+    }
+}
+
+// MARK: - Gallery rail — fixed-height strip; each photo keeps its natural width.
+
+private struct EvdGalleryCard: View {
+    let urls: [String]
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            EvdOverline("Gallery")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: Nuru.S.sm) {
+                    ForEach(urls, id: \.self) { s in
+                        if let url = URL(string: s) {
+                            FitImage(url: url, fixedHeight: 170)
+                                .clipShape(RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(EvD.border, lineWidth: 1))
     }
 }
 
