@@ -212,7 +212,6 @@ struct HomeView: View {
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
-    @State private var showRadio = false
 
     // The five Grow tiles from the fresh Figma GrowGrid (exact tints/labels).
     private var growTiles: [GrowTile] {
@@ -398,14 +397,16 @@ struct HomeView: View {
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                 // Radio — opens the Nuru Radio player (live HLS via the new
                 // backend radio module, or the next scheduled program).
-                Button { Haptics.tap(); showRadio = true } label: {
+                Button {
+                    Haptics.tap()
+                    NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
+                } label: {
                     Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
                         .foregroundStyle(Color(hex: 0xDC2626)).frame(width: 40, height: 40)
                         .background(Color(hex: 0xFEE2E2), in: Circle())
                         .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.pressable).padding(.leading, 8)
-                .fullScreenCover(isPresented: $showRadio) { RadioPlayerView() }
                 progressRing.padding(.leading, 8)
             }
             Text("\(greeting), \(firstName).")
@@ -549,7 +550,9 @@ struct HomeView: View {
     /// the shell's island pill yields while the bar is in view and slides into
     /// the notch the moment it scrolls away (one radio surface at a time).
     private func onAirCard(_ p: RadioProgram) -> some View {
-        HomeOnAirCard(program: p) { showRadio = true }
+        HomeOnAirCard(program: p) {
+            NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
+        }
             .background(GeometryReader { geo in
                 Color.clear
                     .onChange(of: geo.frame(in: .global).minY, initial: true) { _, y in

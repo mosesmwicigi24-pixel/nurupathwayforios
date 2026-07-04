@@ -132,6 +132,12 @@ struct RootView: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: radio.program == nil)
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: tabs.onAirBarVisible)
         .fullScreenCover(isPresented: $radioOpen) { RadioPlayerView() }
+        // The ONE radio presentation source — Home's radio button and the ON AIR
+        // bar post this instead of presenting their own cover (two covers over
+        // the same window fought and produced a mis-sized, shifted player).
+        .onReceive(NotificationCenter.default.publisher(for: .nuruOpenRadio)) { _ in
+            radioOpen = true
+        }
         .overlay(alignment: .bottom) {
             if !tabs.chromeHidden {
                 NuruTabBar(selection: $tabs.selected)

@@ -257,19 +257,12 @@ struct RadioPlayerView: View {
     /// Audio is actually flowing — drives the glow, shimmer and play rings.
     private var spinning: Bool { center.playing }
 
-    /// Real top / bottom safe-area insets — the screen is full-bleed (the
-    /// backdrop must reach every edge), so the header pads itself past the
-    /// Dynamic Island and the content clears the home indicator explicitly.
-    private var safeTop: CGFloat {
-        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
-            .windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
-    }
-    private var safeBottom: CGFloat {
-        (UIApplication.shared.connectedScenes.first as? UIWindowScene)?
-            .windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 34
-    }
-
     var body: some View {
+        // The backdrop ignores safe areas on its own; the header/content column
+        // stays INSIDE them (standard layout — matching Android). No manual
+        // UIKit inset math: reading the key window's insets mis-sized the
+        // screen when presented over another surface, shoving the back button
+        // off-screen and the whole column off-center.
         ZStack {
             LiveRadioBackdrop(artwork: backdropArtwork)
             VStack(spacing: 0) {
@@ -277,7 +270,6 @@ struct RadioPlayerView: View {
                 content
             }
         }
-        .ignoresSafeArea()   // full-bleed; header/content pad for the insets below
         .preferredColorScheme(.dark)
         .task { await vm.start() }                                // 45s program poll
         .task(id: live?.id) {                                     // chat follows the live show
@@ -331,7 +323,7 @@ struct RadioPlayerView: View {
             .allowsHitTesting(false)
         }
         .padding(.horizontal, 16)
-        .padding(.top, safeTop + 4)   // clears the Dynamic Island / status bar
+        .padding(.top, 4)
         .padding(.bottom, 8)
     }
 
@@ -359,7 +351,7 @@ struct RadioPlayerView: View {
                     tabContent.padding(.top, 16)
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, safeBottom + 24)   // clears the home indicator
+                .padding(.bottom, 24)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -736,7 +728,7 @@ private struct ShimmerSweep: View {
 
 // MARK: - Progress lines
 
-/// LIVE: "● LIVE" + indeterminate gold sweep + elapsed clock since tune-in.
+/// LIVE: "● LIVE" + a subtle gold wave + elapsed clock since tune-in.
 private struct LiveSweepLine: View {
     let tunedAt: Date?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -748,7 +740,7 @@ private struct LiveSweepLine: View {
                 Text("LIVE").font(.inter(10, .bold)).kerning(1.4)
                     .foregroundStyle(RadioUX.redSoft)
             }
-            sweepBar
+            waveBar
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 Text(fmtElapsed(tunedAt.map { ctx.date.timeIntervalSince($0) } ?? 0))
                     .font(.inter(10)).monospacedDigit()
@@ -757,32 +749,44 @@ private struct LiveSweepLine: View {
         }
     }
 
-    private var sweepBar: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Color.white.opacity(0.16))
-                if reduceMotion {
-                    Capsule()
-                        .fill(LinearGradient(colors: [.clear, RadioUX.gold, .clear],
-                                             startPoint: .leading, endPoint: .trailing))
-                        .frame(width: geo.size.width / 3)
-                        .offset(x: geo.size.width / 3)
-                } else {
-                    TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
-                        let t = ctx.date.timeIntervalSinceReferenceDate
-                            .truncatingRemainder(dividingBy: 2.4) / 2.4
-                        Capsule()
-                            .fill(LinearGradient(colors: [.clear, RadioUX.gold, .clear],
-                                                 startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width / 3)
-                            .offset(x: -geo.size.width / 3 + t * geo.size.width * (4.0 / 3.0))
-                    }
+    /// Subtle live wave — thin gold bars breathing on layered sines (a radio
+    /// signal, not a loading bar); brightest mid-line, fading toward the
+    /// edges. Frozen at a pleasant phase under Reduce Motion. Mirrors
+    /// Android's LiveWaveBar exactly.
+    private var waveBar: some View {
+        Group {
+            if reduceMotion {
+                wave(phase: 1.1)
+            } else {
+                TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+                    let phase = ctx.date.timeIntervalSinceReferenceDate
+                        .truncatingRemainder(dividingBy: 2.8) / 2.8 * 2 * .pi
+                    wave(phase: phase)
                 }
             }
-            .clipShape(Capsule())
         }
-        .frame(height: 4)
+        .frame(height: 18)
         .accessibilityHidden(true)
+    }
+
+    private func wave(phase: Double) -> some View {
+        Canvas { context, size in
+            let n = 27
+            let slot = size.width / CGFloat(n)
+            let barW = min(slot * 0.42, 3)
+            let mid = size.height / 2
+            for i in 0..<n {
+                let x = slot * CGFloat(i) + slot / 2
+                let envelope = sin(.pi * Double(i) / Double(n - 1))
+                let a = 0.34 + 0.26 * sin(phase + Double(i) * 0.9)
+                      + 0.18 * sin(phase * 1.7 + Double(i) * 0.47 + 1.3)
+                let h = max(2, size.height * min(0.85, max(0.12, a)) * (0.45 + 0.55 * envelope))
+                let rect = CGRect(x: x - barW / 2, y: mid - CGFloat(h) / 2,
+                                  width: barW, height: CGFloat(h))
+                context.fill(Path(roundedRect: rect, cornerRadius: barW / 2),
+                             with: .color(RadioUX.gold.opacity(0.35 + 0.55 * envelope)))
+            }
+        }
     }
 }
 

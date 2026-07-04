@@ -11,6 +11,10 @@ extension Notification.Name {
     /// Posted when the member taps one of our iOS notifications — Home listens
     /// and pushes the in-app Notifications screen.
     static let nuruOpenNotifications = Notification.Name("nuru.openNotifications")
+    /// Posted by any surface that wants the radio player open (Home's radio
+    /// button, the ON AIR bar). RootView owns the ONE fullScreenCover — a
+    /// single presentation source so covers never fight over the window.
+    static let nuruOpenRadio = Notification.Name("nuru.openRadio")
 }
 
 @MainActor
