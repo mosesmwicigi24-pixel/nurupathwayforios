@@ -21,6 +21,9 @@ struct ProfileView: View {
     /// moment they tapped a size. SceneStorage survives that reconstruction.
     @SceneStorage("nuru.profile.showSettings") private var showSettings = false
 
+    /// Pushes the discipler roster (staff only — Instructor+).
+    @State private var showDisciples = false
+
     // Sheets
     @State private var editingField: PField?
     @State private var viewingBadge: PBadgeItem?
@@ -47,6 +50,7 @@ struct ProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Nuru.S.base) {
                     header
+                    if isStaff { disciplerEntry }
                     personalInfo
                     achievements
                     growthScores
@@ -60,6 +64,7 @@ struct ProfileView: View {
             .ignoresSafeArea(edges: .top)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showSettings) { SettingsView() }
+            .navigationDestination(isPresented: $showDisciples) { DisciplerRosterView() }
             .task { await loadExtras() }
             .sheet(item: $editingField) { f in
                 EditFieldSheet(field: f, current: currentValue(for: f), rowVersion: p?.rowVersion ?? 1) {
@@ -215,6 +220,45 @@ struct ProfileView: View {
         .clipShape(.rect(bottomLeadingRadius: 28, bottomTrailingRadius: 28))
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
         .padding(.horizontal, -Nuru.S.screen)   // full-bleed inside the padded scroll
+    }
+
+    // MARK: Discipler entry (staff only — Instructor / Admin / SuperAdmin)
+
+    /// True when the signed-in member carries a staff role — the only members
+    /// GET /disciples serves (the server 403s Students regardless).
+    private var isStaff: Bool {
+        ["instructor", "admin", "superadmin"].contains((auth.me?.profile.role ?? "").lowercased())
+    }
+
+    /// Navy card with a gold icon — the shepherd's door into their flock.
+    private var disciplerEntry: some View {
+        Button { Haptics.tap(); showDisciples = true } label: {
+            HStack(spacing: Nuru.S.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(Nuru.gold.opacity(0.18))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
+                        .frame(width: 44, height: 44)
+                    Icon(.users, size: 19, color: Nuru.gold)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("SHEPHERD THE FLOCK")
+                        .font(.inter(9, .bold)).kerning(1.2).foregroundStyle(Nuru.goldHi)
+                    Text("Your disciples")
+                        .font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                    Text("Roster, journeys & pending reflections")
+                        .font(.inter(11)).foregroundStyle(Nuru.onNavyDim)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 16, color: Nuru.onNavyFaint)
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.navyGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+            .nuruShadow()
+        }
+        .buttonStyle(.pressable)
     }
 
     // MARK: Personal information

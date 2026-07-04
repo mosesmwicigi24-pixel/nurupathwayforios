@@ -13,4 +13,19 @@ extension MemberAPI {
         struct Env: Decodable { let data: Discipleship }
         return try await APIClient.shared.get("me/discipleship", as: Env.self).data
     }
+
+    // MARK: Discipler side (Instructor+ — the server scopes to the caller's flock)
+
+    /// GET /disciples → { data: [rows], summary } — the leader's roster, with
+    /// needs-action rows pre-sorted first by the server (never re-sorted here).
+    static func disciples() async throws -> DiscipleRoster {
+        try await APIClient.shared.get("disciples", as: DiscipleRoster.self)
+    }
+
+    /// GET /disciples/{id} → { data: DiscipleDossier } — one student's full
+    /// dossier (member, progression, scores, engagement, reflections, activity).
+    static func disciple(_ id: String) async throws -> DiscipleDossier {
+        struct Env: Decodable { let data: DiscipleDossier }
+        return try await APIClient.shared.get("disciples/\(id)", as: Env.self).data
+    }
 }
