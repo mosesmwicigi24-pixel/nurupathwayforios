@@ -410,7 +410,7 @@ struct ChatView: View {
             case .dm: dmList
             case .group: groupList
             case .broadcast:
-                if isStaff { BroadcastComposer(peopleCount: vm.people.count) }
+                if isStaff { BroadcastComposer() }
             }
         }
     }
@@ -805,26 +805,57 @@ private struct RowChrome: ViewModifier {
     }
 }
 
-// Overlapping member dots + count chip (Figma MemberStack).
+// Overlapping avatar cascade (the reference MemberStack): identical 20pt
+// circles offset by -7pt (~1/3 diameter), each with a 2pt white ring, later
+// circles layered ON TOP of earlier ones (zIndex ramps up), finished by the
+// white member-count capsule (same 20pt height, thin border, bold navy number)
+// overlapping the last circle as the stack's topmost element. The first circle
+// shows the space photo (or its initial); the rest are tinted placeholders
+// cycling the row palette.
 private struct MemberStack: View {
-    let tint: Color
+    let avatarUrl: String?
+    let title: String?
+    let index: Int
     let count: Int
+
     var body: some View {
-        HStack(spacing: -8) {
-            ForEach(0..<min(3, max(1, count)), id: \.self) { i in
-                Circle()
-                    .fill(LinearGradient(colors: [tint, tint.opacity(0.6)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 22, height: 22)
-                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    .zIndex(Double(3 - i))
+        let circles = min(3, max(1, count))
+        HStack(spacing: -7) {
+            ForEach(0..<circles, id: \.self) { i in
+                circle(i).zIndex(Double(i))
             }
             Text(count > 999 ? String(format: "%.1fk", Double(count) / 1000) : "\(count)")
                 .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
-                .padding(.horizontal, 6)
-                .frame(height: 22)
+                .padding(.horizontal, 7)
+                .frame(height: 20)
                 .background(Color.white, in: Capsule())
                 .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+                .zIndex(Double(circles))
         }
+    }
+
+    private func circle(_ i: Int) -> some View {
+        let tint = rowTint(index + i)
+        return ZStack {
+            LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing)
+            if i == 0 {
+                if let avatarUrl, let u = URL(string: avatarUrl) {
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill() } else { initial }
+                    }
+                } else {
+                    initial
+                }
+            }
+        }
+        .frame(width: 20, height: 20)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.white, lineWidth: 2))
+    }
+
+    private var initial: some View {
+        Text(String((title ?? "#").trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
+            .font(.inter(8, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -888,7 +919,7 @@ private struct SpaceRow: View {
                     if unread { UnreadBadge(count: c.unread) } else { DoubleCheck() }
                 }
                 HStack {
-                    MemberStack(tint: tint, count: c.memberCount)
+                    MemberStack(avatarUrl: c.avatarUrl, title: c.title, index: index, count: c.memberCount)
                     Spacer(minLength: 0)
                     activePill
                 }
@@ -1064,7 +1095,7 @@ private struct DiscoverSpaceRow: View {
     private var tint: Color { rowTint(index + 2) }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 14) {
+        HStack(alignment: .top, spacing: 14) {
             Text("#").font(.inter(22, .bold)).foregroundStyle(.white)
                 .frame(width: 52, height: 52)
                 .background(
@@ -1077,6 +1108,9 @@ private struct DiscoverSpaceRow: View {
                     .foregroundStyle(Nuru.navy).lineLimit(1)
                 Text(subtitle)
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                // Member cascade — the count lives in the stack's pill, not the text.
+                MemberStack(avatarUrl: nil, title: space.title, index: index + 2, count: space.memberCount)
+                    .padding(.top, 5)
             }
             Spacer(minLength: 4)
             Button(action: follow) {
@@ -1104,10 +1138,9 @@ private struct DiscoverSpaceRow: View {
     }
 
     private var subtitle: String {
-        let members = "\(space.memberCount) member\(space.memberCount == 1 ? "" : "s")"
-        if let t = space.topic, !t.isEmpty { return "\(t) · \(members)" }
-        if let c = space.category, !c.isEmpty { return "\(c) · \(members)" }
-        return "Public space · \(members)"
+        if let t = space.topic, !t.isEmpty { return t }
+        if let c = space.category, !c.isEmpty { return c }
+        return "Public space"
     }
 }
 
@@ -1117,7 +1150,6 @@ private struct DiscoverSpaceRow: View {
 // here is fanned out server-side (POST /chat/broadcast) as an individual DM to
 // every member of the congregation — replies arrive back as normal 1:1 threads.
 private struct BroadcastComposer: View {
-    let peopleCount: Int
     @State private var text = ""
     @State private var confirming = false
     @State private var sending = false
@@ -1132,18 +1164,24 @@ private struct BroadcastComposer: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 12) {
-                Icon(.megaphone, size: 19, color: .white)
-                    .frame(width: 44, height: 44)
-                    .background(storyRing, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .shadow(color: Nuru.gold.opacity(0.45), radius: 7, y: 4)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Reach every member")
-                        .font(.nCardTitle).kerning(-0.3).foregroundStyle(Nuru.navy)
-                    Text("BROADCAST · STAFF ONLY")
-                        .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
+            // Navy explainer card — sets expectations before the composer.
+            HStack(alignment: .top, spacing: 14) {
+                Icon(.megaphone, size: 20, color: Color(hex: 0xE6C068))
+                    .frame(width: 40, height: 40)
+                    .background(Nuru.gold.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Message every member")
+                        .font(.nRowTitle).kerning(-0.16).foregroundStyle(.white)
+                    Text("Reaches every member as a personal message from you. Replies come back to you one-on-one.")
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.7)).lineSpacing(3)
                 }
+                Spacer(minLength: 0)
             }
+            .padding(Nuru.S.base)
+            .background(
+                LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x16273F)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 20, style: .continuous))
             if uploading || attachmentImage != nil {
                 BroadcastAttachmentThumb(image: attachmentImage, uploading: uploading) {
                     photoItem = nil; attachmentUrl = nil; attachmentImage = nil
@@ -1187,12 +1225,10 @@ private struct BroadcastComposer: View {
                 guard item != nil else { return }
                 Task { await uploadPicked() }
             }
-            Text("Delivers as a personal message to \(peopleCount) member\(peopleCount == 1 ? "" : "s") · replies come back to you individually")
-                .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineSpacing(3)
             if let n = sentTo {
                 HStack(spacing: 6) {
                     Icon(.checkCircle2, size: 14, color: Color(hex: 0x15803D))
-                    Text("Sent to \(n) member\(n == 1 ? "" : "s") ✓")
+                    Text("Delivered to \(n) member\(n == 1 ? "" : "s") 🎉")
                         .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x15803D))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
@@ -1214,7 +1250,7 @@ private struct BroadcastComposer: View {
                     } else {
                         HStack(spacing: 6) {
                             Icon(.send, size: 13, color: .white)
-                            Text("Send to all").font(.nCardCTA).foregroundStyle(.white)
+                            Text("Send to everyone").font(.nCardCTA).foregroundStyle(.white)
                         }
                     }
                 }
@@ -1226,12 +1262,11 @@ private struct BroadcastComposer: View {
             }
             .buttonStyle(.pressable)
             .disabled(!canSend)
-            .confirmationDialog("Send to \(peopleCount) member\(peopleCount == 1 ? "" : "s")?",
-                                isPresented: $confirming, titleVisibility: .visible) {
-                Button("Send to all — this can’t be undone", role: .destructive) { Task { await send() } }
+            .alert("Broadcast to all members?", isPresented: $confirming) {
+                Button("Send") { Task { await send() } }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("Every member receives this as a personal message from you. There is no way to unsend it.")
+                Text("Every member receives this as a personal message from you.")
             }
         }
         .padding(Nuru.S.base)

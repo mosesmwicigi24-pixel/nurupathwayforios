@@ -52,7 +52,7 @@ struct PrayerWallDetailView: View {
                 Spacer(); ProgressView(); Spacer()
             } else if let d = vm.detail {
                 content(d)
-                composer
+                composer(d)
             } else {
                 Spacer()
                 VStack(spacing: Nuru.S.md) {
@@ -188,7 +188,7 @@ struct PrayerWallDetailView: View {
         .padding(.bottom, Nuru.S.sm)
     }
 
-    private var composer: some View {
+    private func composer(_ d: PrayerWallDetail) -> some View {
         HStack(alignment: .bottom, spacing: Nuru.S.sm) {
             TextField("Write an encouragement…", text: $vm.draft, axis: .vertical)
                 .font(.inter(15)).lineLimit(1...5)
@@ -196,6 +196,10 @@ struct PrayerWallDetailView: View {
                 .frame(minHeight: 44)
                 .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
                 .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
+            // ✨ Nuru drafting — reads the prayer request + latest comments and
+            // proposes an editable encouragement; "Use draft" only fills the field.
+            AiDraftButton(recentMessages: draftContext(d)) { vm.draft = $0 }
+                .padding(.bottom, 7)
             Button { Haptics.action(); Task { await vm.comment() } } label: {
                 Icon(.send, size: 17, color: .white)
                     .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
@@ -208,6 +212,21 @@ struct PrayerWallDetailView: View {
         .padding(Nuru.S.sm)
         .background(Nuru.white)
         .overlay(Rectangle().fill(Nuru.border).frame(height: 1), alignment: .top)
+    }
+
+    /// The prayer request (title — body) + the last 4 comments, as the
+    /// "[Author]: text" context Nuru drafts from.
+    private func draftContext(_ d: PrayerWallDetail) -> [(author: String, text: String)] {
+        let p = d.post
+        var items: [(author: String, text: String)] = []
+        let postText = [p.title ?? "", p.body].filter { !$0.isEmpty }.joined(separator: " — ")
+        items.append((p.authorName.isEmpty ? "Member" : p.authorName,
+                      postText.isEmpty ? "(voice prayer)" : postText))
+        for c in d.comments.suffix(4) {
+            items.append((c.authorName.isEmpty ? "Member" : c.authorName,
+                          c.body.isEmpty ? "(voice reply)" : c.body))
+        }
+        return items
     }
 
     private var answeredChip: some View {

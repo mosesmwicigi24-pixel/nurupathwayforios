@@ -247,10 +247,18 @@ extension MemberAPI {
     }
 
     /// POST /assistant/chat — send the running transcript, get Nuru's reply.
-    static func assistantChat(_ messages: [AssistantMessage]) async throws -> String {
-        struct Body: Encodable { let messages: [AssistantMessage] }
+    /// `conversationId` lets the server ground on messages the member can access
+    /// and `contextLimit` caps how many it reads; both are OMITTED from the JSON
+    /// when nil (synthesized Encodable uses encodeIfPresent — the server's zod
+    /// schema rejects explicit nulls), so existing call sites' wire is unchanged.
+    static func assistantChat(_ messages: [AssistantMessage],
+                              conversationId: String? = nil,
+                              contextLimit: Int? = nil) async throws -> String {
+        struct Body: Encodable { let messages: [AssistantMessage]; let conversationId: String?; let contextLimit: Int? }
         struct Reply: Decodable { let reply: String }
-        return try await APIClient.shared.post("assistant/chat", body: Body(messages: messages), as: Reply.self).reply
+        return try await APIClient.shared.post("assistant/chat",
+            body: Body(messages: messages, conversationId: conversationId, contextLimit: contextLimit),
+            as: Reply.self).reply
     }
 
     /// GET /growth/plans/{id} — a plan with its day-by-day breakdown.

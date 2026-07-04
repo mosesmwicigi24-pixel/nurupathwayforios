@@ -104,11 +104,8 @@ final class HomeViewModel: ObservableObject {
         loading = false
     }
 
-    // Rhythm
-    func markRhythm(_ kind: String) async {
-        guard !done(kind) else { return }
-        if let next = try? await MemberAPI.completeRhythm(kind) { rhythm = next }
-    }
+    // Rhythm — read-only on this surface: the server ticks each rhythm from
+    // real acts (prayer posted/encouraged, Scripture engaged, reflection written).
     func done(_ kind: String) -> Bool {
         switch kind { case "prayer": return rhythm.prayer; case "word": return rhythm.word; default: return rhythm.reflection }
     }
@@ -1188,24 +1185,21 @@ struct HomeView: View {
         .cardSurface()
     }
 
+    // Read-only: each chip is a reflection of real acts (prayer posted/encouraged,
+    // Scripture engaged, reflection written) that the server ticks — not a checkbox.
     private func rhythmTile(_ kind: String, _ label: String) -> some View {
         let done = vm.done(kind)
-        return Button {
-            if !done { Haptics.action() }   // completing a discipline deserves a firmer tap
-            Task { await vm.markRhythm(kind) }
-        } label: {
-            VStack(spacing: 4) {
-                ZStack {
-                    Circle().fill(done ? Nuru.successText : Nuru.white).frame(width: 24, height: 24)
-                    Icon(done ? .check : .clock, size: 12, color: done ? Nuru.white : Nuru.goldLo)
-                }
-                Text(label).font(.inter(12, .semibold)).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText)
-                Text(done ? "DONE" : "PENDING").font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
+        return VStack(spacing: 4) {
+            ZStack {
+                Circle().fill(done ? Nuru.successText : Nuru.white).frame(width: 24, height: 24)
+                Icon(done ? .check : .clock, size: 12, color: done ? Nuru.white : Nuru.goldLo)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.md)
-            .background(done ? Nuru.successBg : Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: done)   // pending → done springs, not snaps
-        }.buttonStyle(.pressable)
+            Text(label).font(.inter(12, .semibold)).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText)
+            Text(done ? "DONE" : "PENDING").font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.md)
+        .background(done ? Nuru.successBg : Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: done)   // pending → done springs, not snaps
     }
 
     // MARK: 13 — Your progress (scores)

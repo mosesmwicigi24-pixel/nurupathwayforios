@@ -3,7 +3,7 @@
 // accent colors (stable hash → palette, gold for self), quoted replies on a
 // faint navy wash with an accent bar, in-bubble reaction chips + read ticks,
 // gradient-hairline day separators, quick replies, and the cream composer
-// (plus · message · gold sparkle · smile · navy mic / gold send).
+// (plus · message · ✨ Nuru draft assist · smile · navy mic / gold send).
 // All data is real (MemberAPI). The make's voice recorder, attachment and
 // emoji pickers are mock-only and deliberately not reproduced here.
 import Combine
@@ -272,12 +272,33 @@ struct ChatThreadView: View {
                 Task { await vm.send(reply) }
             }
             ComposerBar(draft: $vm.draft, sending: vm.sending,
-                        myName: auth.profile?.fullName ?? "You") {
+                        myName: auth.profile?.fullName ?? "You",
+                        recentMessages: recentForDraft,
+                        conversationId: vm.conversation.conversationId) {
                 Haptics.action()
                 Task { await vm.send() }
             }
         }
         .background(Aurora.sectionBg)
+    }
+
+    /// ✨ Nuru drafting context — the last 5 turns as "[Author]: text", with
+    /// placeholders standing in for voice/photo/file bodies.
+    private var recentForDraft: [(author: String, text: String)] {
+        vm.allMessages
+            .filter { $0.msgType != "system" }
+            .suffix(5)
+            .map { m in
+                let author = m.mine ? "You" : (m.authorName.isEmpty ? "Member" : m.authorName)
+                let text: String
+                switch m.msgType {
+                case "voice": text = m.body.isEmpty ? "(voice note)" : m.body
+                case "image": text = m.body.isEmpty ? "(photo)" : m.body
+                case "video", "file": text = m.body.isEmpty ? "(shared a file)" : m.body
+                default: text = m.body
+                }
+                return (author, text)
+            }
     }
 }
 
@@ -946,6 +967,8 @@ private struct ComposerBar: View {
     @Binding var draft: String
     let sending: Bool
     let myName: String
+    let recentMessages: [(author: String, text: String)]
+    let conversationId: String
     var onSend: () -> Void
 
     private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -980,19 +1003,17 @@ private struct ComposerBar: View {
                 .foregroundStyle(Aurora.navy)
                 .lineLimit(1...6)
                 .padding(.vertical, 8)
-            sparkleChip.padding(.bottom, 5)
+            // ✨ Nuru drafting — summarizes the last messages and proposes an
+            // editable reply; "Use draft" only fills the composer (member sends).
+            AiDraftButton(recentMessages: recentMessages, conversationId: conversationId) { text in
+                draft = text
+            }
+            .padding(.bottom, 5)
             Icon(.smile, size: 19, color: Aurora.meta).padding(.bottom, 9)
         }
         .padding(.horizontal, Nuru.S.md)
         .background(Nuru.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Aurora.border, lineWidth: 1))
-    }
-
-    /// Nuru AI assist — decorative parity with the make (drafting is mock-only there).
-    private var sparkleChip: some View {
-        Circle().fill(Aurora.gold.opacity(0.10))
-            .frame(width: 28, height: 28)
-            .overlay(Icon(.sparkles, size: 15, color: Aurora.gold))
     }
 
     /// Gold story-ring send when there's a draft; navy ink mic placeholder otherwise.
