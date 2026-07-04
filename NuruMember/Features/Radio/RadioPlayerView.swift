@@ -228,6 +228,188 @@ final class LiveChatModel: ObservableObject {
     }
 }
 
+// MARK: - Reactions FX — full-screen floating emoji + a live, growing counter
+//
+// A TikTok/IG-LIVE celebration layer. Each tap spawns an emoji that rises the
+// FULL height of the screen with a sine sway, random x-jitter, random scale,
+// slight rotation and a fade near the top; many coexist (rapid taps = a
+// stream). The counter climbs optimistically on every tap and reconciles with
+// the REAL server total from POST /react. Lives above the whole screen so the
+// stream is never clipped inside the reaction row.
+
+/// One rising emoji particle. All randomness is frozen at spawn so the render
+/// stays a pure function of `t` (elapsed) inside the TimelineView.
+struct ReactionParticle: Identifiable {
+    let id = UUID()
+    let emoji: String
+    let bornAt: Date
+    let lifetime: Double          // 2.5–4s
+    let startXFrac: CGFloat       // 0…1 across the reaction bar width
+    let drift: CGFloat            // net horizontal travel (pts)
+    let sway: CGFloat             // sine amplitude (pts)
+    let swayFreq: Double          // wobbles over the rise
+    let phase: Double             // sine phase offset
+    let scale: CGFloat            // 0.7–1.6
+    let rotation: Double          // final rotation (deg)
+}
+
+/// Drives both the full-screen burst and the growing counter. `@MainActor`
+/// so the SwiftUI state mutations are always on the main actor.
+@MainActor
+final class RadioReactionsFX: ObservableObject {
+    /// Live particles (capped so rapid taps stay smooth).
+    @Published private(set) var particles: [ReactionParticle] = []
+    /// What the counter shows — optimistic, reconciled by the server total.
+    @Published private(set) var displayTotal: Int = 0
+    /// Bumps on every increment so the counter can pop.
+    @Published private(set) var pulse: Int = 0
+
+    private let cap = 60
+    private var reduceMotion = false
+
+    func configure(reduceMotion: Bool) { self.reduceMotion = reduceMotion }
+
+    /// Seed / reconcile the counter with a real server total (never downgrade a
+    /// higher optimistic value on a stale read — take the max so it only grows).
+    func sync(total: Int) {
+        if total > displayTotal { displayTotal = total }
+    }
+
+    /// A tap landed: bump the counter and spawn floating emoji.
+    func tap(_ emoji: String) {
+        displayTotal += 1
+        pulse += 1
+        spawn(emoji)
+    }
+
+    private func spawn(_ emoji: String) {
+        // Under Reduce Motion, keep it gentle: a single, calm particle, no swarm.
+        let burst = reduceMotion ? 1 : 1
+        for _ in 0..<burst {
+            let p = ReactionParticle(
+                emoji: emoji,
+                bornAt: Date(),
+                lifetime: reduceMotion ? 2.2 : .random(in: 2.5...4.0),
+                startXFrac: .random(in: 0.15...0.85),
+                drift: reduceMotion ? 0 : .random(in: -60...60),
+                sway: reduceMotion ? 0 : .random(in: 18...54),
+                swayFreq: .random(in: 1.4...2.8),
+                phase: .random(in: 0...(2 * .pi)),
+                scale: reduceMotion ? 1.0 : .random(in: 0.7...1.6),
+                rotation: reduceMotion ? 0 : .random(in: -28...28))
+            particles.append(p)
+        }
+        if particles.count > cap { particles.removeFirst(particles.count - cap) }
+        // Reap by the longest possible lifetime; cheap and keeps the array bounded.
+        let ttl = (particles.last?.lifetime ?? 4) + 0.2
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: UInt64(ttl * 1_000_000_000))
+            guard let self else { return }
+            let now = Date()
+            self.particles.removeAll { now.timeIntervalSince($0.bornAt) >= $0.lifetime }
+        }
+    }
+}
+
+/// The full-screen burst layer. Mounted at the screen root so emoji rise the
+/// entire height, never clipped by the reaction row. One TimelineView drives
+/// every particle from its own elapsed time — no per-view @State animations.
+struct ReactionBurstLayer: View {
+    @ObservedObject var fx: RadioReactionsFX
+
+    var body: some View {
+        GeometryReader { geo in
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { ctx in
+                ZStack {
+                    ForEach(fx.particles) { p in
+                        particleView(p, now: ctx.date, size: geo.size)
+                    }
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            }
+        }
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .ignoresSafeArea()
+    }
+
+    @ViewBuilder
+    private func particleView(_ p: ReactionParticle, now: Date, size: CGSize) -> some View {
+        let elapsed = now.timeIntervalSince(p.bornAt)
+        let t = min(1, max(0, elapsed / p.lifetime))          // 0 → 1 over its life
+        let eased = 1 - pow(1 - t, 1.7)                        // easeOut rise
+        // Rise from just above the reaction bar (near the bottom) to the top.
+        let bottomY = size.height - 140
+        let y = bottomY - eased * (bottomY - 40)
+        let baseX = size.width * p.startXFrac
+        let x = baseX + p.drift * CGFloat(t)
+              + p.sway * CGFloat(sin(p.phase + t * p.swayFreq * 2 * .pi))
+        // Pop in over the first 12%, hold, then fade out over the last 45%.
+        let appear = min(1, t / 0.12)
+        let fade = t < 0.55 ? 1 : max(0, 1 - (t - 0.55) / 0.45)
+        let opacity = appear * fade
+        let scale = p.scale * (0.6 + 0.4 * min(1, t / 0.18))    // small → full
+
+        Text(p.emoji)
+            .font(.system(size: 30))
+            .scaleEffect(scale)
+            .rotationEffect(.degrees(p.rotation * t))
+            .opacity(opacity)
+            .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+            .position(x: x, y: y)
+    }
+}
+
+/// A prominent, animated LIVE reaction counter — a soft-glass gold pill with a
+/// heart, the (abbreviated) total, and a "reactions" caption. Scale-bumps and
+/// re-rolls its digits on every increment.
+struct LiveReactionCounter: View {
+    let total: Int
+    let pulse: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var bump = false
+
+    var body: some View {
+        HStack(spacing: 7) {
+            Icon(.heart, size: 13, color: RadioUX.redSoft)
+            Text(abbreviate(total))
+                .font(.inter(15, .bold)).monospacedDigit()
+                .foregroundStyle(.white)
+                .contentTransition(.numericText(value: Double(total)))
+            Text("reactions")
+                .font(.inter(10, .semibold)).kerning(0.6)
+                .foregroundStyle(.white.opacity(0.5))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(
+            Capsule().fill(RadioUX.gold.opacity(0.14))
+        )
+        .overlay(Capsule().stroke(RadioUX.gold.opacity(0.38), lineWidth: 1))
+        .shadow(color: RadioUX.gold.opacity(bump ? 0.45 : 0.15), radius: bump ? 14 : 6)
+        .scaleEffect(bump ? 1.12 : 1)
+        .animation(.spring(response: 0.28, dampingFraction: 0.5), value: bump)
+        .onChange(of: pulse) { _, _ in
+            guard !reduceMotion else { return }
+            bump = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) { bump = false }
+        }
+        .accessibilityLabel("\(total) reactions")
+    }
+
+    /// 999 → "999", 1_200 → "1.2K", 12_300 → "12.3K", 1_200_000 → "1.2M".
+    private func abbreviate(_ n: Int) -> String {
+        switch n {
+        case ..<1_000: return "\(n)"
+        case ..<1_000_000:
+            let v = Double(n) / 1_000
+            return v < 10 ? String(format: "%.1fK", v) : "\(Int(v))K"
+        default:
+            let v = Double(n) / 1_000_000
+            return v < 10 ? String(format: "%.1fM", v) : "\(Int(v))M"
+        }
+    }
+}
+
 // MARK: - Entry — the immersive LiveRadioScreen (fullScreenCover from Home)
 
 private enum RadioTab { case live, recordings, schedule }
@@ -235,6 +417,7 @@ private enum RadioTab { case live, recordings, schedule }
 struct RadioPlayerView: View {
     @StateObject private var vm = LiveRadioModel()
     @StateObject private var chat = LiveChatModel()
+    @StateObject private var fx = RadioReactionsFX()
     @ObservedObject private var center = RadioCenter.shared
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
@@ -269,8 +452,16 @@ struct RadioPlayerView: View {
                 header
                 content
             }
+            // Full-screen celebration layer — emoji rise the whole height, above
+            // everything, never clipped by the reaction row.
+            ReactionBurstLayer(fx: fx)
         }
         .preferredColorScheme(.dark)
+        .onAppear { fx.configure(reduceMotion: reduceMotion) }
+        .onChange(of: reduceMotion) { _, v in fx.configure(reduceMotion: v) }
+        // Reconcile the growing counter with the REAL server total whenever a
+        // POST /react response updates the counts (only ever grows).
+        .onChange(of: chat.counts?.total) { _, t in if let t { fx.sync(total: t) } }
         .task { await vm.start() }                                // 45s program poll
         .task(id: live?.id) {                                     // chat follows the live show
             if let id = live?.id { await chat.start(id) }
@@ -503,7 +694,7 @@ struct RadioPlayerView: View {
         Group {
             switch tab {
             case .live:
-                LiveTabView(live: live, chat: chat, myId: auth.profile?.userId)
+                LiveTabView(live: live, chat: chat, fx: fx, myId: auth.profile?.userId)
             case .recordings:
                 RecordingsTabView(recordings: vm.recordedShows)
             case .schedule:
@@ -1068,29 +1259,19 @@ private struct StatChip: View {
 
 // MARK: - LIVE tab — reactions (real POST /react) + live chat (real comments)
 
-private struct ReactionFloat: Identifiable {
-    let id = UUID()
-    let emoji: String
-    let xJitter: CGFloat
-}
-
 private struct LiveTabView: View {
     let live: RadioProgram?
     @ObservedObject var chat: LiveChatModel
+    @ObservedObject var fx: RadioReactionsFX
     let myId: String?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var floats: [ReactionFloat] = []
 
     var body: some View {
         if live != nil {
             VStack(spacing: 0) {
                 reactionRow
-                if let counts = chat.counts {
-                    Text("\(counts.total.formatted()) reactions today")
-                        .font(.inter(10, .semibold))
-                        .foregroundStyle(.white.opacity(0.45))
-                        .padding(.top, 8)
-                }
+                LiveReactionCounter(total: fx.displayTotal, pulse: fx.pulse)
+                    .padding(.top, 12)
                 commentsList.padding(.top, 12)
                 composer.padding(.top, 12)
             }
@@ -1107,7 +1288,8 @@ private struct LiveTabView: View {
         }
     }
 
-    // Three 48pt reaction circles + the floating-emoji burst above them.
+    // Three 48pt reaction circles. The floating-emoji stream is rendered by the
+    // screen-root ReactionBurstLayer, so nothing here clips it.
     private var reactionRow: some View {
         HStack(spacing: 12) {
             ReactionButton(tint: RadioUX.redDeep) {
@@ -1121,24 +1303,14 @@ private struct LiveTabView: View {
             } action: { fire("fire", emoji: "🙌") }
         }
         .frame(maxWidth: .infinity)
-        .overlay {
-            ZStack {
-                ForEach(floats) { f in FloatingReaction(float: f) }
-            }
-            .allowsHitTesting(false)
-        }
     }
 
+    /// Tap → haptic + optimistic counter bump + a floating emoji (via the
+    /// screen-root FX layer), and the real server react call, exactly as before.
     private func fire(_ kind: String, emoji: String) {
         Haptics.love()
+        fx.tap(emoji)                 // grows the counter + spawns the float
         Task { await chat.react(kind) }
-        guard !reduceMotion else { return }
-        let f = ReactionFloat(emoji: emoji, xJitter: .random(in: -24...24))
-        floats.append(f)
-        Task {
-            try? await Task.sleep(nanoseconds: 1_500_000_000)
-            floats.removeAll { $0.id == f.id }
-        }
     }
 
     // Glass chat rows — 28pt gradient monograms, bold name + white/70 body.
@@ -1213,23 +1385,6 @@ private struct ReactionButton<Content: View>: View {
                 .overlay(Circle().stroke(tint.opacity(0.4), lineWidth: 1))
         }
         .buttonStyle(PressableStyle(scale: 0.85))
-    }
-}
-
-/// One emoji rising ~70pt while scaling 0.6→1.2 and fading — the tap burst.
-private struct FloatingReaction: View {
-    let float: ReactionFloat
-    @State private var up = false
-
-    var body: some View {
-        Text(float.emoji)
-            .font(.system(size: 26))
-            .scaleEffect(up ? 1.2 : 0.6)
-            .offset(x: float.xJitter, y: up ? -70 : 0)
-            .opacity(up ? 0 : 0.95)
-            .onAppear {
-                withAnimation(.easeOut(duration: 1.4)) { up = true }
-            }
     }
 }
 
