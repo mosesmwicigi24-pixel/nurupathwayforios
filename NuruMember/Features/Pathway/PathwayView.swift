@@ -268,8 +268,7 @@ struct PathwayView: View {
                     })
                     .gentleEntrance(delay: 0.1)
 
-                PathwaySummitCard(overallPct: vm.overallPct,
-                              levelsLeft: s.levels.filter { $0.status != .completed }.count)
+                PathwaySummitCard(overallPct: vm.overallPct, levels: s.levels, firstName: firstName)
                     .gentleEntrance(delay: 0.15)
             }
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
@@ -914,19 +913,32 @@ private struct PWSurrenderFigure: View {
     }
 }
 
-// MARK: - PathwayHub · the summit (fresh Figma: rich destination card)
+// MARK: - PathwayHub · the summit (redesigned commissioning card — Android parity)
 
 private struct PathwaySummitCard: View {
     let overallPct: Int
-    let levelsLeft: Int
+    let levels: [PathwayLevel]
+    let firstName: String
     private var reached: Bool { overallPct >= 100 }
-    private let img = "https://images.unsplash.com/photo-1513759565286-20e9c5fad06b?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
+    private var levelsLeft: Int { levels.filter { $0.status != .completed }.count }
+    // Real sending: a worship gathering, hands raised, JESUS over the stage —
+    // visually verified (not picked blind from an ID).
+    private let img = "https://images.unsplash.com/photo-1507692049790-de58290a4334?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("THE SUMMIT · YOUR DESTINATION")
+            Text("THE SUMMIT · WHERE THIS ROAD LEADS")
                 .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).padding(.horizontal, 4)
             card
+        }
+        // First time the summit is truly reached → a real celebration (once ever;
+        // CelebrationCenter persists fired keys, so replays are no-ops).
+        .task(id: reached) {
+            guard reached else { return }
+            CelebrationCenter.shared.fire(
+                key: "commissioned",
+                title: "You have been commissioned",
+                subtitle: "Sent to make disciples — Matthew 28:19")
         }
     }
 
@@ -935,50 +947,71 @@ private struct PathwaySummitCard: View {
             if let u = URL(string: img) {
                 CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
             }
-            LinearGradient(colors: [Color(hex: 0x0A1628, alpha: 0.25), Color(hex: 0x0A1628, alpha: 0.50), Color(hex: 0x0A1628, alpha: 0.92)], startPoint: .top, endPoint: .bottom)
-            RadialGradient(colors: [PW.gold.opacity(0.33), .clear], center: .top, startRadius: 0, endRadius: 90)
-                .frame(width: 160, height: 160).blur(radius: 30).offset(y: -80)
+            // Navy scrim: 0x26 → 0x73 → 0xF2 of 0A1628, top → bottom.
+            LinearGradient(colors: [Color(hex: 0x0A1628, alpha: 0.15), Color(hex: 0x0A1628, alpha: 0.45), Color(hex: 0x0A1628, alpha: 0.95)], startPoint: .top, endPoint: .bottom)
             content
         }
-        .frame(height: 256).frame(maxWidth: .infinity)
+        .frame(height: 300).frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        // Reached earns a gold ceremonial ring; the road there stays quiet.
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
+            .strokeBorder(reached ? PW.gold.opacity(0.85) : .clear, lineWidth: 1.5))
         .overlay(alignment: .topTrailing) { statusChip.padding(12) }
-        .shadow(color: Color(hex: 0x0A1628).opacity(0.5), radius: 23, y: 14)
     }
 
     private var statusChip: some View {
         HStack(spacing: 4) {
             if reached { Image(systemName: "star.fill").font(.system(size: 10)) } else { Icon(.lock, size: 10, color: .white) }
-            Text(reached ? "Reached" : "Locked").font(.inter(9, .bold))
+            Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(9, .bold)).kerning(1)
         }
         .foregroundStyle(reached ? PW.navy : .white)
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(reached ? AnyShapeStyle(PW.gold) : AnyShapeStyle(.ultraThinMaterial), in: Capsule())
+        .background(reached ? PW.gold : Color.white.opacity(0.18), in: Capsule())
     }
 
     private var content: some View {
-        VStack(spacing: 2) {
+        VStack(spacing: 0) {
+            // Ceremonial seal — double gold ring, medal, no emoji.
             ZStack {
-                Circle().fill(Color.white.opacity(0.08)).frame(width: 56, height: 56)
-                    .overlay(Circle().stroke(PW.gold.opacity(0.4), lineWidth: 1))
-                Text("👑").font(.system(size: 26))
+                Circle().fill(Color.white.opacity(reached ? 0.14 : 0.07)).frame(width: 58, height: 58)
+                    .overlay(Circle().strokeBorder(PW.gold.opacity(reached ? 0.95 : 0.45), lineWidth: 1.5))
+                Circle().strokeBorder(PW.goldLight.opacity(reached ? 0.8 : 0.35), lineWidth: 1).frame(width: 46, height: 46)
+                Icon(.award, size: 24, color: reached ? PW.goldLight : PW.gold.opacity(0.75))
             }
-            .padding(.bottom, 6)
-            Text("THE SUMMIT").font(.inter(8, .bold)).kerning(1.92).foregroundStyle(PW.goldLight)
-            Text("Commissioned").font(.fraunces(22, .bold)).kerning(-0.44).foregroundStyle(.white).padding(.top, 1)
-            Text("Sent to make disciples · Matthew 28:19").font(.inter(11)).foregroundStyle(.white.opacity(0.82))
-            VStack(spacing: 6) {
-                PWBar(pct: overallPct, height: 6,
-                      fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
-                      track: Color.white.opacity(0.22))
-                    .frame(maxWidth: 260)
-                Text(reached ? "You've been commissioned 🎉" : "\(overallPct)% of the way · \(levelsLeft) \(levelsLeft == 1 ? "level" : "levels") to go")
-                    .font(.inter(10, .bold)).foregroundStyle(PW.goldLight)
+            .padding(.bottom, 10)
+            Text("COMMISSIONED").font(.inter(10, .bold)).kerning(2.4).foregroundStyle(PW.goldLight)
+            // The actual charge, not a caption — the words carry the weight.
+            Text("“Go therefore and make disciples of all nations…”")
+                .font(.fraunces(19, .semibold)).italic().kerning(-0.2)
+                .foregroundStyle(.white).multilineTextAlignment(.center).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 6)
+            Text("MATTHEW 28:19").font(.inter(9, .bold)).kerning(1.8)
+                .foregroundStyle(.white.opacity(0.75)).padding(.top, 4)
+            // The road itself: one dot per level, gold when walked.
+            HStack(spacing: 8) {
+                ForEach(levels) { lv in
+                    let done = lv.status == .completed
+                    Circle()
+                        .fill(done ? PW.gold : Color.white.opacity(0.28))
+                        .overlay(Circle().strokeBorder(done ? PW.goldLight : .clear, lineWidth: 1))
+                        .frame(width: done ? 9 : 7, height: done ? 9 : 7)
+                }
             }
-            .padding(.top, 12)
+            .padding(.top, 14)
+            Text(personalLine)
+                .font(.inter(11, .bold)).foregroundStyle(PW.goldLight)
+                .multilineTextAlignment(.center)
+                .padding(.top, 8)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-        .padding(20)
+        .padding(.horizontal, 20).padding(.vertical, 22)
+    }
+
+    private var personalLine: String {
+        if reached { return "\(firstName), you have been commissioned — go." }
+        if levelsLeft == 1 { return "One level between you and being sent." }
+        return "\(levelsLeft) levels between you and being sent."
     }
 }
 
