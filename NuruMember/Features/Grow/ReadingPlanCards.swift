@@ -318,10 +318,34 @@ struct PLPlanTile: View {
                     .frame(maxWidth: .infinity)
                     .clipped()
                     .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
+                    .overlay(alignment: .topTrailing) {
+                        if plan.completedAt != nil {
+                            Icon(.check, size: 11, color: .white)
+                                .frame(width: 22, height: 22).background(PL.gold, in: Circle())
+                                .padding(6)
+                        }
+                    }
+                    // Progress rail for a plan in progress.
+                    .overlay(alignment: .bottom) {
+                        if plan.enrolled, plan.completedAt == nil {
+                            let done = plan.completedDays?.count ?? max(0, (plan.currentDay ?? 1) - 1)
+                            let pct = plan.dayCount > 0 ? CGFloat(done) / CGFloat(plan.dayCount) : 0
+                            GeometryReader { geo in
+                                ZStack(alignment: .leading) {
+                                    Rectangle().fill(Color.black.opacity(0.28))
+                                    Rectangle().fill(PL.gold).frame(width: geo.size.width * pct)
+                                }
+                            }.frame(height: 4)
+                        }
+                    }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy)
                         .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
-                    if let c = plan.category, !c.isEmpty {
+                    if plan.enrolled, plan.completedAt == nil {
+                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(9, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep).lineLimit(1)
+                    } else if plan.completedAt != nil {
+                        Text("COMPLETED").font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep).lineLimit(1)
+                    } else if let c = plan.category, !c.isEmpty {
                         Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.catText)
                             .lineLimit(1)
                     }
