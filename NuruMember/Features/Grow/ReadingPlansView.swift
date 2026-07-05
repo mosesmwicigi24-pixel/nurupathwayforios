@@ -60,6 +60,10 @@ struct ReadingPlansView: View {
         if !vm.plans.isEmpty { out.append(("featured", "Featured for you", Array(vm.plans.prefix(8)))) }
         let short = vm.plans.filter { $0.dayCount <= 7 }
         if !short.isEmpty { out.append(("short", "Short reads · 7 days or less", short)) }
+        // Mid-length (8–13 days) — most study plans are 10-day, so without this
+        // bucket they'd fall between "short" and "long" and never appear in browse.
+        let mid = vm.plans.filter { (8...13).contains($0.dayCount) }
+        if !mid.isEmpty { out.append(("mid", "Mid-length journeys · about 10 days", mid)) }
         let long = vm.plans.filter { $0.dayCount >= 14 }
         if !long.isEmpty { out.append(("long", "Longer journeys · 2 weeks and up", long)) }
         return out
