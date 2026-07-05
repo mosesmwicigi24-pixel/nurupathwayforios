@@ -111,6 +111,7 @@ struct SegmentCompleteResult: Codable, Sendable {
 struct PlanDayRef: Hashable {
     let planId: String
     let day: ReadingPlanDay
+    var planTitle: String? = nil   // for the completion keepsake ("You completed …")
 }
 
 /// Navigation reference for one plan-day segment (Watch / Read / Devotional / Talk),

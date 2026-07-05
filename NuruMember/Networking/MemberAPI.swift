@@ -271,11 +271,15 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("growth/plans/\(id)/start", as: EmptyResponse.self)
     }
 
-    /// POST /growth/plans/{id}/complete-day — mark a whole day done.
-    static func completePlanDay(_ id: String, dayNumber: Int) async throws {
+    /// POST /growth/plans/{id}/complete-day — mark a whole day done. Returns whether
+    /// this completion finished the WHOLE plan (server stamps completed_at).
+    @discardableResult
+    static func completePlanDay(_ id: String, dayNumber: Int) async throws -> Bool {
         struct Body: Encodable { let dayNumber: Int }
-        _ = try await APIClient.shared.post("growth/plans/\(id)/complete-day",
-                                            body: Body(dayNumber: dayNumber), as: EmptyResponse.self)
+        struct Res: Decodable { let completedAt: String? }
+        let r = try await APIClient.shared.post("growth/plans/\(id)/complete-day",
+                                                body: Body(dayNumber: dayNumber), as: Res.self)
+        return r.completedAt != nil
     }
 
     /// POST /growth/segments/{id}/complete — mark one plan-day segment done.

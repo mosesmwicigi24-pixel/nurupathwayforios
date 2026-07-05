@@ -735,7 +735,7 @@ struct PlanDetailView: View {
         return HStack(spacing: 10) {
             Group {
                 if d.enrolled, let target {
-                    NavigationLink(value: PlanDayRef(planId: d.planId, day: target)) { ctaLabel(label) }
+                    NavigationLink(value: PlanDayRef(planId: d.planId, day: target, planTitle: d.title)) { ctaLabel(label) }
                 } else {
                     Button {
                         Haptics.action()
@@ -776,6 +776,7 @@ struct PlanDetailView: View {
 final class PlanDayViewModel: ObservableObject {
     @Published var completedSegments: Set<String> = []
     @Published var dayCompleted = false
+    @Published var planCompleted = false   // this day finished the WHOLE plan
     @Published var busy = false
 
     private let planId: String
@@ -804,8 +805,9 @@ final class PlanDayViewModel: ObservableObject {
         busy = true; completeError = nil
         defer { busy = false }
         do {
-            try await MemberAPI.completePlanDay(planId, dayNumber: dayNumber)
+            let planDone = try await MemberAPI.completePlanDay(planId, dayNumber: dayNumber)
             dayCompleted = true
+            planCompleted = planDone
             return true
         } catch {
             completeError = "Couldn't save today — check your connection and try again."
@@ -870,6 +872,7 @@ struct PlanDayView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var justDone = false
+    @State private var showKeepsake = false
     @State private var videoItem: DayVideoItem?
 
     // Scroll-dwell reading tracker: a part is marked read only after the reader
@@ -942,6 +945,10 @@ struct PlanDayView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { await vm.loadReflection() }
         .fullScreenCover(item: $videoItem) { it in videoWindow(it.url) }
+        .fullScreenCover(isPresented: $showKeepsake) {
+            PlanKeepsakeView(planTitle: ref.planTitle ?? ref.day.title ?? "your plan",
+                             days: ref.day.dayNumber) { showKeepsake = false; dismiss() }
+        }
         .onAppear { tabs.chromeHidden = true }
         .onPreferenceChange(ReaderScrollKey.self) { scrollY = -$0 }
         .onPreferenceChange(ViewportHKey.self) { viewportH = $0 }
@@ -1285,6 +1292,11 @@ struct PlanDayView: View {
                         if await vm.completeDay() {
                             Haptics.success() // land the celebration with a felt "done"
                             justDone = true
+                            // Finishing the WHOLE plan opens the keepsake after the burst.
+                            if vm.planCompleted {
+                                try? await Task.sleep(nanoseconds: 700_000_000)
+                                showKeepsake = true
+                            }
                             // The intense fireworks run ~5s, then retire (the completed
                             // button stays via vm.dayCompleted).
                             try? await Task.sleep(nanoseconds: 5_300_000_000)
@@ -1560,5 +1572,93 @@ private struct DayVideoCard: View {
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+    }
+}
+
+// MARK: - Plan completion keepsake (milestone celebration + shareable card)
+
+/// A warm, full-screen "you finished the plan" moment: a ceremonial gold seal,
+/// the plan name in serif, days walked, a blessing, fireworks, and a shareable
+/// keepsake card. The emotional payoff that makes members start the next plan.
+struct PlanKeepsakeView: View {
+    let planTitle: String
+    let days: Int
+    let onDone: () -> Void
+    @State private var shareImage: Image?
+    @State private var seal = false
+
+    var body: some View {
+        ZStack {
+            PL.cream.ignoresSafeArea()
+            IntenseCelebration().ignoresSafeArea().allowsHitTesting(false)
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                ZStack {
+                    Circle().stroke(PL.gold.opacity(0.4), lineWidth: 2).frame(width: 132, height: 132)
+                    Circle()
+                        .fill(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 104, height: 104)
+                        .shadow(color: PL.gold.opacity(0.5), radius: 16, y: 8)
+                    Icon(.check, size: 40, color: .white)
+                }
+                .scaleEffect(seal ? 1 : 0.6).opacity(seal ? 1 : 0)
+                .padding(.bottom, 24)
+                Text("PLAN COMPLETE").font(.inter(12, .bold)).kerning(2.4).foregroundStyle(PL.goldDeep)
+                Text(planTitle).font(.fraunces(30, .semibold)).foregroundStyle(PL.navy)
+                    .multilineTextAlignment(.center).padding(.horizontal, 32).padding(.top, 8)
+                Text("\(days) days walking with God").font(.inter(14, .medium)).foregroundStyle(PL.ink2).padding(.top, 6)
+                Text("“Well done, good and faithful servant.”\nMatthew 25:23")
+                    .font(.fraunces(15)).italic().foregroundStyle(PL.goldDeep)
+                    .multilineTextAlignment(.center).lineSpacing(4).padding(.horizontal, 40).padding(.top, 18)
+                Spacer(minLength: 0)
+                VStack(spacing: 10) {
+                    if let shareImage {
+                        ShareLink(item: shareImage, preview: SharePreview("I completed \(planTitle)", image: shareImage)) {
+                            HStack(spacing: 8) {
+                                Icon(.share2, size: 15, color: .white)
+                                Text("Share my finish").font(.inter(15, .bold)).foregroundStyle(.white)
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(PL.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        }
+                    }
+                    Button { Haptics.tap(); onDone() } label: {
+                        Text("Continue your journey").font(.inter(15, .bold)).foregroundStyle(PL.navy)
+                            .frame(maxWidth: .infinity, minHeight: 52)
+                            .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }.buttonStyle(.pressable)
+                }
+                .padding(.horizontal, 24).padding(.bottom, 30)
+            }
+        }
+        .onAppear {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.6).delay(0.15)) { seal = true }
+            let renderer = ImageRenderer(content: KeepsakeShareCard(planTitle: planTitle, days: days))
+            renderer.scale = 3
+            if let ui = renderer.uiImage { shareImage = Image(uiImage: ui) }
+        }
+    }
+}
+
+/// The rendered image shared to WhatsApp / socials — a branded Nuru keepsake.
+struct KeepsakeShareCard: View {
+    let planTitle: String
+    let days: Int
+    var body: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                Circle().fill(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 84, height: 84)
+                Icon(.check, size: 34, color: .white)
+            }
+            Text("PLAN COMPLETE").font(.inter(11, .bold)).kerning(2).foregroundStyle(PL.goldDeep).padding(.top, 4)
+            Text(planTitle).font(.fraunces(26, .semibold)).foregroundStyle(PL.navy).multilineTextAlignment(.center)
+            Text("\(days) days walking with God").font(.inter(13, .medium)).foregroundStyle(PL.ink2)
+            Text("NURU PATHWAY").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep).padding(.top, 8)
+        }
+        .padding(40)
+        .frame(width: 400, height: 400)
+        .background(PL.cream)
     }
 }
