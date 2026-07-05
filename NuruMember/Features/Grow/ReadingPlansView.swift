@@ -416,6 +416,10 @@ struct PlanDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
         .onAppear { tabs.chromeHidden = true }
+        // Restore the bar when this plan is popped (works from the Plans tab AND from
+        // the Home resume banner). Pushing the day view keeps this mounted, so this
+        // only fires on the real pop back out of the plan.
+        .onDisappear { tabs.chromeHidden = false }
     }
 
     // Real completion state, derived from the day rows the server returns.

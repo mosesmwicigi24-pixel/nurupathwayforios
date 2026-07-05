@@ -252,6 +252,7 @@ struct HomeView: View {
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
         s.append(AnyView(rhythmCard))                                                   // 2b · Today's rhythm (right under For-you-today)
+        if let rp = resumePlan { s.append(AnyView(planResumeBanner(rp))) }              // 2c · Continue your plan (resume nudge)
         if let v = vm.welcomeVideo { s.append(AnyView(welcomeVideoCard(v))) }           // 3
         s.append(AnyView(verseCard))                                                    // 4
         if !vm.prayerPosts.isEmpty { s.append(AnyView(prayerWallCard)) }                // 5
@@ -880,11 +881,57 @@ struct HomeView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
+    // MARK: 2c — "Continue your plan" resume banner (a pending-study nudge)
+
+    /// The member's in-progress plan (enrolled, not yet finished), if any.
+    private var resumePlan: ReadingPlanRow? {
+        guard let p = vm.plan, p.enrolled, p.completedAt == nil else { return nil }
+        return p
+    }
+
+    private func planResumeBanner(_ p: ReadingPlanRow) -> some View {
+        let day = p.currentDay ?? 1
+        let done = p.completedDays?.count ?? max(0, day - 1)
+        let pct = p.dayCount > 0 ? CGFloat(done) / CGFloat(p.dayCount) : 0
+        return NavigationLink(value: p) {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
+                    Circle().trim(from: 0, to: pct)
+                        .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Icon(.bookMarked, size: 17, color: .white)
+                }
+                .frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CONTINUE YOUR PLAN").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                    Text(p.title).font(.fraunces(18, .semibold)).foregroundStyle(.white).lineLimit(1)
+                    Text("Day \(day) of \(p.dayCount) · pick up where you left off")
+                        .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                }
+                Spacer(minLength: 8)
+                Icon(.arrowRight, size: 18, color: Nuru.gold)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity)
+            .background(Nuru.navyGradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+    }
+
     // MARK: 6 — Reading-plan + Prayer-journal minis
 
     private var minisRow: some View {
         HStack(spacing: Nuru.S.sm) {
-            NavigationLink(value: GrowDestination.readingPlans) { readingPlanMini }.buttonStyle(.pressable)
+            // Resume the plan directly when one is in progress; otherwise open the catalogue.
+            Group {
+                if let p = resumePlan {
+                    NavigationLink(value: p) { readingPlanMini }
+                } else {
+                    NavigationLink(value: GrowDestination.readingPlans) { readingPlanMini }
+                }
+            }
+            .buttonStyle(.pressable)
             NavigationLink(value: GrowDestination.prayerJournal) { prayerJournalMini }.buttonStyle(.pressable)
         }
         .fixedSize(horizontal: false, vertical: true)
