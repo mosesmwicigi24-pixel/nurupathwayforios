@@ -42,6 +42,29 @@ enum PlanReminders {
     }
 }
 
+// MARK: - Reader palette (day / warm-night sepia)
+
+/// Colors for the day reader in either light (cream/navy) or a warm night/sepia
+/// mode (deep warm paper, cream ink, dimmed gold) for comfortable low-light reading.
+struct ReaderPalette {
+    var night: Bool = false
+    var bg: Color { night ? Color(hex: 0x171411) : PL.cream }
+    var ink: Color { night ? Color(hex: 0xEBE3D3) : PL.navy }
+    var inkDim: Color { night ? Color(hex: 0x9A9280) : PL.ink3 }
+    var card: Color { night ? Color(hex: 0x221E18) : Color.white }
+    var gold: Color { night ? Color(hex: 0xD9B65A) : PL.gold }
+    var goldDeep: Color { night ? Color(hex: 0xCBA24A) : PL.goldDeep }
+    var border: Color { night ? Color.white.opacity(0.09) : PL.border }
+    var verseBg: Color { night ? Color(hex: 0x251E13) : PL.highlight }
+}
+private struct ReaderPaletteKey: EnvironmentKey { static let defaultValue = ReaderPalette() }
+extension EnvironmentValues {
+    var readerPalette: ReaderPalette {
+        get { self[ReaderPaletteKey.self] }
+        set { self[ReaderPaletteKey.self] = newValue }
+    }
+}
+
 // MARK: - Plans list (discovery)
 
 @MainActor
@@ -885,6 +908,8 @@ struct PlanDayView: View {
     @State private var dwellTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
     @FocusState private var reflectionFocused: Bool
     @State private var fastTicks = 0   // >0 while the "slow down" nudge shows
+    @AppStorage("readerNight") private var readerNight = false
+    private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
 
     struct DayVideoItem: Identifiable { let id = UUID(); let url: URL }
 
@@ -904,7 +929,7 @@ struct PlanDayView: View {
     // quick-step chips at the top that jump to a section (same page, one read).
     var body: some View {
         ZStack {
-            PL.cream.ignoresSafeArea()
+            pal.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
@@ -941,6 +966,7 @@ struct PlanDayView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fastTicks > 0)
         .ignoresSafeArea(edges: .top)
+        .environment(\.readerPalette, pal)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await vm.loadReflection() }
@@ -1010,7 +1036,17 @@ struct PlanDayView: View {
                 Spacer()
                 Text("DAY \(ref.day.dayNumber)").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
                 Spacer()
-                Color.clear.frame(width: 36, height: 36)
+                Button {
+                    Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
+                } label: {
+                    Icon(readerNight ? .sun : .moon, size: 17, color: .white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.10), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(readerNight ? "Day mode" : "Night mode")
             }
             Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.6)).padding(.top, 12)
             Text(ref.day.title ?? "Day \(ref.day.dayNumber)")
@@ -1085,13 +1121,13 @@ struct PlanDayView: View {
         let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
         return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
-                Text(overline(seg)).font(.inter(13, .bold)).kerning(2.0).foregroundStyle(PL.goldDeep)
+                Text(overline(seg)).font(.inter(13, .bold)).kerning(2.0).foregroundStyle(pal.goldDeep)
                 if seg.kind.lowercased() == "scripture", let r = seg.reference, !r.isEmpty {
-                    Text("· \(r)").font(.inter(12, .medium)).foregroundStyle(PL.ink3)
+                    Text("· \(r)").font(.inter(12, .medium)).foregroundStyle(pal.inkDim)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 15)).foregroundStyle(done ? PL.gold : PL.ink3.opacity(0.4))
+                    .font(.system(size: 15)).foregroundStyle(done ? pal.gold : pal.inkDim.opacity(0.5))
                     .scaleEffect(done ? 1 : 0.9)
                     .animation(.spring(response: 0.3, dampingFraction: 0.65), value: done)
             }
@@ -1429,6 +1465,7 @@ private struct SectionFramesKey: PreferenceKey {
 /// Gold pull-quote. Never double-quotes: verse text already carries curly quotes.
 private struct DayPullQuote: View {
     let text: String; let caption: String; var quoted = true
+    @Environment(\.readerPalette) private var pal
     private var display: String {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let already = t.hasPrefix("\u{201C}") || t.hasPrefix("\"")
@@ -1436,17 +1473,17 @@ private struct DayPullQuote: View {
     }
     var body: some View {
         HStack(spacing: 0) {
-            Rectangle().fill(PL.gold).frame(width: 3)
+            Rectangle().fill(pal.gold).frame(width: 3)
             VStack(alignment: .leading, spacing: 8) {
-                Icon(.quote, size: 16, color: PL.gold)
-                Text(display).font(.fraunces(18)).foregroundStyle(PL.navy).lineSpacing(6)
+                Icon(.quote, size: 16, color: pal.gold)
+                Text(display).font(.fraunces(18)).foregroundStyle(pal.ink).lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
-                Text(caption.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(PL.ink3)
+                Text(caption.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(pal.inkDim)
             }
             .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         }
-        .background(PL.highlight, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.gold.opacity(0.3), lineWidth: 1))
+        .background(pal.verseBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.gold.opacity(0.3), lineWidth: 1))
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }
 }
@@ -1455,13 +1492,14 @@ private struct DayPullQuote: View {
 /// height + inter-paragraph gap for comfortable, unhurried reading.
 private struct DayPassage: View {
     let content: String
+    @Environment(\.readerPalette) private var pal
     private var paragraphs: [String] {
         content.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
-                Text(p).font(.fraunces(18)).foregroundStyle(PL.navy).lineSpacing(10)
+                Text(p).font(.fraunces(18)).foregroundStyle(pal.ink).lineSpacing(10)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1472,6 +1510,7 @@ private struct DayPassage: View {
 /// Talk-it-over questions on a white card.
 private struct DayTalk: View {
     let prompt: String
+    @Environment(\.readerPalette) private var pal
     private var questions: [String] {
         prompt.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             .map { $0.hasPrefix("—") ? String($0.dropFirst()).trimmingCharacters(in: .whitespaces) : $0 }
@@ -1480,21 +1519,22 @@ private struct DayTalk: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
-                    Icon(.messageCircle, size: 13, color: PL.goldDeep).padding(.top, 3)
-                    Text(q).font(.fraunces(15)).foregroundStyle(PL.navy).lineSpacing(5)
+                    Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
+                    Text(q).font(.fraunces(15)).foregroundStyle(pal.ink).lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.border, lineWidth: 1))
+        .background(pal.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.border, lineWidth: 1))
     }
 }
 
 /// Prayer on a warm gold tint, with an italic closing blessing (`_…_`).
 private struct DayPrayer: View {
     let text: String
+    @Environment(\.readerPalette) private var pal
     private var lines: [String] { text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
     private var blessing: String? {
         guard let last = lines.last, last.hasPrefix("_"), last.hasSuffix("_"), last.count > 2 else { return nil }
@@ -1504,44 +1544,46 @@ private struct DayPrayer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !prayer.isEmpty {
-                Text(prayer).font(.fraunces(15)).foregroundStyle(PL.navy).lineSpacing(6)
+                Text(prayer).font(.fraunces(15)).foregroundStyle(pal.ink).lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let b = blessing {
-                Text(b).font(.fraunces(14)).italic().foregroundStyle(PL.goldDeep)
+                Text(b).font(.fraunces(14)).italic().foregroundStyle(pal.goldDeep)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(PL.gold.opacity(0.09), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.gold.opacity(0.22), lineWidth: 1))
+        .background(pal.gold.opacity(0.09), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.gold.opacity(0.22), lineWidth: 1))
     }
 }
 
 /// Compact Go Deeper references row.
 private struct DayGoDeeper: View {
     let refs: String
+    @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(spacing: 10) {
-            Icon(.bookOpen, size: 15, color: PL.goldDeep)
-            Text(refs).font(.fraunces(14)).foregroundStyle(PL.navy).fixedSize(horizontal: false, vertical: true)
+            Icon(.bookOpen, size: 15, color: pal.goldDeep)
+            Text(refs).font(.fraunces(14)).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-        .background(PL.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .background(pal.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 
 /// Sign-off line on a soft gold tint.
 private struct DayEncouragement: View {
+    @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Icon(.handHeart, size: 16, color: PL.gold)
+            Icon(.handHeart, size: 16, color: pal.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
-                .font(.nCardBody).foregroundStyle(PL.navy).fixedSize(horizontal: false, vertical: true)
+                .font(.nCardBody).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
-        .background(PL.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(pal.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
 
