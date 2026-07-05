@@ -24,7 +24,9 @@ final class NotificationsViewModel: ObservableObject {
 
 struct NotificationsView: View {
     @StateObject private var vm = NotificationsViewModel()
+    @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
+    @State private var detail: NotificationRow?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -40,10 +42,7 @@ struct NotificationsView: View {
                         emptyState
                     } else {
                         ForEach(vm.rows) { n in
-                            Button {
-                                if n.isUnread { Haptics.tap() }
-                                Task { await vm.open(n) }
-                            } label: { row(n) }.buttonStyle(.pressableSubtle)
+                            rowLink(n)
                             Divider().padding(.leading, 68)
                         }
                     }
@@ -57,6 +56,62 @@ struct NotificationsView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.rows.isEmpty { await vm.load() } }
+        // Fallback popup: read the whole notification, then dismiss.
+        .sheet(item: $detail) { n in
+            NotificationDetailSheet(meta: metaFor(n.template),
+                                    reward: Self.isReward(n.template),
+                                    title: titleFor(n),
+                                    bodyText: bodyFor(n),
+                                    when: ago(n.sentAt ?? n.scheduledFor)) { detail = nil }
+        }
+    }
+
+    // MARK: tap routing — every notification lands exactly where it points
+
+    /// Wraps a row in the right navigation: a push to the precise in-app target
+    /// (announcement, module, level), a tab switch (events / giving / profile /
+    /// pathway), or — when there is no target — the read-and-dismiss popup.
+    @ViewBuilder private func rowLink(_ n: NotificationRow) -> some View {
+        let t = n.template
+        if let aid = n.payload?.announcementId, !aid.isEmpty {
+            NavigationLink(value: AppRoute.announcement(aid)) { row(n) }
+                .buttonStyle(.pressableSubtle)
+                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
+        } else if let mid = n.payload?.moduleId, !mid.isEmpty {
+            NavigationLink(value: PathwayRoute.module(mid)) { row(n) }
+                .buttonStyle(.pressableSubtle)
+                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
+        } else if t.hasPrefix("level"), let lvl = n.payload?.levelNumber {
+            NavigationLink(value: PathwayRoute.level(lvl)) { row(n) }
+                .buttonStyle(.pressableSubtle)
+                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
+        } else if let tab = tabDest(t) {
+            Button {
+                markRead(n)
+                Haptics.tap()
+                dismiss()
+                tabs.selected = tab
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        } else {
+            Button {
+                markRead(n)
+                Haptics.tap()
+                detail = n
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        }
+    }
+
+    private func markRead(_ n: NotificationRow) {
+        if n.isUnread { Task { await vm.open(n) } }
+    }
+
+    /// Template families whose home is a whole tab, not one pushed page.
+    private func tabDest(_ t: String) -> AppTab? {
+        if t.hasPrefix("event") { return .events }
+        if t.hasPrefix("giving") || t.hasPrefix("payment") { return .give }
+        if t.hasPrefix("badge") || t.hasPrefix("certificate") { return .profile }
+        if t.hasPrefix("level") || t.hasPrefix("reflection") { return .pathway }
+        return nil
     }
 
     /// Unread reward rows (badge / certificate / level) get the Figma "gift" cue.
@@ -194,8 +249,8 @@ struct NotificationsView: View {
 
     // Figma CATEGORY_TONE — info / success / warning / security. Reward templates
     // (badge/certificate/level) override the tile with the gold gradient above.
-    private struct Meta { let icon: Lucide; let bg, fg: Color }
-    private func metaFor(_ t: String) -> Meta {
+    struct Meta { let icon: Lucide; let bg, fg: Color }
+    fileprivate func metaFor(_ t: String) -> Meta {
         if t.hasPrefix("reflection") { return Meta(icon: .messageSquareText, bg: Color(hex: 0xFEF3C7), fg: Color(hex: 0xD97706)) }   // warning
         if t.hasPrefix("level") { return Meta(icon: .trendingUp, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }               // success
         if t.hasPrefix("certificate") { return Meta(icon: .award, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }              // success
@@ -239,4 +294,56 @@ struct NotificationsView: View {
 
 private extension String {
     func capitalizingFirst() -> String { isEmpty ? self : prefix(1).uppercased() + dropFirst() }
+}
+
+// MARK: - Read-and-dismiss popup (notifications with no in-app destination)
+
+private struct NotificationDetailSheet: View {
+    let meta: NotificationsView.Meta
+    let reward: Bool
+    let title: String
+    let bodyText: String?
+    let when: String
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(reward
+                              ? AnyShapeStyle(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : AnyShapeStyle(meta.bg))
+                        .frame(width: 48, height: 48)
+                    Icon(meta.icon, size: 21, color: reward ? Nuru.navy : meta.fg)
+                }
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title).font(.fraunces(19, .medium)).kerning(-0.3).foregroundStyle(Nuru.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(when).font(.nMicro).foregroundStyle(Nuru.faint)
+                }
+                Spacer(minLength: 0)
+            }
+            if let b = bodyText, !b.isEmpty {
+                Rectangle().fill(Nuru.border).frame(height: 1).padding(.vertical, 16)
+                Text(b).font(.inter(14)).foregroundStyle(Nuru.muted).lineSpacing(5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 16)
+            Button {
+                Haptics.tap()
+                onDismiss()
+            } label: {
+                Text("Dismiss").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
+                    .frame(maxWidth: .infinity, minHeight: 50)
+                    .background(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+        }
+        .padding(20)
+        .presentationDetents([.fraction(0.42), .medium])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Nuru.paper)
+    }
 }
