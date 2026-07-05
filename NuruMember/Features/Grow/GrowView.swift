@@ -39,6 +39,7 @@ extension View {
             .navigationDestination(for: ReadingPlanRow.self) { PlanDetailView(plan: $0) }
             .navigationDestination(for: PlanDayRef.self) { PlanDayView(ref: $0) }
             .navigationDestination(for: PlanSegmentRef.self) { PlanSegmentView(ref: $0) }
+            .navigationDestination(for: TalkRoute.self) { TalkItOverView(route: $0) }
             .navigationDestination(for: CommunityRoute.self) { r in
                 switch r {
                 case .prayerWall: PrayerWallView()

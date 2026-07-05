@@ -58,6 +58,26 @@ struct PlanSegmentView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         content
                         if ref.part == "respond", let pid = ref.planId {
+                            NavigationLink(value: TalkRoute(planId: pid,
+                                                            dayNumber: ref.dayNumber,
+                                                            planTitle: ref.planTitle,
+                                                            prompt: talkPrompt)) {
+                                HStack(spacing: 12) {
+                                    Icon(.users, size: 16, color: pal.goldDeep)
+                                        .frame(width: 38, height: 38)
+                                        .background(pal.gold.opacity(0.14), in: Circle())
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text("Talk it over together").font(.inter(14, .semibold)).foregroundStyle(pal.ink)
+                                        Text("See what others are hearing — add your voice").font(.inter(11)).foregroundStyle(pal.inkDim)
+                                    }
+                                    Spacer(minLength: 8)
+                                    Icon(.chevronRight, size: 15, color: pal.inkDim)
+                                }
+                                .padding(14)
+                                .background(pal.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.gold.opacity(0.3), lineWidth: 1))
+                            }
+                            .buttonStyle(.pressable)
                             PartReflectionBox(planId: pid, dayNumber: ref.dayNumber)
                         }
                         DayEncouragement()
@@ -261,6 +281,17 @@ struct PlanSegmentView: View {
         )
     }
 
+    /// The day's Talk it Over prompt (first question) — seeds the shared page.
+    private var talkPrompt: String {
+        guard let talk = ref.segments.first(where: { $0.kind.lowercased() == "talk" }),
+              let c = talk.content else { return "What is God saying to you through today's reading?" }
+        let first = c.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .first { !$0.isEmpty }
+        let q = (first ?? "").hasPrefix("—") ? String(first!.dropFirst()).trimmingCharacters(in: .whitespaces) : (first ?? "")
+        return q.isEmpty ? "What is God saying to you through today's reading?" : q
+    }
+
     /// Warm, part-specific completion wording.
     private var finishLabel: String {
         switch ref.part {
@@ -397,5 +428,303 @@ private struct PartReflectionBox: View {
             Haptics.error()
         }
         saving = false
+    }
+}
+
+// MARK: - Talk it Over — the shared plan-day conversation page
+
+/// The community page for a plan day: the day's question in the serif prompt
+/// voice, the family's responses (avatar · name · time · body · encouragement
+/// heart), and a pinned composer. Everyone walking the plan meets here.
+struct TalkItOverView: View {
+    let route: TalkRoute
+
+    @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.dismiss) private var dismiss
+    @State private var posts: [TalkPost] = []
+    @State private var loading = true
+    @State private var draft = ""
+    @State private var posting = false
+    @FocusState private var composing: Bool
+
+    var body: some View {
+        ZStack {
+            PL.cream.ignoresSafeArea()
+            VStack(spacing: 0) {
+                header
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 14) {
+                            promptCard
+                            if loading && posts.isEmpty {
+                                HStack { Spacer(); ProgressView().tint(PL.gold); Spacer() }
+                                    .padding(.vertical, 40)
+                            } else if posts.isEmpty {
+                                emptyState
+                            } else {
+                                ForEach(posts) { post in
+                                    TalkPostRow(post: post) { toggleLike(post) }
+                                        .id(post.postId)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 16)
+                    }
+                    .scrollDismissesKeyboard(.interactively)
+                    .onChange(of: posts.count) { _, _ in
+                        if let last = posts.last {
+                            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(last.postId, anchor: .bottom) }
+                        }
+                    }
+                }
+                composer
+            }
+        }
+        .ignoresSafeArea(edges: .top)
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .onAppear { tabs.chromeHidden = true }
+        .task { await load() }
+        .refreshable { await load() }
+    }
+
+    private func load() async {
+        if let rows = try? await MemberAPI.talkList(planId: route.planId, dayNumber: route.dayNumber) {
+            posts = rows
+        }
+        loading = false
+    }
+
+    private func toggleLike(_ post: TalkPost) {
+        Haptics.love()
+        Task {
+            guard let r = try? await MemberAPI.talkLike(post.postId),
+                  let i = posts.firstIndex(where: { $0.postId == post.postId }) else { return }
+            posts[i] = TalkPost(postId: post.postId, dayNumber: post.dayNumber, body: post.body,
+                                createdAt: post.createdAt, userId: post.userId, name: post.name,
+                                avatarUrl: post.avatarUrl, likeCount: r.likeCount, liked: r.liked)
+        }
+    }
+
+    private func send() {
+        let body = String(draft.trimmingCharacters(in: .whitespacesAndNewlines).prefix(2000))
+        guard !body.isEmpty, !posting else { return }
+        posting = true
+        Task {
+            if let row = try? await MemberAPI.talkPost(planId: route.planId, dayNumber: route.dayNumber, body: body) {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { posts.append(row) }
+                draft = ""
+                composing = false
+                Haptics.success()
+            } else {
+                Haptics.error()
+            }
+            posting = false
+        }
+    }
+
+    // MARK: header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    Icon(.arrowLeft, size: 18, color: .white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.10), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                Spacer(minLength: 8)
+                Text("DAY \(route.dayNumber) · \(route.planTitle.uppercased())")
+                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                Spacer(minLength: 8)
+                Color.clear.frame(width: 36, height: 36)
+            }
+            HStack(spacing: 12) {
+                Icon(.users, size: 16, color: PL.gold)
+                    .frame(width: 40, height: 40)
+                    .background(PL.gold.opacity(0.16), in: Circle())
+                    .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Talk it Over").font(.fraunces(24, .medium)).kerning(-0.7).foregroundStyle(.white)
+                    Text(posts.isEmpty ? "Be the first to respond" : "\(posts.count) response\(posts.count == 1 ? "" : "s")")
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
+                }
+                Spacer(minLength: 0)
+                participantStack
+            }
+            .padding(.top, 14)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20).padding(.top, 8).padding(.bottom, 16)
+        .background(
+            LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .clipShape(.rect(bottomLeadingRadius: 22, bottomTrailingRadius: 22))
+                .ignoresSafeArea(edges: .top)
+        )
+    }
+
+    /// Overlapping avatars of the people in today's conversation.
+    private var participantStack: some View {
+        let people = Array(Dictionary(grouping: posts, by: \.userId).values.compactMap(\.first).prefix(4))
+        return HStack(spacing: -8) {
+            ForEach(people) { p in
+                TalkAvatar(name: p.name, url: p.avatarUrl, size: 26)
+                    .overlay(Circle().stroke(PL.navy, lineWidth: 2))
+            }
+        }
+    }
+
+    // MARK: prompt + empty state
+
+    private var promptCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("TODAY'S QUESTION").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
+            Text(route.prompt)
+                .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
+                .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        .background(PL.highlight, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.gold.opacity(0.3), lineWidth: 1))
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Icon(.messageCircle, size: 24, color: PL.gold)
+            Text("No responses yet").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+            Text("Share what God is showing you — your voice encourages the family.")
+                .font(.inter(12)).foregroundStyle(PL.ink3)
+                .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 44)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+
+    // MARK: composer (pinned)
+
+    private var composer: some View {
+        HStack(spacing: 10) {
+            ZStack(alignment: .leading) {
+                if draft.isEmpty {
+                    Text("Write your response…").font(.inter(13)).foregroundStyle(PL.ink3)
+                        .padding(.horizontal, 14)
+                }
+                TextField("", text: $draft, axis: .vertical)
+                    .lineLimit(1...5)
+                    .font(.inter(13)).foregroundStyle(PL.navy).tint(PL.gold)
+                    .focused($composing)
+                    .padding(.horizontal, 14)
+            }
+            .padding(.vertical, 10)
+            .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
+            Button { send() } label: {
+                Group {
+                    if posting { ProgressView().tint(PL.navy) }
+                    else { Icon(.send, size: 16, color: PL.navy) }
+                }
+                .frame(width: 42, height: 42)
+                .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || posting)
+            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+        }
+        .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
+        .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+    }
+}
+
+/// One response row — avatar, name, time-ago, body, encouragement heart.
+private struct TalkPostRow: View {
+    let post: TalkPost
+    let onLike: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            TalkAvatar(name: post.name, url: post.avatarUrl, size: 36)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 6) {
+                    Text(post.name).font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(TalkTime.ago(post.createdAt)).font(.inter(10)).foregroundStyle(PL.ink3)
+                }
+                Text(post.body)
+                    .font(.inter(13)).foregroundStyle(PL.bodyInk).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(action: onLike) {
+                    HStack(spacing: 5) {
+                        Image(systemName: post.liked ? "heart.fill" : "heart")
+                            .font(.system(size: 13))
+                            .foregroundStyle(post.liked ? PL.gold : PL.ink3)
+                        if post.likeCount > 0 {
+                            Text("\(post.likeCount)").font(.inter(11, .semibold))
+                                .foregroundStyle(post.liked ? PL.goldDeep : PL.ink3)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable)
+                .animation(.spring(response: 0.3, dampingFraction: 0.6), value: post.liked)
+            }
+        }
+        .padding(14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+}
+
+/// Avatar with warm-initials fallback.
+private struct TalkAvatar: View {
+    let name: String
+    let url: String?
+    let size: CGFloat
+    private var initials: String {
+        let parts = name.split(separator: " ").prefix(2)
+        let s = parts.compactMap { $0.first.map(String.init) }.joined().uppercased()
+        return s.isEmpty ? "?" : s
+    }
+    var body: some View {
+        Group {
+            if let u = url.flatMap(URL.init), !(url ?? "").isEmpty {
+                Color.clear.overlay {
+                    CachedAsyncImage(url: u) { phase in
+                        if let img = phase.image { img.resizable().scaledToFill() }
+                        else { fallback }
+                    }
+                }
+                .clipShape(Circle())
+            } else {
+                fallback.clipShape(Circle())
+            }
+        }
+        .frame(width: size, height: size)
+    }
+    private var fallback: some View {
+        ZStack {
+            Circle().fill(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
+            Text(initials).font(.inter(size * 0.34, .bold)).foregroundStyle(.white)
+        }
+    }
+}
+
+/// Compact relative time for talk rows ("2h", "3d", "1w").
+private enum TalkTime {
+    static func ago(_ iso: String) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = f.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) ?? Date()
+        let s = max(0, Date().timeIntervalSince(date))
+        if s < 60 { return "now" }
+        if s < 3600 { return "\(Int(s / 60))m" }
+        if s < 86400 { return "\(Int(s / 3600))h" }
+        if s < 604800 { return "\(Int(s / 86400))d" }
+        return "\(Int(s / 604800))w"
     }
 }

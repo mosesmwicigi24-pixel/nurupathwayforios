@@ -51,3 +51,43 @@ extension MemberAPI {
         return try await APIClient.shared.postEmpty("me/prayers/\(entryId)/share-to-wall", as: Res.self).postId
     }
 }
+
+// MARK: - Talk it Over (the shared plan-day conversation)
+
+/// One response in a plan day's shared "Talk it Over" thread.
+struct TalkPost: Decodable, Sendable, Identifiable {
+    let postId: String
+    let dayNumber: Int
+    let body: String
+    let createdAt: String
+    let userId: String
+    let name: String
+    let avatarUrl: String?
+    let likeCount: Int
+    let liked: Bool
+    var id: String { postId }
+}
+
+extension MemberAPI {
+    /// GET /growth/plans/{planId}/days/{n}/talk → `{ data: [TalkPost] }` oldest first.
+    static func talkList(planId: String, dayNumber: Int) async throws -> [TalkPost] {
+        struct Env: Decodable { let data: [TalkPost] }
+        return try await APIClient.shared.get(
+            "growth/plans/\(planId)/days/\(dayNumber)/talk", as: Env.self).data
+    }
+
+    /// POST …/talk — add my response (1..2000 chars). Returns the saved row.
+    static func talkPost(planId: String, dayNumber: Int, body: String) async throws -> TalkPost {
+        struct Body: Encodable { let body: String }
+        return try await APIClient.shared.post(
+            "growth/plans/\(planId)/days/\(dayNumber)/talk",
+            body: Body(body: body), as: TalkPost.self)
+    }
+
+    /// POST /growth/talk/{id}/like — toggle my encouragement heart.
+    static func talkLike(_ postId: String) async throws -> (liked: Bool, likeCount: Int) {
+        struct Res: Decodable { let liked: Bool; let likeCount: Int }
+        let r = try await APIClient.shared.postEmpty("growth/talk/\(postId)/like", as: Res.self)
+        return (r.liked, r.likeCount)
+    }
+}

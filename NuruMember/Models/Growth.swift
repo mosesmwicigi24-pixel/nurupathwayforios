@@ -131,6 +131,14 @@ struct PlanSegmentRef: Hashable {
     var doneIds: [String] = []
 }
 
+/// Navigation to a plan day's shared Talk it Over conversation.
+struct TalkRoute: Hashable {
+    let planId: String
+    let dayNumber: Int
+    let planTitle: String
+    let prompt: String
+}
+
 // MARK: - Prayer journal
 
 struct PrayerEntry: Codable, Sendable, Identifiable {
