@@ -121,6 +121,7 @@ struct PlanSegmentRef: Hashable {
     let dayNumber: Int
     let segments: [PlanSegment]
     let index: Int
+    var planId: String? = nil   // enables the reflection box inside the Prayer part
 }
 
 // MARK: - Prayer journal

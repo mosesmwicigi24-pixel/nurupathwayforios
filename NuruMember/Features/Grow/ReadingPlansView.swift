@@ -896,22 +896,8 @@ struct PlanDayView: View {
     @Environment(\.openURL) private var openURL
     @State private var justDone = false
     @State private var showKeepsake = false
-    @State private var videoItem: DayVideoItem?
-
-    // Scroll-dwell reading tracker: a part is marked read only after the reader
-    // has lingered on it (slow scroll / pause), never on a fast flick-through.
-    @State private var sectionFrames: [String: CGRect] = [:]
-    @State private var scrollY: CGFloat = 0
-    @State private var lastScrollY: CGFloat = 0
-    @State private var dwell: [String: Double] = [:]
-    @State private var requested = Set<String>()
-    @State private var dwellTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
-    @FocusState private var reflectionFocused: Bool
-    @State private var fastTicks = 0   // >0 while the "slow down" nudge shows
     @AppStorage("readerNight") private var readerNight = false
     private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
-
-    struct DayVideoItem: Identifiable { let id = UUID(); let url: URL }
 
     init(ref: PlanDayRef) {
         self.ref = ref
@@ -940,100 +926,117 @@ struct PlanDayView: View {
         return Double(vm.completedSegments.count) / Double(segments.count)
     }
 
-    // Open the day → the reading itself: one warm scroll of every part, with
-    // quick-step chips at the top that jump to a section (same page, one read).
+
+    // Open a day -> the DAY HUB: the big day numeral, then the day's parts as
+    // tappable rows in the study flow (Watch/Listen -> Scripture -> Devotional ->
+    // Talk it Over -> Prayer -> Go Deeper). Each part reads on its own focused
+    // page and ticks here on return; "Mark day complete" seals the day.
     var body: some View {
         ZStack {
             pal.bg.ignoresSafeArea()
             VStack(spacing: 0) {
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(spacing: 0) {
-                            Color.clear.frame(height: 0)
-                                .background(GeometryReader { g in
-                                    Color.clear.preference(key: ReaderScrollKey.self,
-                                                           value: g.frame(in: .named("reader")).minY)
-                                })
-                            dayHeader
-                            quickSteps(proxy)
-                            VStack(alignment: .leading, spacing: 30) {
-                                ForEach(Array(segments.enumerated()), id: \.element.id) { _, seg in
-                                    readerSection(seg).id(seg.segmentId)
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        dayHeader
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("TODAY'S JOURNEY").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
+                            ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
+                                NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                                                     dayNumber: ref.day.dayNumber,
+                                                                     segments: segments,
+                                                                     index: idx,
+                                                                     planId: ref.planId)) {
+                                    partRow(seg)
                                 }
-                                reflectionCard
-                                DayEncouragement()
+                                .buttonStyle(.pressable)
                             }
-                            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
+                            DayEncouragement().padding(.top, 10)
                         }
+                        .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24)
                     }
-                    .scrollDismissesKeyboard(.interactively)
-                    .coordinateSpace(name: "reader")
-                    .background(GeometryReader { g in
-                        Color.clear.preference(key: ViewportHKey.self, value: g.size.height)
-                    })
                 }
                 footerBar
             }
             if justDone { IntenseCelebration().ignoresSafeArea().allowsHitTesting(false) }
         }
-        .overlay(alignment: .top) {
-            if fastTicks > 0 { fastScrollNudge.padding(.top, 92) }
-        }
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fastTicks > 0)
         .ignoresSafeArea(edges: .top)
         .environment(\.readerPalette, pal)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .task { await vm.loadReflection() }
-        .fullScreenCover(item: $videoItem) { it in videoWindow(it.url) }
         .fullScreenCover(isPresented: $showKeepsake) {
             PlanKeepsakeView(planTitle: ref.planTitle ?? ref.day.title ?? "your plan",
                              days: ref.day.dayNumber) { showKeepsake = false; dismiss() }
         }
         .onAppear { tabs.chromeHidden = true }
-        .onPreferenceChange(ReaderScrollKey.self) { scrollY = -$0 }
-        .onPreferenceChange(ViewportHKey.self) { viewportH = $0 }
-        .onPreferenceChange(SectionFramesKey.self) { sectionFrames = $0 }
-        .onReceive(dwellTimer) { _ in tickDwell() }
-        .onDisappear { dwellTimer.upstream.connect().cancel() }
-    }
-
-    @State private var viewportH: CGFloat = 720
-
-    /// One tick (~0.15s): accrue "reading" credit for the part straddling the
-    /// reading line, but ONLY while scrolling slowly — a fast flick earns nothing.
-    /// When a part's dwell passes its threshold it marks itself read.
-    private func tickDwell() {
-        let dt = 0.15
-        let velocity = abs(scrollY - lastScrollY) / dt
-        lastScrollY = scrollY
-        if fastTicks > 0 { fastTicks -= 1 }              // fade the nudge out over time
-        if velocity > 2600 { fastTicks = 16 }            // racing past → "slow down" (~2.4s)
-        guard velocity < 650 else { return }            // fast scroll → skip, no credit
-        let line = viewportH * 0.40                       // reading line: upper-middle
-        for seg in segments {
-            let id = seg.segmentId
-            if vm.completedSegments.contains(id) || seg.completed { continue }
-            guard let f = sectionFrames[id], f.minY <= line, line <= f.maxY else { continue }
-            let need = min(2.2, max(0.9, f.height / 520))  // longer parts need a bit more dwell
-            dwell[id, default: 0] += dt
-            if dwell[id, default: 0] >= need, !requested.contains(id) {
-                requested.insert(id)
-                Task { await vm.completeSegment(id) }
+        // A part finished in its reader ticks its row the moment we return.
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanPartDone)) { note in
+            if let id = note.object as? String {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) {
+                    _ = vm.completedSegments.insert(id)
+                }
             }
         }
     }
 
-    /// Floating "slow down" nudge — appears when the reader races past the text.
-    private var fastScrollNudge: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "tortoise.fill").font(.system(size: 13)).foregroundStyle(PL.gold)
-            Text("Slow down — savour the reading").font(.inter(12.5, .semibold)).foregroundStyle(.white)
+    private var nextId: String? {
+        segments.first(where: { !vm.completedSegments.contains($0.segmentId) && !$0.completed })?.segmentId
+    }
+
+    // MARK: part rows (medallion / name / status -- the label and tick never collide)
+
+    private func partRow(_ seg: PlanSegment) -> some View {
+        let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
+        let isNext = seg.segmentId == nextId && !done
+        return HStack(spacing: 12) {
+            Icon(sectionIcon(seg), size: 16, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
+                .frame(width: 42, height: 42)
+                .background((done || isNext) ? pal.gold.opacity(0.15) : pal.inkDim.opacity(0.07), in: Circle())
+                .overlay(Circle().stroke(done ? pal.gold.opacity(0.5) : (isNext ? pal.gold.opacity(0.4) : pal.border), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(partLabel(seg)).font(.inter(14, .semibold)).foregroundStyle(pal.ink)
+                Text(partSub(seg)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            if done {
+                Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(pal.gold)
+                    .transition(.scale(scale: 0.5).combined(with: .opacity))
+            } else if isNext {
+                Text("Next").font(.inter(10, .bold)).foregroundStyle(PL.navy)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(pal.gold, in: Capsule())
+            } else {
+                Image(systemName: "circle").font(.system(size: 20)).foregroundStyle(pal.inkDim.opacity(0.35))
+            }
         }
-        .padding(.horizontal, 16).padding(.vertical, 10)
-        .background(PL.navy, in: Capsule())
-        .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .padding(14)
+        .background(pal.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(isNext ? pal.gold.opacity(0.35) : pal.border, lineWidth: 1))
+    }
+
+    private func partLabel(_ seg: PlanSegment) -> String {
+        if seg.title.lowercased().hasPrefix("pray") { return "Prayer" }
+        switch seg.kind.lowercased() {
+        case "video": return "Watch"
+        case "audio": return "Listen"
+        case "scripture": return "Scripture"
+        case "talk": return "Talk it Over"
+        case "reading": return "Go Deeper"
+        default: return "Devotional"
+        }
+    }
+
+    private func partSub(_ seg: PlanSegment) -> String {
+        if vm.completedSegments.contains(seg.segmentId) || seg.completed { return "Completed" }
+        if seg.title.lowercased().hasPrefix("pray") { return "Prayer + your reflection" }
+        switch seg.kind.lowercased() {
+        case "video": return "Begin with today's video"
+        case "audio": return "Listen to today's word"
+        case "scripture": return seg.reference ?? "Today's reading"
+        case "talk": return "Questions to sit with"
+        case "reading": return seg.content ?? "Further scriptures"
+        default: return "Today's teaching"
+        }
     }
 
     // MARK: navy header (fresh DayReader)
@@ -1110,88 +1113,6 @@ struct PlanDayView: View {
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
-    // MARK: quick steps (in-page jump nav under the header)
-
-    private func quickSteps(_ proxy: ScrollViewProxy) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
-                ForEach(Array(segments.enumerated()), id: \.element.id) { _, seg in
-                    let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
-                    Button {
-                        Haptics.tap()
-                        withAnimation(.easeOut(duration: 0.35)) { proxy.scrollTo(seg.segmentId, anchor: .top) }
-                    } label: {
-                        HStack(spacing: 5) {
-                            if done { Icon(.check, size: 10, color: PL.goldDeep) }
-                            Text(chipLabel(seg)).font(.inter(12, .bold)).foregroundStyle(PL.navy)
-                        }
-                        .padding(.horizontal, 12).padding(.vertical, 8)
-                        .background(PL.gold.opacity(0.14), in: Capsule())
-                        .overlay(Capsule().stroke(PL.gold.opacity(0.3), lineWidth: 1))
-                    }
-                    .buttonStyle(.pressable)
-                }
-            }
-            .padding(.horizontal, 20).padding(.vertical, 12)
-        }
-        .background(PL.cream)
-    }
-
-    private func chipLabel(_ seg: PlanSegment) -> String {
-        if seg.title.lowercased().hasPrefix("pray") { return "Prayer" }
-        switch seg.kind.lowercased() {
-        case "scripture": return "Scripture"
-        case "devotional": return "Devotional"
-        case "talk": return "Talk"
-        case "reading": return "Deeper"
-        case "video": return "Watch"
-        default: return seg.title.isEmpty ? seg.kind.capitalized : seg.title
-        }
-    }
-
-    // MARK: reader section (overline + completion tick + kind-aware body)
-
-    private func readerSection(_ seg: PlanSegment) -> some View {
-        let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
-        return VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 9) {
-                // Gold medallion per part — the day reads as an organized journey.
-                Icon(sectionIcon(seg), size: 13, color: pal.goldDeep)
-                    .frame(width: 28, height: 28)
-                    .background(pal.gold.opacity(0.14), in: Circle())
-                    .overlay(Circle().stroke(pal.gold.opacity(0.3), lineWidth: 1))
-                Text(overline(seg)).font(.inter(13, .bold)).kerning(2.0).foregroundStyle(pal.goldDeep)
-                if seg.kind.lowercased() == "scripture", let r = seg.reference, !r.isEmpty {
-                    Text("· \(r)").font(.inter(12, .medium)).foregroundStyle(pal.inkDim)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: done ? "checkmark.circle.fill" : "circle")
-                    .font(.system(size: 15)).foregroundStyle(done ? pal.gold : pal.inkDim.opacity(0.5))
-                    .scaleEffect(done ? 1 : 0.9)
-                    .animation(.spring(response: 0.3, dampingFraction: 0.65), value: done)
-            }
-            sectionBody(seg)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(GeometryReader { g in
-            Color.clear.preference(key: SectionFramesKey.self,
-                                   value: [seg.segmentId: g.frame(in: .named("reader"))])
-        })
-    }
-
-    private func overline(_ seg: PlanSegment) -> String {
-        if seg.title.lowercased().hasPrefix("pray") { return "PRAYER" }
-        if !seg.title.isEmpty { return seg.title.uppercased() }
-        switch seg.kind.lowercased() {
-        case "scripture": return "TODAY'S READING"
-        case "devotional": return "DEVOTIONAL"
-        case "talk": return "TALK IT OVER"
-        case "reading": return "GO DEEPER"
-        case "video": return "WATCH"
-        default: return seg.kind.uppercased()
-        }
-    }
-
     private func sectionIcon(_ seg: PlanSegment) -> Lucide {
         if seg.title.lowercased().hasPrefix("pray") { return .handHeart }
         switch seg.kind.lowercased() {
@@ -1201,144 +1122,6 @@ struct PlanDayView: View {
         case "reading": return .bookOpen
         default: return .sun
         }
-    }
-
-    @ViewBuilder
-    private func sectionBody(_ seg: PlanSegment) -> some View {
-        switch seg.kind.lowercased() {
-        case "video":
-            DayVideoCard(seg: seg) { url in videoItem = DayVideoItem(url: url) }
-        case "scripture":
-            DayPullQuote(text: (seg.content?.isEmpty == false ? seg.content! : (seg.reference ?? seg.title)),
-                         caption: seg.reference ?? "Scripture",
-                         quoted: seg.content?.isEmpty == false)
-        case "talk":
-            if let c = seg.content, !c.isEmpty { DayTalk(prompt: c) }
-        case "reading":
-            if let c = seg.content, !c.isEmpty { DayGoDeeper(refs: c) }
-        default:
-            if seg.title.lowercased().hasPrefix("pray"), let c = seg.content, !c.isEmpty { DayPrayer(text: c) }
-            else if let c = seg.content, !c.isEmpty { DayPassage(content: c) }
-        }
-    }
-
-    // MARK: video window (opens over the day content)
-
-    private func videoWindow(_ url: URL) -> some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack {
-                HStack {
-                    Button { videoItem = nil } label: {
-                        Icon(.x, size: 18, color: .white)
-                            .frame(width: 38, height: 38).background(Color.white.opacity(0.18), in: Circle())
-                    }
-                    .buttonStyle(.pressable)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 20).padding(.top, 12)
-                Spacer(minLength: 0)
-                Button { openURL(url) } label: {
-                    HStack(spacing: 8) {
-                        Icon(.play, size: 16, color: PL.navy)
-                        Text("Start watching").font(.inter(16, .bold)).foregroundStyle(PL.navy)
-                    }
-                    .frame(maxWidth: .infinity).frame(height: 52)
-                    .background(Color.white, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .padding(.horizontal, 20).padding(.bottom, 40)
-            }
-        }
-    }
-
-    private func segmentIcon(_ kind: String) -> Lucide {
-        switch kind.lowercased() {
-        case "video":      return .play
-        case "reading":    return .bookOpen
-        case "devotional": return .sun
-        case "talk":       return .messageCircle
-        case "scripture":  return .quote
-        default:           return .book
-        }
-    }
-
-    // MARK: reflection — the Figma textarea, now backed by the real endpoint.
-    // Pre-filled from GET; Submit upserts (the button reads "Update" once a
-    // reflection exists) and lands a brief "Saved" check.
-
-    private var reflectionCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("REFLECTION").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
-                Spacer(minLength: 0)
-                if vm.reflectionJustSaved {
-                    HStack(spacing: 4) {
-                        Icon(.check, size: 11, color: Color(hex: 0x16A34A))
-                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
-                    }
-                    .transition(.opacity.combined(with: .scale(scale: 0.85)))
-                }
-            }
-            Text("What is God showing you today?")
-                .font(.fraunces(16, .medium)).italic().kerning(-0.16).foregroundStyle(PL.navy)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 8)
-            ZStack(alignment: .topLeading) {
-                if vm.reflectionText.isEmpty {
-                    Text("Write it down while it's fresh…").font(.inter(13)).foregroundStyle(PL.ink3)
-                        .padding(.horizontal, 14).padding(.vertical, 12)
-                }
-                TextField("", text: $vm.reflectionText, axis: .vertical)
-                    .lineLimit(4...10)
-                    .font(.inter(13.5)).foregroundStyle(PL.navy).tint(PL.gold)
-                    .focused($reflectionFocused)
-                    .padding(.horizontal, 14).padding(.vertical, 12)
-                    .toolbar {
-                        ToolbarItemGroup(placement: .keyboard) {
-                            Spacer()
-                            Button("Done") { reflectionFocused = false }
-                                .font(.inter(14, .semibold)).foregroundStyle(PL.goldDeep)
-                        }
-                    }
-            }
-            .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
-            .padding(.top, 10)
-            if let err = vm.reflectionError {
-                Text(err).font(.inter(11)).foregroundStyle(Color(hex: 0xB42318))
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 8)
-            }
-            reflectionSubmit.padding(.top, 10)
-        }
-        .padding(16)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
-    }
-
-    private var reflectionSubmit: some View {
-        let empty = vm.reflectionText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return Button {
-            Haptics.action()
-            Task { await vm.saveReflection() }
-        } label: {
-            HStack(spacing: 6) {
-                if vm.reflectionSaving { ProgressView().tint(PL.refInk) }
-                else { Icon(.pencil, size: 13, color: PL.refInk) }
-                Text(vm.savedReflection == nil ? "Save reflection" : "Update")
-                    .font(.inter(12, .bold)).foregroundStyle(PL.refInk)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 10)
-            .background(PL.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(PL.gold.opacity(0.27), lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
-        .disabled(empty || vm.reflectionSaving)
-        .opacity(empty ? 0.5 : 1)
-        .animation(.easeInOut(duration: 0.2), value: empty)
     }
 
     // MARK: sticky footer — mark complete → confetti → tap to go back
@@ -1513,7 +1296,7 @@ private struct SectionFramesKey: PreferenceKey {
 // MARK: - Day reader section components (single-scroll reading)
 
 /// Gold pull-quote. Never double-quotes: verse text already carries curly quotes.
-private struct DayPullQuote: View {
+struct DayPullQuote: View {
     let text: String; let caption: String; var quoted = true
     @Environment(\.readerPalette) private var pal
     private var display: String {
@@ -1540,7 +1323,7 @@ private struct DayPullQuote: View {
 
 /// Serif teaching split into paragraphs on blank lines. Generous size + line
 /// height + inter-paragraph gap for comfortable, unhurried reading.
-private struct DayPassage: View {
+struct DayPassage: View {
     let content: String
     @Environment(\.readerPalette) private var pal
     private var paragraphs: [String] {
@@ -1558,7 +1341,7 @@ private struct DayPassage: View {
 }
 
 /// Talk-it-over questions on a white card.
-private struct DayTalk: View {
+struct DayTalk: View {
     let prompt: String
     @Environment(\.readerPalette) private var pal
     private var questions: [String] {
@@ -1582,7 +1365,7 @@ private struct DayTalk: View {
 }
 
 /// Prayer on a warm gold tint, with an italic closing blessing (`_…_`).
-private struct DayPrayer: View {
+struct DayPrayer: View {
     let text: String
     @Environment(\.readerPalette) private var pal
     private var lines: [String] { text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty } }
@@ -1609,7 +1392,7 @@ private struct DayPrayer: View {
 }
 
 /// Compact Go Deeper references row.
-private struct DayGoDeeper: View {
+struct DayGoDeeper: View {
     let refs: String
     @Environment(\.readerPalette) private var pal
     var body: some View {
@@ -1624,7 +1407,7 @@ private struct DayGoDeeper: View {
 }
 
 /// Sign-off line on a soft gold tint.
-private struct DayEncouragement: View {
+struct DayEncouragement: View {
     @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -1638,7 +1421,7 @@ private struct DayEncouragement: View {
 }
 
 /// Inline 16:9 video card — tap opens the player window over the day content.
-private struct DayVideoCard: View {
+struct DayVideoCard: View {
     let seg: PlanSegment
     let onPlay: (URL) -> Void
     var body: some View {

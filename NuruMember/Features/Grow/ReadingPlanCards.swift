@@ -419,22 +419,22 @@ struct PLDetailDayRow: View {
                         .fill(done ? PL.gold.opacity(0.16) : Color.white)
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .stroke(done ? PL.gold.opacity(0.55) : PL.border, lineWidth: 1)
-                    VStack(spacing: -1) {
-                        Text("DAY").font(.inter(7, .bold)).kerning(0.8).foregroundStyle(done ? PL.goldDeep : PL.gold)
-                        Text("\(day.dayNumber)").font(.fraunces(17, .semibold)).foregroundStyle(PL.navy)
+                    VStack(spacing: -2) {
+                        Text("DAY").font(.inter(8, .bold)).kerning(0.9).foregroundStyle(done ? PL.goldDeep : PL.gold)
+                        Text("\(day.dayNumber)").font(.fraunces(22, .semibold)).foregroundStyle(PL.navy)
                     }
                 }
-                .frame(width: 42, height: 42)
+                .frame(width: 52, height: 52)
                 if done {
-                    Icon(.check, size: 8, color: .white)
-                        .frame(width: 15, height: 15)
+                    Icon(.check, size: 9, color: .white)
+                        .frame(width: 17, height: 17)
                         .background(PL.gold, in: Circle())
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
                         .offset(x: 5, y: -5)
                 }
             }
-            VStack(alignment: .leading, spacing: 1) {
-                Text(day.title ?? "Reading & reflection").font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
                 Text(done ? "Completed · \(day.reference)" : "\(day.reference) · ~5 min read")
                     .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : PL.ink3).lineLimit(1)
             }

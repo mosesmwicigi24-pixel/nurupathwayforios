@@ -306,6 +306,8 @@ struct HomeView: View {
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
+            // Home root always shows the tab bar (plan screens hide it while inside).
+            .onAppear { tabs.chromeHidden = false }
             .nuruDestinations()
         }
         // Tapping one of our iOS notifications lands on the in-app inbox.
