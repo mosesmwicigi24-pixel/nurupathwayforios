@@ -28,6 +28,7 @@ struct ProfileView: View {
     @State private var editingField: PField?
     @State private var viewingBadge: PBadgeItem?
     @State private var showAllBadges = false
+    @AppStorage("streakQuiet") private var streakQuiet = false
     @State private var verifyingCert: PCert?
 
     // Real backend extras (loaded once; tolerate offline with empty state).
@@ -405,6 +406,18 @@ struct ProfileView: View {
                 .font(.nCardMeta).italic().foregroundStyle(Color(hex: 0x74808F))
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm)
+            // Quiet mode — for those who'd rather walk without a visible streak.
+            Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.sm)
+            HStack(spacing: 10) {
+                Icon(.moon, size: 15, color: Nuru.gold)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Quiet mode").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                    Text("Hide my streak — just walk with God").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                }
+                Spacer(minLength: 8)
+                Toggle("", isOn: $streakQuiet).labelsHidden().tint(Nuru.gold)
+            }
+            .padding(.top, Nuru.S.sm)
         }
     }
 

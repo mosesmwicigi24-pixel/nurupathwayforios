@@ -72,6 +72,7 @@ struct ReadingPlansView: View {
     @AppStorage("planReminderOn") private var reminderOn = false
     @AppStorage("planReminderHour") private var reminderHour = 7
     @AppStorage("planReminderMinute") private var reminderMinute = 0
+    @AppStorage("streakQuiet") private var streakQuiet = false
 
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
     private var searching: Bool { !q.isEmpty || category != "all" }
@@ -126,7 +127,7 @@ struct ReadingPlansView: View {
                               isEmpty: vm.plans.isEmpty, error: vm.error,
                               emptyText: "No reading plans yet.", retry: { Task { await vm.load() } }) {
                     VStack(alignment: .leading, spacing: 24) {
-                        if !searching { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
+                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, !continueReading.isEmpty { reminderCard }
                         if !searching, let pod = planOfDay { planOfDayCard(pod) }
