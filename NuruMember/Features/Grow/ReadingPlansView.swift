@@ -148,7 +148,7 @@ struct ReadingPlansView: View {
                 header
                 LoadStateView(loading: vm.loading && vm.plans.isEmpty,
                               isEmpty: vm.plans.isEmpty, error: vm.error,
-                              emptyText: "No reading plans yet.", retry: { Task { await vm.load() } }) {
+                              emptyText: "Plans are being prepared — check back soon.", retry: { Task { await vm.load() } }) {
                     VStack(alignment: .leading, spacing: 24) {
                         if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
                         if !searching, !continueReading.isEmpty { continueSection }
@@ -408,7 +408,7 @@ struct ReadingPlansView: View {
                     HStack {
                         Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
                         Spacer(minLength: 0)
-                        Text("See all").font(.inter(11, .bold)).foregroundStyle(PL.gold)
+                        Text("\(col.plans.count)").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 12) {
@@ -457,6 +457,7 @@ struct ReadingPlansView: View {
     // MARK: invitation
 
     private var invitationCard: some View {
+        ShareLink(item: "Walk with me through a reading plan on Nuru Pathway — a little of the Word every day. Get the app and let's keep each other going.") {
         HStack(spacing: 12) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
@@ -474,6 +475,8 @@ struct ReadingPlansView: View {
         .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
     }
 
     private func overline(_ text: String) -> some View {
@@ -532,7 +535,10 @@ struct PlanDetailView: View {
             if let d = vm.detail {
                 content(d)
             } else if vm.loading {
-                ProgressView().tint(PL.gold)
+                VStack(spacing: 12) {
+                    ProgressView().tint(PL.gold)
+                    Text("Preparing your plan…").font(.inter(12, .medium)).foregroundStyle(PL.ink3)
+                }
             } else {
                 VStack(spacing: 12) {
                     Text(vm.error ?? "Couldn't load this plan.").font(.nBody).foregroundStyle(PL.ink2)
@@ -699,7 +705,7 @@ struct PlanDetailView: View {
         let visible = showAllDays ? d.days : Array(d.days.prefix(4))
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("WHAT YOU'LL READ").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
+                Text("YOUR JOURNEY · \(d.days.count) DAYS").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
                 Spacer(minLength: 0)
                 if done > 0 {
                     Text("\(Int((Double(done) / Double(max(d.days.count, 1)) * 100).rounded()))% done")
@@ -718,9 +724,12 @@ struct PlanDetailView: View {
                         Haptics.tap()
                         withAnimation(.easeOut(duration: 0.25)) { showAllDays = true }
                     } label: {
-                        Text("+ \(d.days.count - 4) more days").font(.inter(10)).foregroundStyle(PL.ink3)
-                            .frame(maxWidth: .infinity, minHeight: 36) // fingertip-friendly
-                            .contentShape(Rectangle())
+                        HStack(spacing: 5) {
+                            Text("Show all \(d.days.count) days").font(.inter(12, .bold)).foregroundStyle(PL.goldDeep)
+                            Icon(.chevronDown, size: 13, color: PL.goldDeep)
+                        }
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.pressable)
                 }
@@ -753,8 +762,8 @@ struct PlanDetailView: View {
         let allDone = !d.days.isEmpty && done >= d.days.count
         let target = allDone ? d.days.first : firstIncomplete(d)
         let label: String = done > 0
-            ? (allDone ? "Review plan" : "Continue · Day \(target?.dayNumber ?? 1)")
-            : "Start plan"
+            ? (allDone ? "Read again" : "Continue · Day \(target?.dayNumber ?? 1)")
+            : "Begin Day 1"
         return HStack(spacing: 10) {
             Group {
                 if d.enrolled, let target {
@@ -767,7 +776,7 @@ struct PlanDetailView: View {
                 }
             }
             .buttonStyle(.pressable)
-            Button { } label: {
+            ShareLink(item: "Join me on \"\(d.title)\" — a \(d.dayCount)-day journey in the Word on Nuru Pathway.") {
                 HStack(spacing: 6) { Icon(.share2, size: 15, color: PL.navy); Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy) }
                     .frame(minHeight: 48).padding(.horizontal, 16)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -939,14 +948,16 @@ struct PlanDayView: View {
                     VStack(spacing: 0) {
                         dayHeader
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("TODAY'S JOURNEY").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
+                            Text("TODAY'S JOURNEY · \(hubParts.count) PART\(hubParts.count == 1 ? "" : "S")")
+                                .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
                             ForEach(hubParts) { part in
                                 NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
                                                                      dayNumber: ref.day.dayNumber,
                                                                      segments: segments,
                                                                      index: part.firstIndex,
                                                                      planId: ref.planId,
-                                                                     part: part.tag)) {
+                                                                     part: part.tag,
+                                                                     doneIds: Array(vm.completedSegments))) {
                                     partRow(part)
                                 }
                                 .buttonStyle(.pressable)
@@ -1198,6 +1209,15 @@ struct PlanDayView: View {
 
     private var footerBar: some View {
         VStack(spacing: 8) {
+            if !vm.dayCompleted && !justDone {
+                let read = hubParts.filter(isDone).count
+                Text(read >= hubParts.count && !hubParts.isEmpty
+                     ? "All parts read — seal the day"
+                     : "\(read) of \(hubParts.count) part\(hubParts.count == 1 ? "" : "s") read")
+                    .font(.inter(11, .semibold))
+                    .foregroundStyle(read >= hubParts.count && !hubParts.isEmpty ? PL.goldDeep : PL.ink3)
+                    .frame(maxWidth: .infinity, alignment: .center)
+            }
             if let e = vm.completeError {
                 Text(e).font(.inter(11)).foregroundStyle(Color(hex: 0xB91C1C))
                     .frame(maxWidth: .infinity, alignment: .center)
@@ -1400,7 +1420,7 @@ struct DayPassage: View {
         content.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        VStack(alignment: .leading, spacing: 18) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
                 Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).lineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)

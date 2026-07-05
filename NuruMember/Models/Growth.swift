@@ -126,6 +126,9 @@ struct PlanSegmentRef: Hashable {
     /// (Scripture + Devotional + Go Deeper) or "respond" (Talk + Prayer +
     /// Reflection). Nil = single-segment fallback.
     var part: String? = nil
+    /// Segment ids already completed this session (the day's segment flags can be
+    /// stale) — lets a reopened finished part greet with "Done", not a second ask.
+    var doneIds: [String] = []
 }
 
 // MARK: - Prayer journal

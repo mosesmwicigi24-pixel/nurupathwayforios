@@ -72,7 +72,10 @@ struct PlanSegmentView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(item: $player) { it in mediaWindow(it.url) }
-        .onAppear { tabs.chromeHidden = true; if group.allSatisfy(\.completed) { done = true } }
+        .onAppear {
+            tabs.chromeHidden = true
+            if group.allSatisfy({ $0.completed || ref.doneIds.contains($0.segmentId) }) { done = true }
+        }
     }
 
     // MARK: header — back · medallion + part name · DAY N kicker · night toggle
@@ -242,7 +245,7 @@ struct PlanSegmentView: View {
             HStack(spacing: 8) {
                 if saving { ProgressView().tint(PL.navy) }
                 else { Icon(.check, size: 15, color: PL.navy) }
-                Text(done ? "Done" : "Finished — mark as read")
+                Text(done ? "Done" : finishLabel)
                     .font(.inter(14, .bold)).foregroundStyle(PL.navy)
             }
             .frame(maxWidth: .infinity, minHeight: 52)
@@ -251,11 +254,20 @@ struct PlanSegmentView: View {
             .shadow(color: PL.gold.opacity(0.4), radius: 10, y: 6)
         }
         .buttonStyle(.pressable)
-        .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 10)
+        .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 14)
         .background(
             LinearGradient(colors: [pal.bg.opacity(0), pal.bg], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    /// Warm, part-specific completion wording.
+    private var finishLabel: String {
+        switch ref.part {
+        case "word": return "I've read today's Word"
+        case "respond": return "Amen — finished"
+        default: return segment.kind.lowercased() == "audio" ? "Finished listening" : "Finished watching"
+        }
     }
 
     // MARK: media window (over the content)

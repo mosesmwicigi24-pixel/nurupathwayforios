@@ -435,7 +435,7 @@ struct PLDetailDayRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text(done ? "Completed · \(day.reference)" : "\(day.reference) · ~5 min read")
+                Text(done ? "Completed · \(day.reference)" : "\(day.reference) · about 6 min")
                     .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : PL.ink3).lineLimit(1)
             }
             Spacer(minLength: 0)
