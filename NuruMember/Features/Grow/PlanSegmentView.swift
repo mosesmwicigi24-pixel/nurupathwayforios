@@ -1,12 +1,12 @@
-// Plan segment — the native port of screens/PlanSegmentScreen.tsx, presented as
-// the Figma make's ReadingDayReader: a navy day header (gold kicker, serif title,
-// per-segment step chips), a warm reader canvas with serif passage text (small
-// gold verse numbers when the content carries them), a gold pull-quote card for
-// the featured scripture, a REFLECTION prompt card for talk-it-over segments,
-// an encouragement line, and a pinned completion CTA. Real segment data
-// throughout — the Figma's mock audio/video timers are skipped because the
-// model carries no media beyond `videoUrl`; video segments keep the immersive
-// full-bleed player.
+// Plan day reader — ONE elegant scroll for the whole day, replacing the old
+// tab-through (a separate screen per segment). Every part of the day — Today's
+// Reading, Devotional, Talk it Over, Prayer, Go Deeper — flows as a section on a
+// single warm canvas: a navy day header with a live progress bar, a gold
+// pull-quote for the scripture, serif teaching for the devotional, a reflection
+// card for talk-it-over, a tinted prayer card, and a compact Go Deeper row. Each
+// part ticks itself complete as you scroll past it (best-effort, non-blocking),
+// so returning to the day view shows real per-part progress. Video segments keep
+// an inline player card. Opened from a part row deep-links (scrolls) to that part.
 import SwiftUI
 import UIKit
 
@@ -15,44 +15,21 @@ struct PlanSegmentView: View {
     init(ref: PlanSegmentRef) { self.ref = ref }
 
     @Environment(\.dismiss) private var dismiss
-    @State private var showPlayer = false
-    @State private var completed = false
+    @State private var viewedIds = Set<String>()
+    @State private var player: VideoItem?
 
-    private var segment: PlanSegment { ref.segments[ref.index] }
-    private var isVideo: Bool {
-        segment.kind.lowercased() == "video" && (segment.videoUrl?.isEmpty == false)
+    private struct VideoItem: Identifiable { let id = UUID(); let url: URL }
+
+    private var segments: [PlanSegment] { ref.segments }
+
+    /// Fraction of the day's parts read (server-confirmed OR viewed this session).
+    private var progress: Double {
+        guard !segments.isEmpty else { return 0 }
+        let done = segments.filter { $0.completed || viewedIds.contains($0.segmentId) }.count
+        return Double(done) / Double(segments.count)
     }
-    private var hasNext: Bool { ref.index + 1 < ref.segments.count }
-
-    /// Gold overline label per segment kind (WATCH / READ / DEVOTIONAL / …) —
-    /// used by the immersive player.
-    private var overline: String {
-        switch segment.kind.lowercased() {
-        case "video":      return "WATCH"
-        case "reading":    return "READ"
-        case "devotional": return "DEVOTIONAL"
-        case "talk":       return "TALK IT OVER"
-        case "scripture":  return "SCRIPTURE"
-        default:           return segment.kind.uppercased()
-        }
-    }
-
-    /// Short label per segment kind for the header step chips.
-    private static func chipLabel(_ kind: String) -> String {
-        switch kind.lowercased() {
-        case "video":      return "Watch"
-        case "reading":    return "Read"
-        case "devotional": return "Devotional"
-        case "talk":       return "Talk"
-        case "scripture":  return "Scripture"
-        default:           return kind.capitalized
-        }
-    }
-
-    /// Header caption: the scripture reference, else the segment kind.
-    private var headerCaption: String {
-        if let r = segment.reference, !r.isEmpty { return r }
-        return Self.chipLabel(segment.kind)
+    private var allDone: Bool {
+        !segments.isEmpty && segments.allSatisfy { $0.completed || viewedIds.contains($0.segmentId) }
     }
 
     var body: some View {
@@ -60,30 +37,45 @@ struct PlanSegmentView: View {
             Nuru.surface.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: Nuru.S.base) {
-                        if isVideo { videoCard }
-                        readerBlocks
-                        EncouragementRow()
+                ScrollViewReader { proxy in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                            ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
+                                section(seg)
+                                    .id(seg.segmentId)
+                                    .onAppear { markViewed(seg) }
+                                if idx < segments.count - 1 {
+                                    Rectangle().fill(Nuru.gold.opacity(0.14))
+                                        .frame(height: 1).frame(maxWidth: 64)
+                                        .frame(maxWidth: .infinity, alignment: .center)
+                                }
+                            }
+                            EncouragementRow()
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, Nuru.S.screen)
+                        .padding(.top, Nuru.S.base)
+                        .padding(.bottom, Nuru.S.xl)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.horizontal, Nuru.S.screen)
-                    .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.S.xl)
+                    .safeAreaInset(edge: .bottom) { bottomCTA }
+                    .onAppear {
+                        // Deep-link: a tapped part row scrolls that section into view.
+                        guard ref.index > 0, ref.index < segments.count else { return }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                            withAnimation(.easeOut(duration: 0.3)) {
+                                proxy.scrollTo(segments[ref.index].segmentId, anchor: .top)
+                            }
+                        }
+                    }
                 }
-                .safeAreaInset(edge: .bottom) { bottomCTA }
             }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .fullScreenCover(isPresented: $showPlayer) { immersivePlayer }
-        .task {
-            // Read-type segments count as viewed on open (non-blocking, best-effort).
-            if !isVideo { await markComplete() }
-        }
+        .fullScreenCover(item: $player) { item in immersivePlayer(item.url) }
     }
 
-    // MARK: Navy day header (kicker · serif title · step chips)
+    // MARK: Navy day header (kicker · serif day title · progress bar)
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -93,22 +85,18 @@ struct PlanSegmentView: View {
                 }
                 .buttonStyle(.pressable)
                 Spacer(minLength: Nuru.S.sm)
-                Text("DAY \(ref.dayNumber) · \(ref.planTitle.uppercased())")
-                    .font(.inter(10, .bold)).kerning(1.8)
+                Text("DAY \(ref.dayNumber)")
+                    .font(.inter(10, .bold)).kerning(2.0)
                     .foregroundStyle(Nuru.gold)
-                    .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: Nuru.S.sm)
                 headerChip { Icon(.bookmark, size: 16, color: Nuru.gold) }
             }
-            Text(segment.title)
+            Text(ref.planTitle)
                 .font(.fraunces(22, .semibold))
                 .foregroundStyle(.white)
+                .lineLimit(2).minimumScaleFactor(0.8)
                 .padding(.top, Nuru.S.md)
-            Text(headerCaption)
-                .font(.inter(12, .regular))
-                .foregroundStyle(.white.opacity(0.7))
-                .padding(.top, 2)
-            stepChips
+            progressBar
                 .padding(.top, Nuru.S.md)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -122,34 +110,99 @@ struct PlanSegmentView: View {
         )
     }
 
+    private var progressBar: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.white.opacity(0.14))
+                Capsule().fill(Nuru.gold)
+                    .frame(width: max(6, geo.size.width * progress))
+            }
+        }
+        .frame(height: 4)
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: progress)
+    }
+
     private func headerChip<C: View>(@ViewBuilder _ content: () -> C) -> some View {
         content()
             .frame(width: 38, height: 38)
             .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
-    /// One chip per sibling segment of the day — gold once completed.
-    private var stepChips: some View {
-        HStack(spacing: 6) {
-            ForEach(Array(ref.segments.enumerated()), id: \.element.id) { idx, seg in
-                StepChip(label: Self.chipLabel(seg.kind),
-                         done: seg.completed || (idx == ref.index && completed))
+    // MARK: One section per segment (overline + kind-aware body)
+
+    @ViewBuilder
+    private func section(_ seg: PlanSegment) -> some View {
+        let done = seg.completed || viewedIds.contains(seg.segmentId)
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            HStack(spacing: 6) {
+                Text(overline(seg))
+                    .font(.inter(11, .bold)).kerning(1.6)
+                    .foregroundStyle(Nuru.goldLo)
+                if let r = seg.reference, !r.isEmpty, seg.kind.lowercased() == "scripture" {
+                    Text("· \(r)").font(.inter(11, .medium)).foregroundStyle(Nuru.muted)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 15))
+                    .foregroundStyle(done ? Nuru.gold : Nuru.muted.opacity(0.4))
             }
+            body(seg)
         }
-        // The current chip turning gold settles in rather than snapping.
-        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: completed)
     }
 
-    // MARK: 16:9 video card (real `videoUrl` only)
+    @ViewBuilder
+    private func body(_ seg: PlanSegment) -> some View {
+        switch seg.kind.lowercased() {
+        case "video":
+            videoCard(seg)
+        case "scripture":
+            PullQuoteCard(text: (seg.content?.isEmpty == false ? seg.content : nil) ?? seg.reference ?? seg.title,
+                          caption: seg.reference ?? "Scripture",
+                          quoted: seg.content?.isEmpty == false)
+        case "talk":
+            if let p = seg.content, !p.isEmpty { ReaderReflectionCard(prompt: p) }
+            else if let r = seg.reference, !r.isEmpty { PullQuoteCard(text: r, caption: "Scripture", quoted: false) }
+        case "reading":
+            if let c = seg.content, !c.isEmpty { GoDeeperRow(refs: c) }
+        default:
+            // "Pray" is a devotional-kind segment but reads as a prayer.
+            if seg.title.lowercased().hasPrefix("pray"), let c = seg.content, !c.isEmpty {
+                PrayerCard(text: c)
+            } else if let c = seg.content, !c.isEmpty {
+                PassageText(content: c)
+            }
+        }
+    }
 
-    private var videoCard: some View {
+    /// Section overline from the segment title (falls back to a kind label).
+    private func overline(_ seg: PlanSegment) -> String {
+        let t = seg.title
+        if !t.isEmpty {
+            if t.lowercased().hasPrefix("pray") { return "PRAYER" }
+            return t.uppercased()
+        }
+        switch seg.kind.lowercased() {
+        case "video": return "WATCH"
+        case "reading": return "GO DEEPER"
+        case "devotional": return "DEVOTIONAL"
+        case "talk": return "TALK IT OVER"
+        case "scripture": return "TODAY'S READING"
+        default: return seg.kind.uppercased()
+        }
+    }
+
+    // MARK: Inline video card (real videoUrl only)
+
+    private func videoCard(_ seg: PlanSegment) -> some View {
         ZStack {
-            mediaBackground
-            Button { Haptics.tap(); showPlayer = true } label: {
+            mediaBackground(seg)
+            Button {
+                Haptics.tap()
+                if let u = seg.videoUrl.flatMap(URL.init) { player = VideoItem(url: u) }
+            } label: {
                 ZStack {
-                    Circle().fill(Nuru.gold).frame(width: 64, height: 64).nuruShadow()
-                    Icon(.play, size: 22, color: Nuru.navy)
-                        .offset(x: 1) // optically centre the play triangle
+                    Circle().fill(Nuru.gold).frame(width: 60, height: 60).nuruShadow()
+                    Icon(.play, size: 20, color: Nuru.navy).offset(x: 1)
                 }
             }
             .buttonStyle(.pressable)
@@ -161,17 +214,14 @@ struct PlanSegmentView: View {
     }
 
     @ViewBuilder
-    private var mediaBackground: some View {
-        if let url = segment.imageUrl.flatMap(URL.init) {
-            // Color.clear owns the layout size; the fill image lives in an
-            // overlay so its oversized "fill" size can never inflate the 16:9
-            // video card (the radio-screen edge-spill bug family).
+    private func mediaBackground(_ seg: PlanSegment) -> some View {
+        if let url = seg.imageUrl.flatMap(URL.init) {
             Color.clear
                 .overlay {
                     CachedAsyncImage(url: url) { phase in
                         if let img = phase.image {
                             img.resizable().scaledToFill()
-                                .transition(.opacity.animation(.easeOut(duration: 0.25))) // no pop
+                                .transition(.opacity.animation(.easeOut(duration: 0.25)))
                         } else {
                             Rectangle().fill(Nuru.navyGradient)
                         }
@@ -183,60 +233,25 @@ struct PlanSegmentView: View {
         }
     }
 
-    // MARK: Reader blocks per segment kind
-
-    @ViewBuilder
-    private var readerBlocks: some View {
-        switch segment.kind.lowercased() {
-        case "scripture":
-            // Scripture segments ARE the featured verse — the whole content goes
-            // in the pull-quote card.
-            PullQuoteCard(text: (segment.content?.isEmpty == false ? segment.content : nil)
-                                ?? segment.reference ?? segment.title,
-                          caption: segment.reference ?? "Scripture",
-                          quoted: segment.content?.isEmpty == false)
-        case "talk":
-            if let prompt = segment.content, !prompt.isEmpty {
-                ReaderReflectionCard(prompt: prompt)
-            } else if let r = segment.reference, !r.isEmpty {
-                PullQuoteCard(text: r, caption: "Scripture", quoted: false)
-            }
-        default:
-            if let content = segment.content, !content.isEmpty {
-                PassageText(content: content)
-            }
-            if let r = segment.reference, !r.isEmpty, r != segment.content {
-                PullQuoteCard(text: r, caption: "Scripture", quoted: false)
-            }
-        }
-    }
-
-    // MARK: Pinned completion CTA (gradient fade + navy button)
+    // MARK: Bottom CTA — finish the day's reading
 
     private var bottomCTA: some View {
-        VStack(spacing: 0) {
-            if hasNext {
-                NavigationLink(value: nextRef) { ctaLabel("Continue") }
-                    .buttonStyle(.pressable)
-                    .simultaneousGesture(TapGesture().onEnded {
-                        Haptics.tap()
-                        Task { await markComplete() }
-                    })
-            } else {
-                Button {
-                    let alreadyDone = completed || segment.completed
-                    Task {
-                        await markComplete()
-                        // Celebrate only the first completion, not a revisit.
-                        if alreadyDone { Haptics.tap() } else { Haptics.success() }
-                        dismiss()
-                    }
-                } label: {
-                    ctaLabel(completed || segment.completed ? "Done" : "Mark complete")
-                }
-                .buttonStyle(.pressable)
+        Button {
+            // Ensure every part is recorded, then hand back to the day view
+            // (where "Mark day complete" finalises the day per the per-part model).
+            for seg in segments { markViewed(seg) }
+            Haptics.success()
+            dismiss()
+        } label: {
+            HStack(spacing: 8) {
+                Icon(.check, size: 15, color: .white)
+                Text(allDone ? "Done for today" : "Finish reading")
+                    .font(.inter(14, .bold)).foregroundStyle(.white)
             }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
+        .buttonStyle(.pressable)
         .padding(.horizontal, Nuru.S.screen)
         .padding(.top, Nuru.S.md)
         .padding(.bottom, Nuru.S.md)
@@ -247,38 +262,14 @@ struct PlanSegmentView: View {
         )
     }
 
-    private func ctaLabel(_ title: String) -> some View {
-        Text(title)
-            .font(.inter(14, .bold))
-            .foregroundStyle(.white)
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
+    // MARK: Immersive video player (full-bleed)
 
-    private var nextRef: PlanSegmentRef {
-        PlanSegmentRef(planTitle: ref.planTitle,
-                       dayNumber: ref.dayNumber,
-                       segments: ref.segments,
-                       index: ref.index + 1)
-    }
-
-    // MARK: Immersive player (full-bleed cover)
-
-    private var immersivePlayer: some View {
+    private func immersivePlayer(_ url: URL) -> some View {
         ZStack {
-            // Full-bleed background image + dark scrim.
-            mediaBackground
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-                .ignoresSafeArea()
-            LinearGradient(
-                colors: [Color.black.opacity(0.15), Color.black.opacity(0.55), Color.black.opacity(0.85)],
-                startPoint: .top, endPoint: .bottom)
-                .ignoresSafeArea()
-
-            VStack(alignment: .leading, spacing: 0) {
+            Color.black.ignoresSafeArea()
+            VStack {
                 HStack {
-                    Button { showPlayer = false } label: {
+                    Button { player = nil } label: {
                         Icon(.x, size: 18, color: .white)
                             .frame(width: 38, height: 38)
                             .background(Color.white.opacity(0.18), in: Circle())
@@ -286,100 +277,47 @@ struct PlanSegmentView: View {
                     .buttonStyle(.pressable)
                     Spacer(minLength: 0)
                 }
-                .padding(.horizontal, Nuru.S.screen)
-                .padding(.top, Nuru.S.sm)
-
+                .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.sm)
                 Spacer(minLength: 0)
-
-                VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                    Text(overline)
-                        .font(.inter(11, .semibold)).kerning(1.5)
-                        .foregroundStyle(Nuru.gold)
-                    Text(segment.title)
-                        .font(.fraunces(30, .semibold))
-                        .foregroundStyle(.white)
-                    if let sub = segment.reference ?? segment.content, !sub.isEmpty {
-                        Text(sub)
-                            .font(.nBodyLg)
-                            .foregroundStyle(Color.white.opacity(0.75))
-                            .lineLimit(2)
+                Button {
+                    Haptics.action()
+                    UIApplication.shared.open(url)
+                } label: {
+                    HStack(spacing: Nuru.S.sm) {
+                        Icon(.play, size: 16, color: Nuru.navy)
+                        Text("Start watching").font(.inter(16, .bold)).foregroundStyle(Nuru.navy)
                     }
+                    .frame(maxWidth: .infinity).frame(height: Nuru.buttonHeightLg)
+                    .background(Nuru.white, in: Capsule())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Nuru.S.screen)
-
-                startWatchingButton
-                    .padding(.horizontal, Nuru.S.screen)
-                    .padding(.top, Nuru.S.lg)
-                    .padding(.bottom, Nuru.S.xl)
+                .buttonStyle(.pressable)
+                .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.xl)
             }
         }
     }
 
-    @ViewBuilder
-    private var startWatchingButton: some View {
-        if let url = segment.videoUrl.flatMap(URL.init) {
-            Button {
-                Haptics.action()
-                UIApplication.shared.open(url)
-                Task { await markComplete() }
-            } label: {
-                HStack(spacing: Nuru.S.sm) {
-                    Icon(.play, size: 16, color: Nuru.navy)
-                    Text("Start Watching")
-                        .font(.inter(16, .bold))
-                        .foregroundStyle(Nuru.navy)
-                }
-                .frame(maxWidth: .infinity)
-                .frame(height: Nuru.buttonHeightLg)
-                .background(Nuru.white, in: Capsule())
-            }
-            .buttonStyle(.pressable)
+    // MARK: Completion (per-part, best-effort, non-blocking)
+
+    private func markViewed(_ seg: PlanSegment) {
+        guard !viewedIds.contains(seg.segmentId), !seg.completed else {
+            viewedIds.insert(seg.segmentId); return
         }
-    }
-
-    // MARK: Completion (best-effort, non-blocking)
-
-    private func markComplete() async {
-        guard !completed, !segment.completed else { completed = true; return }
-        _ = try? await MemberAPI.completePlanSegment(segment.segmentId)
-        completed = true
+        viewedIds.insert(seg.segmentId)
+        Task { _ = try? await MemberAPI.completePlanSegment(seg.segmentId) }
     }
 }
 
-// MARK: - Reader pieces (small private structs keep the body's type metadata light)
+// MARK: - Reader pieces
 
-/// One header step chip — gold with a check once its segment is done.
-private struct StepChip: View {
-    let label: String
-    let done: Bool
-    var body: some View {
-        HStack(spacing: 3) {
-            if done { Icon(.check, size: 9, color: Nuru.navy) }
-            Text(label)
-                .font(.inter(10, .bold))
-                .lineLimit(1).minimumScaleFactor(0.75)
-        }
-        .foregroundStyle(done ? Nuru.navy : Color.white.opacity(0.7))
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 5)
-        .background(done ? Nuru.gold : Color.white.opacity(0.08), in: Capsule())
-    }
-}
-
-/// Serif passage copy. Lines that open with a verse number ("14 but whoever…")
-/// render it as a small raised gold marker, matching the Figma reader.
+/// Serif passage copy split into paragraphs on blank lines, with a leading verse
+/// number rendered as a small raised gold marker when a line opens with one.
 private struct PassageText: View {
     let content: String
-
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
-            ForEach(Self.lines(content)) { line in
-                paragraph(line)
-            }
+            ForEach(Self.lines(content)) { line in paragraph(line) }
         }
     }
-
     private func paragraph(_ line: Line) -> some View {
         (numberText(line.number) + Text(line.text)
             .font(.fraunces(16, .regular))
@@ -388,23 +326,11 @@ private struct PassageText: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
     }
-
     private func numberText(_ n: String?) -> Text {
         guard let n else { return Text("") }
-        return Text("\(n)  ")
-            .font(.inter(11, .bold))
-            .foregroundStyle(Nuru.gold)
-            .baselineOffset(5)
+        return Text("\(n)  ").font(.inter(11, .bold)).foregroundStyle(Nuru.gold).baselineOffset(5)
     }
-
-    struct Line: Identifiable {
-        let id: Int
-        let number: String?
-        let text: String
-    }
-
-    /// Split into trimmed non-empty lines; peel a leading verse number ("14 ",
-    /// "14. ", "14) ", "14: ") when present.
+    struct Line: Identifiable { let id: Int; let number: String?; let text: String }
     static func lines(_ content: String) -> [Line] {
         content.components(separatedBy: .newlines)
             .map { $0.trimmingCharacters(in: .whitespaces) }
@@ -416,8 +342,7 @@ private struct PassageText: View {
                     var rest = raw.dropFirst(digits.count)
                     if let f = rest.first, ".):".contains(f) { rest = rest.dropFirst() }
                     if rest.first == " " {
-                        return Line(id: idx, number: String(digits),
-                                    text: rest.trimmingCharacters(in: .whitespaces))
+                        return Line(id: idx, number: String(digits), text: rest.trimmingCharacters(in: .whitespaces))
                     }
                 }
                 return Line(id: idx, number: nil, text: raw)
@@ -425,19 +350,26 @@ private struct PassageText: View {
     }
 }
 
-/// Gold pull-quote card — verse tint (#FFF8E6), gold spine + hairline, Quote
-/// glyph, serif text, uppercase reference caption.
+/// Gold pull-quote card. Never double-quotes: if the text already opens with a
+/// quotation glyph (the verse text carries curly quotes from the source), it is
+/// rendered as-is instead of being wrapped again.
 private struct PullQuoteCard: View {
     let text: String
     let caption: String
     var quoted = true
+
+    private var display: String {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let alreadyQuoted = t.hasPrefix("\u{201C}") || t.hasPrefix("\"")
+        return (quoted && !alreadyQuoted) ? "\u{201C}\(t)\u{201D}" : t
+    }
 
     var body: some View {
         HStack(spacing: 0) {
             Rectangle().fill(Nuru.gold).frame(width: 3)
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Icon(.quote, size: 16, color: Nuru.gold)
-                Text(quoted ? "\u{201C}\(text)\u{201D}" : text)
+                Text(display)
                     .font(.fraunces(18, .regular))
                     .foregroundStyle(Nuru.navy)
                     .lineSpacing(6)
@@ -455,22 +387,83 @@ private struct PullQuoteCard: View {
     }
 }
 
-/// "REFLECTION" prompt card — serif prompt on a white card (talk-it-over segments).
+/// Talk-it-over prompt card — serif questions on a white card.
 private struct ReaderReflectionCard: View {
     let prompt: String
     var body: some View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
-                Text("REFLECTION")
-                    .font(.nCardKicker).kerning(1.4)
+                ForEach(Self.questions(prompt), id: \.self) { q in
+                    HStack(alignment: .top, spacing: 8) {
+                        Icon(.messageCircle, size: 13, color: Nuru.goldLo).padding(.top, 3)
+                        Text(q)
+                            .font(.fraunces(15, .regular)).foregroundStyle(Nuru.navy)
+                            .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+    }
+    /// The prompt stores questions as em-dash bullets separated by blank lines.
+    static func questions(_ s: String) -> [String] {
+        let parts = s.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { $0.hasPrefix("—") ? String($0.dropFirst()).trimmingCharacters(in: .whitespaces) : $0 }
+        return parts.isEmpty ? [s] : parts
+    }
+}
+
+/// Prayer card — warm gold tint, serif prayer, an italic closing blessing.
+private struct PrayerCard: View {
+    let text: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+            if !prayer.isEmpty {
+                Text(prayer)
+                    .font(.fraunces(15, .regular)).foregroundStyle(Nuru.navy)
+                    .lineSpacing(6).fixedSize(horizontal: false, vertical: true)
+            }
+            if let b = blessing, !b.isEmpty {
+                Text(b)
+                    .font(.fraunces(14, .regular)).italic()
                     .foregroundStyle(Nuru.goldLo)
-                Text(prompt)
-                    .font(.fraunces(15, .regular))
-                    .foregroundStyle(Nuru.navy)
-                    .lineSpacing(5)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.gold.opacity(0.09), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.gold.opacity(0.22), lineWidth: 1))
+    }
+    // Split the prayer body from a trailing italic blessing (`_…_`).
+    private var lines: [String] {
+        text.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    private var blessing: String? {
+        guard let last = lines.last, last.hasPrefix("_"), last.hasSuffix("_"), last.count > 2 else { return nil }
+        return String(last.dropFirst().dropLast())
+    }
+    private var prayer: String {
+        let body = blessing == nil ? lines : Array(lines.dropLast())
+        return body.joined(separator: "\n\n")
+    }
+}
+
+/// Compact Go Deeper row — the extra references on a soft surface, no dead space.
+private struct GoDeeperRow: View {
+    let refs: String
+    var body: some View {
+        HStack(alignment: .center, spacing: Nuru.S.sm) {
+            Icon(.bookOpen, size: 15, color: Nuru.goldLo)
+            Text(refs)
+                .font(.fraunces(14, .regular)).foregroundStyle(Nuru.navy)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(Nuru.S.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }
 

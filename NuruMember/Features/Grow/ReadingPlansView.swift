@@ -861,8 +861,27 @@ struct PlanDayView: View {
         // PlanDayRef carries no plan title, so fall back to the day title.
         let planTitle = ref.day.title ?? "Reading plan"
         let nextId = vm.dayCompleted ? nil : segments.first(where: { !vm.completedSegments.contains($0.segmentId) })?.segmentId
+        let startIdx = segments.firstIndex(where: { !vm.completedSegments.contains($0.segmentId) }) ?? 0
+        let started = !vm.completedSegments.isEmpty
         return VStack(alignment: .leading, spacing: 0) {
             Text("WORK THROUGH TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(PL.goldDeep)
+            // One tap into the whole day — the reader now flows every part in a
+            // single scroll, so this opens (or resumes) the day's reading.
+            NavigationLink(value: PlanSegmentRef(planTitle: planTitle,
+                                                 dayNumber: ref.day.dayNumber,
+                                                 segments: segments,
+                                                 index: startIdx)) {
+                HStack(spacing: 8) {
+                    Icon(.bookOpen, size: 15, color: PL.navy)
+                    Text(started ? "Continue reading" : "Start reading")
+                        .font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                }
+                .frame(maxWidth: .infinity, minHeight: 48)
+                .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .padding(.top, 12)
             VStack(spacing: 6) {
                 ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
                     NavigationLink(value: PlanSegmentRef(planTitle: planTitle,
