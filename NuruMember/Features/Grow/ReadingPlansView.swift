@@ -766,6 +766,8 @@ struct PlanDayView: View {
     @State private var dwell: [String: Double] = [:]
     @State private var requested = Set<String>()
     @State private var dwellTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
+    @FocusState private var reflectionFocused: Bool
+    @State private var fastTicks = 0   // >0 while the "slow down" nudge shows
 
     struct DayVideoItem: Identifiable { let id = UUID(); let url: URL }
 
@@ -797,16 +799,17 @@ struct PlanDayView: View {
                                 })
                             dayHeader
                             quickSteps(proxy)
-                            VStack(alignment: .leading, spacing: 20) {
+                            VStack(alignment: .leading, spacing: 30) {
                                 ForEach(Array(segments.enumerated()), id: \.element.id) { _, seg in
                                     readerSection(seg).id(seg.segmentId)
                                 }
                                 reflectionCard
                                 DayEncouragement()
                             }
-                            .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24)
+                            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
                         }
                     }
+                    .scrollDismissesKeyboard(.interactively)
                     .coordinateSpace(name: "reader")
                     .background(GeometryReader { g in
                         Color.clear.preference(key: ViewportHKey.self, value: g.size.height)
@@ -814,8 +817,12 @@ struct PlanDayView: View {
                 }
                 footerBar
             }
-            if justDone { PLConfettiBurst().ignoresSafeArea() }
+            if justDone { IntenseCelebration().ignoresSafeArea().allowsHitTesting(false) }
         }
+        .overlay(alignment: .top) {
+            if fastTicks > 0 { fastScrollNudge.padding(.top, 92) }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: fastTicks > 0)
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -838,6 +845,8 @@ struct PlanDayView: View {
         let dt = 0.15
         let velocity = abs(scrollY - lastScrollY) / dt
         lastScrollY = scrollY
+        if fastTicks > 0 { fastTicks -= 1 }              // fade the nudge out over time
+        if velocity > 2600 { fastTicks = 16 }            // racing past → "slow down" (~2.4s)
         guard velocity < 650 else { return }            // fast scroll → skip, no credit
         let line = viewportH * 0.40                       // reading line: upper-middle
         for seg in segments {
@@ -851,6 +860,18 @@ struct PlanDayView: View {
                 Task { await vm.completeSegment(id) }
             }
         }
+    }
+
+    /// Floating "slow down" nudge — appears when the reader races past the text.
+    private var fastScrollNudge: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "tortoise.fill").font(.system(size: 13)).foregroundStyle(PL.gold)
+            Text("Slow down — savour the reading").font(.inter(12.5, .semibold)).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .background(PL.navy, in: Capsule())
+        .shadow(color: .black.opacity(0.18), radius: 12, y: 5)
+        .transition(.move(edge: .top).combined(with: .opacity))
     }
 
     // MARK: navy header (fresh DayReader)
@@ -941,11 +962,11 @@ struct PlanDayView: View {
 
     private func readerSection(_ seg: PlanSegment) -> some View {
         let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
-        return VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
-                Text(overline(seg)).font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
+                Text(overline(seg)).font(.inter(13, .bold)).kerning(2.0).foregroundStyle(PL.goldDeep)
                 if seg.kind.lowercased() == "scripture", let r = seg.reference, !r.isEmpty {
-                    Text("· \(r)").font(.inter(11, .medium)).foregroundStyle(PL.ink3)
+                    Text("· \(r)").font(.inter(12, .medium)).foregroundStyle(PL.ink3)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: done ? "checkmark.circle.fill" : "circle")
@@ -1063,8 +1084,16 @@ struct PlanDayView: View {
                 }
                 TextField("", text: $vm.reflectionText, axis: .vertical)
                     .lineLimit(4...10)
-                    .font(.inter(13)).foregroundStyle(PL.navy).tint(PL.gold)
+                    .font(.inter(13.5)).foregroundStyle(PL.navy).tint(PL.gold)
+                    .focused($reflectionFocused)
                     .padding(.horizontal, 14).padding(.vertical, 12)
+                    .toolbar {
+                        ToolbarItemGroup(placement: .keyboard) {
+                            Spacer()
+                            Button("Done") { reflectionFocused = false }
+                                .font(.inter(14, .semibold)).foregroundStyle(PL.goldDeep)
+                        }
+                    }
             }
             .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
@@ -1125,23 +1154,27 @@ struct PlanDayView: View {
     @ViewBuilder private var footerButton: some View {
         HStack {
             if vm.dayCompleted || justDone {
-                Button { dismiss() } label: {
-                    Text("Day complete 🎉").font(.inter(14, .bold)).foregroundStyle(PL.navy)
-                        .frame(maxWidth: .infinity, minHeight: 48)
-                        .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
+                Button { Haptics.tap(); dismiss() } label: {
+                    HStack(spacing: 8) {
+                        Text("Continue the plan").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                        Icon(.arrowRight, size: 15, color: PL.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
                 }
                 .buttonStyle(.pressable)
             } else {
                 Button {
                     Task {
                         if await vm.completeDay() {
-                            Haptics.success() // land the confetti with a felt "done"
-                            // No withAnimation here — inserting the burst inside a
-                            // transaction coalesced its flight to the end state
-                            // (confetti never visibly fired). It animates itself.
+                            Haptics.success() // land the celebration with a felt "done"
                             justDone = true
+                            // The intense fireworks run ~5s, then retire (the completed
+                            // button stays via vm.dayCompleted).
+                            try? await Task.sleep(nanoseconds: 5_300_000_000)
+                            justDone = false
                         } else {
                             Haptics.error()
                         }
@@ -1161,6 +1194,90 @@ struct PlanDayView: View {
                 .disabled(vm.busy) // double-taps queued a second completion call
             }
         }
+    }
+}
+
+// MARK: - Intense celebration (fireworks + saturating confetti, ~5s)
+
+/// A big, joyful "boom": staggered firework bursts across the upper screen plus a
+/// dense tumbling-confetti rain, drawn in a single Canvas for performance. Runs
+/// for ~5s then empties itself. Purely decorative — never blocks touches.
+private struct IntenseCelebration: View {
+    var duration: Double = 5.0
+    @State private var start: Date?
+
+    private let confetti: [Piece]
+    private let sparks: [Spark]
+
+    struct Piece { let x, delay, fall, sway, phase, spin, size: Double; let color: Color }
+    struct Spark { let cx, cy, t0, angle, speed, size: Double; let color: Color }
+
+    static let palette: [Color] = [
+        PL.gold, PL.goldLight, Color(hex: 0xFBBF24), Color(hex: 0xFB7185),
+        Color(hex: 0x34D399), Color(hex: 0x60A5FA), Color(hex: 0xFFF3D6),
+    ]
+
+    init(duration: Double = 5.0) {
+        self.duration = duration
+        var conf: [Piece] = []
+        for _ in 0..<170 {
+            conf.append(Piece(x: .random(in: 0...1), delay: .random(in: 0...2.6),
+                              fall: .random(in: 0.9...1.7), sway: .random(in: 12...48),
+                              phase: .random(in: 0...6.28), spin: .random(in: -7...7),
+                              size: .random(in: 6...13), color: Self.palette.randomElement()!))
+        }
+        var sp: [Spark] = []
+        let bursts = 7
+        for b in 0..<bursts {
+            let cx = Double.random(in: 0.15...0.85)
+            let cy = Double.random(in: 0.14...0.52)
+            let t0 = Double(b) * (duration * 0.55 / Double(bursts)) + Double.random(in: 0...0.35)
+            let color = Self.palette.randomElement()!
+            let count = 46
+            for i in 0..<count {
+                let ang = Double(i) / Double(count) * 6.2831 + Double.random(in: -0.05...0.05)
+                sp.append(Spark(cx: cx, cy: cy, t0: t0, angle: ang,
+                                speed: .random(in: 0.15...0.26), size: .random(in: 3...6), color: color))
+            }
+        }
+        confetti = conf; sparks = sp
+    }
+
+    var body: some View {
+        TimelineView(.animation) { tl in
+            Canvas { ctx, size in
+                let t = start.map { tl.date.timeIntervalSince($0) } ?? 0
+                for p in confetti {
+                    let lt = t - p.delay
+                    if lt < 0 { continue }
+                    let prog = lt * p.fall / duration
+                    if prog > 1.05 { continue }
+                    let x = (p.x + sin(lt * 2.2 + p.phase) * (p.sway / size.width)) * size.width
+                    let y = (-0.08 + prog * 1.25) * size.height
+                    let alpha = min(1, max(0, 1 - (prog - 0.82) / 0.18))
+                    var l = ctx
+                    l.opacity = alpha
+                    l.translateBy(x: x, y: y)
+                    l.rotate(by: .radians(lt * p.spin))
+                    l.fill(Path(CGRect(x: -p.size / 2, y: -p.size / 2, width: p.size, height: p.size * 0.62)),
+                           with: .color(p.color))
+                }
+                for s in sparks {
+                    let lt = t - s.t0
+                    if lt < 0 || lt > 1.5 { continue }
+                    let ease = 1 - pow(1 - min(lt / 1.0, 1), 3)
+                    let dist = s.speed * ease
+                    let x = (s.cx + cos(s.angle) * dist) * size.width
+                    let y = (s.cy + sin(s.angle) * dist + 0.11 * lt * lt) * size.height
+                    var l = ctx
+                    l.opacity = max(0, 1 - lt / 1.5)
+                    l.fill(Path(ellipseIn: CGRect(x: x - s.size / 2, y: y - s.size / 2, width: s.size, height: s.size)),
+                           with: .color(s.color))
+                }
+            }
+        }
+        .onAppear { start = Date() }
+        .allowsHitTesting(false)
     }
 }
 
@@ -1208,16 +1325,17 @@ private struct DayPullQuote: View {
     }
 }
 
-/// Serif teaching split into paragraphs on blank lines.
+/// Serif teaching split into paragraphs on blank lines. Generous size + line
+/// height + inter-paragraph gap for comfortable, unhurried reading.
 private struct DayPassage: View {
     let content: String
     private var paragraphs: [String] {
         content.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 22) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
-                Text(p).font(.fraunces(16)).foregroundStyle(PL.navy).lineSpacing(7)
+                Text(p).font(.fraunces(18)).foregroundStyle(PL.navy).lineSpacing(10)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
