@@ -14,6 +14,7 @@ struct PlanSegmentView: View {
     let ref: PlanSegmentRef
     init(ref: PlanSegmentRef) { self.ref = ref }
 
+    @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
     @State private var viewedIds = Set<String>()
     @State private var player: VideoItem?
@@ -43,7 +44,6 @@ struct PlanSegmentView: View {
                             ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
                                 section(seg)
                                     .id(seg.segmentId)
-                                    .onAppear { markViewed(seg) }
                                 if idx < segments.count - 1 {
                                     Rectangle().fill(Nuru.gold.opacity(0.14))
                                         .frame(height: 1).frame(maxWidth: 64)
@@ -73,6 +73,8 @@ struct PlanSegmentView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(item: $player) { item in immersivePlayer(item.url) }
+        .onAppear { tabs.chromeHidden = true }
+        .onDisappear { tabs.chromeHidden = false }   // leaf reader (Home shortcut) — restore the bar
     }
 
     // MARK: Navy day header (kicker · serif day title · progress bar)

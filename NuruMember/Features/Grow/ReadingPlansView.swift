@@ -36,6 +36,7 @@ final class ReadingPlansViewModel: ObservableObject {
 
 struct ReadingPlansView: View {
     @StateObject private var vm = ReadingPlansViewModel()
+    @EnvironmentObject private var tabs: TabRouter
     @State private var query = ""
     @State private var category = "all"
 
@@ -80,6 +81,8 @@ struct ReadingPlansView: View {
             #endif
         }
         .task { if vm.plans.isEmpty { await vm.load() } }
+        // Root of the Plans tab — the bottom bar belongs here (hidden inside a plan).
+        .onAppear { tabs.chromeHidden = false }
     }
 
     private var listBody: some View {
@@ -380,6 +383,7 @@ final class PlanDetailViewModel: ObservableObject {
 struct PlanDetailView: View {
     let plan: ReadingPlanRow
     @StateObject private var vm: PlanDetailViewModel
+    @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
     @State private var saved = false
     @State private var showAllDays = false
@@ -407,10 +411,11 @@ struct PlanDetailView: View {
                 }
             }
         }
-        .ignoresSafeArea(edges: [.top, .bottom])
+        .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
+        .onAppear { tabs.chromeHidden = true }
     }
 
     // Real completion state, derived from the day rows the server returns.
@@ -634,7 +639,7 @@ struct PlanDetailView: View {
             .buttonStyle(.plain)
         }
         .padding(.horizontal, 20).padding(.top, 12)
-        .padding(.bottom, Nuru.tabBarSpace)
+        .padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
     }
 
@@ -747,10 +752,20 @@ final class PlanDayViewModel: ObservableObject {
 struct PlanDayView: View {
     let ref: PlanDayRef
     @StateObject private var vm: PlanDayViewModel
+    @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @State private var justDone = false
     @State private var videoItem: DayVideoItem?
+
+    // Scroll-dwell reading tracker: a part is marked read only after the reader
+    // has lingered on it (slow scroll / pause), never on a fast flick-through.
+    @State private var sectionFrames: [String: CGRect] = [:]
+    @State private var scrollY: CGFloat = 0
+    @State private var lastScrollY: CGFloat = 0
+    @State private var dwell: [String: Double] = [:]
+    @State private var requested = Set<String>()
+    @State private var dwellTimer = Timer.publish(every: 0.15, on: .main, in: .common).autoconnect()
 
     struct DayVideoItem: Identifiable { let id = UUID(); let url: URL }
 
@@ -775,13 +790,16 @@ struct PlanDayView: View {
                 ScrollViewReader { proxy in
                     ScrollView(showsIndicators: false) {
                         VStack(spacing: 0) {
+                            Color.clear.frame(height: 0)
+                                .background(GeometryReader { g in
+                                    Color.clear.preference(key: ReaderScrollKey.self,
+                                                           value: g.frame(in: .named("reader")).minY)
+                                })
                             dayHeader
                             quickSteps(proxy)
                             VStack(alignment: .leading, spacing: 20) {
                                 ForEach(Array(segments.enumerated()), id: \.element.id) { _, seg in
-                                    readerSection(seg)
-                                        .id(seg.segmentId)
-                                        .onAppear { markViewed(seg) }
+                                    readerSection(seg).id(seg.segmentId)
                                 }
                                 reflectionCard
                                 DayEncouragement()
@@ -789,22 +807,50 @@ struct PlanDayView: View {
                             .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24)
                         }
                     }
+                    .coordinateSpace(name: "reader")
+                    .background(GeometryReader { g in
+                        Color.clear.preference(key: ViewportHKey.self, value: g.size.height)
+                    })
                 }
                 footerBar
             }
             if justDone { PLConfettiBurst().ignoresSafeArea() }
         }
-        .ignoresSafeArea(edges: [.top, .bottom])
+        .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { await vm.loadReflection() }
         .fullScreenCover(item: $videoItem) { it in videoWindow(it.url) }
+        .onAppear { tabs.chromeHidden = true }
+        .onPreferenceChange(ReaderScrollKey.self) { scrollY = -$0 }
+        .onPreferenceChange(ViewportHKey.self) { viewportH = $0 }
+        .onPreferenceChange(SectionFramesKey.self) { sectionFrames = $0 }
+        .onReceive(dwellTimer) { _ in tickDwell() }
+        .onDisappear { dwellTimer.upstream.connect().cancel() }
     }
 
-    /// Mark a part read as it scrolls into view (server-backed, non-blocking).
-    private func markViewed(_ seg: PlanSegment) {
-        guard !vm.completedSegments.contains(seg.segmentId), !seg.completed else { return }
-        Task { await vm.completeSegment(seg.segmentId) }
+    @State private var viewportH: CGFloat = 720
+
+    /// One tick (~0.15s): accrue "reading" credit for the part straddling the
+    /// reading line, but ONLY while scrolling slowly — a fast flick earns nothing.
+    /// When a part's dwell passes its threshold it marks itself read.
+    private func tickDwell() {
+        let dt = 0.15
+        let velocity = abs(scrollY - lastScrollY) / dt
+        lastScrollY = scrollY
+        guard velocity < 650 else { return }            // fast scroll → skip, no credit
+        let line = viewportH * 0.40                       // reading line: upper-middle
+        for seg in segments {
+            let id = seg.segmentId
+            if vm.completedSegments.contains(id) || seg.completed { continue }
+            guard let f = sectionFrames[id], f.minY <= line, line <= f.maxY else { continue }
+            let need = min(2.2, max(0.9, f.height / 520))  // longer parts need a bit more dwell
+            dwell[id, default: 0] += dt
+            if dwell[id, default: 0] >= need, !requested.contains(id) {
+                requested.insert(id)
+                Task { await vm.completeSegment(id) }
+            }
+        }
     }
 
     // MARK: navy header (fresh DayReader)
@@ -904,10 +950,16 @@ struct PlanDayView: View {
                 Spacer(minLength: 0)
                 Image(systemName: done ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 15)).foregroundStyle(done ? PL.gold : PL.ink3.opacity(0.4))
+                    .scaleEffect(done ? 1 : 0.9)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.65), value: done)
             }
             sectionBody(seg)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .background(GeometryReader { g in
+            Color.clear.preference(key: SectionFramesKey.self,
+                                   value: [seg.segmentId: g.frame(in: .named("reader"))])
+        })
     }
 
     private func overline(_ seg: PlanSegment) -> String {
@@ -1066,7 +1118,7 @@ struct PlanDayView: View {
         }
         .animation(.easeInOut(duration: 0.2), value: vm.completeError == nil)
         .padding(.horizontal, 20).padding(.top, 12)
-        .padding(.bottom, Nuru.tabBarSpace)
+        .padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
     }
 
@@ -1109,9 +1161,23 @@ struct PlanDayView: View {
                 .disabled(vm.busy) // double-taps queued a second completion call
             }
         }
-        .padding(.horizontal, 20).padding(.top, 12)
-        .padding(.bottom, Nuru.tabBarSpace)
-        .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+    }
+}
+
+// MARK: - Reader scroll/dwell preference keys
+
+private struct ReaderScrollKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+private struct ViewportHKey: PreferenceKey {
+    static var defaultValue: CGFloat = 720
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { let n = nextValue(); if n > 0 { value = n } }
+}
+private struct SectionFramesKey: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 
