@@ -121,7 +121,11 @@ struct PlanSegmentRef: Hashable {
     let dayNumber: Int
     let segments: [PlanSegment]
     let index: Int
-    var planId: String? = nil   // enables the reflection box inside the Prayer part
+    var planId: String? = nil   // enables the reflection box on the Respond page
+    /// Which combined page to open: "media" (one video/audio), "word"
+    /// (Scripture + Devotional + Go Deeper) or "respond" (Talk + Prayer +
+    /// Reflection). Nil = single-segment fallback.
+    var part: String? = nil
 }
 
 // MARK: - Prayer journal

@@ -29,7 +29,25 @@ struct PlanSegmentView: View {
 
     private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
     private var segment: PlanSegment { ref.segments[min(max(ref.index, 0), ref.segments.count - 1)] }
-    private var isPray: Bool { segment.title.lowercased().hasPrefix("pray") }
+
+    /// The segments this page renders — a combined group ("word" = Scripture +
+    /// teaching + Go Deeper; "respond" = Talk + Prayer) or the single segment.
+    private var group: [PlanSegment] {
+        switch ref.part {
+        case "word": return ref.segments.filter { [1, 2, 5].contains(rank($0)) }
+        case "respond": return ref.segments.filter { [3, 4].contains(rank($0)) }
+        default: return [segment]
+        }
+    }
+    private func rank(_ s: PlanSegment) -> Int {
+        switch s.kind.lowercased() {
+        case "video", "audio": return 0
+        case "scripture": return 1
+        case "talk": return 3
+        case "reading": return 5
+        default: return s.title.lowercased().hasPrefix("pray") ? 4 : 2
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -39,7 +57,7 @@ struct PlanSegmentView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 20) {
                         content
-                        if isPray, let pid = ref.planId {
+                        if ref.part == "respond", let pid = ref.planId {
                             PartReflectionBox(planId: pid, dayNumber: ref.dayNumber)
                         }
                         DayEncouragement()
@@ -54,7 +72,7 @@ struct PlanSegmentView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .fullScreenCover(item: $player) { it in mediaWindow(it.url) }
-        .onAppear { tabs.chromeHidden = true; if segment.completed { done = true } }
+        .onAppear { tabs.chromeHidden = true; if group.allSatisfy(\.completed) { done = true } }
     }
 
     // MARK: header — back · medallion + part name · DAY N kicker · night toggle
@@ -93,7 +111,7 @@ struct PlanSegmentView: View {
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(partName).font(.fraunces(24, .semibold)).foregroundStyle(.white)
-                    if let r = segment.reference, !r.isEmpty {
+                    if let r = headerRef, !r.isEmpty {
                         Text(r).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                     }
                 }
@@ -111,46 +129,94 @@ struct PlanSegmentView: View {
     }
 
     private var partName: String {
-        if isPray { return "Prayer" }
-        switch segment.kind.lowercased() {
-        case "video": return "Watch"
-        case "audio": return "Listen"
-        case "scripture": return "Scripture"
-        case "talk": return "Talk it Over"
-        case "reading": return "Go Deeper"
-        default: return "Devotional"
+        switch ref.part {
+        case "word": return "The Word"
+        case "respond": return "Respond"
+        default: return segment.kind.lowercased() == "audio" ? "Listen" : "Watch"
         }
     }
 
     private var partIcon: Lucide {
-        if isPray { return .handHeart }
-        switch segment.kind.lowercased() {
-        case "video", "audio": return .play
-        case "scripture": return .quote
-        case "talk": return .messageCircle
-        case "reading": return .bookOpen
-        default: return .sun
+        switch ref.part {
+        case "word": return .bookOpen
+        case "respond": return .handHeart
+        default: return .play
         }
+    }
+
+    /// Header caption — the scripture reference for The Word page.
+    private var headerRef: String? {
+        if ref.part == "word" {
+            return group.first(where: { $0.kind.lowercased() == "scripture" })?.reference
+        }
+        return segment.reference
     }
 
     // MARK: content per part (shared Day* reading components)
 
     @ViewBuilder private var content: some View {
-        switch segment.kind.lowercased() {
-        case "video", "audio":
-            DayVideoCard(seg: segment) { url in player = MediaItem(url: url) }
-            if let c = segment.content, !c.isEmpty { DayPassage(content: c) }
-        case "scripture":
-            DayPullQuote(text: (segment.content?.isEmpty == false ? segment.content! : (segment.reference ?? segment.title)),
-                         caption: segment.reference ?? "Scripture",
-                         quoted: segment.content?.isEmpty == false)
-        case "talk":
-            if let c = segment.content, !c.isEmpty { DayTalk(prompt: c) }
-        case "reading":
-            if let c = segment.content, !c.isEmpty { DayGoDeeper(refs: c) }
+        switch ref.part {
+        case "word":
+            // Scripture woven straight into the teaching — one encouraging read,
+            // Go Deeper folded in at the end.
+            ForEach(group) { seg in
+                switch seg.kind.lowercased() {
+                case "scripture":
+                    DayPullQuote(text: (seg.content?.isEmpty == false ? seg.content! : (seg.reference ?? seg.title)),
+                                 caption: seg.reference ?? "Scripture",
+                                 quoted: seg.content?.isEmpty == false)
+                case "reading":
+                    if let c = seg.content, !c.isEmpty {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("GO DEEPER").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+                            DayGoDeeper(refs: c)
+                        }
+                    }
+                default:
+                    if let c = seg.content, !c.isEmpty { DayPassage(content: c) }
+                }
+            }
+        case "respond":
+            // Talk it Over → Prayer → your reflection, one response page.
+            ForEach(group) { seg in
+                if seg.kind.lowercased() == "talk", let c = seg.content, !c.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("TALK IT OVER").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+                        DayTalk(prompt: c)
+                    }
+                } else if let c = seg.content, !c.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("PRAYER").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+                        DayPrayer(text: c)
+                    }
+                }
+            }
         default:
-            if isPray, let c = segment.content, !c.isEmpty { DayPrayer(text: c) }
-            else if let c = segment.content, !c.isEmpty { DayPassage(content: c) }
+            // Media page: a portrait, screen-filling player, then the title and
+            // a few scanty keynotes just below.
+            DayVideoCard(seg: segment, portrait: true) { url in player = MediaItem(url: url) }
+            if !segment.title.isEmpty {
+                Text(segment.title).font(.fraunces(20, .semibold)).foregroundStyle(pal.ink)
+            }
+            if let c = segment.content, !c.isEmpty { keynotes(c) }
+        }
+    }
+
+    /// A few short keynote bullets (capped — scanty by design).
+    private func keynotes(_ content: String) -> some View {
+        let points = content.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .prefix(4)
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("KEY POINTS").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+            ForEach(Array(points.enumerated()), id: \.offset) { _, p in
+                HStack(alignment: .top, spacing: 8) {
+                    Circle().fill(pal.gold).frame(width: 5, height: 5).padding(.top, 7)
+                    Text(p).font(.fraunces(15)).foregroundStyle(pal.ink).lineSpacing(5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
         }
     }
 
@@ -164,8 +230,10 @@ struct PlanSegmentView: View {
             }
             saving = true
             Task {
-                _ = try? await MemberAPI.completePlanSegment(segment.segmentId)
-                NotificationCenter.default.post(name: .nuruPlanPartDone, object: segment.segmentId)
+                for seg in group where !seg.completed {
+                    _ = try? await MemberAPI.completePlanSegment(seg.segmentId)
+                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: seg.segmentId)
+                }
                 done = true; saving = false
                 Haptics.success()
                 dismiss()

@@ -940,17 +940,20 @@ struct PlanDayView: View {
                         dayHeader
                         VStack(alignment: .leading, spacing: 10) {
                             Text("TODAY'S JOURNEY").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
-                            ForEach(Array(segments.enumerated()), id: \.element.id) { idx, seg in
+                            ForEach(hubParts) { part in
                                 NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
                                                                      dayNumber: ref.day.dayNumber,
                                                                      segments: segments,
-                                                                     index: idx,
-                                                                     planId: ref.planId)) {
-                                    partRow(seg)
+                                                                     index: part.firstIndex,
+                                                                     planId: ref.planId,
+                                                                     part: part.tag)) {
+                                    partRow(part)
                                 }
                                 .buttonStyle(.pressable)
                             }
-                            DayEncouragement().padding(.top, 10)
+                            walkStrip
+                            reminderRow
+                            DayEncouragement().padding(.top, 2)
                         }
                         .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 24)
                     }
@@ -968,6 +971,7 @@ struct PlanDayView: View {
                              days: ref.day.dayNumber) { showKeepsake = false; dismiss() }
         }
         .onAppear { tabs.chromeHidden = true }
+        .task { if walkDays == nil { walkDays = try? await MemberAPI.achievements().streak.current } }
         // A part finished in its reader ticks its row the moment we return.
         .onReceive(NotificationCenter.default.publisher(for: .nuruPlanPartDone)) { note in
             if let id = note.object as? String {
@@ -978,23 +982,58 @@ struct PlanDayView: View {
         }
     }
 
-    private var nextId: String? {
-        segments.first(where: { !vm.completedSegments.contains($0.segmentId) && !$0.completed })?.segmentId
+    // MARK: grouped parts — Watch/Listen · The Word · Respond
+
+    struct HubPart: Identifiable {
+        let id: String
+        let tag: String            // "media" | "word" | "respond"
+        let label: String
+        let icon: Lucide
+        let segs: [PlanSegment]
+        let firstIndex: Int
     }
 
-    // MARK: part rows (medallion / name / status -- the label and tick never collide)
+    /// The day distilled into a story arc: media first (when the day has it),
+    /// then THE WORD (Scripture woven into the teaching, Go Deeper folded in),
+    /// then RESPOND (Talk it Over + Prayer + Reflection together).
+    private var hubParts: [HubPart] {
+        let segs = segments
+        var parts: [HubPart] = []
+        for (i, s) in segs.enumerated() where rank(s) == 0 {
+            let audio = s.kind.lowercased() == "audio"
+            parts.append(HubPart(id: s.segmentId, tag: "media",
+                                 label: audio ? "Listen" : "Watch",
+                                 icon: .play, segs: [s], firstIndex: i))
+        }
+        let word = segs.enumerated().filter { [1, 2, 5].contains(rank($0.element)) }
+        if let f = word.first {
+            parts.append(HubPart(id: "word", tag: "word", label: "The Word",
+                                 icon: .bookOpen, segs: word.map(\.element), firstIndex: f.offset))
+        }
+        let respond = segs.enumerated().filter { [3, 4].contains(rank($0.element)) }
+        if let f = respond.first {
+            parts.append(HubPart(id: "respond", tag: "respond", label: "Respond",
+                                 icon: .handHeart, segs: respond.map(\.element), firstIndex: f.offset))
+        }
+        return parts
+    }
 
-    private func partRow(_ seg: PlanSegment) -> some View {
-        let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
-        let isNext = seg.segmentId == nextId && !done
+    private func isDone(_ part: HubPart) -> Bool {
+        part.segs.allSatisfy { vm.completedSegments.contains($0.segmentId) || $0.completed }
+    }
+    private var nextPartId: String? { hubParts.first(where: { !isDone($0) })?.id }
+
+    private func partRow(_ part: HubPart) -> some View {
+        let done = isDone(part)
+        let isNext = part.id == nextPartId && !done
         return HStack(spacing: 12) {
-            Icon(sectionIcon(seg), size: 16, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
+            Icon(part.icon, size: 16, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
                 .frame(width: 42, height: 42)
                 .background((done || isNext) ? pal.gold.opacity(0.15) : pal.inkDim.opacity(0.07), in: Circle())
                 .overlay(Circle().stroke(done ? pal.gold.opacity(0.5) : (isNext ? pal.gold.opacity(0.4) : pal.border), lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
-                Text(partLabel(seg)).font(.inter(14, .semibold)).foregroundStyle(pal.ink)
-                Text(partSub(seg)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim).lineLimit(1)
+                Text(part.label).font(.inter(14, .semibold)).foregroundStyle(pal.ink)
+                Text(partSub(part)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim).lineLimit(1)
             }
             Spacer(minLength: 8)
             if done {
@@ -1014,28 +1053,59 @@ struct PlanDayView: View {
             .stroke(isNext ? pal.gold.opacity(0.35) : pal.border, lineWidth: 1))
     }
 
-    private func partLabel(_ seg: PlanSegment) -> String {
-        if seg.title.lowercased().hasPrefix("pray") { return "Prayer" }
-        switch seg.kind.lowercased() {
-        case "video": return "Watch"
-        case "audio": return "Listen"
-        case "scripture": return "Scripture"
-        case "talk": return "Talk it Over"
-        case "reading": return "Go Deeper"
-        default: return "Devotional"
+    private func partSub(_ part: HubPart) -> String {
+        if isDone(part) { return "Completed" }
+        switch part.tag {
+        case "media":
+            return part.label == "Listen" ? "Today's word + key takeaways" : "Begin with today's video"
+        case "word":
+            let r = part.segs.first(where: { $0.kind.lowercased() == "scripture" })?.reference
+            return r.map { "\($0) · Scripture & teaching" } ?? "Scripture & teaching"
+        default:
+            return "Talk it over · Prayer · Reflection"
         }
     }
 
-    private func partSub(_ seg: PlanSegment) -> String {
-        if vm.completedSegments.contains(seg.segmentId) || seg.completed { return "Completed" }
-        if seg.title.lowercased().hasPrefix("pray") { return "Prayer + your reflection" }
-        switch seg.kind.lowercased() {
-        case "video": return "Begin with today's video"
-        case "audio": return "Listen to today's word"
-        case "scripture": return seg.reference ?? "Today's reading"
-        case "talk": return "Questions to sit with"
-        case "reading": return seg.content ?? "Further scriptures"
-        default: return "Today's teaching"
+    // MARK: what we've built, woven in — the walk (streak) + the daily reminder
+
+    @AppStorage("streakQuiet") private var streakQuiet = false
+    @AppStorage("planReminderOn") private var reminderOn = false
+    @AppStorage("planReminderHour") private var reminderHour = 7
+    @AppStorage("planReminderMinute") private var reminderMinute = 0
+    @State private var walkDays: Int?
+
+    @ViewBuilder private var walkStrip: some View {
+        if !streakQuiet, let days = walkDays, days > 0 {
+            HStack(spacing: 8) {
+                PLFlame()
+                Text(days == 1 ? "1 day with God" : "\(days) days with God")
+                    .font(.inter(12, .bold)).foregroundStyle(pal.ink)
+                Text("· grace covers missed days").font(.inter(11)).foregroundStyle(pal.inkDim)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .background(pal.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+    }
+
+    private var reminderRow: some View {
+        HStack(spacing: 10) {
+            Icon(.bell, size: 14, color: pal.goldDeep)
+                .frame(width: 32, height: 32)
+                .background(pal.gold.opacity(0.12), in: Circle())
+            Text(reminderOn
+                 ? String(format: "Daily reminder · %d:%02d", reminderHour, reminderMinute)
+                 : "Set a daily reminder")
+                .font(.inter(12, .semibold)).foregroundStyle(pal.ink)
+            Spacer(minLength: 8)
+            Toggle("", isOn: $reminderOn).labelsHidden().tint(pal.gold)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 8)
+        .background(pal.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(pal.border, lineWidth: 1))
+        .onChange(of: reminderOn) { _, _ in
+            PlanReminders.schedule(enabled: reminderOn, hour: reminderHour, minute: reminderMinute,
+                                   planTitle: ref.planTitle ?? ref.day.title, day: ref.day.dayNumber)
         }
     }
 
@@ -1423,6 +1493,7 @@ struct DayEncouragement: View {
 /// Inline 16:9 video card — tap opens the player window over the day content.
 struct DayVideoCard: View {
     let seg: PlanSegment
+    var portrait: Bool = false
     let onPlay: (URL) -> Void
     var body: some View {
         ZStack {
@@ -1444,7 +1515,7 @@ struct DayVideoCard: View {
                 }
             }.buttonStyle(.pressable)
         }
-        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+        .aspectRatio(portrait ? 9.0 / 15.0 : 16.0 / 9.0, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
     }

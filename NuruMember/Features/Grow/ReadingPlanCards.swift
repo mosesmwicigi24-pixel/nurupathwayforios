@@ -197,7 +197,7 @@ struct PLStreakStrip: View {
 }
 
 /// Gently pulsing filled flame (Lucide has only the outline glyph → SF Symbol).
-private struct PLFlame: View {
+struct PLFlame: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var up = false
     var body: some View {
