@@ -554,11 +554,11 @@ struct PlanDetailView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.detail == nil { await vm.load() } }
+        // Hide the bar inside a plan. No onDisappear-restore here: on a PUSH the
+        // child's onAppear fires BEFORE this view's onDisappear, so restoring from
+        // here re-showed the bar on top of the day hub's footer button. The roots
+        // (Plans list, Home) restore the bar on their own onAppear when we pop out.
         .onAppear { tabs.chromeHidden = true }
-        // Restore the bar when this plan is popped (works from the Plans tab AND from
-        // the Home resume banner). Pushing the day view keeps this mounted, so this
-        // only fires on the real pop back out of the plan.
-        .onDisappear { tabs.chromeHidden = false }
     }
 
     // Real completion state, derived from the day rows the server returns.
