@@ -11,6 +11,36 @@
 // video/audio players, friends-on-plan avatars) are omitted — no fake data.
 // Shared card structs + the PL palette live in ReadingPlanCards.swift.
 import SwiftUI
+import UserNotifications
+
+// MARK: - Daily plan reminder (local notification)
+
+/// Schedules ONE repeating daily local notification that nudges the member back
+/// into their reading plan, deep-specific to the plan + day. Grace-first tone: a
+/// warm invitation, never a guilt trip. Re-scheduling replaces the pending one.
+enum PlanReminders {
+    static let id = "nuru.plan.daily"
+
+    static func schedule(enabled: Bool, hour: Int, minute: Int, planTitle: String?, day: Int?) {
+        let center = UNUserNotificationCenter.current()
+        center.removePendingNotificationRequests(withIdentifiers: [id])
+        guard enabled else { return }
+        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+            let content = UNMutableNotificationContent()
+            content.title = "Time in the Word 🌱"
+            if let planTitle, let day {
+                content.body = "Day \(day) of \(planTitle) is waiting — a few faithful minutes?"
+            } else {
+                content.body = "Your reading plan is waiting — a few faithful minutes with God?"
+            }
+            content.sound = .default
+            var comps = DateComponents(); comps.hour = hour; comps.minute = minute
+            let trigger = UNCalendarNotificationTrigger(dateMatching: comps, repeats: true)
+            center.add(UNNotificationRequest(identifier: id, content: content, trigger: trigger))
+        }
+    }
+}
 
 // MARK: - Plans list (discovery)
 
@@ -39,6 +69,9 @@ struct ReadingPlansView: View {
     @EnvironmentObject private var tabs: TabRouter
     @State private var query = ""
     @State private var category = "all"
+    @AppStorage("planReminderOn") private var reminderOn = false
+    @AppStorage("planReminderHour") private var reminderHour = 7
+    @AppStorage("planReminderMinute") private var reminderMinute = 0
 
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
     private var searching: Bool { !q.isEmpty || category != "all" }
@@ -80,7 +113,7 @@ struct ReadingPlansView: View {
             listBody
             #endif
         }
-        .task { if vm.plans.isEmpty { await vm.load() } }
+        .task { if vm.plans.isEmpty { await vm.load() }; reschedule() }
         // Root of the Plans tab — the bottom bar belongs here (hidden inside a plan).
         .onAppear { tabs.chromeHidden = false }
     }
@@ -95,6 +128,7 @@ struct ReadingPlansView: View {
                     VStack(alignment: .leading, spacing: 24) {
                         if !searching { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
                         if !searching, !continueReading.isEmpty { continueSection }
+                        if !searching, !continueReading.isEmpty { reminderCard }
                         if !searching, let pod = planOfDay { planOfDayCard(pod) }
                         categoriesSection
                         if searching { filteredResults } else { collectionsSections }
@@ -190,12 +224,87 @@ struct ReadingPlansView: View {
     // MARK: continue reading
 
     private var continueSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             overline("Continue reading")
-            ForEach(continueReading) { plan in
+            if let first = continueReading.first {
+                NavigationLink(value: first) { planResumeBanner(first) }.buttonStyle(.pressable)
+            }
+            ForEach(Array(continueReading.dropFirst())) { plan in
                 NavigationLink(value: plan) { PLContinueRow(plan: plan) }.buttonStyle(.pressable)
             }
         }
+    }
+
+    /// Prominent navy "Continue · Day N" banner (mirrors the Home resume nudge).
+    private func planResumeBanner(_ p: ReadingPlanRow) -> some View {
+        let day = p.currentDay ?? 1
+        let done = p.completedDays?.count ?? max(0, day - 1)
+        let pct = p.dayCount > 0 ? CGFloat(done) / CGFloat(p.dayCount) : 0
+        return HStack(spacing: 14) {
+            ZStack {
+                Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
+                Circle().trim(from: 0, to: pct)
+                    .stroke(PL.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .rotationEffect(.degrees(-90))
+                Icon(.bookMarked, size: 17, color: .white)
+            }
+            .frame(width: 48, height: 48)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("CONTINUE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                Text(p.title).font(.fraunces(18, .semibold)).foregroundStyle(.white).lineLimit(1)
+                Text("Day \(day) of \(p.dayCount) · pick up where you left off")
+                    .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            Icon(.arrowRight, size: 18, color: PL.gold)
+        }
+        .padding(16).frame(maxWidth: .infinity)
+        .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    // MARK: daily reminder card (grace-first nudge)
+
+    private var reminderTime: Binding<Date> {
+        Binding(
+            get: { Calendar.current.date(from: DateComponents(hour: reminderHour, minute: reminderMinute)) ?? Date() },
+            set: { d in
+                let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+                reminderHour = c.hour ?? 7; reminderMinute = c.minute ?? 0
+                reschedule()
+            }
+        )
+    }
+
+    private func reschedule() {
+        let p = continueReading.first ?? planOfDay
+        PlanReminders.schedule(enabled: reminderOn, hour: reminderHour, minute: reminderMinute,
+                               planTitle: p?.title, day: p?.currentDay)
+    }
+
+    private var reminderCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 12) {
+                Icon(.bell, size: 16, color: PL.goldDeep)
+                    .frame(width: 38, height: 38)
+                    .background(PL.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Daily reminder").font(.inter(14, .semibold)).foregroundStyle(PL.navy)
+                    Text("A gentle nudge to keep your rhythm").font(.inter(11.5)).foregroundStyle(PL.ink3)
+                }
+                Spacer(minLength: 8)
+                Toggle("", isOn: $reminderOn).labelsHidden().tint(PL.gold)
+            }
+            if reminderOn {
+                Rectangle().fill(PL.border).frame(height: 1)
+                DatePicker("Remind me at", selection: reminderTime, displayedComponents: .hourAndMinute)
+                    .font(.inter(13)).tint(PL.gold).foregroundStyle(PL.navy)
+            }
+        }
+        .padding(16)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.border, lineWidth: 1))
+        .onChange(of: reminderOn) { _, _ in reschedule() }
     }
 
     // MARK: plan of the day (shimmering badge + sparkles)
