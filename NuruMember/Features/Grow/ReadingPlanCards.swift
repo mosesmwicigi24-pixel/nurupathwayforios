@@ -411,22 +411,32 @@ struct PLDetailDayRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(done ? PL.gold : Color.white)
-                if done {
-                    Icon(.check, size: 15, color: .white)
-                } else {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PL.border, lineWidth: 1)
-                    VStack(spacing: 0) {
-                        Text("DAY").font(.inter(7, .bold)).foregroundStyle(PL.gold)
-                        Text("\(day.dayNumber)").font(.fraunces(14, .semibold)).foregroundStyle(PL.navy)
+            // The day number is ALWAYS prominent — completion never covers it.
+            // Done state = warm gold tint + a small corner check badge instead.
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .fill(done ? PL.gold.opacity(0.16) : Color.white)
+                    RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .stroke(done ? PL.gold.opacity(0.55) : PL.border, lineWidth: 1)
+                    VStack(spacing: -1) {
+                        Text("DAY").font(.inter(7, .bold)).kerning(0.8).foregroundStyle(done ? PL.goldDeep : PL.gold)
+                        Text("\(day.dayNumber)").font(.fraunces(17, .semibold)).foregroundStyle(PL.navy)
                     }
                 }
+                .frame(width: 42, height: 42)
+                if done {
+                    Icon(.check, size: 8, color: .white)
+                        .frame(width: 15, height: 15)
+                        .background(PL.gold, in: Circle())
+                        .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                        .offset(x: 5, y: -5)
+                }
             }
-            .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 1) {
                 Text(day.title ?? "Reading & reflection").font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text("\(day.reference) · ~5 min read").font(.nCardMeta).foregroundStyle(PL.ink3).lineLimit(1)
+                Text(done ? "Completed · \(day.reference)" : "\(day.reference) · ~5 min read")
+                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : PL.ink3).lineLimit(1)
             }
             Spacer(minLength: 0)
             if isNext {

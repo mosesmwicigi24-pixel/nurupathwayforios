@@ -918,7 +918,22 @@ struct PlanDayView: View {
         _vm = StateObject(wrappedValue: PlanDayViewModel(ref: ref))
     }
 
-    private var segments: [PlanSegment] { ref.day.segments ?? [] }
+    /// The day's parts in the STUDY flow: watch/listen first (media sets the
+    /// scene), then the Word (Scripture), the teaching (Devotional), the
+    /// conversation (Talk it Over), the prayer, and Go Deeper for the hungry.
+    /// Stable within ranks (DB sort breaks ties), so authored order is respected.
+    private var segments: [PlanSegment] {
+        (ref.day.segments ?? []).sorted { rank($0) == rank($1) ? $0.sort < $1.sort : rank($0) < rank($1) }
+    }
+    private func rank(_ s: PlanSegment) -> Int {
+        switch s.kind.lowercased() {
+        case "video", "audio": return 0
+        case "scripture": return 1
+        case "talk": return 3
+        case "reading": return 5
+        default: return s.title.lowercased().hasPrefix("pray") ? 4 : 2   // Pray after Talk; teaching before
+        }
+    }
     private var progress: Double {
         if vm.dayCompleted { return 1 }
         guard !segments.isEmpty else { return 0 }
@@ -1034,7 +1049,10 @@ struct PlanDayView: View {
                 }
                 .buttonStyle(.pressable)
                 Spacer()
-                Text("DAY \(ref.day.dayNumber)").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
+                if let pt = ref.planTitle, !pt.isEmpty {
+                    Text(pt.uppercased()).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                }
                 Spacer()
                 Button {
                     Haptics.tap()
@@ -1048,10 +1066,26 @@ struct PlanDayView: View {
                 .buttonStyle(.pressable)
                 .accessibilityLabel(readerNight ? "Day mode" : "Night mode")
             }
-            Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.6)).padding(.top, 12)
-            Text(ref.day.title ?? "Day \(ref.day.dayNumber)")
-                .font(.fraunces(23, .semibold)).kerning(-0.46).foregroundStyle(.white)
-                .lineLimit(2).padding(.top, 2)
+            // The DAY is the hero — a large serif numeral that stays prominent
+            // whatever the read-state, beside the day's title + reference.
+            HStack(alignment: .center, spacing: 14) {
+                VStack(spacing: -4) {
+                    Text("DAY").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    Text("\(ref.day.dayNumber)")
+                        .font(.fraunces(40, .semibold)).foregroundStyle(.white)
+                        .monospacedDigit()
+                }
+                .frame(minWidth: 52)
+                Rectangle().fill(PL.gold.opacity(0.5)).frame(width: 1, height: 44)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(ref.day.title ?? "Reading & reflection")
+                        .font(.fraunces(21, .semibold)).kerning(-0.4).foregroundStyle(.white)
+                        .lineLimit(2).minimumScaleFactor(0.85)
+                    Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 14)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.white.opacity(0.2))
@@ -1120,7 +1154,12 @@ struct PlanDayView: View {
     private func readerSection(_ seg: PlanSegment) -> some View {
         let done = vm.completedSegments.contains(seg.segmentId) || seg.completed
         return VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 6) {
+            HStack(spacing: 9) {
+                // Gold medallion per part — the day reads as an organized journey.
+                Icon(sectionIcon(seg), size: 13, color: pal.goldDeep)
+                    .frame(width: 28, height: 28)
+                    .background(pal.gold.opacity(0.14), in: Circle())
+                    .overlay(Circle().stroke(pal.gold.opacity(0.3), lineWidth: 1))
                 Text(overline(seg)).font(.inter(13, .bold)).kerning(2.0).foregroundStyle(pal.goldDeep)
                 if seg.kind.lowercased() == "scripture", let r = seg.reference, !r.isEmpty {
                     Text("· \(r)").font(.inter(12, .medium)).foregroundStyle(pal.inkDim)
@@ -1150,6 +1189,17 @@ struct PlanDayView: View {
         case "reading": return "GO DEEPER"
         case "video": return "WATCH"
         default: return seg.kind.uppercased()
+        }
+    }
+
+    private func sectionIcon(_ seg: PlanSegment) -> Lucide {
+        if seg.title.lowercased().hasPrefix("pray") { return .handHeart }
+        switch seg.kind.lowercased() {
+        case "video", "audio": return .play
+        case "scripture": return .quote
+        case "talk": return .messageCircle
+        case "reading": return .bookOpen
+        default: return .sun
         }
     }
 
