@@ -738,6 +738,13 @@ extension MemberAPI {
         return try await APIClient.shared.post("radio/programs/\(programId)/react",
             body: Body(kind: kind, clientEventId: UUID().uuidString), as: Res.self).counts
     }
+
+    /// POST /radio/programs/{id}/listening — live-listener presence heartbeat.
+    /// The player pings this ~every 20s while actually playing a live program so
+    /// the studio roster shows this member by name. Fire-and-forget.
+    static func radioListening(_ programId: String) async throws {
+        _ = try await APIClient.shared.postEmpty("radio/programs/\(programId)/listening", as: EmptyResponse.self)
+    }
 }
 
 /// One submitted answer — `givenAnswer` is always a string per the wire contract

@@ -466,6 +466,16 @@ struct RadioPlayerView: View {
         .task(id: live?.id) {                                     // chat follows the live show
             if let id = live?.id { await chat.start(id) }
         }
+        // Live-listener presence — heartbeat every 20s while a live show is on so
+        // the studio roster shows this member by name. Cancelled automatically
+        // when the live program changes or the screen closes.
+        .task(id: live?.id) {
+            guard let id = live?.id else { return }
+            while !Task.isCancelled {
+                try? await MemberAPI.radioListening(id)
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+            }
+        }
         .onChange(of: vm.loading) { _, isLoading in
             guard !isLoading, !autoTabbed else { return }
             autoTabbed = true
