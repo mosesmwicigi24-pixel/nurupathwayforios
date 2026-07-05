@@ -197,7 +197,10 @@ private func interFace(_ w: Font.Weight) -> String {
     case .bold, .heavy, .black: return "Inter-Bold"
     case .semibold:             return "Inter-SemiBold"
     case .medium:               return "Inter-Medium"
-    default:                    return "Inter-Regular"
+    // GLOBAL VOICE (owner-set 2026-07-06): regular body text renders in Inter
+    // MEDIUM — the Pathway module-reader weight — so every title, subtitle and
+    // paragraph app-wide carries the same warm, confident reading presence.
+    default:                    return "Inter-Medium"
     }
 }
 // Display/headers use the Fraunces serif for ceremony moments; body stays Inter.
