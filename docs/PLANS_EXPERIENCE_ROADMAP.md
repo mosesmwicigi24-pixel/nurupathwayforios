@@ -13,10 +13,10 @@ only celebrations, warm specific reminders, no shame loops. Lean on Nuru's **cel
 - #1 Resume + reminders — ✅ DONE (Home + Plans "Continue · Day N" banners; daily local reminder).
 - #2 Grace-first streak — ✅ DONE (backend grace-days deployed `12bdf48`; "N days with God" copy; Quiet Mode toggle in Profile).
 - #3 Milestone keepsake — ✅ DONE (plan-completion keepsake: seal, blessing, fireworks, shareable card, "continue your journey").
-- #4 Browse + reader comfort — ◐ PARTIAL (browse cards now show progress rail + "Day N of M"/COMPLETED). REMAINING: hero "For you today" + intent rows; reader Aa size menu + warm night/sepia mode + focus-fade + gold verse numbers.
+- #4 Browse + reader comfort — ◐ MOSTLY DONE (browse cards show progress rail + "Day N of M"/COMPLETED; warm night/sepia reader mode via moon toggle). REMAINING (minor): hero "For you today" + intent rows on browse.
 - **Android parity** — ☐ the entire plans experience (single-scroll reader, dwell, resume, streak grace copy, keepsake, browse progress) still to port to Kotlin/Compose.
 
-Member iOS builds this arc: 8 (single-scroll reader) → 17 (browse progress). Backend: grace-first streak deployed.
+Member iOS builds this arc: 8 (single-scroll reader) → 18 (night mode). Backend: grace-first streak deployed.
 
 ## Build order (user picked all four, 2026-07-05)
 
