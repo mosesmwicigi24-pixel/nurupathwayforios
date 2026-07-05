@@ -137,9 +137,11 @@ struct PLStreakStrip: View {
                 }
                 .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("\(count)-day streak").font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
+                    Text(count == 1 ? "1 day with God" : "\(count) days with God")
+                        .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
                         .lineLimit(1)
-                    Text(count > 0 ? "Read today to keep it alive 🔥" : "Read today to start your streak 🔥")
+                    // Grace-first tone: an invitation, never loss-aversion or guilt.
+                    Text(count > 0 ? "A day at a time — return when you can 🌱" : "Begin your walk today 🌱")
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
                         .lineLimit(2).minimumScaleFactor(0.9)
                 }
