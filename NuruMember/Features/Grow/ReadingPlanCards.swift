@@ -421,7 +421,7 @@ struct PLDetailDayRow: View {
                         .stroke(done ? PL.gold.opacity(0.55) : PL.border, lineWidth: 1)
                     VStack(spacing: -2) {
                         Text("DAY").font(.inter(8, .bold)).kerning(0.9).foregroundStyle(done ? PL.goldDeep : PL.gold)
-                        Text("\(day.dayNumber)").font(.fraunces(22, .semibold)).foregroundStyle(PL.navy)
+                        Text("\(day.dayNumber)").font(.fraunces(22, .medium)).foregroundStyle(PL.navy)
                     }
                 }
                 .frame(width: 52, height: 52)

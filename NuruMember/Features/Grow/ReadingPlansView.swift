@@ -180,7 +180,7 @@ struct ReadingPlansView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.catText)
-                    Text("Grow in the Word").font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(PL.navy)
+                    Text("Grow in the Word").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(PL.navy)
                         .padding(.top, 4)
                     Text("A little every day — with the whole family of God.")
                         .font(.inter(12)).foregroundStyle(PL.ink2).padding(.top, 4)
@@ -275,7 +275,7 @@ struct ReadingPlansView: View {
             .frame(width: 48, height: 48)
             VStack(alignment: .leading, spacing: 3) {
                 Text("CONTINUE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                Text(p.title).font(.fraunces(18, .semibold)).foregroundStyle(.white).lineLimit(1)
+                Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white).lineLimit(1)
                 Text("Day \(day) of \(p.dayCount) · pick up where you left off")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
             }
@@ -345,7 +345,7 @@ struct ReadingPlansView: View {
             .overlay(alignment: .topLeading) { planOfDayBadge.padding(14) }
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(plan.title).font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(.white)
+                    Text(plan.title).font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(.white)
                         .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     HStack(spacing: 4) {
                         Icon(.clock, size: 12, color: .white.opacity(0.8))
@@ -622,7 +622,7 @@ struct PlanDetailView: View {
                         .lineLimit(1)
                         .padding(.horizontal, 10).padding(.vertical, 4).background(PL.gold, in: Capsule())
                 }
-                Text(d.title).font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(.white)
+                Text(d.title).font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(.white)
                     .lineLimit(3).truncationMode(.tail).multilineTextAlignment(.leading)
                 HStack(spacing: 16) {
                     heroMeta(.clock, "\(d.dayCount) days")
@@ -1145,14 +1145,14 @@ struct PlanDayView: View {
                 VStack(spacing: -4) {
                     Text("DAY").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     Text("\(ref.day.dayNumber)")
-                        .font(.fraunces(40, .semibold)).foregroundStyle(.white)
+                        .font(.fraunces(40, .medium)).kerning(-1.2).foregroundStyle(.white)
                         .monospacedDigit()
                 }
                 .frame(minWidth: 52)
                 Rectangle().fill(PL.gold.opacity(0.5)).frame(width: 1, height: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(ref.day.title ?? "Reading & reflection")
-                        .font(.fraunces(21, .semibold)).kerning(-0.4).foregroundStyle(.white)
+                        .font(.fraunces(21, .medium)).kerning(-0.6).foregroundStyle(.white)
                         .lineLimit(2).minimumScaleFactor(0.85)
                     Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                 }
@@ -1379,7 +1379,7 @@ struct DayPullQuote: View {
             Rectangle().fill(pal.gold).frame(width: 3)
             VStack(alignment: .leading, spacing: 8) {
                 Icon(.quote, size: 16, color: pal.gold)
-                Text(display).font(.fraunces(18)).foregroundStyle(pal.ink).lineSpacing(6)
+                Text(display).font(.fraunces(17, .regular)).italic().foregroundStyle(pal.ink).lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(caption.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(pal.inkDim)
             }
@@ -1402,7 +1402,7 @@ struct DayPassage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 22) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
-                Text(p).font(.fraunces(18)).foregroundStyle(pal.ink).lineSpacing(10)
+                Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).lineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1423,7 +1423,7 @@ struct DayTalk: View {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
                     Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
-                    Text(q).font(.fraunces(15)).foregroundStyle(pal.ink).lineSpacing(5)
+                    Text(q).font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink).lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1447,7 +1447,7 @@ struct DayPrayer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !prayer.isEmpty {
-                Text(prayer).font(.fraunces(15)).foregroundStyle(pal.ink).lineSpacing(6)
+                Text(prayer).font(.fraunces(16, .regular)).foregroundStyle(pal.ink).lineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let b = blessing {
@@ -1468,7 +1468,7 @@ struct DayGoDeeper: View {
     var body: some View {
         HStack(spacing: 10) {
             Icon(.bookOpen, size: 15, color: pal.goldDeep)
-            Text(refs).font(.fraunces(14)).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
+            Text(refs).font(.inter(13, .medium)).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .padding(14).frame(maxWidth: .infinity, alignment: .leading)
@@ -1550,7 +1550,7 @@ struct PlanKeepsakeView: View {
                 .scaleEffect(seal ? 1 : 0.6).opacity(seal ? 1 : 0)
                 .padding(.bottom, 24)
                 Text("PLAN COMPLETE").font(.inter(12, .bold)).kerning(2.4).foregroundStyle(PL.goldDeep)
-                Text(planTitle).font(.fraunces(30, .semibold)).foregroundStyle(PL.navy)
+                Text(planTitle).font(.fraunces(30, .medium)).kerning(-0.9).foregroundStyle(PL.navy)
                     .multilineTextAlignment(.center).padding(.horizontal, 32).padding(.top, 8)
                 Text("\(days) days walking with God").font(.inter(14, .medium)).foregroundStyle(PL.ink2).padding(.top, 6)
                 Text("“Well done, good and faithful servant.”\nMatthew 25:23")
@@ -1599,7 +1599,7 @@ struct KeepsakeShareCard: View {
                 Icon(.check, size: 34, color: .white)
             }
             Text("PLAN COMPLETE").font(.inter(11, .bold)).kerning(2).foregroundStyle(PL.goldDeep).padding(.top, 4)
-            Text(planTitle).font(.fraunces(26, .semibold)).foregroundStyle(PL.navy).multilineTextAlignment(.center)
+            Text(planTitle).font(.fraunces(26, .medium)).kerning(-0.52).foregroundStyle(PL.navy).multilineTextAlignment(.center)
             Text("\(days) days walking with God").font(.inter(13, .medium)).foregroundStyle(PL.ink2)
             Text("NURU PATHWAY").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(PL.goldDeep).padding(.top, 8)
         }

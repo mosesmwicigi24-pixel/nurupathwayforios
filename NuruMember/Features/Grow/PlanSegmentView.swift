@@ -110,7 +110,7 @@ struct PlanSegmentView: View {
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(partName).font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                    Text(partName).font(.fraunces(24, .medium)).kerning(-0.7).foregroundStyle(.white)
                     if let r = headerRef, !r.isEmpty {
                         Text(r).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                     }
@@ -196,7 +196,7 @@ struct PlanSegmentView: View {
             // a few scanty keynotes just below.
             DayVideoCard(seg: segment, portrait: true) { url in player = MediaItem(url: url) }
             if !segment.title.isEmpty {
-                Text(segment.title).font(.fraunces(20, .semibold)).foregroundStyle(pal.ink)
+                Text(segment.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
             }
             if let c = segment.content, !c.isEmpty { keynotes(c) }
         }
@@ -213,7 +213,7 @@ struct PlanSegmentView: View {
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
                 HStack(alignment: .top, spacing: 8) {
                     Circle().fill(pal.gold).frame(width: 5, height: 5).padding(.top, 7)
-                    Text(p).font(.fraunces(15)).foregroundStyle(pal.ink).lineSpacing(5)
+                    Text(p).font(.inter(14, .medium)).foregroundStyle(pal.ink).lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -318,7 +318,7 @@ private struct PartReflectionBox: View {
                 }
             }
             Text("What is God showing you today?")
-                .font(.fraunces(16, .medium)).italic().foregroundStyle(pal.ink)
+                .font(.fraunces(16.5, .regular)).italic().foregroundStyle(pal.ink)
                 .fixedSize(horizontal: false, vertical: true)
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
