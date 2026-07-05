@@ -35,7 +35,7 @@ struct PlanSegmentView: View {
     private var group: [PlanSegment] {
         switch ref.part {
         case "word": return ref.segments.filter { [1, 2, 5].contains(rank($0)) }
-        case "respond": return ref.segments.filter { [3, 4].contains(rank($0)) }
+        case "respond": return ref.segments.filter { rank($0) == 4 }
         default: return [segment]
         }
     }
@@ -58,26 +58,6 @@ struct PlanSegmentView: View {
                     VStack(alignment: .leading, spacing: 20) {
                         content
                         if ref.part == "respond", let pid = ref.planId {
-                            NavigationLink(value: TalkRoute(planId: pid,
-                                                            dayNumber: ref.dayNumber,
-                                                            planTitle: ref.planTitle,
-                                                            prompt: talkPrompt)) {
-                                HStack(spacing: 12) {
-                                    Icon(.users, size: 16, color: pal.goldDeep)
-                                        .frame(width: 38, height: 38)
-                                        .background(pal.gold.opacity(0.14), in: Circle())
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text("Talk it over together").font(.inter(14, .semibold)).foregroundStyle(pal.ink)
-                                        Text("See what others are hearing — add your voice").font(.inter(11)).foregroundStyle(pal.inkDim)
-                                    }
-                                    Spacer(minLength: 8)
-                                    Icon(.chevronRight, size: 15, color: pal.inkDim)
-                                }
-                                .padding(14)
-                                .background(pal.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.gold.opacity(0.3), lineWidth: 1))
-                            }
-                            .buttonStyle(.pressable)
                             PartReflectionBox(planId: pid, dayNumber: ref.dayNumber)
                         }
                         DayEncouragement()
@@ -281,17 +261,6 @@ struct PlanSegmentView: View {
         )
     }
 
-    /// The day's Talk it Over prompt (first question) — seeds the shared page.
-    private var talkPrompt: String {
-        guard let talk = ref.segments.first(where: { $0.kind.lowercased() == "talk" }),
-              let c = talk.content else { return "What is God saying to you through today's reading?" }
-        let first = c.components(separatedBy: "\n")
-            .map { $0.trimmingCharacters(in: .whitespaces) }
-            .first { !$0.isEmpty }
-        let q = (first ?? "").hasPrefix("—") ? String(first!.dropFirst()).trimmingCharacters(in: .whitespaces) : (first ?? "")
-        return q.isEmpty ? "What is God saying to you through today's reading?" : q
-    }
-
     /// Warm, part-specific completion wording.
     private var finishLabel: String {
         switch ref.part {
@@ -445,6 +414,7 @@ struct TalkItOverView: View {
     @State private var loading = true
     @State private var draft = ""
     @State private var posting = false
+    @State private var markedRead = false
     @FocusState private var composing: Bool
 
     var body: some View {
@@ -483,7 +453,18 @@ struct TalkItOverView: View {
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear { tabs.chromeHidden = true }
+        .onAppear {
+            tabs.chromeHidden = true
+            // Presence counts: opening the conversation marks the talk part read
+            // (nobody is forced to post publicly to complete their day).
+            if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
+                markedRead = true
+                Task {
+                    _ = try? await MemberAPI.completePlanSegment(sid)
+                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
+                }
+            }
+        }
         .task { await load() }
         .refreshable { await load() }
     }
@@ -579,12 +560,22 @@ struct TalkItOverView: View {
 
     // MARK: prompt + empty state
 
+    private var promptLines: [String] {
+        route.prompt.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+            .map { $0.hasPrefix("—") ? String($0.dropFirst()).trimmingCharacters(in: .whitespaces) : $0 }
+    }
+
     private var promptCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("TODAY'S QUESTION").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
-            Text(route.prompt)
-                .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
-                .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+            Text(promptLines.count == 1 ? "TODAY'S QUESTION" : "TODAY'S QUESTIONS")
+                .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
+            ForEach(Array(promptLines.enumerated()), id: \.offset) { _, q in
+                Text(q)
+                    .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
+                    .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(PL.highlight, in: RoundedRectangle(cornerRadius: 18, style: .continuous))

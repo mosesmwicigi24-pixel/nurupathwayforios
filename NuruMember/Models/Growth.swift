@@ -137,6 +137,10 @@ struct TalkRoute: Hashable {
     let dayNumber: Int
     let planTitle: String
     let prompt: String
+    /// The day's talk segment — visiting the conversation marks it read
+    /// (presence counts; nobody is forced to post publicly).
+    var talkSegmentId: String? = nil
+    var talkDone: Bool = false
 }
 
 // MARK: - Prayer journal

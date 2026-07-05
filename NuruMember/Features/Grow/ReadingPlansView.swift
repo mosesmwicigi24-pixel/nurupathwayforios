@@ -951,16 +951,28 @@ struct PlanDayView: View {
                             Text("TODAY'S JOURNEY · \(hubParts.count) PART\(hubParts.count == 1 ? "" : "S")")
                                 .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
                             ForEach(hubParts) { part in
-                                NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
-                                                                     dayNumber: ref.day.dayNumber,
-                                                                     segments: segments,
-                                                                     index: part.firstIndex,
-                                                                     planId: ref.planId,
-                                                                     part: part.tag,
-                                                                     doneIds: Array(vm.completedSegments))) {
-                                    partRow(part)
+                                if part.tag == "talk" {
+                                    NavigationLink(value: TalkRoute(planId: ref.planId,
+                                                                    dayNumber: ref.day.dayNumber,
+                                                                    planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                                                    prompt: talkPromptFull,
+                                                                    talkSegmentId: part.segs.first?.segmentId,
+                                                                    talkDone: isDone(part))) {
+                                        partRow(part)
+                                    }
+                                    .buttonStyle(.pressable)
+                                } else {
+                                    NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                                                         dayNumber: ref.day.dayNumber,
+                                                                         segments: segments,
+                                                                         index: part.firstIndex,
+                                                                         planId: ref.planId,
+                                                                         part: part.tag,
+                                                                         doneIds: Array(vm.completedSegments))) {
+                                        partRow(part)
+                                    }
+                                    .buttonStyle(.pressable)
                                 }
-                                .buttonStyle(.pressable)
                             }
                             walkStrip
                             reminderRow
@@ -1021,12 +1033,24 @@ struct PlanDayView: View {
             parts.append(HubPart(id: "word", tag: "word", label: "The Word",
                                  icon: .bookOpen, segs: word.map(\.element), firstIndex: f.offset))
         }
-        let respond = segs.enumerated().filter { [3, 4].contains(rank($0.element)) }
+        let respond = segs.enumerated().filter { rank($0.element) == 4 }
         if let f = respond.first {
             parts.append(HubPart(id: "respond", tag: "respond", label: "Respond",
                                  icon: .handHeart, segs: respond.map(\.element), firstIndex: f.offset))
         }
+        // Talk it Over stands alone — the family's shared conversation.
+        let talk = segs.enumerated().filter { rank($0.element) == 3 }
+        if let f = talk.first {
+            parts.append(HubPart(id: "talk", tag: "talk", label: "Talk it Over",
+                                 icon: .messageCircle, segs: talk.map(\.element), firstIndex: f.offset))
+        }
         return parts
+    }
+
+    /// The day's talk questions, joined — seeds the conversation page prompt.
+    private var talkPromptFull: String {
+        let qs = segments.filter { rank($0) == 3 }.compactMap(\.content).joined(separator: "\n")
+        return qs.isEmpty ? "What is God saying to you through today's reading?" : qs
     }
 
     private func isDone(_ part: HubPart) -> Bool {
@@ -1072,8 +1096,10 @@ struct PlanDayView: View {
         case "word":
             let r = part.segs.first(where: { $0.kind.lowercased() == "scripture" })?.reference
             return r.map { "\($0) · Scripture & teaching" } ?? "Scripture & teaching"
+        case "talk":
+            return "The family's conversation on today's word"
         default:
-            return "Talk it over · Prayer · Reflection"
+            return "Prayer · your reflection"
         }
     }
 
