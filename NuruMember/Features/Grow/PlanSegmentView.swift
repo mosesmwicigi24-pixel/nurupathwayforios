@@ -497,8 +497,12 @@ struct TalkItOverView: View {
                     }
                 }
                 composer
+                // The same gold "seal it" button every other part ends with —
+                // hidden while the keyboard is up so the composer gets the room.
+                if !composing { doneBar }
             }
         }
+        .animation(.easeInOut(duration: 0.2), value: composing)
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -677,6 +681,38 @@ struct TalkItOverView: View {
         }
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+    }
+
+    // MARK: done — seal the part and return to the day hub
+
+    /// Talk it Over completes the moment it's opened (nobody is forced to post),
+    /// but the page still ends with the SAME gold button every other part has —
+    /// one consistent gesture: read/respond, press gold, back at the hub, ticked.
+    private var doneBar: some View {
+        Button {
+            // Backstop: make sure the tick landed even if the appear-marking raced.
+            if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
+                markedRead = true
+                Task {
+                    _ = try? await MemberAPI.completePlanSegment(sid)
+                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
+                }
+            }
+            Haptics.success()
+            dismiss()
+        } label: {
+            HStack(spacing: 8) {
+                Icon(.check, size: 15, color: PL.navy)
+                Text("I've talked it over").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+            }
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .shadow(color: PL.gold.opacity(0.4), radius: 10, y: 6)
+        }
+        .buttonStyle(.pressable)
+        .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
+        .background(Color.white)
     }
 }
 
