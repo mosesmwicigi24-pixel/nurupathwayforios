@@ -6,12 +6,31 @@
 	objectVersion = 70;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		1F49253E25E96E56CF6E97A8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		2000000000000000000000F1 /* NuruMember.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NuruMember.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
+		664342554B6FC512AC94FFFA /* NuruWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NuruWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NuruWidgets.swift; sourceTree = "<group>"; };
+		E694577B48D734E91F73C524 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		2000000000000000000000D1 /* NuruMember */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = NuruMember; sourceTree = "<group>"; };
+		2000000000000000000000D1 /* NuruMember */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = NuruMember;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -22,14 +41,32 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		3B180FA9E3906524753431CE /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				1F49253E25E96E56CF6E97A8 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1D20C23DF827334EE86638B2 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				A3C3242BE0A69605A8764319 /* iOS */,
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		2000000000000000000000B1 = {
 			isa = PBXGroup;
 			children = (
 				2000000000000000000000D1 /* NuruMember */,
 				2000000000000000000000C1 /* Products */,
+				1D20C23DF827334EE86638B2 /* Frameworks */,
+				D0BFF2874D3354E1D4BF2A3E /* NuruWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -37,13 +74,49 @@
 			isa = PBXGroup;
 			children = (
 				2000000000000000000000F1 /* NuruMember.app */,
+				664342554B6FC512AC94FFFA /* NuruWidgets.appex */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A3C3242BE0A69605A8764319 /* iOS */ = {
+			isa = PBXGroup;
+			children = (
+				5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */,
+			);
+			name = iOS;
+			sourceTree = "<group>";
+		};
+		D0BFF2874D3354E1D4BF2A3E /* NuruWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */,
+				E694577B48D734E91F73C524 /* Info.plist */,
+			);
+			name = NuruWidgets;
+			path = NuruWidgets;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		1DC1230CB6104AC59DC4A281 /* NuruWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D0E92B1AD2D8FE930D19994B /* Build configuration list for PBXNativeTarget "NuruWidgets" */;
+			buildPhases = (
+				B1FE96DC8B9207E512E1AFE3 /* Sources */,
+				3B180FA9E3906524753431CE /* Frameworks */,
+				54DFFD779432C8AC5E09AB7A /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NuruWidgets;
+			productName = NuruWidgets;
+			productReference = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		2000000000000000000000E1 /* NuruMember */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 200000000000000000000141 /* Build configuration list for PBXNativeTarget "NuruMember" */;
@@ -93,12 +166,20 @@
 			projectRoot = "";
 			targets = (
 				2000000000000000000000E1 /* NuruMember */,
+				1DC1230CB6104AC59DC4A281 /* NuruWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		200000000000000000000121 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		54DFFD779432C8AC5E09AB7A /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -112,6 +193,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B1FE96DC8B9207E512E1AFE3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -229,7 +318,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
@@ -262,7 +351,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 30;
+				CURRENT_PROJECT_VERSION = 31;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
@@ -289,6 +378,57 @@
 			};
 			name = Release;
 		};
+		720EAB32ECE1BA110D281557 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 31;
+				DEVELOPMENT_TEAM = SGC7566QY6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NuruWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Nuru;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		DBDDF4EAFB8A403637300662 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 31;
+				DEVELOPMENT_TEAM = SGC7566QY6;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NuruWidgets/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Nuru;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.1;
+				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruWidgets;
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -306,6 +446,15 @@
 			buildConfigurations = (
 				200000000000000000000171 /* Debug */,
 				200000000000000000000181 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D0E92B1AD2D8FE930D19994B /* Build configuration list for PBXNativeTarget "NuruWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				720EAB32ECE1BA110D281557 /* Release */,
+				DBDDF4EAFB8A403637300662 /* Debug */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

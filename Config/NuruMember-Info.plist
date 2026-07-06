@@ -11,5 +11,18 @@
 	<!-- QR event check-in (CheckInScannerView) — shown on the first camera ask. -->
 	<key>NSCameraUsageDescription</key>
 	<string>Nuru uses the camera to scan the event check-in code.</string>
+	<!-- nuru:// deep links — the home-screen widgets open straight into their
+	     surface (nuru://pathway, nuru://plans, nuru://chat, nuru://radio). -->
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>org.nuruplace.member</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nuru</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>

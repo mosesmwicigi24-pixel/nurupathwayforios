@@ -210,6 +210,7 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     @State private var playingVideo = false
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
+    @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
 
@@ -292,7 +293,9 @@ struct HomeView: View {
                     // whose mangled type name overflows the Swift metadata demangler
                     // (swift_getTypeByMangledNameImpl) at launch on-device → EXC_BAD_ACCESS.
                     // Each group boundary erases the tuple, keeping every type small.
-                    VStack(spacing: Nuru.S.base) {
+                    // 20pt between sections — the 16pt grid read congested with
+                    // this many cards; each one gets room to breathe (owner ask).
+                    VStack(spacing: 20) {
                         ForEach(Array(feedSections.enumerated()), id: \.offset) { _, section in
                             section
                         }
@@ -315,6 +318,14 @@ struct HomeView: View {
             tabs.selected = .home
             if !path.isEmpty { path = NavigationPath() }
             path.append(AppRoute.notifications)
+        }
+        // A tapped announcement notification opens the announcement itself.
+        .onReceive(tabs.$announcementLink) { id in
+            guard let id else { return }
+            if !path.isEmpty { path = NavigationPath() }
+            path.append(AppRoute.announcement(id))
+            Task { await vm.openAnnouncement(id) }
+            DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
         .task {
@@ -813,6 +824,19 @@ struct HomeView: View {
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
 
+    /// A card-header trailing link that reads as a BUTTON — a gold-tinted pill
+    /// ("Open wall", "View", "View all") instead of a whisper of bare text that
+    /// disappeared into the card (owner ask: make it stand out).
+    private func sectionLink(_ label: String) -> some View {
+        HStack(spacing: 3) {
+            Text(label).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
+            Icon(.chevronRight, size: 11, color: Nuru.goldChipText)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Nuru.goldChipBg, in: Capsule())
+        .overlay(Capsule().stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+    }
+
     // MARK: 5 — Pray for one another (carousel)
 
     private var prayerWallCard: some View {
@@ -821,7 +845,7 @@ struct HomeView: View {
                 Text("PRAY FOR ONE ANOTHER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer()
                 NavigationLink(value: CommunityRoute.prayerWall) {
-                    Text("Open wall ›").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
+                    sectionLink("Open wall")
                 }.buttonStyle(.plain)
             }
             // A single post hugs its content (no pager, no dead space); multiple
@@ -870,8 +894,9 @@ struct HomeView: View {
                 Text(t).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).padding(.top, Nuru.S.sm)
             }
             Text(post.body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
+                .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 4)
+                .padding(.top, 6)
             // Gold-tinted praying pill (Figma).
             HStack(spacing: 5) {
                 Icon(.handHeart, size: 13, color: Nuru.goldChipText)
@@ -880,7 +905,7 @@ struct HomeView: View {
             }
             .padding(.horizontal, 12).padding(.vertical, 6)
             .background(Nuru.gold.opacity(0.10), in: Capsule())
-            .padding(.top, Nuru.S.sm)
+            .padding(.top, Nuru.S.md)
             if inPager { Spacer(minLength: 0) }   // top-align short posts in the pager
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -928,7 +953,7 @@ struct HomeView: View {
     // MARK: 6 — Reading-plan + Prayer-journal minis
 
     private var minisRow: some View {
-        HStack(spacing: Nuru.S.sm) {
+        HStack(spacing: Nuru.S.md) {
             // Resume the plan directly when one is in progress; otherwise open the
             // catalogue — always on the Plans tab (its home), never inside Home.
             Button {
@@ -1091,45 +1116,74 @@ struct HomeView: View {
                 Text("MEET YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
                 Spacer(minLength: 0)
                 // Opens the Discipleship Hub — the fuller student home for the
-                // discipleship relationship (supersedes the bare mentor view).
+                // discipleship relationship (backend: GET /me/discipleship).
                 NavigationLink(value: AppRoute.discipleshipHub) {
-                    HStack(spacing: 3) {
-                        Text("View").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
-                        Icon(.chevronRight, size: 12, color: Nuru.goldLo)
-                    }
+                    sectionLink("View")
                 }.buttonStyle(.plain)
             }
-            TabView {
-                ForEach(vm.disciplers) { d in
-                    NavigationLink(value: AppRoute.discipleshipHub) { disciplerView(d) }
-                        .buttonStyle(.pressableSubtle)
+            // One discipler hugs its content (no pager, no dead band); several
+            // page with OUR gold dots — the system pager dots are WHITE and were
+            // invisible on the white card, leaving what read as an empty card.
+            if vm.disciplers.count == 1, let d = vm.disciplers.first {
+                NavigationLink(value: AppRoute.discipleshipHub) { disciplerView(d) }
+                    .buttonStyle(.pressableSubtle)
+                    .padding(.top, Nuru.S.md)
+            } else {
+                TabView(selection: $disciplerPage) {
+                    ForEach(Array(vm.disciplers.enumerated()), id: \.element.id) { i, d in
+                        NavigationLink(value: AppRoute.discipleshipHub) { disciplerView(d, inPager: true) }
+                            .buttonStyle(.pressableSubtle)
+                            .tag(i)
+                    }
                 }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 190)
+                .padding(.top, Nuru.S.md)
+                HStack(spacing: 5) {
+                    ForEach(0..<vm.disciplers.count, id: \.self) { i in
+                        Capsule().fill(i == disciplerPage ? Nuru.gold : Nuru.gold.opacity(0.22))
+                            .frame(width: i == disciplerPage ? 16 : 6, height: 6)
+                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: disciplerPage)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, Nuru.S.sm)
             }
-            .tabViewStyle(.page(indexDisplayMode: .always))
-            .frame(height: 150)
-            .padding(.top, Nuru.S.sm)
         }
         .padding(Nuru.S.base)
         .cardSurface()
     }
 
-    private func disciplerView(_ d: Discipler) -> some View {
+    private func disciplerView(_ d: Discipler, inPager: Bool = false) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: Nuru.S.md) {
-                Avatar(url: d.avatarUrl, name: d.fullName, size: 44)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(d.fullName).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy)
-                    Text(d.roleLabel.uppercased()).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Nuru.gold)
-                    if let m = d.message, !m.isEmpty {
-                        Text("“\(m)”").font(.fraunces(12)).italic().foregroundStyle(Color(hex: 0x3A4A5F)).lineLimit(3).padding(.top, 5)
-                    }
+            HStack(alignment: .center, spacing: Nuru.S.md) {
+                Avatar(url: d.avatarUrl, name: d.fullName, size: 52)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(d.fullName).font(.fraunces(17, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text(d.roleLabel.uppercased()).font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.goldLo)
                 }
                 Spacer(minLength: 0)
+                Icon(.chevronRight, size: 16, color: Nuru.ink300)
             }
-            Spacer(minLength: 0)
+            if let m = d.message, !m.isEmpty {
+                Text("“\(m)”")
+                    .font(.fraunces(14, .regular)).italic()
+                    .foregroundStyle(Color(hex: 0x3A4A5F))
+                    .lineSpacing(4).lineLimit(inPager ? 3 : nil)
+                    .fixedSize(horizontal: false, vertical: !inPager)
+                    .padding(.top, Nuru.S.md)
+            }
+            // The relationship's front door — the hub's hero CTA, previewed here.
+            HStack(spacing: 6) {
+                Icon(.messageCircle, size: 12, color: Nuru.goldChipText)
+                Text("Message · walk together").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 6)
+            .background(Nuru.gold.opacity(0.10), in: Capsule())
+            .padding(.top, Nuru.S.md)
+            if inPager { Spacer(minLength: 0) }   // top-align inside the fixed pager
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.bottom, Nuru.S.lg)
     }
 
     // MARK: 9 — Featured announcement
@@ -1141,7 +1195,7 @@ struct HomeView: View {
                 Text("FEATURED ANNOUNCEMENT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Nuru.goldChipText)
                 Spacer()
                 NavigationLink(value: AppRoute.notifications) {
-                    Text("View all").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                    sectionLink("View all")
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 4)

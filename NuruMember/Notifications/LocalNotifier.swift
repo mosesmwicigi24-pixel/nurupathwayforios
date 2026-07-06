@@ -11,6 +11,10 @@ extension Notification.Name {
     /// Posted when the member taps one of our iOS notifications — Home listens
     /// and pushes the in-app Notifications screen.
     static let nuruOpenNotifications = Notification.Name("nuru.openNotifications")
+    /// Posted with the tapped notification's userInfo (template + route ids) —
+    /// RootView routes it to the EXACT in-app location (module, level,
+    /// announcement, events/give/profile tab), falling back to the inbox.
+    static let nuruNotificationTap = Notification.Name("nuru.notificationTap")
     /// Posted by any surface that wants the radio player open (Home's radio
     /// button, the ON AIR bar). RootView owns the ONE fullScreenCover — a
     /// single presentation source so covers never fight over the window.
@@ -53,7 +57,14 @@ final class LocalNotifier: NSObject, ObservableObject {
             content.title = Self.title(for: n)
             if let body = Self.body(for: n) { content.body = body }
             content.sound = .default   // silent mode → vibration
-            content.userInfo = ["notificationId": n.notificationId]
+            // Carry the routing payload so a TAP can land on the exact target.
+            content.userInfo = [
+                "notificationId": n.notificationId,
+                "template": n.template,
+                "announcementId": n.payload?.announcementId ?? "",
+                "moduleId": n.payload?.moduleId ?? "",
+                "levelNumber": n.payload?.levelNumber ?? 0,
+            ]
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)
             try? await UNUserNotificationCenter.current().add(req)
@@ -91,12 +102,19 @@ extension LocalNotifier: UNUserNotificationCenterDelegate {
         completionHandler([.banner, .sound, .badge])
     }
 
-    /// Tap → open the in-app Notification Center.
+    /// Tap → land on the EXACT target (RootView routes by the userInfo payload;
+    /// anything unroutable falls back to the in-app Notification Center there).
+    /// Opening from the banner also counts as reading it.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
+        let info = response.notification.request.content.userInfo
         Task { @MainActor in
-            NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
+            NotificationCenter.default.post(name: .nuruNotificationTap, object: nil,
+                                            userInfo: info as? [String: Any])
+            if let id = info["notificationId"] as? String, !id.isEmpty {
+                try? await MemberAPI.markNotificationsRead([id])
+            }
         }
         completionHandler()
     }

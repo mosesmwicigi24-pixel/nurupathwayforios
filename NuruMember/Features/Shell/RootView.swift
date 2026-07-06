@@ -76,10 +76,13 @@ final class TabRouter: ObservableObject {
     @Published var pathwayLink: PathwayRoute?
     @Published var planLink: PlanDeepLink?
     @Published var eventLink: CalendarOccurrence?
+    /// Announcement to open on the Home stack (from a tapped iOS notification).
+    @Published var announcementLink: String?
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
     func openEvent(_ o: CalendarOccurrence) { eventLink = o; selected = .events }
+    func openAnnouncement(_ id: String) { announcementLink = id; selected = .home }
 }
 
 struct RootView: View {
@@ -168,6 +171,46 @@ struct RootView: View {
         // (rhythm complete, streak marks, new badges, prayer posted, gift
         // confirmed). Mounted ONCE here, above every tab and the tab bar.
         .overlay { CelebrationHost() }
+        // A tapped iOS notification lands on its EXACT target: module/level →
+        // Pathway tab, announcement → Home stack, event/giving/badge families →
+        // their tab. Anything unroutable opens the in-app inbox as before.
+        .onReceive(NotificationCenter.default.publisher(for: .nuruNotificationTap)) { note in
+            let info = note.userInfo ?? [:]
+            let template = info["template"] as? String ?? ""
+            let announcementId = info["announcementId"] as? String ?? ""
+            let moduleId = info["moduleId"] as? String ?? ""
+            let level = info["levelNumber"] as? Int ?? 0
+            if !announcementId.isEmpty {
+                tabs.openAnnouncement(announcementId)
+            } else if !moduleId.isEmpty {
+                tabs.openPathway(.module(moduleId))
+            } else if template.hasPrefix("level"), level > 0 {
+                tabs.openPathway(.level(level))
+            } else if template.hasPrefix("event") {
+                tabs.selected = .events
+            } else if template.hasPrefix("giving") || template.hasPrefix("payment") {
+                tabs.selected = .give
+            } else if template.hasPrefix("badge") || template.hasPrefix("certificate") {
+                tabs.selected = .profile
+            } else if template.hasPrefix("reflection") {
+                tabs.selected = .pathway
+            } else {
+                NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
+            }
+        }
+        // Home-screen widgets deep-link with nuru:// URLs — route to the tab
+        // (or open the radio player) the widget promises.
+        .onOpenURL { url in
+            switch url.host ?? url.absoluteString.replacingOccurrences(of: "nuru://", with: "") {
+            case "pathway": tabs.selected = .pathway
+            case "plans":   tabs.selected = .plans
+            case "chat":    tabs.selected = .chat
+            case "events":  tabs.selected = .events
+            case "give":    tabs.selected = .give
+            case "radio":   NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
+            default:        tabs.selected = .home
+            }
+        }
         .onChange(of: tabs.selected) { _, t in
             loaded.insert(t)
             // Screen telemetry (POST /me/activity/screens) — silent by contract.
