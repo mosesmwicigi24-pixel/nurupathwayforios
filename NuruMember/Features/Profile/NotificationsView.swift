@@ -60,6 +60,7 @@ struct NotificationsView: View {
         .sheet(item: $detail) { n in
             NotificationDetailSheet(meta: metaFor(n.template),
                                     reward: Self.isReward(n.template),
+                                    template: n.template,
                                     title: titleFor(n),
                                     bodyText: bodyFor(n),
                                     when: ago(n.sentAt ?? n.scheduledFor)) { detail = nil }
@@ -300,53 +301,156 @@ private extension String {
 }
 
 // MARK: - Read-and-dismiss popup (notifications with no in-app destination)
+// Not a flat message box: it greets the member BY NAME, carries the
+// notification, shows their live quick stats (streak · level · plan), and ends
+// with a word of encouragement + a gold door back onto the journey.
 
 private struct NotificationDetailSheet: View {
     let meta: NotificationsView.Meta
     let reward: Bool
+    let template: String
     let title: String
     let bodyText: String?
     let when: String
     let onDismiss: () -> Void
 
+    @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var tabs: TabRouter
+    @State private var streak: Int?
+    @State private var activeLevel: PathwayLevel?
+    @State private var plan: ReadingPlanRow?
+
+    private var firstName: String {
+        (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend"
+    }
+    private var greeting: String {
+        if Calendar.current.component(.weekday, from: Date()) == 1 { return "Happy Lord's Day" }
+        let h = Calendar.current.component(.hour, from: Date())
+        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
+    }
+    /// The keep-going word, tuned to what the notification is about.
+    private var nudge: String {
+        if template.hasPrefix("nudge") || template.contains("miss") {
+            return "The road is still yours, \(firstName). One small step today — a verse, a prayer, a page — and you're walking again."
+        }
+        if reward { return "God is faithful — and so were you. Keep walking; there's more ahead." }
+        return "Every step counts, \(firstName). Keep going — God isn't finished with you."
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Personal greeting first — this popup speaks TO the member.
+            Text("\(greeting), \(firstName).")
+                .font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
+
+            // The notification itself.
             HStack(alignment: .top, spacing: 14) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 14)
                         .fill(reward
                               ? AnyShapeStyle(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing))
                               : AnyShapeStyle(meta.bg))
-                        .frame(width: 48, height: 48)
-                    Icon(meta.icon, size: 21, color: reward ? Nuru.navy : meta.fg)
+                        .frame(width: 44, height: 44)
+                    Icon(meta.icon, size: 19, color: reward ? Nuru.navy : meta.fg)
                 }
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.fraunces(19, .medium)).kerning(-0.3).foregroundStyle(Nuru.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(when).font(.nMicro).foregroundStyle(Nuru.faint)
+                    HStack(alignment: .firstTextBaseline, spacing: 8) {
+                        Text(title).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                        Text(when).font(.nMicro).foregroundStyle(Nuru.faint)
+                    }
+                    if let b = bodyText, !b.isEmpty {
+                        Text(b).font(.inter(13)).foregroundStyle(Nuru.muted).lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
-                Spacer(minLength: 0)
             }
-            if let b = bodyText, !b.isEmpty {
-                Rectangle().fill(Nuru.border).frame(height: 1).padding(.vertical, 16)
-                Text(b).font(.inter(14)).foregroundStyle(Nuru.muted).lineSpacing(5)
-                    .fixedSize(horizontal: false, vertical: true)
+            .padding(14)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .padding(.top, 14)
+
+            // Quick stats — where the member actually stands, live from the server.
+            if streak != nil || activeLevel != nil || plan != nil {
+                HStack(spacing: 8) {
+                    if let s = streak {
+                        statChip(icon: .flame, tint: Color(hex: 0xB4530A), bg: Color(hex: 0xFFF4DA),
+                                 label: s > 0 ? "\(s) days with God" : "Begin today")
+                    }
+                    if let a = activeLevel {
+                        statChip(icon: .bookOpen, tint: Nuru.navy, bg: Nuru.tintBlue,
+                                 label: "Level \(a.levelNumber) · \(a.completedModules)/\(a.totalModules)")
+                    }
+                    if let p = plan {
+                        statChip(icon: .bookMarked, tint: Color(hex: 0x6366F1), bg: Color(hex: 0xEEF2FF),
+                                 label: "Day \(p.currentDay ?? 1) of \(p.dayCount)")
+                    }
+                }
+                .padding(.top, 14)
+                .transition(.opacity)
             }
+
+            // The word that sends them on.
+            Text(nudge)
+                .font(.fraunces(14.5, .regular)).italic()
+                .foregroundStyle(Color(hex: 0x3A4A5F)).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 14)
+
             Spacer(minLength: 16)
             Button {
                 Haptics.tap()
                 onDismiss()
+                if let a = activeLevel { tabs.openPathway(.level(a.levelNumber)) }
+                else { tabs.selected = .pathway }
             } label: {
-                Text("Dismiss").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
-                    .frame(maxWidth: .infinity, minHeight: 50)
-                    .background(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                HStack(spacing: 8) {
+                    Icon(.arrowRight, size: 15, color: Nuru.navy)
+                    Text("Continue my journey").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
+                }
+                .frame(maxWidth: .infinity, minHeight: 50)
+                .background(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.pressable)
+            Button {
+                Haptics.tap()
+                onDismiss()
+            } label: {
+                Text("Dismiss").font(.inter(13, .semibold)).foregroundStyle(Nuru.muted)
+                    .frame(maxWidth: .infinity, minHeight: 40)
+            }
+            .buttonStyle(.plain)
+            .padding(.top, 2)
         }
         .padding(20)
-        .presentationDetents([.fraction(0.42), .medium])
+        .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Nuru.paper)
+        .animation(.easeInOut(duration: 0.25), value: streak == nil)
+        // Live stats — best-effort, in parallel; chips appear as data lands.
+        .task {
+            async let ach = try? MemberAPI.achievements()
+            async let pw = try? MemberAPI.pathway()
+            async let pl = try? MemberAPI.plans()
+            streak = (await ach)?.streak.current
+            if let p = await pw {
+                activeLevel = p.levels.first { $0.status == .active }
+                    ?? p.levels.first { $0.levelNumber == p.currentLevel }
+                    ?? p.levels.first
+            }
+            plan = (await pl)?.first { $0.enrolled && $0.completedAt == nil }
+        }
+    }
+
+    private func statChip(icon: Lucide, tint: Color, bg: Color, label: String) -> some View {
+        HStack(spacing: 5) {
+            Icon(icon, size: 12, color: tint)
+            Text(label).font(.inter(11, .bold)).foregroundStyle(tint)
+                .lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 7)
+        .background(bg, in: Capsule())
     }
 }
