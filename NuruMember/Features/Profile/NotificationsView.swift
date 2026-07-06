@@ -150,19 +150,26 @@ struct NotificationsView: View {
                 }
             }
             Spacer()
+            // ALWAYS legible (the old 40%-opacity ghost was an unreadable gray
+            // blob): unread → a full-strength navy/gold action; all read → a
+            // calm gold-tinted "All read" state, still at full opacity.
             Button { Haptics.action(); Task { await vm.markAll() } } label: {
                 HStack(spacing: 4) {
                     // Figma's CheckCheck (double tick) — composed from two check glyphs.
                     ZStack {
-                        Icon(.check, size: 13, color: Nuru.gold).offset(x: -3)
-                        Icon(.check, size: 13, color: Nuru.gold).offset(x: 3)
+                        Icon(.check, size: 13, color: vm.unread > 0 ? Nuru.goldHi : Nuru.goldChipText).offset(x: -3)
+                        Icon(.check, size: 13, color: vm.unread > 0 ? Nuru.goldHi : Nuru.goldChipText).offset(x: 3)
                     }
                     .frame(width: 18)
-                    Text("Mark all read").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                    Text(vm.unread > 0 ? "Mark all read" : "All read")
+                        .font(.inter(11, .bold))
+                        .foregroundStyle(vm.unread > 0 ? Nuru.goldHi : Nuru.goldChipText)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 7).background(Nuru.navy, in: Capsule())
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(vm.unread > 0 ? AnyShapeStyle(Nuru.navy) : AnyShapeStyle(Nuru.goldChipBg), in: Capsule())
+                .overlay(Capsule().stroke(Nuru.gold.opacity(vm.unread > 0 ? 0 : 0.35), lineWidth: 1))
             }
-            .disabled(vm.unread == 0).opacity(vm.unread == 0 ? 0.4 : 1)
+            .disabled(vm.unread == 0)
             .animation(.easeInOut(duration: 0.25), value: vm.unread == 0)
         }
         .padding(.horizontal, Nuru.S.base).padding(.top, 54).padding(.bottom, Nuru.S.md)
