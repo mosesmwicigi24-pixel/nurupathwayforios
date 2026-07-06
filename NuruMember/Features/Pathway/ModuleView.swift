@@ -540,8 +540,7 @@ struct ModuleView: View {
         // never crosses the title or any content.
         .overlay(alignment: .top) {
             if vm.detail != nil {
-                MLReadingProgressBar(progress: overallProgress)
-                    .allowsHitTesting(false)
+                NuruReadingBar(progress: overallProgress)
                     .ignoresSafeArea(edges: .top)
             }
         }
@@ -578,7 +577,7 @@ struct ModuleView: View {
             if vm.detail != nil {
                 // Bind the dot to `overallProgress` — the SAME whole-module signal
                 // the top reading bar uses — so the dot and the bar move in lockstep.
-                MLPaceRail(progress: overallProgress)
+                NuruPaceRail(progress: overallProgress)
                     .transition(.opacity)
             }
         }
@@ -1131,24 +1130,9 @@ private struct MLScrollMetricsKey: PreferenceKey {
     }
 }
 
-// MARK: - Reading progress bar (3pt gold, pinned at the very top of the reader)
-
-private struct MLReadingProgressBar: View {
-    let progress: Double
-    var body: some View {
-        GeometryReader { geo in
-            ZStack(alignment: .leading) {
-                Rectangle().fill(ML.track.opacity(0.5))
-                Rectangle().fill(ML.goldGradient)
-                    .frame(width: max(0, geo.size.width * progress))
-            }
-        }
-        .frame(height: 3)
-        .accessibilityElement()
-        .accessibilityLabel("Reading progress")
-        .accessibilityValue("\(Int((progress * 100).rounded())) percent")
-    }
-}
+// The reading-progress bar + right-rail eye-pacer are the shared
+// NuruReadingBar / NuruPaceRail (NuruTheme.swift) — one visual language
+// across the Pathway module reader and the Plan part readers.
 
 // MARK: - Resume note + whisper page indicator (immersive-mode companions)
 
@@ -1524,54 +1508,6 @@ private struct MLSquareLabel: View {
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
                 .stroke(ML.border, lineWidth: 1))
-    }
-}
-
-/// The eye-pacer — a gold dot on the right rail whose vertical position is bound
-/// to the reader's real scroll fraction. It moves exactly with your scroll
-/// (already spring-smoothed upstream), stops the instant you stop, and speeds up
-/// when you do; the rail behind the dot fills gold to show how far you've read.
-/// Purely a guide that observes nothing. Spans the mid-height so it never
-/// collides with the top full-screen handle or the bottom page whisper.
-private struct MLPaceRail: View {
-    let progress: Double   // 0…1, the live whole-module reading progress
-
-    private var p: CGFloat { CGFloat(min(1, max(0, progress))) }
-
-    var body: some View {
-        // DIAGNOSIS: the old rail placed the track/fill/dot in a `ZStack(.top)` and
-        // positioned the dot with `.offset(y:)` where `y` folded in the OVERLAY's
-        // `geo.safeAreaInsets.top`. Because the host view `.ignoresSafeArea(edges:
-        // .top)`, those insets resolve differently for the overlay than for the top
-        // bar, and the mixed `.padding` + `.offset` layout wasn't re-resolving the
-        // dot's position on every `progress` change → the dot sat still while the
-        // top bar (a plain width-driven fill) moved. FIX: one GeometryReader that
-        // owns a fixed rail rect in ITS OWN coordinate space, and place the dot with
-        // absolute `.position(y:)` computed purely from `progress` — so it re-lays
-        // out on every scroll tick and tracks the top bar exactly.
-        GeometryReader { geo in
-            let top: CGFloat = 66
-            let bottom = max(top + 1, geo.size.height - 92)
-            let span = bottom - top
-            let y = top + p * span
-            let railX = geo.size.width - 8.5   // 7pt trailing inset + half the 3pt rail
-            ZStack {
-                // Faint full track (top → bottom).
-                Capsule().fill(ML.gold.opacity(0.12))
-                    .frame(width: 3, height: span)
-                    .position(x: railX, y: (top + bottom) / 2)
-                // Read-so-far fill (top → dot) — grows with progress.
-                Capsule().fill(ML.gold.opacity(0.55))
-                    .frame(width: 3, height: max(0, y - top))
-                    .position(x: railX, y: top + max(0, y - top) / 2)
-                // The scroll dot — absolute position, purely a function of progress.
-                Circle().fill(ML.gold)
-                    .frame(width: 9, height: 9)
-                    .shadow(color: ML.gold.opacity(0.6), radius: 4)
-                    .position(x: railX, y: y)
-            }
-        }
-        .allowsHitTesting(false)
     }
 }
 

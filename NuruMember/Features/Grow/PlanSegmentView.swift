@@ -13,6 +13,18 @@ extension Notification.Name {
     static let nuruPlanPartDone = Notification.Name("nuruPlanPartDone")
 }
 
+// Scroll metrics (content offset + height → the reading instruments).
+private struct PLReadMetrics: Equatable {
+    var offset: CGFloat = 0
+    var contentHeight: CGFloat = 1
+}
+private struct PLReadMetricsKey: PreferenceKey {
+    static var defaultValue = PLReadMetrics()
+    static func reduce(value: inout PLReadMetrics, nextValue: () -> PLReadMetrics) {
+        value = nextValue()
+    }
+}
+
 struct PlanSegmentView: View {
     let ref: PlanSegmentRef
     init(ref: PlanSegmentRef) { self.ref = ref }
@@ -24,6 +36,11 @@ struct PlanSegmentView: View {
     @State private var done = false
     @State private var saving = false
     @State private var player: MediaItem?
+    // Live scroll fraction → the same reading instruments the Pathway reader
+    // shows (top gold hairline + right-rail eye-pacer). Hidden when the part
+    // fits on one screen (nothing to pace).
+    @State private var readFraction: Double = 0
+    @State private var readScrollable = false
 
     private struct MediaItem: Identifiable { let id = UUID(); let url: URL }
 
@@ -54,23 +71,55 @@ struct PlanSegmentView: View {
             pal.bg.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 20) {
-                        content
-                        if ref.part == "respond", let pid = ref.planId {
-                            PartReflectionBox(planId: pid, dayNumber: ref.dayNumber)
+                GeometryReader { viewport in
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 20) {
+                            content
+                            if ref.part == "respond", let pid = ref.planId {
+                                PartReflectionBox(planId: pid, dayNumber: ref.dayNumber)
+                            }
+                            DayEncouragement()
                         }
-                        DayEncouragement()
+                        .padding(.horizontal, 20).padding(.top, 22).padding(.bottom, 24)
+                        // Scroll metrics for the reading instruments: content
+                        // offset + height in the scroll's coordinate space.
+                        .background(GeometryReader { g in
+                            Color.clear.preference(
+                                key: PLReadMetricsKey.self,
+                                value: PLReadMetrics(offset: -g.frame(in: .named("plRead")).minY,
+                                                     contentHeight: g.size.height))
+                        })
                     }
-                    .padding(.horizontal, 20).padding(.top, 22).padding(.bottom, 24)
+                    .coordinateSpace(name: "plRead")
+                    .scrollDismissesKeyboard(.interactively)
+                    .onPreferenceChange(PLReadMetricsKey.self) { m in
+                        let span = m.contentHeight - viewport.size.height
+                        readScrollable = span > 56
+                        readFraction = span > 1 ? min(1, max(0, Double(m.offset / span))) : 1
+                    }
+                    // The eye-pacer rides the reading canvas — under the navy
+                    // header, clear of the bottom CTA (same cue as Pathway).
+                    .overlay(alignment: .trailing) {
+                        if readScrollable {
+                            NuruPaceRail(progress: readFraction, topInset: 16, bottomInset: 116)
+                                .transition(.opacity)
+                        }
+                    }
+                    .safeAreaInset(edge: .bottom) { cta }
                 }
-                .scrollDismissesKeyboard(.interactively)
-                .safeAreaInset(edge: .bottom) { cta }
             }
         }
         .environment(\.readerPalette, pal)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        // Whole-part reading progress, flush to the physical top edge — the
+        // same gold hairline the Pathway reader pins there.
+        .overlay(alignment: .top) {
+            if readScrollable {
+                NuruReadingBar(progress: readFraction)
+                    .ignoresSafeArea(edges: .top)
+            }
+        }
         .fullScreenCover(item: $player) { it in mediaWindow(it.url) }
         .onAppear {
             tabs.chromeHidden = true

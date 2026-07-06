@@ -266,9 +266,11 @@ final class EventsViewModel: ObservableObject {
 
 struct EventsView: View {
     @StateObject private var vm = EventsViewModel()
+    @EnvironmentObject private var tabs: TabRouter
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     header
@@ -304,6 +306,14 @@ struct EventsView: View {
             .nuruDestinations()
         }
         .task { if vm.occurrences.isEmpty && vm.series.isEmpty && vm.announcements.isEmpty { await vm.load() } }
+        // Cross-tab deep link (Home's live-now card): open the event detail
+        // inside THIS tab, with the Events list as the back stop.
+        .onReceive(tabs.$eventLink) { link in
+            guard let link else { return }
+            path = NavigationPath()
+            path.append(link)
+            DispatchQueue.main.async { tabs.eventLink = nil }
+        }
     }
 
     // MARK: 1 — cream header

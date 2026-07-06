@@ -526,7 +526,7 @@ struct HomeView: View {
             location: info.occ.location,
             posterUrl: info.occ.primaryImageUrl,
             startsInMin: info.startsInMin
-        ) { path.append(info.occ) }
+        ) { tabs.openEvent(info.occ) }   // events live on the Events tab
     }
 
     // MARK: 1 — Priority strip (reflection due; appears at top AND before progress)
@@ -541,8 +541,10 @@ struct HomeView: View {
             meta: vm.nextAction?.title ?? active?.title ?? "Today's module",
             cta: "Start reflection"
         ) {
-            if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
-            else { path.append(PathwayRoute.level(active?.levelNumber ?? 1)) }
+            // Pathway content lives on the Pathway tab — switch there, don't
+            // bury the module inside Home's stack (the tab bar must tell the truth).
+            if let m = nextModuleId { tabs.openPathway(.module(m)) }
+            else { tabs.openPathway(.level(active?.levelNumber ?? 1)) }
         }
     }
 
@@ -580,10 +582,11 @@ struct HomeView: View {
             note: a.body,
             ctaLabel: a.ctaLabel
         ) {
+            // "For you today" continues the pathway — land on the Pathway tab.
             if a.route == "module", let m = a.params?.moduleId {
-                path.append(PathwayRoute.module(m))
+                tabs.openPathway(.module(m))
             } else if let lvl = active?.levelNumber {
-                path.append(PathwayRoute.level(lvl))
+                tabs.openPathway(.level(lvl))
             }
         }
     }
@@ -895,7 +898,8 @@ struct HomeView: View {
         let day = p.currentDay ?? 1
         let done = p.completedDays?.count ?? max(0, day - 1)
         let pct = p.dayCount > 0 ? CGFloat(done) / CGFloat(p.dayCount) : 0
-        return NavigationLink(value: p) {
+        // Plans live on the Plans tab — switch there and land on this plan.
+        return Button { Haptics.tap(); tabs.openPlans(.plan(p)) } label: {
             HStack(spacing: 14) {
                 ZStack {
                     Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
@@ -925,14 +929,12 @@ struct HomeView: View {
 
     private var minisRow: some View {
         HStack(spacing: Nuru.S.sm) {
-            // Resume the plan directly when one is in progress; otherwise open the catalogue.
-            Group {
-                if let p = resumePlan {
-                    NavigationLink(value: p) { readingPlanMini }
-                } else {
-                    NavigationLink(value: GrowDestination.readingPlans) { readingPlanMini }
-                }
-            }
+            // Resume the plan directly when one is in progress; otherwise open the
+            // catalogue — always on the Plans tab (its home), never inside Home.
+            Button {
+                Haptics.tap()
+                tabs.openPlans(resumePlan.map { .plan($0) } ?? .catalogue)
+            } label: { readingPlanMini }
             .buttonStyle(.pressable)
             NavigationLink(value: GrowDestination.prayerJournal) { prayerJournalMini }.buttonStyle(.pressable)
         }
@@ -1228,8 +1230,8 @@ struct HomeView: View {
                 .padding(.top, 6)
             Button {
                 Haptics.tap()
-                if let m = nextModuleId { path.append(PathwayRoute.module(m)) }
-                else { path.append(PathwayRoute.level(a?.levelNumber ?? 1)) }
+                if let m = nextModuleId { tabs.openPathway(.module(m)) }
+                else { tabs.openPathway(.level(a?.levelNumber ?? 1)) }
             } label: {
                 HStack(spacing: 6) {
                     Text("Continue").font(.nCardCTA).foregroundStyle(Nuru.gold)
@@ -1306,7 +1308,9 @@ struct HomeView: View {
             HStack(alignment: .firstTextBaseline) {
                 Text("Your progress").font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
                 Spacer()
-                NavigationLink(value: PathwayRoute.level(active?.levelNumber ?? 1)) {
+                Button {
+                    Haptics.tap(); tabs.openPathway(.level(active?.levelNumber ?? 1))
+                } label: {
                     Text("View pathway").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
                 }
             }
@@ -1426,7 +1430,12 @@ struct HomeView: View {
     @ViewBuilder
     private func growTileLink(_ t: GrowTile) -> some View {
         if let g = t.dest as? GrowDestination {
-            NavigationLink(value: g) { growTileView(t) }
+            if g == .readingPlans {
+                // The plan catalogue is the Plans TAB — switch, don't push a copy.
+                Button { Haptics.tap(); tabs.openPlans(.catalogue) } label: { growTileView(t) }
+            } else {
+                NavigationLink(value: g) { growTileView(t) }
+            }
         } else if let c = t.dest as? CommunityRoute {
             NavigationLink(value: c) { growTileView(t) }
         } else {

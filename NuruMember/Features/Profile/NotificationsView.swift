@@ -78,13 +78,16 @@ struct NotificationsView: View {
                 .buttonStyle(.pressableSubtle)
                 .simultaneousGesture(TapGesture().onEnded { markRead(n) })
         } else if let mid = n.payload?.moduleId, !mid.isEmpty {
-            NavigationLink(value: PathwayRoute.module(mid)) { row(n) }
-                .buttonStyle(.pressableSubtle)
-                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
+            // Pathway content opens ON the Pathway tab (the tab bar tells the truth).
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openPathway(.module(mid))
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
         } else if t.hasPrefix("level"), let lvl = n.payload?.levelNumber {
-            NavigationLink(value: PathwayRoute.level(lvl)) { row(n) }
-                .buttonStyle(.pressableSubtle)
-                .simultaneousGesture(TapGesture().onEnded { markRead(n) })
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openPathway(.level(lvl))
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
         } else if let tab = tabDest(t) {
             Button {
                 markRead(n)

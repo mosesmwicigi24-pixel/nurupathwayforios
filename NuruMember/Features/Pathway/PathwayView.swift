@@ -147,6 +147,7 @@ final class PathwayViewModel: ObservableObject {
 
 struct PathwayView: View {
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = PathwayViewModel()
     @State private var path = NavigationPath()
     @State private var selectedLevelNumber: Int?
@@ -213,6 +214,14 @@ struct PathwayView: View {
         .task { if vm.summary == nil { await vm.load() } }
         .task(id: selectedLevel?.levelNumber) {
             if let n = selectedLevel?.levelNumber { await vm.fetchModules(n) }
+        }
+        // Cross-tab deep link (Home nudges, notifications): land exactly on the
+        // module/level inside THIS tab, with the Pathway hub as the back stop.
+        .onReceive(tabs.$pathwayLink) { link in
+            guard let link else { return }
+            path = NavigationPath()
+            path.append(link)
+            DispatchQueue.main.async { tabs.pathwayLink = nil }
         }
     }
 

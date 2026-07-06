@@ -50,6 +50,9 @@ enum AppTab: Hashable, CaseIterable {
     }
 }
 
+/// A cross-tab deep link into the Plans tab — the catalogue root or one plan.
+enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow) }
+
 /// The selected primary tab, hoisted out of RootView so any screen can switch
 /// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
 @MainActor
@@ -62,6 +65,21 @@ final class TabRouter: ObservableObject {
     /// to it (one radio surface at a time; scroll the bar away and the pill
     /// slides into the notch, Apple-Music style).
     @Published var onAirBarVisible = false
+
+    // Cross-tab deep links. Content always opens INSIDE the tab that owns it —
+    // a Pathway module from a Home nudge lands on the Pathway tab, a plan from
+    // the resume banner lands on Plans, an event card lands on Events — so the
+    // bottom bar always tells the truth about where the member is. The owning
+    // tab's root consumes its link (pushes it on its own stack) and clears it;
+    // links survive the tab being lazily created (a @Published replays the
+    // pending value to a fresh subscriber).
+    @Published var pathwayLink: PathwayRoute?
+    @Published var planLink: PlanDeepLink?
+    @Published var eventLink: CalendarOccurrence?
+
+    func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
+    func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
+    func openEvent(_ o: CalendarOccurrence) { eventLink = o; selected = .events }
 }
 
 struct RootView: View {
@@ -221,10 +239,21 @@ private struct SyncStatusBanner: View {
 
 /// Plans tab — the reading-plan catalogue with its own navigation stack.
 private struct PlansTab: View {
+    @EnvironmentObject private var tabs: TabRouter
+    @State private var path = NavigationPath()
+
     var body: some View {
         // .nuruDestinations() MUST be inside the stack — applied to the stack from
         // outside, SwiftUI never registers the destinations and plan taps do nothing.
-        NavigationStack { ReadingPlansView().nuruDestinations() }
+        NavigationStack(path: $path) { ReadingPlansView().nuruDestinations() }
+            // Cross-tab deep link (Home's resume banner / plan mini / Grow tile):
+            // land exactly on the plan with the catalogue as the back stop.
+            .onReceive(tabs.$planLink) { link in
+                guard let link else { return }
+                path = NavigationPath()
+                if case .plan(let row) = link { path.append(row) }
+                DispatchQueue.main.async { tabs.planLink = nil }
+            }
     }
 }
 

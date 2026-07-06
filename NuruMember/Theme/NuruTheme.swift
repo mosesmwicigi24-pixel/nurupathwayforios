@@ -221,3 +221,77 @@ extension View {
                radius: 12 * strength, x: 0, y: 6 * strength)
     }
 }
+
+// MARK: - Reading instruments (shared by every long-form reader)
+// The Pathway module reader and the Plan part readers show the SAME two
+// orientation cues: a 3pt gold hairline pinned to the very top of the screen
+// (how far through the whole read) and the gold eye-pacer dot on the right
+// rail that moves exactly with the member's scroll. One visual language for
+// "how far am I" everywhere the Word is read.
+
+/// The top reading-progress hairline — pin with `.overlay(alignment: .top)`
+/// + `.ignoresSafeArea(edges: .top)` so it sits flush on the physical edge.
+struct NuruReadingBar: View {
+    let progress: Double
+    private var p: CGFloat { CGFloat(min(1, max(0, progress))) }
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Nuru.gold.opacity(0.16))
+                Rectangle()
+                    .fill(LinearGradient(colors: [Nuru.goldHi, Nuru.gold],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .frame(width: max(0, geo.size.width * p))
+            }
+        }
+        .frame(height: 3)
+        .allowsHitTesting(false)
+        .accessibilityElement()
+        .accessibilityLabel("Reading progress")
+        .accessibilityValue("\(Int((min(1, max(0, progress)) * 100).rounded())) percent")
+    }
+}
+
+/// The eye-pacer — a gold dot on the right rail bound to the live scroll
+/// fraction, the rail behind it filling as you read. Weighted to be VISIBLE
+/// on cream, white and navy alike (the first cut's 3pt/12%-opacity rail
+/// washed out on device — the owner couldn't see it at all): a 4pt track,
+/// a bold gold fill, and a 12pt dot ringed in white with a gold glow.
+/// `topInset`/`bottomInset` keep it clear of headers and bottom CTAs.
+struct NuruPaceRail: View {
+    let progress: Double
+    var topInset: CGFloat = 66
+    var bottomInset: CGFloat = 92
+
+    private var p: CGFloat { CGFloat(min(1, max(0, progress))) }
+
+    var body: some View {
+        // One GeometryReader owns the rail rect; the dot is placed with absolute
+        // `.position(y:)` computed purely from `progress`, so it re-lays out on
+        // every scroll tick and tracks the top bar exactly.
+        GeometryReader { geo in
+            let top = topInset
+            let bottom = max(top + 1, geo.size.height - bottomInset)
+            let span = bottom - top
+            let y = top + p * span
+            let railX = geo.size.width - 9   // 7pt trailing inset + half the rail
+            ZStack {
+                // Full track (top → bottom) — always faintly present.
+                Capsule().fill(Nuru.gold.opacity(0.22))
+                    .frame(width: 4, height: span)
+                    .position(x: railX, y: (top + bottom) / 2)
+                // Read-so-far fill (top → dot) — grows with progress.
+                Capsule().fill(Nuru.gold.opacity(0.85))
+                    .frame(width: 4, height: max(0, y - top))
+                    .position(x: railX, y: top + max(0, y - top) / 2)
+                // The scroll dot — white-ringed so it reads on any canvas.
+                Circle().fill(Nuru.gold)
+                    .frame(width: 12, height: 12)
+                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                    .shadow(color: Nuru.gold.opacity(0.7), radius: 5)
+                    .position(x: railX, y: y)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
