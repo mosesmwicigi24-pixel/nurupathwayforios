@@ -18,6 +18,19 @@ only celebrations, warm specific reminders, no shame loops. Lean on Nuru's **cel
 
 Member iOS builds this arc: 8 (single-scroll reader) → 18 (night mode). Backend: grace-first streak deployed.
 
+## Status update (2026-07-06)
+- Journey restructured into FOUR pages: Plans → Days → **Day hub** (story arc:
+  Watch/Listen → The Word → Respond → **Talk it Over standalone**) → focused part
+  readers. Dwell ticking replaced by explicit per-part "Finished". (builds 19–26)
+- **Talk it Over** shipped full-stack (posts + hearts, `98c452f`); its "Read with
+  your cell / Talk together" multiplier is now partially real.
+- Notification deep-links + read popup (build 27); **global Inter-Medium voice**
+  app-wide (build 28, installed on both iPhones).
+- Catalogue rebuilt from the author's own PDFs: **22 plans live** (4 new), 237 days,
+  PDF-canonical content, deeper devotional kept per day (pathway #350 → `97f43c1`).
+- Remaining minors unchanged: hero "For you today" + intent rows; CMS media
+  authoring for Watch/Listen; Android port of the whole arc.
+
 ## Build order (user picked all four, 2026-07-05)
 
 1. **Resume + reminders everywhere** — "Continue · Day N of Plan" card on Home + Plans
