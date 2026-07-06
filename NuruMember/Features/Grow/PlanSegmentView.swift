@@ -464,6 +464,7 @@ struct TalkItOverView: View {
     @State private var draft = ""
     @State private var posting = false
     @State private var markedRead = false
+    @State private var aiBusy = false
     @FocusState private var composing: Bool
 
     var body: some View {
@@ -503,21 +504,14 @@ struct TalkItOverView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: composing)
-        .ignoresSafeArea(edges: .top)
+        // NOT .ignoresSafeArea(.top) — that buried the back-arrow row under the
+        // status bar (the header's own background still bleeds navy to the top).
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .onAppear {
-            tabs.chromeHidden = true
-            // Presence counts: opening the conversation marks the talk part read
-            // (nobody is forced to post publicly to complete their day).
-            if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
-                markedRead = true
-                Task {
-                    _ = try? await MemberAPI.completePlanSegment(sid)
-                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
-                }
-            }
-        }
+        // Deliberately NO auto-marking here: the back arrow leaves the day
+        // untouched (owner ask — sometimes you just want to look and leave).
+        // Only the gold "I've talked it over" button seals the part.
+        .onAppear { tabs.chromeHidden = true }
         .task { await load() }
         .refreshable { await load() }
     }
@@ -666,6 +660,39 @@ struct TalkItOverView: View {
             .padding(.vertical, 10)
             .background(PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
+            // AI compose help: empty box → an honest first-person starter from
+            // today's questions; with your words → they come back polished, in
+            // YOUR voice. Always editable — the member presses send themselves.
+            Button {
+                guard !aiBusy else { return }
+                Haptics.tap()
+                aiBusy = true
+                Task {
+                    let mine = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if let s = try? await MemberAPI.talkAssist(planId: route.planId,
+                                                               dayNumber: route.dayNumber,
+                                                               draft: mine.isEmpty ? nil : mine) {
+                        withAnimation(.easeInOut(duration: 0.2)) { draft = s }
+                    } else {
+                        Haptics.error()
+                    }
+                    aiBusy = false
+                }
+            } label: {
+                Group {
+                    if aiBusy { ProgressView().tint(PL.goldDeep) }
+                    else {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(PL.goldDeep)
+                    }
+                }
+                .frame(width: 42, height: 42)
+                .background(PL.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(PL.gold.opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(draft.isEmpty ? "Compose with AI" : "Polish my words with AI")
             Button { send() } label: {
                 Group {
                     if posting { ProgressView().tint(PL.navy) }

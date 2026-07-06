@@ -90,4 +90,15 @@ extension MemberAPI {
         let r = try await APIClient.shared.postEmpty("growth/talk/\(postId)/like", as: Res.self)
         return (r.liked, r.likeCount)
     }
+
+    /// POST …/talk/assist — AI compose help. No draft → a first-person starter
+    /// from the day's questions; with a draft → the member's words polished
+    /// (voice kept). Returns a SUGGESTION only; the member edits and posts.
+    static func talkAssist(planId: String, dayNumber: Int, draft: String?) async throws -> String {
+        struct Body: Encodable { let draft: String? }
+        struct Res: Decodable { let suggestion: String }
+        return try await APIClient.shared.post(
+            "growth/plans/\(planId)/days/\(dayNumber)/talk/assist",
+            body: Body(draft: draft), as: Res.self).suggestion
+    }
 }
