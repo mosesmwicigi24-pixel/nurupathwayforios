@@ -767,7 +767,6 @@ private struct EvdComposer: View {
     var onFocus: () -> Void
     @FocusState private var focused: Bool
     @State private var preview: UIImage?
-    @State private var showSourceDialog = false
     @State private var showLibrary = false
     @State private var showCamera = false
     @State private var photoItem: PhotosPickerItem?
@@ -813,10 +812,14 @@ private struct EvdComposer: View {
 
             // Action row: attach (+) · flame · —— · Post.
             HStack(spacing: 8) {
-                Button { Haptics.tap(); showSourceDialog = true } label: {
+                // A menu (not an action sheet) so each choice carries its icon.
+                Menu {
+                    Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera.fill") }
+                    Button { showLibrary = true } label: { Label("Choose Photo", systemImage: "photo.on.rectangle") }
+                } label: {
                     plusDisc
                 }
-                .buttonStyle(.pressable)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                 Button {
                     Haptics.tap(); draft += draft.isEmpty ? "🔥" : " 🔥"
                 } label: {
@@ -837,11 +840,6 @@ private struct EvdComposer: View {
         .onChange(of: focused) { _, f in if f { onFocus() } }
         // Clear the local preview once the VM has posted (imageData reset to nil).
         .onChange(of: imageData) { _, d in if d == nil { preview = nil } }
-        .confirmationDialog("Add a photo", isPresented: $showSourceDialog, titleVisibility: .visible) {
-            Button("Take Photo") { showCamera = true }
-            Button("Choose Photo") { showLibrary = true }
-            Button("Cancel", role: .cancel) {}
-        }
         .photosPicker(isPresented: $showLibrary, selection: $photoItem, matching: .images)
         .onChange(of: photoItem) { _, item in
             guard let item else { return }
