@@ -143,6 +143,56 @@ extension MemberAPI {
         }
     }
 
+    // MARK: Post image (POST /me/media/image — multipart, field "file", ≤5 MB)
+
+    /// Upload a one-off post image (event wall "Hype the room", etc.) to the
+    /// backend's own disk. Bearer-authenticated multipart POST; returns the
+    /// stored URL to attach as image_url. Mirrors uploadAvatar (with a 401 retry).
+    static func uploadPostImage(jpeg data: Data, filename: String = "post.jpg") async throws -> String {
+        var (body, http) = try await postImage(data, filename: filename, token: ProfileEnv.accessToken)
+        if http.statusCode == 401 {
+            _ = try await MemberAPI.me()
+            (body, http) = try await postImage(data, filename: filename, token: ProfileEnv.accessToken)
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            struct Env: Decodable {
+                struct Inner: Decodable { let code: String?; let message: String? }
+                let error: Inner?; let message: String?
+            }
+            let env = try? JSONDecoder().decode(Env.self, from: body)
+            let msg = env?.error?.message ?? env?.message ?? "Couldn't upload the image."
+            throw APIError.http(status: http.statusCode, code: env?.error?.code, message: msg)
+        }
+        struct Res: Decodable { let url: String }
+        return try JSONDecoder().decode(Res.self, from: body).url
+    }
+
+    private static func postImage(_ data: Data, filename: String, token: String?) async throws -> (Data, HTTPURLResponse) {
+        let boundary = "nuru-\(UUID().uuidString)"
+        var req = URLRequest(url: ProfileEnv.baseURL.appendingPathComponent("me/media/image"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 60
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        if let token { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+
+        var form = Data()
+        form.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\nContent-Type: image/jpeg\r\n\r\n".utf8))
+        form.append(data)
+        form.append(Data("\r\n--\(boundary)--\r\n".utf8))
+
+        do {
+            let (res, resp) = try await URLSession.shared.upload(for: req, from: form)
+            guard let http = resp as? HTTPURLResponse else { throw APIError.transport("No HTTP response.") }
+            return (res, http)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+                throw APIError.offline
+            }
+            throw APIError.transport(urlErr.localizedDescription)
+        }
+    }
+
     // MARK: Certificate PDF (GET /media/certificates/{code} — streams with auth)
 
     /// Fetch a certificate's PDF bytes. Rides APIClient's RawJSON passthrough,

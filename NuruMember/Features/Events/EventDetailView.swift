@@ -10,6 +10,8 @@
 // /events/{id} + RSVP endpoints; Figma's hardcoded roster drawer and buzz feed
 // are mock-only and intentionally not reproduced.
 import SwiftUI
+import PhotosUI
+import UIKit
 
 @MainActor
 final class EventDetailViewModel: ObservableObject {
@@ -47,32 +49,40 @@ final class EventDetailViewModel: ObservableObject {
 
     @Published var posts: [EventPost] = []
     @Published var postDraft = ""
+    /// A photo the member attached to the buzz composer, awaiting upload on Post.
+    @Published var pendingImage: Data?
     @Published var posting = false
 
     func loadPosts() async {
         if let fresh = try? await MemberAPI.eventPosts(occurrence.occurrenceId) { posts = fresh }
     }
 
-    /// Post to the wall: optimistic insert, then the real POST (idempotent on the
-    /// client-minted post_id + client_mutation_id), then reconcile from the server.
+    /// Post to the wall: optionally upload the attached photo first, then the real
+    /// POST (idempotent on the client-minted post_id + client_mutation_id), then
+    /// reconcile from the server. A post needs text OR a photo.
     func submitPost() async {
         let body = postDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !body.isEmpty, !posting else { return }
+        let image = pendingImage
+        guard (!body.isEmpty || image != nil), !posting else { return }
         posting = true; defer { posting = false }
         let pid = UUID().uuidString
         posts.insert(EventPost(
             postId: pid, authorUserId: "", authorName: "You", authorAvatar: nil,
-            body: body, imageUrl: nil, createdAt: ISO8601DateFormatter().string(from: Date()),
+            body: body.isEmpty ? nil : body, imageUrl: nil, createdAt: ISO8601DateFormatter().string(from: Date()),
             mine: true, rsvpStatus: myRsvpOverride ?? detail?.myRsvp,
             cheerCount: 0, loveCount: 0, myReaction: nil), at: 0)
         postDraft = ""
+        pendingImage = nil
         do {
-            _ = try await MemberAPI.createEventPost(occurrence.occurrenceId, postId: pid, body: body)
+            var imageUrl: String?
+            if let image { imageUrl = try await MemberAPI.uploadPostImage(jpeg: image) }
+            _ = try await MemberAPI.createEventPost(occurrence.occurrenceId, postId: pid, body: body, imageUrl: imageUrl)
             await loadPosts()
         } catch {
-            // Roll back the optimistic row and restore the draft so nothing is lost.
+            // Roll back the optimistic row and restore the draft + photo so nothing is lost.
             posts.removeAll { $0.postId == pid }
             postDraft = body
+            pendingImage = image
             Haptics.error()
         }
     }
@@ -707,7 +717,7 @@ private struct EvdBuzzCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             header
-            EvdComposer(draft: $vm.postDraft, posting: vm.posting,
+            EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
                         onPost: { Task { await vm.submitPost() } },
                         onFocus: onComposerFocus)
             if vm.posts.isEmpty {
@@ -751,31 +761,64 @@ private struct EvdBuzzCard: View {
 
 private struct EvdComposer: View {
     @Binding var draft: String
+    @Binding var imageData: Data?
     let posting: Bool
     var onPost: () -> Void
     var onFocus: () -> Void
     @FocusState private var focused: Bool
+    @State private var preview: UIImage?
+    @State private var showSourceDialog = false
+    @State private var showLibrary = false
+    @State private var showCamera = false
+    @State private var photoItem: PhotosPickerItem?
 
-    private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var canPost: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || imageData != nil }
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(alignment: .top, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
+            // A roomy text area — the "You" tag sits above it, not squeezed beside it.
+            HStack(spacing: 8) {
                 youDisc
-                TextField("", text: $draft,
-                          prompt: Text("Hype the room — say you're coming 🔥")
-                            .foregroundColor(EvD.placeholder),
-                          axis: .vertical)
-                    .font(.inter(13)).foregroundStyle(EvD.ink)
-                    .lineLimit(1...4)
-                    .focused($focused)
-                    .padding(.top, 9)
+                Text("You").font(.inter(11, .bold)).foregroundStyle(EvD.ink.opacity(0.8))
+                Spacer(minLength: 0)
             }
-            HStack(spacing: 6) {
-                // Real, local: drops a 🔥 into the draft.
+            TextField("", text: $draft,
+                      prompt: Text("Hype the room — say you're coming 🔥")
+                        .foregroundColor(EvD.placeholder),
+                      axis: .vertical)
+                .font(.inter(14)).foregroundStyle(EvD.ink)
+                .lineLimit(3...9)
+                .frame(minHeight: 76, alignment: .topLeading)
+                .focused($focused)
+                .padding(10)
+                .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(EvD.gold.opacity(0.20), lineWidth: 1))
+
+            // Attached photo — a preview with a remove button.
+            if let img = preview {
+                ZStack(alignment: .topTrailing) {
+                    Image(uiImage: img).resizable().scaledToFill()
+                        .frame(maxWidth: .infinity).frame(height: 168).clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    Button {
+                        Haptics.tap(); preview = nil; imageData = nil
+                    } label: {
+                        Icon(.x, size: 13, color: .white)
+                            .frame(width: 28, height: 28)
+                            .background(Color.black.opacity(0.55), in: Circle())
+                    }
+                    .padding(8)
+                }
+            }
+
+            // Action row: attach (+) · flame · —— · Post.
+            HStack(spacing: 8) {
+                Button { Haptics.tap(); showSourceDialog = true } label: {
+                    plusDisc
+                }
+                .buttonStyle(.pressable)
                 Button {
-                    Haptics.tap()
-                    draft += draft.isEmpty ? "🔥" : " 🔥"
+                    Haptics.tap(); draft += draft.isEmpty ? "🔥" : " 🔥"
                 } label: {
                     iconDisc(.flame, color: EvD.gold)
                 }
@@ -784,7 +827,7 @@ private struct EvdComposer: View {
                 postPill
             }
         }
-        .padding(10)
+        .padding(12)
         .background(LinearGradient(colors: [EvD.composerTop, EvD.tile],
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -792,15 +835,49 @@ private struct EvdComposer: View {
             .stroke(EvD.gold.opacity(0.28), lineWidth: 1))
         .shadow(color: EvD.navyBase.opacity(0.10), radius: 8, x: 0, y: 5)
         .onChange(of: focused) { _, f in if f { onFocus() } }
+        // Clear the local preview once the VM has posted (imageData reset to nil).
+        .onChange(of: imageData) { _, d in if d == nil { preview = nil } }
+        .confirmationDialog("Add a photo", isPresented: $showSourceDialog, titleVisibility: .visible) {
+            Button("Take Photo") { showCamera = true }
+            Button("Choose Photo") { showLibrary = true }
+            Button("Cancel", role: .cancel) {}
+        }
+        .photosPicker(isPresented: $showLibrary, selection: $photoItem, matching: .images)
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task {
+                if let data = try? await item.loadTransferable(type: Data.self), let ui = UIImage(data: data) {
+                    await MainActor.run { setImage(ui) }
+                }
+                await MainActor.run { photoItem = nil }
+            }
+        }
+        .sheet(isPresented: $showCamera) {
+            EvdCameraPicker { ui in setImage(ui) }.ignoresSafeArea()
+        }
+    }
+
+    /// Downscale + JPEG-encode so uploads stay well under the 5 MB cap.
+    private func setImage(_ ui: UIImage) {
+        let scaled = ui.evdDownscaled(maxDimension: 1600)
+        preview = scaled
+        imageData = scaled.jpegData(compressionQuality: 0.82)
     }
 
     private var youDisc: some View {
         Circle()
             .fill(LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x163655)],
                                  startPoint: .topLeading, endPoint: .bottomTrailing))
+            .frame(width: 30, height: 30)
+            .overlay(Icon(.user, size: 14, color: .white))
+            .shadow(color: EvD.navyBase.opacity(0.3), radius: 4, x: 0, y: 2)
+    }
+
+    private var plusDisc: some View {
+        Circle().fill(.white)
             .frame(width: 36, height: 36)
-            .overlay(Text("You").font(.inter(10, .bold)).foregroundStyle(.white))
-            .shadow(color: EvD.navyBase.opacity(0.3), radius: 5, x: 0, y: 3)
+            .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.08), lineWidth: 1))
+            .overlay(Icon(.plus, size: 18, color: EvD.navyBase))
     }
 
     private func iconDisc(_ icon: Lucide, color: Color) -> some View {
@@ -817,20 +894,21 @@ private struct EvdComposer: View {
             onPost()
         } label: {
             HStack(spacing: 6) {
-                Text("Post").font(.inter(12, .bold)).foregroundStyle(EvD.ink)
-                Icon(.send, size: 15, color: EvD.ink)
+                if posting { ProgressView().tint(EvD.ink).scaleEffect(0.8) }
+                Text(posting ? "Posting" : "Post").font(.inter(12, .bold)).foregroundStyle(EvD.ink)
+                if !posting { Icon(.send, size: 15, color: EvD.ink) }
             }
             .padding(.horizontal, 16)
             .frame(height: 40)
             .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                         in: Capsule())
+            .opacity(canPost && !posting ? 1 : 0.5)
             .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
         }
         .buttonStyle(.pressable)
-        .disabled(!hasDraft || posting)
-        .opacity(!hasDraft || posting ? 0.55 : 1)
-        .animation(.easeOut(duration: 0.18), value: hasDraft)
+        .disabled(!canPost || posting)
+        .animation(.easeOut(duration: 0.18), value: canPost)
     }
 }
 
@@ -1017,5 +1095,50 @@ private extension View {
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
                 .stroke(EvD.border, lineWidth: 1))
             .shadow(color: shadow ? EvD.navyBase.opacity(0.16) : .clear, radius: 12, x: 0, y: 7)
+    }
+}
+
+// MARK: - Camera capture for the buzz composer (UIImagePickerController wrapper).
+
+/// Presents the system camera and hands back the captured photo. PhotosPicker
+/// covers the library; this covers "Take Photo" (NSCameraUsageDescription is set
+/// for the QR scanner). Falls back to the photo library on the simulator.
+private struct EvdCameraPicker: UIViewControllerRepresentable {
+    var onCapture: (UIImage) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = UIImagePickerController.isSourceTypeAvailable(.camera) ? .camera : .photoLibrary
+        picker.delegate = context.coordinator
+        return picker
+    }
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let parent: EvdCameraPicker
+        init(_ parent: EvdCameraPicker) { self.parent = parent }
+        func imagePickerController(_ picker: UIImagePickerController,
+                                   didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let img = info[.originalImage] as? UIImage { parent.onCapture(img) }
+            parent.dismiss()
+        }
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { parent.dismiss() }
+    }
+}
+
+extension UIImage {
+    /// Aspect-fit downscale so the longest side is ≤ maxDimension (no upscaling).
+    func evdDownscaled(maxDimension: CGFloat) -> UIImage {
+        let longest = max(size.width, size.height)
+        guard longest > maxDimension, longest > 0 else { return self }
+        let scale = maxDimension / longest
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        return UIGraphicsImageRenderer(size: target, format: format).image { _ in
+            draw(in: CGRect(origin: .zero, size: target))
+        }
     }
 }
