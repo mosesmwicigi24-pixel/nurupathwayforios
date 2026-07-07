@@ -955,10 +955,12 @@ private struct EvdBuzzPostRow: View {
         }
     }
 
-    /// Natural-aspect thumb (height capped ~280), tap → full-screen lightbox.
+    /// Full-width photo at its OWN aspect — the card grows to fit it (no crop);
+    /// only extreme towers are clamped by NaturalImageThumb's minAspect. Tap →
+    /// full-screen lightbox.
     @ViewBuilder private var postImage: some View {
         if let s = post.imageUrl, let url = URL(string: s) {
-            NaturalImageThumb(url: url, maxWidth: .infinity, maxHeight: 280)
+            NaturalImageThumb(url: url, maxWidth: .infinity, maxHeight: .infinity, minAspect: 0.5)
         }
     }
 
