@@ -31,12 +31,16 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     /// LOCKED while this is true. Cleared (→ false) once the discipler ushers and the
     /// member's current level advances.
     var awaitingReview: Bool = false
+    /// The level's final exam is published (admin flipped review→publish). The
+    /// exam gate is hidden until this is true. Defaults TRUE so payloads from a
+    /// server that predates the gate keep showing the exam (no regression).
+    var examPublished: Bool = true
 
     var id: Int { levelNumber }
 
     private enum CodingKeys: String, CodingKey {
         case levelNumber, title, theme, description, totalModules
-        case completedModules, minutes, status, awaitingReview
+        case completedModules, minutes, status, awaitingReview, examPublished
     }
 
     init(from decoder: Decoder) throws {
@@ -50,12 +54,26 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
         minutes = try c.decode(Int.self, forKey: .minutes)
         status = try c.decode(LevelStatus.self, forKey: .status)
         awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
+        examPublished = (try? c.decodeIfPresent(Bool.self, forKey: .examPublished)) ?? true
     }
 }
 
 struct PathwaySummary: Codable, Sendable {
     let currentLevel: Int
     let levels: [PathwayLevel]
+}
+
+/// A level's mastery out of 100 — the owner's model: exam (50) + module quizzes
+/// (30) + app participation (20). Server-computed; the client only renders it.
+struct LevelScore: Decodable, Sendable {
+    struct Part: Decodable, Sendable { let score: Int; let of: Int; let rawPct: Int }
+    struct ExamPart: Decodable, Sendable { let score: Int; let of: Int; let rawPct: Int; let passed: Bool }
+    let levelNumber: Int
+    let total: Int
+    let band: String
+    let exam: ExamPart
+    let modules: Part
+    let participation: Part
 }
 
 // MARK: - Modules

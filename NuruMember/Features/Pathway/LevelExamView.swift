@@ -596,6 +596,7 @@ private struct ExamPassScreen: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
     @State private var advancing = false   // Continue tapped — loading the next module
+    @State private var levelScore: LevelScore?   // the 50/30/20 mastery breakdown
 
     var body: some View {
         ZStack {
@@ -630,6 +631,12 @@ private struct ExamPassScreen: View {
                     .padding(.top, 10)
                     .padding(.horizontal, 40)
                     .gentleEntrance(delay: 0.26)
+                if let ls = levelScore {
+                    ExamScoreBreakdown(score: ls)
+                        .padding(.top, 22)
+                        .padding(.horizontal, Nuru.S.lg)
+                        .gentleEntrance(delay: 0.32)
+                }
                 divider.padding(.top, 24)
                 Spacer()
                 Button {
@@ -664,6 +671,10 @@ private struct ExamPassScreen: View {
             if reduceMotion { bloomed = true }
             else { withAnimation(.spring(response: 0.5, dampingFraction: 0.7)) { bloomed = true } }
         }
+        // Pull the 50/30/20 mastery breakdown once the ceremony lands.
+        .task {
+            if levelScore == nil { levelScore = try? await MemberAPI.levelScore(levelNumber) }
+        }
     }
 
     // Concentric rings (190/154/122) with the trophy, laurelled by eight gold
@@ -692,6 +703,50 @@ private struct ExamPassScreen: View {
             Rectangle().fill(EX.gold.opacity(0.35)).frame(height: 1)
         }
         .frame(width: 200)
+    }
+}
+
+/// The level's mastery out of 100 — exam (50) + module quizzes (30) + app
+/// participation (20). Server-computed; shown on the pass ceremony so the member
+/// sees where the 100 came from. Gold on the ceremony navy.
+private struct ExamScoreBreakdown: View {
+    let score: LevelScore
+
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("YOUR LEVEL SCORE").font(.inter(10.5, .bold)).kerning(1.6)
+                    .foregroundStyle(EX.gold.opacity(0.7))
+                Spacer(minLength: 0)
+                Text("\(score.total)").font(.fraunces(20, .semibold)).foregroundStyle(EX.gold)
+                Text("/ 100").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.5))
+            }
+            row("Exam", score.exam.score, score.exam.of)
+            row("Modules", score.modules.score, score.modules.of)
+            row("Participation", score.participation.score, score.participation.of)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity)
+        .background(Color.white.opacity(0.05), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(EX.gold.opacity(0.25), lineWidth: 1))
+    }
+
+    private func row(_ label: String, _ got: Int, _ of: Int) -> some View {
+        VStack(spacing: 5) {
+            HStack {
+                Text(label).font(.inter(12.5, .semibold)).foregroundStyle(.white.opacity(0.8))
+                Spacer(minLength: 0)
+                Text("\(got) / \(of)").font(.inter(12, .bold)).foregroundStyle(EX.goldLight)
+            }
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.white.opacity(0.10)).frame(height: 5)
+                    Capsule().fill(EX.gold)
+                        .frame(width: of > 0 ? geo.size.width * CGFloat(got) / CGFloat(of) : 0, height: 5)
+                }
+            }
+            .frame(height: 5)
+        }
     }
 }
 

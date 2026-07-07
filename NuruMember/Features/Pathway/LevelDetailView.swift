@@ -84,6 +84,7 @@ final class LevelDetailViewModel: ObservableObject {
     /// eligibility answer stays the server's (§1.9).
     var examAvailable: Bool {
         !modules.isEmpty && modules.allSatisfy(\.completed) && level?.status != .completed && !awaitingReview
+            && (level?.examPublished ?? true)   // hidden until the admin publishes the exam
     }
 
     // Derived stats for the strip card.

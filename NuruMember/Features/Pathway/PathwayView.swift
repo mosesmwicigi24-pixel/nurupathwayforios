@@ -596,6 +596,7 @@ private struct PathwaySelectedModules: View {
     private var examReady: Bool {
         !modules.isEmpty && modules.allSatisfy(\.completed)
             && level.status != .completed && !level.awaitingReview
+            && level.examPublished   // hidden until the admin publishes the exam
     }
     private var awaitingReview: Bool { level.awaitingReview }
 

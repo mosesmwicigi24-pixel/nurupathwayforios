@@ -77,4 +77,10 @@ extension MemberAPI {
         try await APIClient.shared.get("levels/\(levelNumber)/encouragements",
                                        as: Envelope<LevelEncouragement>.self).data
     }
+
+    /// GET /me/levels/{n}/score — this level's mastery out of 100: exam (50) +
+    /// module quizzes (30) + app participation (20). Server-computed.
+    static func levelScore(_ levelNumber: Int) async throws -> LevelScore {
+        try await APIClient.shared.get("me/levels/\(levelNumber)/score", as: LevelScore.self)
+    }
 }
