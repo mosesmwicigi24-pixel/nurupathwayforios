@@ -8,8 +8,33 @@
 
 /* Begin PBXBuildFile section */
 		1F49253E25E96E56CF6E97A8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		A98B80ED6D10CCF5253A638E /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2000000000000000000000A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1DC1230CB6104AC59DC4A281;
+			remoteInfo = NuruWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C9149281DCBC8B6B8ED84B35 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		2000000000000000000000F1 /* NuruMember.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = NuruMember.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -124,10 +149,12 @@
 				200000000000000000000101 /* Sources */,
 				200000000000000000000111 /* Frameworks */,
 				200000000000000000000121 /* Resources */,
+				C9149281DCBC8B6B8ED84B35 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C201E3A67BA36FA4121F5FC8 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				2000000000000000000000D1 /* NuruMember */,
@@ -205,6 +232,15 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C201E3A67BA36FA4121F5FC8 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = NuruWidgets;
+			target = 1DC1230CB6104AC59DC4A281 /* NuruWidgets */;
+			targetProxy = A98B80ED6D10CCF5253A638E /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		200000000000000000000151 /* Debug */ = {
@@ -318,7 +354,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
@@ -351,7 +387,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
@@ -383,7 +419,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEVELOPMENT_TEAM = SGC7566QY6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NuruWidgets/Info.plist;
@@ -396,6 +432,7 @@
 				);
 				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruWidgets;
+				PRODUCT_NAME = NuruWidgets;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
@@ -409,7 +446,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 35;
+				CURRENT_PROJECT_VERSION = 36;
 				DEVELOPMENT_TEAM = SGC7566QY6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NuruWidgets/Info.plist;
@@ -422,6 +459,7 @@
 				);
 				MARKETING_VERSION = 1.1;
 				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruWidgets;
+				PRODUCT_NAME = NuruWidgets;
 				SDKROOT = iphoneos;
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 5.0;
