@@ -40,7 +40,19 @@ struct GrowthScore: Codable, Sendable {
     let band: String?
 }
 
-/// GET /me/scores — the five growth scores + a weighted overall.
+/// The rolling growth trend — this 28-day window vs the previous 28 days.
+struct ScoreTrend: Codable, Sendable {
+    let windowDays: Int
+    let previous: Int
+    let delta: Int
+    let direction: String        // "up" | "down" | "flat"
+    let domains: [String: Int]?  // per-domain delta (habits/curriculum/…)
+
+    var isUp: Bool { direction == "up" }
+    var isDown: Bool { direction == "down" }
+}
+
+/// GET /me/scores — the five growth scores + a weighted overall + a 28-day trend.
 struct ScoresSummary: Codable, Sendable {
     struct Overall: Codable, Sendable { let score: Int; let band: String }
     let overall: Overall
@@ -49,4 +61,6 @@ struct ScoresSummary: Codable, Sendable {
     let attendance: GrowthScore
     let word: GrowthScore
     let prayer: GrowthScore
+    /// Optional so a pre-trend server response still decodes.
+    let trend: ScoreTrend?
 }
