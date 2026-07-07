@@ -120,6 +120,11 @@ struct LevelModule: Codable, Sendable, Identifiable {
     let locked: Bool
 
     var id: String { moduleId }
+
+    /// The level's capstone exam container (not a readable lesson). Shown as a
+    /// visible, locked-until-ready row at the foot of the trail; tapping it once
+    /// unlocked opens the level exam rather than the lesson reader.
+    var isExam: Bool { evaluationKind == "exit_exam" }
 }
 
 struct ModuleDetail: Codable, Sendable {
