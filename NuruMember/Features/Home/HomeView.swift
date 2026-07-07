@@ -491,22 +491,45 @@ struct HomeView: View {
              : h < 19 ? "sunset.fill" : "moon.stars.fill"
     }
 
-    // MiniRing (Figma) — 42px, navy track, gold progress, navy pct.
+    /// The member's overall GROWTH score (0–100) — the weighted average of the
+    /// five domains over the rolling 28 days. Falls back to 0 until scores land.
+    private var growthScore: Int { vm.scores?.overall.score ?? 0 }
+    /// This-28-days vs previous-28-days movement, for the ▲/▼ badge.
+    private var growthTrend: ScoreTrend? { vm.scores?.trend }
+
+    // MiniRing (Figma) — 42px, growth ring, with a ▲/▼ 28-day trend badge.
     // The arc sweeps in once on appear and re-tracks smoothly as data lands.
     private var progressRing: some View {
         ZStack {
             Circle().fill(Color(hex: 0xDCFCE7).opacity(0.6))
             Circle().stroke(Color(hex: 0x16A34A).opacity(0.15), lineWidth: 3)
             HomeRingTrim(
-                pct: CGFloat(overallPct) / 100,
+                pct: CGFloat(growthScore) / 100,
                 style: AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
                                                     startPoint: .top, endPoint: .bottom)),
                 lineWidth: 3)
-            Text("\(overallPct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
+            Text("\(growthScore)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
                 .contentTransition(.numericText())
-                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: overallPct)
+                .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }
         .frame(width: 42, height: 42)
+        .overlay(alignment: .bottomTrailing) {
+            if let t = growthTrend, t.delta != 0 { trendBadge(t).offset(x: 5, y: 4) }
+        }
+        .accessibilityLabel("Growth score \(growthScore) percent")
+    }
+
+    /// A tiny ▲/▼ badge — points earned or lost vs the previous 28 days.
+    private func trendBadge(_ t: ScoreTrend) -> some View {
+        HStack(spacing: 0.5) {
+            Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.system(size: 7, weight: .black))
+            Text("\(abs(t.delta))").font(.inter(8, .bold)).contentTransition(.numericText())
+        }
+        .foregroundStyle(.white)
+        .padding(.horizontal, 3.5).padding(.vertical, 1.5)
+        .background(t.isDown ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A), in: Capsule())
+        .overlay(Capsule().stroke(Color.white, lineWidth: 1))
+        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: t.delta)
     }
 
     // MARK: 0 — Live now (driven by REAL calendar occurrences; no fake stream data)
@@ -1385,17 +1408,26 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("OVERALL GROWTH").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                     Text(s.overall.band).font(.nCardTitle).foregroundStyle(HomeFig.navy)
-                    Text("Your rhythm across the disciplines").font(.nCardBody).foregroundStyle(HomeFig.metaGray)
+                    if let t = s.trend {
+                        HStack(spacing: 4) {
+                            Image(systemName: t.isDown ? "arrow.down.right" : t.isUp ? "arrow.up.right" : "minus")
+                                .font(.system(size: 10, weight: .bold))
+                                .foregroundStyle(t.isDown ? Color(hex: 0xDC6B26) : t.isUp ? Color(hex: 0x16A34A) : HomeFig.metaGray)
+                            Text(trendCaption(t)).font(.nCardBody).foregroundStyle(HomeFig.metaGray)
+                        }
+                    } else {
+                        Text("Your rhythm across the disciplines").font(.nCardBody).foregroundStyle(HomeFig.metaGray)
+                    }
                 }
                 Spacer(minLength: 0)
             }
             .padding(.top, Nuru.S.base)
             VStack(spacing: 10) {
-                scoreBar("Habits", s.habits.score, Nuru.gold)
-                scoreBar("Word", s.word.score, Color(hex: 0x2F6FB0))
-                scoreBar("Prayer", s.prayer.score, Color(hex: 0xC98A3C))
-                scoreBar("Curriculum", s.curriculum.score, HomeFig.navy)
-                scoreBar("Attendance", s.attendance.score, Color(hex: 0x16A34A))
+                scoreBar("Habits", s.habits.score, Nuru.gold, delta: s.trend?.domains?["habits"])
+                scoreBar("Word", s.word.score, Color(hex: 0x2F6FB0), delta: s.trend?.domains?["word"])
+                scoreBar("Prayer", s.prayer.score, Color(hex: 0xC98A3C), delta: s.trend?.domains?["prayer"])
+                scoreBar("Curriculum", s.curriculum.score, HomeFig.navy, delta: s.trend?.domains?["curriculum"])
+                scoreBar("Attendance", s.attendance.score, Color(hex: 0x16A34A), delta: s.trend?.domains?["attendance"])
             }
             .padding(.top, Nuru.S.base)
             if let a = active {
@@ -1417,7 +1449,7 @@ struct HomeView: View {
         .cardSurface()
     }
 
-    private func scoreBar(_ label: String, _ value: Int, _ fill: Color) -> some View {
+    private func scoreBar(_ label: String, _ value: Int, _ fill: Color, delta: Int? = nil) -> some View {
         HStack(spacing: Nuru.S.md) {
             Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).frame(width: 72, alignment: .leading)
             GeometryReader { geo in
@@ -1426,8 +1458,25 @@ struct HomeView: View {
                     Capsule().fill(fill).frame(width: geo.size.width * CGFloat(value) / 100, height: 8)
                 }
             }.frame(height: 8)
+            // A whisper of movement vs the previous 28 days, next to the score.
+            if let d = delta, d != 0 {
+                HStack(spacing: 1) {
+                    Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.system(size: 8, weight: .bold))
+                    Text("\(abs(d))").font(.inter(9, .bold))
+                }
+                .foregroundStyle(d < 0 ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A))
+                .frame(width: 26, alignment: .trailing)
+            } else {
+                Spacer().frame(width: 26)
+            }
             Text("\(value)").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy).frame(width: 24, alignment: .trailing)
         }
+    }
+
+    /// "Up 6 vs last 28 days" / "Down 4 · keep going" / "Holding steady".
+    private func trendCaption(_ t: ScoreTrend) -> String {
+        if t.delta == 0 { return "Holding steady vs last 28 days" }
+        return "\(t.isDown ? "Down" : "Up") \(abs(t.delta)) vs last 28 days"
     }
 
     // MARK: 14 — Grow your faith
@@ -1771,12 +1820,6 @@ struct HomeView: View {
         return p.levels.first { $0.status == .active }
             ?? p.levels.first { $0.levelNumber == p.currentLevel }
             ?? p.levels.first
-    }
-    private var overallPct: Int {
-        guard let p = vm.pathway else { return 0 }
-        let total = p.levels.reduce(0) { $0 + $1.totalModules }
-        let done = p.levels.reduce(0) { $0 + $1.completedModules }
-        return total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
     }
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
     private var isSunday: Bool { Calendar.current.component(.weekday, from: Date()) == 1 }
