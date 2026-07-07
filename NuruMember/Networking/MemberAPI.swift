@@ -452,10 +452,10 @@ extension MemberAPI {
     /// POST /events/{id}/posts — post to the wall. Idempotent on both the
     /// client-minted post_id and client_mutation_id (server dedupes replays).
     @discardableResult
-    static func createEventPost(_ eventId: String, postId: String, body: String) async throws -> EventPostCreateResult {
-        struct Body: Encodable { let postId: String; let body: String; let clientMutationId: String }
+    static func createEventPost(_ eventId: String, postId: String, body: String, imageUrl: String? = nil) async throws -> EventPostCreateResult {
+        struct Body: Encodable { let postId: String; let body: String?; let imageUrl: String?; let clientMutationId: String }
         return try await APIClient.shared.post("events/\(eventId)/posts",
-            body: Body(postId: postId, body: body, clientMutationId: UUID().uuidString),
+            body: Body(postId: postId, body: body.isEmpty ? nil : body, imageUrl: imageUrl, clientMutationId: UUID().uuidString),
             as: EventPostCreateResult.self)
     }
 
