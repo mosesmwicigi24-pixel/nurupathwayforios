@@ -225,6 +225,18 @@ struct PathwayView: View {
         }
     }
 
+    /// Routes a module id to its screen: the level's exam container opens the
+    /// level exam; every other module opens the lesson reader. Keeps the "resume"
+    /// affordances (hero card, milestones) correct now that the exam is the last
+    /// unlocked step in a finished trail.
+    private func openModuleId(_ id: String) {
+        if let m = vm.modulesByLevel.values.flatMap({ $0 }).first(where: { $0.moduleId == id }), m.isExam {
+            path.append(PathwayRoute.exam(m.levelNumber))
+        } else {
+            path.append(PathwayRoute.module(id))
+        }
+    }
+
     // MARK: content — the PathwayHub layout (hero → journey rail → level modules → milestones → summit)
 
     private func content(_ s: PathwaySummary) -> some View {
@@ -233,7 +245,7 @@ struct PathwayView: View {
             PathwayHubHeader(
                 vm: vm, firstName: firstName, active: active,
                 resume: active.flatMap { vm.resumeModule(in: $0.levelNumber) },
-                openModule: { path.append(PathwayRoute.module($0)) })
+                openModule: { openModuleId($0) })
 
             VStack(alignment: .leading, spacing: 24) {
                 // Awaiting your discipler — the level exam is passed; the member waits
@@ -257,7 +269,7 @@ struct PathwayView: View {
                         level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
-                        openModule: { path.append(PathwayRoute.module($0)) },
+                        openModule: { openModuleId($0) },
                         openExam: { path.append(PathwayRoute.exam($0)) })
                         .gentleEntrance(delay: 0.05)
                 }
@@ -272,7 +284,7 @@ struct PathwayView: View {
                     levels: s.levels, reward: nextReward(s),
                     openResume: {
                         if let a = active, let m = vm.resumeModule(in: a.levelNumber) {
-                            path.append(PathwayRoute.module(m.moduleId))
+                            openModuleId(m.moduleId)
                         }
                     })
                     .gentleEntrance(delay: 0.1)
@@ -636,7 +648,10 @@ private struct PathwaySelectedModules: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
                     ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
-                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady && !awaitingReview) { if m.status != .locked { openModule(m.moduleId) } }
+                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady && !awaitingReview) {
+                            guard m.status != .locked else { return }
+                            if m.isExam { openExam(level.levelNumber) } else { openModule(m.moduleId) }
+                        }
                         // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
                         if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
                     }
@@ -685,6 +700,20 @@ private struct PWModuleRow: View {
     private var done: Bool { module.status == .completed }
     private var active: Bool { module.status == .next }
     private var locked: Bool { module.status == .locked }
+    private var isExam: Bool { module.isExam }
+
+    /// Caption under the title — the exam row speaks in exam language ("locked
+    /// until you finish the modules", "ready — tap to begin", "passed").
+    private var caption: String {
+        if isExam {
+            return done ? "Level exam · passed"
+                 : active ? "Level exam · ready — tap to begin"
+                 : lockHint ? "Finish every module to unlock the exam" : "Level exam · locked"
+        }
+        return done ? "Completed"
+             : active ? "In progress · tap to continue"
+             : lockHint ? "Finish the previous module to unlock" : "Locked"
+    }
 
     var body: some View {
         Button(action: handleTap) {
@@ -693,31 +722,33 @@ private struct PWModuleRow: View {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
                               : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
                               : AnyShapeStyle(PW.mutedBg))
                         .frame(width: 32, height: 32)
-                    if done { Icon(.check, size: 15, color: PW.goldDeep) }
-                    else if active { Icon(.playCircle, size: 16, color: PW.navy) }
+                    if done { Icon(isExam ? .award : .check, size: 15, color: PW.goldDeep) }
+                    else if active { Icon(isExam ? .award : .playCircle, size: 15, color: PW.navy) }
+                    else if isExam { Icon(.lock, size: 13, color: PW.goldDeep) }
                     else { Icon(.lock, size: 13, color: PW.ink3) }
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     // Locked titles stay legible ink (only the caption goes faint) —
                     // #8B95A5-on-white washed the whole card out on device.
-                    Text(module.title).font(.inter(13, active ? .bold : .medium))
-                        .foregroundStyle(locked ? PW.ink2 : PW.navy).lineLimit(1)
-                    Text(done ? "Completed" : active ? "In progress · tap to continue"
-                         : lockHint ? "Finish the previous module to unlock" : "Locked")
-                        .font(.inter(9, active ? .bold : .medium)).foregroundStyle(active ? PW.goldDeep : PW.ink3)
+                    Text(module.title).font(.inter(13, (active || isExam) ? .bold : .medium))
+                        .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
+                    Text(caption)
+                        .font(.inter(9, (active || isExam) ? .bold : .medium))
+                        .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
                 }
                 Spacer(minLength: 0)
                 if active {
-                    Text("Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                    Text(isExam ? "Start exam" : "Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
                         .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
                 } else if done {
                     Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(active ? PW.gold.opacity(0.05) : Color.clear)
+            .background(active ? PW.gold.opacity(0.05) : isExam ? PW.gold.opacity(0.03) : Color.clear)
             .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
         }
         .buttonStyle(.pressable)

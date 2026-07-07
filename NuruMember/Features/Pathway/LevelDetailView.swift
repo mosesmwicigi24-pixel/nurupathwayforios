@@ -492,7 +492,9 @@ struct LevelDetailView: View {
                 if m.locked {
                     LockedTrailCard(module: m)
                 } else {
-                    NavigationLink(value: PathwayRoute.module(m.moduleId)) {
+                    // The level's exam container opens the exam; every other module
+                    // opens its lesson reader.
+                    NavigationLink(value: m.isExam ? PathwayRoute.exam(m.levelNumber) : PathwayRoute.module(m.moduleId)) {
                         ModuleTrailCard(module: m)
                     }
                     .buttonStyle(.pressable)
