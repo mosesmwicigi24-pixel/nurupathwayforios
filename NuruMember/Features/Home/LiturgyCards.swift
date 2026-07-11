@@ -58,8 +58,8 @@ struct HomeLiturgyCard: View {
                         Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
                             .frame(width: 150, height: 150).blur(radius: 38)
                             .offset(x: 45, y: -55)
-                    },
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 )
             }
         }
