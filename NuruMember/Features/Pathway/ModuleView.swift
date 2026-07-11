@@ -406,6 +406,11 @@ struct ModuleView: View {
     @State private var quizTarget: String?        // pushes QuizView once the flush lands
     @State private var nextModuleTarget: String?  // the server-unlocked next module (post-quiz-pass)
 
+    // Living curriculum — "hear it another way": the same lesson re-rendered by
+    // Nuru (simple English / Kiswahili / as a story). Server-gated (§1.9).
+    @State private var showExplainMenu = false
+    @State private var explainTarget: ExplainTarget?
+
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
     @State private var pageFraction: Double = 0  // scroll progress within the page
@@ -632,6 +637,15 @@ struct ModuleView: View {
             })
         }
         .navigationDestination(item: $nextModuleTarget) { ModuleView(moduleId: $0) }
+        .confirmationDialog("Hear it another way", isPresented: $showExplainMenu, titleVisibility: .visible) {
+            Button("In simple English") { explainTarget = ExplainTarget(style: "simple") }
+            Button("Kwa Kiswahili") { explainTarget = ExplainTarget(style: "swahili") }
+            Button("As a story") { explainTarget = ExplainTarget(style: "story") }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $explainTarget) { t in
+            ExplainSheet(moduleId: moduleId, style: t.style)
+        }
         .onChange(of: playingVideo) { _, _ in syncEngagementSignals() }
         .onChange(of: currentPage) { _, _ in syncEngagementSignals() }
         // A short beat after the server confirms, so the success haptic and the
@@ -716,7 +730,8 @@ struct ModuleView: View {
                                                     hasAudio: vm.hasAudio,
                                                     pageCount: pages.count, proxy: proxy),
                              onBack: { dismiss() },
-                             onToggleImmersion: { toggleImmersion() })
+                             onToggleImmersion: { toggleImmersion() },
+                             onExplain: { Haptics.tap(); showExplainMenu = true })
                         .transition(.opacity)
                 }
                 reader(d, pages: pages, bodyBlocks: bodyBlocks,
@@ -1275,6 +1290,7 @@ private struct MLHeader: View {
     let actions: MLHeaderActions
     let onBack: () -> Void
     let onToggleImmersion: () -> Void
+    let onExplain: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1286,6 +1302,8 @@ private struct MLHeader: View {
                 HStack(spacing: 8) {
                     MLSquareButton(icon: .arrowLeft, action: onBack)
                     Spacer(minLength: 0)
+                    // "Hear it another way" — Nuru re-renders this lesson.
+                    MLSquareButton(icon: .sparkles, action: onExplain)
                     // Hide the header + tab bar for a full-screen read.
                     MLImmerseButton(expanded: false, action: onToggleImmersion)
                     ShareLink(item: "\(title) — Nuru Pathway") {

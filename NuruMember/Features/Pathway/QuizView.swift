@@ -125,6 +125,7 @@ struct QuizView: View {
             QZ.bg.ignoresSafeArea()
             if let result = vm.result {
                 QuizResultScreen(result: result,
+                                 moduleId: moduleId,
                                  onDone: { dismiss() },
                                  onAdvance: { nextId in
                                      if let onPassAdvance { onPassAdvance(nextId) } else { dismiss() }
@@ -487,6 +488,7 @@ private let quizGoldGradient = LinearGradient(
 
 private struct QuizResultScreen: View {
     let result: QuizResult
+    let moduleId: String
     let onDone: () -> Void
     let onAdvance: (_ nextModuleId: String?) -> Void
     let onRetry: () -> Void
@@ -501,6 +503,7 @@ private struct QuizResultScreen: View {
         } else {
             QuizFailScreen(score: result.scoreAchieved,
                            passMark: result.passMark,
+                           moduleId: moduleId,
                            onReview: onDone,
                            onRetry: onRetry)
         }
@@ -614,8 +617,10 @@ private struct QuizPassScreen: View {
 private struct QuizFailScreen: View {
     let score: Int
     let passMark: Int
+    let moduleId: String
     let onReview: () -> Void
     let onRetry: () -> Void
+    @State private var showCoach = false
 
     var body: some View {
         ZStack {
@@ -639,6 +644,18 @@ private struct QuizFailScreen: View {
                     .padding(.horizontal, 36)
                 Spacer()
                 VStack(spacing: 10) {
+                    // Living curriculum: a short Nuru-composed review of exactly
+                    // what tripped this attempt, then straight back to the retry.
+                    Button { Haptics.action(); showCoach = true } label: {
+                        HStack(spacing: 8) {
+                            Icon(.sparkles, size: 17, color: QZ.navy)
+                            Text("Review with Nuru")
+                        }
+                        .font(.inter(16, .bold)).foregroundStyle(QZ.navy)
+                        .frame(maxWidth: .infinity, minHeight: 56)
+                        .background(quizGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.pressable)
                     Button { Haptics.tap(); onReview() } label: {
                         Text("Review Lesson")
                             .font(.inter(16, .semibold)).foregroundStyle(.white)
@@ -661,6 +678,9 @@ private struct QuizFailScreen: View {
             }
         }
         .onAppear { Haptics.error() }   // kind copy stays; the hand hears "not yet"
+        .sheet(isPresented: $showCoach) {
+            NuruCoachSheet(moduleId: moduleId, onRetry: onRetry)
+        }
     }
 }
 
