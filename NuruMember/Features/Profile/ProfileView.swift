@@ -35,6 +35,8 @@ struct ProfileView: View {
     @State private var badges: [PBadgeItem] = []
     @State private var certs: [PCert] = []
     @State private var scores: ScoresSummary?
+    @State private var aiOptOut = false
+    @State private var aiConsentLoaded = false
     @State private var scoreDetailPillar: ScorePillar?
 
     // Avatar upload (PhotosPicker → downscaled JPEG → POST /me/avatar).
@@ -55,6 +57,7 @@ struct ProfileView: View {
                     personalInfo
                     achievements
                     growthScores
+                    aiCompanionSection
                     milestonesSection
                     certificates
                 }
@@ -430,6 +433,33 @@ struct ProfileView: View {
         case .habits: return s.habits
         case .curriculum: return s.curriculum
         case .attendance: return s.attendance
+        }
+    }
+
+    /// The personalization covenant — plain words, one switch. Off = the AI
+    /// never reads what you write, your story is deleted, letters pause.
+    private var aiCompanionSection: some View {
+        sectionCard("NURU INTELLIGENCE", icon: .sparkles) {
+            Toggle(isOn: Binding(
+                get: { !aiOptOut },
+                set: { on in
+                    aiOptOut = !on
+                    Haptics.tap()
+                    Task { try? await MemberAPI.setAiConsent(optOut: !on) }
+                }
+            )) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Personal companion & Sunday Letter").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                    Text("Nuru remembers your journey to walk with you personally. Your prayer journal is never read — ever. Turn this off and Nuru forgets your story, stops reading your reflections, and pauses your Sunday Letters.")
+                        .font(.inter(11)).foregroundStyle(Nuru.muted).lineSpacing(2)
+                }
+            }
+            .tint(Nuru.gold)
+            .task {
+                guard !aiConsentLoaded else { return }
+                aiConsentLoaded = true
+                if let v = try? await MemberAPI.aiConsent() { aiOptOut = v }
+            }
         }
     }
 

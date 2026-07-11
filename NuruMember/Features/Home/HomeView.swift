@@ -44,9 +44,13 @@ final class HomeViewModel: ObservableObject {
 
     @Published var loading = true
     @Published var error: String?
+    /// The latest Sunday Letter (intelligence layer) — drives the gold
+    /// "A letter for you" knock on Home while unread.
+    @Published var letter: PastoralLetter?
 
     func load() async {
         loading = true; error = nil
+        async let letter = try? MemberAPI.latestLetter()
         async let pathway = try? MemberAPI.pathway()
         async let ach = try? MemberAPI.achievements()
         async let unread = try? MemberAPI.unreadNotifications()
@@ -69,6 +73,7 @@ final class HomeViewModel: ObservableObject {
         async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
 
+        self.letter = (await letter) ?? nil
         self.pathway = await pathway
         let achievements = await ach
         self.streak = achievements?.streak.current ?? 0
@@ -213,6 +218,7 @@ struct HomeView: View {
     @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
+    @State private var openedLetter: PastoralLetter?   // Sunday Letter sheet
 
     // The five Grow tiles from the fresh Figma GrowGrid (exact tints/labels).
     private var growTiles: [GrowTile] {
@@ -250,6 +256,7 @@ struct HomeView: View {
         }
         if let p = vm.onAir { s.append(AnyView(onAirCard(p))) }                         // 0a · Radio ON AIR (pinned first)
         if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
+        if let lt = vm.letter, lt.isUnread { s.append(AnyView(letterKnock(lt))) }       // 0b · A letter for you (unread Sunday Letter)
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
         s.append(AnyView(rhythmCard))                                                   // 2b · Today's rhythm (right under For-you-today)
@@ -328,6 +335,16 @@ struct HomeView: View {
             DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
+        .sheet(item: $openedLetter) { lt in
+            LetterView(letter: lt) {
+                // Read on the server — clear the knock locally too.
+                if let cur = vm.letter, cur.letterId == lt.letterId {
+                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, body: cur.body,
+                                               scriptureRef: cur.scriptureRef, createdAt: cur.createdAt,
+                                               readAt: ISO8601DateFormatter().string(from: Date()))
+                }
+            }
+        }
         .task {
             if vm.pathway == nil { await vm.load() }
             deepLinkForScreenshots()
@@ -552,6 +569,48 @@ struct HomeView: View {
     private func isWorshipish(_ occ: CalendarOccurrence) -> Bool {
         let hay = "\(occ.category ?? "") \(occ.title)".lowercased()
         return hay.contains("worship") || hay.contains("service") || hay.contains("praise") || hay.contains("church")
+    }
+
+    /// 0b — "A letter for you": the gold knock that appears while this week's
+    /// Sunday Letter is unread. Tapping opens the stationery sheet (which marks
+    /// it read server-side); the knock then rests until next Sunday.
+    private func letterKnock(_ lt: PastoralLetter) -> some View {
+        Button {
+            Haptics.action()
+            openedLetter = lt
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                    Icon(.mail, size: 19, color: Color(hex: 0x1E2A1F))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                        .foregroundStyle(Color(hex: 0xE8CA6C))
+                    Text("A letter was written for you").font(.fraunces(16, .semibold)).foregroundStyle(.white)
+                    if let ref = lt.scriptureRef {
+                        Text(ref).font(.inter(11)).foregroundStyle(Color(hex: 0xB9C4D4))
+                    }
+                }
+                Spacer(minLength: 0)
+                Text("Open").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x1E2A1F))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Color(hex: 0xE8CA6C), in: Capsule())
+            }
+            .padding(14)
+            .background(
+                LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color(hex: 0xC9A227).opacity(0.5), lineWidth: 1))
+            .shadow(color: Color(hex: 0xC9A227).opacity(0.18), radius: 10, y: 5)
+        }
+        .buttonStyle(.pressableSubtle)
     }
 
     private func liveNowCard(_ info: (occ: CalendarOccurrence, startsInMin: Int?)) -> some View {
