@@ -96,6 +96,11 @@ struct RootView: View {
     // The app-wide station — drives the floating island pill on every tab.
     @ObservedObject private var radio = RadioCenter.shared
     @State private var radioOpen = false
+    // Location-first onboarding: invite ONCE after first login; refresh silently
+    // on every open for members already sharing (Profile keeps the off switch).
+    @AppStorage("nuru.locationInviteShown") private var locationInviteShown = false
+    @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
+    @State private var showLocationInvite = false
 
     /// Height of the top safe-area inset (status-bar / Dynamic Island band) so the
     /// cream stripe covers exactly that region. Falls back to 59 (Dynamic Island).
@@ -220,6 +225,16 @@ struct RootView: View {
         .onChange(of: scenePhase) { _, p in
             if p == .background { ScreenTracker.appDidEnterBackground() }
         }
+        .task {
+            if !locationInviteShown && !shareLocation {
+                try? await Task.sleep(nanoseconds: 1_200_000_000) // let Home land first
+                locationInviteShown = true
+                showLocationInvite = true
+            } else {
+                await LocationOnboarding.refreshIfSharing()
+            }
+        }
+        .sheet(isPresented: $showLocationInvite) { LocationInviteSheet() }
     }
 
     // Type-ERASED per tab (AnyView): otherwise RootView.body's type embeds all
