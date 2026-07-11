@@ -1,0 +1,164 @@
+// The liturgy Home + celebrations rail (intelligence Phase 4).
+//   • HomeLiturgyCard — Home breathes with the hours: the current part's prayer
+//     line (morning/midday/evening/night), coloured by the church season.
+//     Self-loading; collapses to nothing until the line arrives.
+//   • CelebrationsRail — the congregation's recent milestones (server-detected,
+//     Phase 4 moments) with one-tap blessings (🙌 ❤️ 🔥), optimistic updates.
+import SwiftUI
+
+struct HomeLiturgyCard: View {
+    @State private var lit: HomeLiturgy?
+
+    private func partLabel(_ p: String) -> String {
+        switch p {
+        case "morning": return "MORNING"
+        case "midday": return "MIDDAY"
+        case "evening": return "EVENING"
+        default: return "NIGHT"
+        }
+    }
+
+    private func partEmoji(_ p: String) -> String {
+        switch p {
+        case "morning": return "🌅"
+        case "midday": return "☀️"
+        case "evening": return "🌆"
+        default: return "🌙"
+        }
+    }
+
+    var body: some View {
+        Group {
+            if let lit {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Text(partEmoji(lit.part)).font(.system(size: 15))
+                        Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
+                            .font(.inter(10.5, .bold)).kerning(1.6)
+                            .foregroundStyle(Color(hex: 0xE8CA6C))
+                        Spacer()
+                        if let ref = lit.scriptureRef {
+                            Text(ref)
+                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.white.opacity(0.12), in: Capsule())
+                        }
+                    }
+                    Text(lit.line)
+                        .font(.fraunces(18)).foregroundStyle(.white)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(18)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    ZStack(alignment: .topTrailing) {
+                        LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
+                            .frame(width: 150, height: 150).blur(radius: 38)
+                            .offset(x: 45, y: -55)
+                    },
+                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
+                )
+            }
+        }
+        .task { lit = try? await MemberAPI.homeLiturgy() }
+    }
+}
+
+struct CelebrationsRail: View {
+    @State private var moments: [CommunityMoment] = []
+
+    var body: some View {
+        Group {
+            if !moments.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 6) {
+                        Text("🎉").font(.system(size: 13))
+                        Text("CELEBRATE THE FAMILY")
+                            .font(.inter(10.5, .bold)).kerning(1.6)
+                            .foregroundStyle(Nuru.muted)
+                    }
+                    .padding(.horizontal, Nuru.S.screen)
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 10) {
+                            ForEach(moments) { m in
+                                MomentCard(moment: m) { kind in
+                                    bless(m, kind: kind)
+                                }
+                            }
+                        }
+                        .padding(.horizontal, Nuru.S.screen)
+                    }
+                }
+            }
+        }
+        .task { moments = (try? await MemberAPI.communityMoments()) ?? [] }
+    }
+
+    private func bless(_ m: CommunityMoment, kind: String) {
+        guard let idx = moments.firstIndex(where: { $0.momentId == m.momentId }) else { return }
+        Haptics.action()
+        var updated = moments[idx]
+        // Optimistic: move my blessing to the tapped kind.
+        if let prev = updated.myBlessing {
+            if prev == "amen" { updated.amenCount -= 1 }
+            if prev == "heart" { updated.heartCount -= 1 }
+            if prev == "fire" { updated.fireCount -= 1 }
+        }
+        if kind == "amen" { updated.amenCount += 1 }
+        if kind == "heart" { updated.heartCount += 1 }
+        if kind == "fire" { updated.fireCount += 1 }
+        updated.myBlessing = kind
+        moments[idx] = updated
+        Task { _ = try? await MemberAPI.bless(m.momentId, kind: kind) }
+    }
+}
+
+private struct MomentCard: View {
+    let moment: CommunityMoment
+    let onBless: (String) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Avatar(url: moment.avatarUrl, name: moment.fullName, size: 30)
+                Text(moment.fullName.split(separator: " ").first.map(String.init) ?? moment.fullName)
+                    .font(.inter(13, .bold)).foregroundStyle(Nuru.ink)
+                    .lineLimit(1)
+            }
+            Text(moment.title)
+                .font(.fraunces(15)).foregroundStyle(Nuru.navyMid)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, minHeight: 40, alignment: .topLeading)
+            HStack(spacing: 6) {
+                blessChip("🙌", "amen", moment.amenCount)
+                blessChip("❤️", "heart", moment.heartCount)
+                blessChip("🔥", "fire", moment.fireCount)
+            }
+        }
+        .padding(14)
+        .frame(width: 210, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private func blessChip(_ emoji: String, _ kind: String, _ count: Int) -> some View {
+        let mine = moment.myBlessing == kind
+        return Button { onBless(kind) } label: {
+            HStack(spacing: 4) {
+                Text(emoji).font(.system(size: 12))
+                if count > 0 {
+                    Text("\(count)").font(.inter(11, .bold))
+                        .foregroundStyle(mine ? Nuru.navy : Nuru.muted)
+                }
+            }
+            .padding(.horizontal, 9).padding(.vertical, 6)
+            .background(mine ? Color(hex: 0xE8CA6C).opacity(0.35) : Nuru.tintBlue, in: Capsule())
+            .overlay(Capsule().stroke(mine ? Color(hex: 0xC9A227).opacity(0.6) : Color.clear, lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+    }
+}

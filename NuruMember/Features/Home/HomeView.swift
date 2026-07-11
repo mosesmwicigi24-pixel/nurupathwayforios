@@ -257,6 +257,7 @@ struct HomeView: View {
         if let p = vm.onAir { s.append(AnyView(onAirCard(p))) }                         // 0a · Radio ON AIR (pinned first)
         if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
         if let lt = vm.letter, lt.isUnread { s.append(AnyView(letterKnock(lt))) }       // 0b · A letter for you (unread Sunday Letter)
+        s.append(AnyView(HomeLiturgyCard()))                                            // 0c · The hour's prayer line (liturgy, Phase 4)
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
         s.append(AnyView(rhythmCard))                                                   // 2b · Today's rhythm (right under For-you-today)
@@ -264,6 +265,7 @@ struct HomeView: View {
         if let v = vm.welcomeVideo { s.append(AnyView(welcomeVideoCard(v))) }           // 3
         s.append(AnyView(verseCard))                                                    // 4
         if !vm.prayerPosts.isEmpty { s.append(AnyView(prayerWallCard)) }                // 5
+        s.append(AnyView(CelebrationsRail()))                                           // 5b · Celebrate the family (moments, Phase 4)
         s.append(AnyView(minisRow))                                                     // 6
         if let c = vm.featuredCell {                                                    // 7
             if let aid = weekAnnouncementId {
