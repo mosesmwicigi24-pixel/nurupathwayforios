@@ -1823,6 +1823,49 @@ private struct MLSectionHeader: View {
 
 // MARK: - Reflection card (inline; submits through completeModule)
 
+/// Header ribbon payload for a finished module.
+struct MLFinishedSummary {
+    let score: Int?
+    let when: String?
+    let canRetake: Bool
+    let onRetake: () -> Void
+}
+
+/// Finished modules show the reflection FOLDED — the words the member wrote,
+/// read-only, with a quiet Edit chip. Unfolding swaps in the full editor.
+private struct MLReflectionFolded: View {
+    let text: String
+    let onEdit: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("YOUR REFLECTION").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
+                Spacer()
+                HStack(spacing: 3) {
+                    Icon(.check, size: 10, color: Color(hex: 0x15803D))
+                    Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                }
+                Button(action: onEdit) {
+                    Text("Edit").font(.inter(11, .bold)).foregroundStyle(ML.navy)
+                        .padding(.horizontal, 12).padding(.vertical, 5)
+                        .background(ML.gold.opacity(0.2), in: Capsule())
+                        .overlay(Capsule().stroke(ML.gold.opacity(0.4), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+            }
+            Text(text.isEmpty ? "\u{2014}" : text)
+                .font(.fraunces(15)).foregroundStyle(ML.bodyInk)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(ML.gold.opacity(0.4), lineWidth: 1))
+    }
+}
+
 private struct MLReflectionCard: View {
     @Binding var text: String
     let busy: Bool
