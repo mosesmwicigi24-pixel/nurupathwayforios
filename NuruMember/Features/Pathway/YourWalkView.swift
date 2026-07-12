@@ -9,6 +9,7 @@ import SwiftUI
 struct YourWalkView: View {
     @State private var events: [WalkEvent] = []
     @State private var loading = true
+    @State private var failed = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -20,7 +21,8 @@ struct YourWalkView: View {
                 } else if events.isEmpty {
                     VStack(spacing: 8) {
                         Icon(.flag, size: 26, color: Nuru.gold)
-                        Text("Your walk begins with the next lesson you open.")
+                        Text(failed ? "Couldn't load your walk — check your connection and come back."
+                                    : "Your walk begins with the next lesson you open.")
                             .font(.inter(14)).foregroundStyle(Nuru.ink)
                             .multilineTextAlignment(.center)
                     }
@@ -38,7 +40,11 @@ struct YourWalkView: View {
         }
         .background(Color(hex: 0xFAF7F0).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
-        .task { events = (try? await MemberAPI.myWalk()) ?? []; loading = false }
+        .task {
+            do { events = try await MemberAPI.myWalk(); failed = false }
+            catch { failed = true } // offline ≠ "no walk yet" — tell the truth
+            loading = false
+        }
     }
 
     private var header: some View {
@@ -169,6 +175,9 @@ struct FootprintsStrip: View {
 
     var body: some View {
         Group {
+            if res == nil {
+                Color.clear.frame(height: 0) // install-anchor — see HomeLiturgyCard
+            }
             if let line, let r = res {
                 HStack(spacing: 10) {
                     HStack(spacing: -8) {

@@ -6,6 +6,7 @@
 import SwiftUI
 
 struct HomeEchoCard: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var echo: HomeEcho?
 
     private var kicker: String {
@@ -18,6 +19,9 @@ struct HomeEchoCard: View {
 
     var body: some View {
         Group {
+            if echo == nil {
+                Color.clear.frame(height: 0) // install-anchor — see HomeLiturgyCard
+            }
             if let e = echo {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
@@ -54,5 +58,10 @@ struct HomeEchoCard: View {
             }
         }
         .task { echo = try? await MemberAPI.homeEcho() }
+        .onChange(of: scenePhase) { _, phase in
+            // The tab shell keeps Home alive for the whole session — without
+            // this an overnight-resident app shows yesterday's card forever.
+            if phase == .active { Task { echo = try? await MemberAPI.homeEcho() } }
+        }
     }
 }

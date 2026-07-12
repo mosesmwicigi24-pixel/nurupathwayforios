@@ -166,9 +166,11 @@ struct PathwayView: View {
                 VStack(spacing: 0) {
                     if vm.loading && vm.summary == nil {
                         PathwaySkeleton()
-                    } else if let s = vm.summary {
+                    } else if let s = vm.summary, !s.levels.isEmpty {
                         content(s)
                     } else {
+                        // Includes a decoded-but-empty levels array — rendering
+                        // "Level 1 of 0" with dead CTAs is worse than retrying.
                         errorState.padding(.top, 120)
                     }
                 }

@@ -79,6 +79,46 @@ struct LevelScore: Decodable, Sendable {
     let exam: ExamPart
     let modules: Part
     let participation: Part
+
+    private enum CodingKeys: String, CodingKey {
+        case levelNumber, total, band, exam, modules, participation
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        levelNumber = (try? c.decodeIfPresent(Int.self, forKey: .levelNumber)) ?? 0
+        total = (try? c.decodeIfPresent(Int.self, forKey: .total)) ?? 0
+        band = (try? c.decodeIfPresent(String.self, forKey: .band)) ?? ""
+        exam = (try? c.decodeIfPresent(ExamPart.self, forKey: .exam))
+            ?? ExamPart(score: 0, of: 0, rawPct: 0, passed: false)
+        modules = (try? c.decodeIfPresent(Part.self, forKey: .modules))
+            ?? Part(score: 0, of: 0, rawPct: 0)
+        participation = (try? c.decodeIfPresent(Part.self, forKey: .participation))
+            ?? Part(score: 0, of: 0, rawPct: 0)
+    }
+}
+
+// Tolerant decoding for the score parts lives in extensions so the memberwise
+// inits stay available for the sparse-payload fallbacks above.
+extension LevelScore.Part {
+    private enum CodingKeys: String, CodingKey { case score, of, rawPct }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        score = (try? c.decodeIfPresent(Int.self, forKey: .score)) ?? 0
+        of = (try? c.decodeIfPresent(Int.self, forKey: .of)) ?? 0
+        rawPct = (try? c.decodeIfPresent(Int.self, forKey: .rawPct)) ?? 0
+    }
+}
+
+extension LevelScore.ExamPart {
+    private enum CodingKeys: String, CodingKey { case score, of, rawPct, passed }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        score = (try? c.decodeIfPresent(Int.self, forKey: .score)) ?? 0
+        of = (try? c.decodeIfPresent(Int.self, forKey: .of)) ?? 0
+        rawPct = (try? c.decodeIfPresent(Int.self, forKey: .rawPct)) ?? 0
+        passed = (try? c.decodeIfPresent(Bool.self, forKey: .passed)) ?? false
+    }
 }
 
 // MARK: - Modules
@@ -130,6 +170,24 @@ struct LevelModule: Codable, Sendable, Identifiable {
     /// visible, locked-until-ready row at the foot of the trail; tapping it once
     /// unlocked opens the level exam rather than the lesson reader.
     var isExam: Bool { evaluationKind == "exit_exam" }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        moduleId = try c.decode(String.self, forKey: .moduleId)
+        levelNumber = try c.decode(Int.self, forKey: .levelNumber)
+        moduleSequenceNumber = try c.decode(Int.self, forKey: .moduleSequenceNumber)
+        title = try c.decode(String.self, forKey: .title)
+        summary = try? c.decodeIfPresent(String.self, forKey: .summary)
+        estimatedMinutes = try? c.decodeIfPresent(Int.self, forKey: .estimatedMinutes)
+        evaluationKind = (try? c.decodeIfPresent(String.self, forKey: .evaluationKind)) ?? "none"
+        _quizPassMark = (try? c.decodeIfPresent(FlexInt.self, forKey: .quizPassMark))
+            ?? FlexInt(wrappedValue: 0)
+        completed = (try? c.decodeIfPresent(Bool.self, forKey: .completed)) ?? false
+        status = (try? c.decodeIfPresent(ModuleStatus.self, forKey: .status)) ?? .locked
+        progress = (try? c.decodeIfPresent(Double.self, forKey: .progress)) ?? 0.0
+        // A missing gate must never unlock content (§1.9) — default LOCKED.
+        locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? true
+    }
 }
 
 struct ModuleDetail: Codable, Sendable {
@@ -166,6 +224,33 @@ struct ModuleDetail: Codable, Sendable {
     /// (companion Wave 2). Defaulted so older servers still decode.
     var voiceNote: ModuleVoiceNote? = nil
 
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        moduleId = try c.decode(String.self, forKey: .moduleId)
+        levelNumber = try c.decode(Int.self, forKey: .levelNumber)
+        moduleSequenceNumber = try c.decode(Int.self, forKey: .moduleSequenceNumber)
+        title = try c.decode(String.self, forKey: .title)
+        lessonContent = (try? c.decodeIfPresent(String.self, forKey: .lessonContent)) ?? ""
+        contentPages = try? c.decodeIfPresent([String].self, forKey: .contentPages)
+        summary = try? c.decodeIfPresent(String.self, forKey: .summary)
+        keyVerses = try? c.decodeIfPresent([String].self, forKey: .keyVerses)
+        videoUrl = try? c.decodeIfPresent(String.self, forKey: .videoUrl)
+        videoDurationSec = try? c.decodeIfPresent(Int.self, forKey: .videoDurationSec)
+        audioUrl = try? c.decodeIfPresent(String.self, forKey: .audioUrl)
+        audioDurationSec = try? c.decodeIfPresent(Int.self, forKey: .audioDurationSec)
+        evaluationKind = (try? c.decodeIfPresent(String.self, forKey: .evaluationKind)) ?? "none"
+        estimatedMinutes = try? c.decodeIfPresent(Int.self, forKey: .estimatedMinutes)
+        _quizPassMark = (try? c.decodeIfPresent(FlexInt.self, forKey: .quizPassMark))
+            ?? FlexInt(wrappedValue: 0)
+        currentVersion = (try? c.decodeIfPresent(Int.self, forKey: .currentVersion)) ?? 1
+        // A missing gate must never unlock content (§1.9) — default LOCKED.
+        locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? true
+        completed = try? c.decodeIfPresent(Bool.self, forKey: .completed)
+        completedAt = try? c.decodeIfPresent(String.self, forKey: .completedAt)
+        bestScore = try? c.decodeIfPresent(Int.self, forKey: .bestScore)
+        voiceNote = try? c.decodeIfPresent(ModuleVoiceNote.self, forKey: .voiceNote)
+    }
+
     /// True when finishing this module requires a graded quiz (vs. mark-complete).
     var requiresQuiz: Bool { evaluationKind.lowercased().contains("quiz") }
 
@@ -200,6 +285,13 @@ struct ModuleVoiceNote: Codable, Sendable {
     let avatarUrl: String?
     let audioUrl: String
     let durationSec: Int
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        authorName = (try? c.decodeIfPresent(String.self, forKey: .authorName)) ?? ""
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        audioUrl = (try? c.decodeIfPresent(String.self, forKey: .audioUrl)) ?? ""
+        durationSec = (try? c.decodeIfPresent(Int.self, forKey: .durationSec)) ?? 0
+    }
 }
 
 struct CompleteResult: Codable, Sendable {
@@ -208,6 +300,15 @@ struct CompleteResult: Codable, Sendable {
     let isCompleted: Bool
     let duplicate: Bool
     let nextModuleUnlocked: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        progressId = try c.decode(String.self, forKey: .progressId)
+        moduleId = try c.decode(String.self, forKey: .moduleId)
+        // Safe-conservative defaults: never claim completion/unlocks by omission.
+        isCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .isCompleted)) ?? false
+        duplicate = (try? c.decodeIfPresent(Bool.self, forKey: .duplicate)) ?? false
+        nextModuleUnlocked = (try? c.decodeIfPresent(Bool.self, forKey: .nextModuleUnlocked)) ?? false
+    }
 }
 
 // MARK: - Quiz (server-assembled, server-scored — §1.3/§3.7)
@@ -257,8 +358,8 @@ struct QuizQuestion: Decodable, Sendable, Identifiable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         questionId = try c.decode(String.self, forKey: .questionId)
-        qType = try c.decode(String.self, forKey: .qType)
-        questionText = try c.decode(String.self, forKey: .questionText)
+        qType = (try? c.decodeIfPresent(String.self, forKey: .qType)) ?? ""
+        questionText = (try? c.decodeIfPresent(String.self, forKey: .questionText)) ?? ""
         points = try c.decodeIfPresent(Int.self, forKey: .points)
         required = try c.decodeIfPresent(Bool.self, forKey: .required)
 
@@ -290,6 +391,15 @@ struct AssembledQuiz: Decodable, Sendable {
     let moduleId: String
     let questionCount: Int
     let questions: [QuizQuestion]
+
+    private enum CodingKeys: String, CodingKey { case moduleId, questionCount, questions }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        moduleId = (try? c.decodeIfPresent(String.self, forKey: .moduleId)) ?? ""
+        questionCount = (try? c.decodeIfPresent(Int.self, forKey: .questionCount)) ?? 0
+        questions = (try? c.decodeIfPresent([QuizQuestion].self, forKey: .questions)) ?? []
+    }
 }
 
 struct QuizResult: Decodable, Sendable {
@@ -300,4 +410,23 @@ struct QuizResult: Decodable, Sendable {
     let unlockedNextModuleId: String?
     let requiresManualReview: Bool
     let duplicate: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case attemptId, scoreAchieved, isPassed, passMark
+        case unlockedNextModuleId, requiresManualReview, duplicate
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        attemptId = (try? c.decodeIfPresent(String.self, forKey: .attemptId)) ?? ""
+        _scoreAchieved = (try? c.decodeIfPresent(FlexInt.self, forKey: .scoreAchieved))
+            ?? FlexInt(wrappedValue: 0)
+        // Safe-conservative: never claim a pass by omission.
+        isPassed = (try? c.decodeIfPresent(Bool.self, forKey: .isPassed)) ?? false
+        _passMark = (try? c.decodeIfPresent(FlexInt.self, forKey: .passMark))
+            ?? FlexInt(wrappedValue: 0)
+        unlockedNextModuleId = try? c.decodeIfPresent(String.self, forKey: .unlockedNextModuleId)
+        requiresManualReview = (try? c.decodeIfPresent(Bool.self, forKey: .requiresManualReview)) ?? false
+        duplicate = (try? c.decodeIfPresent(Bool.self, forKey: .duplicate)) ?? false
+    }
 }

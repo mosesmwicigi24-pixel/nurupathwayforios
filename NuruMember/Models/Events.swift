@@ -7,6 +7,12 @@ struct EventAttendee: Codable, Sendable, Identifiable {
     let fullName: String
     let avatarUrl: String?
     var id: String { userId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        userId = try c.decode(String.self, forKey: .userId)
+        fullName = (try? c.decodeIfPresent(String.self, forKey: .fullName)) ?? ""
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+    }
 }
 
 /// GET /calendar — one scheduled occurrence in the window.
@@ -37,6 +43,23 @@ struct CalendarOccurrence: Codable, Sendable, Identifiable, Hashable {
         case occurrenceId, seriesId, title, description, location, category
         case primaryImageUrl, startAt, endAt, status, rescheduled, going, attendees
     }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        occurrenceId = try c.decode(String.self, forKey: .occurrenceId)
+        seriesId = (try? c.decodeIfPresent(String.self, forKey: .seriesId)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        location = try? c.decodeIfPresent(String.self, forKey: .location)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        primaryImageUrl = try? c.decodeIfPresent(String.self, forKey: .primaryImageUrl)
+        startAt = (try? c.decodeIfPresent(String.self, forKey: .startAt)) ?? ""
+        endAt = (try? c.decodeIfPresent(String.self, forKey: .endAt)) ?? ""
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        rescheduled = try? c.decodeIfPresent(Bool.self, forKey: .rescheduled)
+        going = (try? c.decodeIfPresent(Int.self, forKey: .going)) ?? 0
+        attendees = try? c.decodeIfPresent([EventAttendee].self, forKey: .attendees)
+    }
 }
 
 /// GET /calendar/series — a followable event series (Events "Series you follow").
@@ -54,10 +77,33 @@ struct EventSeries: Codable, Sendable, Identifiable {
     var id: String { seriesId }
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the optimistic follow-toggle in EventsView.
+extension EventSeries {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        seriesId = try c.decode(String.self, forKey: .seriesId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        cadence = (try? c.decodeIfPresent(String.self, forKey: .cadence)) ?? ""
+        nextAt = try? c.decodeIfPresent(String.self, forKey: .nextAt)
+        nextOccurrenceId = try? c.decodeIfPresent(String.self, forKey: .nextOccurrenceId)
+        nextEndAt = try? c.decodeIfPresent(String.self, forKey: .nextEndAt)
+        location = try? c.decodeIfPresent(String.self, forKey: .location)
+        following = (try? c.decodeIfPresent(Bool.self, forKey: .following)) ?? false
+        newCount = (try? c.decodeIfPresent(Int.self, forKey: .newCount)) ?? 0
+    }
+}
+
 /// POST /calendar/series/{id}/follow — toggle result for "Series you follow".
 struct SeriesFollowResult: Codable, Sendable {
     let seriesId: String
     let following: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        seriesId = (try? c.decodeIfPresent(String.self, forKey: .seriesId)) ?? ""
+        following = (try? c.decodeIfPresent(Bool.self, forKey: .following)) ?? false
+    }
 }
 
 /// GET /home/featured-event — the admin-featured event anchoring the hero.
@@ -69,6 +115,16 @@ struct FeaturedEvent: Codable, Sendable {
     let category: String?
     let primaryImageUrl: String?
     let dtstartLocal: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        seriesId = (try? c.decodeIfPresent(String.self, forKey: .seriesId)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        location = try? c.decodeIfPresent(String.self, forKey: .location)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        primaryImageUrl = try? c.decodeIfPresent(String.self, forKey: .primaryImageUrl)
+        dtstartLocal = (try? c.decodeIfPresent(String.self, forKey: .dtstartLocal)) ?? ""
+    }
 }
 
 /// GET /events/{id} — full detail with RSVP state + roster.
@@ -88,6 +144,22 @@ struct EventDetail: Codable, Sendable {
     let rsvpCounts: RsvpCounts
     let myRsvp: String?
     let attendees: [EventAttendee]?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        eventId = try c.decode(String.self, forKey: .eventId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        occursAt = (try? c.decodeIfPresent(String.self, forKey: .occursAt)) ?? ""
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        location = try? c.decodeIfPresent(String.self, forKey: .location)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        primaryImageUrl = try? c.decodeIfPresent(String.self, forKey: .primaryImageUrl)
+        images = try? c.decodeIfPresent([String].self, forKey: .images)
+        videoUrl = try? c.decodeIfPresent(String.self, forKey: .videoUrl)
+        rsvpCounts = (try? c.decodeIfPresent(RsvpCounts.self, forKey: .rsvpCounts))
+            ?? RsvpCounts(going: nil, maybe: nil, declined: nil)
+        myRsvp = try? c.decodeIfPresent(String.self, forKey: .myRsvp)
+        attendees = try? c.decodeIfPresent([EventAttendee].self, forKey: .attendees)
+    }
 }
 
 /// GET /me/rsvps — the member's RSVPs.
@@ -120,11 +192,37 @@ struct EventPost: Codable, Sendable, Identifiable {
     var id: String { postId }
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the optimistic insert in EventDetailView.
+extension EventPost {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        postId = try c.decode(String.self, forKey: .postId)
+        authorUserId = (try? c.decodeIfPresent(String.self, forKey: .authorUserId)) ?? ""
+        authorName = (try? c.decodeIfPresent(String.self, forKey: .authorName)) ?? ""
+        authorAvatar = try? c.decodeIfPresent(String.self, forKey: .authorAvatar)
+        body = try? c.decodeIfPresent(String.self, forKey: .body)
+        imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        mine = (try? c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
+        rsvpStatus = try? c.decodeIfPresent(String.self, forKey: .rsvpStatus)
+        cheerCount = (try? c.decodeIfPresent(Int.self, forKey: .cheerCount)) ?? 0
+        loveCount = (try? c.decodeIfPresent(Int.self, forKey: .loveCount)) ?? 0
+        myReaction = try? c.decodeIfPresent(String.self, forKey: .myReaction)
+    }
+}
+
 /// POST /events/{id}/posts/{postId}/react — fresh counts + my reaction.
 struct EventPostReactionResult: Codable, Sendable {
     let cheerCount: Int
     let loveCount: Int
     let myReaction: String?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        cheerCount = (try? c.decodeIfPresent(Int.self, forKey: .cheerCount)) ?? 0
+        loveCount = (try? c.decodeIfPresent(Int.self, forKey: .loveCount)) ?? 0
+        myReaction = try? c.decodeIfPresent(String.self, forKey: .myReaction)
+    }
 }
 
 /// POST /events/{id}/posts — creation receipt (idempotent on client_mutation_id).

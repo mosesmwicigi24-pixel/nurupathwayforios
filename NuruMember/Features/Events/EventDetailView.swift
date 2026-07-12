@@ -517,12 +517,43 @@ private struct EvdMetaCard: View {
 
     private var actions: some View {
         HStack(spacing: 8) {
-            // Native calendar write needs an EventKit entitlement — visual for now.
-            Button {} label: { EvdActionLabel(icon: .calendarDays, text: "Add to calendar") }
-                .buttonStyle(.plain)
+            // A real .ics via the share sheet — "Add to Calendar" appears natively,
+            // no EventKit entitlement or permission prompt needed (Android parity:
+            // its button fires a calendar intent).
+            if let ics = icsFile() {
+                ShareLink(item: ics) { EvdActionLabel(icon: .calendarDays, text: "Add to calendar") }
+                    .buttonStyle(.plain)
+            } else {
+                ShareLink(item: shareText) { EvdActionLabel(icon: .calendarDays, text: "Add to calendar") }
+                    .buttonStyle(.plain)
+            }
             ShareLink(item: shareText) { EvdActionLabel(icon: .share2, text: "Share") }
                 .buttonStyle(.plain)
         }
+    }
+
+    /// Write a minimal VCALENDAR for this occurrence to a temp file. ICS wants
+    /// UTC stamps; occ dates are ISO-8601 from the server.
+    private func icsFile() -> URL? {
+        let iso = ISO8601DateFormatter()
+        let isoFrac = ISO8601DateFormatter()
+        isoFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        guard let start = iso.date(from: occ.startAt) ?? isoFrac.date(from: occ.startAt),
+              let end = iso.date(from: occ.endAt) ?? isoFrac.date(from: occ.endAt) else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd'T'HHmmss'Z'"
+        f.timeZone = TimeZone(identifier: "UTC")
+        f.locale = Locale(identifier: "en_US_POSIX")
+        let esc = { (t: String) in t.replacingOccurrences(of: ",", with: "\\,").replacingOccurrences(of: ";", with: "\\;") }
+        var lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//Nuru Place//Member//EN",
+                     "BEGIN:VEVENT", "UID:\(occ.occurrenceId)@nuruplace.org",
+                     "DTSTAMP:\(f.string(from: start))", "DTSTART:\(f.string(from: start))",
+                     "DTEND:\(f.string(from: end))", "SUMMARY:\(esc(occ.title))"]
+        if let location, !location.isEmpty { lines.append("LOCATION:\(esc(location))") }
+        lines += ["END:VEVENT", "END:VCALENDAR"]
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("nuru-event.ics")
+        guard (try? lines.joined(separator: "\r\n").write(to: url, atomically: true, encoding: .utf8)) != nil else { return nil }
+        return url
     }
 }
 

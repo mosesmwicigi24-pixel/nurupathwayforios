@@ -37,12 +37,23 @@ extension MemberAPI {
 /// POST /giving/paypal/capture → { status } (succeeded | processing | failed).
 struct PayPalCaptureResult: Decodable, Sendable {
     let status: String
+    private enum CodingKeys: String, CodingKey { case status }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+    }
 }
 
 /// POST /events/{id}/attendance → the recorded (or replayed) check-in.
 struct EventCheckInResult: Decodable, Sendable {
     let attendanceId: String
     let duplicate: Bool
+    private enum CodingKeys: String, CodingKey { case attendanceId, duplicate }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        attendanceId = (try? c.decodeIfPresent(String.self, forKey: .attendanceId)) ?? ""
+        duplicate = (try? c.decodeIfPresent(Bool.self, forKey: .duplicate)) ?? false
+    }
 }
 
 // MARK: - Screen telemetry (POST /me/activity/screens — best-effort, silent)

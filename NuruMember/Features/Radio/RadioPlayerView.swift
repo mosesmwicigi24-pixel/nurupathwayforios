@@ -41,6 +41,27 @@ struct RadioProgram: Decodable, Sendable, Identifiable, Hashable {
 
     var live: Bool { isLive || status == "live" }
     var recorded: Bool { status == "ended" && audioUrl != nil }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, title, description, category, speaker, artworkUrl
+        case scheduledAt, status, isLive, audioUrl, hlsUrl, peakListeners
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        category = (try? c.decodeIfPresent(String.self, forKey: .category)) ?? ""
+        speaker = try? c.decodeIfPresent(String.self, forKey: .speaker)
+        artworkUrl = try? c.decodeIfPresent(String.self, forKey: .artworkUrl)
+        scheduledAt = try? c.decodeIfPresent(String.self, forKey: .scheduledAt)
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "scheduled"
+        isLive = (try? c.decodeIfPresent(Bool.self, forKey: .isLive)) ?? false
+        audioUrl = try? c.decodeIfPresent(String.self, forKey: .audioUrl)
+        hlsUrl = try? c.decodeIfPresent(String.self, forKey: .hlsUrl)
+        peakListeners = try? c.decodeIfPresent(Int.self, forKey: .peakListeners)
+    }
 }
 
 struct RadioReactionCounts: Decodable, Sendable {
@@ -56,6 +77,18 @@ struct RadioReactionCounts: Decodable, Sendable {
     }
 }
 
+// Tolerant decoding lives in an extension so the memberwise init survives for
+// the optimistic bump above.
+extension RadioReactionCounts {
+    private enum CodingKeys: String, CodingKey { case heart, amen, fire }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        heart = (try? c.decodeIfPresent(Int.self, forKey: .heart)) ?? 0
+        amen = (try? c.decodeIfPresent(Int.self, forKey: .amen)) ?? 0
+        fire = (try? c.decodeIfPresent(Int.self, forKey: .fire)) ?? 0
+    }
+}
+
 /// One comment row. The backend join now carries the author's name/avatar;
 /// both stay optional so older payloads (and optimistic local rows) still
 /// decode — the UI falls back to "Member" only when the name is absent.
@@ -66,6 +99,23 @@ struct RadioComment: Decodable, Sendable, Identifiable {
     let createdAt: String
     var authorName: String?
     var authorAvatarUrl: String?
+}
+
+// Tolerant decoding lives in an extension so the memberwise init survives for
+// the optimistic local row.
+extension RadioComment {
+    private enum CodingKeys: String, CodingKey {
+        case id, memberId, body, createdAt, authorName, authorAvatarUrl
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        memberId = (try? c.decodeIfPresent(String.self, forKey: .memberId)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        authorName = try? c.decodeIfPresent(String.self, forKey: .authorName)
+        authorAvatarUrl = try? c.decodeIfPresent(String.self, forKey: .authorAvatarUrl)
+    }
 }
 
 // MARK: - Design tokens (the TSX's exact hexes; Nuru.* where they match)

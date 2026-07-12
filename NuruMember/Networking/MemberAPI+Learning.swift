@@ -7,6 +7,12 @@ struct LessonExplanation: Codable, Sendable {
     let style: String
     let body: String
     let cached: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        style = (try? c.decodeIfPresent(String.self, forKey: .style)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        cached = (try? c.decodeIfPresent(Bool.self, forKey: .cached)) ?? false
+    }
 }
 
 struct QuizRemediation: Codable, Sendable {
@@ -14,6 +20,13 @@ struct QuizRemediation: Codable, Sendable {
     let body: String
     let missed: Int
     let cached: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        attemptId = (try? c.decodeIfPresent(String.self, forKey: .attemptId)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        missed = (try? c.decodeIfPresent(Int.self, forKey: .missed)) ?? 0
+        cached = (try? c.decodeIfPresent(Bool.self, forKey: .cached)) ?? false
+    }
 }
 
 extension MemberAPI {

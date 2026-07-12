@@ -17,6 +17,15 @@ struct AssembledExam: Decodable, Sendable {
     let levelNumber: Int
     let questionCount: Int
     let questions: [QuizQuestion]
+
+    private enum CodingKeys: String, CodingKey { case levelNumber, questionCount, questions }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        levelNumber = (try? c.decodeIfPresent(Int.self, forKey: .levelNumber)) ?? 0
+        questionCount = (try? c.decodeIfPresent(Int.self, forKey: .questionCount)) ?? 0
+        questions = (try? c.decodeIfPresent([QuizQuestion].self, forKey: .questions)) ?? []
+    }
 }
 
 /// POST /levels/{n}/exam/attempts → the ExamResult interface in exam.ts. The
@@ -29,6 +38,23 @@ struct ExamResult: Decodable, Sendable {
     @FlexInt var passMark: Int
     let requiresManualReview: Bool
     let duplicate: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case examAttemptId, scoreAchieved, isPassed, passMark, requiresManualReview, duplicate
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        examAttemptId = (try? c.decodeIfPresent(String.self, forKey: .examAttemptId)) ?? ""
+        _scoreAchieved = (try? c.decodeIfPresent(FlexInt.self, forKey: .scoreAchieved))
+            ?? FlexInt(wrappedValue: 0)
+        // Safe-conservative: never claim a pass by omission.
+        isPassed = (try? c.decodeIfPresent(Bool.self, forKey: .isPassed)) ?? false
+        _passMark = (try? c.decodeIfPresent(FlexInt.self, forKey: .passMark))
+            ?? FlexInt(wrappedValue: 0)
+        requiresManualReview = (try? c.decodeIfPresent(Bool.self, forKey: .requiresManualReview)) ?? false
+        duplicate = (try? c.decodeIfPresent(Bool.self, forKey: .duplicate)) ?? false
+    }
 }
 
 /// GET /levels/{n}/encouragements → { data: [...] } rows from level_encouragements

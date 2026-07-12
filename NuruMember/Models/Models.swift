@@ -49,6 +49,30 @@ struct UserProfile: Codable, Sendable, Identifiable {
     let rowVersion: Int
 
     var id: String { userId }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        userId = try c.decode(String.self, forKey: .userId)
+        email = try? c.decodeIfPresent(String.self, forKey: .email)
+        fullName = try c.decode(String.self, forKey: .fullName)
+        phoneNumber = try? c.decodeIfPresent(String.self, forKey: .phoneNumber)
+        dateOfBirth = try? c.decodeIfPresent(String.self, forKey: .dateOfBirth)
+        yearOfSalvation = try? c.decodeIfPresent(Int.self, forKey: .yearOfSalvation)
+        isBaptized = (try? c.decodeIfPresent(Bool.self, forKey: .isBaptized)) ?? false
+        cellGroupId = try? c.decodeIfPresent(String.self, forKey: .cellGroupId)
+        congregationId = try? c.decodeIfPresent(String.self, forKey: .congregationId)
+        role = (try? c.decodeIfPresent(String.self, forKey: .role)) ?? "Student"
+        timezone = (try? c.decodeIfPresent(String.self, forKey: .timezone)) ?? "Africa/Nairobi"
+        locale = (try? c.decodeIfPresent(String.self, forKey: .locale)) ?? "en"
+        // Defaulting to adult is safe here: minor gating (DMs/chat) is enforced server-side.
+        isMinor = (try? c.decodeIfPresent(Bool.self, forKey: .isMinor)) ?? false
+        gender = try? c.decodeIfPresent(String.self, forKey: .gender)
+        city = try? c.decodeIfPresent(String.self, forKey: .city)
+        countryCode = try? c.decodeIfPresent(String.self, forKey: .countryCode)
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        mfaEnabled = try? c.decodeIfPresent(Bool.self, forKey: .mfaEnabled)
+        rowVersion = (try? c.decodeIfPresent(Int.self, forKey: .rowVersion)) ?? 0
+    }
 }
 
 struct EnrollmentSummary: Codable, Sendable {
@@ -56,6 +80,13 @@ struct EnrollmentSummary: Codable, Sendable {
     let currentLevel: Int
     let state: String
     let startedAt: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        enrollmentId = try c.decode(String.self, forKey: .enrollmentId)
+        currentLevel = try c.decode(Int.self, forKey: .currentLevel)
+        state = try c.decode(String.self, forKey: .state)
+        startedAt = (try? c.decodeIfPresent(String.self, forKey: .startedAt)) ?? ""
+    }
 }
 
 struct MeResponse: Codable, Sendable {
@@ -67,6 +98,11 @@ struct MeResponse: Codable, Sendable {
 struct MfaEnrollment: Codable, Sendable {
     let otpauthUri: String
     let secret: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        otpauthUri = (try? c.decodeIfPresent(String.self, forKey: .otpauthUri)) ?? ""
+        secret = (try? c.decodeIfPresent(String.self, forKey: .secret)) ?? ""
+    }
 }
 
 // MARK: - Home (server-driven dashboard)
@@ -101,6 +137,18 @@ struct NextAction: Codable, Sendable, Identifiable {
     /// Route parameters — e.g. `{ moduleId }` when `route == "module"`, so the CTA
     /// can deep-link straight to the specific lesson instead of the level.
     let params: NextActionParams?
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        ctaLabel = (try? c.decodeIfPresent(String.self, forKey: .ctaLabel)) ?? ""
+        route = (try? c.decodeIfPresent(String.self, forKey: .route)) ?? ""
+        accent = (try? c.decodeIfPresent(String.self, forKey: .accent)) ?? ""
+        priority = (try? c.decodeIfPresent(Int.self, forKey: .priority)) ?? 0
+        params = try? c.decodeIfPresent(NextActionParams.self, forKey: .params)
+    }
 }
 
 /// Destination parameters for a NextAction CTA (only the keys we navigate on).

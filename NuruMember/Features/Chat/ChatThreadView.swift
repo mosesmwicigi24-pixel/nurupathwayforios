@@ -236,7 +236,13 @@ struct ChatThreadView: View {
         // A conversation owns the whole bottom edge: slide the tab bar away while
         // this screen is up so the composer sits on the home indicator / keyboard.
         .onAppear { tabs.chromeHidden = true }
-        .onDisappear { tabs.chromeHidden = false }
+        .onDisappear {
+            tabs.chromeHidden = false
+            // Silence the thread's shared player on the way out — it's
+            // process-wide, and once this screen is gone there is no visible
+            // control anywhere to stop a note still talking over Home.
+            ChatVoicePlayer.threadShared.stop()
+        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             keyboardVisible = true
         }
@@ -966,17 +972,35 @@ private struct ComposerBar: View {
 
     @StateObject private var recorder = ChatVoiceRecorder()
     @State private var sendingVoice = false
+    @State private var voiceSendFailed = false
+    @State private var micHint = false
+    @State private var micHintDismiss: Task<Void, Never>?
 
     private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    /// The strip owns the bar while capturing, after an autostop (the take is
+    /// finished and waiting), mid-upload, and after a failed send (retry).
+    private var stripUp: Bool {
+        recorder.isRecording || recorder.finishedFile != nil || sendingVoice || voiceSendFailed
+    }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: Nuru.S.sm) {
-            if recorder.isRecording || sendingVoice {
-                recordingStrip
-            } else {
-                myAvatar
-                inputPill
-                sendOrMic
+        VStack(spacing: 0) {
+            if micHint {
+                Text("Allow microphone in Settings to send voice messages.")
+                    .font(.inter(11.5)).foregroundStyle(Aurora.meta)
+                    .frame(maxWidth: .infinity)
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+                    .onTapGesture { withAnimation { micHint = false } }
+            }
+            HStack(alignment: .bottom, spacing: Nuru.S.sm) {
+                if stripUp {
+                    recordingStrip
+                } else {
+                    myAvatar
+                    inputPill
+                    sendOrMic
+                }
             }
         }
         .padding(.horizontal, Nuru.S.md)
@@ -985,13 +1009,29 @@ private struct ComposerBar: View {
         .background(Color.white.opacity(0.92))
         .overlay(Rectangle().fill(Aurora.border).frame(height: 1), alignment: .top)
         .onDisappear { recorder.cancel() }
+        // Mic denied → a brief hint (~4 s, or the next tap) instead of a dead button.
+        .onChange(of: recorder.denied) { _, denied in
+            guard denied else { return }
+            recorder.denied = false
+            withAnimation { micHint = true }
+            micHintDismiss?.cancel()
+            micHintDismiss = Task {
+                try? await Task.sleep(nanoseconds: 4_000_000_000)
+                guard !Task.isCancelled else { return }
+                withAnimation { micHint = false }
+            }
+        }
     }
 
     /// While capturing: pulsing red dot · live wave · clock · cancel · send.
+    /// After the 5-minute cap (or a call/Siri) the strip stays — wave frozen,
+    /// clock stopped, send live — and a failed send flips it to tap-to-retry.
     private var recordingStrip: some View {
         HStack(spacing: 12) {
             Button {
-                Haptics.tap(); recorder.cancel()
+                Haptics.tap()
+                recorder.cancel()
+                voiceSendFailed = false
             } label: {
                 Icon(.x, size: 17, color: Aurora.meta)
                     .frame(width: 36, height: 36)
@@ -999,9 +1039,20 @@ private struct ComposerBar: View {
             }
             .buttonStyle(.pressable)
             .disabled(sendingVoice)
-            RecordingDot()
-            LiveWaveView(levels: recorder.levels, tint: Aurora.gold)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            if recorder.isRecording {
+                RecordingDot()
+            } else {
+                Circle().fill(voiceSendFailed ? Color(hex: 0xE0342C) : Aurora.gold)
+                    .frame(width: 10, height: 10)
+            }
+            if voiceSendFailed {
+                Text("Couldn't send — tap to retry")
+                    .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xE0342C))
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                LiveWaveView(levels: recorder.levels, tint: Aurora.gold)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
             Text(String(format: "%d:%02d", recorder.elapsedSec / 60, recorder.elapsedSec % 60))
                 .font(.inter(12, .semibold)).monospacedDigit().foregroundStyle(Aurora.navy)
             Button { sendVoice() } label: {
@@ -1025,20 +1076,32 @@ private struct ComposerBar: View {
     private func sendVoice() {
         guard !sendingVoice else { return }
         Haptics.action()
-        let duration = max(1, recorder.elapsedSec)
         let waveform = recorder.waveformFor()
         guard let file = recorder.stop() else { return }
+        // Duration after stop(): stop() finalizes it from the recorder's clock.
+        let duration = max(1, recorder.elapsedSec)
+        // Read the bytes NOW (≤ ~2.4 MB, local disk): onDisappear's cancel()
+        // deletes the tmp file, and a deferred read inside the Task could lose
+        // that race and silently drop the message.
+        guard let data = try? Data(contentsOf: file) else {
+            voiceSendFailed = true
+            return
+        }
+        voiceSendFailed = false
         sendingVoice = true
         Task {
             defer { sendingVoice = false }
             do {
-                let data = try Data(contentsOf: file)
                 let url = try await MemberAPI.uploadVoiceAudio(m4a: data, filename: "chat-voice.m4a")
                 try await MemberAPI.sendChatVoice(conversationId, audioUrl: url, durationSec: duration, waveform: waveform)
                 Haptics.success()
+                recorder.discardFile()   // the send landed — the tmp copy can go
                 onVoiceSent()
             } catch {
+                // Keep the take: the strip stays up with a retry until the
+                // member sends it or cancels it themselves.
                 Haptics.tap()
+                voiceSendFailed = true
             }
         }
     }
@@ -1077,7 +1140,7 @@ private struct ComposerBar: View {
     /// otherwise (Android parity — was a dead placeholder).
     private var sendOrMic: some View {
         Button {
-            if hasDraft { onSend() } else { Haptics.action(); recorder.start() }
+            if hasDraft { onSend() } else { Haptics.action(); micHint = false; recorder.start() }
         } label: {
             Icon(hasDraft ? .send : .mic, size: 18, color: .white)
                 .frame(width: 44, height: 44)

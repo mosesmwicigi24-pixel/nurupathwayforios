@@ -13,6 +13,20 @@ struct ResourceRow: Decodable, Sendable, Identifiable {
     let durationLabel: String
     let url: String?
     var id: String { resourceId }
+
+    private enum CodingKeys: String, CodingKey {
+        case resourceId, title, author, kind, durationLabel, url
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        resourceId = try c.decode(String.self, forKey: .resourceId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        author = (try? c.decodeIfPresent(String.self, forKey: .author)) ?? ""
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+        durationLabel = (try? c.decodeIfPresent(String.self, forKey: .durationLabel)) ?? ""
+        url = try? c.decodeIfPresent(String.self, forKey: .url)
+    }
 }
 
 // Exact Figma palette (ResourcesLibraryScreen / ScreenShell).

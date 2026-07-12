@@ -10,12 +10,24 @@ struct Footprint: Codable, Sendable {
     let firstName: String
     let avatarUrl: String?
     let completedAt: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        firstName = (try? c.decodeIfPresent(String.self, forKey: .firstName)) ?? ""
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        completedAt = (try? c.decodeIfPresent(String.self, forKey: .completedAt)) ?? ""
+    }
 }
 
 struct FootprintsRes: Codable, Sendable {
     let count: Int
     let scope: String            // "cell" | "congregation"
     let footprints: [Footprint]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        count = (try? c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+        scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? "cell"
+        footprints = (try? c.decodeIfPresent([Footprint].self, forKey: .footprints)) ?? []
+    }
 }
 
 struct WalkEvent: Codable, Sendable, Identifiable {
@@ -24,6 +36,15 @@ struct WalkEvent: Codable, Sendable, Identifiable {
     let detail: String?
     let quote: String?
     let occurredAt: String
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        detail = try? c.decodeIfPresent(String.self, forKey: .detail)
+        quote = try? c.decodeIfPresent(String.self, forKey: .quote)
+        occurredAt = (try? c.decodeIfPresent(String.self, forKey: .occurredAt)) ?? ""
+    }
 
     var id: String { "\(kind)-\(title)-\(occurredAt)" }
 
@@ -36,7 +57,13 @@ struct WalkEvent: Codable, Sendable, Identifiable {
     }
 }
 
-struct WalkRes: Codable, Sendable { let data: [WalkEvent] }
+struct WalkRes: Codable, Sendable {
+    let data: [WalkEvent]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        data = (try? c.decodeIfPresent([WalkEvent].self, forKey: .data)) ?? []
+    }
+}
 
 extension MemberAPI {
     static func footprints(moduleId: String) async throws -> FootprintsRes {

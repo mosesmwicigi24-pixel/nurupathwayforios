@@ -727,12 +727,36 @@ private struct UpdateMeBody: Encodable {
 
 private struct PBadgeCat: Decodable, Sendable {
     let code: String; let name: String; let description: String; let category: String
+    private enum CodingKeys: String, CodingKey { case code, name, description, category }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        description = (try? c.decodeIfPresent(String.self, forKey: .description)) ?? ""
+        category = (try? c.decodeIfPresent(String.self, forKey: .category)) ?? ""
+    }
 }
 private struct PEarnedBadge: Decodable, Sendable {
     let code: String; let name: String; let description: String; let category: String
     let awardedAt: String?
+    private enum CodingKeys: String, CodingKey { case code, name, description, category, awardedAt }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        description = (try? c.decodeIfPresent(String.self, forKey: .description)) ?? ""
+        category = (try? c.decodeIfPresent(String.self, forKey: .category)) ?? ""
+        awardedAt = try? c.decodeIfPresent(String.self, forKey: .awardedAt)
+    }
 }
-private struct PMyAchievements: Decodable, Sendable { let badges: [PEarnedBadge] }
+private struct PMyAchievements: Decodable, Sendable {
+    let badges: [PEarnedBadge]
+    private enum CodingKeys: String, CodingKey { case badges }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        badges = (try? c.decodeIfPresent([PEarnedBadge].self, forKey: .badges)) ?? []
+    }
+}
 
 private struct PBadgeItem: Identifiable {
     let code: String; let name: String; let description: String; let category: String
@@ -925,6 +949,19 @@ private struct PCert: Decodable, Sendable, Identifiable {
     let downloadUrl: String?
     var id: String { certificateId }
     var title: String { levelNumber.map { "Pathway Level \($0)" } ?? "Pathway certificate" }
+
+    private enum CodingKeys: String, CodingKey {
+        case certificateId, levelNumber, verificationCode, issuedAt, downloadUrl
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        certificateId = (try? c.decodeIfPresent(String.self, forKey: .certificateId)) ?? ""
+        levelNumber = try? c.decodeIfPresent(Int.self, forKey: .levelNumber)
+        verificationCode = (try? c.decodeIfPresent(String.self, forKey: .verificationCode)) ?? ""
+        issuedAt = (try? c.decodeIfPresent(String.self, forKey: .issuedAt)) ?? ""
+        downloadUrl = try? c.decodeIfPresent(String.self, forKey: .downloadUrl)
+    }
 }
 
 private struct CertificateCardView: View {
