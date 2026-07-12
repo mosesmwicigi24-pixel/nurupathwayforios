@@ -797,7 +797,7 @@ struct ModuleView: View {
                         .padding(.top, chromeHidden ? Self.safeAreaTop + 8 : Nuru.S.base)
                         // Clear the home indicator when immersive (no gate below);
                         // a smaller cushion when the gate sits beneath the scroll.
-                        .padding(.bottom, chromeHidden ? Self.safeAreaBottom + 40 : Nuru.S.lg)
+                        .padding(.bottom, chromeHidden ? Self.safeAreaBottom + 40 : Nuru.S.xl + 12)
                         .background(
                             // Scroll metrics for the top progress bar: content
                             // offset + height in the scroll's coordinate space.
@@ -1889,21 +1889,31 @@ private struct MLBottomGate: View {
     private var doneCount: Int { steps.filter(\.done).count }
 
     var body: some View {
-        VStack(spacing: 10) {
-            // Header — the live "N of M steps done" tally.
-            HStack(spacing: 10) {
-                Text(complete ? "All steps done 🎉" : "\(doneCount) of \(steps.count) steps done")
-                    .font(.inter(11, .bold))
-                    .foregroundStyle(complete ? ML.overline : ML.navy)
-                    .contentTransition(.numericText())
-                    .animation(.easeInOut(duration: 0.25), value: doneCount)
-                Spacer(minLength: 0)
+        VStack(spacing: complete ? 8 : 10) {
+            if complete {
+                // Done state collapses to one slim celebratory line — the bar and
+                // chips would only repeat it, and the reclaimed height keeps the
+                // reflection card visible above the gate.
+                HStack(spacing: 10) {
+                    Text("All steps done 🎉")
+                        .font(.inter(11, .bold)).foregroundStyle(ML.overline)
+                    Spacer(minLength: 0)
+                }
+            } else {
+                // Header — the live "N of M steps done" tally.
+                HStack(spacing: 10) {
+                    Text("\(doneCount) of \(steps.count) steps done")
+                        .font(.inter(11, .bold))
+                        .foregroundStyle(ML.navy)
+                        .contentTransition(.numericText())
+                        .animation(.easeInOut(duration: 0.25), value: doneCount)
+                    Spacer(minLength: 0)
+                }
+                // The compact chip row — check when done, a partial ring while in
+                // progress. (The old segmented bar duplicated these rings and cost
+                // a full row of reading space; the chips alone tell the story.)
+                chipRow
             }
-            // Segmented progress bar — one segment per step, partial-filling the
-            // in-progress one from its real fraction.
-            segmentedBar
-            // The compact chip row — check when done, a partial ring while in progress.
-            chipRow
             if let error {
                 Text(error)
                     .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
@@ -1912,7 +1922,7 @@ private struct MLBottomGate: View {
             cta
         }
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, Nuru.S.md)
+        .padding(.top, complete ? Nuru.S.sm : Nuru.S.md)
         .padding(.bottom, bottomInset)
         .background(
             ML.cream
