@@ -410,8 +410,10 @@ struct ModuleView: View {
     // Nuru (simple English / Kiswahili / as a story). Server-gated (§1.9).
     @State private var showExplainMenu = false
     @State private var explainTarget: ExplainTarget?
-    // Finished modules fold the reflection to what was written; Edit unfolds it.
+    // Finished modules fold the reflection to what was written; changing it is
+    // an intentional act behind the "Revisit this module" door.
     @State private var editingReflection = false
+    @State private var showRevisitDialog = false
 
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
@@ -648,6 +650,18 @@ struct ModuleView: View {
         .sheet(item: $explainTarget) { t in
             ExplainSheet(moduleId: moduleId, style: t.style)
         }
+        .confirmationDialog("You've completed this module", isPresented: $showRevisitDialog, titleVisibility: .visible) {
+            Button("Edit my reflection") { Haptics.tap(); editingReflection = true }
+            if vm.detail?.requiresQuiz == true {
+                Button("Retake the quiz") {
+                    Haptics.action()
+                    quizTarget = moduleId
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It is sealed — but you can still revisit what you wrote or try the quiz again.")
+        }
         .onChange(of: playingVideo) { _, _ in syncEngagementSignals() }
         .onChange(of: currentPage) { _, _ in syncEngagementSignals() }
         // A short beat after the server confirms, so the success haptic and the
@@ -760,7 +774,7 @@ struct ModuleView: View {
                                  moduleId: d.moduleId,
                                  busy: vm.completing,
                                  error: vm.completionError,
-                                 bottomInset: Nuru.tabBarSpace,
+                                 bottomInset: Nuru.tabBarSpace - 24,
                                  startingQuiz: startingQuiz,
                                  onStartQuiz: {
                                      guard !startingQuiz else { return }
@@ -903,9 +917,24 @@ struct ModuleView: View {
                 // Reflect step lights up and the quiz gate can clear.
                 Group {
                     if d.isFinished && !editingReflection {
-                        MLReflectionFolded(text: vm.savedReflection ?? reflection) {
-                            Haptics.tap()
-                            editingReflection = true
+                        VStack(spacing: 14) {
+                            MLReflectionFolded(text: vm.savedReflection ?? reflection)
+                            // The module is sealed — changing anything is an
+                            // intentional act, behind one quiet door.
+                            Button {
+                                Haptics.tap()
+                                showRevisitDialog = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Icon(.bookOpen, size: 12, color: ML.secondary)
+                                    Text("Revisit this module")
+                                        .font(.inter(13, .semibold)).foregroundStyle(ML.secondary)
+                                }
+                                .padding(.horizontal, 18).padding(.vertical, 10)
+                                .background(Color.white, in: Capsule())
+                                .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+                            }
+                            .buttonStyle(.pressable)
                         }
                     } else {
                         MLReflectionCard(text: $reflection,
@@ -1822,6 +1851,41 @@ private struct MLSectionHeader: View {
 }
 
 // MARK: - Reflection card (inline; submits through completeModule)
+
+/// Header ribbon payload for a finished module.
+struct MLFinishedSummary {
+    let score: Int?
+    let when: String?
+    let canRetake: Bool
+    let onRetake: () -> Void
+}
+
+/// Finished modules show the reflection FOLDED — the words the member wrote,
+/// read-only and sealed (edits flow through the "Revisit this module" door).
+private struct MLReflectionFolded: View {
+    let text: String
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("YOUR REFLECTION").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
+                Spacer()
+                HStack(spacing: 3) {
+                    Icon(.check, size: 10, color: Color(hex: 0x15803D))
+                    Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                }
+            }
+            Text(text.isEmpty ? "\u{2014}" : text)
+                .font(.fraunces(15)).foregroundStyle(ML.bodyInk)
+                .lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .stroke(ML.gold.opacity(0.4), lineWidth: 1))
+    }
+}
 
 private struct MLReflectionCard: View {
     @Binding var text: String
