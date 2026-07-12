@@ -414,6 +414,19 @@ struct ModuleView: View {
     // an intentional act behind the "Revisit this module" door.
     @State private var editingReflection = false
     @State private var showRevisitDialog = false
+    // The margin companion (Wave 1): ONE soft whisper per module open, after
+    // ten faithful minutes of reading. Scarcity is what makes it land.
+    @State private var whisper: String?
+    @State private var whisperShown = false
+
+    private static let whisperLines = [
+        "Ten quiet minutes. \u{201C}Blessed is the one\u{2026} who meditates on his law day and night.\u{201D} \u{2014} Psalm 1",
+        "You are still here. \u{201C}Your word is a lamp for my feet.\u{201D} \u{2014} Psalm 119:105",
+        "Ten minutes given to the Word. \u{201C}Man shall not live on bread alone.\u{201D} \u{2014} Matthew 4:4",
+        "Still reading. \u{201C}Let the word of Christ dwell in you richly.\u{201D} \u{2014} Colossians 3:16",
+        "Ten unhurried minutes. \u{201C}Be still, and know that I am God.\u{201D} \u{2014} Psalm 46:10",
+        "You stayed. \u{201C}As newborn babes, desire the pure milk of the word.\u{201D} \u{2014} 1 Peter 2:2",
+    ]
 
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
@@ -649,6 +662,33 @@ struct ModuleView: View {
         }
         .sheet(item: $explainTarget) { t in
             ExplainSheet(moduleId: moduleId, style: t.style)
+        }
+        .task {
+            // Ten continuous minutes on this module: one whisper, then silence.
+            try? await Task.sleep(nanoseconds: 600 * 1_000_000_000)
+            guard viewOnScreen, !whisperShown else { return }
+            whisperShown = true
+            let line = Self.whisperLines[(Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0) % Self.whisperLines.count]
+            withAnimation(.easeInOut(duration: 0.4)) { whisper = line }
+            Haptics.tap()
+            try? await Task.sleep(nanoseconds: 9 * 1_000_000_000)
+            withAnimation(.easeInOut(duration: 0.6)) { whisper = nil }
+        }
+        .overlay(alignment: .bottom) {
+            if let w = whisper {
+                Text(w)
+                    .font(.fraunces(14)).foregroundStyle(.white)
+                    .lineSpacing(4)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 18).padding(.vertical, 12)
+                    .background(Color(hex: 0x14273D).opacity(0.96), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color(hex: 0xE8CA6C).opacity(0.4), lineWidth: 1))
+                    .padding(.horizontal, 28)
+                    .padding(.bottom, Nuru.tabBarSpace + 60)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
         }
         .confirmationDialog("You've completed this module", isPresented: $showRevisitDialog, titleVisibility: .visible) {
             Button("Edit my reflection") { Haptics.tap(); editingReflection = true }
