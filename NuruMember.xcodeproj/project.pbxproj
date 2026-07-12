@@ -349,6 +349,7 @@
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone only when a discipler records a voice note for their congregation on a lesson.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -382,6 +383,7 @@
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone only when a discipler records a voice note for their congregation on a lesson.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

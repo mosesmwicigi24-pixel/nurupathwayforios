@@ -396,6 +396,7 @@ struct ModuleView: View {
     @StateObject private var vm: ModuleViewModel
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var tabs: TabRouter
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -405,6 +406,12 @@ struct ModuleView: View {
     @State private var startingQuiz = false       // flushing engagement before the quiz
     @State private var quizTarget: String?        // pushes QuizView once the flush lands
     @State private var nextModuleTarget: String?  // the server-unlocked next module (post-quiz-pass)
+
+    /// Instructor and above may leave "a word from your discipler" on the
+    /// lesson for their whole congregation (server enforces the same ladder).
+    private var canLeaveVoiceNote: Bool {
+        ["Instructor", "Admin", "SuperAdmin"].contains(auth.profile?.role ?? "")
+    }
 
     // Living curriculum — "hear it another way": the same lesson re-rendered by
     // Nuru (simple English / Kiswahili / as a story). Server-gated (§1.9).
@@ -919,6 +926,21 @@ struct ModuleView: View {
             MLSectionHeader(title: sectionTitle,
                             index0: pageIndex, count: pageCount)
                 .padding(.bottom, video == nil && !hasLead ? 20 : 16)
+            // A word from the member's own discipler — the human voice comes
+            // before any produced media (Wave 2). Leaders see the record
+            // affordance beneath it.
+            if isFirstPage {
+                if let vn = d.voiceNote {
+                    VoiceNoteCard(note: vn)
+                        .padding(.bottom, canLeaveVoiceNote ? 10 : 16)
+                }
+                if canLeaveVoiceNote {
+                    VoiceNoteLeaderRow(moduleId: d.moduleId, existing: d.voiceNote) {
+                        Task { await vm.load() }
+                    }
+                    .padding(.bottom, 16)
+                }
+            }
             if let video {
                 MLVideoCard(video: video, playing: $playingVideo)
                     .id("video")
