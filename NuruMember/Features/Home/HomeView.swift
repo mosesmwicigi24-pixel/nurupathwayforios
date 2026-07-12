@@ -258,6 +258,7 @@ struct HomeView: View {
         if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
         if let lt = vm.letter, lt.isUnread { s.append(AnyView(letterKnock(lt))) }       // 0b · A letter for you (unread Sunday Letter)
         s.append(AnyView(HomeLiturgyCard()))                                            // 0c · The hour's prayer line (liturgy, Phase 4)
+        s.append(AnyView(HomeEchoCard()))                                               // 0d · Today's echo — the app remembers you (Wave 1)
         if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
         s.append(AnyView(rhythmCard))                                                   // 2b · Today's rhythm (right under For-you-today)

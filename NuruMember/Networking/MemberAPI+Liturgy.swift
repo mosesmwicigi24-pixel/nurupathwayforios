@@ -46,3 +46,21 @@ extension MemberAPI {
         return try await APIClient.shared.post("community/moments/\(momentId)/bless", body: Body(kind: kind), as: BlessRes.self)
     }
 }
+
+// Wave 1 — echoes: today's companion moment (the member's own history,
+// carried back at the right time; null when nothing specific is true).
+struct HomeEcho: Codable, Sendable {
+    let kind: String     // welcome_back | reflection_echo | anniversary
+    let body: String
+    let quote: String?
+    let ref: String?
+}
+
+struct HomeEchoEnvelope: Codable, Sendable { let echo: HomeEcho? }
+
+extension MemberAPI {
+    static func homeEcho() async throws -> HomeEcho? {
+        try await APIClient.shared.get("home/echo", as: HomeEchoEnvelope.self).echo
+    }
+}
+
