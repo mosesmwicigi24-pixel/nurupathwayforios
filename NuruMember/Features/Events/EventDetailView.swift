@@ -1,7 +1,8 @@
-// Event detail — Figma-parity port of the EventDetail make. A full-bleed 16:11
-// cover photo hero (parallax stretch, navy scrim, category/live/completed pills,
-// serif title), a white content card overlapping the hero with the 2x2 meta grid
-// and add-to-calendar/share actions, the "About this gathering" card, the
+// Event detail — Figma-parity port of the EventDetail make. A full-bleed cover
+// photo hero shown WHOLE at the photo's own aspect (never fill-cropped; 16:11
+// gradient fallback, parallax stretch, navy scrim, category/live/completed
+// pills, serif title), a white content card flush beneath it with the 2x2 meta
+// grid and add-to-calendar/share actions, the "About this gathering" card, the
 // "Who's going" avatar rail, the going/maybe/can't RSVP selector, the
 // "Who's coming" buzz card with the visual hype composer, a "Check in" button
 // for today's/live occurrences that opens the real QR scanner
@@ -183,8 +184,10 @@ struct EventDetailView: View {
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView(showsIndicators: false) {
-                // The content column overlaps the hero by 16 (Figma -mt-4).
-                VStack(spacing: -16) {
+                // The hero shows the whole photo, so the content column sits
+                // flush below it — Figma's -mt-4 overlap hid the photo's
+                // bottom edge and is intentionally not reproduced.
+                VStack(spacing: 0) {
                     EvdHero(title: title, category: category, imageUrl: imageUrl,
                             isLive: isLive, isCompleted: isCompleted,
                             shareText: shareText, onBack: { dismiss() })
@@ -302,7 +305,11 @@ private struct EvdGalleryCard: View {
     }
 }
 
-// MARK: - Hero — 16:11 cover with parallax stretch, scrim, chrome, pills + title.
+// MARK: - Hero — the whole cover photo at its own aspect (never fill-cropped),
+// with parallax stretch, scrim, chrome, pills + title. The displayed aspect is
+// clamped 16:9 (widest) … 3:4 (tallest ≈ 60% of the screen) so a flat panorama
+// keeps room for the chrome and a portrait poster can't push everything below
+// the fold — clamped photos letterbox on the brand gradient rather than crop.
 
 private struct EvdHero: View {
     let title: String
@@ -313,15 +320,33 @@ private struct EvdHero: View {
     let shareText: String
     let onBack: () -> Void
 
+    /// Natural aspect (w/h) of the decoded cover photo; nil until measured.
+    @State private var imageAspect: CGFloat?
+
+    private static let widestAspect: CGFloat = 16.0 / 9.0
+    private static let tallestAspect: CGFloat = 3.0 / 4.0
+
+    /// The hero adopts the photo's own (clamped) aspect once it loads, so the
+    /// full image is always visible; 16:11 — the Figma frame — while loading
+    /// and for the no-photo gradient.
+    private var displayAspect: CGFloat {
+        guard let ar = imageAspect else { return 16.0 / 11.0 }
+        return min(max(ar, Self.tallestAspect), Self.widestAspect)
+    }
+
     var body: some View {
         GeometryReader { geo in
             let minY = geo.frame(in: .global).minY
             let stretch = max(0, minY)          // parallax overscroll
             let h = geo.size.height + stretch
             ZStack(alignment: .bottomLeading) {
-                cover
+                // The gradient always paints the full hero (and the overscroll
+                // stretch), so a letterboxed photo sits on brand navy.
+                fallback
                     .frame(width: geo.size.width, height: h)
-                    .clipped()
+                    .offset(y: -stretch)
+                photo
+                    .frame(width: geo.size.width, height: h)
                     .offset(y: -stretch)
                 scrim
                     .frame(width: geo.size.width, height: h)
@@ -331,18 +356,29 @@ private struct EvdHero: View {
             }
             .frame(width: geo.size.width, height: h, alignment: .bottom)
         }
-        .aspectRatio(16.0 / 11.0, contentMode: .fit)
+        .aspectRatio(displayAspect, contentMode: .fit)
     }
 
-    /// Real cover photo when the event has one; brand navy→category gradient otherwise.
-    @ViewBuilder private var cover: some View {
+    /// The cover photo, whole — scaledToFit never crops. Once the `.success`
+    /// branch renders, the decoded bitmap is in `NuruImageCache`; measure it
+    /// there (same trick as NaturalImageThumb) so the hero adopts its aspect.
+    @ViewBuilder private var photo: some View {
         if let s = imageUrl, let url = URL(string: s) {
             CachedAsyncImage(url: url) { phase in
-                if let img = phase.image { img.resizable().scaledToFill() }
-                else { fallback }
+                if let img = phase.image {
+                    img.resizable().scaledToFit()
+                        .onAppear { measure(url) }
+                }
             }
-        } else {
-            fallback
+        }
+    }
+
+    private func measure(_ url: URL) {
+        guard imageAspect == nil,
+              let ui = NuruImageCache.shared.image(for: url),
+              ui.size.width > 0, ui.size.height > 0 else { return }
+        withAnimation(.easeOut(duration: 0.25)) {
+            imageAspect = ui.size.width / ui.size.height
         }
     }
 
