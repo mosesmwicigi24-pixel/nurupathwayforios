@@ -567,16 +567,34 @@ private struct PWJourneyNode: View {
             VStack(spacing: 6) {
                 Text(active ? "▾ You" : " ").font(.inter(7, .bold)).kerning(0.7)
                     .foregroundStyle(active ? PW.gold : Color.clear).frame(height: 10)
-                ZStack {
-                    Circle()
-                        .fill(done || active
-                              ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                              : AnyShapeStyle(PW.mutedBg))
-                        .frame(width: 48, height: 48)
-                        .overlay { if active { Circle().stroke(PW.navy, lineWidth: 2) } }
-                    if done { Icon(.check, size: 20, color: PW.navy) }
-                    else if active { Text("\(number)").font(.inter(13, .bold)).foregroundStyle(PW.navy) }
-                    else { Icon(.lock, size: 15, color: PW.ink3) }
+                // The level NUMBER never leaves the circle — completion becomes a
+                // corner check-seal; locked levels keep their number with a lock-seal.
+                ZStack(alignment: .topTrailing) {
+                    ZStack {
+                        Circle()
+                            .fill(done || active
+                                  ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                  : AnyShapeStyle(PW.mutedBg))
+                            .frame(width: 48, height: 48)
+                            .overlay { if active { Circle().stroke(PW.navy, lineWidth: 2) } }
+                        Text("\(number)").font(.inter(15, .bold))
+                            .foregroundStyle(done || active ? PW.navy : PW.ink3)
+                    }
+                    if done {
+                        ZStack {
+                            Circle().fill(PW.navy).frame(width: 16, height: 16)
+                            Icon(.check, size: 9, color: .white)
+                        }
+                        .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                        .offset(x: 3, y: -2)
+                    } else if !active {
+                        ZStack {
+                            Circle().fill(PW.mutedBg).frame(width: 16, height: 16)
+                            Icon(.lock, size: 8, color: PW.ink3)
+                        }
+                        .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                        .offset(x: 3, y: -2)
+                    }
                 }
                 .overlay { if selected { Circle().stroke(PW.gold, lineWidth: 2).frame(width: 54, height: 54) } }
                 Text(pwShortName(level.title))
@@ -718,17 +736,38 @@ private struct PWModuleRow: View {
     var body: some View {
         Button(action: handleTap) {
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
-                              : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                              : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
-                              : AnyShapeStyle(PW.mutedBg))
-                        .frame(width: 32, height: 32)
-                    if done { Icon(isExam ? .award : .check, size: 15, color: PW.goldDeep) }
-                    else if active { Icon(isExam ? .award : .playCircle, size: 15, color: PW.navy) }
-                    else if isExam { Icon(.lock, size: 13, color: PW.goldDeep) }
-                    else { Icon(.lock, size: 13, color: PW.ink3) }
+                // The module NUMBER stays put; completion/locks move to a corner
+                // seal. The exam tile keeps its award identity.
+                ZStack(alignment: .topTrailing) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 11, style: .continuous)
+                            .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
+                                  : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                  : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
+                                  : AnyShapeStyle(PW.mutedBg))
+                            .frame(width: 32, height: 32)
+                        if isExam { Icon(.award, size: 15, color: done || active ? PW.goldDeep : PW.goldDeep) }
+                        else {
+                            Text("\(module.moduleSequenceNumber)")
+                                .font(.inter(13, .bold))
+                                .foregroundStyle(done ? PW.goldDeep : active ? PW.navy : PW.ink3)
+                        }
+                    }
+                    if done {
+                        ZStack {
+                            Circle().fill(PW.navy).frame(width: 13, height: 13)
+                            Icon(.check, size: 7, color: .white)
+                        }
+                        .overlay(Circle().stroke(.white, lineWidth: 1.2))
+                        .offset(x: 4, y: -3)
+                    } else if !active && !done {
+                        ZStack {
+                            Circle().fill(PW.mutedBg).frame(width: 13, height: 13)
+                            Icon(.lock, size: 7, color: PW.ink3)
+                        }
+                        .overlay(Circle().stroke(.white, lineWidth: 1.2))
+                        .offset(x: 4, y: -3)
+                    }
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     // Locked titles stay legible ink (only the caption goes faint) —
