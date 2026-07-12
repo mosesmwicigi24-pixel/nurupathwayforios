@@ -152,9 +152,37 @@ struct ModuleDetail: Codable, Sendable {
     @FlexInt var quizPassMark: Int
     let currentVersion: Int
     let locked: Bool
+    /// Per-member completion summary (defaulted — older servers omit them).
+    /// When `completed`, the reader collapses into a clean reading room.
+    var completed: Bool? = nil
+    var completedAt: String? = nil
+    var bestScore: Int? = nil
 
     /// True when finishing this module requires a graded quiz (vs. mark-complete).
     var requiresQuiz: Bool { evaluationKind.lowercased().contains("quiz") }
+
+    var isFinished: Bool { completed == true }
+
+    /// "11 Jul 2026 · 20:14" from the ISO completed_at, in the member's locale.
+    var finishedLine: String? {
+        guard let completedAt else { return nil }
+        let iso = ISO8601DateFormatter()
+        iso.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let alt = ISO8601DateFormatter()
+        var date = iso.date(from: completedAt) ?? alt.date(from: completedAt)
+        if date == nil {
+            // Postgres ::text form "2026-07-11 17:14:09.123+00"
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd HH:mm:ss.SSSSSSxx"
+            date = f.date(from: completedAt)
+            if date == nil { f.dateFormat = "yyyy-MM-dd HH:mm:ssxx"; date = f.date(from: completedAt) }
+        }
+        guard let date else { return nil }
+        let out = DateFormatter()
+        out.dateFormat = "d MMM yyyy · HH:mm"
+        return out.string(from: date)
+    }
 }
 
 struct CompleteResult: Codable, Sendable {

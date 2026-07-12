@@ -410,6 +410,8 @@ struct ModuleView: View {
     // Nuru (simple English / Kiswahili / as a story). Server-gated (§1.9).
     @State private var showExplainMenu = false
     @State private var explainTarget: ExplainTarget?
+    // Finished modules fold the reflection to what was written; Edit unfolds it.
+    @State private var editingReflection = false
 
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
@@ -731,7 +733,15 @@ struct ModuleView: View {
                                                     pageCount: pages.count, proxy: proxy),
                              onBack: { dismiss() },
                              onToggleImmersion: { toggleImmersion() },
-                             onExplain: { Haptics.tap(); showExplainMenu = true })
+                             onExplain: { Haptics.tap(); showExplainMenu = true },
+                             finished: d.isFinished ? MLFinishedSummary(
+                                 score: d.bestScore,
+                                 when: d.finishedLine,
+                                 canRetake: d.requiresQuiz,
+                                 onRetake: {
+                                     Haptics.action()
+                                     quizTarget = d.moduleId
+                                 }) : nil)
                         .transition(.opacity)
                 }
                 reader(d, pages: pages, bodyBlocks: bodyBlocks,
@@ -742,7 +752,7 @@ struct ModuleView: View {
                     }
                     .transition(.opacity)
                 }
-                if !chromeHidden {
+                if !chromeHidden && !d.isFinished {
                     MLBottomGate(steps: gateSteps,
                                  complete: contentComplete,
                                  lockReason: gateLockReason(requiresQuiz: d.requiresQuiz),
@@ -891,12 +901,21 @@ struct ModuleView: View {
                 // Reflection is a REQUIRED content step BEFORE the quiz — it POSTs
                 // through /modules/{id}/reflection (NOT completion). On success the
                 // Reflect step lights up and the quiz gate can clear.
-                MLReflectionCard(text: $reflection,
-                                 busy: vm.submittingReflection,
-                                 done: vm.reflectDone,
-                                 error: vm.reflectionError) {
-                    Haptics.action()
-                    Task { await vm.submitReflection(reflection) }
+                Group {
+                    if d.isFinished && !editingReflection {
+                        MLReflectionFolded(text: vm.savedReflection ?? reflection) {
+                            Haptics.tap()
+                            editingReflection = true
+                        }
+                    } else {
+                        MLReflectionCard(text: $reflection,
+                                         busy: vm.submittingReflection,
+                                         done: vm.reflectDone,
+                                         error: vm.reflectionError) {
+                            Haptics.action()
+                            Task { await vm.submitReflection(reflection) }
+                        }
+                    }
                 }
                 .padding(.top, 32)
                 .id("reflect")
@@ -1291,6 +1310,7 @@ private struct MLHeader: View {
     let onBack: () -> Void
     let onToggleImmersion: () -> Void
     let onExplain: () -> Void
+    var finished: MLFinishedSummary? = nil
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1328,9 +1348,14 @@ private struct MLHeader: View {
                 MLSectionIndex(titles: sectionTitles, current: currentSection, onSelect: onSelectSection)
                     .padding(.top, 12)
             }
-            // Action row — balanced, equal-width.
-            actionRow
-                .padding(.top, 14)
+            // Action row — balanced, equal-width. Finished modules show the
+            // completed ribbon instead: score · finish time · Retake.
+            if let f = finished {
+                finishedRibbon(f).padding(.top, 14)
+            } else {
+                actionRow
+                    .padding(.top, 14)
+            }
         }
         .padding(.horizontal, Nuru.S.screen)
         .padding(.top, 56)
@@ -1378,6 +1403,31 @@ private struct MLHeader: View {
                     .frame(maxWidth: .infinity)
             }
         }
+    }
+
+    private func finishedRibbon(_ f: MLFinishedSummary) -> some View {
+        HStack(spacing: 8) {
+            Icon(.check, size: 12, color: ML.navy)
+            Text("COMPLETED").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(ML.navy)
+            if let s = f.score {
+                Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
+            }
+            if let w = f.when {
+                Text("· \(w)").font(.inter(10.5)).foregroundStyle(ML.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            if f.canRetake {
+                Button { f.onRetake() } label: {
+                    Text("Retake").font(.inter(11, .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(ML.navy, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(ML.gold.opacity(0.14), in: Capsule())
+        .overlay(Capsule().stroke(ML.gold.opacity(0.35), lineWidth: 1))
     }
 
     private var headerBackground: some View {
