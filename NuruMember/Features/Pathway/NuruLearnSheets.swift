@@ -111,12 +111,28 @@ struct ExplainSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(hex: 0xFFFDF6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                             .padding(.horizontal, 20).padding(.bottom, 26)
-                    } else {
+                    } else if loading {
                         HStack(spacing: 10) {
                             ProgressView().tint(Color(hex: 0xE8CA6C))
-                            Text(loading ? "Rendering the lesson…" : "Couldn't render this lesson right now.")
+                            Text("Rendering the lesson…")
                                 .font(.inter(14)).foregroundStyle(.white.opacity(0.85))
                         }
+                        .padding(.top, 30)
+                    } else {
+                        VStack(spacing: 14) {
+                            Text("Couldn't render this lesson right now.")
+                                .font(.inter(14)).foregroundStyle(.white.opacity(0.85))
+                            Button {
+                                Haptics.tap()
+                                Task { await load() }
+                            } label: {
+                                Text("Try again").font(.inter(14, .bold)).foregroundStyle(Color(hex: 0x1E2A1F))
+                                    .padding(.horizontal, 22).padding(.vertical, 10)
+                                    .background(Color(hex: 0xE8CA6C), in: Capsule())
+                            }
+                            .buttonStyle(.pressable)
+                        }
+                        .frame(maxWidth: .infinity)
                         .padding(.top, 30)
                     }
                 }

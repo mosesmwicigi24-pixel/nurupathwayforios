@@ -18,7 +18,7 @@ struct QuizRemediation: Codable, Sendable {
 
 extension MemberAPI {
     static func explainLesson(_ moduleId: String, style: String) async throws -> LessonExplanation {
-        try await APIClient.shared.get("modules/\(moduleId)/explain?style=\(style)", as: LessonExplanation.self)
+        try await APIClient.shared.get("modules/\(moduleId)/explain", query: ["style": style], as: LessonExplanation.self)
     }
 
     static func quizRemediation(_ moduleId: String) async throws -> QuizRemediation {
