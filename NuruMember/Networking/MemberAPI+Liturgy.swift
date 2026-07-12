@@ -55,6 +55,11 @@ struct CommunityMoment: Codable, Sendable, Identifiable {
 struct BlessRes: Codable, Sendable {
     let blessed: Bool
     let kind: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        blessed = (try? c.decodeIfPresent(Bool.self, forKey: .blessed)) ?? false
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+    }
 }
 
 extension MemberAPI {

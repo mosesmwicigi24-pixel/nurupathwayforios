@@ -6,6 +6,12 @@ struct PrayerReaction: Codable, Sendable {
     let emoji: String
     let count: Int
     let mine: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        emoji = (try? c.decodeIfPresent(String.self, forKey: .emoji)) ?? ""
+        count = (try? c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+        mine = (try? c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
+    }
 }
 
 struct PrayerWallPost: Codable, Sendable, Identifiable {
@@ -62,9 +68,26 @@ struct PrayerWallComment: Codable, Sendable, Identifiable {
     let mine: Bool
 
     var id: String { commentId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        commentId = try c.decode(String.self, forKey: .commentId)
+        authorUserId = (try? c.decodeIfPresent(String.self, forKey: .authorUserId)) ?? ""
+        authorName = (try? c.decodeIfPresent(String.self, forKey: .authorName)) ?? ""
+        authorAvatar = try? c.decodeIfPresent(String.self, forKey: .authorAvatar)
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        audioUrl = try? c.decodeIfPresent(String.self, forKey: .audioUrl)
+        audioWaveform = try? c.decodeIfPresent([Int].self, forKey: .audioWaveform)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        mine = (try? c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
+    }
 }
 
 struct PrayerWallDetail: Codable, Sendable {
     let post: PrayerWallPost
     let comments: [PrayerWallComment]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        post = try c.decode(PrayerWallPost.self, forKey: .post)
+        comments = (try? c.decodeIfPresent([PrayerWallComment].self, forKey: .comments)) ?? []
+    }
 }

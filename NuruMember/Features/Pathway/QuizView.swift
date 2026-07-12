@@ -148,6 +148,15 @@ struct QuizView: View {
                             .background(quizGoldGradient, in: Capsule())
                     }
                     .buttonStyle(.pressable)
+                    // The nav bar is hidden on this screen — without this the
+                    // member is TRAPPED on a failed load (Android parity).
+                    Button {
+                        Haptics.tap(); dismiss()
+                    } label: {
+                        Text("Go back").font(.inter(13, .semibold)).foregroundStyle(QZ.copy)
+                            .padding(.horizontal, 20).padding(.vertical, 10)
+                    }
+                    .buttonStyle(.pressable)
                 }
                 .padding(Nuru.S.screen)
             }

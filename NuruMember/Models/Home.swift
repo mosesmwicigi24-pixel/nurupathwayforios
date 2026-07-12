@@ -14,7 +14,15 @@ struct Achievements: Codable, Sendable {
             longest = (try? c.decodeIfPresent(Int.self, forKey: .longest)) ?? 0
         }
     }
-    struct Badge: Codable, Sendable { let code: String; let name: String }
+    struct Badge: Codable, Sendable {
+        let code: String
+        let name: String
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        }
+    }
     // Sparse payloads must degrade to zeros, not sink the card (Android parity).
     var streak: Streak? = nil
     let badges: [Badge]?
@@ -27,6 +35,14 @@ struct TailoredVerse: Codable, Sendable {
     let theme: String?
     let reason: String?
     let text: String?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
+        version = (try? c.decodeIfPresent(String.self, forKey: .version)) ?? "WEB"
+        theme = try? c.decodeIfPresent(String.self, forKey: .theme)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+        text = try? c.decodeIfPresent(String.self, forKey: .text)
+    }
 }
 
 /// GET /scripture?ref= — a looked-up passage (used when the tailored verse has no text).
@@ -71,6 +87,15 @@ struct ScoreTrend: Codable, Sendable {
 
     var isUp: Bool { direction == "up" }
     var isDown: Bool { direction == "down" }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        windowDays = (try? c.decodeIfPresent(Int.self, forKey: .windowDays)) ?? 28
+        previous = (try? c.decodeIfPresent(Int.self, forKey: .previous)) ?? 0
+        delta = (try? c.decodeIfPresent(Int.self, forKey: .delta)) ?? 0
+        direction = (try? c.decodeIfPresent(String.self, forKey: .direction)) ?? "flat"
+        domains = try? c.decodeIfPresent([String: Int].self, forKey: .domains)
+    }
 }
 
 /// GET /me/scores — the five growth scores + a weighted overall + a 28-day trend.

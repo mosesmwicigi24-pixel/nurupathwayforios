@@ -25,4 +25,15 @@ struct NotificationRow: Codable, Sendable, Identifiable {
 
     var id: String { notificationId }
     var isUnread: Bool { readAt == nil && status == "sent" }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        notificationId = try c.decode(String.self, forKey: .notificationId)
+        template = (try? c.decodeIfPresent(String.self, forKey: .template)) ?? ""
+        payload = try? c.decodeIfPresent(NotifPayload.self, forKey: .payload)
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+        scheduledFor = (try? c.decodeIfPresent(String.self, forKey: .scheduledFor)) ?? ""
+        sentAt = try? c.decodeIfPresent(String.self, forKey: .sentAt)
+        readAt = try? c.decodeIfPresent(String.self, forKey: .readAt)
+    }
 }

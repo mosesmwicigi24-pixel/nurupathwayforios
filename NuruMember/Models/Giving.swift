@@ -21,6 +21,20 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
 
     static func == (a: GivingRecord, b: GivingRecord) -> Bool { a.transactionId == b.transactionId }
     func hash(into h: inout Hasher) { h.combine(transactionId) }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        transactionId = try c.decode(String.self, forKey: .transactionId)
+        amountMinor = (try? c.decodeIfPresent(Int.self, forKey: .amountMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+        fund = (try? c.decodeIfPresent(String.self, forKey: .fund)) ?? ""
+        method = try? c.decodeIfPresent(String.self, forKey: .method)
+        providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
+        receiptCode = try? c.decodeIfPresent(String.self, forKey: .receiptCode)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
+    }
 }
 
 /// POST /giving/intents → the created intent. The card path returns a
@@ -34,6 +48,16 @@ struct GivingIntentResult: Codable, Sendable {
     let providerRef: String?
     let approveUrl: String?
     let reused: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        transactionId = (try? c.decodeIfPresent(String.self, forKey: .transactionId)) ?? ""
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+        clientSecret = try? c.decodeIfPresent(String.self, forKey: .clientSecret)
+        provider = try? c.decodeIfPresent(String.self, forKey: .provider)
+        providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
+        approveUrl = try? c.decodeIfPresent(String.self, forKey: .approveUrl)
+        reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
+    }
 }
 
 /// One balanced ledger leg behind a gift (cash + fund accounts).
@@ -43,6 +67,13 @@ struct GivingLedgerEntry: Codable, Sendable, Identifiable {
     let amountMinor: Int
     let currency: String
     var id: String { "\(side)-\(account)-\(amountMinor)" }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        side = (try? c.decodeIfPresent(String.self, forKey: .side)) ?? ""
+        account = (try? c.decodeIfPresent(String.self, forKey: .account)) ?? ""
+        amountMinor = (try? c.decodeIfPresent(Int.self, forKey: .amountMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+    }
 }
 
 /// GET /giving/transactions/{id} — full detail incl. the double-entry trail.
@@ -59,6 +90,21 @@ struct GivingDetail: Codable, Sendable {
     let settledAt: String?
     let scheduleId: String?
     let ledger: [GivingLedgerEntry]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        transactionId = try c.decode(String.self, forKey: .transactionId)
+        amountMinor = (try? c.decodeIfPresent(Int.self, forKey: .amountMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+        fund = (try? c.decodeIfPresent(String.self, forKey: .fund)) ?? ""
+        method = try? c.decodeIfPresent(String.self, forKey: .method)
+        providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
+        receiptCode = try? c.decodeIfPresent(String.self, forKey: .receiptCode)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
+        scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
+        ledger = (try? c.decodeIfPresent([GivingLedgerEntry].self, forKey: .ledger)) ?? []
+    }
 }
 
 struct GivingSchedule: Codable, Sendable, Identifiable {
@@ -72,4 +118,16 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
     let nextRunAt: String
     let createdAt: String
     var id: String { scheduleId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        scheduleId = try c.decode(String.self, forKey: .scheduleId)
+        fund = (try? c.decodeIfPresent(String.self, forKey: .fund)) ?? ""
+        amountMinor = (try? c.decodeIfPresent(Int.self, forKey: .amountMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        frequency = (try? c.decodeIfPresent(String.self, forKey: .frequency)) ?? "monthly"
+        method = (try? c.decodeIfPresent(String.self, forKey: .method)) ?? ""
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
+        nextRunAt = (try? c.decodeIfPresent(String.self, forKey: .nextRunAt)) ?? ""
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+    }
 }

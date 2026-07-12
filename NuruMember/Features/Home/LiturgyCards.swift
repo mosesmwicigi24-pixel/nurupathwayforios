@@ -7,6 +7,7 @@
 import SwiftUI
 
 struct HomeLiturgyCard: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var lit: HomeLiturgy?
 
     private func partLabel(_ p: String) -> String {
@@ -29,6 +30,12 @@ struct HomeLiturgyCard: View {
 
     var body: some View {
         Group {
+            if lit == nil {
+                // Zero-height anchor: keeps this view INSTALLED while empty so
+                // .task actually runs (a bare empty Group never appears, so its
+                // task never fires — the card would stay dead forever).
+                Color.clear.frame(height: 0)
+            }
             if let lit {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
@@ -64,14 +71,23 @@ struct HomeLiturgyCard: View {
             }
         }
         .task { lit = try? await MemberAPI.homeLiturgy() }
+        .onChange(of: scenePhase) { _, phase in
+            // The tab shell keeps Home alive for the whole session — without
+            // this an overnight-resident app shows yesterday's card forever.
+            if phase == .active { Task { lit = try? await MemberAPI.homeLiturgy() } }
+        }
     }
 }
 
 struct CelebrationsRail: View {
+    @Environment(\.scenePhase) private var scenePhase
     @State private var moments: [CommunityMoment] = []
 
     var body: some View {
         Group {
+            if moments.isEmpty {
+                Color.clear.frame(height: 0) // install-anchor — see HomeLiturgyCard
+            }
             if !moments.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 6) {
@@ -95,6 +111,11 @@ struct CelebrationsRail: View {
             }
         }
         .task { moments = (try? await MemberAPI.communityMoments()) ?? [] }
+        .onChange(of: scenePhase) { _, phase in
+            // The tab shell keeps Home alive for the whole session — without
+            // this an overnight-resident app shows yesterday's card forever.
+            if phase == .active { Task { moments = (try? await MemberAPI.communityMoments()) ?? [] } }
+        }
     }
 
     private func bless(_ m: CommunityMoment, kind: String) {

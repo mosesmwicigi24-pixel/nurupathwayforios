@@ -19,16 +19,21 @@ final class VoiceNotePlayer: ObservableObject {
     private var player: AVPlayer?
     private var ticker: Timer?
     private var durationSec: Double = 1
+    private var holdsSession = false
 
     func toggle(url: String, durationSec: Int) {
         if playing { pause(); return }
         self.durationSec = Double(max(1, durationSec))
         if player == nil, let u = URL(string: url) {
-            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
-            try? AVAudioSession.sharedInstance().setActive(true)
             player = AVPlayer(url: u)
         }
         guard let player else { return }
+        if !holdsSession {
+            do {
+                try VoiceAudioSession.activate(.playback, mode: .spokenAudio)
+                holdsSession = true
+            } catch {}
+        }
         if progress >= 0.999 { player.seek(to: .zero); progress = 0 }
         player.play()
         playing = true
@@ -42,6 +47,9 @@ final class VoiceNotePlayer: ObservableObject {
         player?.pause()
         playing = false
         ticker?.invalidate(); ticker = nil
+        // Let the session go so the member's own audio can resume; the next
+        // toggle takes a fresh hold.
+        if holdsSession { holdsSession = false; VoiceAudioSession.release() }
     }
 
     private func tick() {
@@ -153,6 +161,8 @@ final class VoiceRecorderModel: NSObject, ObservableObject {
     private var recorder: AVAudioRecorder?
     private var ticker: Timer?
     private var preview: AVAudioPlayer?
+    private var interruptionObserver: NSObjectProtocol?
+    private var holdsSession = false
     @Published var previewing = false
 
     let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent("nuru-voice-note.m4a")
@@ -170,50 +180,125 @@ final class VoiceRecorderModel: NSObject, ObservableObject {
 
     private func beginRecording() {
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
-            try session.setActive(true)
+            try VoiceAudioSession.activate(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker])
+            holdsSession = true
             try? FileManager.default.removeItem(at: fileURL)
-            recorder = try AVAudioRecorder(url: fileURL, settings: [
+            let r = try AVAudioRecorder(url: fileURL, settings: [
                 AVFormatIDKey: kAudioFormatMPEG4AAC,
                 AVSampleRateKey: 44_100,
                 AVNumberOfChannelsKey: 1,
                 AVEncoderAudioQualityKey: AVAudioQuality.medium.rawValue,
             ])
-            recorder?.record()
+            guard r.record() else {   // session refused (active call etc.)
+                releaseSession()
+                self.error = "Couldn't start recording."
+                phase = .idle
+                return
+            }
+            recorder = r
             seconds = 0
             phase = .recording
-            ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            observeInterruptions()
+            let t = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
                 Task { @MainActor in
-                    guard let self, self.phase == .recording else { return }
-                    self.seconds += 1
+                    guard let self, self.phase == .recording, let r = self.recorder else { return }
+                    // The recorder's own clock — wall-ticks drift and keep
+                    // counting straight through interruptions.
+                    self.seconds = Int(r.currentTime)
                     if self.seconds >= Self.maxSeconds { self.stop() }
                 }
             }
+            RunLoop.main.add(t, forMode: .common)
+            ticker = t
         } catch {
+            releaseSession()
             self.error = "Couldn't start recording."
             phase = .idle
         }
     }
 
+    /// A call/Siri stops the hardware mid-take: finalize what was captured
+    /// (as if the leader tapped Stop) so the clock can't count silence.
+    private func observeInterruptions() {
+        guard interruptionObserver == nil else { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(), queue: .main
+        ) { [weak self] note in
+            let began = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began
+            Task { @MainActor [weak self] in
+                guard let self, began else { return }
+                if self.phase == .recording { self.stop() }
+                else if self.previewing { self.preview?.stop(); self.previewDidEnd() }
+            }
+        }
+    }
+
     func stop() {
+        // Real duration from the recorder's clock, read before stop() zeroes it.
+        if let r = recorder { seconds = Int(r.currentTime.rounded()) }
         recorder?.stop(); recorder = nil
         ticker?.invalidate(); ticker = nil
+        releaseSession()
         phase = seconds >= 2 ? .recorded : .idle
         if phase == .idle { error = seconds < 2 ? "Hold it a little longer — say a full word to your flock." : nil }
     }
 
     func togglePreview() {
-        if previewing { preview?.stop(); previewing = false; return }
+        if previewing { preview?.stop(); previewDidEnd(); return }
+        do {
+            try VoiceAudioSession.activate(.playback, mode: .spokenAudio)
+            holdsSession = true
+        } catch {}
         preview = try? AVAudioPlayer(contentsOf: fileURL)
+        preview?.delegate = self
         preview?.play()
         previewing = preview?.isPlaying == true
+        if !previewing { releaseSession() }
+    }
+
+    /// Back to a clean slate — a running preview must not play through the
+    /// speaker into the retake.
+    func redo() {
+        if previewing { preview?.stop(); previewDidEnd() }
+        preview = nil
+        seconds = 0
+        error = nil
+        phase = .idle
+    }
+
+    /// Sheet teardown (swipe-dismiss or done): nothing may keep running —
+    /// recorder, preview, the 1 Hz ticker, the interruption observer, or the
+    /// audio-session hold.
+    func cleanup() {
+        recorder?.stop(); recorder = nil
+        ticker?.invalidate(); ticker = nil
+        preview?.stop(); preview = nil
+        previewing = false
+        if let o = interruptionObserver {
+            NotificationCenter.default.removeObserver(o)
+            interruptionObserver = nil
+        }
+        releaseSession()
+    }
+
+    private func previewDidEnd() {
+        previewing = false
+        releaseSession()
+    }
+
+    private func releaseSession() {
+        guard holdsSession else { return }
+        holdsSession = false
+        VoiceAudioSession.release()
     }
 
     func share(moduleId: String) async -> Bool {
         phase = .uploading
         do {
-            let data = try Data(contentsOf: fileURL)
+            // Off the main actor — a 5-minute take is ~2.4 MB of disk read.
+            let data = try await Task.detached { [fileURL] in try Data(contentsOf: fileURL) }.value
             let url = try await MemberAPI.uploadVoiceAudio(m4a: data)
             try await MemberAPI.setVoiceNote(moduleId: moduleId, audioUrl: url, durationSec: max(1, seconds))
             return true
@@ -222,6 +307,14 @@ final class VoiceRecorderModel: NSObject, ObservableObject {
             phase = .recorded
             return false
         }
+    }
+}
+
+/// AVAudioPlayerDelegate lands off-actor; hop back to reset the preview state
+/// so "Listen back" doesn't stay wedged on a pause icon forever.
+extension VoiceRecorderModel: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.previewDidEnd() }
     }
 }
 
@@ -277,7 +370,7 @@ struct VoiceRecordSheet: View {
                     }
                     .buttonStyle(.pressable)
                     Button {
-                        Haptics.tap(); model.phase = .idle; model.seconds = 0
+                        Haptics.tap(); model.redo()
                     } label: {
                         HStack(spacing: 6) {
                             Icon(.mic, size: 12, color: Nuru.ink)
@@ -324,6 +417,10 @@ struct VoiceRecordSheet: View {
             Spacer(minLength: 0)
         }
         .presentationBackground(Color(red: 0.985, green: 0.975, blue: 0.95))
+        // A half-hearted swipe must not leave a live mic (or upload) running
+        // behind a closed sheet; deliberate dismissal still tears it all down.
+        .interactiveDismissDisabled(model.phase == .recording || model.phase == .uploading)
+        .onDisappear { model.cleanup() }
     }
 
     private func timeString(_ s: Int) -> String { String(format: "%d:%02d", s / 60, s % 60) }
@@ -377,6 +474,9 @@ struct CellPresenceLine: View {
 
     var body: some View {
         Group {
+            if presence == nil {
+                Color.clear.frame(height: 0) // install-anchor — see HomeLiturgyCard
+            }
             if let line {
                 HStack(alignment: .top, spacing: 8) {
                     Icon(.flame, size: 13, color: Nuru.goldChipText)

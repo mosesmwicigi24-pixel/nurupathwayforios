@@ -34,6 +34,7 @@ struct SettingsView: View {
 
     // Sheets
     @State private var showSignOutConfirm = false
+    @State private var showDeleteInfo = false
     @State private var showPasswordSheet = false
     @State private var helpSheet: SHelpSheet?
 
@@ -349,12 +350,22 @@ struct SettingsView: View {
             } message: {
                 Text("Your progress is saved — you can pick up right where you left off.")
             }
-            Button { } label: {
+            Button {
+                Haptics.tap()
+                showDeleteInfo = true
+            } label: {
                 HStack(spacing: 6) { Icon(.trash2, size: 15, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color(hex: 0xFEF2F2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(hex: 0xFECACA), lineWidth: 1))
             }.buttonStyle(.plain)
+            // Honest, not silent (Android parity): in-app deletion isn't
+            // available yet, and a dead press in Settings reads as broken.
+            .alert("Delete account", isPresented: $showDeleteInfo) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Account deletion isn't available in the app yet. Please speak to your discipler or a church admin and they'll take care of it for you.")
+            }
         }
     }
 

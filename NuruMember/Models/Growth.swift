@@ -18,6 +18,20 @@ struct Devotional: Codable, Sendable {
     let audioUrl: String?
     let videoUrl: String?
     let myReflection: String?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        devotionalId = try c.decode(String.self, forKey: .devotionalId)
+        dayNumber = (try? c.decodeIfPresent(Int.self, forKey: .dayNumber)) ?? 0
+        series = try? c.decodeIfPresent(String.self, forKey: .series)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        scriptureRef = try? c.decodeIfPresent(String.self, forKey: .scriptureRef)
+        scriptureText = try? c.decodeIfPresent(String.self, forKey: .scriptureText)
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        reflectionPrompt = try? c.decodeIfPresent(String.self, forKey: .reflectionPrompt)
+        audioUrl = try? c.decodeIfPresent(String.self, forKey: .audioUrl)
+        videoUrl = try? c.decodeIfPresent(String.self, forKey: .videoUrl)
+        myReflection = try? c.decodeIfPresent(String.self, forKey: .myReflection)
+    }
 }
 
 // MARK: - Memory verses
@@ -33,6 +47,16 @@ struct MemoryVerseRow: Codable, Sendable, Identifiable {
 
     var id: String { memoryVerseId }
     var isMastered: Bool { status == "mastered" }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        memoryVerseId = try c.decode(String.self, forKey: .memoryVerseId)
+        reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
+        verseText = (try? c.decodeIfPresent(String.self, forKey: .verseText)) ?? ""
+        version = (try? c.decodeIfPresent(String.self, forKey: .version)) ?? "WEB"
+        weekNumber = try? c.decodeIfPresent(Int.self, forKey: .weekNumber)
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "learning"
+        bestMatchPct = (try? c.decodeIfPresent(Int.self, forKey: .bestMatchPct)) ?? 0
+    }
 }
 
 // MARK: - Reading plans
@@ -52,6 +76,21 @@ struct ReadingPlanRow: Codable, Sendable, Identifiable, Hashable {
     let completedAt: String?
 
     var id: String { planId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        planId = try c.decode(String.self, forKey: .planId)
+        code = try? c.decodeIfPresent(String.self, forKey: .code)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        subtitle = try? c.decodeIfPresent(String.self, forKey: .subtitle)
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
+        dayCount = (try? c.decodeIfPresent(Int.self, forKey: .dayCount)) ?? 0
+        currentDay = try? c.decodeIfPresent(Int.self, forKey: .currentDay)
+        completedDays = try? c.decodeIfPresent([Int].self, forKey: .completedDays)
+        enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
+        completedAt = try? c.decodeIfPresent(String.self, forKey: .completedAt)
+    }
 }
 
 struct PlanSegment: Codable, Sendable, Identifiable, Hashable {
@@ -68,6 +107,23 @@ struct PlanSegment: Codable, Sendable, Identifiable, Hashable {
     var id: String { segmentId }
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the hand-built Home rhythm segments.
+extension PlanSegment {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        segmentId = try c.decode(String.self, forKey: .segmentId)
+        sort = (try? c.decodeIfPresent(Int.self, forKey: .sort)) ?? 0
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "reading"
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        reference = try? c.decodeIfPresent(String.self, forKey: .reference)
+        content = try? c.decodeIfPresent(String.self, forKey: .content)
+        videoUrl = try? c.decodeIfPresent(String.self, forKey: .videoUrl)
+        imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
+        completed = (try? c.decodeIfPresent(Bool.self, forKey: .completed)) ?? false
+    }
+}
+
 struct ReadingPlanDay: Codable, Sendable, Identifiable, Hashable {
     let dayNumber: Int
     let reference: String
@@ -77,6 +133,15 @@ struct ReadingPlanDay: Codable, Sendable, Identifiable, Hashable {
     let completed: Bool?
 
     var id: Int { dayNumber }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        dayNumber = try c.decode(Int.self, forKey: .dayNumber)
+        reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        content = try? c.decodeIfPresent(String.self, forKey: .content)
+        segments = try? c.decodeIfPresent([PlanSegment].self, forKey: .segments)
+        completed = try? c.decodeIfPresent(Bool.self, forKey: .completed)
+    }
 }
 
 /// `/growth/plans/{id}` — the row plus its day-by-day breakdown.
@@ -92,6 +157,20 @@ struct ReadingPlanDetail: Codable, Sendable {
     let completedDays: [Int]?
     let enrolled: Bool
     let days: [ReadingPlanDay]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        planId = try c.decode(String.self, forKey: .planId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        subtitle = try? c.decodeIfPresent(String.self, forKey: .subtitle)
+        description = try? c.decodeIfPresent(String.self, forKey: .description)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
+        dayCount = (try? c.decodeIfPresent(Int.self, forKey: .dayCount)) ?? 0
+        currentDay = try? c.decodeIfPresent(Int.self, forKey: .currentDay)
+        completedDays = try? c.decodeIfPresent([Int].self, forKey: .completedDays)
+        enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
+        days = (try? c.decodeIfPresent([ReadingPlanDay].self, forKey: .days)) ?? []
+    }
 }
 
 struct SegmentCompleteResult: Codable, Sendable {
@@ -100,11 +179,25 @@ struct SegmentCompleteResult: Codable, Sendable {
         let currentDay: Int
         let completedDays: [Int]
         let completedAt: String?
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            planId = (try? c.decodeIfPresent(String.self, forKey: .planId)) ?? ""
+            currentDay = (try? c.decodeIfPresent(Int.self, forKey: .currentDay)) ?? 0
+            completedDays = (try? c.decodeIfPresent([Int].self, forKey: .completedDays)) ?? []
+            completedAt = try? c.decodeIfPresent(String.self, forKey: .completedAt)
+        }
     }
     let segmentId: String
     let dayNumber: Int
     let dayCompleted: Bool
     let progress: Progress?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        segmentId = (try? c.decodeIfPresent(String.self, forKey: .segmentId)) ?? ""
+        dayNumber = (try? c.decodeIfPresent(Int.self, forKey: .dayNumber)) ?? 0
+        dayCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .dayCompleted)) ?? false
+        progress = try? c.decodeIfPresent(Progress.self, forKey: .progress)
+    }
 }
 
 /// Navigation reference for a single plan day (the day + its owning plan id).
@@ -158,6 +251,22 @@ struct PrayerEntry: Codable, Sendable, Identifiable {
     var id: String { entryId }
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the optimistic insert in PrayerJournalView.
+extension PrayerEntry {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        entryId = try c.decode(String.self, forKey: .entryId)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        isAnswered = (try? c.decodeIfPresent(Bool.self, forKey: .isAnswered)) ?? false
+        answeredNote = try? c.decodeIfPresent(String.self, forKey: .answeredNote)
+        answeredAt = try? c.decodeIfPresent(String.self, forKey: .answeredAt)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        updatedAt = (try? c.decodeIfPresent(String.self, forKey: .updatedAt)) ?? ""
+    }
+}
+
 // MARK: - Saved verses (Verse Library)
 
 struct SavedVerse: Codable, Sendable, Identifiable {
@@ -169,4 +278,18 @@ struct SavedVerse: Codable, Sendable, Identifiable {
     let createdAt: String
 
     var id: String { savedVerseId }
+}
+
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the optimistic insert in VerseLibraryView.
+extension SavedVerse {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        savedVerseId = try c.decode(String.self, forKey: .savedVerseId)
+        reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
+        version = (try? c.decodeIfPresent(String.self, forKey: .version)) ?? "WEB"
+        verseText = try? c.decodeIfPresent(String.self, forKey: .verseText)
+        note = try? c.decodeIfPresent(String.self, forKey: .note)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+    }
 }

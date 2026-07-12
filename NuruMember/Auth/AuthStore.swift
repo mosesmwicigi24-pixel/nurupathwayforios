@@ -5,6 +5,7 @@ import SwiftUI
 
 @MainActor
 final class AuthStore: ObservableObject {
+    private var didRegisterDevice = false
     @Published var isAuthenticated = false
     @Published var me: MeResponse?
     @Published var booting = true
@@ -55,11 +56,16 @@ final class AuthStore: ObservableObject {
     }
 
     func loadProfile() async {
-        me = try? await MemberAPI.me()
+        // Keep the last good profile on a transient failure — overwriting with
+        // nil would blank role-gated UI (leader tools) mid-session.
+        if let fresh = try? await MemberAPI.me() { me = fresh }
         // Device census (Android parity): platform + app version + model so
         // leadership's device analytics see iOS too. Fire-and-forget; the
         // push_token joins once APNs ships (paid Apple Developer Program).
-        if me != nil { Task.detached { await MemberAPI.registerDevice() } }
+        if me != nil, !didRegisterDevice {
+            didRegisterDevice = true // once per launch — the census wants presence, not every /me refresh
+            Task.detached { await MemberAPI.registerDevice() }
+        }
     }
 
     func signOut() {

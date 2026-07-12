@@ -18,6 +18,20 @@ struct PastoralLetter: Codable, Sendable, Identifiable {
     var isUnread: Bool { readAt == nil }
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the mark-read patch in HomeView.
+extension PastoralLetter {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        letterId = try c.decode(String.self, forKey: .letterId)
+        weekOf = (try? c.decodeIfPresent(String.self, forKey: .weekOf)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        scriptureRef = try? c.decodeIfPresent(String.self, forKey: .scriptureRef)
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        readAt = try? c.decodeIfPresent(String.self, forKey: .readAt)
+    }
+}
+
 extension MemberAPI {
     static func letters() async throws -> [PastoralLetter] {
         try await APIClient.shared.get("me/letters", as: Envelope<PastoralLetter>.self).data

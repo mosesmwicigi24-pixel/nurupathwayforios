@@ -105,6 +105,8 @@ struct PrayerWallDetailView: View {
             .padding(.bottom, Nuru.tabBarSpace)
             .animation(.spring(response: 0.4, dampingFraction: 0.85), value: d.comments.count)
         }
+        // Drag-to-dismiss the keyboard, same feel as the chat thread.
+        .scrollDismissesKeyboard(.interactively)
     }
 
     private func postCard(_ post: PrayerWallPost) -> some View {

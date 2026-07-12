@@ -16,6 +16,17 @@ struct NotificationPreferences: Codable, Sendable {
     var smsEnabled: Bool
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the PUT body construction below.
+extension NotificationPreferences {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        pushEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .pushEnabled)) ?? true
+        emailEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .emailEnabled)) ?? true
+        smsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .smsEnabled)) ?? false
+    }
+}
+
 /// One growth-score pillar (the five member scores of the scores module).
 enum ScorePillar: String, CaseIterable, Identifiable, Sendable {
     case word, prayer, habits, curriculum, attendance
@@ -51,6 +62,16 @@ struct ScoreBreakdown: Decodable, Sendable {
     let band: String
     let components: [String: Double]
     let detail: [String: Double]
+
+    private enum CodingKeys: String, CodingKey { case score, band, components, detail }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        score = (try? c.decodeIfPresent(Int.self, forKey: .score)) ?? 0
+        band = (try? c.decodeIfPresent(String.self, forKey: .band)) ?? ""
+        components = (try? c.decodeIfPresent([String: Double].self, forKey: .components)) ?? [:]
+        detail = (try? c.decodeIfPresent([String: Double].self, forKey: .detail)) ?? [:]
+    }
 }
 
 // MARK: - Endpoints

@@ -23,6 +23,22 @@ struct Discipleship: Codable, Sendable {
     let nextMeetingAt: String?
     let notes: [HubNote]
 
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        discipler = try? c.decodeIfPresent(Discipler.self, forKey: .discipler)
+        dmConversationId = try? c.decodeIfPresent(String.self, forKey: .dmConversationId)
+        canMessage = (try? c.decodeIfPresent(Bool.self, forKey: .canMessage)) ?? false
+        progression = (try? c.decodeIfPresent(Progression.self, forKey: .progression))
+            ?? Progression(currentLevel: 1, levelTitle: "", streakDays: 0, modulesCompleted: 0,
+                           modulesTotal: 0, awaitingReview: false, awaitingLevel: nil)
+        scores = (try? c.decodeIfPresent(HubScores.self, forKey: .scores))
+            ?? HubScores(overall: nil, word: nil, prayer: nil, habits: nil,
+                         curriculum: nil, attendance: nil)
+        reflections = (try? c.decodeIfPresent([HubReflection].self, forKey: .reflections)) ?? []
+        nextMeetingAt = try? c.decodeIfPresent(String.self, forKey: .nextMeetingAt)
+        notes = (try? c.decodeIfPresent([HubNote].self, forKey: .notes)) ?? []
+    }
+
     /// The resolved discipler card.
     struct Discipler: Codable, Sendable {
         let userId: String
@@ -31,6 +47,15 @@ struct Discipleship: Codable, Sendable {
         let roleLabel: String
         let cellName: String?
         let establishedAt: String?
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            userId = (try? c.decodeIfPresent(String.self, forKey: .userId)) ?? ""
+            fullName = (try? c.decodeIfPresent(String.self, forKey: .fullName)) ?? ""
+            avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+            roleLabel = (try? c.decodeIfPresent(String.self, forKey: .roleLabel)) ?? ""
+            cellName = try? c.decodeIfPresent(String.self, forKey: .cellName)
+            establishedAt = try? c.decodeIfPresent(String.self, forKey: .establishedAt)
+        }
     }
 
     /// Where the member is on the pathway (server-authoritative — the Hub only
@@ -71,6 +96,15 @@ struct Discipleship: Codable, Sendable {
         // Stable identity for ForEach (a member can reflect on a module once,
         // so module id is unique within the list).
         var id: String { moduleId }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            moduleId = (try? c.decodeIfPresent(String.self, forKey: .moduleId)) ?? ""
+            moduleTitle = (try? c.decodeIfPresent(String.self, forKey: .moduleTitle)) ?? ""
+            levelNumber = (try? c.decodeIfPresent(Int.self, forKey: .levelNumber)) ?? 0
+            state = (try? c.decodeIfPresent(String.self, forKey: .state)) ?? ""
+            submittedAt = (try? c.decodeIfPresent(String.self, forKey: .submittedAt)) ?? ""
+            feedbackNotes = try? c.decodeIfPresent(String.self, forKey: .feedbackNotes)
+        }
     }
 
     /// A meeting note from the discipler.
@@ -79,5 +113,27 @@ struct Discipleship: Codable, Sendable {
         let body: String
         let metAt: String
         let nextMeetingAt: String?
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            topic = (try? c.decodeIfPresent(String.self, forKey: .topic)) ?? ""
+            body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+            metAt = (try? c.decodeIfPresent(String.self, forKey: .metAt)) ?? ""
+            nextMeetingAt = try? c.decodeIfPresent(String.self, forKey: .nextMeetingAt)
+        }
+    }
+}
+
+// Tolerant decoding in an extension so the memberwise init stays available for
+// the sparse-payload fallback above.
+extension Discipleship.Progression {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        currentLevel = (try? c.decodeIfPresent(Int.self, forKey: .currentLevel)) ?? 1
+        levelTitle = (try? c.decodeIfPresent(String.self, forKey: .levelTitle)) ?? ""
+        streakDays = (try? c.decodeIfPresent(Int.self, forKey: .streakDays)) ?? 0
+        modulesCompleted = (try? c.decodeIfPresent(Int.self, forKey: .modulesCompleted)) ?? 0
+        modulesTotal = (try? c.decodeIfPresent(Int.self, forKey: .modulesTotal)) ?? 0
+        awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
+        awaitingLevel = try? c.decodeIfPresent(Int.self, forKey: .awaitingLevel)
     }
 }

@@ -7,14 +7,28 @@ import Foundation
 /// One saved plan-day reflection row, as returned by both the POST (201) and
 /// the GET (`{ "data": row-or-null }`) reflection endpoints.
 struct PlanDayReflection: Decodable, Sendable {
-    // id/timestamps nullable on the wire (Android made them so) — a sparse
-    // row must not fail the reflection load.
+    // Tolerant end-to-end (Android parity): a sparse row must not fail the
+    // reflection load.
     let id: String?
     let planId: String
     let dayNumber: Int
     let body: String
     let createdAt: String?
     let updatedAt: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case id, planId, dayNumber, body, createdAt, updatedAt
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = try? c.decodeIfPresent(String.self, forKey: .id)
+        planId = (try? c.decodeIfPresent(String.self, forKey: .planId)) ?? ""
+        dayNumber = (try? c.decodeIfPresent(Int.self, forKey: .dayNumber)) ?? 0
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+        updatedAt = try? c.decodeIfPresent(String.self, forKey: .updatedAt)
+    }
 }
 
 extension MemberAPI {
@@ -68,6 +82,27 @@ struct TalkPost: Decodable, Sendable, Identifiable {
     let likeCount: Int
     let liked: Bool
     var id: String { postId }
+}
+
+// Tolerant decoding lives in an extension so the memberwise init survives for
+// the optimistic like-toggle in PlanSegmentView.
+extension TalkPost {
+    private enum CodingKeys: String, CodingKey {
+        case postId, dayNumber, body, createdAt, userId, name, avatarUrl, likeCount, liked
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        postId = try c.decode(String.self, forKey: .postId)
+        dayNumber = (try? c.decodeIfPresent(Int.self, forKey: .dayNumber)) ?? 0
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        userId = (try? c.decodeIfPresent(String.self, forKey: .userId)) ?? ""
+        name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        likeCount = (try? c.decodeIfPresent(Int.self, forKey: .likeCount)) ?? 0
+        liked = (try? c.decodeIfPresent(Bool.self, forKey: .liked)) ?? false
+    }
 }
 
 extension MemberAPI {

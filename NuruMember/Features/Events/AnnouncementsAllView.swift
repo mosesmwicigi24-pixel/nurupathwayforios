@@ -6,6 +6,7 @@ import SwiftUI
 struct AnnouncementsAllView: View {
     @State private var items: [MyAnnouncement] = []
     @State private var loading = true
+    @State private var failed = false
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -16,7 +17,8 @@ struct AnnouncementsAllView: View {
                 } else if items.isEmpty {
                     VStack(spacing: 8) {
                         Icon(.megaphone, size: 24, color: Nuru.gold)
-                        Text("No announcements yet.").font(.inter(14)).foregroundStyle(Nuru.ink)
+                        Text(failed ? "Couldn't load announcements — pull to try again." : "No announcements yet.")
+                            .font(.inter(14)).foregroundStyle(Nuru.ink)
                     }
                     .frame(maxWidth: .infinity).padding(.top, 60)
                 } else {
@@ -32,10 +34,14 @@ struct AnnouncementsAllView: View {
             .padding(.bottom, Nuru.tabBarSpace)
         }
         .background(Color(hex: 0xFAF7F0).ignoresSafeArea())
+        .refreshable {
+            do { items = try await MemberAPI.myAnnouncements(); failed = false } catch { failed = true }
+        }
         .navigationTitle("Announcements")
         .navigationBarTitleDisplayMode(.inline)
         .task {
-            items = (try? await MemberAPI.myAnnouncements()) ?? []
+            do { items = try await MemberAPI.myAnnouncements(); failed = false }
+            catch { failed = true }
             loading = false
         }
     }

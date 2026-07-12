@@ -29,6 +29,29 @@ struct ChatConversation: Codable, Sendable, Identifiable, Hashable {
     func hash(into h: inout Hasher) { h.combine(conversationId) }
 }
 
+// Tolerant decoding lives in an extension so the synthesized memberwise init
+// survives for the screens that build placeholder conversations by hand.
+extension ChatConversation {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        conversationId = try c.decode(String.self, forKey: .conversationId)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "space"
+        isPublic = (try? c.decodeIfPresent(Bool.self, forKey: .isPublic)) ?? false
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        topic = try? c.decodeIfPresent(String.self, forKey: .topic)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        memberCount = (try? c.decodeIfPresent(Int.self, forKey: .memberCount)) ?? 0
+        lastBody = try? c.decodeIfPresent(String.self, forKey: .lastBody)
+        lastType = try? c.decodeIfPresent(String.self, forKey: .lastType)
+        lastAt = try? c.decodeIfPresent(String.self, forKey: .lastAt)
+        lastAuthor = try? c.decodeIfPresent(String.self, forKey: .lastAuthor)
+        lastDuration = try? c.decodeIfPresent(Int.self, forKey: .lastDuration)
+        unread = (try? c.decodeIfPresent(Int.self, forKey: .unread)) ?? 0
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        peerUserId = try? c.decodeIfPresent(String.self, forKey: .peerUserId)
+    }
+}
+
 struct DiscoverSpace: Codable, Sendable, Identifiable {
     let conversationId: String
     let title: String?
@@ -36,11 +59,24 @@ struct DiscoverSpace: Codable, Sendable, Identifiable {
     let category: String?
     let memberCount: Int
     var id: String { conversationId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        conversationId = try c.decode(String.self, forKey: .conversationId)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        topic = try? c.decodeIfPresent(String.self, forKey: .topic)
+        category = try? c.decodeIfPresent(String.self, forKey: .category)
+        memberCount = (try? c.decodeIfPresent(Int.self, forKey: .memberCount)) ?? 0
+    }
 }
 
 struct ChatInbox: Codable, Sendable {
     let conversations: [ChatConversation]
     let discoverSpaces: [DiscoverSpace]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        conversations = (try? c.decodeIfPresent([ChatConversation].self, forKey: .conversations)) ?? []
+        discoverSpaces = (try? c.decodeIfPresent([DiscoverSpace].self, forKey: .discoverSpaces)) ?? []
+    }
 }
 
 /// One row of GET /chat/people — a congregation member the caller may DM.
@@ -58,12 +94,30 @@ struct ChatPerson: Codable, Sendable, Identifiable, Hashable {
     let certCount: Int?         // issued certificates — count only
 
     var id: String { userId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        userId = try c.decode(String.self, forKey: .userId)
+        fullName = (try? c.decodeIfPresent(String.self, forKey: .fullName)) ?? ""
+        role = try? c.decodeIfPresent(String.self, forKey: .role)
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        congregation = try? c.decodeIfPresent(String.self, forKey: .congregation)
+        level = try? c.decodeIfPresent(Int.self, forKey: .level)
+        badgeCount = try? c.decodeIfPresent(Int.self, forKey: .badgeCount)
+        badgeIcons = try? c.decodeIfPresent([String].self, forKey: .badgeIcons)
+        certCount = try? c.decodeIfPresent(Int.self, forKey: .certCount)
+    }
 }
 
 struct ChatReaction: Codable, Sendable {
     let emoji: String
     let count: Int
     let mine: Bool
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        emoji = (try? c.decodeIfPresent(String.self, forKey: .emoji)) ?? ""
+        count = (try? c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+        mine = (try? c.decodeIfPresent(Bool.self, forKey: .mine)) ?? false
+    }
 }
 
 /// Voice attachment meta — { duration (sec), waveform [0..100] }.
@@ -141,4 +195,15 @@ struct ChatThreadDetail: Codable, Sendable {
     let memberCount: Int
     let joined: Bool
     let messages: [ChatMessage]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        conversationId = try c.decode(String.self, forKey: .conversationId)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "space"
+        isPublic = (try? c.decodeIfPresent(Bool.self, forKey: .isPublic)) ?? false
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        topic = try? c.decodeIfPresent(String.self, forKey: .topic)
+        memberCount = (try? c.decodeIfPresent(Int.self, forKey: .memberCount)) ?? 0
+        joined = (try? c.decodeIfPresent(Bool.self, forKey: .joined)) ?? false
+        messages = (try? c.decodeIfPresent([ChatMessage].self, forKey: .messages)) ?? []
+    }
 }

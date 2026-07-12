@@ -10,6 +10,12 @@ struct CommunityPresence: Codable, Sendable {
     let count: Int
     let names: [String]     // up to three first names
     let scope: String       // "cell" | "congregation"
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        count = (try? c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+        names = (try? c.decodeIfPresent([String].self, forKey: .names)) ?? []
+        scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? "cell"
+    }
 }
 
 extension MemberAPI {
