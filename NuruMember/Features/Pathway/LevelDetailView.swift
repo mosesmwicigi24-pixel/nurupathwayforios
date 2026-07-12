@@ -506,18 +506,34 @@ struct LevelDetailView: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
+    // The module NUMBER never leaves the node — your place on the trail stays
+    // readable. State lives in the medallion + a small corner seal: gold fill
+    // with a navy check-seal when done, muted with a lock-seal when locked,
+    // gold-tinted with the gold number for the open/next module.
     private func node(_ m: LevelModule) -> some View {
-        ZStack {
-            Circle()
-                .fill(m.completed ? Nuru.gold : (m.locked ? Nuru.mutedBg : Nuru.goldTint))
-                .frame(width: 36, height: 36)
-            if m.completed {
-                Icon(.check, size: 15, color: .white)
-            } else if m.locked {
-                Icon(.lock, size: 13, color: Nuru.faint)
-            } else {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                Circle()
+                    .fill(m.completed ? Nuru.gold : (m.locked ? Nuru.mutedBg : Nuru.goldTint))
+                    .frame(width: 36, height: 36)
                 Text("\(m.moduleSequenceNumber)")
-                    .font(.inter(14, .bold)).foregroundStyle(Nuru.gold)
+                    .font(.inter(14, .bold))
+                    .foregroundStyle(m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+            }
+            if m.completed {
+                ZStack {
+                    Circle().fill(Nuru.navy).frame(width: 15, height: 15)
+                    Icon(.check, size: 8, color: .white)
+                }
+                .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                .offset(x: 4, y: -3)
+            } else if m.locked {
+                ZStack {
+                    Circle().fill(Nuru.mutedBg).frame(width: 15, height: 15)
+                    Icon(.lock, size: 8, color: Nuru.faint)
+                }
+                .overlay(Circle().stroke(.white, lineWidth: 1.5))
+                .offset(x: 4, y: -3)
             }
         }
     }
