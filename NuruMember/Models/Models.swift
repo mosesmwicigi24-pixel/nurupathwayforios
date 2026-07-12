@@ -73,9 +73,18 @@ struct MfaEnrollment: Codable, Sendable {
 
 /// GET /me/rhythm/today — the three daily rhythms feeding the streak.
 struct RhythmToday: Codable, Sendable {
-    let prayer: Bool
-    let word: Bool
-    let reflection: Bool
+    var prayer: Bool = false
+    var word: Bool = false
+    var reflection: Bool = false
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        prayer = (try? c.decodeIfPresent(Bool.self, forKey: .prayer)) ?? false
+        word = (try? c.decodeIfPresent(Bool.self, forKey: .word)) ?? false
+        reflection = (try? c.decodeIfPresent(Bool.self, forKey: .reflection)) ?? false
+    }
+    init(prayer: Bool, word: Bool, reflection: Bool) {
+        self.prayer = prayer; self.word = word; self.reflection = reflection
+    }
 
     var doneCount: Int { (prayer ? 1 : 0) + (word ? 1 : 0) + (reflection ? 1 : 0) }
 }

@@ -76,7 +76,7 @@ final class HomeViewModel: ObservableObject {
         self.letter = (await letter) ?? nil
         self.pathway = await pathway
         let achievements = await ach
-        self.streak = achievements?.streak.current ?? 0
+        self.streak = achievements?.streak?.current ?? 0
         self.unread = await unread ?? 0
         if let g = await greet, !g.isEmpty { greetingLine = g }
         self.nextAction = await next ?? nil
@@ -1279,7 +1279,7 @@ struct HomeView: View {
             HStack {
                 Text("FEATURED ANNOUNCEMENT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Nuru.goldChipText)
                 Spacer()
-                NavigationLink(value: AppRoute.notifications) {
+                NavigationLink(value: AppRoute.announcementsList) {
                     sectionLink("View all")
                 }.buttonStyle(.plain)
             }

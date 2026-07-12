@@ -107,7 +107,7 @@ final class PathwayViewModel: ObservableObject {
             summary = nil
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your pathway."
         }
-        streak = (try? await MemberAPI.achievements())?.streak.current ?? 0
+        streak = (try? await MemberAPI.achievements())?.streak?.current ?? 0
         if let active = active(in: summary) { await fetchModules(active.levelNumber) }
         loading = false
     }

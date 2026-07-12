@@ -7,12 +7,14 @@ import Foundation
 /// One saved plan-day reflection row, as returned by both the POST (201) and
 /// the GET (`{ "data": row-or-null }`) reflection endpoints.
 struct PlanDayReflection: Decodable, Sendable {
-    let id: String
+    // id/timestamps nullable on the wire (Android made them so) — a sparse
+    // row must not fail the reflection load.
+    let id: String?
     let planId: String
     let dayNumber: Int
     let body: String
-    let createdAt: String
-    let updatedAt: String
+    let createdAt: String?
+    let updatedAt: String?
 }
 
 extension MemberAPI {

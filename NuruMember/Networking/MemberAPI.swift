@@ -550,6 +550,41 @@ extension MemberAPI {
             as: EmptyResponse.self)
     }
 
+    /// POST /chat/conversations/{id}/messages — send a VOICE message: the
+    /// uploaded m4a URL + { duration, waveform } meta (Android parity). Its own
+    /// body shape so text sends never carry attachment keys.
+    static func sendChatVoice(_ conversationId: String, audioUrl: String, durationSec: Int, waveform: [Int]) async throws {
+        struct Meta: Encodable { let duration: Int; let waveform: [Int] }
+        struct Body: Encodable {
+            let messageId: String; let body: String; let msgType: String
+            let attachmentUrl: String; let attachmentMeta: Meta; let clientMutationId: String
+        }
+        _ = try await APIClient.shared.post("chat/conversations/\(conversationId)/messages",
+            body: Body(messageId: UUID().uuidString, body: "Voice message", msgType: "voice",
+                       attachmentUrl: audioUrl, attachmentMeta: Meta(duration: durationSec, waveform: waveform),
+                       clientMutationId: UUID().uuidString),
+            as: EmptyResponse.self)
+    }
+
+    /// POST /me/devices — register this device for the leadership device
+    /// census (platform / app version / model). push_token stays absent until
+    /// APNs ships (needs the paid Apple Developer Program).
+    static func registerDevice() async {
+        struct Body: Encodable { let platform: String; let appVersion: String?; let model: String? }
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        var sys = utsname(); uname(&sys)
+        let model = withUnsafeBytes(of: &sys.machine) { raw in
+            String(decoding: raw.prefix(while: { $0 != 0 }), as: UTF8.self)
+        }
+        struct Res: Decodable {}
+        _ = try? await APIClient.shared.post("me/devices",
+            body: Body(platform: "ios",
+                       appVersion: [version, build].compactMap { $0 }.joined(separator: "+"),
+                       model: model.isEmpty ? nil : model),
+            as: Res.self)
+    }
+
     /// POST /chat/conversations/{id}/read — mark the thread read.
     static func markChatRead(_ conversationId: String) async throws {
         _ = try await APIClient.shared.postEmpty("chat/conversations/\(conversationId)/read", as: EmptyResponse.self)

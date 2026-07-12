@@ -56,6 +56,10 @@ final class AuthStore: ObservableObject {
 
     func loadProfile() async {
         me = try? await MemberAPI.me()
+        // Device census (Android parity): platform + app version + model so
+        // leadership's device analytics see iOS too. Fire-and-forget; the
+        // push_token joins once APNs ships (paid Apple Developer Program).
+        if me != nil { Task.detached { await MemberAPI.registerDevice() } }
     }
 
     func signOut() {

@@ -274,10 +274,12 @@ struct ChatThreadView: View {
             ComposerBar(draft: $vm.draft, sending: vm.sending,
                         myName: auth.profile?.fullName ?? "You",
                         recentMessages: recentForDraft,
-                        conversationId: vm.conversation.conversationId) {
-                Haptics.action()
-                Task { await vm.send() }
-            }
+                        conversationId: vm.conversation.conversationId,
+                        onSend: {
+                            Haptics.action()
+                            Task { await vm.send() }
+                        },
+                        onVoiceSent: { Task { await vm.load() } })
         }
         .background(Aurora.sectionBg)
     }
@@ -712,7 +714,7 @@ private struct AuroraBubble: View {
         case "image":
             BubbleImage(m: m, onReact: onReact)
         case "voice":
-            VoicePill()
+            VoiceMessageBubble(message: m, player: ChatVoicePlayer.threadShared, onDark: m.mine)
         default:
             mentionText(m.body)
                 .font(.inter(13))
@@ -808,17 +810,7 @@ private struct BubbleImage: View {
     }
 }
 
-private struct VoicePill: View {
-    var body: some View {
-        HStack(spacing: Nuru.S.sm) {
-            Icon(.audioLines, size: 16, color: Aurora.gold)
-            Text("Voice note").font(.inter(14, .medium)).foregroundStyle(Aurora.textDark)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Aurora.gold.opacity(0.12), in: Capsule())
-    }
-}
+
 
 /// In-bubble footer: reaction chips left, edited · time · read ticks right.
 private struct BubbleFooter: View {
@@ -970,20 +962,85 @@ private struct ComposerBar: View {
     let recentMessages: [(author: String, text: String)]
     let conversationId: String
     var onSend: () -> Void
+    var onVoiceSent: () -> Void = {}
+
+    @StateObject private var recorder = ChatVoiceRecorder()
+    @State private var sendingVoice = false
 
     private var hasDraft: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         HStack(alignment: .bottom, spacing: Nuru.S.sm) {
-            myAvatar
-            inputPill
-            sendOrMic
+            if recorder.isRecording || sendingVoice {
+                recordingStrip
+            } else {
+                myAvatar
+                inputPill
+                sendOrMic
+            }
         }
         .padding(.horizontal, Nuru.S.md)
         .padding(.top, 10)
         .padding(.bottom, 10)
         .background(Color.white.opacity(0.92))
         .overlay(Rectangle().fill(Aurora.border).frame(height: 1), alignment: .top)
+        .onDisappear { recorder.cancel() }
+    }
+
+    /// While capturing: pulsing red dot · live wave · clock · cancel · send.
+    private var recordingStrip: some View {
+        HStack(spacing: 12) {
+            Button {
+                Haptics.tap(); recorder.cancel()
+            } label: {
+                Icon(.x, size: 17, color: Aurora.meta)
+                    .frame(width: 36, height: 36)
+                    .background(Nuru.paper, in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .disabled(sendingVoice)
+            RecordingDot()
+            LiveWaveView(levels: recorder.levels, tint: Aurora.gold)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(String(format: "%d:%02d", recorder.elapsedSec / 60, recorder.elapsedSec % 60))
+                .font(.inter(12, .semibold)).monospacedDigit().foregroundStyle(Aurora.navy)
+            Button { sendVoice() } label: {
+                if sendingVoice {
+                    ProgressView().tint(.white)
+                        .frame(width: 44, height: 44)
+                        .background(AnyShapeStyle(Aurora.storyRing), in: Circle())
+                } else {
+                    Icon(.send, size: 18, color: .white)
+                        .frame(width: 44, height: 44)
+                        .background(AnyShapeStyle(Aurora.storyRing), in: Circle())
+                        .shadow(color: Aurora.gold.opacity(0.5), radius: 6, x: 0, y: 5)
+                }
+            }
+            .buttonStyle(.pressable)
+            .disabled(sendingVoice)
+        }
+        .frame(minHeight: 44)
+    }
+
+    private func sendVoice() {
+        guard !sendingVoice else { return }
+        Haptics.action()
+        let duration = max(1, recorder.elapsedSec)
+        let waveform = recorder.waveformFor()
+        guard let file = recorder.stop() else { return }
+        sendingVoice = true
+        Task {
+            defer { sendingVoice = false }
+            do {
+                let data = try Data(contentsOf: file)
+                let url = try await MemberAPI.uploadVoiceAudio(m4a: data, filename: "chat-voice.m4a")
+                try await MemberAPI.sendChatVoice(conversationId, audioUrl: url, durationSec: duration, waveform: waveform)
+                Haptics.success()
+                onVoiceSent()
+            } catch {
+                Haptics.tap()
+            }
+        }
     }
 
     private var myAvatar: some View {
@@ -1016,9 +1073,12 @@ private struct ComposerBar: View {
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Aurora.border, lineWidth: 1))
     }
 
-    /// Gold story-ring send when there's a draft; navy ink mic placeholder otherwise.
+    /// Gold story-ring send when there's a draft; hold-free tap-to-record mic
+    /// otherwise (Android parity — was a dead placeholder).
     private var sendOrMic: some View {
-        Button { if hasDraft { onSend() } } label: {
+        Button {
+            if hasDraft { onSend() } else { Haptics.action(); recorder.start() }
+        } label: {
             Icon(hasDraft ? .send : .mic, size: 18, color: .white)
                 .frame(width: 44, height: 44)
                 .background(hasDraft ? AnyShapeStyle(Aurora.storyRing) : AnyShapeStyle(Aurora.inkBubble), in: Circle())
@@ -1029,5 +1089,18 @@ private struct ComposerBar: View {
         .opacity(sending ? 0.6 : 1)
         // Mic ↔ gold send swap eases instead of snapping per keystroke.
         .animation(.easeInOut(duration: 0.18), value: hasDraft)
+    }
+}
+
+
+/// The classic recording pulse — a red dot breathing at ~1 Hz.
+private struct RecordingDot: View {
+    @State private var on = false
+    var body: some View {
+        Circle().fill(Color(hex: 0xE0342C))
+            .frame(width: 10, height: 10)
+            .opacity(on ? 1 : 0.35)
+            .animation(.easeInOut(duration: 0.6).repeatForever(autoreverses: true), value: on)
+            .onAppear { on = true }
     }
 }
