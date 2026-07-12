@@ -410,8 +410,10 @@ struct ModuleView: View {
     // Nuru (simple English / Kiswahili / as a story). Server-gated (§1.9).
     @State private var showExplainMenu = false
     @State private var explainTarget: ExplainTarget?
-    // Finished modules fold the reflection to what was written; Edit unfolds it.
+    // Finished modules fold the reflection to what was written; changing it is
+    // an intentional act behind the "Revisit this module" door.
     @State private var editingReflection = false
+    @State private var showRevisitDialog = false
 
     // Paged reading
     @State private var currentPage = 0           // 0-based page index
@@ -648,6 +650,18 @@ struct ModuleView: View {
         .sheet(item: $explainTarget) { t in
             ExplainSheet(moduleId: moduleId, style: t.style)
         }
+        .confirmationDialog("You've completed this module", isPresented: $showRevisitDialog, titleVisibility: .visible) {
+            Button("Edit my reflection") { Haptics.tap(); editingReflection = true }
+            if vm.detail?.requiresQuiz == true {
+                Button("Retake the quiz") {
+                    Haptics.action()
+                    quizTarget = moduleId
+                }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("It is sealed — but you can still revisit what you wrote or try the quiz again.")
+        }
         .onChange(of: playingVideo) { _, _ in syncEngagementSignals() }
         .onChange(of: currentPage) { _, _ in syncEngagementSignals() }
         // A short beat after the server confirms, so the success haptic and the
@@ -760,7 +774,7 @@ struct ModuleView: View {
                                  moduleId: d.moduleId,
                                  busy: vm.completing,
                                  error: vm.completionError,
-                                 bottomInset: Nuru.tabBarSpace,
+                                 bottomInset: Nuru.tabBarSpace - 24,
                                  startingQuiz: startingQuiz,
                                  onStartQuiz: {
                                      guard !startingQuiz else { return }
@@ -903,9 +917,24 @@ struct ModuleView: View {
                 // Reflect step lights up and the quiz gate can clear.
                 Group {
                     if d.isFinished && !editingReflection {
-                        MLReflectionFolded(text: vm.savedReflection ?? reflection) {
-                            Haptics.tap()
-                            editingReflection = true
+                        VStack(spacing: 14) {
+                            MLReflectionFolded(text: vm.savedReflection ?? reflection)
+                            // The module is sealed — changing anything is an
+                            // intentional act, behind one quiet door.
+                            Button {
+                                Haptics.tap()
+                                showRevisitDialog = true
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Icon(.bookOpen, size: 12, color: ML.secondary)
+                                    Text("Revisit this module")
+                                        .font(.inter(13, .semibold)).foregroundStyle(ML.secondary)
+                                }
+                                .padding(.horizontal, 18).padding(.vertical, 10)
+                                .background(Color.white, in: Capsule())
+                                .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+                            }
+                            .buttonStyle(.pressable)
                         }
                     } else {
                         MLReflectionCard(text: $reflection,
