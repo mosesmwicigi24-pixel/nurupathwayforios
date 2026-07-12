@@ -14,6 +14,7 @@ enum PathwayRoute: Hashable {
     case quiz(String)     // moduleId
     case exam(Int)        // levelNumber — the level gate (§1.9 rule 2)
     case map              // the full levels map ("Map view")
+    case walk             // Your Walk — the member's whole journey (Wave 3)
 }
 
 // Exact Figma palette (LevelsOverview.tsx) — kept local so this page is 1:1 with
@@ -200,6 +201,7 @@ struct PathwayView: View {
                         }
                     })
                 case .map: LevelsMapView(vm: vm) { path.append(PathwayRoute.level($0)) }
+                case .walk: YourWalkView()
                 }
             }
             // The Pathway stack registers only PathwayRoute; the Discipleship Hub
@@ -283,6 +285,9 @@ struct PathwayView: View {
                 // "awaiting your discipler's blessing" flow above.
                 PathwayDisciplershipRow { path.append(AppRoute.discipleshipHub) }
                     .gentleEntrance(delay: 0.08)
+
+                PathwayWalkRow { path.append(PathwayRoute.walk) }
+                    .gentleEntrance(delay: 0.09)
 
                 PathwayMilestones(
                     levels: s.levels, reward: nextReward(s),
@@ -518,6 +523,36 @@ private struct PathwayDisciplershipRow: View {
         }
         .buttonStyle(.pressable)
         .accessibilityHint("Opens your Discipleship Hub.")
+    }
+}
+
+private struct PathwayWalkRow: View {
+    let onTap: () -> Void
+    var body: some View {
+        Button { Haptics.tap(); onTap() } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .fill(LinearGradient(colors: [PW.navy, Color(hex: 0x1B3A5C)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                    Icon(.flag, size: 20, color: PW.gold)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("EVERY STEP, REMEMBERED").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
+                    Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
+                    Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: PW.chevron)
+            }
+            .padding(14)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.border, lineWidth: 1))
+            .shadow(color: PW.navy.opacity(0.05), radius: 8, y: 3)
+        }
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens Your Walk, a timeline of your whole journey.")
     }
 }
 

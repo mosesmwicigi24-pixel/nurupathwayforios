@@ -930,6 +930,10 @@ struct ModuleView: View {
             // before any produced media (Wave 2). Leaders see the record
             // affordance beneath it.
             if isFirstPage {
+                // Footprints (Wave 3): cell-mates who already walked this
+                // module — quiet proof nobody reads alone. Absent when fresh.
+                FootprintsStrip(moduleId: d.moduleId)
+                    .padding(.bottom, 12)
                 if let vn = d.voiceNote {
                     VoiceNoteCard(note: vn)
                         .padding(.bottom, canLeaveVoiceNote ? 10 : 16)
