@@ -157,6 +157,9 @@ struct ModuleDetail: Codable, Sendable {
     var completed: Bool? = nil
     var completedAt: String? = nil
     var bestScore: Int? = nil
+    /// A discipler's voice note on this lesson — one per congregation
+    /// (companion Wave 2). Defaulted so older servers still decode.
+    var voiceNote: ModuleVoiceNote? = nil
 
     /// True when finishing this module requires a graded quiz (vs. mark-complete).
     var requiresQuiz: Bool { evaluationKind.lowercased().contains("quiz") }
@@ -183,6 +186,15 @@ struct ModuleDetail: Codable, Sendable {
         out.dateFormat = "d MMM yyyy · HH:mm"
         return out.string(from: date)
     }
+}
+
+/// "A word from your discipler" — a short voice note a leader leaves on a
+/// module for their whole congregation (Wave 2).
+struct ModuleVoiceNote: Codable, Sendable {
+    let authorName: String
+    let avatarUrl: String?
+    let audioUrl: String
+    let durationSec: Int
 }
 
 struct CompleteResult: Codable, Sendable {

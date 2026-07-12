@@ -255,6 +255,10 @@ struct PathwayView: View {
                     PathwayAwaitingBanner(level: a).gentleEntrance()
                 }
 
+                // Studying together, apart (Wave 2): who from your cell opened
+                // a lesson this week. Renders nothing when nobody has.
+                CellPresenceLine().gentleEntrance()
+
                 PathwayJourneyRail(
                     levels: s.levels, selected: selectedLevel?.levelNumber ?? -1,
                     onSelect: { n in
