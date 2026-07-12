@@ -81,7 +81,7 @@ final class ReadingPlansViewModel: ObservableObject {
         async let rhythm = try? MemberAPI.rhythmToday()
         do { plans = try await MemberAPI.plans() }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
-        streak = (await ach)?.streak.current ?? 0
+        streak = (await ach)?.streak?.current ?? 0
         todayWordDone = (await rhythm)?.word ?? false
         loading = false
     }
@@ -994,7 +994,7 @@ struct PlanDayView: View {
                              days: ref.day.dayNumber) { showKeepsake = false; dismiss() }
         }
         .onAppear { tabs.chromeHidden = true }
-        .task { if walkDays == nil { walkDays = try? await MemberAPI.achievements().streak.current } }
+        .task { if walkDays == nil { walkDays = (try? await MemberAPI.achievements())?.streak?.current } }
         // A part finished in its reader ticks its row the moment we return.
         .onReceive(NotificationCenter.default.publisher(for: .nuruPlanPartDone)) { note in
             if let id = note.object as? String {

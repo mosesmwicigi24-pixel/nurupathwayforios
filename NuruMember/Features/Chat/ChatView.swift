@@ -868,7 +868,9 @@ private struct RowPreview: View {
         HStack(spacing: 4) {
             if c.lastType == "voice" {
                 Icon(.mic, size: 11, color: Nuru.gold)
-                Text("Voice message").font(.inter(10)).foregroundStyle(bodyColor)
+                // Android parity: surface the note's length in the preview.
+                Text(c.lastDuration.map { String(format: "Voice message · %d:%02d", $0 / 60, $0 % 60) } ?? "Voice message")
+                    .font(.inter(10)).foregroundStyle(bodyColor)
             } else if c.lastType == "image" {
                 Icon(.image, size: 11, color: Nuru.gold)
                 Text("Photo").font(.inter(10)).foregroundStyle(bodyColor)

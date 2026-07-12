@@ -49,18 +49,23 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
         title = try c.decode(String.self, forKey: .title)
         theme = try c.decodeIfPresent(String.self, forKey: .theme)
         description = try c.decodeIfPresent(String.self, forKey: .description)
-        totalModules = try c.decode(Int.self, forKey: .totalModules)
-        completedModules = try c.decode(Int.self, forKey: .completedModules)
-        minutes = try c.decode(Int.self, forKey: .minutes)
-        status = try c.decode(LevelStatus.self, forKey: .status)
+        totalModules = (try? c.decodeIfPresent(Int.self, forKey: .totalModules)) ?? 0
+        completedModules = (try? c.decodeIfPresent(Int.self, forKey: .completedModules)) ?? 0
+        minutes = (try? c.decodeIfPresent(Int.self, forKey: .minutes)) ?? 0
+        status = (try? c.decodeIfPresent(LevelStatus.self, forKey: .status)) ?? .locked
         awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
         examPublished = (try? c.decodeIfPresent(Bool.self, forKey: .examPublished)) ?? true
     }
 }
 
 struct PathwaySummary: Codable, Sendable {
-    let currentLevel: Int
-    let levels: [PathwayLevel]
+    var currentLevel: Int = 1
+    var levels: [PathwayLevel] = []
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        currentLevel = (try? c.decodeIfPresent(Int.self, forKey: .currentLevel)) ?? 1
+        levels = (try? c.decodeIfPresent([PathwayLevel].self, forKey: .levels)) ?? []
+    }
 }
 
 /// A level's mastery out of 100 — the owner's model: exam (50) + module quizzes

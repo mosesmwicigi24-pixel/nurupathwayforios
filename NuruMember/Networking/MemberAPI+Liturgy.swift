@@ -5,26 +5,51 @@
 import Foundation
 
 struct HomeLiturgy: Codable, Sendable {
-    let part: String        // morning | midday | evening | night
-    let season: String      // advent | christmas | lent | easter | ordinary
-    let isSunday: Bool
-    let line: String
-    let scriptureRef: String?
+    // Tolerant like the Android DTOs: a sparse field degrades one label, it
+    // must never blank the whole card (all feed fetches are try?-wrapped).
+    var part: String = "morning" // morning | midday | evening | night
+    var season: String = "ordinary" // advent | christmas | lent | easter | ordinary
+    var isSunday: Bool = false
+    var line: String = ""
+    var scriptureRef: String? = nil
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        part = (try? c.decodeIfPresent(String.self, forKey: .part)) ?? "morning"
+        season = (try? c.decodeIfPresent(String.self, forKey: .season)) ?? "ordinary"
+        isSunday = (try? c.decodeIfPresent(Bool.self, forKey: .isSunday)) ?? false
+        line = (try? c.decodeIfPresent(String.self, forKey: .line)) ?? ""
+        scriptureRef = try? c.decodeIfPresent(String.self, forKey: .scriptureRef)
+    }
 }
 
 struct CommunityMoment: Codable, Sendable, Identifiable {
-    let momentId: String
-    let userId: String
-    let fullName: String
-    let avatarUrl: String?
-    let kind: String        // module_complete | level_complete | verse_mastered | plan_complete
-    let title: String
-    let occurredAt: String
-    var amenCount: Int
-    var heartCount: Int
-    var fireCount: Int
-    var myBlessing: String?
+    // One odd row must cost ONE card, never the whole rail (Android parity).
+    var momentId: String = ""
+    var userId: String = ""
+    var fullName: String = ""
+    var avatarUrl: String? = nil
+    var kind: String = "" // module_complete | level_complete | verse_mastered | plan_complete
+    var title: String = ""
+    var occurredAt: String = ""
+    var amenCount: Int = 0
+    var heartCount: Int = 0
+    var fireCount: Int = 0
+    var myBlessing: String? = nil
     var id: String { momentId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        momentId = (try? c.decodeIfPresent(String.self, forKey: .momentId)) ?? ""
+        userId = (try? c.decodeIfPresent(String.self, forKey: .userId)) ?? ""
+        fullName = (try? c.decodeIfPresent(String.self, forKey: .fullName)) ?? ""
+        avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        occurredAt = (try? c.decodeIfPresent(String.self, forKey: .occurredAt)) ?? ""
+        amenCount = (try? c.decodeIfPresent(Int.self, forKey: .amenCount)) ?? 0
+        heartCount = (try? c.decodeIfPresent(Int.self, forKey: .heartCount)) ?? 0
+        fireCount = (try? c.decodeIfPresent(Int.self, forKey: .fireCount)) ?? 0
+        myBlessing = try? c.decodeIfPresent(String.self, forKey: .myBlessing)
+    }
 }
 
 struct BlessRes: Codable, Sendable {
@@ -50,10 +75,17 @@ extension MemberAPI {
 // Wave 1 — echoes: today's companion moment (the member's own history,
 // carried back at the right time; null when nothing specific is true).
 struct HomeEcho: Codable, Sendable {
-    let kind: String     // welcome_back | reflection_echo | anniversary
-    let body: String
-    let quote: String?
-    let ref: String?
+    var kind: String = "" // welcome_back | reflection_echo | anniversary
+    var body: String = ""
+    var quote: String? = nil
+    var ref: String? = nil
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        quote = try? c.decodeIfPresent(String.self, forKey: .quote)
+        ref = try? c.decodeIfPresent(String.self, forKey: .ref)
+    }
 }
 
 struct HomeEchoEnvelope: Codable, Sendable { let echo: HomeEcho? }

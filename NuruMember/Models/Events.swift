@@ -96,7 +96,9 @@ struct MyRsvp: Codable, Sendable, Identifiable {
     let status: String
     let eventId: String
     let title: String
-    let occursAt: String
+    /// Null when the series has no next occurrence — one such row must not
+    /// sink the whole list (it did: strict decode + try? upstream).
+    let occursAt: String?
     var id: String { rsvpId }
 }
 

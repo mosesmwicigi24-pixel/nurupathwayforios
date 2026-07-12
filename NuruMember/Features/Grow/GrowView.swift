@@ -5,7 +5,7 @@
 import SwiftUI
 
 /// App-wide pushable routes (notification center, announcement detail, mentor, cell info).
-enum AppRoute: Hashable { case notifications; case announcement(String); case mentor; case cell; case discipleshipHub }
+enum AppRoute: Hashable { case notifications; case announcement(String); case announcementsList; case mentor; case cell; case discipleshipHub }
 
 /// Value-routes for the growth screens, pushed from Home / Plans stacks.
 enum GrowDestination: Hashable {
@@ -63,6 +63,7 @@ extension View {
                 switch r {
                 case .notifications: NotificationsView()
                 case .announcement(let id): AnnouncementDetailView(announcementId: id)
+                case .announcementsList: AnnouncementsAllView()
                 case .mentor: MentorView()
                 case .cell: CellInfoView()
                 case .discipleshipHub: DiscipleshipHubView()

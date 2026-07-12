@@ -5,9 +5,18 @@ import Foundation
 /// GET /me/achievements — badges + streak. Home uses the streak count and
 /// diffs the earned badge codes to celebrate newly-awarded badges.
 struct Achievements: Codable, Sendable {
-    struct Streak: Codable, Sendable { let current: Int; let longest: Int }
+    struct Streak: Codable, Sendable {
+        var current: Int = 0
+        var longest: Int = 0
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            current = (try? c.decodeIfPresent(Int.self, forKey: .current)) ?? 0
+            longest = (try? c.decodeIfPresent(Int.self, forKey: .longest)) ?? 0
+        }
+    }
     struct Badge: Codable, Sendable { let code: String; let name: String }
-    let streak: Streak
+    // Sparse payloads must degrade to zeros, not sink the card (Android parity).
+    var streak: Streak? = nil
     let badges: [Badge]?
 }
 
@@ -29,15 +38,27 @@ struct ScripturePassage: Codable, Sendable {
 
 /// Verse-of-the-day reactions — community counts for today's shared verse.
 struct VerseReactions: Codable, Sendable {
-    let counts: [String: Int]
-    let mine: String?
-    let total: Int
+    var counts: [String: Int] = [:]
+    var mine: String? = nil
+    var total: Int = 0
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        counts = (try? c.decodeIfPresent([String: Int].self, forKey: .counts)) ?? [:]
+        mine = try? c.decodeIfPresent(String.self, forKey: .mine)
+        total = (try? c.decodeIfPresent(Int.self, forKey: .total)) ?? 0
+    }
 }
 
 /// One growth discipline's score (GET /me/scores).
 struct GrowthScore: Codable, Sendable {
-    let score: Int
-    let band: String?
+    var score: Int = 0
+    var band: String? = nil
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        score = (try? c.decodeIfPresent(Int.self, forKey: .score)) ?? 0
+        band = try? c.decodeIfPresent(String.self, forKey: .band)
+    }
+    init(score: Int, band: String?) { self.score = score; self.band = band }
 }
 
 /// The rolling growth trend — this 28-day window vs the previous 28 days.
@@ -54,7 +75,15 @@ struct ScoreTrend: Codable, Sendable {
 
 /// GET /me/scores — the five growth scores + a weighted overall + a 28-day trend.
 struct ScoresSummary: Codable, Sendable {
-    struct Overall: Codable, Sendable { let score: Int; let band: String }
+    struct Overall: Codable, Sendable {
+        var score: Int = 0
+        var band: String = "steady"
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            score = (try? c.decodeIfPresent(Int.self, forKey: .score)) ?? 0
+            band = (try? c.decodeIfPresent(String.self, forKey: .band)) ?? "steady"
+        }
+    }
     let overall: Overall
     let habits: GrowthScore
     let curriculum: GrowthScore

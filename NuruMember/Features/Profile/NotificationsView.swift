@@ -441,7 +441,7 @@ private struct NotificationDetailSheet: View {
             async let ach = try? MemberAPI.achievements()
             async let pw = try? MemberAPI.pathway()
             async let pl = try? MemberAPI.plans()
-            streak = (await ach)?.streak.current
+            streak = (await ach)?.streak?.current
             if let p = await pw {
                 activeLevel = p.levels.first { $0.status == .active }
                     ?? p.levels.first { $0.levelNumber == p.currentLevel }
