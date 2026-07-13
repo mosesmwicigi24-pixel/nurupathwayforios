@@ -42,36 +42,32 @@ struct HomeLiturgyCard: View {
                         Text(partEmoji(lit.part)).font(.system(size: 15))
                         Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
                             .font(.inter(10.5, .bold)).kerning(1.6)
-                            .foregroundStyle(Color(hex: 0xE8CA6C))
+                            .foregroundStyle(Color(hex: 0xF2DDA0))
+                            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
                         Spacer()
                         if let ref = lit.scriptureRef {
                             Text(ref)
-                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
+                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
                                 .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Color.white.opacity(0.12), in: Capsule())
+                                .background(Color.black.opacity(0.22), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
                         }
                     }
                     Text(lit.line)
                         .font(.fraunces(18)).foregroundStyle(.white)
                         .lineSpacing(4)
+                        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    // The gradient owns the layout size; the glow lives in an
-                    // overlay so its fixed 150pt frame can never inflate the
-                    // background beyond the card. As a ZStack sibling it made
-                    // the background 150pt tall on a ~116pt card — the paint
-                    // spilled ±17pt over the neighbouring cards' gaps (the
-                    // "cards mangled together" bug; edge-spill family).
-                    LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .overlay(alignment: .topTrailing) {
-                            Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
-                                .frame(width: 150, height: 150).blur(radius: 38)
-                                .offset(x: 45, y: -55)
-                        }
+                    // Home breathes with the hours: the card carries a photograph
+                    // of the hour it names (dawn/noon/dusk/night), under a navy
+                    // scrim so the white serif stays legible. Everything lives
+                    // inside .background (never affects layout) and is clipped to
+                    // the card — the ornament rule after the ios#72 fusion bug.
+                    litBackground(art: lit.art)
                         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 )
             }
@@ -81,6 +77,46 @@ struct HomeLiturgyCard: View {
             // The tab shell keeps Home alive for the whole session — without
             // this an overnight-resident app shows yesterday's card forever.
             if phase == .active { Task { lit = try? await MemberAPI.homeLiturgy() } }
+        }
+    }
+
+    /// The hour's photograph behind a navy scrim, or the classic navy gradient
+    /// (+ gold glow) when there's no art / we're offline. Returns some View via
+    /// AnyView so both branches share the one `.background` slot.
+    @ViewBuilder
+    private func litBackground(art: VerseArt?) -> some View {
+        if let art, let url = URL(string: art.url), !art.url.isEmpty {
+            Color.clear
+                .overlay {
+                    CachedAsyncImage(url: url) { phase in
+                        if let img = phase.image {
+                            img.resizable().scaledToFill()
+                        } else {
+                            // Loading / failed → the navy field, so white text
+                            // always has contrast (never a bright flash).
+                            LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        }
+                    }
+                }
+                .overlay(
+                    // Navy scrim: keeps the brand feel and the serif legible even
+                    // over a bright midday sky — quiet at top, certain at base.
+                    LinearGradient(stops: [
+                        .init(color: Color(hex: 0x0A1C33).opacity(0.42), location: 0),
+                        .init(color: Color(hex: 0x0A1C33).opacity(0.50), location: 0.5),
+                        .init(color: Color(hex: 0x0A1C33).opacity(0.84), location: 1),
+                    ], startPoint: .top, endPoint: .bottom)
+                )
+                .clipped()
+        } else {
+            LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
+                        .frame(width: 150, height: 150).blur(radius: 38)
+                        .offset(x: 45, y: -55)
+                }
         }
     }
 }

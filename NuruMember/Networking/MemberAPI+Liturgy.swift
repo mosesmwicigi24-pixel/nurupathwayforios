@@ -12,6 +12,7 @@ struct HomeLiturgy: Codable, Sendable {
     var isSunday: Bool = false
     var line: String = ""
     var scriptureRef: String? = nil
+    var art: VerseArt? = nil   // the hour's tableau photograph (server-curated per part+day)
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         part = (try? c.decodeIfPresent(String.self, forKey: .part)) ?? "morning"
@@ -19,6 +20,7 @@ struct HomeLiturgy: Codable, Sendable {
         isSunday = (try? c.decodeIfPresent(Bool.self, forKey: .isSunday)) ?? false
         line = (try? c.decodeIfPresent(String.self, forKey: .line)) ?? ""
         scriptureRef = try? c.decodeIfPresent(String.self, forKey: .scriptureRef)
+        art = try? c.decodeIfPresent(VerseArt.self, forKey: .art)
     }
 }
 
