@@ -263,54 +263,57 @@ struct HomeView: View {
     // Radio ON AIR → LiveNow → Priority → continue hero → rhythm → video → verse → pray →
     // plans/journal → this week → disciplers → announcement → continue level → Priority
     // (repeat) → progress → Grow → Upcoming → encouragement → cohort → give.
-    private var feedSections: [AnyView] {
+    private var feedSections: [(id: String, view: AnyView)] {
         // TRUE first load only (refreshes keep the live content in place) —
         // shimmering placeholders instead of a blank scroll.
         if vm.loading && vm.pathway == nil {
-            return [AnyView(HomeFeedSkeleton())]
+            return [("skeleton", AnyView(HomeFeedSkeleton()))]
         }
-        var s: [AnyView] = []
+        // STABLE ids, not array offsets: when the radio bar arrives late and
+        // inserts at the top, every other row must keep its identity — offset
+        // keys made SwiftUI tear down and rebuild every card below it.
+        var s: [(id: String, view: AnyView)] = []
         // The whole dashboard failed (offline / server down) — a quiet retry
         // strip on top; the sections below degrade gracefully as usual.
         if vm.error != nil && vm.pathway == nil {
-            s.append(AnyView(HomeLoadErrorCard { Task { await vm.load() } }))
+            s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
         }
-        if let p = vm.onAir { s.append(AnyView(onAirCard(p))) }                         // 0a · Radio ON AIR (pinned first)
-        if let live = liveNowInfo { s.append(AnyView(liveNowCard(live))) }              // 0 · Live now
-        if let lt = vm.letter, lt.isUnread { s.append(AnyView(letterKnock(lt))) }       // 0b · A letter for you (unread Sunday Letter)
-        s.append(AnyView(HomeLiturgyCard()))                                            // 0c · The hour's prayer line (liturgy, Phase 4)
-        s.append(AnyView(HomeEchoCard()))                                               // 0d · Today's echo — the app remembers you (Wave 1)
-        if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 1 · Priority (top)
-        if let a = vm.nextAction { s.append(AnyView(heroCard(a))) }                     // 2
-        s.append(AnyView(rhythmCard))                                                   // 2b · Today's rhythm (right under For-you-today)
-        if let rp = resumePlan { s.append(AnyView(planResumeBanner(rp))) }              // 2c · Continue your plan (resume nudge)
-        if let v = vm.welcomeVideo { s.append(AnyView(welcomeVideoCard(v))) }           // 3
-        s.append(AnyView(verseCard))                                                    // 4
-        if !vm.prayerPosts.isEmpty { s.append(AnyView(prayerWallCard)) }                // 5
-        s.append(AnyView(CelebrationsRail()))                                           // 5b · Celebrate the family (moments, Phase 4)
-        s.append(AnyView(minisRow))                                                     // 6
+        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first)
+        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0 · Live now
+        if let lt = vm.letter, lt.isUnread { s.append(("letter", AnyView(letterKnock(lt)))) }       // 0b · A letter for you (unread Sunday Letter)
+        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0c · The hour's prayer line (liturgy, Phase 4)
+        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0d · Today's echo — the app remembers you (Wave 1)
+        if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority (top)
+        if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
+        s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
+        if let rp = resumePlan { s.append(("planresume", AnyView(planResumeBanner(rp)))) }              // 2c · Continue your plan (resume nudge)
+        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 3
+        s.append(("verse", AnyView(verseCard)))                                                    // 4
+        if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }                // 5
+        s.append(("celebrations", AnyView(CelebrationsRail())))                                           // 5b · Celebrate the family (moments, Phase 4)
+        s.append(("minis", AnyView(minisRow)))                                                     // 6
         if let c = vm.featuredCell {                                                    // 7
             if let aid = weekAnnouncementId {
-                s.append(AnyView(Button {
+                s.append(("cell", AnyView(Button {
                     Haptics.tap()
                     path.append(AppRoute.announcement(aid))
                     Task { await vm.openAnnouncement(aid) }
-                } label: { featuredCellCard(c) }.buttonStyle(.pressableSubtle)))
+                } label: { featuredCellCard(c) }.buttonStyle(.pressableSubtle))))
             } else {
-                s.append(AnyView(featuredCellCard(c)))
+                s.append(("cell", AnyView(featuredCellCard(c))))
             }
         }
-        if !vm.disciplers.isEmpty { s.append(AnyView(disciplersCard)) }                 // 8
-        if let a = vm.featuredAnnouncement { s.append(AnyView(featuredAnnouncementCard(a))) } // 9
-        s.append(AnyView(continueLevelCard))                                            // 10
-        if reflectionDue { s.append(AnyView(priorityStrip)) }                           // 12 · Priority (repeat)
-        if let sc = vm.scores { s.append(AnyView(progressCard(sc))) }                   // 13
-        s.append(AnyView(growSection))                                                  // 14
-        if let fe = vm.featuredEvent { s.append(AnyView(featuredGatheringCard(fe))) }   // 14b · admin-featured event
-        s.append(AnyView(upcomingSection))                                              // 15
-        s.append(AnyView(oneReflectionBanner))                                          // 16
-        s.append(AnyView(cohortSection))                                                // 17
-        s.append(AnyView(giveBanner))                                                   // 18
+        if !vm.disciplers.isEmpty { s.append(("disciplers", AnyView(disciplersCard))) }                 // 8
+        if let a = vm.featuredAnnouncement { s.append(("announcement", AnyView(featuredAnnouncementCard(a)))) } // 9
+        s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
+        if reflectionDue { s.append(("priority2", AnyView(priorityStrip))) }                           // 12 · Priority (repeat)
+        if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
+        s.append(("grow", AnyView(growSection)))                                                  // 14
+        if let fe = vm.featuredEvent { s.append(("event", AnyView(featuredGatheringCard(fe)))) }   // 14b · admin-featured event
+        s.append(("upcoming", AnyView(upcomingSection)))                                              // 15
+        s.append(("encourage", AnyView(oneReflectionBanner)))                                          // 16
+        s.append(("cohort", AnyView(cohortSection)))                                                // 17
+        s.append(("give", AnyView(giveBanner)))                                                   // 18
         return s
     }
 
@@ -327,16 +330,18 @@ struct HomeView: View {
                     // 20pt between sections — the 16pt grid read congested with
                     // this many cards; each one gets room to breathe (owner ask).
                     VStack(spacing: 20) {
-                        ForEach(Array(feedSections.enumerated()), id: \.offset) { i, section in
-                            // One-shot entrance (the session's first real render
-                            // only): the first 8 cards fade in and rise 12pt,
-                            // 40ms apart. Deeper cards — and every render after
-                            // feedRisen settles — are instant, layout untouched.
+                        ForEach(Array(feedSections.enumerated()), id: \.element.id) { i, section in
+                            // One-shot entrance, OPACITY ONLY. The old 12pt rise
+                            // painted rows away from their layout slot, and two
+                            // separate races stranded it mid-flight — cards fused
+                            // on device (owner screenshots). A card must never be
+                            // painted anywhere but where layout puts it: fades
+                            // can't move geometry, so stacking is now impossible
+                            // by construction.
                             let entering = feedStaged && i < 8
-                            section
+                            section.view
                                 .opacity(entering && !feedRisen ? 0 : 1)
-                                .offset(y: entering && !feedRisen ? 12 : 0)
-                                .animation(entering ? .spring(response: 0.5, dampingFraction: 0.85).delay(Double(i) * 0.04) : nil,
+                                .animation(entering ? .easeOut(duration: 0.45).delay(Double(i) * 0.04) : nil,
                                            value: feedRisen)
                         }
                     }
