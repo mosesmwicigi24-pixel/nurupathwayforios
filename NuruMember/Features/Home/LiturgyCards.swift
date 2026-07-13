@@ -59,14 +59,20 @@ struct HomeLiturgyCard: View {
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(
-                    ZStack(alignment: .topTrailing) {
-                        LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                        Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
-                            .frame(width: 150, height: 150).blur(radius: 38)
-                            .offset(x: 45, y: -55)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    // The gradient owns the layout size; the glow lives in an
+                    // overlay so its fixed 150pt frame can never inflate the
+                    // background beyond the card. As a ZStack sibling it made
+                    // the background 150pt tall on a ~116pt card — the paint
+                    // spilled ±17pt over the neighbouring cards' gaps (the
+                    // "cards mangled together" bug; edge-spill family).
+                    LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .overlay(alignment: .topTrailing) {
+                            Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
+                                .frame(width: 150, height: 150).blur(radius: 38)
+                                .offset(x: 45, y: -55)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 )
             }
         }

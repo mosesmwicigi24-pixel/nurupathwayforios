@@ -30,6 +30,10 @@ final class LocalNotifier: NSObject, ObservableObject {
 
     /// Ask once after sign-in; safe to call repeatedly (no-op when decided).
     func requestPermission() {
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted UI verification must not be blocked by the OS permission alert.
+        if ProcessInfo.processInfo.environment["NURU_AUTOLOGIN"] == "1" { return }
+        #endif
         UNUserNotificationCenter.current().delegate = self
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
