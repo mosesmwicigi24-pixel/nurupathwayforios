@@ -35,6 +35,7 @@ struct TailoredVerse: Codable, Sendable {
     let theme: String?
     let reason: String?
     let text: String?
+    let art: VerseArt?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
@@ -42,6 +43,18 @@ struct TailoredVerse: Codable, Sendable {
         theme = try? c.decodeIfPresent(String.self, forKey: .theme)
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
         text = try? c.decodeIfPresent(String.self, forKey: .text)
+        art = try? c.decodeIfPresent(VerseArt.self, forKey: .art)
+    }
+}
+
+/// The day's tableau photograph behind the verse (server-curated, theme-matched).
+struct VerseArt: Codable, Sendable {
+    let url: String
+    let alt: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        url = (try? c.decodeIfPresent(String.self, forKey: .url)) ?? ""
+        alt = (try? c.decodeIfPresent(String.self, forKey: .alt)) ?? ""
     }
 }
 

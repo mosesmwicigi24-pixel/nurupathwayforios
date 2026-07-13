@@ -22,6 +22,7 @@ final class HomeViewModel: ObservableObject {
     // Verse
     @Published var verse: (text: String, reference: String, version: String)?
     @Published var verseReason: String?
+    @Published var verseArt: VerseArt?   // the day's tableau photograph (server-curated)
     @Published var reactions: VerseReactions?
     @Published var verseSaved = false
 
@@ -100,6 +101,7 @@ final class HomeViewModel: ObservableObject {
                 verse = (passage.text, passage.reference, passage.version)
             }
             verseReason = v.reason
+            verseArt = (v.art?.url.isEmpty == false) ? v.art : nil
         }
 
         self.welcomeVideo = await video ?? nil
@@ -228,6 +230,8 @@ struct HomeView: View {
     @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
+    @State private var verseShareDialog = false
+    @State private var verseShareImage: VerseImagePayload?
     @State private var openedLetter: PastoralLetter?   // Sunday Letter sheet
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
@@ -286,6 +290,7 @@ struct HomeView: View {
         if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
         s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
+        s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
         if let rp = resumePlan { s.append(("planresume", AnyView(planResumeBanner(rp)))) }              // 2c · Continue your plan (resume nudge)
         if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 3
         s.append(("verse", AnyView(verseCard)))                                                    // 4
@@ -308,12 +313,21 @@ struct HomeView: View {
         s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
         if reflectionDue { s.append(("priority2", AnyView(priorityStrip))) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
+        s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
         s.append(("grow", AnyView(growSection)))                                                  // 14
         if let fe = vm.featuredEvent { s.append(("event", AnyView(featuredGatheringCard(fe)))) }   // 14b · admin-featured event
         s.append(("upcoming", AnyView(upcomingSection)))                                              // 15
         s.append(("encourage", AnyView(oneReflectionBanner)))                                          // 16
         s.append(("cohort", AnyView(cohortSection)))                                                // 17
         s.append(("give", AnyView(giveBanner)))                                                   // 18
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted visual verification: NURU_UITEST_TOP=<row id> hoists that row
+        // to the top of the feed so a headless screenshot can behold it.
+        if let top = ProcessInfo.processInfo.environment["NURU_UITEST_TOP"],
+           let idx = s.firstIndex(where: { $0.id == top }), idx > 0 {
+            s.insert(s.remove(at: idx), at: 0)
+        }
+        #endif
         return s
     }
 
@@ -895,20 +909,45 @@ struct HomeView: View {
 
     private var verseCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
-                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
-                Spacer(minLength: 0)
-                Text((vm.verse?.version ?? "WEB").uppercased())
-                    .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Nuru.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
+            if let art = vm.verseArt {
+                // The tableau: the day's photograph carries the verse (owner ask —
+                // "something beautiful to behold" breaking the wall of text).
+                VerseTableauHeader(
+                    art: art,
+                    verseText: vm.verse?.text,
+                    reference: "\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")",
+                    version: vm.verse?.version ?? "WEB"
+                )
+            } else {
+                // No art (offline first paint / older backend): the classic cream reading.
+                HStack(spacing: 6) {
+                    Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
+                    Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                    Text((vm.verse?.version ?? "WEB").uppercased())
+                        .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
+                }
+                .padding([.horizontal, .top], Nuru.S.base)
+                Text(vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”")
+                    .font(.fraunces(18)).foregroundStyle(HomeFig.navy).lineSpacing(5).padding(.top, Nuru.S.md)
+                    .padding(.horizontal, Nuru.S.base)
+                Text("\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")")
+                    .font(.inter(13, .semibold)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.sm)
+                    .padding(.horizontal, Nuru.S.base)
             }
-            Text(vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”")
-                .font(.fraunces(18)).foregroundStyle(HomeFig.navy).lineSpacing(5).padding(.top, Nuru.S.md)
-            Text("\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")")
-                .font(.inter(13, .semibold)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.sm)
+            verseCardBody
+        }
+        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+    }
+
+    /// Season ribbon + reactions/save/share — shared by both verse renderings.
+    private var verseCardBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
             if let reason = vm.verseReason, !reason.isEmpty {
                 // The season ribbon — Nuru discerned this from THEIR recent
                 // prayers and reactions, so it reads as a personal choosing,
@@ -952,15 +991,42 @@ struct HomeView: View {
                     pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
                         .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
                 }.buttonStyle(.pressable)
-                Button { Haptics.tap(); sharePayload = SharePayload(text: verseShareText()) } label: {
+                Button { Haptics.tap(); shareVerseTapped() } label: {
                     pill(icon: .share2, label: "Share", tint: HomeFig.navy)
                 }.buttonStyle(.pressable)
             }
             .padding(.top, Nuru.S.md)
         }
         .padding(Nuru.S.base)
-        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+        .confirmationDialog("Share today's verse", isPresented: $verseShareDialog, titleVisibility: .visible) {
+            Button("Share as a picture") { Task { await shareVerseAsImage() } }
+            Button("Send in chat") { sharePayload = SharePayload(text: verseShareText()) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $verseShareImage) { payload in
+            VerseShareSheet(image: payload.image)
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// With a tableau the member chooses picture vs chat; without art the old
+    /// text-to-chat share fires directly (nothing to photograph).
+    private func shareVerseTapped() {
+        if vm.verseArt != nil { verseShareDialog = true }
+        else { sharePayload = SharePayload(text: verseShareText()) }
+    }
+
+    private func shareVerseAsImage() async {
+        guard let art = vm.verseArt else { return }
+        let text = vm.verse?.text ?? "Your word is a lamp to my feet, and a light for my path."
+        let ref = vm.verse?.reference ?? "Psalm 119:105"
+        let ver = vm.verse?.version ?? "WEB"
+        if let img = await VerseImageShare.render(art: art, verseText: text, reference: ref, version: ver) {
+            verseShareImage = VerseImagePayload(image: img)
+        } else {
+            // Couldn't fetch/render the picture (offline, CDN hiccup) — share the words.
+            sharePayload = SharePayload(text: verseShareText())
+        }
     }
 
     private func pill(icon: Lucide, label: String, tint: Color) -> some View {
