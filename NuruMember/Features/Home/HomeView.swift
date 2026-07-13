@@ -358,6 +358,16 @@ struct HomeView: View {
                 guard !reduceMotion else { return }
                 feedStaged = true   // rows render hidden this frame…
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { feedRisen = true }   // …then rise
+                // RETIRE the entrance once every stagger has finished (8 × 40ms
+                // + 0.5s spring ≈ 0.9s): with feedStaged back to false, every
+                // row's offset/opacity become PLAIN zeros — no expression left
+                // to linger. Without this, a scheduling race could strand a
+                // row 12pt low and visually fuse it into its neighbour
+                // (owner-reported "cards mangled together").
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.8) {
+                    var tx = Transaction(); tx.disablesAnimations = true
+                    withTransaction(tx) { feedStaged = false }
+                }
             }
             // Home root always shows the tab bar (plan screens hide it while inside).
             .onAppear { tabs.chromeHidden = false }
