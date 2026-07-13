@@ -283,11 +283,12 @@ struct HomeView: View {
             s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
         }
         if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first, only while live)
-        // The featured welcome video sits right under the header (owner ask) —
-        // it IS the "start here" moment, so it leads the feed. The thin ON AIR
-        // bar stays pinned above it while a broadcast is live (never bury the
-        // live station); with no broadcast this is the first card after the greeting.
-        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0 · Featured video (start here)
+        // Today's verse leads the feed — right under the header (owner ask): the
+        // daily Word first, then the featured welcome video. The thin ON AIR bar
+        // stays pinned above both while a broadcast is live (never bury the live
+        // station); with no broadcast the verse is the first card after the greeting.
+        s.append(("verse", AnyView(verseCard)))                                                    // 0 · Verse of the day (leads the feed)
+        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0a2 · Featured video (start here)
         if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0b · Live now
         if let lt = vm.letter, lt.isUnread { s.append(("letter", AnyView(letterKnock(lt)))) }       // 0c · A letter for you (unread Sunday Letter)
         s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0d · The hour's prayer line (liturgy, Phase 4)
@@ -297,7 +298,6 @@ struct HomeView: View {
         s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
         s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
         if let rp = resumePlan { s.append(("planresume", AnyView(planResumeBanner(rp)))) }              // 2c · Continue your plan (resume nudge)
-        s.append(("verse", AnyView(verseCard)))                                                    // 4
         if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }                // 5
         s.append(("celebrations", AnyView(CelebrationsRail())))                                           // 5b · Celebrate the family (moments, Phase 4)
         s.append(("minis", AnyView(minisRow)))                                                     // 6
