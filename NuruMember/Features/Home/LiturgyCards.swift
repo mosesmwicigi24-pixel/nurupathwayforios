@@ -38,26 +38,40 @@ struct HomeLiturgyCard: View {
             }
             if let lit {
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 7) {
                         Text(partEmoji(lit.part)).font(.system(size: 15))
                         Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
                             .font(.inter(10.5, .bold)).kerning(1.6)
                             .foregroundStyle(Color(hex: 0xF2DDA0))
                             .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-                        Spacer()
-                        if let ref = lit.scriptureRef {
-                            Text(ref)
-                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
-                                .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Color.black.opacity(0.22), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
-                        }
+                            .lineLimit(1)
+                        // Featured brand — this daily liturgy is Nuru Pathway's.
+                        BrandMark(size: 14)
+                        Text("Nuru Pathway")
+                            .font(.inter(10.5, .semibold)).foregroundStyle(.white)
+                            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                            .lineLimit(1)
+                        Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
+                        Spacer(minLength: 0)
                     }
                     Text(lit.line)
                         .font(.fraunces(18)).foregroundStyle(.white)
                         .lineSpacing(4)
                         .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                         .fixedSize(horizontal: false, vertical: true)
+                    if let ref = lit.scriptureRef {
+                        // The citation rests under the line, right-aligned — the
+                        // hour + brand now own the top row without crowding.
+                        HStack {
+                            Spacer(minLength: 0)
+                            Text(ref)
+                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
+                                .lineLimit(1)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .background(Color.black.opacity(0.22), in: Capsule())
+                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                        }
+                    }
                 }
                 .padding(18)
                 .frame(maxWidth: .infinity, alignment: .leading)
