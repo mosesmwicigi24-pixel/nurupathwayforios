@@ -47,6 +47,12 @@ final class HomeViewModel: ObservableObject {
     /// The latest Sunday Letter (intelligence layer) — drives the gold
     /// "A letter for you" knock on Home while unread.
     @Published var letter: PastoralLetter?
+    /// Flips true the moment the THIRD rhythm discipline lands DURING this
+    /// session — a refresh moving 2→3, never a first load that arrives already
+    /// done. Per-session only (nothing persisted): the rhythm card answers with
+    /// one soft gold sweep and a "Day sealed" line that stays.
+    @Published var daySealed = false
+    private var lastRhythmDone: Int?
 
     func load() async {
         loading = true; error = nil
@@ -81,6 +87,10 @@ final class HomeViewModel: ObservableObject {
         if let g = await greet, !g.isEmpty { greetingLine = g }
         self.nextAction = await next ?? nil
         if let r = await rhythm { self.rhythm = r }
+        // Day sealed — only a WITNESSED completion counts (a count this session
+        // below 3 rising to 3). All-done on the very first load stays quiet.
+        if let prev = lastRhythmDone, prev < 3, self.rhythm.doneCount == 3 { daySealed = true }
+        lastRhythmDone = self.rhythm.doneCount
         self.scores = await scores
         self.reactions = await vr
 
@@ -219,6 +229,17 @@ struct HomeView: View {
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
     @State private var openedLetter: PastoralLetter?   // Sunday Letter sheet
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    // "Day sealed" — one soft gold radial sweep over the rhythm card when the
+    // third discipline lands mid-session. Opacity-only, and Reduce Motion never
+    // stages it (the haptic + caption still speak).
+    @State private var sealGlow: Double = 0
+    // One-shot feed entrance — plays ONCE per app session, the first time real
+    // content replaces the skeleton. Static, so tab hops, refreshes and even a
+    // text-size rebuild (RootView's `.id(textScale)`) can never replay it.
+    private static var feedEntranceDone = false
+    @State private var feedStaged = false   // rows begin hidden, awaiting the rise
+    @State private var feedRisen = false    // the staggered rise has run
 
     // The five Grow tiles from the fresh Figma GrowGrid (exact tints/labels).
     private var growTiles: [GrowTile] {
@@ -306,8 +327,17 @@ struct HomeView: View {
                     // 20pt between sections — the 16pt grid read congested with
                     // this many cards; each one gets room to breathe (owner ask).
                     VStack(spacing: 20) {
-                        ForEach(Array(feedSections.enumerated()), id: \.offset) { _, section in
+                        ForEach(Array(feedSections.enumerated()), id: \.offset) { i, section in
+                            // One-shot entrance (the session's first real render
+                            // only): the first 8 cards fade in and rise 12pt,
+                            // 40ms apart. Deeper cards — and every render after
+                            // feedRisen settles — are instant, layout untouched.
+                            let entering = feedStaged && i < 8
                             section
+                                .opacity(entering && !feedRisen ? 0 : 1)
+                                .offset(y: entering && !feedRisen ? 12 : 0)
+                                .animation(entering ? .spring(response: 0.5, dampingFraction: 0.85).delay(Double(i) * 0.04) : nil,
+                                           value: feedRisen)
                         }
                     }
                     .padding(.horizontal, Nuru.S.base)
@@ -319,6 +349,16 @@ struct HomeView: View {
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
+            // Arm the one-shot entrance the moment real content replaces the
+            // skeleton — and never again (feedEntranceDone). Reduce Motion
+            // skips it entirely: cards simply stand where they belong.
+            .onChange(of: vm.loading) { _, isLoading in
+                guard !isLoading, vm.pathway != nil, !Self.feedEntranceDone else { return }
+                Self.feedEntranceDone = true
+                guard !reduceMotion else { return }
+                feedStaged = true   // rows render hidden this frame…
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { feedRisen = true }   // …then rise
+            }
             // Home root always shows the tab bar (plan screens hide it while inside).
             .onAppear { tabs.chromeHidden = false }
             .nuruDestinations()
@@ -467,6 +507,7 @@ struct HomeView: View {
                             Icon(.flame, size: 11, color: Color(hex: 0xDC6B26))
                             Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB4530A))
                                 .contentTransition(.numericText())
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: vm.streak)
                         }
                     } else {
                         Text("Begin today").font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
@@ -1401,6 +1442,8 @@ struct HomeView: View {
                     Icon(.flame, size: 12, color: Nuru.goldChipText)
                     Text(displayStreak > 0 ? "\(displayStreak)-day streak" : "Start today")
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .contentTransition(.numericText())
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: displayStreak)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 5)
                 .background(Nuru.goldChipBg, in: Capsule())
@@ -1411,6 +1454,15 @@ struct HomeView: View {
                 rhythmTile("reflection", "Reflection")
             }
             .padding(.top, Nuru.S.md)
+            // The seal — appears when the third discipline lands mid-session
+            // and stays for the rest of it. A blessing spoken once, not a badge.
+            if vm.daySealed {
+                Text("Day sealed · well walked")
+                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, Nuru.S.md)
+                    .transition(.opacity)
+            }
             // Weekly consistency — reflects real completion (today fills when done).
             HomeWeekChain(streakDays: vm.streak, todayDone: complete)
                 .padding(.top, 14)
@@ -1421,6 +1473,24 @@ struct HomeView: View {
         }
         .padding(Nuru.S.base)
         .cardSurface()
+        // The sweep itself — soft gold breathing out from the card's heart,
+        // 0.35 → 0 over 1.2s. Invisible at rest; never intercepts a touch.
+        .overlay {
+            RadialGradient(colors: [Nuru.gold, .clear], center: .center, startRadius: 0, endRadius: 240)
+                .opacity(sealGlow)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .allowsHitTesting(false)
+        }
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.5), value: vm.daySealed)
+        .onChange(of: vm.daySealed) { _, sealed in
+            guard sealed else { return }
+            Haptics.success()
+            guard !reduceMotion else { return }   // haptic + caption only
+            sealGlow = 0.35   // land at full…
+            DispatchQueue.main.async {            // …then fade on the next tick
+                withAnimation(.easeOut(duration: 1.2)) { sealGlow = 0 }
+            }
+        }
     }
 
     // Read-only: each chip is a reflection of real acts (prayer posted/encouraged,

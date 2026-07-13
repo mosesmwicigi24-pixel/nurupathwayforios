@@ -221,6 +221,9 @@ final class ChatVoicePlayer: ObservableObject {
 
     @Published var playingId: String?
     @Published var progress: Double = 0
+    /// True while a finger is on a waveform — the progress ticker yields so
+    /// the bars track the scrub, not the (still-chasing) player clock.
+    var scrubbing = false
 
     private var player: AVPlayer?
     private var ticker: Timer?
@@ -271,6 +274,7 @@ final class ChatVoicePlayer: ObservableObject {
                 // A load that dies (offline, bad URL) must not wedge the
                 // bubble in a silent "playing" state.
                 if p.currentItem?.status == .failed || p.error != nil { self.stop(); return }
+                guard !self.scrubbing else { return }   // the finger owns progress
                 self.progress = min(1, max(0, p.currentTime().seconds / self.durationSec))
             }
         }
@@ -293,6 +297,16 @@ final class ChatVoicePlayer: ObservableObject {
         }
     }
 
+    /// Waveform scrub — jump to a fraction of the playing item. Progress is
+    /// set immediately so the bars track the finger, not the seek latency.
+    func seek(toFraction fraction: Double) {
+        guard let p = player else { return }
+        let f = min(1, max(0, fraction))
+        progress = f
+        p.seek(to: CMTime(seconds: f * durationSec, preferredTimescale: 600),
+               toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
     func stop() {
         player?.pause(); player = nil
         ticker?.invalidate(); ticker = nil
@@ -300,6 +314,7 @@ final class ChatVoicePlayer: ObservableObject {
         if let o = interruptionObserver { NotificationCenter.default.removeObserver(o); interruptionObserver = nil }
         playingId = nil
         progress = 0
+        scrubbing = false   // a track ending mid-drag must not freeze the ticker
         if holdsSession { holdsSession = false; VoiceAudioSession.release() }
     }
 }
@@ -349,6 +364,7 @@ struct VoiceMessageBubble: View {
     let message: ChatMessage
     @ObservedObject var player: ChatVoicePlayer
     let onDark: Bool   // true inside my navy bubble, false on the light bubble
+    @State private var scrubbing = false   // a finger is on THIS bubble's wave
 
     private var duration: Int { message.attachmentMeta?.duration ?? 0 }
     private var playing: Bool { player.playingId == message.messageId }
@@ -378,6 +394,33 @@ struct VoiceMessageBubble: View {
                 playedTint: onDark ? .white : Nuru.gold,
                 restTint: onDark ? Color.white.opacity(0.4) : Nuru.gold.opacity(0.35),
             )
+            // Scrub — drag along the wave to seek (x → fraction). A drag on a
+            // silent bubble starts it first, then seeks; the 10pt threshold
+            // leaves vertical thread scrolling untouched.
+            .overlay {
+                GeometryReader { geo in
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(
+                            DragGesture(minimumDistance: 10)
+                                .onChanged { g in
+                                    if !scrubbing {
+                                        scrubbing = true
+                                        Haptics.tap()
+                                        if !playing, let url = message.attachmentUrl {
+                                            player.toggle(id: message.messageId, url: url, durationSec: duration)
+                                        }
+                                        player.scrubbing = true   // after toggle — its stop() clears the flag
+                                    }
+                                    player.seek(toFraction: g.location.x / max(1, geo.size.width))
+                                }
+                                .onEnded { _ in
+                                    scrubbing = false
+                                    player.scrubbing = false
+                                }
+                        )
+                }
+            }
             Text(String(format: "%d:%02d", duration / 60, duration % 60))
                 .font(.inter(11, .semibold)).monospacedDigit()
                 .foregroundStyle(onDark ? Color.white.opacity(0.85) : Nuru.ink600)

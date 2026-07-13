@@ -174,6 +174,8 @@ private struct MomentCard: View {
                 if count > 0 {
                     Text("\(count)").font(.inter(11, .bold))
                         .foregroundStyle(mine ? Nuru.navy : Nuru.muted)
+                        .contentTransition(.numericText())   // ticks up, never snaps
+                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
                 }
             }
             .padding(.horizontal, 9).padding(.vertical, 6)
