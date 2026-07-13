@@ -3,6 +3,7 @@
 // client. Only the endpoints needed by the current slice are wired; the rest are
 // ported screen-by-screen (see PORT_STATUS.md).
 import Foundation
+import Network
 
 enum MemberAPI {
     // MARK: Auth
@@ -567,10 +568,10 @@ extension MemberAPI {
     }
 
     /// POST /me/devices — register this device for the leadership device
-    /// census (platform / app version / model). push_token stays absent until
-    /// APNs ships (needs the paid Apple Developer Program).
+    /// census (platform / app version / model / network). push_token stays
+    /// absent until APNs ships (needs the paid Apple Developer Program).
     static func registerDevice() async {
-        struct Body: Encodable { let platform: String; let appVersion: String?; let model: String? }
+        struct Body: Encodable { let platform: String; let appVersion: String?; let model: String?; let network: String? }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String
         var sys = utsname(); uname(&sys)
@@ -581,8 +582,39 @@ extension MemberAPI {
         _ = try? await APIClient.shared.post("me/devices",
             body: Body(platform: "ios",
                        appVersion: [version, build].compactMap { $0 }.joined(separator: "+"),
-                       model: model.isEmpty ? nil : model),
+                       model: model.isEmpty ? nil : model,
+                       network: await currentNetworkKind()),
             as: Res.self)
+    }
+
+    /// One-shot sample of the current network path for the census —
+    /// "wifi" | "cellular" | "other", or nil when the path is unsatisfied or
+    /// hasn't reported within ~1s (nil is simply omitted from the JSON body).
+    /// The whole registerDevice call runs detached after login, so the cap is
+    /// belt-and-braces: this can never hold up sign-in.
+    private static func currentNetworkKind() async -> String? {
+        // Single-fire guard — only ever touched on the serial `queue` below
+        // (path handler + timeout both run there), hence @unchecked Sendable.
+        final class Once: @unchecked Sendable { var fired = false }
+        return await withCheckedContinuation { (cont: CheckedContinuation<String?, Never>) in
+            let queue = DispatchQueue(label: "nuru.device-census.network")
+            let monitor = NWPathMonitor()
+            let once = Once()
+            let finish: @Sendable (String?) -> Void = { value in
+                guard !once.fired else { return }
+                once.fired = true
+                monitor.cancel()
+                cont.resume(returning: value)
+            }
+            monitor.pathUpdateHandler = { path in         // fires on `queue`
+                guard path.status == .satisfied else { return finish(nil) }
+                if path.usesInterfaceType(.wifi) { finish("wifi") }
+                else if path.usesInterfaceType(.cellular) { finish("cellular") }
+                else { finish("other") }
+            }
+            queue.asyncAfter(deadline: .now() + 1) { finish(nil) }
+            monitor.start(queue: queue)
+        }
     }
 
     /// POST /chat/conversations/{id}/read — mark the thread read.
