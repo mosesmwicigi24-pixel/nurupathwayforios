@@ -282,17 +282,21 @@ struct HomeView: View {
         if vm.error != nil && vm.pathway == nil {
             s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
         }
-        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first)
-        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0 · Live now
-        if let lt = vm.letter, lt.isUnread { s.append(("letter", AnyView(letterKnock(lt)))) }       // 0b · A letter for you (unread Sunday Letter)
-        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0c · The hour's prayer line (liturgy, Phase 4)
-        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0d · Today's echo — the app remembers you (Wave 1)
+        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first, only while live)
+        // The featured welcome video sits right under the header (owner ask) —
+        // it IS the "start here" moment, so it leads the feed. The thin ON AIR
+        // bar stays pinned above it while a broadcast is live (never bury the
+        // live station); with no broadcast this is the first card after the greeting.
+        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0 · Featured video (start here)
+        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0b · Live now
+        if let lt = vm.letter, lt.isUnread { s.append(("letter", AnyView(letterKnock(lt)))) }       // 0c · A letter for you (unread Sunday Letter)
+        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0d · The hour's prayer line (liturgy, Phase 4)
+        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0e · Today's echo — the app remembers you (Wave 1)
         if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
         s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
         s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
         if let rp = resumePlan { s.append(("planresume", AnyView(planResumeBanner(rp)))) }              // 2c · Continue your plan (resume nudge)
-        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 3
         s.append(("verse", AnyView(verseCard)))                                                    // 4
         if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }                // 5
         s.append(("celebrations", AnyView(CelebrationsRail())))                                           // 5b · Celebrate the family (moments, Phase 4)
