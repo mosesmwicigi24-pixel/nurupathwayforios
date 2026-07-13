@@ -329,7 +329,14 @@ struct HomeView: View {
                     // Each group boundary erases the tuple, keeping every type small.
                     // 20pt between sections — the 16pt grid read congested with
                     // this many cards; each one gets room to breathe (owner ask).
-                    VStack(spacing: 20) {
+                    // Spacing-by-padding: each row OWNS its 20pt skirt as part
+                    // of its layout frame instead of negotiating VStack spacing
+                    // with its neighbour. On the owner's device something kept
+                    // collapsing inter-row spacing around the radio/liturgy/echo
+                    // rows (two fixes survived in the sim, not in the field) —
+                    // intrinsic padding is part of the row's own geometry and
+                    // cannot be eaten by identity, insertion, or animation.
+                    VStack(spacing: 0) {
                         ForEach(Array(feedSections.enumerated()), id: \.element.id) { i, section in
                             // One-shot entrance, OPACITY ONLY. The old 12pt rise
                             // painted rows away from their layout slot, and two
@@ -340,6 +347,7 @@ struct HomeView: View {
                             // by construction.
                             let entering = feedStaged && i < 8
                             section.view
+                                .padding(.bottom, 20)
                                 .opacity(entering && !feedRisen ? 0 : 1)
                                 .animation(entering ? .easeOut(duration: 0.45).delay(Double(i) * 0.04) : nil,
                                            value: feedRisen)
@@ -347,7 +355,7 @@ struct HomeView: View {
                     }
                     .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.tabBarSpace)
+                    .padding(.bottom, Nuru.tabBarSpace - 20)  // last row brings its own 20pt skirt
                 }
             }
             .ignoresSafeArea(edges: .top)
