@@ -11,6 +11,21 @@
 // overlays CLIPPED to owned frames — nothing here can inflate layout.
 import SwiftUI
 
+/// The deep-navy veil laid over a tableau photograph so the type stays legible:
+/// the image shows through (a bit hidden), the navy deepens toward the base
+/// where the text sits. Shared by the verse tableau and the liturgy card so the
+/// two read as one family. Owned+clipped by its host — never inflates layout.
+struct DeepNavyBlock: View {
+    private static let navy = Color(hex: 0x0A1628)
+    var body: some View {
+        LinearGradient(stops: [
+            .init(color: Self.navy.opacity(0.48), location: 0),
+            .init(color: Self.navy.opacity(0.58), location: 0.45),
+            .init(color: Self.navy.opacity(0.92), location: 1),
+        ], startPoint: .top, endPoint: .bottom)
+    }
+}
+
 // MARK: - The tableau header (sits above the cream verse body)
 
 struct VerseTableauHeader: View {
@@ -41,14 +56,7 @@ struct VerseTableauHeader: View {
                 }
             }
             .clipped()   // the fill overlay can never spill past the owned frame
-            .overlay {
-                // Legibility scrim — quiet at the top, certain at the base.
-                LinearGradient(stops: [
-                    .init(color: .black.opacity(0.18), location: 0),
-                    .init(color: .black.opacity(0.05), location: 0.35),
-                    .init(color: .black.opacity(0.62), location: 1),
-                ], startPoint: .top, endPoint: .bottom)
-            }
+            .overlay { DeepNavyBlock() }   // deep-navy veil — the type stays certain
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 6) {
                     Icon(.bookOpen, size: 13, color: Color(hex: 0xF2DDA0))
