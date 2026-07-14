@@ -37,53 +37,77 @@ struct HomeLiturgyCard: View {
                 Color.clear.frame(height: 0)
             }
             if let lit {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 7) {
-                        Text(partEmoji(lit.part)).font(.system(size: 15))
-                        Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
-                            .font(.inter(10.5, .bold)).kerning(1.6)
-                            .foregroundStyle(Color(hex: 0xF2DDA0))
-                            .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-                            .lineLimit(1)
-                        // Featured brand — this daily liturgy is Nuru Pathway's.
-                        BrandMark(size: 14)
-                        Text("Nuru Pathway")
-                            .font(.inter(10.5, .semibold)).foregroundStyle(.white)
-                            .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
-                            .lineLimit(1)
-                        Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
-                        Spacer(minLength: 0)
-                    }
-                    Text(lit.line)
-                        .font(.fraunces(18)).foregroundStyle(.white)
-                        .lineSpacing(4)
-                        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let ref = lit.scriptureRef {
-                        // The citation rests under the line, right-aligned — the
-                        // hour + brand now own the top row without crowding.
-                        HStack {
-                            Spacer(minLength: 0)
-                            Text(ref)
-                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
-                                .lineLimit(1)
-                                .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Color.black.opacity(0.22), in: Capsule())
-                                .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                if let art = lit.art, let url = URL(string: art.url), !art.url.isEmpty {
+                    // The hour, beheld: a taller photograph of the hour it names,
+                    // hidden a little under the deep-navy block, with the hour +
+                    // brand at the top and the prayer line resting at the BOTTOM
+                    // where the veil is deepest — so the type reads clearly (owner
+                    // ask). Everything is owned+clipped, never inflates layout.
+                    Color.clear
+                        .frame(height: 206)
+                        .overlay {
+                            CachedAsyncImage(url: url) { phase in
+                                if let img = phase.image {
+                                    img.resizable().scaledToFill()
+                                } else {
+                                    LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                }
+                            }
+                        }
+                        .clipped()
+                        .overlay { DeepNavyBlock() }
+                        .overlay(alignment: .topLeading) { litKicker(lit).padding(18) }
+                        .overlay(alignment: .bottomLeading) {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(lit.line)
+                                    .font(.fraunces(19)).foregroundStyle(.white)
+                                    .lineSpacing(4)
+                                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if let ref = lit.scriptureRef {
+                                    Text(ref)
+                                        .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.92))
+                                        .lineLimit(1)
+                                        .padding(.horizontal, 10).padding(.vertical, 4)
+                                        .background(Color.black.opacity(0.28), in: Capsule())
+                                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                                }
+                            }
+                            .padding(18)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                } else {
+                    // Offline / older backend: the classic navy card, content-sized.
+                    VStack(alignment: .leading, spacing: 10) {
+                        litKicker(lit)
+                        Text(lit.line)
+                            .font(.fraunces(18)).foregroundStyle(.white)
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let ref = lit.scriptureRef {
+                            HStack {
+                                Spacer(minLength: 0)
+                                Text(ref)
+                                    .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
+                                    .padding(.horizontal, 10).padding(.vertical, 4)
+                                    .background(Color.white.opacity(0.12), in: Capsule())
+                            }
                         }
                     }
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                            .overlay(alignment: .topTrailing) {
+                                Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
+                                    .frame(width: 150, height: 150).blur(radius: 38)
+                                    .offset(x: 45, y: -55)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    )
                 }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    // Home breathes with the hours: the card carries a photograph
-                    // of the hour it names (dawn/noon/dusk/night), under a navy
-                    // scrim so the white serif stays legible. Everything lives
-                    // inside .background (never affects layout) and is clipped to
-                    // the card — the ornament rule after the ios#72 fusion bug.
-                    litBackground(art: lit.art)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                )
             }
         }
         .task { lit = try? await MemberAPI.homeLiturgy() }
@@ -94,43 +118,24 @@ struct HomeLiturgyCard: View {
         }
     }
 
-    /// The hour's photograph behind a navy scrim, or the classic navy gradient
-    /// (+ gold glow) when there's no art / we're offline. Returns some View via
-    /// AnyView so both branches share the one `.background` slot.
+    /// The hour + brand row — shared by the tableau (top overlay) and the
+    /// classic offline card. Gold hour label, then the Nuru Pathway lockup.
     @ViewBuilder
-    private func litBackground(art: VerseArt?) -> some View {
-        if let art, let url = URL(string: art.url), !art.url.isEmpty {
-            Color.clear
-                .overlay {
-                    CachedAsyncImage(url: url) { phase in
-                        if let img = phase.image {
-                            img.resizable().scaledToFill()
-                        } else {
-                            // Loading / failed → the navy field, so white text
-                            // always has contrast (never a bright flash).
-                            LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                        }
-                    }
-                }
-                .overlay(
-                    // Navy scrim: keeps the brand feel and the serif legible even
-                    // over a bright midday sky — quiet at top, certain at base.
-                    LinearGradient(stops: [
-                        .init(color: Color(hex: 0x0A1C33).opacity(0.42), location: 0),
-                        .init(color: Color(hex: 0x0A1C33).opacity(0.50), location: 0.5),
-                        .init(color: Color(hex: 0x0A1C33).opacity(0.84), location: 1),
-                    ], startPoint: .top, endPoint: .bottom)
-                )
-                .clipped()
-        } else {
-            LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
-                        .frame(width: 150, height: 150).blur(radius: 38)
-                        .offset(x: 45, y: -55)
-                }
+    private func litKicker(_ lit: HomeLiturgy) -> some View {
+        HStack(spacing: 7) {
+            Text(partEmoji(lit.part)).font(.system(size: 15))
+            Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
+                .font(.inter(10.5, .bold)).kerning(1.6)
+                .foregroundStyle(Color(hex: 0xF2DDA0))
+                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                .lineLimit(1)
+            BrandMark(size: 14)
+            Text("Nuru Pathway")
+                .font(.inter(10.5, .semibold)).foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                .lineLimit(1)
+            Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
+            Spacer(minLength: 0)
         }
     }
 }
