@@ -19,9 +19,9 @@ struct DeepNavyBlock: View {
     private static let navy = Color(hex: 0x0A1628)
     var body: some View {
         LinearGradient(stops: [
-            .init(color: Self.navy.opacity(0.48), location: 0),
+            .init(color: Self.navy.opacity(0.40), location: 0),
             .init(color: Self.navy.opacity(0.58), location: 0.45),
-            .init(color: Self.navy.opacity(0.92), location: 1),
+            .init(color: Self.navy.opacity(0.97), location: 1),
         ], startPoint: .top, endPoint: .bottom)
     }
 }
