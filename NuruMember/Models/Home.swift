@@ -70,6 +70,7 @@ struct VerseReactions: Codable, Sendable {
     var counts: [String: Int] = [:]
     var mine: String? = nil
     var total: Int = 0
+    init() {}   // the custom init(from:) suppresses the default — restore it
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         counts = (try? c.decodeIfPresent([String: Int].self, forKey: .counts)) ?? [:]
