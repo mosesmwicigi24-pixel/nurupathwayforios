@@ -166,7 +166,30 @@ final class HomeViewModel: ObservableObject {
     }
 
     // Verse
-    func reactVerse(_ emoji: String) async { reactions = try? await MemberAPI.setVerseReaction(emoji) }
+    /// Toggle my reaction to today's verse. OPTIMISTIC: the tap shows instantly
+    /// (one reaction per member/day — tapping my current emoji removes it, a
+    /// different one MOVES it), then we reconcile with the server. A dropped or
+    /// failed request rolls back to the prior counts instead of blanking them
+    /// (the old `try?` swallowed errors into nil, so a slow tap read as "nothing
+    /// happened" — the reported bug).
+    func reactVerse(_ emoji: String) async {
+        let previous = reactions
+        var r = reactions ?? VerseReactions()
+        func drop(_ e: String) {
+            let n = (r.counts[e] ?? 0) - 1
+            if n > 0 { r.counts[e] = n } else { r.counts[e] = nil }
+        }
+        if r.mine == emoji {
+            drop(emoji); r.mine = nil                    // tapped my own → remove
+        } else {
+            if let old = r.mine { drop(old) }            // move off the old one
+            r.counts[emoji, default: 0] += 1; r.mine = emoji
+        }
+        r.total = r.counts.values.reduce(0, +)
+        reactions = r                                    // instant feedback
+        do { reactions = try await MemberAPI.setVerseReaction(emoji) }
+        catch { reactions = previous }                   // server said no → restore
+    }
     func saveVerse() async {
         guard !verseSaved, let v = verse else { return }
         verseSaved = true
