@@ -44,7 +44,7 @@ struct HomeLiturgyCard: View {
                     // where the veil is deepest — so the type reads clearly (owner
                     // ask). Everything is owned+clipped, never inflates layout.
                     Color.clear
-                        .frame(height: 206)
+                        .frame(height: 232)
                         .overlay {
                             CachedAsyncImage(url: url) { phase in
                                 if let img = phase.image {
