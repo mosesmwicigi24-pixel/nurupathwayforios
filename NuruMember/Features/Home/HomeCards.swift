@@ -708,34 +708,6 @@ struct HomeOnAirCard: View {
 }
 
 
-// MARK: - Equalizer wave (Apple-Music-style dancing bars while radio plays)
-
-/// Five capsule bars bouncing on staggered, slightly-detuned loops so the wave
-/// reads organic rather than metronomic. Purely decorative — honors Reduce
-/// Motion by holding a static mid-height wave.
-struct EqualizerWave: View {
-    var color: Color = HomeFig.gold
-    var barHeight: CGFloat = 14
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dancing = false
-    // Each bar's full height as a share of barHeight — an uneven skyline.
-    private let peaks: [CGFloat] = [0.55, 1.0, 0.7, 0.9, 0.5]
-
-    var body: some View {
-        HStack(alignment: .center, spacing: 2.5) {
-            ForEach(peaks.indices, id: \.self) { i in
-                Capsule().fill(color)
-                    .frame(width: 3, height: max(3, peaks[i] * barHeight * (dancing ? 1 : 0.3)))
-                    .animation(reduceMotion ? nil
-                               : .easeInOut(duration: 0.42 + Double(i) * 0.07).repeatForever(autoreverses: true),
-                               value: dancing)
-            }
-        }
-        .frame(height: barHeight)
-        .onAppear { dancing = true }
-    }
-}
-
 // MARK: - "New today" pulsing dot (devotional tile in the Grow grid)
 
 struct HomePulseDot: View {

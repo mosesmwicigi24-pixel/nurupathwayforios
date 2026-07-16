@@ -1449,23 +1449,6 @@ private struct IntenseCelebration: View {
     }
 }
 
-// MARK: - Reader scroll/dwell preference keys
-
-private struct ReaderScrollKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-private struct ViewportHKey: PreferenceKey {
-    static var defaultValue: CGFloat = 720
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { let n = nextValue(); if n > 0 { value = n } }
-}
-private struct SectionFramesKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
-    }
-}
-
 // MARK: - Day reader section components (single-scroll reading)
 
 /// Gold pull-quote. Never double-quotes: verse text already carries curly quotes.
