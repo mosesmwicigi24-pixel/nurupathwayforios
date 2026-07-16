@@ -639,22 +639,51 @@ extension MemberAPI {
         return try await APIClient.shared.post("chat/dms", body: Body(userId: peerUserId), as: Res.self).conversationId
     }
 
-    /// POST /chat/broadcast — staff only (Instructor+; the server 403s Students):
-    /// ONE message delivered to every active member of the congregation as an
-    /// individual DM from the sender — replies come back as normal 1:1 threads.
-    /// May carry an image (`msgType: "image"` + `attachmentUrl` from the
-    /// sign-and-upload flow below); `body` is then the caption. Returns how many
-    /// members it reached. Replays of the same clientMutationId are server-side
-    /// no-ops (§3.6).
+    /// POST /chat/broadcast — SuperAdmin only, and password-gated (§5.3): a 403
+    /// carrying `details.password_required` means confirm and retry, not "no".
+    ///
+    /// ONE message delivered to every active member as an individual DM from the
+    /// sender — replies come back as private 1:1 threads only the sender can
+    /// open. May carry an image (`msgType: "image"` + `attachmentUrl` from the
+    /// sign-and-upload flow below); `body` is then the caption.
+    ///
+    /// `audience` OMITTED means the whole church — do not pass "congregation"
+    /// unless the person deliberately narrowed it. Sending it by default is what
+    /// made a broadcast reach 40 of 60 members: the other 19 have no
+    /// congregation to be scoped to.
+    ///
+    /// Returns the message AS SENT, whole — so the page can show it immediately
+    /// rather than refetching to find out what was just said. Replays of the same
+    /// clientMutationId are server-side no-ops and return the same thing (§3.6).
     static func broadcast(body: String, attachmentUrl: String? = nil, msgType: String = "text",
-                          clientMutationId: String = UUID().uuidString) async throws -> Int {
+                          audience: String? = nil,
+                          clientMutationId: String = UUID().uuidString) async throws -> BroadcastSent {
         struct Body: Encodable {
-            let body: String; let msgType: String; let attachmentUrl: String?; let clientMutationId: String
+            let body: String; let msgType: String; let attachmentUrl: String?
+            let audience: String?; let clientMutationId: String
         }
-        struct Res: Decodable { let sent: Int }
         return try await APIClient.shared.post("chat/broadcast",
             body: Body(body: body, msgType: msgType, attachmentUrl: attachmentUrl,
-                       clientMutationId: clientMutationId), as: Res.self).sent
+                       audience: audience, clientMutationId: clientMutationId), as: BroadcastSent.self)
+    }
+
+    /// GET /chat/broadcasts — what I have sent, newest first. Opens on the last 4
+    /// (the ones still live enough to watch); ask for more when they tap through.
+    static func broadcasts(limit: Int = 4) async throws -> BroadcastList {
+        try await APIClient.shared.get("chat/broadcasts", query: ["limit": String(limit)], as: BroadcastList.self)
+    }
+
+    /// GET /chat/broadcasts/{id} — the message, every answer to it, and the ticks
+    /// (who it reached, who has opened it).
+    static func broadcastDetail(_ broadcastId: String) async throws -> BroadcastDetail {
+        try await APIClient.shared.get("chat/broadcasts/\(broadcastId)", as: BroadcastDetail.self)
+    }
+
+    /// POST /auth/confirm-password — prove I am the account owner, right now, and
+    /// re-mint my access token so the password-gated screens open (§5.3). Throws
+    /// on a wrong password (401) without spending a second lockout attempt.
+    static func confirmPassword(_ password: String) async throws {
+        try await APIClient.shared.confirmPassword(password)
     }
 
     // MARK: Chat attachments (bytes go straight to Cloudinary, never our server — §4.5)

@@ -337,15 +337,20 @@ struct ChatView: View {
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
 
-    /// Staff gate for the Broadcast composer — mirrors the server's
-    /// requireRole("Instructor"): any role above Student (Instructor, Admin,
-    /// SuperAdmin). The server 403s Students regardless; this only hides the UI.
+    /// SuperAdmin gate for the Broadcast segment — mirrors the server's
+    /// requireRole("SuperAdmin").
+    ///
+    /// NOT "any role above Student", which is what this used to be: a cell leader
+    /// is a member who is not an admin, and the Broadcast does not exist for them.
+    /// The server refuses everyone below SuperAdmin regardless; this keeps the tab
+    /// from being offered to people it would only refuse. Compared case-insensitively
+    /// because the app has both spellings in the wild, and failing open here would
+    /// mean showing a door that never opens.
     private var isStaff: Bool {
-        guard let role = auth.profile?.role, !role.isEmpty else { return false }
-        return role != "Student"
+        (auth.profile?.role ?? "").lowercased() == "superadmin"
     }
 
-    // Megaphone pill — 4th segment, staff only (no count chip; it's a composer).
+    // Megaphone pill — 4th segment, SuperAdmin only (no count chip; it's a composer).
     private var broadcastSegmentButton: some View {
         let selected = segment == .broadcast
         return Button {
@@ -1151,12 +1156,51 @@ private struct DiscoverSpaceRow: View {
 // The Broadcast segment body: an inspiring composer card. What the admin writes
 // here is fanned out server-side (POST /chat/broadcast) as an individual DM to
 // every member of the congregation — replies arrive back as normal 1:1 threads.
+/// The message you just sent, shown as the sent thing — its own words in the
+/// serif the app reserves for what is being said, and the count it actually
+/// reached. Built from the send's own reply; nothing is refetched to draw it.
+private struct BroadcastSentCard: View {
+    let sent: Broadcast
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Icon(.megaphone, size: 11, color: Nuru.goldChipText)
+                Text("SENT TO EVERYONE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                Spacer(minLength: 0)
+                Text(reach).font(.nCardMeta).foregroundStyle(Nuru.ink600)
+            }
+            Text(sent.body)
+                .font(.fraunces(15)).foregroundStyle(Nuru.navy).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.md)
+        .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+    }
+
+    private var reach: String {
+        let n = sent.recipientCount
+        return "\(n) member" + (n == 1 ? "" : "s")
+    }
+}
+
 private struct BroadcastComposer: View {
     @State private var text = ""
     @State private var confirming = false
     @State private var sending = false
     @State private var sentTo: Int?
     @State private var errorText: String?
+    /// The server asked us to confirm the password (§5.3). The draft survives it.
+    @State private var askingPassword = false
+    /// The message as it went out — shown at once from the send's own reply,
+    /// with no refetch to find out what we just said.
+    @State private var justSent: Broadcast?
+    /// Held across a password prompt so confirm-then-retry resumes THIS send
+    /// rather than starting a second one. A new id is minted only after a send
+    /// actually lands.
+    @State private var mutationId = UUID().uuidString
     // ✨ AI drafting + 🖼️ image attachment (sign → Cloudinary → secure_url)
     @State private var aiDrafting = false
     @State private var photoItem: PhotosPickerItem?
@@ -1227,6 +1271,12 @@ private struct BroadcastComposer: View {
                 guard item != nil else { return }
                 Task { await uploadPicked() }
             }
+            // The message, as sent — drawn from the send's own reply, so it
+            // appears the instant it lands rather than after a refetch.
+            if let sent = justSent {
+                BroadcastSentCard(sent: sent)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             if let n = sentTo {
                 HStack(spacing: 6) {
                     Icon(.checkCircle2, size: 14, color: Color(hex: 0x15803D))
@@ -1280,6 +1330,13 @@ private struct BroadcastComposer: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: sentTo)
         .animation(.easeInOut(duration: 0.2), value: errorText)
         .animation(.easeInOut(duration: 0.2), value: attachmentImage == nil)
+        // The server asked who is holding the phone. Confirm, then finish the
+        // send that was already in flight — the draft never left the field.
+        .sheet(isPresented: $askingPassword) {
+            PasswordConfirmSheet(reason: "This message goes to every member in your name. Confirm your password to send it.") {
+                Task { await send() }
+            }
+        }
     }
 
     private var canSend: Bool {
@@ -1290,14 +1347,27 @@ private struct BroadcastComposer: View {
         sending = true; errorText = nil; sentTo = nil
         defer { sending = false }
         do {
-            let n = try await MemberAPI.broadcast(
+            // audience is deliberately NOT passed: unasked means the whole
+            // church. Sending "congregation" by default is what made a broadcast
+            // reach 40 of 60 — the other 19 have no congregation to be scoped to.
+            let sent = try await MemberAPI.broadcast(
                 body: text.trimmingCharacters(in: .whitespacesAndNewlines),
                 attachmentUrl: attachmentUrl,
-                msgType: attachmentUrl == nil ? "text" : "image")
-            sentTo = n
+                msgType: attachmentUrl == nil ? "text" : "image",
+                clientMutationId: mutationId)
+            sentTo = sent.sent
+            justSent = sent.asBroadcast   // show it as THE MESSAGE SENT, at once
             text = ""
             photoItem = nil; attachmentUrl = nil; attachmentImage = nil
+            mutationId = UUID().uuidString  // the next send is a new thing to say
             Haptics.success()
+        } catch let e as APIError where e.needsPasswordConfirm {
+            // Not a refusal — the server is asking who is holding the phone.
+            // Keep the draft and the mutation id: confirming and retrying must
+            // resume THIS send, not make them write it again, and the same id
+            // means a half-delivered attempt cannot double-send.
+            Haptics.tap()
+            askingPassword = true
         } catch {
             errorText = "Couldn’t send the broadcast — please try again."
             Haptics.error()
