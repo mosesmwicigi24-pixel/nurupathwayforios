@@ -131,6 +131,11 @@ struct ReadingPlanDay: Codable, Sendable, Identifiable, Hashable {
     let content: String?
     let segments: [PlanSegment]?
     let completed: Bool?
+    /// Server-decided: true while an earlier day is still unfinished. A locked
+    /// day arrives with its shape (title, reference, the kinds of its parts) but
+    /// its `content` and `video_url` withheld — there is nothing to render past
+    /// the gate even if a client tried.
+    let locked: Bool
 
     var id: Int { dayNumber }
     init(from d: Decoder) throws {
@@ -141,6 +146,8 @@ struct ReadingPlanDay: Codable, Sendable, Identifiable, Hashable {
         content = try? c.decodeIfPresent(String.self, forKey: .content)
         segments = try? c.decodeIfPresent([PlanSegment].self, forKey: .segments)
         completed = try? c.decodeIfPresent(Bool.self, forKey: .completed)
+        // Absent on an older server: nothing is locked, as before.
+        locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? false
     }
 }
 
@@ -157,6 +164,9 @@ struct ReadingPlanDetail: Codable, Sendable {
     let completedDays: [Int]?
     let enrolled: Bool
     let days: [ReadingPlanDay]
+    /// The first day not yet finished — the one day to point someone back to.
+    /// Null once the whole plan is done.
+    let nextDay: Int?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         planId = try c.decode(String.self, forKey: .planId)
@@ -170,6 +180,7 @@ struct ReadingPlanDetail: Codable, Sendable {
         completedDays = try? c.decodeIfPresent([Int].self, forKey: .completedDays)
         enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
         days = (try? c.decodeIfPresent([ReadingPlanDay].self, forKey: .days)) ?? []
+        nextDay = try? c.decodeIfPresent(Int.self, forKey: .nextDay)
     }
 }
 

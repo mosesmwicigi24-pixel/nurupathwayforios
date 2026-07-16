@@ -468,41 +468,51 @@ struct TalkItOverView: View {
     @FocusState private var composing: Bool
 
     var body: some View {
-        ZStack {
-            PL.cream.ignoresSafeArea()
-            VStack(spacing: 0) {
-                header
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            promptCard
-                            if loading && posts.isEmpty {
-                                HStack { Spacer(); ProgressView().tint(PL.gold); Spacer() }
-                                    .padding(.vertical, 40)
-                            } else if posts.isEmpty {
-                                emptyState
-                            } else {
-                                ForEach(posts) { post in
-                                    TalkPostRow(post: post) { toggleLike(post) }
-                                        .id(post.postId)
-                                }
+        VStack(spacing: 0) {
+            header
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        promptCard
+                        if loading && posts.isEmpty {
+                            HStack { Spacer(); ProgressView().tint(PL.gold); Spacer() }
+                                .padding(.vertical, 40)
+                        } else if posts.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(posts) { post in
+                                TalkPostRow(post: post) { toggleLike(post) }
+                                    .id(post.postId)
                             }
                         }
-                        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 16)
                     }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onChange(of: posts.count) { _, _ in
-                        if let last = posts.last {
-                            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(last.postId, anchor: .bottom) }
-                        }
+                    .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 16)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                // The composer rides in the scroll's bottom safe-area inset, the
+                // same way ChatThreadView pins its own: keyboard avoidance is then
+                // automatic and the bar floats directly on top of the keyboard.
+                // It must NOT be a plain sibling in a ZStack that also holds a
+                // .ignoresSafeArea() background — a ZStack sizes to its LARGEST
+                // child, so the keyboard-ignoring Color inflates the stack to the
+                // full screen and the composer lays out UNDER the keyboard.
+                // (Same ornament lesson as the Home card fusion, ios#72.)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        composer
+                        // The same gold "seal it" button every other part ends
+                        // with — hidden while typing so the composer gets the room.
+                        if !composing { doneBar }
                     }
                 }
-                composer
-                // The same gold "seal it" button every other part ends with —
-                // hidden while the keyboard is up so the composer gets the room.
-                if !composing { doneBar }
+                .onChange(of: posts.count) { _, _ in
+                    if let last = posts.last {
+                        withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(last.postId, anchor: .bottom) }
+                    }
+                }
             }
         }
+        .background(PL.cream.ignoresSafeArea())
         .animation(.easeInOut(duration: 0.2), value: composing)
         // NOT .ignoresSafeArea(.top) — that buried the back-arrow row under the
         // status bar (the header's own background still bleeds navy to the top).

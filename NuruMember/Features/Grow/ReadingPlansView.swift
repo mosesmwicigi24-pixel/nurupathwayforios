@@ -523,6 +523,9 @@ struct PlanDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var saved = false
     @State private var showAllDays = false
+    /// Which locked day the member just reached for — drives the nudge back to
+    /// the day they're actually on.
+    @State private var lockedNudgeFor: Int?
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -534,6 +537,13 @@ struct PlanDetailView: View {
             PL.cream.ignoresSafeArea()
             if let d = vm.detail {
                 content(d)
+                    .alert("Day \(lockedNudgeFor ?? 0) is still ahead",
+                           isPresented: Binding(get: { lockedNudgeFor != nil },
+                                                set: { if !$0 { lockedNudgeFor = nil } })) {
+                        Button("Stay on Day \(d.nextDay ?? 1)") { lockedNudgeFor = nil }
+                    } message: {
+                        Text(lockedNudgeMessage(d))
+                    }
             } else if vm.loading {
                 VStack(spacing: 12) {
                     ProgressView().tint(PL.gold)
@@ -714,10 +724,23 @@ struct PlanDetailView: View {
             }
             VStack(spacing: 6) {
                 ForEach(visible) { day in
-                    NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) {
-                        PLDetailDayRow(day: day, isNext: !allDone && day.dayNumber == next)
+                    if day.locked {
+                        // The plan is walked, not skimmed. A locked day doesn't
+                        // open — tapping it turns you back to the day you're on,
+                        // kindly. (The server withholds its words either way.)
+                        Button {
+                            Haptics.tap()
+                            withAnimation(.easeOut(duration: 0.2)) { lockedNudgeFor = day.dayNumber }
+                        } label: {
+                            PLDetailDayRow(day: day, isNext: false)
+                        }
+                        .buttonStyle(.pressable)
+                    } else {
+                        NavigationLink(value: PlanDayRef(planId: d.planId, day: day, planTitle: d.title)) {
+                            PLDetailDayRow(day: day, isNext: !allDone && day.dayNumber == next)
+                        }
+                        .buttonStyle(.pressable)
                     }
-                    .buttonStyle(.pressable)
                 }
                 if !showAllDays, d.days.count > 4 {
                     Button {
@@ -739,6 +762,16 @@ struct PlanDetailView: View {
         .padding(16)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+
+    /// Turning someone back from a locked day. Not an error — an invitation:
+    /// name the day they're on, name what it holds, and tell them the truth
+    /// about why this one is closed. The plan is a walk, and a walk has an order.
+    private func lockedNudgeMessage(_ d: ReadingPlanDetail) -> String {
+        let n = d.nextDay ?? 1
+        let title = d.days.first(where: { $0.dayNumber == n })?.title
+        let named = title.map { "Day \(n) — \($0)" } ?? "Day \(n)"
+        return "Finish \(named) first, and this one opens.\n\nThese days build on each other, so the plan waits for you rather than running ahead. One day at a time is the whole point."
     }
 
     private var nudge: some View {
@@ -951,28 +984,7 @@ struct PlanDayView: View {
                             Text("TODAY'S JOURNEY · \(hubParts.count) PART\(hubParts.count == 1 ? "" : "S")")
                                 .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
                             ForEach(hubParts) { part in
-                                if part.tag == "talk" {
-                                    NavigationLink(value: TalkRoute(planId: ref.planId,
-                                                                    dayNumber: ref.day.dayNumber,
-                                                                    planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
-                                                                    prompt: talkPromptFull,
-                                                                    talkSegmentId: part.segs.first?.segmentId,
-                                                                    talkDone: isDone(part))) {
-                                        partRow(part)
-                                    }
-                                    .buttonStyle(.pressable)
-                                } else {
-                                    NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
-                                                                         dayNumber: ref.day.dayNumber,
-                                                                         segments: segments,
-                                                                         index: part.firstIndex,
-                                                                         planId: ref.planId,
-                                                                         part: part.tag,
-                                                                         doneIds: Array(vm.completedSegments))) {
-                                        partRow(part)
-                                    }
-                                    .buttonStyle(.pressable)
-                                }
+                                partLink(part) { partRow(part) }
                             }
                             walkStrip
                             reminderRow
@@ -1056,7 +1068,36 @@ struct PlanDayView: View {
     private func isDone(_ part: HubPart) -> Bool {
         part.segs.allSatisfy { vm.completedSegments.contains($0.segmentId) || $0.completed }
     }
-    private var nextPartId: String? { hubParts.first(where: { !isDone($0) })?.id }
+    private var nextPart: HubPart? { hubParts.first(where: { !isDone($0) }) }
+    private var nextPartId: String? { nextPart?.id }
+
+    /// The one way into a part — used by both the row and the footer CTA, so the
+    /// gold button can only ever carry you INTO the work, never around it.
+    @ViewBuilder
+    private func partLink<Content: View>(_ part: HubPart, @ViewBuilder label: () -> Content) -> some View {
+        if part.tag == "talk" {
+            NavigationLink(value: TalkRoute(planId: ref.planId,
+                                            dayNumber: ref.day.dayNumber,
+                                            planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                            prompt: talkPromptFull,
+                                            talkSegmentId: part.segs.first?.segmentId,
+                                            talkDone: isDone(part))) {
+                label()
+            }
+            .buttonStyle(.pressable)
+        } else {
+            NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                                 dayNumber: ref.day.dayNumber,
+                                                 segments: segments,
+                                                 index: part.firstIndex,
+                                                 planId: ref.planId,
+                                                 part: part.tag,
+                                                 doneIds: Array(vm.completedSegments))) {
+                label()
+            }
+            .buttonStyle(.pressable)
+        }
+    }
 
     private func partRow(_ part: HubPart) -> some View {
         let done = isDone(part)
@@ -1271,6 +1312,22 @@ struct PlanDayView: View {
                     .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
                 }
                 .buttonStyle(.pressable)
+            } else if let next = nextPart {
+                // A day is finished by DOING it, not by declaring it. While a part
+                // is still unread the gold button is the way into that part — it
+                // no longer offers to seal a day nobody has walked. (The server
+                // refuses that too: 409 CONTENT_INCOMPLETE.)
+                partLink(next) {
+                    HStack(spacing: 8) {
+                        Icon(next.icon, size: 16, color: PL.navy)
+                        Text("Continue · \(next.label)").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                        Icon(.arrowRight, size: 15, color: PL.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
+                }
             } else {
                 Button {
                     Task {
@@ -1294,7 +1351,7 @@ struct PlanDayView: View {
                     HStack(spacing: 8) {
                         if vm.busy { ProgressView().tint(PL.navy) }
                         else { Icon(.check, size: 16, color: PL.navy) }
-                        Text("Mark day complete").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                        Text("Seal the day").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
