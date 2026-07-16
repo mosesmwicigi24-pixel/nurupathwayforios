@@ -151,6 +151,9 @@ struct ChatMessage: Codable, Sendable, Identifiable {
     var readCount: Int? = nil
     var recipientCount: Int? = nil
     var aiTag: String? = nil
+    /// Set when this message was delivered by a broadcast — the mark that lets a
+    /// member's thread dress itself as "Talk with Pastor" instead of a plain DM.
+    var broadcastId: String? = nil
 
     var id: String { messageId }
     init(messageId: String, authorUserId: String, authorName: String, authorAvatar: String?,
@@ -183,6 +186,7 @@ struct ChatMessage: Codable, Sendable, Identifiable {
         readCount = try? c.decodeIfPresent(Int.self, forKey: .readCount)
         recipientCount = try? c.decodeIfPresent(Int.self, forKey: .recipientCount)
         aiTag = try? c.decodeIfPresent(String.self, forKey: .aiTag)
+        broadcastId = try? c.decodeIfPresent(String.self, forKey: .broadcastId)
     }
 }
 

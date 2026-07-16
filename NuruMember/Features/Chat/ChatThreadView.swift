@@ -32,9 +32,17 @@ final class ChatThreadViewModel: ObservableObject {
     }
     var memberCount: Int { thread?.memberCount ?? conversation.memberCount }
     var avatarUrl: String? { conversation.avatarUrl }
+    /// Pastor mail: a DM that began as a broadcast FROM the other person. The
+    /// sender's own copy never dresses (their broadcast messages are `mine`) —
+    /// this is the member's side only, which is the whole point: it reads as
+    /// "Talk with Pastor", not as one DM among many.
+    var isPastorMail: Bool {
+        !isSpace && allMessages.contains { $0.broadcastId != nil && !$0.mine }
+    }
     // DMs carry an inspiring covenant line instead of a flat "Direct message".
     var subtitle: String {
-        isSpace ? "Public space · \(memberCount) members" : "Walking together in faith"
+        if isSpace { return "Public space · \(memberCount) members" }
+        return isPastorMail ? "Talk with Pastor" : "Walking together in faith"
     }
 
     func load() async {
@@ -273,6 +281,21 @@ struct ChatThreadView: View {
     // composer on the home indicator and floats it on the keyboard while typing.
     private var bottomBar: some View {
         VStack(spacing: 0) {
+            // The line that makes a member actually answer. Their fear is not
+            // the label — it is "is the whole church about to read this?" So the
+            // screen says the true thing, plainly, right where they type. It can
+            // be said without lying because the thread genuinely is 1:1: no
+            // admin, no leader, nobody else can open it.
+            if vm.isPastorMail {
+                HStack(spacing: 6) {
+                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Text("Only \(vm.title) sees your reply")
+                        .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 7)
+                .background(Nuru.goldChipBg)
+            }
             QuickReplyRow { reply in
                 Haptics.action()
                 Task { await vm.send(reply) }
