@@ -101,8 +101,8 @@ final class EventsViewModel: ObservableObject {
         todayStart = start
         selectedDay = start
         let f = ISO8601DateFormatter()
-        from = f.string(from: Calendar.current.date(byAdding: .day, value: -7, to: start)!)
-        to = f.string(from: Calendar.current.date(byAdding: .day, value: 60, to: start)!)
+        from = f.string(from: Calendar.current.date(byAdding: .day, value: -7, to: start) ?? start)
+        to = f.string(from: Calendar.current.date(byAdding: .day, value: 60, to: start) ?? start)
     }
 
     func load() async {
