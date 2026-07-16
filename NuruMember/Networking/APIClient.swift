@@ -212,11 +212,14 @@ actor APIClient {
         body: B?, as type: T.Type, isRetry: Bool = false
     ) async throws -> T {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        var comps = URLComponents(url: baseURL.appendingPathComponent(trimmed), resolvingAgainstBaseURL: false)!
+        guard var comps = URLComponents(url: baseURL.appendingPathComponent(trimmed), resolvingAgainstBaseURL: false) else {
+            throw APIError.transport("Couldn't form the request URL.")
+        }
         if !query.isEmpty {
             comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
-        var req = URLRequest(url: comps.url!)
+        guard let url = comps.url else { throw APIError.transport("Couldn't form the request URL.") }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         // 30s, not 15s: password endpoints run Argon2id, which can take several
         // seconds on a small/cold server (mirrors client.ts).
