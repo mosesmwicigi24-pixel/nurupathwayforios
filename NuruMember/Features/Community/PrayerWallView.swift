@@ -24,7 +24,7 @@ final class PrayerWallViewModel: ObservableObject {
     }
 
     func pray(_ p: PrayerWallPost) async {
-        try? await MemberAPI.prayerWallReact(p.postId, emoji: "🙏")
+        _ = try? await MemberAPI.prayerWallReact(p.postId, emoji: "🙏")
         await load()
     }
 }
