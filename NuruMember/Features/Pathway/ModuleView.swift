@@ -522,8 +522,6 @@ struct ModuleView: View {
         steps.append(GateStep(kind: .reflect, fraction: vm.reflectDone ? 1 : 0))
         return steps
     }
-    private var stepsDone: Int { gateSteps.filter(\.done).count }
-    private var stepsTotal: Int { gateSteps.count }
     /// The quiz / mark-complete only unlocks when EVERY applicable step is done.
     private var contentComplete: Bool { reachedEnd && watchDone && listenDone && vm.reflectDone }
     /// The honest reason the gate is still locked — names the FIRST unmet step.
@@ -2119,24 +2117,6 @@ private struct MLBottomGate: View {
                 .ignoresSafeArea(edges: .bottom)
         )
         .animation(.easeInOut(duration: 0.25), value: complete)
-    }
-
-    /// One filling segment per applicable step. A done segment is solid gold; the
-    /// in-progress segment fills gold to its real fraction; not-yet steps stay track.
-    private var segmentedBar: some View {
-        HStack(spacing: 5) {
-            ForEach(steps) { step in
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(ML.track)
-                        Capsule().fill(step.done ? AnyShapeStyle(ML.goldGradient) : AnyShapeStyle(ML.gold.opacity(0.85)))
-                            .frame(width: max(0, geo.size.width * step.clamped))
-                    }
-                }
-                .frame(height: 6)
-                .animation(.easeOut(duration: 0.35), value: step.clamped)
-            }
-        }
     }
 
     /// A compact row of labelled step chips.

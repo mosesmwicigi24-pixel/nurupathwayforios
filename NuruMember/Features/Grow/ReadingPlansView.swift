@@ -1261,17 +1261,6 @@ struct PlanDayView: View {
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
-    private func sectionIcon(_ seg: PlanSegment) -> Lucide {
-        if seg.title.lowercased().hasPrefix("pray") { return .handHeart }
-        switch seg.kind.lowercased() {
-        case "video", "audio": return .play
-        case "scripture": return .quote
-        case "talk": return .messageCircle
-        case "reading": return .bookOpen
-        default: return .sun
-        }
-    }
-
     // MARK: sticky footer — mark complete → confetti → tap to go back
 
     private var footerBar: some View {
