@@ -95,7 +95,7 @@ final class PrayerJournalViewModel: ObservableObject {
         } catch {
             Haptics.error()
             let api = error as? APIError
-            if case .http(let status, _, _)? = api, status == 404 {
+            if case .http(let status, _, _, _)? = api, status == 404 {
                 // Offline-created entries live in the mutation queue until the
                 // next sync — the server can't share what it hasn't seen yet.
                 shareError = "This prayer hasn't finished syncing yet. Give it a moment and try again."

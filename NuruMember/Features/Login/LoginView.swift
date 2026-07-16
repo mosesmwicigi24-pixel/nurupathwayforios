@@ -418,7 +418,7 @@ struct LoginView: View {
         case .login: return "Invalid email or password."
         case .mfa: return "That code didn't match. Try again or use a recovery code."
         case .register:
-            if case .http(let status, _, _) = e, status == 409 { return "An account with this email already exists." }
+            if case .http(let status, _, _, _) = e, status == 409 { return "An account with this email already exists." }
             return "Couldn't create your account. Try again."
         case .forgot: return "Couldn't request a reset. Try again."
         case .reset: return "That reset link is invalid or has expired."

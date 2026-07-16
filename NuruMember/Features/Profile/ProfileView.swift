@@ -1095,7 +1095,7 @@ private struct CertificateCardView: View {
                 presentShare(url)
             } catch {
                 Haptics.error()
-                if case APIError.http(let status, _, _) = error, status == 404 {
+                if case APIError.http(let status, _, _, _) = error, status == 404 {
                     downloadError = "The PDF isn't ready yet — check back soon."
                 } else {
                     downloadError = (error as? APIError)?.errorDescription ?? "Couldn't download the certificate."

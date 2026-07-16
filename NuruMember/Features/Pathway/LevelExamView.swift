@@ -46,7 +46,7 @@ final class LevelExamViewModel: ObservableObject {
     /// ("no exam questions yet" / "no active enrollment") are honest server states,
     /// not failures — everything else is a genuine load error worth retrying.
     private func classify(_ error: Error) {
-        if case let APIError.http(_, code, message) = error,
+        if case let APIError.http(_, code, message, _) = error,
            code == "GATE_LOCKED" || code == "UNPROCESSABLE" {
             notEligible = message
         } else {
@@ -91,7 +91,7 @@ final class LevelExamViewModel: ObservableObject {
         do {
             result = try await MemberAPI.submitLevelExam(levelNumber, clientMutationId: clientMutationId, answers: answers)
         } catch {
-            if case let APIError.http(_, code, message) = error, code == "GATE_LOCKED" {
+            if case let APIError.http(_, code, message, _) = error, code == "GATE_LOCKED" {
                 notEligible = message   // the gate closed between assemble and submit
             } else {
                 self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
