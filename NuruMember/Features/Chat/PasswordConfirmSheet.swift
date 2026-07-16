@@ -21,6 +21,10 @@ struct PasswordConfirmSheet: View {
     @State private var busy = false
     @State private var errorText: String?
     @FocusState private var focused: Bool
+    /// Offer to remember the password behind Face ID / Touch ID so the next
+    /// unlock is a glance, not typing. On by default where the hardware exists —
+    /// the point of the ask was "fingerprint or camera or password".
+    @State private var rememberWithBiometrics = BroadcastLock.biometryAvailable
 
     var body: some View {
         NavigationStack {
@@ -58,6 +62,14 @@ struct PasswordConfirmSheet: View {
                     .transition(.opacity)
                 }
 
+                if BroadcastLock.biometryAvailable {
+                    Toggle(isOn: $rememberWithBiometrics) {
+                        Text("Unlock with \(BroadcastLock.biometryName) next time")
+                            .font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
+                    }
+                    .tint(Nuru.gold)
+                }
+
                 PButton(title: "Confirm", variant: .gold, busy: busy) {
                     Task { await confirm() }
                 }
@@ -92,6 +104,12 @@ struct PasswordConfirmSheet: View {
         defer { busy = false }
         do {
             try await MemberAPI.confirmPassword(entry)
+            // The password is CONFIRMED RIGHT — the only moment it is safe to
+            // put behind the owner's face for next time.
+            if rememberWithBiometrics, BroadcastLock.biometryAvailable {
+                BroadcastLock.enrollBiometricUnlock(password: entry)
+            }
+            BroadcastLock.shared.markOpen()
             password = ""
             Haptics.success()
             onConfirmed()
