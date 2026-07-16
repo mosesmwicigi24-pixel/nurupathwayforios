@@ -142,6 +142,13 @@ struct ChatView: View {
             .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
             .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
         }
+        // Coming back from a thread refreshes the inbox, so a conversation just
+        // opened stops counting: the thread marked itself read on the server the
+        // moment it appeared, and this pulls that truth back into the chips and
+        // rows. Without it the numbers only reset on a full tab re-entry.
+        .onChange(of: path.count) { old, new in
+            if new < old { Task { await vm.load() } }
+        }
         .task {
             if vm.inbox == nil { await vm.load() }
             #if DEBUG
@@ -328,9 +335,12 @@ struct ChatView: View {
 
     private var segmentControl: some View {
         HStack(spacing: 4) {
-            segmentButton(.space, "#My Space", vm.spaces.count)
-            segmentButton(.dm, "DM", vm.dms.count)
-            segmentButton(.group, "My Groups", vm.groups.count)
+            // The chips carry what needs the member's attention — messages not
+            // yet read — not how many rooms exist. A chip with nothing unread
+            // shows no number at all, and opening the conversation clears it.
+            segmentButton(.space, "#My Space", vm.spaces.reduce(0) { $0 + $1.unread })
+            segmentButton(.dm, "DM", vm.dms.reduce(0) { $0 + $1.unread })
+            segmentButton(.group, "My Groups", vm.groups.reduce(0) { $0 + $1.unread })
             if isStaff { broadcastSegmentButton }
         }
         .padding(4)
@@ -383,11 +393,16 @@ struct ChatView: View {
         } label: {
             HStack(spacing: 5) {
                 Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
-                Text("\(count)").font(.inter(10, .bold))
-                    .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .frame(minWidth: 18)
-                    .background(selected ? Nuru.gold : Nuru.surface, in: Capsule())
+                // Unread only. All read → no number at all; the quiet chip IS the
+                // "nothing waiting" signal.
+                if count > 0 {
+                    Text("\(count)").font(.inter(10, .bold))
+                        .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .frame(minWidth: 18)
+                        .background(selected ? Nuru.gold : Nuru.surface, in: Capsule())
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
