@@ -2278,7 +2278,7 @@ private func mlMinutes(_ seconds: Int?) -> Int? {
 /// isn't rendered twice. Otherwise `title == nil` and the body is the page
 /// verbatim (internal spacing preserved). Display-only; the server's page split
 /// is untouched.
-private let mlHeadingRegex = try! NSRegularExpression(pattern: "^#{1,6}[ \\t]+(.+?)[ \\t]*$")
+private let mlHeadingRegex = try? NSRegularExpression(pattern: "^#{1,6}[ \\t]+(.+?)[ \\t]*$")
 
 private func pageTitleAndBody(_ page: String) -> (title: String?, body: String) {
     let trimmed = page.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2289,7 +2289,7 @@ private func pageTitleAndBody(_ page: String) -> (title: String?, body: String) 
     }
     let firstLine = lines[firstIdx].trimmingCharacters(in: .whitespaces)
     let range = NSRange(firstLine.startIndex..<firstLine.endIndex, in: firstLine)
-    guard let match = mlHeadingRegex.firstMatch(in: firstLine, range: range),
+    guard let match = mlHeadingRegex?.firstMatch(in: firstLine, range: range),
           let capture = Range(match.range(at: 1), in: firstLine) else {
         return (nil, page)
     }
