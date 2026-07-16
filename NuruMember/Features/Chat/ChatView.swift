@@ -140,6 +140,7 @@ struct ChatView: View {
             .refreshable { await vm.load() }
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
             .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
+            .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
         }
         .task {
             if vm.inbox == nil { await vm.load() }
@@ -415,7 +416,9 @@ struct ChatView: View {
             case .dm: dmList
             case .group: groupList
             case .broadcast:
-                if isStaff { BroadcastComposer() }
+                // The whole segment sits behind the lock: Face ID (or the
+                // password) first, then the composer and the sent broadcasts.
+                if isStaff { BroadcastSection() }
             }
         }
     }
@@ -1159,7 +1162,7 @@ private struct DiscoverSpaceRow: View {
 /// The message you just sent, shown as the sent thing — its own words in the
 /// serif the app reserves for what is being said, and the count it actually
 /// reached. Built from the send's own reply; nothing is refetched to draw it.
-private struct BroadcastSentCard: View {
+struct BroadcastSentCard: View {
     let sent: Broadcast
 
     var body: some View {
@@ -1186,7 +1189,7 @@ private struct BroadcastSentCard: View {
     }
 }
 
-private struct BroadcastComposer: View {
+struct BroadcastComposer: View {
     @State private var text = ""
     @State private var confirming = false
     @State private var sending = false
