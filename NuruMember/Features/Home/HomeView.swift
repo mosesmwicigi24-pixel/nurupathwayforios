@@ -836,12 +836,19 @@ struct HomeView: View {
             .padding(.horizontal, Nuru.S.base)
 
             VStack(alignment: .leading, spacing: 0) {
+                // Caption + fallback sub-line, never the same words twice: when the
+                // authored caption IS the fallback copy (or absent), show it once
+                // (Android's dedup rule, ported).
+                let fallback = "Start here — what the journey looks like"
                 if let cap = v.caption, !cap.isEmpty {
                     // Clean sans title block (Figma) — the serif stays on ceremony cards.
                     Text(cap).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
+                    if cap != fallback {
+                        Text(fallback).font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
+                    }
+                } else {
+                    Text(fallback).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
                 }
-                Text("Start here — what the journey looks like")
-                    .font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {

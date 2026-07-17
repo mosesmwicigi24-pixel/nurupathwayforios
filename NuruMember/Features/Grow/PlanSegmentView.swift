@@ -463,6 +463,7 @@ struct TalkItOverView: View {
     @State private var loading = true
     @State private var draft = ""
     @State private var posting = false
+    @State private var postFailed = false
     @State private var markedRead = false
     @State private var aiBusy = false
     @FocusState private var composing: Bool
@@ -553,9 +554,11 @@ struct TalkItOverView: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { posts.append(row) }
                 draft = ""
                 composing = false
+                postFailed = false
                 Haptics.success()
             } else {
                 Haptics.error()
+                postFailed = true // the draft is kept; say why it's still here
             }
             posting = false
         }
@@ -655,6 +658,12 @@ struct TalkItOverView: View {
     // MARK: composer (pinned)
 
     private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+        if postFailed {
+            Text("Couldn't send — check your connection and try again.")
+                .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                .padding(.horizontal, 4)
+        }
         HStack(spacing: 10) {
             ZStack(alignment: .leading) {
                 if draft.isEmpty {
@@ -715,6 +724,7 @@ struct TalkItOverView: View {
             .buttonStyle(.pressable)
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || posting)
             .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+        }
         }
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
