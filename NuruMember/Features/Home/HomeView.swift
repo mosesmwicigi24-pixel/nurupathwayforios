@@ -2101,10 +2101,6 @@ struct HomeView: View {
         let m = sec / 60, s = sec % 60
         return String(format: "%d:%02d", m, s)
     }
-    private func openURL(_ s: String?) {
-        guard let s, let u = URL(string: s) else { return }
-        UIApplication.shared.open(u)
-    }
     /// Parse an ISO timestamp tolerantly.
     private func parseISO(_ iso: String) -> Date? {
         ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)

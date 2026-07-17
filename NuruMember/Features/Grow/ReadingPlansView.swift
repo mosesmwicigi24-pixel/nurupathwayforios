@@ -1261,17 +1261,6 @@ struct PlanDayView: View {
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
-    private func sectionIcon(_ seg: PlanSegment) -> Lucide {
-        if seg.title.lowercased().hasPrefix("pray") { return .handHeart }
-        switch seg.kind.lowercased() {
-        case "video", "audio": return .play
-        case "scripture": return .quote
-        case "talk": return .messageCircle
-        case "reading": return .bookOpen
-        default: return .sun
-        }
-    }
-
     // MARK: sticky footer — mark complete → confetti → tap to go back
 
     private var footerBar: some View {
@@ -1446,23 +1435,6 @@ private struct IntenseCelebration: View {
         }
         .onAppear { start = Date() }
         .allowsHitTesting(false)
-    }
-}
-
-// MARK: - Reader scroll/dwell preference keys
-
-private struct ReaderScrollKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-private struct ViewportHKey: PreferenceKey {
-    static var defaultValue: CGFloat = 720
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { let n = nextValue(); if n > 0 { value = n } }
-}
-private struct SectionFramesKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
     }
 }
 

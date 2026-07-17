@@ -6,7 +6,7 @@
 // then a success ceremony ("You're checked in ✓") or a polite failure state
 // with rescan. Camera-permission denial gets a friendly Settings pointer.
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 
 struct CheckInScannerView: View {

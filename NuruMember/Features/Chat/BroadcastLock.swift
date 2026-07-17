@@ -53,15 +53,18 @@ final class BroadcastLock: ObservableObject {
         }
     }
 
-    /// Is a password stored behind biometrics? Checked WITHOUT prompting
-    /// (kSecUseAuthenticationUIFail): errSecInteractionNotAllowed means "it is
-    /// there, but a face is needed to read it" — which is exactly a yes.
+    /// Is a password stored behind biometrics? Checked WITHOUT prompting — an
+    /// LAContext with interactionNotAllowed (the iOS 14+ replacement for the
+    /// deprecated kSecUseAuthenticationUIFail): errSecInteractionNotAllowed
+    /// means "it is there, but a face is needed to read it" — exactly a yes.
     static var biometricUnlockEnrolled: Bool {
+        let ctx = LAContext()
+        ctx.interactionNotAllowed = true
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
-            kSecUseAuthenticationUI as String: kSecUseAuthenticationUIFail,
+            kSecUseAuthenticationContext as String: ctx,
         ]
         let status = SecItemCopyMatching(query as CFDictionary, nil)
         return status == errSecInteractionNotAllowed || status == errSecSuccess

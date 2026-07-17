@@ -54,7 +54,7 @@ struct LetterView: View {
         }
         .onAppear {
             guard letter.isUnread else { return }
-            Task { try? await MemberAPI.markLetterRead(letter.letterId); onRead() }
+            Task { _ = try? await MemberAPI.markLetterRead(letter.letterId); onRead() }
         }
     }
 

@@ -103,24 +103,3 @@ struct LoadStateView<Content: View>: View {
     }
 }
 
-/// A simple branded placeholder for screens not yet ported.
-struct PlaceholderScreen: View {
-    var title: String
-    var blurb: String
-    var icon: Lucide
-
-    var body: some View {
-        ZStack {
-            Nuru.paper.ignoresSafeArea()
-            VStack(spacing: Nuru.S.base) {
-                Icon(icon, size: 40, color: Nuru.gold)
-                Text(title).font(.fraunces(22, .semibold)).foregroundStyle(Nuru.ink)
-                Text(blurb).font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                Text("Coming soon").font(.nMicro).foregroundStyle(Nuru.faint)
-            }
-            .padding(Nuru.S.xl)
-        }
-        .navigationTitle(title)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-}
