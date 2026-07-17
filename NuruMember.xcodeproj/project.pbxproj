@@ -8,11 +8,20 @@
 
 /* Begin PBXBuildFile section */
 		1F49253E25E96E56CF6E97A8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		5CC7B488EBD80946899A64C0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */; };
 		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		98EF880A985213BC01A9EF46 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2000000000000000000000A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2000000000000000000000E1;
+			remoteInfo = NuruMember;
+		};
 		A98B80ED6D10CCF5253A638E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 2000000000000000000000A1 /* Project object */;
@@ -41,11 +50,23 @@
 		5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		664342554B6FC512AC94FFFA /* NuruWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NuruWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NuruWidgets.swift; sourceTree = "<group>"; };
+		7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NuruMemberTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
 		E694577B48D734E91F73C524 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		2000000000000000000000D1 /* NuruMember */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = NuruMember; sourceTree = "<group>"; };
+		2000000000000000000000D1 /* NuruMember */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = NuruMember;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -64,9 +85,26 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F7A4BC66EE0335F2D981C683 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CC7B488EBD80946899A64C0 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0D402ADEE34F48F4135D7F64 /* NuruMemberTests */ = {
+			isa = PBXGroup;
+			children = (
+				D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */,
+			);
+			name = NuruMemberTests;
+			path = NuruMemberTests;
+			sourceTree = "<group>";
+		};
 		1D20C23DF827334EE86638B2 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -82,6 +120,7 @@
 				2000000000000000000000C1 /* Products */,
 				1D20C23DF827334EE86638B2 /* Frameworks */,
 				D0BFF2874D3354E1D4BF2A3E /* NuruWidgets */,
+				0D402ADEE34F48F4135D7F64 /* NuruMemberTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -90,6 +129,7 @@
 			children = (
 				2000000000000000000000F1 /* NuruMember.app */,
 				664342554B6FC512AC94FFFA /* NuruWidgets.appex */,
+				7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -153,6 +193,24 @@
 			productReference = 2000000000000000000000F1 /* NuruMember.app */;
 			productType = "com.apple.product-type.application";
 		};
+		7AA8DC0ABD81C8871098560D /* NuruMemberTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0BEAE36C1BD88DE8ACACD277 /* Build configuration list for PBXNativeTarget "NuruMemberTests" */;
+			buildPhases = (
+				5094DE1EA62CC906A565EF84 /* Sources */,
+				F7A4BC66EE0335F2D981C683 /* Frameworks */,
+				AAE109D93E6A15053D514D22 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				19A6B076B0DF8F94860DBFFB /* PBXTargetDependency */,
+			);
+			name = NuruMemberTests;
+			productName = NuruMemberTests;
+			productReference = 7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -183,6 +241,7 @@
 			targets = (
 				2000000000000000000000E1 /* NuruMember */,
 				1DC1230CB6104AC59DC4A281 /* NuruWidgets */,
+				7AA8DC0ABD81C8871098560D /* NuruMemberTests */,
 			);
 		};
 /* End PBXProject section */
@@ -202,6 +261,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AAE109D93E6A15053D514D22 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -209,6 +275,14 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5094DE1EA62CC906A565EF84 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,6 +297,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		19A6B076B0DF8F94860DBFFB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = NuruMember;
+			target = 2000000000000000000000E1 /* NuruMember */;
+			targetProxy = 98EF880A985213BC01A9EF46 /* PBXContainerItemProxy */;
+		};
 		C201E3A67BA36FA4121F5FC8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = NuruWidgets;
@@ -232,6 +312,25 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0D55C659E3F4303867B85675 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruMemberTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NuruMember.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NuruMember";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		200000000000000000000151 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -460,9 +559,36 @@
 			};
 			name = Debug;
 		};
+		FF95115EF4C8D3848210F395 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruMemberTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NuruMember.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NuruMember";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0BEAE36C1BD88DE8ACACD277 /* Build configuration list for PBXNativeTarget "NuruMemberTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D55C659E3F4303867B85675 /* Release */,
+				FF95115EF4C8D3848210F395 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		200000000000000000000131 /* Build configuration list for PBXProject "NuruMember" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
