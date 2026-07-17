@@ -18,6 +18,7 @@ struct SettingsView: View {
     // preferences) with @AppStorage as the offline cache/fallback so the UI
     // never blocks. Toggles are optimistic and roll back on a failed PUT; push
     // additionally requests the real system permission.
+    @State private var prefSaveFailed = false
     @AppStorage("nuru.notif.push") private var pushOn = true
     @AppStorage("nuru.notif.email") private var emailOn = true
     @AppStorage("nuru.notif.sms") private var smsOn = false
@@ -171,6 +172,7 @@ struct SettingsView: View {
                 } catch {
                     Haptics.error()
                     value.wrappedValue = old
+                    prefSaveFailed = true // say it, don't just snap the toggle back
                 }
             }
         })
@@ -234,6 +236,11 @@ struct SettingsView: View {
             toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", prefBinding($pushOn, isPush: true)); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
+            if prefSaveFailed {
+                Text("Couldn't save your preferences — check your connection and try again.")
+                    .font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .padding(.top, 6)
+            }
             Button { Haptics.tap(); openSystemSettings() } label: {
                 HStack(spacing: Nuru.S.md) {
                     iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
