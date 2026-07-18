@@ -201,14 +201,39 @@ struct SegmentCompleteResult: Codable, Sendable {
     let segmentId: String
     let dayNumber: Int
     let dayCompleted: Bool
+    /// Additive (backend fix/plan-day-unlock-race): the SAME value as
+    /// dayCompleted, plus the authoritative unlock verdict for the day right
+    /// after this one — computed server-side in the SAME transaction as the
+    /// completion write. This is what lets the client act on the LAST
+    /// segment's ack directly instead of racing a plan re-fetch against a
+    /// completion that might still be catching up (the offline-sync race).
+    let dayComplete: Bool
+    let nextDayNumber: Int?
+    let nextDayUnlocked: Bool
     let progress: Progress?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         segmentId = (try? c.decodeIfPresent(String.self, forKey: .segmentId)) ?? ""
         dayNumber = (try? c.decodeIfPresent(Int.self, forKey: .dayNumber)) ?? 0
         dayCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .dayCompleted)) ?? false
+        // Older servers (pre-fix) only ever send day_completed — fall back to it.
+        dayComplete = (try? c.decodeIfPresent(Bool.self, forKey: .dayComplete)) ?? dayCompleted
+        nextDayNumber = try? c.decodeIfPresent(Int.self, forKey: .nextDayNumber)
+        nextDayUnlocked = (try? c.decodeIfPresent(Bool.self, forKey: .nextDayUnlocked)) ?? false
         progress = try? c.decodeIfPresent(Progress.self, forKey: .progress)
     }
+}
+
+/// Carried by `.nuruPlanDayUnlocked` — the authoritative ack from the LAST
+/// segment of a day (§1.1: the server decides gating, never the client). Lets
+/// the day hub and plan overview act on it directly instead of waiting on a
+/// re-fetch that could still be racing the same completion through the sync
+/// path.
+struct PlanDayUnlockAck {
+    let planId: String?
+    let dayNumber: Int
+    let nextDayNumber: Int?
+    let nextDayUnlocked: Bool
 }
 
 /// Navigation reference for a single plan day (the day + its owning plan id).

@@ -492,13 +492,29 @@ final class PlanDetailViewModel: ObservableObject {
     @Published var loading = true
     @Published var error: String?
     @Published var busy = false
+    /// A segment ack told us this day number should already be open. Kept
+    /// until a fetch actually shows it unlocked, so a day that still comes
+    /// back locked (a completion still catching up through the sync path)
+    /// reads as "finishing sync" rather than "you're not there yet".
+    @Published var awaitingUnlock: Int?
 
     private let planId: String
     init(planId: String) { self.planId = planId }
 
+    /// Always re-fetches — this screen decides which days are tappable, so it
+    /// never trusts a cached "locked" answer from before the member walked
+    /// off to finish the previous day. (The offline-sync race: the day
+    /// unlocks the moment its last segment lands, which can be after this
+    /// screen was last drawn.)
     func load() async {
         loading = true; error = nil
-        do { detail = try await MemberAPI.plan(planId) }
+        do {
+            detail = try await MemberAPI.plan(planId)
+            if let waiting = awaitingUnlock,
+               detail?.days.first(where: { $0.dayNumber == waiting })?.locked == false {
+                awaitingUnlock = nil
+            }
+        }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this plan." }
         loading = false
     }
@@ -507,6 +523,13 @@ final class PlanDetailViewModel: ObservableObject {
         busy = true; defer { busy = false }
         try? await MemberAPI.startPlan(planId)
         await load()
+    }
+
+    /// A segment's ack (relayed from the day hub) said this plan's next day
+    /// is already open server-side.
+    func noteUnlockAck(_ ack: PlanDayUnlockAck) {
+        guard ack.planId == nil || ack.planId == planId else { return }
+        if ack.nextDayUnlocked, let next = ack.nextDayNumber { awaitingUnlock = next }
     }
 }
 
@@ -563,12 +586,18 @@ struct PlanDetailView: View {
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .task { if vm.detail == nil { await vm.load() } }
+        // Always re-fetches on appear (including popping back from the day
+        // hub) — see PlanDetailViewModel.load(). vm.detail stays populated
+        // meanwhile so this never flashes back to a loading spinner.
+        .task { await vm.load() }
         // Hide the bar inside a plan. No onDisappear-restore here: on a PUSH the
         // child's onAppear fires BEFORE this view's onDisappear, so restoring from
         // here re-showed the bar on top of the day hub's footer button. The roots
         // (Plans list, Home) restore the bar on their own onAppear when we pop out.
         .onAppear { tabs.chromeHidden = true }
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanDayUnlocked)) { note in
+            if let ack = note.object as? PlanDayUnlockAck { vm.noteUnlockAck(ack) }
+        }
     }
 
     // Real completion state, derived from the day rows the server returns.
@@ -724,7 +753,20 @@ struct PlanDetailView: View {
             }
             VStack(spacing: 6) {
                 ForEach(visible) { day in
-                    if day.locked {
+                    if day.locked, vm.awaitingUnlock == day.dayNumber {
+                        // A segment ack already told us this day should be
+                        // open — this fetch just hasn't caught up yet (the
+                        // completion is still landing through the sync path).
+                        // An honest brief state, not a dead "you're not there
+                        // yet" tap: say so, and let a tap retry the fetch.
+                        Button {
+                            Haptics.tap()
+                            Task { await vm.load() }
+                        } label: {
+                            PLDetailDayRow(day: day, isNext: false, syncing: true)
+                        }
+                        .buttonStyle(.pressable)
+                    } else if day.locked {
                         // The plan is walked, not skimmed. A locked day doesn't
                         // open — tapping it turns you back to the day you're on,
                         // kindly. (The server withholds its words either way.)
@@ -1014,6 +1056,19 @@ struct PlanDayView: View {
                     _ = vm.completedSegments.insert(id)
                 }
             }
+        }
+        // The offline-sync race: the day unlocks server-side the moment the
+        // LAST segment's completion lands, but if the member taps straight
+        // through, the day hub would otherwise still be waiting on an
+        // explicit "Seal the day" tap. Trust the segment's own authoritative
+        // ack (computed in the same transaction as the write) directly —
+        // "Continue the plan" works immediately, with no extra tap and no
+        // race against a re-fetch.
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanDayUnlocked)) { note in
+            guard let ack = note.object as? PlanDayUnlockAck,
+                  ack.dayNumber == ref.day.dayNumber,
+                  ack.planId == nil || ack.planId == ref.planId else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { vm.dayCompleted = true }
         }
     }
 
