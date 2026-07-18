@@ -93,7 +93,7 @@ final class ChatThreadViewModel: ObservableObject {
     var privacyLabel: String? {
         switch context {
         case .discipler: return "Private between you and your assigned discipler."
-        case .pastoral: return "Private pastoral conversation."
+        case .pastoral: return nil // pastoral uses the broadcast-style personal ribbon below
         case .normal: return nil
         }
     }
@@ -591,7 +591,7 @@ struct ChatThreadView: View {
                 }
                 .padding(.horizontal, 16).padding(.vertical, 7)
                 .background(Nuru.goldChipBg)
-            } else if vm.isPastorMail {
+            } else if vm.isPastorMail || vm.context == .pastoral {
                 HStack(spacing: 6) {
                     Icon(.lock, size: 11, color: Nuru.goldChipText)
                     Text("Only \(vm.title) sees your reply")
