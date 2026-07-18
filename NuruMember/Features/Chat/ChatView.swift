@@ -21,18 +21,34 @@ final class ChatInboxViewModel: ObservableObject {
     @Published var busyPersonId: String?    // person whose DM is being created
     @Published var joiningSpaceId: String?  // discover space being followed
 
+    // MARK: Connections (Chat Redesign C3a — "no unsolicited DMs")
+    @Published var connections: [ConnectionRow] = []
+    @Published var incomingRequests: [ConnectionRequestRow] = []
+    @Published var outgoingRequests: [ConnectionRequestRow] = []
+    @Published var connectingPersonId: String?     // person a request is being sent/cancelled/decided for
+    /// Set when POST /chat/dms comes back 403 CONSENT_REQUIRED for someone the
+    /// directory hadn't flagged yet (stale cache) — the view auto-offers to
+    /// send the request instead of just failing.
+    @Published var consentPrompt: ChatPerson?
+
     var conversations: [ChatConversation] { inbox?.conversations ?? [] }
     var spaces: [ChatConversation] { conversations.filter { $0.kind == "space" } }
     var dms: [ChatConversation] { conversations.filter { $0.kind == "dm" } }
     var groups: [ChatConversation] { conversations.filter { $0.kind == "group" } }
     var discover: [DiscoverSpace] { inbox?.discoverSpaces ?? [] }
     var totalUnread: Int { conversations.reduce(0) { $0 + $1.unread } }
+    /// Pending asks from someone else — the number the DM segment badge and
+    /// the bell dot both surface prominently.
+    var pendingIncomingCount: Int { incomingRequests.count }
 
     func load() async {
         loading = true; error = nil
         async let inboxReq = try? MemberAPI.chatInbox()
         async let peopleReq = try? MemberAPI.chatPeople()
         async let verseReq = try? MemberAPI.homeVerse()
+        async let connectionsReq = try? MemberAPI.listConnections()
+        async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
+        async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
 
         if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
         if let p = await peopleReq { people = p }
@@ -40,22 +56,87 @@ final class ChatInboxViewModel: ObservableObject {
             if let t = v.text, !t.isEmpty { verse = (t, v.reference, v.version) }
             else { verse = (defaultVerseText, v.reference, v.version) }
         }
+        if let c = await connectionsReq { connections = c }
+        if let inc = await incomingReq { incomingRequests = inc }
+        if let out = await outgoingReq { outgoingRequests = out }
         loading = false
     }
 
+    /// Where the caller stands with one directory person right now — derived
+    /// client-side from the three lists above, never sent by the server as a
+    /// single field.
+    func connectionState(for userId: String) -> ConnectionState {
+        if connections.contains(where: { $0.userId == userId && $0.status == "accepted" }) { return .connected }
+        if connections.contains(where: { $0.userId == userId && $0.status == "blocked" }) { return .blocked }
+        if let req = outgoingRequests.first(where: { $0.userId == userId }) { return .requestSent(requestId: req.requestId) }
+        if let req = incomingRequests.first(where: { $0.userId == userId }) { return .requestReceived(requestId: req.requestId) }
+        return .notConnected
+    }
+
     /// POST /chat/dms then refresh the inbox; returns the conversation to open.
+    /// Only ever called for someone already `connected` (or staff) — a
+    /// CONSENT_REQUIRED 403 here means the directory's cached state was stale,
+    /// so it auto-offers the connection request rather than a dead-end error.
     func startDm(with person: ChatPerson) async -> ChatConversation? {
         guard busyPersonId == nil else { return nil }
         busyPersonId = person.userId
         defer { busyPersonId = nil }
-        guard let id = try? await MemberAPI.createDm(peerUserId: person.userId) else { return nil }
-        if let i = try? await MemberAPI.chatInbox() { inbox = i }
-        // Prefer the real inbox row (preview, unread); fall back to a stub the
-        // thread screen can hydrate from GET /chat/conversations/{id}.
-        return conversations.first { $0.conversationId == id } ?? ChatConversation(
-            conversationId: id, kind: "dm", isPublic: false, title: person.fullName,
-            topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
-            lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: person.avatarUrl)
+        do {
+            let id = try await MemberAPI.createDm(peerUserId: person.userId)
+            if let i = try? await MemberAPI.chatInbox() { inbox = i }
+            // Prefer the real inbox row (preview, unread); fall back to a stub the
+            // thread screen can hydrate from GET /chat/conversations/{id}.
+            return conversations.first { $0.conversationId == id } ?? ChatConversation(
+                conversationId: id, kind: "dm", isPublic: false, title: person.fullName,
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: person.avatarUrl)
+        } catch let err as APIError {
+            if case .http(_, "CONSENT_REQUIRED", _, _) = err { consentPrompt = person }
+            return nil
+        } catch {
+            return nil
+        }
+    }
+
+    /// POST /chat/connections/requests — the new "New DM" for anyone not yet
+    /// connected. Refreshes the outgoing list so the row flips to "Request sent".
+    func sendConnectionRequest(to person: ChatPerson) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = person.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.requestConnection(userId: person.userId)
+        if let out = try? await MemberAPI.listConnectionRequests(direction: "outgoing") { outgoingRequests = out }
+    }
+
+    /// DELETE /chat/connections/requests/{id} — withdraw a still-pending ask.
+    func cancelConnectionRequest(_ req: ConnectionRequestRow) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = req.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.cancelConnectionRequest(req.requestId)
+        if let out = try? await MemberAPI.listConnectionRequests(direction: "outgoing") { outgoingRequests = out }
+    }
+
+    /// POST .../accept — creates the connection; does NOT open a DM (matches
+    /// the server: `/chat/dms` still does that, now gated on the connection).
+    func acceptConnectionRequest(_ req: ConnectionRequestRow) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = req.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.acceptConnectionRequest(req.requestId)
+        async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
+        async let connectionsReq = try? MemberAPI.listConnections()
+        if let inc = await incomingReq { incomingRequests = inc }
+        if let c = await connectionsReq { connections = c }
+    }
+
+    /// POST .../decline.
+    func declineConnectionRequest(_ req: ConnectionRequestRow) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = req.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.declineConnectionRequest(req.requestId)
+        if let inc = try? await MemberAPI.listConnectionRequests(direction: "incoming") { incomingRequests = inc }
     }
 
     /// POST /chat/spaces/{id}/join then refresh — the space moves to "your spaces".
@@ -149,6 +230,16 @@ struct ChatView: View {
         .onChange(of: path.count) { old, new in
             if new < old { Task { await vm.load() } }
         }
+        // Stale-cache recovery: /chat/dms answered 403 CONSENT_REQUIRED for
+        // someone the directory still showed as messageable — offer the
+        // connection request instead of a dead-end error.
+        .alert(item: $vm.consentPrompt) { person in
+            Alert(
+                title: Text("Not connected yet"),
+                message: Text("Send \(person.fullName) a connection request first — you can chat once they accept."),
+                primaryButton: .default(Text("Send request")) { Task { await vm.sendConnectionRequest(to: person) } },
+                secondaryButton: .cancel())
+        }
         .task {
             if vm.inbox == nil { await vm.load() }
             #if DEBUG
@@ -210,7 +301,9 @@ struct ChatView: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 .overlay(alignment: .topTrailing) {
-                    if vm.totalUnread > 0 {
+                    // Also lights up for a pending "wants to connect" ask — a
+                    // connection request is as much "needs you" as an unread.
+                    if vm.totalUnread > 0 || vm.pendingIncomingCount > 0 {
                         Circle().fill(Nuru.gold)
                             .frame(width: 8, height: 8)
                             .shadow(color: Nuru.gold.opacity(0.9), radius: 4)
@@ -339,7 +432,9 @@ struct ChatView: View {
             // yet read — not how many rooms exist. A chip with nothing unread
             // shows no number at all, and opening the conversation clears it.
             segmentButton(.space, "#My Space", vm.spaces.reduce(0) { $0 + $1.unread })
-            segmentButton(.dm, "DM", vm.dms.reduce(0) { $0 + $1.unread })
+            // Unread DM messages + pending incoming connection requests — both
+            // are "things waiting on you in this tab".
+            segmentButton(.dm, "DM", vm.dms.reduce(0) { $0 + $1.unread } + vm.pendingIncomingCount)
             segmentButton(.group, "My Groups", vm.groups.reduce(0) { $0 + $1.unread })
             if isStaff { broadcastSegmentButton }
         }
@@ -540,12 +635,13 @@ struct ChatView: View {
         let items = vm.dms.filter(matches)
         let directory = filteredPeople
         return VStack(alignment: .leading, spacing: 10) {
+            if query.isEmpty { requestsSection }
             if query.isEmpty && !vm.dms.isEmpty { storiesRow.padding(.bottom, 10) }
             sectionLabel(icon: .users, "DIRECT MESSAGES")
             if items.isEmpty {
                 emptyCard(icon: query.isEmpty ? .messageCircle : .search,
                           query.isEmpty
-                    ? "No direct messages yet — start a conversation with someone below."
+                    ? "Connect with someone before starting a chat."
                     : "No conversations match your search.")
             } else {
                 groupedCard {
@@ -562,11 +658,47 @@ struct ChatView: View {
                     groupedCard {
                         ForEach(Array(directory.enumerated()), id: \.element.id) { idx, p in
                             PersonRow(person: p, index: idx, divider: idx > 0,
-                                      busy: vm.busyPersonId == p.userId) { startDm(p) }
+                                      state: vm.connectionState(for: p.userId),
+                                      busy: vm.busyPersonId == p.userId || vm.connectingPersonId == p.userId,
+                                      onMessage: { startDm(p) },
+                                      onConnect: { Haptics.tap(); Task { await vm.sendConnectionRequest(to: p) } },
+                                      onCancelRequest: {
+                                          Haptics.tap()
+                                          if case let .requestSent(reqId) = vm.connectionState(for: p.userId) {
+                                              Task { await vm.cancelConnectionRequest(
+                                                  ConnectionRequestRow(requestId: reqId, status: "pending", message: nil,
+                                                                        createdAt: nil, userId: p.userId, fullName: p.fullName,
+                                                                        avatarUrl: p.avatarUrl)) }
+                                          }
+                                      })
                         }
                     }
                 }
             }
+        }
+    }
+
+    // "X wants to connect" (incoming, accept/decline) above "Request sent"
+    // (outgoing, cancel) — the incoming list is the one that needs the member's
+    // action, so it leads.
+    @ViewBuilder private var requestsSection: some View {
+        if !vm.incomingRequests.isEmpty || !vm.outgoingRequests.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel(icon: .users, "CONNECTION REQUESTS")
+                groupedCard {
+                    ForEach(Array(vm.incomingRequests.enumerated()), id: \.element.id) { idx, req in
+                        IncomingRequestRow(req: req, divider: idx > 0, busy: vm.connectingPersonId == req.userId,
+                                           onAccept: { Haptics.tap(); Task { await vm.acceptConnectionRequest(req) } },
+                                           onDecline: { Haptics.tap(); Task { await vm.declineConnectionRequest(req) } })
+                    }
+                    ForEach(Array(vm.outgoingRequests.enumerated()), id: \.element.id) { idx, req in
+                        OutgoingRequestRow(req: req, divider: idx > 0 || !vm.incomingRequests.isEmpty,
+                                           busy: vm.connectingPersonId == req.userId,
+                                           onCancel: { Haptics.tap(); Task { await vm.cancelConnectionRequest(req) } })
+                    }
+                }
+            }
+            .padding(.bottom, 6)
         }
     }
 
@@ -1012,12 +1144,25 @@ private struct PersonRow: View {
     let person: ChatPerson
     let index: Int
     let divider: Bool
+    /// Chat Redesign C3a — "no unsolicited DMs": what tapping this row does
+    /// depends entirely on where the pair currently stand.
+    let state: ConnectionState
     let busy: Bool
-    let action: () -> Void
+    let onMessage: () -> Void
+    let onConnect: () -> Void
+    let onCancelRequest: () -> Void
     private var tint: Color { rowTint(index + 1) }
 
     var body: some View {
-        Button(action: action) {
+        let tappable = { () -> (() -> Void)? in
+            switch state {
+            case .connected: return onMessage
+            case .notConnected: return onConnect
+            case .requestSent: return onCancelRequest
+            case .requestReceived, .blocked: return nil
+            }
+        }()
+        Group {
             HStack(spacing: 14) {
                 SquircleAvatar(url: person.avatarUrl, name: person.fullName, tint: tint)
                     .overlay(alignment: .bottomTrailing) { levelChip }
@@ -1037,16 +1182,51 @@ private struct PersonRow: View {
                 if busy {
                     ProgressView().tint(Nuru.gold).scaleEffect(0.8)
                 } else {
-                    Icon(.messageCircle, size: 15, color: Nuru.gold)
-                        .frame(width: 32, height: 32)
-                        .background(Nuru.gold.opacity(0.10), in: Circle())
+                    stateAffordance
                 }
             }
             .modifier(RowChrome(unread: false, divider: divider))
         }
-        .buttonStyle(.pressableSubtle)
-        .disabled(busy)
+        .contentShape(Rectangle())
+        .onTapGesture { if !busy { tappable?() } }
+        .opacity(busy ? 0.6 : 1)
         .animation(.easeInOut(duration: 0.18), value: busy)
+    }
+
+    // Right-edge affordance per connection state — the same real-estate the
+    // old always-message-icon used to occupy.
+    @ViewBuilder private var stateAffordance: some View {
+        switch state {
+        case .connected:
+            Icon(.messageCircle, size: 15, color: Nuru.gold)
+                .frame(width: 32, height: 32)
+                .background(Nuru.gold.opacity(0.10), in: Circle())
+        case .notConnected:
+            HStack(spacing: 4) {
+                Image(systemName: "person.badge.plus").font(.system(size: 10, weight: .bold))
+                Text("Connect").font(.inter(11, .bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(storyRing, in: Capsule())
+        case .requestSent:
+            HStack(spacing: 4) {
+                Text("Request sent").font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
+                Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Color(hex: 0xCBD5E1))
+            }
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(Nuru.surface, in: Capsule())
+        case .requestReceived:
+            HStack(spacing: 4) {
+                Image(systemName: "hand.wave.fill").font(.system(size: 10)).foregroundStyle(Nuru.gold)
+                Text("Wants to connect").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+            }
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(Nuru.gold.opacity(0.14), in: Capsule())
+        case .blocked:
+            Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Color(hex: 0x9AA3AF))
+                .frame(width: 32, height: 32)
+        }
     }
 
     private var subtitle: String {
@@ -1106,6 +1286,72 @@ private struct PersonRow: View {
             }
             .fixedSize()
         }
+    }
+}
+
+// MARK: - Connection request rows (incoming = accept/decline, outgoing = cancel)
+
+private struct IncomingRequestRow: View {
+    let req: ConnectionRequestRow
+    let divider: Bool
+    let busy: Bool
+    let onAccept: () -> Void
+    let onDecline: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            SquircleAvatar(url: req.avatarUrl, name: req.fullName, tint: Nuru.gold)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(req.fullName).font(.inter(12, .medium)).kerning(-0.12).foregroundStyle(Nuru.navy).lineLimit(1)
+                Text("Wants to connect").font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686))
+            }
+            Spacer(minLength: 4)
+            if busy {
+                ProgressView().tint(Nuru.gold).scaleEffect(0.8)
+            } else {
+                HStack(spacing: 8) {
+                    Button(action: onDecline) {
+                        Icon(.x, size: 13, color: Color(hex: 0x59667C))
+                            .frame(width: 30, height: 30)
+                            .background(Nuru.surface, in: Circle())
+                    }.buttonStyle(.pressable)
+                    Button(action: onAccept) {
+                        Icon(.check, size: 13, color: .white)
+                            .frame(width: 30, height: 30)
+                            .background(storyRing, in: Circle())
+                    }.buttonStyle(.pressable)
+                }
+            }
+        }
+        .modifier(RowChrome(unread: true, divider: divider))
+    }
+}
+
+private struct OutgoingRequestRow: View {
+    let req: ConnectionRequestRow
+    let divider: Bool
+    let busy: Bool
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            SquircleAvatar(url: req.avatarUrl, name: req.fullName, tint: Color(hex: 0x9AA3AF))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(req.fullName).font(.inter(12, .medium)).kerning(-0.12).foregroundStyle(Nuru.navy).lineLimit(1)
+                Text("Request sent — waiting to be accepted").font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686))
+            }
+            Spacer(minLength: 4)
+            if busy {
+                ProgressView().tint(Nuru.gold).scaleEffect(0.8)
+            } else {
+                Button(action: onCancel) {
+                    Text("Cancel").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
+                        .padding(.horizontal, 12).frame(height: 28)
+                        .background(Nuru.surface, in: Capsule())
+                }.buttonStyle(.pressable)
+            }
+        }
+        .modifier(RowChrome(unread: false, divider: divider))
     }
 }
 
