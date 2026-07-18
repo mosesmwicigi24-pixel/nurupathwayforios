@@ -87,6 +87,38 @@ final class PastoralLock: ObservableObject {
         relock()
         isEnabled = false
         PastoralPrefs.reset()
+        PastorEligibility.reset()
+    }
+}
+
+/// Session cache for GET /chat/pastoral/eligibility (Chat Redesign C4): "have
+/// I ever been assigned as a pastor" — probed once per app session and kept
+/// in memory only (never UserDefaults; a stale "yes" for a since-reassigned
+/// pastor must not survive a relaunch, and a signed-out/other member on this
+/// device must never inherit it). Reset alongside the rest of the pastoral
+/// state on sign-out.
+@MainActor
+enum PastorEligibility {
+    private static var cached: Bool?
+    private static var inFlight: Task<Bool, Never>?
+
+    /// De-duped: concurrent callers during the first probe share one request.
+    static func isPastor() async -> Bool {
+        if let cached { return cached }
+        if let inFlight { return await inFlight.value }
+        let task = Task<Bool, Never> {
+            (try? await MemberAPI.pastoralEligibility()) ?? false
+        }
+        inFlight = task
+        let value = await task.value
+        cached = value
+        inFlight = nil
+        return value
+    }
+
+    static func reset() {
+        cached = nil
+        inFlight = nil
     }
 }
 

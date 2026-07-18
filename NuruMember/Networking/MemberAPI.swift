@@ -628,6 +628,22 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("chat/conversations/\(conversationId)/read", as: EmptyResponse.self)
     }
 
+    /// PUT /chat/conversations/{id}/mute — mute this conversation for the
+    /// caller only (Chat Redesign C4). `until` nil mutes forever; a caller
+    /// wanting a timed mute passes an ISO-8601 instant. Wired from the
+    /// pastoral ⋮ menu's "Mute" (see ChatThreadView) — the server contract is
+    /// per-member, so `muted` then rides back on GET /chat/conversations(/:id).
+    static func muteChatConversation(_ conversationId: String, until: String? = nil) async throws {
+        struct Body: Encodable { let until: String? }
+        _ = try await APIClient.shared.put("chat/conversations/\(conversationId)/mute",
+            body: Body(until: until), as: EmptyResponse.self)
+    }
+
+    /// DELETE /chat/conversations/{id}/mute — undo the above.
+    static func unmuteChatConversation(_ conversationId: String) async throws {
+        _ = try await APIClient.shared.delete("chat/conversations/\(conversationId)/mute", as: EmptyResponse.self)
+    }
+
     /// GET /chat/people — the member directory (everyone the caller may DM,
     /// minor-safe and congregation-scoped server-side). Optional name search.
     static func chatPeople(query: String? = nil) async throws -> [ChatPerson] {
