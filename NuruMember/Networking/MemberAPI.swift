@@ -346,6 +346,12 @@ extension MemberAPI {
         try await APIClient.shared.get("calendar", query: ["from": from, "to": to], as: Envelope<CalendarOccurrence>.self).data
     }
 
+    /// GET /home/events — up to 5 soonest curated occurrences for Home,
+    /// soonest-first (server-capped at 5; never re-cap, sort, or filter here).
+    static func homeEvents() async throws -> [HomeEventRow] {
+        try await APIClient.shared.get("home/events", as: Envelope<HomeEventRow>.self).data
+    }
+
     /// GET /home/featured-event — the admin-featured event (may be null).
     static func featuredEvent() async throws -> FeaturedEvent? {
         struct Env: Decodable { let data: FeaturedEvent? }

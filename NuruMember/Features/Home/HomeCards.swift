@@ -488,6 +488,11 @@ struct HomeUpcomingEventRow: View {
     let sub: String           // "3 going" or the location
     let subHighlight: Bool    // gold-bold when it's a going-count
     let imageUrl: String?
+    /// The member's RSVP for this occurrence — "going" | "maybe" | "declined" | nil.
+    /// nil (the default) keeps the original static gold-on-navy "RSVP" call-to-action;
+    /// a real status swaps in a tinted state pill (same palette as the Events tab's
+    /// RSVP row — EvD in EventDetailView.swift).
+    var rsvpStatus: String? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
@@ -524,9 +529,7 @@ struct HomeUpcomingEventRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text("RSVP").font(.inter(9, .bold)).foregroundStyle(HomeFig.gold)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(HomeFig.navy, in: Capsule())
+            rsvpPill
         }
         .padding(10)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -534,6 +537,30 @@ struct HomeUpcomingEventRow: View {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
         }
+    }
+
+    /// nil → the original gold-on-navy "RSVP" call-to-action. A real status swaps
+    /// in a tinted state pill — same hexes as the Events tab's RSVP row (EvD in
+    /// EventDetailView.swift; that enum is private to its file, so reused by value).
+    @ViewBuilder private var rsvpPill: some View {
+        switch rsvpStatus {
+        case "going":
+            rsvpStatePill("Going", fg: Color(hex: 0x166534), bg: Color(hex: 0x16A34A).opacity(0.14))
+        case "maybe":
+            rsvpStatePill("Maybe", fg: Color(hex: 0xB45309), bg: Color(hex: 0xD97706).opacity(0.14))
+        case "declined":
+            rsvpStatePill("Can't go", fg: Color(hex: 0x59667C), bg: Color(hex: 0x74808F).opacity(0.14))
+        default:
+            Text("RSVP").font(.inter(9, .bold)).foregroundStyle(HomeFig.gold)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(HomeFig.navy, in: Capsule())
+        }
+    }
+
+    private func rsvpStatePill(_ label: String, fg: Color, bg: Color) -> some View {
+        Text(label).font(.inter(9, .bold)).foregroundStyle(fg)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(bg, in: Capsule())
     }
 }
 

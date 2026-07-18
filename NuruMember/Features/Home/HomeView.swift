@@ -40,6 +40,9 @@ final class HomeViewModel: ObservableObject {
     @Published var announcements: [MyAnnouncement] = []
     @Published var cell: CellSummary.Cell?
     @Published var events: [CalendarOccurrence] = []
+    /// GET /home/events — up to 5 curated, soonest-first rows for the "Upcoming"
+    /// section. Server-capped and pre-sorted; rendered exactly as received.
+    @Published var homeEvents: [HomeEventRow] = []
     /// The radio broadcast that is live RIGHT NOW (nil = off air). The now-playing
     /// endpoint also returns the next scheduled show — that must stay off Home.
     @Published var onAir: RadioProgram?
@@ -80,6 +83,7 @@ final class HomeViewModel: ObservableObject {
         async let anns = try? MemberAPI.myAnnouncements()
         async let summary = try? MemberAPI.cellSummary()
         async let cal = try? MemberAPI.calendar(from: Self.calFrom, to: Self.calTo)
+        async let hev = try? MemberAPI.homeEvents()
         async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
 
@@ -119,6 +123,9 @@ final class HomeViewModel: ObservableObject {
         self.announcements = await anns ?? []
         self.cell = (await summary)?.cell
         self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
+        // Rendered exactly as received — the server caps at 5 and orders
+        // soonest-first; the client never caps, sorts, or filters.
+        self.homeEvents = await hev ?? []
         self.onAir = Self.liveOnly((await radio) ?? nil)
         self.featuredEvent = (await fev) ?? nil
 
@@ -224,7 +231,8 @@ final class HomeViewModel: ObservableObject {
         return p
     }
 
-    // Two-month calendar window around today (drives section 15's mini month grid).
+    // Two-month calendar window around today (drives the Live-now banner; the
+    // "Upcoming" section now renders GET /home/events curated rows instead).
     private static var calFrom: String {
         let cal = Calendar.current
         let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
@@ -347,7 +355,7 @@ struct HomeView: View {
         s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
         s.append(("grow", AnyView(growSection)))                                                  // 14
         if let fe = vm.featuredEvent { s.append(("event", AnyView(featuredGatheringCard(fe)))) }   // 14b · admin-featured event
-        s.append(("upcoming", AnyView(upcomingSection)))                                              // 15
+        if !vm.homeEvents.isEmpty { s.append(("upcoming", AnyView(upcomingSection))) }                // 15 · curated rows; empty → whole section (header too) hides
         s.append(("encourage", AnyView(oneReflectionBanner)))                                          // 16
         s.append(("cohort", AnyView(cohortSection)))                                                // 17
         s.append(("give", AnyView(giveBanner)))                                                   // 18
@@ -1835,7 +1843,7 @@ struct HomeView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: 15 — Upcoming (label outside; full-width mini month + next-event row)
+    // MARK: 15 — Upcoming (label outside; up to 5 curated event rows)
 
     private var upcomingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1880,25 +1888,31 @@ struct HomeView: View {
         return out.string(from: d)
     }
 
+    // The curated rows (GET /home/events): the month grid that used to live here
+    // is gone (owner ask) — the Events tab keeps the full calendar. Up to 5 rows,
+    // exactly as the server sent them (soonest-first, server-capped): thumb, gold
+    // relative-time kicker, title, venue, and the member's RSVP state (or the
+    // RSVP call-to-action). Each row pushes the SAME event-detail destination the
+    // RSVP/QR flows use (CalendarOccurrence by occurrence_id).
     private var upcomingCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
-                Text(monthTitle().uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
+                Text("GATHERINGS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
                 Button { Haptics.selection(); tabs.selected = .events } label: {
                     Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
                 }.buttonStyle(.pressable)
             }
-            miniMonth
-            if let occ = nextUpcoming {
-                Button { Haptics.tap(); path.append(occ) } label: {
+            ForEach(vm.homeEvents) { e in
+                Button { Haptics.tap(); path.append(CalendarOccurrence(homeEvent: e)) } label: {
                     HomeUpcomingEventRow(
-                        kicker: eventKicker(occ),
-                        soon: eventSoon(occ),
-                        title: occ.title,
-                        sub: occ.going > 0 ? "\(occ.going) going" : (occ.location ?? "Next gathering"),
-                        subHighlight: occ.going > 0,
-                        imageUrl: occ.primaryImageUrl)
+                        kicker: eventKicker(e.startsAt),
+                        soon: eventSoon(e.startsAt),
+                        title: e.title,
+                        sub: (e.venue?.isEmpty == false ? e.venue! : "Next gathering"),
+                        subHighlight: false,
+                        imageUrl: e.primaryImageUrl,
+                        rsvpStatus: e.myRsvp)
                 }.buttonStyle(.pressable)
             }
         }
@@ -1906,79 +1920,19 @@ struct HomeView: View {
         .cardSurface()
     }
 
-    private var nextUpcoming: CalendarOccurrence? {
-        vm.events.first {
-            (parseISO($0.startAt) ?? .distantPast) >= Calendar.current.startOfDay(for: Date())
-        } ?? vm.events.first
-    }
-
-    private func monthTitle() -> String {
-        let f = DateFormatter(); f.dateFormat = "MMMM"
-        return f.string(from: Date())
-    }
-
-    private func eventKicker(_ occ: CalendarOccurrence) -> String {
-        guard let d = parseISO(occ.startAt) else { return timeLine(occ.startAt) }
+    private func eventKicker(_ startAt: String) -> String {
+        guard let d = parseISO(startAt) else { return timeLine(startAt) }
         let cal = Calendar.current
         let day: String
         if cal.isDateInToday(d) { day = "Today" }
         else if cal.isDateInTomorrow(d) { day = "Tomorrow" }
         else { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; day = f.string(from: d) }
-        return "\(day) · \(timeLine(occ.startAt))"
+        return "\(day) · \(timeLine(startAt))"
     }
 
-    private func eventSoon(_ occ: CalendarOccurrence) -> Bool {
-        guard let d = parseISO(occ.startAt) else { return false }
+    private func eventSoon(_ startAt: String) -> Bool {
+        guard let d = parseISO(startAt) else { return false }
         return d.timeIntervalSinceNow < 48 * 3600
-    }
-
-    private var miniMonth: some View {
-        let cal = Calendar.current
-        let today = Date()
-        let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: today)) ?? today
-        let daysInMonth = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
-        // Monday-first leading offset
-        let firstWeekday = cal.component(.weekday, from: monthStart) // 1=Sun…7=Sat
-        let lead = (firstWeekday + 5) % 7
-        let cells: [Int?] = Array(repeating: nil, count: lead) + (1...daysInMonth).map { Optional($0) }
-        let eventDays: Set<Int> = Set(vm.events.compactMap { occ -> Int? in
-            guard let d = ISO8601DateFormatter.nuru.date(from: occ.startAt) ?? ISO8601DateFormatter().date(from: occ.startAt) else { return nil }
-            guard cal.isDate(d, equalTo: monthStart, toGranularity: .month) else { return nil }
-            return cal.component(.day, from: d)
-        })
-        let todayNum = cal.isDate(today, equalTo: monthStart, toGranularity: .month) ? cal.component(.day, from: today) : -1
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
-
-        return VStack(spacing: 6) {
-            LazyVGrid(columns: cols, spacing: 2) {
-                ForEach(Array(["M","T","W","T","F","S","S"].enumerated()), id: \.offset) { _, d in
-                    Text(d).font(.inter(9, .semibold)).foregroundStyle(Nuru.ink400).frame(maxWidth: .infinity)
-                }
-            }
-            LazyVGrid(columns: cols, spacing: 4) {
-                ForEach(Array(cells.enumerated()), id: \.offset) { _, day in
-                    if let day {
-                        let isToday = day == todayNum
-                        ZStack {
-                            if isToday { Circle().fill(Nuru.navy).frame(width: 24, height: 24) }
-                            VStack(spacing: 1) {
-                                Text("\(day)")
-                                    .font(.inter(11, isToday ? .bold : .medium))
-                                    .foregroundStyle(isToday ? Nuru.onNavy : Nuru.ink)
-                                if eventDays.contains(day) && !isToday {
-                                    Circle().fill(Nuru.gold).frame(width: 4, height: 4)
-                                } else {
-                                    Color.clear.frame(width: 4, height: 4)
-                                }
-                            }
-                        }
-                        .frame(height: 26)
-                    } else {
-                        Color.clear.frame(height: 26)
-                    }
-                }
-            }
-        }
     }
 
     // MARK: 16 — Encouragement ("one reflection away" / "beautifully done")
