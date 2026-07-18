@@ -205,7 +205,7 @@ private func shortDate(_ d: Date) -> String {
 
 // MARK: - Screen
 
-private enum PrayerTab { case active, answered }
+enum PrayerTab { case active, answered }
 
 struct PrayerJournalView: View {
     /// True when hosted as the "Private Prayer" tab of PrayerRoomView, which
@@ -213,6 +213,10 @@ struct PrayerJournalView: View {
     /// view drops its standalone header and offers a floating "+" instead of
     /// the one that normally lives in that header.
     var embedded: Bool = false
+    /// Non-nil when the Room's "Answered" tab hosts this view directly — the
+    /// internal Active/Answered chips hide and the list is pinned to that tab.
+    var forcedTab: PrayerTab? = nil
+    @EnvironmentObject private var auth: AuthStore
     @StateObject private var vm = PrayerJournalViewModel()
     @State private var editing: PrayerDraft?
     @State private var tab: PrayerTab = .active
@@ -238,29 +242,36 @@ struct PrayerJournalView: View {
                                             weekCount: vm.thisWeekCount,
                                             answeredCount: vm.answered.count)
                                 .gentleEntrance()
-                            PrayerTabs(tab: $tab, activeCount: vm.active.count, answeredCount: vm.answered.count)
-                                .gentleEntrance(delay: 0.05)
-                            let list = tab == .active ? vm.active : vm.answered
-                            if list.isEmpty {
-                                EmptyPrayers(tab: tab)
-                                // No cards yet → the New action still has a home.
+                            // ONE row: Active · Answered · Add Prayer — the page's
+                            // whole management surface in a single place.
+                            HStack(spacing: Nuru.S.sm) {
+                                if forcedTab == nil {
+                                    PrayerTabs(tab: $tab, activeCount: vm.active.count, answeredCount: vm.answered.count)
+                                }
                                 Button { Haptics.tap(); editing = PrayerDraft() } label: {
-                                    HStack(spacing: 6) {
-                                        Icon(.plus, size: 14, color: .white)
-                                        Text("New prayer").font(.inter(13, .bold)).foregroundStyle(.white)
+                                    HStack(spacing: 5) {
+                                        Icon(.plus, size: 13, color: .white)
+                                        Text("Add Prayer").font(.nActionLabel).foregroundStyle(.white)
+                                            .lineLimit(1).minimumScaleFactor(0.8)
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .padding(.vertical, 13)
+                                    .padding(.horizontal, 14).padding(.vertical, 12)
+                                    .frame(maxWidth: forcedTab == nil ? nil : .infinity)
                                     .background(
                                         LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0xC9A227)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing),
                                         in: Capsule())
+                                    .shadow(color: Color(hex: 0xC9A227).opacity(0.35), radius: 6, y: 3)
                                 }
                                 .buttonStyle(.pressable)
-                                .padding(.top, Nuru.S.sm)
+                            }
+                            .gentleEntrance(delay: 0.05)
+                            let list = tab == .active ? vm.active : vm.answered
+                            if list.isEmpty {
+                                EmptyPrayers(tab: tab)
                             } else {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, e in
                                     JournalCard(entry: e,
+                                                ownerName: auth.profile?.fullName ?? "You",
                                                 shared: vm.sharedToWall.contains(e.entryId),
                                                 toggle: { Task { await vm.toggleAnswered(e) } },
                                                 edit: { Haptics.tap(); editing = PrayerDraft(entry: e) },
@@ -306,7 +317,10 @@ struct PrayerJournalView: View {
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .task { if vm.entries.isEmpty { await vm.load() } }
+        .task {
+            if let f = forcedTab { tab = f }
+            if vm.entries.isEmpty { await vm.load() }
+        }
         .sheet(item: $editing) { draft in
             PrayerComposerSheet(draft: draft) { title, body, answered in
                 Task { await vm.upsert(entryId: draft.entryId, title: title, body: body, answered: answered) }
@@ -550,6 +564,7 @@ private struct EmptyPrayers: View {
 
 private struct JournalCard: View {
     let entry: PrayerEntry
+    let ownerName: String
     let shared: Bool
     let toggle: () -> Void
     let edit: () -> Void
@@ -557,23 +572,55 @@ private struct JournalCard: View {
     let remove: () -> Void
     let compose: () -> Void
 
+    /// Green answered · orange on-the-wall · gold private.
+    private var statusColor: Color {
+        if entry.isAnswered { return Color(hex: 0x16A34A) }
+        if shared { return Color(hex: 0xF97316) }
+        return Color(hex: 0xC9A227)
+    }
+    private var initials: String {
+        let parts = ownerName.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }
+        return parts.isEmpty ? "ME" : parts.joined().uppercased()
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             // Header: avatar disc + "You · 2 days ago"
+            // Status speaks ONLY through color, only here: green = answered,
+            // orange = on the corporate wall, gold = private. Everything else
+            // on the card stays neutral.
             HStack(alignment: .center, spacing: Nuru.S.md) {
                 Circle()
-                    .fill(LinearGradient(colors: [Nuru.gold, Nuru.goldLo],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(statusColor)
                     .frame(width: 44, height: 44)
-                    .overlay(Text("ME").font(.inter(12, .bold)).foregroundStyle(.white))
-                    .shadow(color: Nuru.gold.opacity(0.4), radius: 6, x: 0, y: 4)
+                    .overlay(Text(initials).font(.nChipLabel).foregroundStyle(.white))
+                    .shadow(color: statusColor.opacity(0.35), radius: 6, x: 0, y: 4)
                 HStack(spacing: 6) {
-                    Text("You").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                    Text(ownerName).font(.nChipLabel).foregroundStyle(statusColor)
+                        .lineLimit(1)
                     Text("·").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                     Text(relativeLabel(entry.isAnswered ? (entry.answeredAt ?? entry.createdAt) : entry.createdAt))
-                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+                        .font(.nCardMeta).foregroundStyle(statusColor)
                 }
                 Spacer(minLength: 0)
+                Menu {
+                    if entry.isAnswered {
+                        Button { Haptics.tap(); toggle() } label: { Label("Reopen prayer", systemImage: "arrow.uturn.backward") }
+                    } else {
+                        Button { Haptics.success(); toggle() } label: { Label("Mark answered", systemImage: "checkmark.circle") }
+                    }
+                    if !shared {
+                        Button { Haptics.tap(); share() } label: { Label("Publish to Corporate", systemImage: "megaphone") }
+                    }
+                    Button { edit() } label: { Label("Edit", systemImage: "pencil") }
+                    Button(role: .destructive) { remove() } label: { Label("Delete", systemImage: "trash") }
+                } label: {
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(Color(hex: 0x74808F))
+                        .frame(width: 36, height: 36)
+                        .contentShape(Rectangle())
+                }
             }
             .padding(.horizontal, Nuru.S.base)
             .padding(.top, Nuru.S.base)
@@ -595,47 +642,16 @@ private struct JournalCard: View {
                 answeredBanner
                     .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.md)
-                shareToCorporateButton
-                    .padding(.horizontal, Nuru.S.base)
-                    .padding(.top, Nuru.S.sm)
-            } else {
-                // One row, two halves: the quiet toggle and the gold bridge to
-                // Corporate Prayer side by side — the card stays compact.
-                HStack(spacing: Nuru.S.sm) {
-                    markAnsweredButton
-                    shareToCorporateButton
+            } else if shared {
+                HStack(spacing: 6) {
+                    Icon(.handHeart, size: 13, color: Color(hex: 0xF97316))
+                    Text("On the Corporate wall").font(.nMicro).foregroundStyle(Color(hex: 0xF97316))
                 }
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.top, Nuru.S.md)
             }
 
-            // Hairline + remaining row actions (design slot for Love/Comment).
-            Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.md)
-            // ONE home for every action: Edit · (Reopen) · Delete on the left,
-            // and the standout gold "New prayer" on the same row — nothing
-            // floats, nothing hides behind the tab bar.
-            HStack(spacing: 0) {
-                RowAction(icon: .pencil, label: "Edit", action: edit)
-                if entry.isAnswered { RowAction(icon: .repeat, label: "Reopen", action: toggle) }
-                RowAction(icon: .trash2, label: "Delete", action: remove)
-                Spacer(minLength: 0)
-                Button { Haptics.tap(); compose() } label: {
-                    HStack(spacing: 5) {
-                        Icon(.plus, size: 13, color: .white)
-                        Text("New prayer").font(.inter(12, .bold)).foregroundStyle(.white)
-                    }
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(
-                        LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0xC9A227)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: Capsule())
-                    .shadow(color: Color(hex: 0xC9A227).opacity(0.35), radius: 6, x: 0, y: 3)
-                }
-                .buttonStyle(.pressable)
-                .padding(.trailing, Nuru.S.sm)
-            }
-            .padding(.horizontal, 4)
-            .padding(.vertical, 6)
+            Color.clear.frame(height: Nuru.S.base)
         }
         .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))

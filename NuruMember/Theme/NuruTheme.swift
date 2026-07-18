@@ -189,6 +189,8 @@ extension Font {
     static var nRowTitle: Font   { fraunces(15, .semibold) } // row/list-item headline
     static var nCardBody: Font   { inter(13, .regular) }     // card body / preview text
     static var nCardMeta: Font   { inter(11, .regular) }     // timestamps, counts, footnotes
+    static var nChipLabel: Font  { inter(12, .semibold) }    // segment/filter chip text
+    static var nActionLabel: Font { inter(13, .bold) }       // pill CTA / menu action text
     static var nCardCTA: Font    { inter(14, .semibold) }    // in-card button labels
 }
 

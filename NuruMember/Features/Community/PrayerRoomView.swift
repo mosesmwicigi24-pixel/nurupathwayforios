@@ -10,6 +10,7 @@ import SwiftUI
 enum PrayerRoomTab: Hashable {
     case privatePrayer
     case corporatePrayer
+    case answered
 }
 
 struct PrayerRoomView: View {
@@ -27,6 +28,7 @@ struct PrayerRoomView: View {
                 switch tab {
                 case .privatePrayer: PrayerJournalView(embedded: true)
                 case .corporatePrayer: PrayerWallView(embedded: true)
+                case .answered: PrayerJournalView(embedded: true, forcedTab: .answered)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,8 +83,9 @@ struct PrayerRoomView: View {
 
     private var segmentedControl: some View {
         HStack(spacing: 4) {
-            segmentButton(.privatePrayer, "Private Prayer")
-            segmentButton(.corporatePrayer, "Corporate Prayer")
+            segmentButton(.privatePrayer, "Private")
+            segmentButton(.corporatePrayer, "Corporate")
+            segmentButton(.answered, "Answered")
         }
         .padding(4)
         .background(Color.white, in: Capsule())
@@ -96,7 +99,7 @@ struct PrayerRoomView: View {
             withAnimation(.easeInOut(duration: 0.15)) { tab = t }
         } label: {
             Text(label)
-                .font(.inter(12, .semibold))
+                .font(.nChipLabel)
                 .foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 .lineLimit(1).minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity)
