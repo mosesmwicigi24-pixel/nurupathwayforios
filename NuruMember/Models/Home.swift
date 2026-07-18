@@ -36,6 +36,9 @@ struct TailoredVerse: Codable, Sendable {
     let reason: String?
     let text: String?
     let art: VerseArt?
+    /// Seven-bands addition — optional, tolerant: absent on an older backend
+    /// response and the "Chosen for your season" ribbon renders as before.
+    let encouragement: Encouragement?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
@@ -44,6 +47,19 @@ struct TailoredVerse: Codable, Sendable {
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
         text = try? c.decodeIfPresent(String.self, forKey: .text)
         art = try? c.decodeIfPresent(VerseArt.self, forKey: .art)
+        encouragement = try? c.decodeIfPresent(Encouragement.self, forKey: .encouragement)
+    }
+}
+
+/// A short personal encouragement paired with the tailored verse — replaces
+/// the "Chosen for your season" ribbon on Home when present.
+struct Encouragement: Codable, Sendable {
+    let text: String
+    let author: String
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        text = (try? c.decodeIfPresent(String.self, forKey: .text)) ?? ""
+        author = (try? c.decodeIfPresent(String.self, forKey: .author)) ?? ""
     }
 }
 

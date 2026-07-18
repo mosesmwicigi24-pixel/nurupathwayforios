@@ -23,6 +23,9 @@ final class HomeViewModel: ObservableObject {
     @Published var verse: (text: String, reference: String, version: String)?
     @Published var verseReason: String?
     @Published var verseArt: VerseArt?   // the day's tableau photograph (server-curated)
+    /// Seven-bands addition — when present, replaces the "Chosen for your
+    /// season" ribbon with a personal encouragement quote + attribution.
+    @Published var verseEncouragement: Encouragement?
     @Published var reactions: VerseReactions?
     @Published var verseSaved = false
 
@@ -102,6 +105,7 @@ final class HomeViewModel: ObservableObject {
             }
             verseReason = v.reason
             verseArt = (v.art?.url.isEmpty == false) ? v.art : nil
+            verseEncouragement = v.encouragement
         }
 
         self.welcomeVideo = await video ?? nil
@@ -982,7 +986,21 @@ struct HomeView: View {
     /// Season ribbon + reactions/save/share — shared by both verse renderings.
     private var verseCardBody: some View {
         VStack(alignment: .leading, spacing: 0) {
-            if let reason = vm.verseReason, !reason.isEmpty {
+            if let enc = vm.verseEncouragement, !enc.text.isEmpty {
+                // Seven-bands: a personal encouragement quote replaces the
+                // season ribbon when the server provides one.
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(enc.text)
+                        .font(.fraunces(13.5).italic()).foregroundStyle(Nuru.ink)
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                    if !enc.author.isEmpty {
+                        Text("— \(enc.author)")
+                            .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .padding(.top, 8)
+            } else if let reason = vm.verseReason, !reason.isEmpty {
                 // The season ribbon — Nuru discerned this from THEIR recent
                 // prayers and reactions, so it reads as a personal choosing,
                 // not an algorithm's footnote.

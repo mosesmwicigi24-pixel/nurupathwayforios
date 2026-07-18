@@ -13,6 +13,11 @@ struct HomeLiturgy: Codable, Sendable {
     var line: String = ""
     var scriptureRef: String? = nil
     var art: VerseArt? = nil   // the hour's tableau photograph (server-curated per part+day)
+    // Seven-bands additions — all optional, all tolerant: absent on an older
+    // backend response and the card renders exactly as it did before.
+    var band: String? = nil        // one of the 7 time-of-day bands (server-only art selection)
+    var charge: String? = nil      // a second, subdued exhortation line
+    var verseLine: LiturgyVerseLine? = nil
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         part = (try? c.decodeIfPresent(String.self, forKey: .part)) ?? "morning"
@@ -21,6 +26,21 @@ struct HomeLiturgy: Codable, Sendable {
         line = (try? c.decodeIfPresent(String.self, forKey: .line)) ?? ""
         scriptureRef = try? c.decodeIfPresent(String.self, forKey: .scriptureRef)
         art = try? c.decodeIfPresent(VerseArt.self, forKey: .art)
+        band = try? c.decodeIfPresent(String.self, forKey: .band)
+        charge = try? c.decodeIfPresent(String.self, forKey: .charge)
+        verseLine = try? c.decodeIfPresent(LiturgyVerseLine.self, forKey: .verseLine)
+    }
+}
+
+/// A short companion verse alongside the liturgy line — italic serif text
+/// with a small gold reference caption, e.g. "— Lamentations 3:22-23".
+struct LiturgyVerseLine: Codable, Sendable {
+    var reference: String = ""
+    var text: String = ""
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        reference = (try? c.decodeIfPresent(String.self, forKey: .reference)) ?? ""
+        text = (try? c.decodeIfPresent(String.self, forKey: .text)) ?? ""
     }
 }
 
