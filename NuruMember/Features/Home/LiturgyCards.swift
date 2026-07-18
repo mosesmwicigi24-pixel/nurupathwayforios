@@ -24,8 +24,8 @@ struct HomeLiturgyCard: View {
     /// breathing room so the bottom stack never crowds the kicker.
     private func tableauHeight(_ lit: HomeLiturgy) -> CGFloat {
         var h: CGFloat = 232
-        if let charge = lit.charge, !charge.isEmpty { h += 40 }
-        if let vl = lit.verseLine, !vl.text.isEmpty { h += 56 }
+        if let charge = lit.charge, !charge.isEmpty { h += 30 }
+        if let vl = lit.verseLine, !vl.text.isEmpty { h += 50 }
         return h
     }
 
@@ -72,42 +72,41 @@ struct HomeLiturgyCard: View {
                         .overlay { DeepNavyBlock() }
                         .overlay(alignment: .topLeading) { litKicker(lit).padding(18) }
                         .overlay(alignment: .bottomLeading) {
-                            VStack(alignment: .leading, spacing: 8) {
+                            // One hierarchy: the hour's word LARGE, a gold rule
+                            // (the selah), then small golden lines closing on a
+                            // SINGLE scripture.
+                            VStack(alignment: .leading, spacing: 7) {
                                 Text(lit.line)
-                                    .font(.fraunces(19)).foregroundStyle(.white)
+                                    .font(.fraunces(20)).foregroundStyle(.white)
                                     .lineSpacing(4)
                                     .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
                                     .fixedSize(horizontal: false, vertical: true)
-                                if let ref = lit.scriptureRef {
-                                    Text(ref)
-                                        .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.92))
-                                        .lineLimit(1)
-                                        .padding(.horizontal, 10).padding(.vertical, 4)
-                                        .background(Color.black.opacity(0.28), in: Capsule())
-                                        .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
-                                }
-                                // Seven-bands additions — a second, subdued exhortation
-                                // line and an optional companion verse. Both optional;
-                                // the card grows gracefully to fit them when present.
+                                Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                                    .frame(width: 34, height: 1.5)
+                                    .padding(.vertical, 2)
                                 if let charge = lit.charge, !charge.isEmpty {
                                     Text(charge)
-                                        .font(.fraunces(19)).foregroundStyle(.white.opacity(0.7))
-                                        .lineSpacing(4)
-                                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                        .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
+                                        .lineSpacing(3)
+                                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
                                 if let vl = lit.verseLine, !vl.text.isEmpty {
-                                    VStack(alignment: .leading, spacing: 2) {
-                                        Text(vl.text)
-                                            .font(.fraunces(15).italic()).foregroundStyle(.white.opacity(0.92))
-                                            .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                        if !vl.reference.isEmpty {
-                                            Text("— \(vl.reference)")
-                                                .font(.inter(10.5, .semibold)).foregroundStyle(Color(hex: 0xF2DDA0))
-                                                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-                                        }
-                                    }
+                                    Text("“\(vl.text)”")
+                                        .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                        .lineSpacing(3)
+                                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(vl.reference.uppercased())
+                                        .font(.inter(10, .bold)).kerning(1.4)
+                                        .foregroundStyle(Color(hex: 0xE0B85E))
+                                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                                        .padding(.top, 1)
+                                } else if let ref = lit.scriptureRef {
+                                    Text(ref.uppercased())
+                                        .font(.inter(10, .bold)).kerning(1.4)
+                                        .foregroundStyle(Color(hex: 0xE0B85E))
+                                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
                                 }
                             }
                             .padding(18)
@@ -118,36 +117,29 @@ struct HomeLiturgyCard: View {
                     VStack(alignment: .leading, spacing: 10) {
                         litKicker(lit)
                         Text(lit.line)
-                            .font(.fraunces(18)).foregroundStyle(.white)
+                            .font(.fraunces(19)).foregroundStyle(.white)
                             .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
-                        if let ref = lit.scriptureRef {
-                            HStack {
-                                Spacer(minLength: 0)
-                                Text(ref)
-                                    .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
-                                    .padding(.horizontal, 10).padding(.vertical, 4)
-                                    .background(Color.white.opacity(0.12), in: Capsule())
-                            }
-                        }
-                        // Seven-bands additions — see the tableau branch above for
-                        // the same fields; here they sit on the classic navy card.
+                        Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                            .frame(width: 34, height: 1.5)
                         if let charge = lit.charge, !charge.isEmpty {
                             Text(charge)
-                                .font(.fraunces(18)).foregroundStyle(.white.opacity(0.7))
-                                .lineSpacing(4)
+                                .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
+                                .lineSpacing(3)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         if let vl = lit.verseLine, !vl.text.isEmpty {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(vl.text)
-                                    .font(.fraunces(15).italic()).foregroundStyle(.white.opacity(0.92))
-                                    .fixedSize(horizontal: false, vertical: true)
-                                if !vl.reference.isEmpty {
-                                    Text("— \(vl.reference)")
-                                        .font(.inter(10.5, .semibold)).foregroundStyle(Color(hex: 0xF2DDA0))
-                                }
-                            }
+                            Text("“\(vl.text)”")
+                                .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(vl.reference.uppercased())
+                                .font(.inter(10, .bold)).kerning(1.4)
+                                .foregroundStyle(Color(hex: 0xE0B85E))
+                        } else if let ref = lit.scriptureRef {
+                            Text(ref.uppercased())
+                                .font(.inter(10, .bold)).kerning(1.4)
+                                .foregroundStyle(Color(hex: 0xE0B85E))
                         }
                     }
                     .padding(18)
