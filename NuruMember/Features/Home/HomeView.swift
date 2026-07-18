@@ -1228,17 +1228,32 @@ struct HomeView: View {
     // MARK: 6 — Reading-plan + Prayer-journal minis
 
     private var minisRow: some View {
-        HStack(spacing: Nuru.S.md) {
+        // Equal fixed heights + explicit contentShape + clipped: each card's
+        // tap zone is EXACTLY its visible surface. (The GeometryReader inside
+        // the plan card made the row's height ambiguous, letting neighbors'
+        // hit areas bleed — a Prayer Room tap could land on the card below.)
+        HStack(alignment: .top, spacing: Nuru.S.md) {
             // Resume the plan directly when one is in progress; otherwise open the
             // catalogue — always on the Plans tab (its home), never inside Home.
             Button {
                 Haptics.tap()
                 tabs.openPlans(resumePlan.map { .plan($0) } ?? .catalogue)
-            } label: { readingPlanMini }
+            } label: {
+                readingPlanMini
+                    .frame(height: 128)
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .clipped()
+            }
             .buttonStyle(.pressable)
-            NavigationLink(value: GrowDestination.prayerJournal) { prayerJournalMini }.buttonStyle(.pressable)
+            NavigationLink(value: GrowDestination.prayerJournal) {
+                prayerJournalMini
+                    .frame(height: 128)
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .clipped()
+            }
+            .buttonStyle(.pressable)
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(height: 128)
     }
 
     private var readingPlanMini: some View {
