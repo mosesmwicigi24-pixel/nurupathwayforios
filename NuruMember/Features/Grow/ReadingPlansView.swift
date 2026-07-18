@@ -3,7 +3,7 @@
 // (white search field + bell), added a streak/reward strip (flame, week dots,
 // badge progress), a shimmering "Plan of the day" badge, a pulsing play ring on
 // continue rows, a "Finish & earn" trophy card and highlighted next-day rows in
-// the detail slide-over, and a navy day header + confetti on day completion.
+// the detail slide-over, and a navy day header + a fireworks burst on day completion.
 // Everything binds to REAL data: the ReadingPlanRow catalogue (MemberAPI.plans),
 // plan detail (MemberAPI.plan), enrollment (startPlan), day/segment completion
 // (completePlanDay / PlanDayRef navigation), streak (me/achievements) and the
@@ -12,6 +12,7 @@
 // Shared card structs + the PL palette live in ReadingPlanCards.swift.
 import SwiftUI
 import UserNotifications
+import AVFoundation
 
 // MARK: - Daily plan reminder (local notification)
 
@@ -969,9 +970,9 @@ final class PlanDayViewModel: ObservableObject {
 // PlanSegmentView), the Figma reflection textarea (now REAL — backed by
 // GET/POST /growth/plans/{id}/days/{n}/reflection with upsert semantics, so
 // it pre-fills on return visits and the button flips to "Update"), and a
-// sticky gold "Mark day complete" bar that celebrates with a native confetti
-// burst. The mock's prev/next-day arrows are still omitted (the day ref
-// carries no sibling days).
+// sticky gold "Mark day complete" bar that celebrates with a native rocket-
+// and-burst fireworks show. The mock's prev/next-day arrows are still omitted
+// (the day ref carries no sibling days).
 struct PlanDayView: View {
     let ref: PlanDayRef
     @StateObject private var vm: PlanDayViewModel
@@ -1037,7 +1038,7 @@ struct PlanDayView: View {
                 }
                 footerBar
             }
-            if justDone { IntenseCelebration().ignoresSafeArea().allowsHitTesting(false) }
+            if justDone { FireworksCelebration().ignoresSafeArea().allowsHitTesting(false) }
         }
         .ignoresSafeArea(edges: .top)
         .environment(\.readerPalette, pal)
@@ -1316,7 +1317,7 @@ struct PlanDayView: View {
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
-    // MARK: sticky footer — mark complete → confetti → tap to go back
+    // MARK: sticky footer — mark complete → fireworks → tap to go back
 
     private var footerBar: some View {
         VStack(spacing: 8) {
@@ -1409,87 +1410,262 @@ struct PlanDayView: View {
     }
 }
 
-// MARK: - Intense celebration (fireworks + saturating confetti, ~5s)
+// MARK: - Fireworks celebration ("real fireworks, not paper cuts", ~5s)
 
-/// A big, joyful "boom": staggered firework bursts across the upper screen plus a
-/// dense tumbling-confetti rain, drawn in a single Canvas for performance. Runs
-/// for ~5s then empties itself. Purely decorative — never blocks touches.
-private struct IntenseCelebration: View {
+/// The day-seal ceremony: 3–4 staggered rockets rise from the bottom third of
+/// the screen on a fading streak, then burst into two dozen-plus radial
+/// sparks that arc under a light gravity pull and leave their own fading
+/// trail behind — one soft "pop" timed to each burst. A single Canvas +
+/// TimelineView(.animation) draws every rocket and spark (no per-particle
+/// views) so this stays 60fps-friendly. Reduce Motion swaps the whole thing
+/// for a static golden glow and skips sound entirely. Purely decorative —
+/// never blocks touches.
+private struct FireworksCelebration: View {
     var duration: Double = 5.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var start: Date?
 
-    private let confetti: [Piece]
-    private let sparks: [Spark]
+    private let rockets: [Rocket]
 
-    struct Piece { let x, delay, fall, sway, phase, spin, size: Double; let color: Color }
-    struct Spark { let cx, cy, t0, angle, speed, size: Double; let color: Color }
+    /// A spark's fixed flight plan, resolved against its parent rocket's
+    /// burst time + center each frame.
+    private struct SparkSeed {
+        let angle: Double        // radians, 0...2π around the burst center
+        let reach: Double        // radial travel, as a fraction of min(width, height)
+        let size: Double         // point diameter at the glowing head
+        let color: Color
+        let lifeScale: Double    // slight per-spark variance so the burst doesn't die all at once
+    }
 
-    static let palette: [Color] = [
-        PL.gold, PL.goldLight, Color(hex: 0xFBBF24), Color(hex: 0xFB7185),
-        Color(hex: 0x34D399), Color(hex: 0x60A5FA), Color(hex: 0xFFF3D6),
-    ]
+    private struct Rocket: Identifiable {
+        let id: Int
+        let x: Double            // 0...1, launch/burst x (kept fixed — real rockets fly straight up)
+        let burstY: Double       // 0...1 from the top — where the streak ends and the burst begins
+        let t0: Double           // launch time, seconds from celebration start
+        let riseDuration: Double
+        let color: Color
+        let sparks: [SparkSeed]
+    }
+
+    // Golds the brand leans on + white + one warm accent — legible on the
+    // navy day header and the cream body alike.
+    private static let gold = Color(hex: 0xC89B3C)
+    private static let goldLight = Color(hex: 0xE0B85E)
+    private static let cream = Color(hex: 0xFFF4C7)
+    private static let accent = Color(hex: 0xFB7185)   // one accent spark color, used sparingly
+    private static let palette: [Color] = [gold, gold, goldLight, goldLight, cream, .white, accent]
+
+    private static let sparkLife = 1.25   // seconds a spark stays visible once it bursts
 
     init(duration: Double = 5.0) {
         self.duration = duration
-        var conf: [Piece] = []
-        for _ in 0..<170 {
-            conf.append(Piece(x: .random(in: 0...1), delay: .random(in: 0...2.6),
-                              fall: .random(in: 0.9...1.7), sway: .random(in: 12...48),
-                              phase: .random(in: 0...6.28), spin: .random(in: -7...7),
-                              size: .random(in: 6...13), color: Self.palette.randomElement()!))
-        }
-        var sp: [Spark] = []
-        let bursts = 7
-        for b in 0..<bursts {
-            let cx = Double.random(in: 0.15...0.85)
-            let cy = Double.random(in: 0.14...0.52)
-            let t0 = Double(b) * (duration * 0.55 / Double(bursts)) + Double.random(in: 0...0.35)
+        let count = Int.random(in: 3...4)
+        var built: [Rocket] = []
+        var t0 = 0.0
+        for i in 0..<count {
+            let riseDuration = Double.random(in: 0.45...0.62)
             let color = Self.palette.randomElement()!
-            let count = 46
-            for i in 0..<count {
-                let ang = Double(i) / Double(count) * 6.2831 + Double.random(in: -0.05...0.05)
-                sp.append(Spark(cx: cx, cy: cy, t0: t0, angle: ang,
-                                speed: .random(in: 0.15...0.26), size: .random(in: 3...6), color: color))
+            let sparkCount = Int.random(in: 24...40)
+            var seeds: [SparkSeed] = []
+            for s in 0..<sparkCount {
+                let angle = (Double(s) / Double(sparkCount)) * (2 * .pi) + .random(in: -0.06...0.06)
+                seeds.append(SparkSeed(angle: angle,
+                                        reach: .random(in: 0.16...0.30),
+                                        size: .random(in: 3...6.5),
+                                        color: Self.palette.randomElement()!,
+                                        lifeScale: .random(in: 0.85...1.15)))
             }
+            built.append(Rocket(id: i, x: .random(in: 0.2...0.8), burstY: .random(in: 0.16...0.42),
+                                 t0: t0, riseDuration: riseDuration, color: color, sparks: seeds))
+            // Stagger the next launch so its burst still has room to fade
+            // out before the ~5s ceremony retires (host view tears this down
+            // at 5.3s — see PlanDayView.footerButton).
+            t0 += Double.random(in: 0.8...1.05)
         }
-        confetti = conf; sparks = sp
+        rockets = built
     }
 
     var body: some View {
+        Group {
+            if reduceMotion {
+                staticGlow
+            } else {
+                fireworks
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    // Reduce Motion: no rise, no burst, no sound — just a gentle golden
+    // presence that confirms "something good just happened".
+    private var staticGlow: some View {
+        RadialGradient(colors: [Self.cream.opacity(0.5), Self.gold.opacity(0.18), .clear],
+                       center: .center, startRadius: 8, endRadius: 280)
+            .transition(.opacity)
+    }
+
+    private var fireworks: some View {
         TimelineView(.animation) { tl in
             Canvas { ctx, size in
                 let t = start.map { tl.date.timeIntervalSince($0) } ?? 0
-                for p in confetti {
-                    let lt = t - p.delay
-                    if lt < 0 { continue }
-                    let prog = lt * p.fall / duration
-                    if prog > 1.05 { continue }
-                    let x = (p.x + sin(lt * 2.2 + p.phase) * (p.sway / size.width)) * size.width
-                    let y = (-0.08 + prog * 1.25) * size.height
-                    let alpha = min(1, max(0, 1 - (prog - 0.82) / 0.18))
-                    var l = ctx
-                    l.opacity = alpha
-                    l.translateBy(x: x, y: y)
-                    l.rotate(by: .radians(lt * p.spin))
-                    l.fill(Path(CGRect(x: -p.size / 2, y: -p.size / 2, width: p.size, height: p.size * 0.62)),
-                           with: .color(p.color))
-                }
-                for s in sparks {
-                    let lt = t - s.t0
-                    if lt < 0 || lt > 1.5 { continue }
-                    let ease = 1 - pow(1 - min(lt / 1.0, 1), 3)
-                    let dist = s.speed * ease
-                    let x = (s.cx + cos(s.angle) * dist) * size.width
-                    let y = (s.cy + sin(s.angle) * dist + 0.11 * lt * lt) * size.height
-                    var l = ctx
-                    l.opacity = max(0, 1 - lt / 1.5)
-                    l.fill(Path(ellipseIn: CGRect(x: x - s.size / 2, y: y - s.size / 2, width: s.size, height: s.size)),
-                           with: .color(s.color))
+                ctx.blendMode = .plusLighter   // additive glow — sparks brighten where they overlap
+                for rocket in rockets {
+                    draw(rocket, into: ctx, size: size, t: t)
                 }
             }
         }
-        .onAppear { start = Date() }
-        .allowsHitTesting(false)
+        .onAppear {
+            start = Date()
+            FireworksSound.shared.prepareIfNeeded()
+            playPopsTimedToBursts()
+        }
+    }
+
+    /// One background task walks the rocket list, sleeping only the delta to
+    /// each burst moment, and fires a pop right as the sparks appear.
+    private func playPopsTimedToBursts() {
+        let plan = rockets.map { ($0.id, $0.t0 + $0.riseDuration) }
+        Task {
+            var elapsed = 0.0
+            for (id, burstTime) in plan {
+                let delta = burstTime - elapsed
+                if delta > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64((delta * 1_000_000_000).rounded()))
+                }
+                elapsed = max(elapsed, burstTime)
+                FireworksSound.shared.pop(id)
+            }
+        }
+    }
+
+    private func draw(_ rocket: Rocket, into ctx: GraphicsContext, size: CGSize, t: Double) {
+        guard t >= rocket.t0 else { return }
+        let burstTime = rocket.t0 + rocket.riseDuration
+        let minDim = min(size.width, size.height)
+
+        if t < burstTime {
+            drawRisingStreak(rocket, into: ctx, size: size, t: t, burstTime: burstTime)
+            return
+        }
+
+        let bt = t - burstTime
+        guard bt <= Self.sparkLife * 1.3 else { return }   // slowest sparks retire a touch later
+
+        // A quick bright flash at the moment of ignition — the "boom".
+        if bt < 0.12 {
+            let center = CGPoint(x: rocket.x * size.width, y: rocket.burstY * size.height)
+            let flashAlpha = 1 - bt / 0.12
+            ctx.fill(Path(ellipseIn: CGRect(x: center.x - 46, y: center.y - 46, width: 92, height: 92)),
+                     with: .radialGradient(Gradient(colors: [.white.opacity(0.85 * flashAlpha), rocket.color.opacity(0)]),
+                                            center: center, startRadius: 0, endRadius: 46))
+        }
+
+        let center = CGPoint(x: rocket.x * size.width, y: rocket.burstY * size.height)
+        for seed in rocket.sparks {
+            drawSpark(seed, center: center, minDim: minDim, bt: bt, into: ctx)
+        }
+    }
+
+    /// The rising rocket: a short gradient-stroked streak fading to nothing
+    /// at its tail, climbing from just under the screen to the burst point.
+    private func drawRisingStreak(_ rocket: Rocket, into ctx: GraphicsContext, size: CGSize, t: Double, burstTime: Double) {
+        let p = max(0, min(1, (t - rocket.t0) / rocket.riseDuration))
+        let launchY = 1.06
+        let headY = launchY + (rocket.burstY - launchY) * p
+        let tailP = max(0, p - 0.11)
+        let tailY = launchY + (rocket.burstY - launchY) * tailP
+        let x = rocket.x * size.width
+
+        let head = CGPoint(x: x, y: headY * size.height)
+        let tail = CGPoint(x: x, y: tailY * size.height)
+        var path = Path()
+        path.move(to: tail)
+        path.addLine(to: head)
+        ctx.stroke(path, with: .linearGradient(Gradient(colors: [rocket.color.opacity(0), rocket.color.opacity(0.95)]),
+                                                startPoint: tail, endPoint: head),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        // A small bright ember at the very tip.
+        ctx.fill(Path(ellipseIn: CGRect(x: head.x - 2.5, y: head.y - 2.5, width: 5, height: 5)),
+                  with: .color(.white.opacity(0.9)))
+    }
+
+    /// One radial spark: outward travel that decelerates, a slight downward
+    /// gravity pull that grows with time (so late in life it visibly arcs),
+    /// and a short fading trail (gradient stroke) behind the glowing head.
+    private func drawSpark(_ seed: SparkSeed, center: CGPoint, minDim: CGFloat, bt: Double, into ctx: GraphicsContext) {
+        let life = Self.sparkLife * seed.lifeScale
+        guard bt >= 0, bt <= life else { return }
+        let lifeT = bt / life
+
+        func position(atLifeT lt: Double) -> CGPoint {
+            let clamped = max(0, min(1, lt))
+            let outEase = 1 - pow(1 - clamped, 2)          // fast start, decelerating outward push
+            let radial = seed.reach * outEase
+            let gravity = 0.16 * clamped * clamped          // slight pull, compounding late in life
+            let dx = cos(seed.angle) * radial
+            let dy = sin(seed.angle) * radial + gravity
+            return CGPoint(x: center.x + dx * minDim, y: center.y + dy * minDim)
+        }
+
+        let fadeOut = lifeT > 0.7 ? max(0, 1 - (lifeT - 0.7) / 0.3) : 1
+        guard fadeOut > 0.02 else { return }
+
+        let head = position(atLifeT: lifeT)
+        let tail = position(atLifeT: bt / life - 0.09 / life)
+
+        var trail = Path()
+        trail.move(to: tail)
+        trail.addLine(to: head)
+        ctx.stroke(trail, with: .linearGradient(Gradient(colors: [seed.color.opacity(0), seed.color.opacity(0.8 * fadeOut)]),
+                                                 startPoint: tail, endPoint: head),
+                   style: StrokeStyle(lineWidth: seed.size * 0.5, lineCap: .round))
+
+        // Glowing head — a soft radial fade reads as an additive spark rather
+        // than a flat dot.
+        let glowSize = seed.size * 2.2
+        ctx.fill(Path(ellipseIn: CGRect(x: head.x - glowSize / 2, y: head.y - glowSize / 2, width: glowSize, height: glowSize)),
+                  with: .radialGradient(Gradient(colors: [.white.opacity(0.9 * fadeOut), seed.color.opacity(0.55 * fadeOut), seed.color.opacity(0)]),
+                                        center: head, startRadius: 0, endRadius: glowSize / 2))
+    }
+}
+
+// MARK: - Firework "pop" sound (ambient, silent-switch aware)
+
+/// Three short pop WAVs, played one per burst. AVAudioSession category
+/// `.ambient` is the whole point here — it's the one category that RESPECTS
+/// the silent switch, so a decorative sound effect never talks over a
+/// member who has their phone silenced. Players are loaded off the main
+/// thread the first time a celebration appears; nothing here ever blocks UI.
+@MainActor
+private final class FireworksSound {
+    static let shared = FireworksSound()
+    private var players: [AVAudioPlayer] = []
+    private var preparing = false
+
+    func prepareIfNeeded() {
+        guard !preparing, players.isEmpty else { return }
+        preparing = true
+        Task.detached(priority: .utility) {
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            var loaded: [AVAudioPlayer] = []
+            for name in ["pop1", "pop2", "pop3"] {
+                guard let url = Bundle.main.url(forResource: name, withExtension: "wav"),
+                      let player = try? AVAudioPlayer(contentsOf: url) else { continue }
+                player.volume = 0.5
+                player.prepareToPlay()
+                loaded.append(player)
+            }
+            await MainActor.run { FireworksSound.shared.players = loaded }
+        }
+    }
+
+    /// Fire the pop for burst `index` (rotates through the three players so
+    /// back-to-back bursts don't cut each other's tail off).
+    func pop(_ index: Int) {
+        guard !players.isEmpty else { return }
+        let player = players[index % players.count]
+        if player.isPlaying { player.stop(); player.currentTime = 0 }
+        player.play()
     }
 }
 
@@ -1666,7 +1842,7 @@ struct PlanKeepsakeView: View {
     var body: some View {
         ZStack {
             PL.cream.ignoresSafeArea()
-            IntenseCelebration().ignoresSafeArea().allowsHitTesting(false)
+            FireworksCelebration().ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 ZStack {
