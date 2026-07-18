@@ -152,6 +152,56 @@ final class ChatThreadViewModel: ObservableObject {
             return false
         }
     }
+
+    // MARK: Connection controls (Chat Redesign C3a — thread ⋮ menu)
+
+    /// The other participant — only meaningful for a `dm` thread (server sends
+    /// `peer_user_id` on that kind only; group/space rows never carry it).
+    var peerUserId: String? { !isSpace ? conversation.peerUserId : nil }
+
+    @Published var connectionActionBusy = false
+    /// Brief confirmation banner reusing the composer's error-strip chrome
+    /// (see `bottomBar` in ChatThreadView) for a non-error notice.
+    @Published var connectionNotice: String?
+
+    func removeConnection() async {
+        guard let peerUserId, !connectionActionBusy else { return }
+        connectionActionBusy = true; defer { connectionActionBusy = false }
+        do {
+            _ = try await MemberAPI.removeConnection(peerUserId)
+            connectionNotice = "Connection removed. This chat's history is kept."
+        } catch {
+            connectionNotice = "Couldn't remove this connection — try again."
+        }
+    }
+
+    func blockPeer() async {
+        guard let peerUserId, !connectionActionBusy else { return }
+        connectionActionBusy = true; defer { connectionActionBusy = false }
+        do {
+            _ = try await MemberAPI.blockConnection(peerUserId)
+            connectionNotice = "Blocked. They can no longer message you."
+        } catch {
+            connectionNotice = "Couldn't block — try again."
+        }
+    }
+
+    func unblockPeer() async {
+        guard let peerUserId, !connectionActionBusy else { return }
+        connectionActionBusy = true; defer { connectionActionBusy = false }
+        do {
+            _ = try await MemberAPI.unblockConnection(peerUserId)
+            connectionNotice = "Unblocked."
+        } catch let err as APIError {
+            // Not currently blocked (NOT_FOUND) — the menu offers Unblock
+            // unconditionally since the client has no per-pair status read;
+            // this is the expected, harmless outcome when it wasn't needed.
+            if case .http(404, _, _, _) = err { connectionNotice = "This person wasn't blocked." }
+            else { connectionNotice = "Couldn't unblock — try again." }
+        } catch {
+            connectionNotice = "Couldn't unblock — try again."
+        }
+    }
 }
 
 // MARK: - Aurora palette (Figma ChatThread.tsx constants)
@@ -303,7 +353,12 @@ struct ChatThreadView: View {
     var body: some View {
         VStack(spacing: 0) {
             ThreadHeader(isSpace: vm.isSpace, title: vm.title, subtitle: vm.subtitle,
-                         topic: vm.topic, avatarUrl: vm.avatarUrl) { dismiss() }
+                         topic: vm.topic, avatarUrl: vm.avatarUrl,
+                         peerUserId: vm.peerUserId, connectionBusy: vm.connectionActionBusy,
+                         onRemoveConnection: { Task { await vm.removeConnection() } },
+                         onBlock: { Task { await vm.blockPeer() } },
+                         onUnblock: { Task { await vm.unblockPeer() } },
+                         onBack: { dismiss() })
             content
         }
         .background(Aurora.sectionBg.ignoresSafeArea())
@@ -325,6 +380,14 @@ struct ChatThreadView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
+        }
+        // Remove/Block/Unblock confirmations reuse the composer's error-strip
+        // banner — it is not always an error, but the chrome (brief, inline,
+        // auto-dismissing) is exactly what a "done" toast needs too.
+        .onChange(of: vm.connectionNotice) { _, notice in
+            guard let notice else { return }
+            flashActionError(notice)
+            vm.connectionNotice = nil
         }
         .sheet(item: $editingMessage) { message in
             EditMessageSheet(message: message) { newBody in
@@ -444,6 +507,13 @@ private struct ThreadHeader: View {
     let subtitle: String
     let topic: String?
     let avatarUrl: String?
+    /// Chat Redesign C3a — non-nil only for a `dm` thread whose peer the
+    /// server identified (`peer_user_id`); drives the ⋮ connection menu.
+    let peerUserId: String?
+    let connectionBusy: Bool
+    var onRemoveConnection: () -> Void
+    var onBlock: () -> Void
+    var onUnblock: () -> Void
     var onBack: () -> Void
 
     var body: some View {
@@ -453,7 +523,11 @@ private struct ThreadHeader: View {
                 avatar
                 titles
                 Spacer(minLength: Nuru.S.sm)
-                aiButton
+                if let peerUserId {
+                    connectionMenu(for: peerUserId)
+                } else {
+                    aiButton
+                }
             }
             .padding(.horizontal, Nuru.S.base)
             .padding(.top, 54)
@@ -521,6 +595,37 @@ private struct ThreadHeader: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.30), lineWidth: 1))
         }
+    }
+
+    /// Per-connection controls (Chat Redesign C3a): Remove connection, Block,
+    /// Unblock. No "Report" — this app has no member-facing report/moderation
+    /// affordance to reuse (flag/unflag/remove/restore in the backend are
+    /// Admin-role console actions only), so it's intentionally omitted rather
+    /// than half-built.
+    private func connectionMenu(for peerUserId: String) -> some View {
+        Menu {
+            Button(role: .destructive, action: onRemoveConnection) {
+                Label("Remove connection", systemImage: "person.badge.minus")
+            }
+            Button(role: .destructive, action: onBlock) {
+                Label("Block", systemImage: "hand.raised.fill")
+            }
+            Button(action: onUnblock) {
+                Label("Unblock", systemImage: "hand.raised.slash")
+            }
+        } label: {
+            Group {
+                if connectionBusy {
+                    ProgressView().tint(Nuru.navy).scaleEffect(0.7)
+                } else {
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                }
+            }
+            .frame(width: 38, height: 38)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        .disabled(connectionBusy)
     }
 
     private func topicStrip(_ topic: String) -> some View {
