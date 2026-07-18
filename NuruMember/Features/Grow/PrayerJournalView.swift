@@ -243,6 +243,21 @@ struct PrayerJournalView: View {
                             let list = tab == .active ? vm.active : vm.answered
                             if list.isEmpty {
                                 EmptyPrayers(tab: tab)
+                                // No cards yet → the New action still has a home.
+                                Button { Haptics.tap(); editing = PrayerDraft() } label: {
+                                    HStack(spacing: 6) {
+                                        Icon(.plus, size: 14, color: .white)
+                                        Text("New prayer").font(.inter(13, .bold)).foregroundStyle(.white)
+                                    }
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 13)
+                                    .background(
+                                        LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0xC9A227)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                                        in: Capsule())
+                                }
+                                .buttonStyle(.pressable)
+                                .padding(.top, Nuru.S.sm)
                             } else {
                                 ForEach(Array(list.enumerated()), id: \.element.id) { idx, e in
                                     JournalCard(entry: e,
@@ -250,7 +265,8 @@ struct PrayerJournalView: View {
                                                 toggle: { Task { await vm.toggleAnswered(e) } },
                                                 edit: { Haptics.tap(); editing = PrayerDraft(entry: e) },
                                                 share: { pendingShare = e },
-                                                remove: { pendingDelete = e })
+                                                remove: { pendingDelete = e },
+                                                compose: { editing = PrayerDraft() })
                                         .gentleEntrance(delay: 0.1 + min(Double(idx), 3) * 0.05)
                                 }
                             }
@@ -286,19 +302,6 @@ struct PrayerJournalView: View {
                 Button("OK", role: .cancel) { vm.shareError = nil }
             } message: {
                 Text(vm.shareError ?? "")
-            }
-            // Embedded (My Prayer Room) has no header of its own to carry the
-            // "+" compose action, so it floats one instead — same draft flow.
-            if embedded {
-                Button { Haptics.tap(); editing = PrayerDraft() } label: {
-                    Icon(.plus, size: 20, color: Nuru.navy)
-                        .frame(width: 52, height: 52)
-                        .background(Color(hex: 0xC9A227), in: Circle())
-                        .shadow(color: Color(hex: 0xC9A227).opacity(0.4), radius: 10, x: 0, y: 6)
-                }
-                .buttonStyle(.pressable)
-                .padding(Nuru.S.lg)
-                .accessibilityLabel("New prayer")
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -552,6 +555,7 @@ private struct JournalCard: View {
     let edit: () -> Void
     let share: () -> Void
     let remove: () -> Void
+    let compose: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -591,28 +595,47 @@ private struct JournalCard: View {
                 answeredBanner
                     .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.md)
-            } else {
-                markAnsweredButton
+                shareToCorporateButton
                     .padding(.horizontal, Nuru.S.base)
-                    .padding(.top, Nuru.S.md)
-            }
-
-            // PROMINENT gold call-to-action — every private prayer's bridge to
-            // Corporate Prayer. Swaps to a quiet green "On the wall 🙏" state
-            // once it lands (the server is idempotent, so this never regresses).
-            shareToCorporateButton
+                    .padding(.top, Nuru.S.sm)
+            } else {
+                // One row, two halves: the quiet toggle and the gold bridge to
+                // Corporate Prayer side by side — the card stays compact.
+                HStack(spacing: Nuru.S.sm) {
+                    markAnsweredButton
+                    shareToCorporateButton
+                }
                 .padding(.horizontal, Nuru.S.base)
-                .padding(.top, Nuru.S.sm)
+                .padding(.top, Nuru.S.md)
+            }
 
             // Hairline + remaining row actions (design slot for Love/Comment).
             Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.md)
+            // ONE home for every action: Edit · (Reopen) · Delete on the left,
+            // and the standout gold "New prayer" on the same row — nothing
+            // floats, nothing hides behind the tab bar.
             HStack(spacing: 0) {
                 RowAction(icon: .pencil, label: "Edit", action: edit)
                 if entry.isAnswered { RowAction(icon: .repeat, label: "Reopen", action: toggle) }
                 RowAction(icon: .trash2, label: "Delete", action: remove)
+                Spacer(minLength: 0)
+                Button { Haptics.tap(); compose() } label: {
+                    HStack(spacing: 5) {
+                        Icon(.plus, size: 13, color: .white)
+                        Text("New prayer").font(.inter(12, .bold)).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(
+                        LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0xC9A227)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: Capsule())
+                    .shadow(color: Color(hex: 0xC9A227).opacity(0.35), radius: 6, x: 0, y: 3)
+                }
+                .buttonStyle(.pressable)
+                .padding(.trailing, Nuru.S.sm)
             }
             .padding(.horizontal, 4)
-            .padding(.vertical, 4)
+            .padding(.vertical, 6)
         }
         .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -690,7 +713,7 @@ private struct JournalCard: View {
                 Button { Haptics.tap(); share() } label: {
                     HStack(spacing: 6) {
                         Icon(.share2, size: 14, color: Nuru.navyDeep)
-                        Text("Share to Corporate Prayer").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
+                        Text("Share to Corporate").font(.inter(12, .bold)).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(Nuru.navyDeep)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
