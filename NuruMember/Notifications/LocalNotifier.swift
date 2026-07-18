@@ -89,9 +89,20 @@ final class LocalNotifier: NSObject, ObservableObject {
         if t.hasPrefix("event") { return "Upcoming gathering" }
         if t.hasPrefix("giving") { return "Giving receipt" }
         if t.hasPrefix("announcement") { return "New announcement" }
+        // Chat Redesign C3b — the join-review flow notifies both directions.
+        if t.hasPrefix("space_join_requested") { return "New join request" }
+        if t.hasPrefix("space_join_accepted") { return "You're in!" }
+        if t.hasPrefix("space_join_declined") { return "Join request declined" }
+        if t.hasPrefix("connection") { return "Connection request" }
+        // Locked-pastoral rule (spec: generic copy, no preview) applied to ANY
+        // pastoral-flavoured template, present or future, lock or no lock —
+        // a preview leak is worse than a too-quiet notification.
+        if t.hasPrefix("pastoral") { return "You have a new private pastoral message." }
         return "Nuru Pathway"
     }
     private static func body(for n: NotificationRow) -> String? {
+        // Never surface pastoral content in a banner (C3b).
+        if n.template.hasPrefix("pastoral") { return nil }
         if let b = n.payload?.body, !b.isEmpty { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
         return nil
