@@ -407,6 +407,11 @@ struct PLFinishEarnCard: View {
 struct PLDetailDayRow: View {
     let day: ReadingPlanDay
     let isNext: Bool
+    /// True when a segment ack already told us this day should be open, but
+    /// the plan fetch hasn't caught up yet (still landing through the sync
+    /// path) — an honest, actionable "still syncing" state rather than the
+    /// ordinary "not your turn yet" lock.
+    var syncing: Bool = false
     private var done: Bool { day.completed == true }
     /// Not yet opened: an earlier day is still unfinished. Shown quietly — the
     /// road ahead is visible, it just isn't walkable yet.
@@ -439,15 +444,18 @@ struct PLDetailDayRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
                 Text(done ? "Completed · \(day.reference)"
+                     : syncing ? "Finishing your sync… tap to check"
                      : locked ? "\(day.reference) · opens when today is done"
                      : "\(day.reference) · about 6 min")
-                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : PL.ink3).lineLimit(1)
+                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3)).lineLimit(1)
             }
             Spacer(minLength: 0)
             if isNext {
                 Text("Start").font(.inter(9, .bold)).foregroundStyle(PL.navy)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(PL.gold, in: Capsule())
+            } else if syncing {
+                Icon(.clock, size: 13, color: PL.goldDeep)
             } else if locked {
                 Icon(.lock, size: 13, color: PL.chev)
             } else {
@@ -455,7 +463,7 @@ struct PLDetailDayRow: View {
             }
         }
         .padding(10)
-        .opacity(locked ? 0.55 : 1)   // present, but plainly not yours yet
+        .opacity(locked && !syncing ? 0.55 : 1)   // present, but plainly not yours yet
         .background(isNext ? PL.highlight : PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .stroke(isNext ? PL.gold.opacity(0.27) : .clear, lineWidth: 1))

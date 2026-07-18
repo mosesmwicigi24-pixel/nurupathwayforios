@@ -11,6 +11,12 @@ import UIKit
 extension Notification.Name {
     /// Posted (object = segmentId) when a part is finished in its reader.
     static let nuruPlanPartDone = Notification.Name("nuruPlanPartDone")
+    /// Posted (object = PlanDayUnlockAck) when a segment's ack confirms its
+    /// day sealed. Authoritative and same-transaction on the server side —
+    /// the day hub trusts it directly instead of waiting for an explicit
+    /// "Seal the day" tap, and the plan overview uses it to tell a genuine
+    /// lock apart from a completion still catching up to its next fetch.
+    static let nuruPlanDayUnlocked = Notification.Name("nuruPlanDayUnlocked")
 }
 
 // Scroll metrics (content offset + height → the reading instruments).
@@ -282,9 +288,22 @@ struct PlanSegmentView: View {
             }
             saving = true
             Task {
+                var lastAck: SegmentCompleteResult?
                 for seg in group where !seg.completed {
-                    _ = try? await MemberAPI.completePlanSegment(seg.segmentId)
+                    if let res = try? await MemberAPI.completePlanSegment(seg.segmentId) { lastAck = res }
                     NotificationCenter.default.post(name: .nuruPlanPartDone, object: seg.segmentId)
+                }
+                // The LAST segment's ack is the server's authoritative word on
+                // whether this day just sealed and the next one opened —
+                // computed in the same transaction as the write. Broadcasting
+                // it lets the day hub skip the explicit "Seal the day" tap and
+                // the plan overview tell a genuine lock apart from a
+                // completion still landing through the sync path.
+                if let ack = lastAck, ack.dayComplete {
+                    NotificationCenter.default.post(
+                        name: .nuruPlanDayUnlocked,
+                        object: PlanDayUnlockAck(planId: ref.planId, dayNumber: ack.dayNumber,
+                                                  nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
                 }
                 done = true; saving = false
                 Haptics.success()
@@ -741,8 +760,16 @@ struct TalkItOverView: View {
             if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
                 markedRead = true
                 Task {
-                    _ = try? await MemberAPI.completePlanSegment(sid)
+                    let ack = try? await MemberAPI.completePlanSegment(sid)
                     NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
+                    // Talk it Over can be the LAST part of a day too — same
+                    // authoritative-ack broadcast as the segment reader's CTA.
+                    if let ack, ack.dayComplete {
+                        NotificationCenter.default.post(
+                            name: .nuruPlanDayUnlocked,
+                            object: PlanDayUnlockAck(planId: route.planId, dayNumber: ack.dayNumber,
+                                                      nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
+                    }
                 }
             }
             Haptics.success()
