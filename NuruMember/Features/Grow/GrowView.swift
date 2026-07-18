@@ -29,7 +29,9 @@ extension View {
                 case .devotional:    DevotionalView()
                 case .memoryVerses:  MemoryVerseView()
                 case .readingPlans:  ReadingPlansView()
-                case .prayerJournal: PrayerJournalView()
+                // "Prayer journal" is now a tab inside My Prayer Room, not its
+                // own screen — both entry points converge on PrayerRoomView.
+                case .prayerJournal: PrayerRoomView(initialTab: .privatePrayer)
                 case .verseLibrary:  VerseLibraryView()
                 case .gifts:         GiftsView()
                 case .giftsAssessment: GiftsAssessmentView()
@@ -42,7 +44,10 @@ extension View {
             .navigationDestination(for: TalkRoute.self) { TalkItOverView(route: $0) }
             .navigationDestination(for: CommunityRoute.self) { r in
                 switch r {
-                case .prayerWall: PrayerWallView()
+                // "Prayer wall" is now the Corporate Prayer tab inside My
+                // Prayer Room. A specific post still opens its own detail
+                // screen directly — deep links keep working unchanged.
+                case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)
                 case .prayer(let id): PrayerWallDetailView(postId: id)
                 case .discussions: DiscussionsView()
                 case .discussion(let id): DiscussionThreadView(threadId: id)
