@@ -1133,8 +1133,16 @@ struct HomeView: View {
                 .padding(.top, Nuru.S.sm)
             } else {
                 TabView(selection: $prayPage) {
+                    // Buttons, NOT NavigationLinks: links hosted inside a paged
+                    // TabView can fire with a NEIGHBOR page's value (the pager
+                    // forwards taps across hosted pages) — the member tapped
+                    // one prayer and landed on another. A button resolves its
+                    // own captured post, then navigates programmatically.
                     ForEach(Array(vm.prayerPosts.enumerated()), id: \.element.postId) { i, post in
-                        NavigationLink(value: CommunityRoute.prayer(post.postId)) {
+                        Button {
+                            Haptics.tap()
+                            path.append(CommunityRoute.prayer(post.postId))
+                        } label: {
                             prayerPostView(post, inPager: true)
                         }.buttonStyle(.pressableSubtle)
                         .tag(i)
