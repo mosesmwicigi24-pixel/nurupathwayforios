@@ -19,6 +19,16 @@ struct HomeLiturgyCard: View {
         }
     }
 
+    /// Seven-bands: the tableau's height. 232 exactly as shipped when the new
+    /// optional lines are absent; grows to give the charge / companion verse
+    /// breathing room so the bottom stack never crowds the kicker.
+    private func tableauHeight(_ lit: HomeLiturgy) -> CGFloat {
+        var h: CGFloat = 232
+        if let charge = lit.charge, !charge.isEmpty { h += 40 }
+        if let vl = lit.verseLine, !vl.text.isEmpty { h += 56 }
+        return h
+    }
+
     private func partEmoji(_ p: String) -> String {
         switch p {
         case "morning": return "🌅"
@@ -43,8 +53,11 @@ struct HomeLiturgyCard: View {
                     // brand at the top and the prayer line resting at the BOTTOM
                     // where the veil is deepest — so the type reads clearly (owner
                     // ask). Everything is owned+clipped, never inflates layout.
+                    // Seven-bands: the photograph stands taller when the server
+                    // sends the extra charge / companion-verse lines, so the
+                    // bottom stack never crowds the kicker. Absent → classic 232.
                     Color.clear
-                        .frame(height: 232)
+                        .frame(height: tableauHeight(lit))
                         .overlay {
                             CachedAsyncImage(url: url) { phase in
                                 if let img = phase.image {
@@ -73,6 +86,29 @@ struct HomeLiturgyCard: View {
                                         .background(Color.black.opacity(0.28), in: Capsule())
                                         .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
                                 }
+                                // Seven-bands additions — a second, subdued exhortation
+                                // line and an optional companion verse. Both optional;
+                                // the card grows gracefully to fit them when present.
+                                if let charge = lit.charge, !charge.isEmpty {
+                                    Text(charge)
+                                        .font(.fraunces(19)).foregroundStyle(.white.opacity(0.7))
+                                        .lineSpacing(4)
+                                        .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if let vl = lit.verseLine, !vl.text.isEmpty {
+                                    VStack(alignment: .leading, spacing: 2) {
+                                        Text(vl.text)
+                                            .font(.fraunces(15).italic()).foregroundStyle(.white.opacity(0.92))
+                                            .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                        if !vl.reference.isEmpty {
+                                            Text("— \(vl.reference)")
+                                                .font(.inter(10.5, .semibold)).foregroundStyle(Color(hex: 0xF2DDA0))
+                                                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                                        }
+                                    }
+                                }
                             }
                             .padding(18)
                         }
@@ -92,6 +128,25 @@ struct HomeLiturgyCard: View {
                                     .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.9))
                                     .padding(.horizontal, 10).padding(.vertical, 4)
                                     .background(Color.white.opacity(0.12), in: Capsule())
+                            }
+                        }
+                        // Seven-bands additions — see the tableau branch above for
+                        // the same fields; here they sit on the classic navy card.
+                        if let charge = lit.charge, !charge.isEmpty {
+                            Text(charge)
+                                .font(.fraunces(18)).foregroundStyle(.white.opacity(0.7))
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let vl = lit.verseLine, !vl.text.isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(vl.text)
+                                    .font(.fraunces(15).italic()).foregroundStyle(.white.opacity(0.92))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                if !vl.reference.isEmpty {
+                                    Text("— \(vl.reference)")
+                                        .font(.inter(10.5, .semibold)).foregroundStyle(Color(hex: 0xF2DDA0))
+                                }
                             }
                         }
                     }
