@@ -15,10 +15,15 @@ import SwiftUI
 enum LevelTrailItem: Identifiable {
     case module(LevelModule)
     case encouragement(LevelEncouragement)
+    /// The mid-level stats card (owner spec: "around modules 5-8 you should
+    /// have a card that captures all your stats") — woven in once, positionally,
+    /// like an authored encouragement, but built from the member's own real data.
+    case stats
     var id: String {
         switch self {
         case .module(let m): return "m-\(m.moduleId)"
         case .encouragement(let e): return "e-\(e.encouragementId)"
+        case .stats: return "trail-stats-card"
         }
     }
 }
@@ -31,6 +36,17 @@ final class LevelDetailViewModel: ObservableObject {
     @Published var totalLevels = 7
     @Published var loading = true
     @Published var error: String?
+    /// The member's paired discipler (GET /growth/mentor) — feeds the discipler
+    /// name/avatar into both the within-level reminder and the mid-level stats
+    /// card. Best-effort: nil renders a generic "your discipler" fallback.
+    @Published var mentor: MentorInfo.Mentor?
+    /// This level's mastery (GET /me/levels/{n}/score) — the same server band
+    /// ("Deeply rooted" / "Growing" / "Sprouting" / "Just beginning") shown at
+    /// level-end, surfaced early on the mid-level stats card too.
+    @Published var levelScore: LevelScore?
+    /// Current streak in days (GET /me/achievements) — the same figure the
+    /// Pathway hub header already shows.
+    @Published var streak = 0
 
     let levelNumber: Int
     init(levelNumber: Int) { self.levelNumber = levelNumber }
@@ -40,6 +56,9 @@ final class LevelDetailViewModel: ObservableObject {
         async let mods = try? MemberAPI.levelModules(levelNumber)
         async let path = try? MemberAPI.pathway()
         async let enc = try? MemberAPI.levelEncouragements(levelNumber)
+        async let mentorInfo = try? MemberAPI.mentor()
+        async let score = try? MemberAPI.levelScore(levelNumber)
+        async let ach = try? MemberAPI.achievements()
         let loaded = await mods
         if let summary = await path {
             level = summary.levels.first { $0.levelNumber == levelNumber }
@@ -49,6 +68,9 @@ final class LevelDetailViewModel: ObservableObject {
         else if level == nil { error = "Couldn't load this level." }
         // Best-effort: no encouragements (unauthored or failed fetch) renders nothing.
         encouragements = (await enc) ?? []
+        mentor = (await mentorInfo)?.mentor
+        levelScore = await score
+        streak = (await ach)?.streak?.current ?? 0
         loading = false
     }
 
@@ -57,8 +79,20 @@ final class LevelDetailViewModel: ObservableObject {
     /// (tolerates sequence gaps and entry floors); 0 — or a slot below every
     /// visible module — surfaces at the head of the trail; a slot past the last
     /// module trails it. Order within a slot is the server's.
+    /// Where the mid-level stats card lands — directly after the 6th module row
+    /// (or the 5th on a shorter level; skipped on very short levels where the
+    /// card would feel out of place before there's anything to look back on).
+    private var statsCardAfterIndex: Int? {
+        guard modules.count >= 4 else { return nil }
+        return min(modules.count, 6) - 1
+    }
+
     var trailItems: [LevelTrailItem] {
-        guard !encouragements.isEmpty else { return modules.map { .module($0) } }
+        guard !encouragements.isEmpty else {
+            var items = modules.map { LevelTrailItem.module($0) }
+            if let at = statsCardAfterIndex, items.indices.contains(at) { items.insert(.stats, at: at + 1) }
+            return items
+        }
         var slots: [Int: [LevelEncouragement]] = [:]   // module index (-1 = trail head)
         for e in encouragements {
             let idx = e.afterModuleSequence <= 0
@@ -66,9 +100,11 @@ final class LevelDetailViewModel: ObservableObject {
                 : (modules.lastIndex { $0.moduleSequenceNumber <= e.afterModuleSequence } ?? -1)
             slots[idx, default: []].append(e)
         }
+        let statsAt = statsCardAfterIndex
         var items: [LevelTrailItem] = (slots[-1] ?? []).map { .encouragement($0) }
         for (i, m) in modules.enumerated() {
             items.append(.module(m))
+            if i == statsAt { items.append(.stats) }
             items += (slots[i] ?? []).map { .encouragement($0) }
         }
         return items
@@ -115,6 +151,9 @@ struct LevelDetailView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var barShown = false
     @State private var hasAppeared = false
+    /// The within-level "walk with your discipler" reminder pop-up — see
+    /// DisciplerReminderPolicy for the remind-don't-nag re-appearance rules.
+    @State private var showReminder = false
 
     init(levelNumber: Int) {
         self.levelNumber = levelNumber
@@ -172,6 +211,34 @@ struct LevelDetailView: View {
         .onAppear {
             if hasAppeared { Task { await vm.load() } }
             else { hasAppeared = true }
+        }
+        // The within-level reminder — checked once the level finishes loading
+        // (also re-checked on the "came back" refresh above; the policy's
+        // session guard keeps it to at most one appearance per level per visit).
+        .onChange(of: vm.loading) { _, loading in
+            if !loading { maybeShowDisciplerReminder() }
+        }
+        .overlay(alignment: .bottom) {
+            if showReminder {
+                DisciplerReminderCard(
+                    mentorName: vm.mentor?.fullName,
+                    mentorAvatarUrl: vm.mentor?.avatarUrl,
+                    onMessage: { dismissReminder() },
+                    onDismiss: {
+                        DisciplerReminderPolicy.markDismissed(level: levelNumber)
+                        dismissReminder()
+                    }
+                )
+                .padding(.horizontal, Nuru.S.screen)
+                .padding(.bottom, Nuru.tabBarSpace + Nuru.S.md)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                .task(id: showReminder) {
+                    // Auto-dismiss after ~1 minute if untouched — a reminder, not a demand.
+                    try? await Task.sleep(nanoseconds: 60_000_000_000)
+                    guard !Task.isCancelled else { return }
+                    dismissReminder()
+                }
+            }
         }
     }
 
@@ -337,6 +404,7 @@ struct LevelDetailView: View {
                 switch item {
                 case .module(let m): moduleRow(m, isLast: isLast)
                 case .encouragement(let e): encouragementRow(e, isLast: isLast)
+                case .stats: statsCardRow(isLast: isLast)
                 }
             }
             if showWaiting { awaitingRow }
@@ -410,6 +478,34 @@ struct LevelDetailView: View {
                 .padding(.bottom, Nuru.S.base)
         }
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    // MARK: - Mid-level stats card row (woven in around module 5-6 — see
+    // statsCardAfterIndex). A real snapshot of the member's own progress, not
+    // an authored moment, so it gets its own node styling (a gold trending-up
+    // seal) rather than the sparkle used for encouragements.
+
+    private func statsCardRow(isLast: Bool) -> some View {
+        HStack(alignment: .top, spacing: Nuru.S.md) {
+            VStack(spacing: 0) {
+                ZStack {
+                    Circle().fill(Nuru.gold).frame(width: 28, height: 28)
+                    Icon(.trendingUp, size: 13, color: .white)
+                }
+                if !isLast {
+                    Rectangle().fill(Nuru.gold.opacity(0.35)).frame(width: 2).frame(maxHeight: .infinity)
+                }
+            }
+            .frame(width: 36)
+
+            MidLevelStatsCard(
+                completed: vm.completed, total: vm.moduleCount, pct: vm.pct,
+                band: vm.levelScore?.band, streak: vm.streak, mentorName: vm.mentor?.fullName
+            )
+            .padding(.bottom, Nuru.S.base)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .gentleEntrance()
     }
 
     // MARK: - The level gate (exam CTA — the trail's final node)
@@ -554,6 +650,26 @@ struct LevelDetailView: View {
             guard !barShown else { return }
             if reduceMotion { barShown = true }
             else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.1)) { barShown = true } }
+        }
+    }
+
+    // MARK: - Discipler reminder pop-up (within-level, not end-of-level)
+
+    /// Eligible once the member is genuinely mid-level: ≥3 modules done, the
+    /// exam gate isn't showing yet, and they're not already awaiting a
+    /// discipler's usher (that's the existing end-of-level element — this adds
+    /// a WITHIN-level presence, it doesn't replace it).
+    private func maybeShowDisciplerReminder() {
+        guard vm.completed >= 3, !vm.examAvailable, !vm.awaitingReview else { return }
+        guard DisciplerReminderPolicy.shouldShow(level: levelNumber) else { return }
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.5, dampingFraction: 0.85)) {
+            showReminder = true
+        }
+    }
+
+    private func dismissReminder() {
+        withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.4, dampingFraction: 0.9)) {
+            showReminder = false
         }
     }
 }
@@ -781,5 +897,186 @@ private struct ExamGateCard: View {
         .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous)
             .stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
         .shadow(color: Nuru.navyCeremony.opacity(0.35), radius: 12, y: 6)
+    }
+}
+
+// MARK: - Mid-level stats card (owner spec: "around modules 5-8 you should
+// have a card that captures all your stats, beautiful, with imagery, that
+// reminds and encourages you"). Navy-gradient + gold accents — same ceremonial
+// palette as the level gate — with the member's real, server-provided progress
+// (modules done, mastery band, streak) and the same discipler affordance as
+// the reminder pop-up. Static: it lives in the trail, not a popup.
+
+private struct MidLevelStatsCard: View {
+    let completed: Int
+    let total: Int
+    let pct: Int
+    let band: String?
+    let streak: Int
+    let mentorName: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            HStack(spacing: 6) {
+                Icon(.trendingUp, size: 12, color: Nuru.goldGlow)
+                Text("YOUR JOURNEY SO FAR")
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
+            }
+            Text("Look how far you've come")
+                .font(.nCardTitle).foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+
+            HStack(alignment: .center, spacing: Nuru.S.base) {
+                StatsRing(pct: pct)
+                VStack(alignment: .leading, spacing: 8) {
+                    statLine("\(completed) of \(total)", "modules complete")
+                    if let band, !band.isEmpty { statLine(band, "your mastery so far") }
+                    if streak > 0 { statLine("\(streak)-day", "streak") }
+                }
+            }
+
+            Text("Walk the rest with your discipler\(mentorName.map { " — \($0) is right there with you" } ?? "").")
+                .font(.nCardBody).foregroundStyle(Color.white.opacity(0.7))
+                .lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+
+            NavigationLink(value: AppRoute.discipleshipHub) {
+                HStack(spacing: 6) {
+                    Icon(.messageCircle, size: 13, color: Nuru.navyDeep)
+                    Text("Message your discipler").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Nuru.goldGradient, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [Nuru.navy700, Nuru.navyCeremony],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous)
+            .stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+        .shadow(color: Nuru.navyCeremony.opacity(0.35), radius: 12, y: 6)
+    }
+
+    private func statLine(_ value: String, _ label: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(value).font(.inter(15, .bold)).foregroundStyle(.white)
+            Text(label).font(.inter(11, .medium)).foregroundStyle(Color.white.opacity(0.55))
+        }
+    }
+}
+
+/// Small gold progress ring on a dark ground (PWProgressRing's palette flipped
+/// for the navy card — see PathwayView.swift's hub ring for the light version).
+private struct StatsRing: View {
+    let pct: Int
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var shown = false
+
+    var body: some View {
+        ZStack {
+            Circle().stroke(Color.white.opacity(0.18), lineWidth: 6)
+            Circle().trim(from: 0, to: shown ? CGFloat(max(0, min(100, pct))) / 100 : 0)
+                .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                .rotationEffect(.degrees(-90))
+                .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
+            Text("\(pct)%").font(.inter(14, .bold)).foregroundStyle(.white)
+                .contentTransition(.numericText())
+                .animation(.default, value: pct)
+        }
+        .frame(width: 60, height: 60)
+        .onAppear {
+            guard !shown else { return }
+            if reduceMotion { shown = true }
+            else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.15)) { shown = true } }
+        }
+    }
+}
+
+// MARK: - Within-level discipler reminder pop-up (owner spec: "a pop-up
+// appears that says work with your discipler, stays about a minute, then
+// disappears — and it can pop again later; its work is to REMIND you"). A
+// floating card, not a modal — it never blocks the trail underneath.
+
+/// Remind-don't-nag policy: at most once per app session per level (in-memory,
+/// resets on relaunch), and never again within 24h of an explicit X dismissal
+/// (persisted so the quiet period survives relaunches too).
+enum DisciplerReminderPolicy {
+    static var shownThisSession = Set<Int>()
+
+    private static func key(_ level: Int) -> String { "nuru.discipler.reminder.dismissedAt.level.\(level)" }
+
+    static func dismissedRecently(level: Int) -> Bool {
+        let ts = UserDefaults.standard.double(forKey: key(level))
+        guard ts > 0 else { return false }
+        return Date().timeIntervalSince1970 - ts < 24 * 3600
+    }
+
+    static func markDismissed(level: Int) {
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: key(level))
+    }
+
+    /// True (and marks the session) the first time this level qualifies this
+    /// session and isn't in its post-dismissal quiet period.
+    static func shouldShow(level: Int) -> Bool {
+        guard !shownThisSession.contains(level), !dismissedRecently(level: level) else { return false }
+        shownThisSession.insert(level)
+        return true
+    }
+}
+
+private struct DisciplerReminderCard: View {
+    let mentorName: String?
+    let mentorAvatarUrl: String?
+    let onMessage: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: Nuru.S.md) {
+            Avatar(url: mentorAvatarUrl, name: mentorName ?? "Your discipler", size: 44)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("WALK WITH YOUR DISCIPLER")
+                    .font(.nCardKicker).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+                Text(mentorName.map { "\($0) is walking this with you" } ?? "A discipler is walking this with you")
+                    .font(.inter(14.5, .bold)).foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("You're making real progress — you don't have to walk it alone.")
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .lineSpacing(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    NavigationLink(value: AppRoute.discipleshipHub) {
+                        HStack(spacing: 6) {
+                            Icon(.messageCircle, size: 13, color: .white)
+                            Text("Message").font(.inter(13, .bold)).foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 14).padding(.vertical, 9)
+                        .background(Nuru.navyDeep, in: Capsule())
+                    }
+                    .buttonStyle(.pressable)
+                    .simultaneousGesture(TapGesture().onEnded { Haptics.tap(); onMessage() })
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, 2)
+            }
+            Button {
+                Haptics.tap()
+                onDismiss()
+            } label: {
+                Icon(.x, size: 13, color: Nuru.faint)
+                    .frame(width: 26, height: 26)
+                    .background(Nuru.mutedBg, in: Circle())
+            }
+            .buttonStyle(.pressable)
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
+        .nuruShadow(1.4)
     }
 }
