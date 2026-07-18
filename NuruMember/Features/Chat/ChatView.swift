@@ -31,15 +31,48 @@ final class ChatInboxViewModel: ObservableObject {
     /// send the request instead of just failing.
     @Published var consentPrompt: ChatPerson?
 
+    // MARK: Four-tab restructure (Chat Redesign C3b)
+
+    /// GET /me/discipleship — the `discipler` field decides whether the
+    /// My Discipler tab has a live assignment or shows its empty state.
+    @Published var discipleship: Discipleship?
+    /// Spaces whose reviewed join request is pending a leader's decision
+    /// (session-local; the server notifies on accept/decline).
+    @Published var pendingSpaceIds: Set<String> = []
+    @Published var openingDiscipler = false
+    @Published var openingPastoral = false
+    /// Friendly inline notice for the discipler/pastor tabs (open failures).
+    @Published var privateThreadNotice: String?
+
     var conversations: [ChatConversation] { inbox?.conversations ?? [] }
     var spaces: [ChatConversation] { conversations.filter { $0.kind == "space" } }
-    var dms: [ChatConversation] { conversations.filter { $0.kind == "dm" } }
+    /// The Chat tab's DM list — with the discipler/pastoral threads this device
+    /// has learned about kept OUT (they live in their own tabs; the inbox list
+    /// endpoint sends no conversation `type`, so the ids are remembered
+    /// client-side the first time each tab resolves its thread).
+    var dms: [ChatConversation] {
+        conversations.filter {
+            $0.kind == "dm"
+                && $0.conversationId != PastoralPrefs.pastoralConversationId
+                && $0.conversationId != PastoralPrefs.disciplerConversationId
+        }
+    }
     var groups: [ChatConversation] { conversations.filter { $0.kind == "group" } }
     var discover: [DiscoverSpace] { inbox?.discoverSpaces ?? [] }
     var totalUnread: Int { conversations.reduce(0) { $0 + $1.unread } }
-    /// Pending asks from someone else — the number the DM segment badge and
+    /// Pending asks from someone else — the number the Chat segment badge and
     /// the bell dot both surface prominently.
     var pendingIncomingCount: Int { incomingRequests.count }
+
+    /// Unread on the (known) discipler / pastoral threads — the tab badges.
+    var disciplerUnread: Int {
+        guard let id = PastoralPrefs.disciplerConversationId else { return 0 }
+        return conversations.first { $0.conversationId == id }?.unread ?? 0
+    }
+    var pastoralUnread: Int {
+        guard !PastoralPrefs.muted, let id = PastoralPrefs.pastoralConversationId else { return 0 }
+        return conversations.first { $0.conversationId == id }?.unread ?? 0
+    }
 
     func load() async {
         loading = true; error = nil
@@ -49,6 +82,7 @@ final class ChatInboxViewModel: ObservableObject {
         async let connectionsReq = try? MemberAPI.listConnections()
         async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
+        async let discipleshipReq = try? MemberAPI.discipleship()
 
         if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
         if let p = await peopleReq { people = p }
@@ -59,7 +93,71 @@ final class ChatInboxViewModel: ObservableObject {
         if let c = await connectionsReq { connections = c }
         if let inc = await incomingReq { incomingRequests = inc }
         if let out = await outgoingReq { outgoingRequests = out }
+        if let d = await discipleshipReq { discipleship = d }
         loading = false
+    }
+
+    /// My Discipler tab tap → GET /chat/discipler/conversation (lazily creates
+    /// the DISCIPLER thread) → the ChatConversation to navigate into. Records
+    /// the id so the thread keeps its dressing wherever it's opened from.
+    func openDisciplerConversation() async -> ChatConversation? {
+        guard !openingDiscipler else { return nil }
+        openingDiscipler = true
+        defer { openingDiscipler = false }
+        do {
+            let id = try await MemberAPI.disciplerConversation()
+            PastoralPrefs.disciplerConversationId = id
+            let d = discipleship?.discipler
+            return conversations.first { $0.conversationId == id } ?? ChatConversation(
+                conversationId: id, kind: "dm", isPublic: false, title: d?.fullName ?? "My Discipler",
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: d?.avatarUrl)
+        } catch let err as APIError {
+            if case .http(404, _, _, _) = err {
+                // No current assignment (or the discipler's account is gone) —
+                // the tab's empty state covers this; refresh so it shows.
+                discipleship = try? await MemberAPI.discipleship()
+                privateThreadNotice = "A discipler has not yet been assigned to you."
+            } else if case .http(403, _, _, _) = err {
+                privateThreadNotice = "Direct messages aren't available on this account."
+            } else {
+                privateThreadNotice = "Couldn't open the conversation — try again."
+            }
+            return nil
+        } catch {
+            privateThreadNotice = "Couldn't open the conversation — try again."
+            return nil
+        }
+    }
+
+    /// Talk with My Pastor tap → POST /chat/pastoral (create-or-open). The
+    /// pastor's name arrives with the thread itself (GET conversation titles a
+    /// DM as the other participant) — the stub title covers the first frame.
+    func openPastoralThread() async -> ChatConversation? {
+        guard !openingPastoral else { return nil }
+        openingPastoral = true
+        defer { openingPastoral = false }
+        do {
+            let t = try await MemberAPI.openPastoralThread()
+            PastoralPrefs.pastoralConversationId = t.conversationId
+            PastoralPrefs.archived = false   // opening it un-archives by intent
+            return conversations.first { $0.conversationId == t.conversationId } ?? ChatConversation(
+                conversationId: t.conversationId, kind: "dm", isPublic: false, title: "My Pastor",
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: nil)
+        } catch let err as APIError {
+            if case .http(404, _, _, _) = err {
+                privateThreadNotice = "No pastor is available for your congregation yet — please check back soon."
+            } else if case .http(403, _, _, _) = err {
+                privateThreadNotice = "Direct messages aren't available on this account."
+            } else {
+                privateThreadNotice = "Couldn't open the conversation — try again."
+            }
+            return nil
+        } catch {
+            privateThreadNotice = "Couldn't open the conversation — try again."
+            return nil
+        }
     }
 
     /// Where the caller stands with one directory person right now — derived
@@ -139,19 +237,40 @@ final class ChatInboxViewModel: ObservableObject {
         if let inc = try? await MemberAPI.listConnectionRequests(direction: "incoming") { incomingRequests = inc }
     }
 
-    /// POST /chat/spaces/{id}/join then refresh — the space moves to "your spaces".
+    /// POST /chat/spaces/{id}/join then refresh — the space moves to "your
+    /// spaces". C3a/C3b tolerance: where the server refuses the immediate join
+    /// (a space that requires leader review), fall back to filing a reviewed
+    /// join request (POST /chat/spaces/{id}/join-requests) and show "pending"
+    /// instead of a dead-end error.
     func follow(_ space: DiscoverSpace) async {
         guard joiningSpaceId == nil else { return }
         joiningSpaceId = space.conversationId
         defer { joiningSpaceId = nil }
-        guard (try? await MemberAPI.joinChatSpace(space.conversationId)) != nil else { return }
-        if let i = try? await MemberAPI.chatInbox() { inbox = i }
+        do {
+            try await MemberAPI.joinChatSpace(space.conversationId)
+            if let i = try? await MemberAPI.chatInbox() { inbox = i }
+        } catch let err as APIError {
+            // 403 (review required) / 404 (not visible for immediate join) /
+            // 422 — try the reviewed path before giving up.
+            guard case .http(let status, _, _, _) = err, [403, 404, 409, 422].contains(status) else { return }
+            if let res = try? await MemberAPI.requestSpaceJoin(space.conversationId) {
+                if res.status == "already_member" {
+                    if let i = try? await MemberAPI.chatInbox() { inbox = i }
+                } else {
+                    pendingSpaceIds.insert(space.conversationId)
+                }
+            }
+        } catch { /* offline etc. — the button simply stays */ }
     }
 
     private let defaultVerseText = "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”"
 }
 
-private enum ChatSegment: Int, CaseIterable { case space, dm, group, broadcast }
+// C3b four-tab restructure: My Space (spaces + the cell/group rooms, merged —
+// the backend already unifies both under type=SPACE) · Chat (the consent-gated
+// DM segment, renamed) · My Discipler · Talk with My Pastor. SuperAdmin keeps
+// Broadcast appended, unchanged.
+private enum ChatSegment: Int, CaseIterable { case space, dm, discipler, pastor, broadcast }
 private enum ChatDest: Hashable { case notifications }
 
 // Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
@@ -220,6 +339,9 @@ struct ChatView: View {
             .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
+            // Threads opened WITH a known privacy context (My Discipler /
+            // Talk with My Pastor tabs) carry it into the thread screen.
+            .navigationDestination(for: ThreadRoute.self) { ChatThreadView(conversation: $0.conversation, context: $0.context) }
             .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
             .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
         }
@@ -233,6 +355,15 @@ struct ChatView: View {
         // Stale-cache recovery: /chat/dms answered 403 CONSENT_REQUIRED for
         // someone the directory still showed as messageable — offer the
         // connection request instead of a dead-end error.
+        // Discipler/pastor tab open failures land here as a friendly alert.
+        .alert("Chat", isPresented: Binding(
+            get: { vm.privateThreadNotice != nil },
+            set: { if !$0 { vm.privateThreadNotice = nil } })
+        ) {
+            Button("OK", role: .cancel) { vm.privateThreadNotice = nil }
+        } message: {
+            Text(vm.privateThreadNotice ?? "")
+        }
         .alert(item: $vm.consentPrompt) { person in
             Alert(
                 title: Text("Not connected yet"),
@@ -426,19 +557,26 @@ struct ChatView: View {
 
     // MARK: Segmented control (capsule pills, navy gradient active)
 
+    // Four (five for SuperAdmin) chips no longer fit a fixed-width capsule row,
+    // so the control scrolls horizontally; each chip is icon + label + unread.
     private var segmentControl: some View {
-        HStack(spacing: 4) {
-            // The chips carry what needs the member's attention — messages not
-            // yet read — not how many rooms exist. A chip with nothing unread
-            // shows no number at all, and opening the conversation clears it.
-            segmentButton(.space, "#My Space", vm.spaces.reduce(0) { $0 + $1.unread })
-            // Unread DM messages + pending incoming connection requests — both
-            // are "things waiting on you in this tab".
-            segmentButton(.dm, "DM", vm.dms.reduce(0) { $0 + $1.unread } + vm.pendingIncomingCount)
-            segmentButton(.group, "My Groups", vm.groups.reduce(0) { $0 + $1.unread })
-            if isStaff { broadcastSegmentButton }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                // The chips carry what needs the member's attention — messages
+                // not yet read — not how many rooms exist. A chip with nothing
+                // unread shows no number; opening the conversation clears it.
+                segmentButton(.space, "#My Space", icon: nil,
+                              (vm.spaces + vm.groups).reduce(0) { $0 + $1.unread })
+                // Unread DM messages + pending incoming connection requests —
+                // both are "things waiting on you in this tab".
+                segmentButton(.dm, "Chat", icon: .messageCircle,
+                              vm.dms.reduce(0) { $0 + $1.unread } + vm.pendingIncomingCount)
+                segmentButton(.discipler, "My Discipler", icon: .users, vm.disciplerUnread)
+                segmentButton(.pastor, "My Pastor", icon: .heartHandshake, vm.pastoralUnread)
+                if isStaff { broadcastSegmentButton }
+            }
+            .padding(4)
         }
-        .padding(4)
         .background(Color.white.opacity(0.7), in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
@@ -467,7 +605,7 @@ struct ChatView: View {
                 Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C))
                 Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
                 selected
@@ -480,13 +618,14 @@ struct ChatView: View {
         .buttonStyle(.plain)
     }
 
-    private func segmentButton(_ seg: ChatSegment, _ label: String, _ count: Int) -> some View {
+    private func segmentButton(_ seg: ChatSegment, _ label: String, icon: Lucide?, _ count: Int) -> some View {
         let selected = segment == seg
         return Button {
             if !selected { Haptics.selection() }
             withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
         } label: {
             HStack(spacing: 5) {
+                if let icon { Icon(icon, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C)) }
                 Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 // Unread only. All read → no number at all; the quiet chip IS the
                 // "nothing waiting" signal.
@@ -499,7 +638,7 @@ struct ChatView: View {
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
                 selected
@@ -524,7 +663,8 @@ struct ChatView: View {
             switch segment {
             case .space: spaceList
             case .dm: dmList
-            case .group: groupList
+            case .discipler: disciplerTab
+            case .pastor: pastorTab
             case .broadcast:
                 // The whole segment sits behind the lock: Face ID (or the
                 // password) first, then the composer and the sent broadcasts.
@@ -589,8 +729,11 @@ struct ChatView: View {
             || (c.lastAuthor ?? "").lowercased().contains(q)
     }
 
+    // My Space — spaces AND the cell/group rooms under one roof (C3b: the
+    // backend files both under type=SPACE; two segments were one tab too many).
     private var spaceList: some View {
         let items = vm.spaces.filter(matches)
+        let groupItems = vm.groups.filter(matches)
         let discoverable = filteredDiscover
         return VStack(alignment: .leading, spacing: 10) {
             sectionLabel(hash: true, "YOUR SPACES")
@@ -606,17 +749,113 @@ struct ChatView: View {
                     }
                 }
             }
+            if !groupItems.isEmpty {
+                sectionLabel(icon: .users, "CELL & GROUPS").padding(.top, 6)
+                groupedCard {
+                    ForEach(Array(groupItems.enumerated()), id: \.element.id) { idx, c in
+                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
+                    }
+                }
+            }
             if !discoverable.isEmpty {
                 sectionLabel(hash: true, "DISCOVER SPACES").padding(.top, 6)
                 groupedCard {
                     ForEach(Array(discoverable.enumerated()), id: \.element.id) { idx, s in
                         DiscoverSpaceRow(space: s, index: idx, divider: idx > 0,
-                                         joining: vm.joiningSpaceId == s.conversationId) {
+                                         joining: vm.joiningSpaceId == s.conversationId,
+                                         pending: vm.pendingSpaceIds.contains(s.conversationId)) {
                             Haptics.tap()
                             Task { await vm.follow(s) }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: My Discipler tab (C3b)
+
+    @ViewBuilder private var disciplerTab: some View {
+        if let discipler = vm.discipleship?.discipler {
+            PrivateThreadCard(
+                kicker: "MY DISCIPLER",
+                title: discipler.fullName,
+                subtitle: discipler.roleLabel.isEmpty ? "Walking with you on the pathway" : discipler.roleLabel,
+                detail: discipler.cellName,
+                avatarUrl: discipler.avatarUrl,
+                privacyLine: "Private between you and your assigned discipler.",
+                unread: vm.disciplerUnread,
+                busy: vm.openingDiscipler,
+                cta: "Open conversation",
+                locked: false
+            ) {
+                Haptics.tap()
+                Task {
+                    if let c = await vm.openDisciplerConversation() {
+                        path.append(ThreadRoute(conversation: c, context: .discipler))
+                    }
+                }
+            }
+        } else {
+            emptyCard(icon: .users, "A discipler has not yet been assigned to you.")
+        }
+    }
+
+    // MARK: Talk with My Pastor tab (C3b)
+
+    @ViewBuilder private var pastorTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if PastoralPrefs.archived {
+                emptyCard(icon: .messageCircle, "You archived this conversation on this device.")
+                Button {
+                    Haptics.tap()
+                    PastoralPrefs.archived = false
+                    vm.objectWillChange.send()
+                } label: {
+                    Text("Reopen").font(.inter(12, .bold)).foregroundStyle(Nuru.goldChipText)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable)
+            } else {
+                PrivateThreadCard(
+                    kicker: "TALK WITH MY PASTOR",
+                    title: "Your pastor is here for you",
+                    subtitle: "A private 1:1 conversation — bring anything.",
+                    detail: nil,
+                    avatarUrl: nil,
+                    privacyLine: "Private pastoral conversation.",
+                    unread: vm.pastoralUnread,
+                    busy: vm.openingPastoral,
+                    cta: "Open conversation",
+                    locked: PastoralLock.shared.requiresUnlock
+                ) {
+                    Haptics.tap()
+                    Task {
+                        // The local privacy gate first (when enabled), then the
+                        // server create-or-open. Cancelled auth = stay put.
+                        if PastoralLock.shared.requiresUnlock,
+                           !(await PastoralLock.shared.unlock()) { return }
+                        if let c = await vm.openPastoralThread() {
+                            path.append(ThreadRoute(conversation: c, context: .pastoral))
+                        }
+                    }
+                }
+            }
+            // Pastor/SuperAdmin side: the "Talk with Your Pastor" inbox, behind
+            // the SAME server password step-up (and Face ID fast path) as the
+            // Broadcast — reusing that exact machinery.
+            if isStaff {
+                PastoralInboxSection { row in
+                    path.append(ThreadRoute(
+                        conversation: ChatConversation(
+                            conversationId: row.conversationId, kind: "dm", isPublic: false,
+                            title: row.memberName, topic: nil, category: nil, memberCount: 2,
+                            lastBody: row.lastBody, lastType: nil, lastAt: row.lastAt,
+                            lastAuthor: nil, unread: 0, avatarUrl: row.memberAvatarUrl),
+                        context: .normal))
+                }
+                .padding(.top, 6)
             }
         }
     }
@@ -719,25 +958,6 @@ struct ChatView: View {
         }
     }
 
-    private var groupList: some View {
-        let items = vm.groups.filter(matches)
-        return VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(icon: .users, "YOUR GROUPS")
-            if items.isEmpty {
-                emptyCard(icon: query.isEmpty ? .users : .search,
-                          query.isEmpty
-                    ? "You’re not in any group rooms yet — they appear when your cell is set up."
-                    : "No groups match your search.")
-            } else {
-                groupedCard {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
-                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
-                    }
-                }
-            }
-        }
-    }
-
     // MARK: DM stories row (gold gradient rings — presence dots omitted: no data)
 
     private var storiesRow: some View {
@@ -821,9 +1041,9 @@ struct ChatView: View {
                     composeAction("New direct message", "Message a person 1:1", divider: false) {
                         Icon(.pencil, size: 19, color: Nuru.gold)
                     } action: { segment = .dm }
-                    composeAction("New group", "Start a private group chat", divider: true) {
+                    composeAction("New group", "Your cell & group rooms live in My Space", divider: true) {
                         Icon(.users, size: 19, color: Nuru.gold)
-                    } action: { segment = .group }
+                    } action: { segment = .space }
                     composeAction("Browse spaces", "Find & join a community space", divider: true) {
                         Image(systemName: "safari").font(.system(size: 18)).foregroundStyle(Nuru.gold)
                     } action: { segment = .space }
@@ -1362,6 +1582,9 @@ private struct DiscoverSpaceRow: View {
     let index: Int
     let divider: Bool
     let joining: Bool
+    /// A reviewed join request is filed and awaiting the leader (C3b) — the
+    /// Follow button gives way to a quiet "Requested" pill.
+    let pending: Bool
     let follow: () -> Void
     private var tint: Color { rowTint(index + 2) }
 
@@ -1384,26 +1607,36 @@ private struct DiscoverSpaceRow: View {
                     .padding(.top, 5)
             }
             Spacer(minLength: 4)
-            Button(action: follow) {
-                Group {
-                    if joining {
-                        ProgressView().tint(.white).scaleEffect(0.7)
-                    } else {
-                        HStack(spacing: 4) {
-                            Icon(.plus, size: 11, color: .white)
-                            Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
-                        }
-                    }
+            if pending {
+                HStack(spacing: 4) {
+                    Image(systemName: "hourglass").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("Requested").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 30)
-                .frame(minWidth: 44)   // spinner state stays a comfortable target
-                .background(storyRing, in: Capsule())
-                .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+                .background(Nuru.gold.opacity(0.12), in: Capsule())
+            } else {
+                Button(action: follow) {
+                    Group {
+                        if joining {
+                            ProgressView().tint(.white).scaleEffect(0.7)
+                        } else {
+                            HStack(spacing: 4) {
+                                Icon(.plus, size: 11, color: .white)
+                                Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .frame(minWidth: 44)   // spinner state stays a comfortable target
+                    .background(storyRing, in: Capsule())
+                    .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+                }
+                .buttonStyle(.pressable)
+                .disabled(joining)
+                .animation(.easeInOut(duration: 0.18), value: joining)
             }
-            .buttonStyle(.pressable)
-            .disabled(joining)
-            .animation(.easeInOut(duration: 0.18), value: joining)
         }
         .modifier(RowChrome(unread: false, divider: divider))
     }

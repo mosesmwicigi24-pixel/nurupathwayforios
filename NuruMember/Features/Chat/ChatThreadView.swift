@@ -10,6 +10,22 @@ import Combine
 import SwiftUI
 import UIKit
 
+/// What KIND of 1:1 this thread is to the member — drives the privacy label,
+/// the header's ⋮ menu, and (pastoral) the local lock gate. The inbox list
+/// endpoint doesn't send the conversation `type`, so this arrives either from
+/// the tab that opened the thread (discipler/pastoral tabs know what they
+/// resolved) or from the ids remembered in PastoralPrefs.
+enum ChatThreadContext: Hashable {
+    case normal, discipler, pastoral
+}
+
+/// Navigation value for a thread opened WITH a known context (the plain
+/// `ChatConversation` destination stays for ordinary threads).
+struct ThreadRoute: Hashable {
+    let conversation: ChatConversation
+    let context: ChatThreadContext
+}
+
 @MainActor
 final class ChatThreadViewModel: ObservableObject {
     @Published var thread: ChatThreadDetail?
@@ -19,7 +35,22 @@ final class ChatThreadViewModel: ObservableObject {
     @Published var sending = false
 
     let conversation: ChatConversation
-    init(conversation: ChatConversation) { self.conversation = conversation }
+    let context: ChatThreadContext
+    init(conversation: ChatConversation, context: ChatThreadContext = .normal) {
+        self.conversation = conversation
+        // A pastoral/discipler thread reached through an ordinary route (the
+        // Chat tab's DM list on a stale cache, a deep link) still gets its
+        // privacy dressing if this device has learned the thread's id.
+        if context == .normal {
+            switch conversation.conversationId {
+            case PastoralPrefs.pastoralConversationId: self.context = .pastoral
+            case PastoralPrefs.disciplerConversationId: self.context = .discipler
+            default: self.context = .normal
+            }
+        } else {
+            self.context = context
+        }
+    }
 
     var isSpace: Bool {
         let k = thread?.kind ?? conversation.kind
@@ -42,7 +73,21 @@ final class ChatThreadViewModel: ObservableObject {
     // DMs carry an inspiring covenant line instead of a flat "Direct message".
     var subtitle: String {
         if isSpace { return "Public space · \(memberCount) members" }
-        return isPastorMail ? "Talk with Pastor" : "Walking together in faith"
+        switch context {
+        case .discipler: return "My Discipler"
+        case .pastoral: return "Talk with My Pastor"
+        case .normal: return isPastorMail ? "Talk with Pastor" : "Walking together in faith"
+        }
+    }
+
+    /// The honest one-line promise printed where the member types (§15 privacy
+    /// labels — responsible wording, no absolute-confidentiality claims).
+    var privacyLabel: String? {
+        switch context {
+        case .discipler: return "Private between you and your assigned discipler."
+        case .pastoral: return "Private pastoral conversation."
+        case .normal: return nil
+        }
     }
 
     func load() async {
@@ -337,7 +382,19 @@ struct ChatThreadView: View {
     @State private var actionError: String?
     @State private var actionErrorDismiss: Task<Void, Never>?
 
-    init(conversation: ChatConversation) { _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation)) }
+    init(conversation: ChatConversation, context: ChatThreadContext = .normal) {
+        _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation, context: context))
+    }
+
+    // MARK: Pastoral privacy chrome (Chat Redesign C3b)
+
+    /// The local privacy gate — live so the thread re-seals when it re-locks.
+    @ObservedObject private var pastoralLock = PastoralLock.shared
+    @State private var unlockFailed = false
+    /// Privacy-info sheet from the pastoral ⋮ menu.
+    @State private var showingPrivacyInfo = false
+    /// Re-render tick for the UserDefaults-backed mute/archive flags.
+    @State private var pastoralPrefsTick = 0
 
     private func flashActionError(_ message: String) {
         Haptics.error()
@@ -355,11 +412,57 @@ struct ChatThreadView: View {
             ThreadHeader(isSpace: vm.isSpace, title: vm.title, subtitle: vm.subtitle,
                          topic: vm.topic, avatarUrl: vm.avatarUrl,
                          peerUserId: vm.peerUserId, connectionBusy: vm.connectionActionBusy,
+                         context: vm.context,
+                         lockEnabled: pastoralLock.isEnabled,
+                         muted: PastoralPrefs.muted,
+                         prefsTick: pastoralPrefsTick,
                          onRemoveConnection: { Task { await vm.removeConnection() } },
                          onBlock: { Task { await vm.blockPeer() } },
                          onUnblock: { Task { await vm.unblockPeer() } },
+                         onPastoralLockNow: {
+                             Haptics.tap()
+                             pastoralLock.relock()   // the gate takes over in place
+                         },
+                         onPastoralToggleLock: {
+                             Haptics.tap()
+                             if pastoralLock.isEnabled {
+                                 pastoralLock.isEnabled = false
+                                 pastoralLock.relock()
+                             } else {
+                                 pastoralLock.isEnabled = true
+                                 // Just enabled while already inside — stay in.
+                                 pastoralLock.markOpen()
+                             }
+                         },
+                         onPastoralToggleMute: {
+                             Haptics.tap()
+                             PastoralPrefs.muted.toggle()
+                             pastoralPrefsTick += 1
+                         },
+                         onPastoralArchive: {
+                             Haptics.tap()
+                             PastoralPrefs.archived = true
+                             pastoralPrefsTick += 1
+                             dismiss()
+                         },
+                         onPastoralPrivacyInfo: { showingPrivacyInfo = true },
                          onBack: { dismiss() })
-            content
+            if vm.context == .pastoral && pastoralLock.requiresUnlock {
+                PastoralLockedGate(failed: unlockFailed) {
+                    Task {
+                        unlockFailed = !(await pastoralLock.unlock())
+                    }
+                }
+            } else {
+                content
+            }
+        }
+        .alert("Private pastoral conversation", isPresented: $showingPrivacyInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("""
+            This thread is 1:1 between you and your pastor — cell members, leaders and ordinary admins cannot open it. Messages are protected in transit and at rest on the server, but are not end-to-end encrypted. The lock in this menu is a privacy screen on THIS device only.
+            """)
         }
         .background(Aurora.sectionBg.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
@@ -452,7 +555,16 @@ struct ChatThreadView: View {
             // screen says the true thing, plainly, right where they type. It can
             // be said without lying because the thread genuinely is 1:1: no
             // admin, no leader, nobody else can open it.
-            if vm.isPastorMail {
+            if let label = vm.privacyLabel {
+                HStack(spacing: 6) {
+                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Text(label)
+                        .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 7)
+                .background(Nuru.goldChipBg)
+            } else if vm.isPastorMail {
                 HStack(spacing: 6) {
                     Icon(.lock, size: 11, color: Nuru.goldChipText)
                     Text("Only \(vm.title) sees your reply")
@@ -511,9 +623,21 @@ private struct ThreadHeader: View {
     /// server identified (`peer_user_id`); drives the ⋮ connection menu.
     let peerUserId: String?
     let connectionBusy: Bool
+    /// C3b — .pastoral swaps the trailing control for the pastoral ⋮ menu.
+    let context: ChatThreadContext
+    let lockEnabled: Bool
+    let muted: Bool
+    /// Bumped by the parent when the UserDefaults-backed prefs change, so the
+    /// menu labels (Mute/Unmute…) re-render.
+    let prefsTick: Int
     var onRemoveConnection: () -> Void
     var onBlock: () -> Void
     var onUnblock: () -> Void
+    var onPastoralLockNow: () -> Void
+    var onPastoralToggleLock: () -> Void
+    var onPastoralToggleMute: () -> Void
+    var onPastoralArchive: () -> Void
+    var onPastoralPrivacyInfo: () -> Void
     var onBack: () -> Void
 
     var body: some View {
@@ -523,7 +647,9 @@ private struct ThreadHeader: View {
                 avatar
                 titles
                 Spacer(minLength: Nuru.S.sm)
-                if let peerUserId {
+                if context == .pastoral {
+                    pastoralMenu
+                } else if let peerUserId {
                     connectionMenu(for: peerUserId)
                 } else {
                     aiButton
@@ -628,6 +754,43 @@ private struct ThreadHeader: View {
         .disabled(connectionBusy)
     }
 
+    /// The pastoral ⋮ menu (spec §7): Lock now · Enable/Disable biometric lock ·
+    /// Mute · Archive · Privacy info. Lock/mute/archive are all DEVICE-LOCAL —
+    /// nothing here talks to the server (the honest scope of what they protect
+    /// is spelled out in the Privacy info sheet).
+    private var pastoralMenu: some View {
+        Menu {
+            if lockEnabled {
+                Button(action: onPastoralLockNow) {
+                    Label("Lock now", systemImage: "lock.fill")
+                }
+                Button(action: onPastoralToggleLock) {
+                    Label("Disable biometric lock", systemImage: "lock.open")
+                }
+            } else {
+                Button(action: onPastoralToggleLock) {
+                    Label("Enable biometric lock", systemImage: "faceid")
+                }
+            }
+            Button(action: onPastoralToggleMute) {
+                Label(muted ? "Unmute" : "Mute", systemImage: muted ? "bell" : "bell.slash")
+            }
+            Button(action: onPastoralArchive) {
+                Label("Archive", systemImage: "archivebox")
+            }
+            Divider()
+            Button(action: onPastoralPrivacyInfo) {
+                Label("Privacy info", systemImage: "info.circle")
+            }
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                .frame(width: 38, height: 38)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        .id(prefsTick)   // re-render labels when the local prefs flip
+    }
+
     private func topicStrip(_ topic: String) -> some View {
         HStack(spacing: 6) {
             Icon(.flag, size: 13, color: Color(hex: 0x59667C))
@@ -638,6 +801,56 @@ private struct ThreadHeader: View {
         .padding(.vertical, 10)
         .background(Color.white.opacity(0.55))
         .overlay(Rectangle().fill(Nuru.border).frame(height: 1), alignment: .top)
+    }
+}
+
+// MARK: - Pastoral locked gate (C3b — local privacy screen, NOT a server gate)
+
+/// Shown INSTEAD of the messages while the pastoral thread is sealed: the
+/// content is genuinely not rendered underneath (the gate replaces `content` in
+/// the view tree — it is not an opaque cover over live messages). The OS prompt
+/// (Face ID / Touch ID → device passcode) is raised the moment it appears.
+private struct PastoralLockedGate: View {
+    let failed: Bool
+    let onUnlock: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 0)
+            ZStack {
+                Circle().fill(Nuru.gold.opacity(0.14)).frame(width: 74, height: 74)
+                Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1).frame(width: 74, height: 74)
+                Icon(.lockKeyhole, size: 30, color: Nuru.goldChipText)
+            }
+            Text("This conversation is locked")
+                .font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
+            Text("Unlock with \(PastoralLock.biometryName) to open your pastoral conversation on this device.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(4)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            if failed {
+                Text("Couldn't verify — try again.")
+                    .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+            }
+            Button {
+                Haptics.action()
+                onUnlock()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: PastoralLock.biometryName == "Touch ID" ? "touchid" : "faceid")
+                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    Text("Unlock").font(.nCardCTA).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 26).frame(height: 46)
+                .background(Aurora.storyRing, in: Capsule())
+                .shadow(color: Nuru.gold.opacity(0.45), radius: 8, y: 4)
+            }
+            .buttonStyle(.pressable)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Aurora.canvas)
+        .task { onUnlock() }   // glance-and-in: the prompt rises without a tap
     }
 }
 
