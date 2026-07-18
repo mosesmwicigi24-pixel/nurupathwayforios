@@ -92,6 +92,13 @@ final class PrayerJournalViewModel: ObservableObject {
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) {
                 _ = sharedToWall.insert(e.entryId)
             }
+            // Light celebration (no confetti — the wall-compose idiom this
+            // mirrors) once the private prayer is confirmed public.
+            CelebrationCenter.shared.fire(
+                key: "prayer-share-\(e.entryId)",
+                title: "Shared to Corporate Prayer",
+                subtitle: "Your cell is standing with you 🙏",
+                confetti: false)
         } catch {
             Haptics.error()
             let api = error as? APIError
@@ -201,6 +208,11 @@ private func shortDate(_ d: Date) -> String {
 private enum PrayerTab { case active, answered }
 
 struct PrayerJournalView: View {
+    /// True when hosted as the "Private Prayer" tab of PrayerRoomView, which
+    /// supplies its own back button + title + segmented control — so this
+    /// view drops its standalone header and offers a floating "+" instead of
+    /// the one that normally lives in that header.
+    var embedded: Bool = false
     @StateObject private var vm = PrayerJournalViewModel()
     @State private var editing: PrayerDraft?
     @State private var tab: PrayerTab = .active
@@ -208,10 +220,10 @@ struct PrayerJournalView: View {
     @State private var pendingShare: PrayerEntry?
 
     var body: some View {
-        ZStack {
+        ZStack(alignment: .bottomTrailing) {
             Nuru.paper.ignoresSafeArea()
             VStack(spacing: 0) {
-                header
+                if !embedded { header }
                 // isEmpty gates only the error branch: an empty-but-loaded journal
                 // falls through to the designed per-tab empty card below.
                 LoadStateView(loading: vm.loading && vm.entries.isEmpty,
@@ -244,7 +256,7 @@ struct PrayerJournalView: View {
                             }
                         }
                         .padding(.horizontal, Nuru.S.screen)
-                        .padding(.top, Nuru.S.base)
+                        .padding(.top, embedded ? Nuru.S.lg : Nuru.S.base)
                         .padding(.bottom, Nuru.tabBarSpace)
                     }
                     .refreshable { await vm.load() }
@@ -274,6 +286,19 @@ struct PrayerJournalView: View {
                 Button("OK", role: .cancel) { vm.shareError = nil }
             } message: {
                 Text(vm.shareError ?? "")
+            }
+            // Embedded (My Prayer Room) has no header of its own to carry the
+            // "+" compose action, so it floats one instead — same draft flow.
+            if embedded {
+                Button { Haptics.tap(); editing = PrayerDraft() } label: {
+                    Icon(.plus, size: 20, color: Nuru.navy)
+                        .frame(width: 52, height: 52)
+                        .background(Color(hex: 0xC9A227), in: Circle())
+                        .shadow(color: Color(hex: 0xC9A227).opacity(0.4), radius: 10, x: 0, y: 6)
+                }
+                .buttonStyle(.pressable)
+                .padding(Nuru.S.lg)
+                .accessibilityLabel("New prayer")
             }
         }
         .navigationBarBackButtonHidden(true)
@@ -572,21 +597,17 @@ private struct JournalCard: View {
                     .padding(.top, Nuru.S.md)
             }
 
-            // Hairline + real action row (design slot for Love/Comment/Share).
-            // Share swaps to a quiet "On the wall 🙏" note once it lands.
+            // PROMINENT gold call-to-action — every private prayer's bridge to
+            // Corporate Prayer. Swaps to a quiet green "On the wall 🙏" state
+            // once it lands (the server is idempotent, so this never regresses).
+            shareToCorporateButton
+                .padding(.horizontal, Nuru.S.base)
+                .padding(.top, Nuru.S.sm)
+
+            // Hairline + remaining row actions (design slot for Love/Comment).
             Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.md)
             HStack(spacing: 0) {
                 RowAction(icon: .pencil, label: "Edit", action: edit)
-                if shared {
-                    HStack(spacing: 6) {
-                        Icon(.handHeart, size: 15, color: Color(hex: 0x16A34A))
-                        Text("On the wall 🙏").font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x15803D))
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
-                } else {
-                    RowAction(icon: .share2, label: "Share", action: share)
-                }
                 if entry.isAnswered { RowAction(icon: .repeat, label: "Reopen", action: toggle) }
                 RowAction(icon: .trash2, label: "Delete", action: remove)
             }
@@ -647,6 +668,38 @@ private struct JournalCard: View {
                 .stroke(Color(hex: 0xC9A227).opacity(0.27), lineWidth: 1))
         }
         .buttonStyle(.pressable)
+    }
+
+    /// Solid-gold "Share to Corporate Prayer" CTA, or the settled "On the
+    /// wall" state once the server confirms the copy landed.
+    private var shareToCorporateButton: some View {
+        Group {
+            if shared {
+                HStack(spacing: 6) {
+                    Icon(.handHeart, size: 15, color: Color(hex: 0x16A34A))
+                    Text("On the wall 🙏").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 12)
+                .background(
+                    LinearGradient(colors: [Color(hex: 0xDCFCE7), Color(hex: 0xBBF7D0)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            } else {
+                Button { Haptics.tap(); share() } label: {
+                    HStack(spacing: 6) {
+                        Icon(.share2, size: 14, color: Nuru.navyDeep)
+                        Text("Share to Corporate Prayer").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 12)
+                    .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: shared)
     }
 }
 

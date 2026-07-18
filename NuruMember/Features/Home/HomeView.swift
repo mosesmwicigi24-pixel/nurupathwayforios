@@ -279,7 +279,7 @@ struct HomeView: View {
             GrowTile(label: "Reading plan", sub: "Continue your plan", icon: .bookMarked, tint: 0xEEF2FF, fg: 0x6366F1, dest: GrowDestination.readingPlans),
             GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFEF3C7, fg: 0xB45309, dest: GrowDestination.memoryVerses),
             GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF5E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
-            GrowTile(label: "Prayer Wall", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
+            GrowTile(label: "My Prayer Room", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
         ]
     }
 
@@ -1112,7 +1112,7 @@ struct HomeView: View {
                 Text("PRAY FOR ONE ANOTHER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer()
                 NavigationLink(value: CommunityRoute.prayerWall) {
-                    sectionLink("Open wall")
+                    sectionLink("My Prayer Room")
                 }.buttonStyle(.plain)
             }
             // A single post hugs its content (no pager, no dead space); multiple
@@ -1280,7 +1280,7 @@ struct HomeView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color(hex: 0xFEF3C7), in: Capsule())
             }
-            Text("PRAYER JOURNAL").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
+            Text("MY PRAYER ROOM").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
             Text(latest?.title ?? "Your prayers").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
             Text(latest?.body ?? "Start journaling your prayers").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).lineLimit(1).padding(.top, 2)
             Spacer(minLength: 0)
