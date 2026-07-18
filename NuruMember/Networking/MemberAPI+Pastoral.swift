@@ -1,6 +1,7 @@
-// Chat Redesign C3b — the two private-relationship threads and the space
+// Chat Redesign C3b/C4 — the two private-relationship threads and the space
 // join-request flow. Wire shapes verified against the live backend modules
 // (pathway packages/backend/src/modules/{chat,pastoral}):
+//   GET  /chat/pastoral/eligibility   → { is_pastor }                  (no step-up)
 //   GET  /chat/discipler/conversation → { conversation_id }            (404 no_discipler)
 //   POST /chat/pastoral               → { conversation_id, pastor_user_id, source }
 //   GET  /chat/pastoral/inbox         → { data: [rows] }               (403 password_required)
@@ -68,6 +69,16 @@ struct SpaceJoinRequestResult: Codable, Sendable {
 }
 
 extension MemberAPI {
+    /// GET /chat/pastoral/eligibility — side-effect-free "have I ever been
+    /// assigned as a pastor" probe (Chat Redesign C4). No step-up: unlike the
+    /// inbox itself, this reveals nothing private. Lets the Chat tab decide
+    /// whether to show the "Talk with Your Pastor" inbox to an assigned
+    /// non-SuperAdmin pastor without a failed, step-up-gated GET first.
+    static func pastoralEligibility() async throws -> Bool {
+        struct Res: Decodable { let isPastor: Bool }
+        return try await APIClient.shared.get("chat/pastoral/eligibility", as: Res.self).isPastor
+    }
+
     /// GET /chat/discipler/conversation — resolve (lazily creating) my DISCIPLER
     /// thread with my CURRENT assignment. Throws 404 (details.no_discipler) when
     /// nobody is assigned — the tab's empty state, not an error.

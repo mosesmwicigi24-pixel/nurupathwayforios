@@ -43,17 +43,24 @@ final class ChatInboxViewModel: ObservableObject {
     @Published var openingPastoral = false
     /// Friendly inline notice for the discipler/pastor tabs (open failures).
     @Published var privateThreadNotice: String?
+    /// GET /chat/pastoral/eligibility, cached per session (PastorEligibility) —
+    /// "have I ever been assigned as a pastor". Shows the "Talk with Your
+    /// Pastor" inbox to an assigned pastor, not just a SuperAdmin (Chat
+    /// Redesign C4, closing the C3b gap).
+    @Published var isPastor = false
 
     var conversations: [ChatConversation] { inbox?.conversations ?? [] }
     var spaces: [ChatConversation] { conversations.filter { $0.kind == "space" } }
-    /// The Chat tab's DM list — with the discipler/pastoral threads this device
-    /// has learned about kept OUT (they live in their own tabs; the inbox list
-    /// endpoint sends no conversation `type`, so the ids are remembered
-    /// client-side the first time each tab resolves its thread).
+    /// The Chat tab's DM list — with the discipler/pastoral threads kept OUT
+    /// (they live in their own tabs). Server-authoritative: a row's `type`
+    /// (Chat Redesign C4) says DIRECT/BROADCAST_RESPONSE vs DISCIPLER/PASTORAL.
+    /// Only when `type` is absent (an older server) does this fall back to the
+    /// client-taught cached-id heuristic — tolerant decode, not the default path.
     var dms: [ChatConversation] {
         conversations.filter {
-            $0.kind == "dm"
-                && $0.conversationId != PastoralPrefs.pastoralConversationId
+            guard $0.kind == "dm" else { return false }
+            if let type = $0.type { return type != "DISCIPLER" && type != "PASTORAL" }
+            return $0.conversationId != PastoralPrefs.pastoralConversationId
                 && $0.conversationId != PastoralPrefs.disciplerConversationId
         }
     }
@@ -94,6 +101,15 @@ final class ChatInboxViewModel: ObservableObject {
         if let inc = await incomingReq { incomingRequests = inc }
         if let out = await outgoingReq { outgoingRequests = out }
         if let d = await discipleshipReq { discipleship = d }
+        isPastor = await PastorEligibility.isPastor()
+        // The server is the source of truth for mute now (Chat Redesign C4) —
+        // sync the local optimistic flag from whichever row the inbox resolves
+        // as the pastoral thread, so a mute set elsewhere (or by this device in
+        // an earlier session) is honestly reflected rather than staying stale.
+        if let id = PastoralPrefs.pastoralConversationId ?? conversations.first(where: { $0.type == "PASTORAL" })?.conversationId,
+           let row = conversations.first(where: { $0.conversationId == id }) {
+            PastoralPrefs.muted = row.muted
+        }
         loading = false
     }
 
@@ -828,7 +844,8 @@ struct ChatView: View {
                     unread: vm.pastoralUnread,
                     busy: vm.openingPastoral,
                     cta: "Open conversation",
-                    locked: PastoralLock.shared.requiresUnlock
+                    locked: PastoralLock.shared.requiresUnlock,
+                    muted: PastoralPrefs.muted
                 ) {
                     Haptics.tap()
                     Task {
@@ -844,8 +861,11 @@ struct ChatView: View {
             }
             // Pastor/SuperAdmin side: the "Talk with Your Pastor" inbox, behind
             // the SAME server password step-up (and Face ID fast path) as the
-            // Broadcast — reusing that exact machinery.
-            if isStaff {
+            // Broadcast — reusing that exact machinery. Shown to a SuperAdmin
+            // (oversight/fallback reach) OR anyone GET /chat/pastoral/eligibility
+            // says has ever been assigned as a pastor — not SuperAdmin-only,
+            // which used to hide the inbox from an assigned non-SuperAdmin pastor.
+            if isStaff || vm.isPastor {
                 PastoralInboxSection { row in
                     path.append(ThreadRoute(
                         conversation: ChatConversation(
@@ -1285,6 +1305,7 @@ private struct SpaceRow: View {
                     Text(c.title ?? "Space")
                         .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
                         .foregroundStyle(Nuru.navy).lineLimit(1)
+                    if c.muted { MutedGlyph() }
                     Spacer(minLength: 4)
                     Text(chatTime(c.lastAt))
                         .font(unread ? .inter(11, .semibold) : .nCardMeta)
@@ -1342,6 +1363,7 @@ private struct ConversationRow: View {
                     Text(c.title ?? "Conversation")
                         .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
                         .foregroundStyle(Nuru.navy).lineLimit(1)
+                    if c.muted { MutedGlyph() }
                     Spacer(minLength: 4)
                     Text(chatTime(c.lastAt))
                         .font(unread ? .inter(11, .semibold) : .nCardMeta)
@@ -1355,6 +1377,16 @@ private struct ConversationRow: View {
             }
         }
         .modifier(RowChrome(unread: unread, divider: divider))
+    }
+}
+
+/// Small bell-slash glyph for a muted conversation row (Chat Redesign C4) —
+/// beside the title, same signal the pastoral ⋮ menu's Mute/Unmute reflects.
+private struct MutedGlyph: View {
+    var body: some View {
+        Image(systemName: "bell.slash.fill")
+            .font(.system(size: 10))
+            .foregroundStyle(Color(hex: 0x9AA3AF))
     }
 }
 

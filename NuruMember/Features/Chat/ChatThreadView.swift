@@ -40,12 +40,20 @@ final class ChatThreadViewModel: ObservableObject {
         self.conversation = conversation
         // A pastoral/discipler thread reached through an ordinary route (the
         // Chat tab's DM list on a stale cache, a deep link) still gets its
-        // privacy dressing if this device has learned the thread's id.
+        // privacy dressing. Server-authoritative first: `type` (Chat Redesign
+        // C4). Only when the row carries no `type` (an older server) does this
+        // fall back to the client-taught cached-id heuristic — tolerant decode.
         if context == .normal {
-            switch conversation.conversationId {
-            case PastoralPrefs.pastoralConversationId: self.context = .pastoral
-            case PastoralPrefs.disciplerConversationId: self.context = .discipler
-            default: self.context = .normal
+            switch conversation.type {
+            case "PASTORAL": self.context = .pastoral
+            case "DISCIPLER": self.context = .discipler
+            case .some: self.context = .normal
+            case .none:
+                switch conversation.conversationId {
+                case PastoralPrefs.pastoralConversationId: self.context = .pastoral
+                case PastoralPrefs.disciplerConversationId: self.context = .discipler
+                default: self.context = .normal
+                }
             }
         } else {
             self.context = context
@@ -436,8 +444,27 @@ struct ChatThreadView: View {
                          },
                          onPastoralToggleMute: {
                              Haptics.tap()
-                             PastoralPrefs.muted.toggle()
+                             // Optimistic — the menu label and the tab badge
+                             // (ChatInboxViewModel.pastoralUnread) flip instantly.
+                             let target = !PastoralPrefs.muted
+                             PastoralPrefs.muted = target
                              pastoralPrefsTick += 1
+                             let conversationId = vm.conversation.conversationId
+                             Task {
+                                 do {
+                                     if target {
+                                         try await MemberAPI.muteChatConversation(conversationId)
+                                     } else {
+                                         try await MemberAPI.unmuteChatConversation(conversationId)
+                                     }
+                                 } catch {
+                                     // Revert + inline error — same house idiom as
+                                     // editMessage/deleteMessage's rollback below.
+                                     PastoralPrefs.muted = !target
+                                     pastoralPrefsTick += 1
+                                     flashActionError(target ? "Couldn't mute — try again." : "Couldn't unmute — try again.")
+                                 }
+                             }
                          },
                          onPastoralArchive: {
                              Haptics.tap()

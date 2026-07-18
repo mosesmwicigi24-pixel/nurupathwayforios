@@ -24,6 +24,9 @@ struct PrivateThreadCard: View {
     /// Talk with My Pastor only: the device-local gate is on and sealed — the
     /// button says so, and the tap raises the OS prompt before anything else.
     let locked: Bool
+    /// Server-side per-member mute (Chat Redesign C4) — the small bell-slash
+    /// glyph beside the kicker, same signal as the ⋮ menu's Mute/Unmute label.
+    var muted: Bool = false
     let onOpen: () -> Void
 
     var body: some View {
@@ -31,6 +34,11 @@ struct PrivateThreadCard: View {
             HStack(spacing: 6) {
                 Icon(.heartHandshake, size: 12, color: Color(hex: 0xB08A1E))
                 Text(kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
+                if muted {
+                    Image(systemName: "bell.slash.fill")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color(hex: 0x9AA3AF))
+                }
                 Spacer(minLength: 0)
                 if unread > 0 {
                     Text("\(unread) new").font(.inter(10, .bold)).foregroundStyle(.white)
