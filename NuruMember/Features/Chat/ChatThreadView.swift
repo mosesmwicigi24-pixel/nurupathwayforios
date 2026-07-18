@@ -57,7 +57,14 @@ final class ChatThreadViewModel: ObservableObject {
     /// Optimistic messages queued locally until the server echoes them back.
     @Published var pending: [ChatMessage] = []
 
-    /// Server thread + any still-in-flight optimistic sends (deduped by id).
+    /// Optimistic edit/delete state — applied on top of whatever the server
+    /// last returned so Edit/Delete read instantly, and can be rolled back if
+    /// the PATCH/DELETE fails (see editMessage/deleteMessage below).
+    @Published var editOverrides: [String: String] = [:]
+    @Published var locallyDeletedIds: Set<String> = []
+
+    /// Server thread + any still-in-flight optimistic sends (deduped by id),
+    /// with optimistic edits/deletes layered on top.
     /// Ids compare case-insensitively: Postgres normalizes uuid columns to
     /// lowercase, so a client-minted uppercase id comes back lowercased — a
     /// case-sensitive match would keep the optimistic bubble alongside the
@@ -65,7 +72,16 @@ final class ChatThreadViewModel: ObservableObject {
     var allMessages: [ChatMessage] {
         let base = thread?.messages ?? []
         let ids = Set(base.map { $0.messageId.lowercased() })
-        return base + pending.filter { !ids.contains($0.messageId.lowercased()) }
+        let merged = base + pending.filter { !ids.contains($0.messageId.lowercased()) }
+        return merged
+            .filter { !locallyDeletedIds.contains($0.messageId) }
+            .map { m in
+                guard let body = editOverrides[m.messageId] else { return m }
+                var edited = m
+                edited.body = body
+                edited.isEdited = true
+                return edited
+            }
     }
 
     /// Offline-capable send: the bubble appears instantly and the write goes through
@@ -100,6 +116,41 @@ final class ChatThreadViewModel: ObservableObject {
 
     func react(_ m: ChatMessage, _ emoji: String) async {
         do { _ = try await MemberAPI.toggleChatReaction(m.messageId, emoji: emoji); await load() } catch {}
+    }
+
+    /// Author-only edit: reads instantly (optimistic), then reconciles with
+    /// the server. A failed PATCH rolls the bubble straight back to what it
+    /// said before — never leaves a body on screen the server didn't accept.
+    @discardableResult
+    func editMessage(_ messageId: String, newBody: String) async -> Bool {
+        let body = newBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return false }
+        let previous = editOverrides[messageId]
+        editOverrides[messageId] = body
+        do {
+            _ = try await MemberAPI.editChatMessage(messageId, body: body)
+            await load()
+            editOverrides[messageId] = nil
+            return true
+        } catch {
+            editOverrides[messageId] = previous
+            return false
+        }
+    }
+
+    /// Author-only soft delete: the bubble disappears immediately; a failed
+    /// DELETE brings it straight back rather than leaving a false "gone" state.
+    @discardableResult
+    func deleteMessage(_ messageId: String) async -> Bool {
+        locallyDeletedIds.insert(messageId)
+        do {
+            _ = try await MemberAPI.deleteChatMessage(messageId)
+            await load()
+            return true
+        } catch {
+            locallyDeletedIds.remove(messageId)
+            return false
+        }
     }
 }
 
@@ -228,8 +279,26 @@ struct ChatThreadView: View {
     @Environment(\.dismiss) private var dismiss
     /// Tracked via keyboardWillShow/Hide so the list can pin to the newest turn.
     @State private var keyboardVisible = false
+    /// Edit/Delete — own messages only, offered from the bubble's long-press menu.
+    @State private var editingMessage: ChatMessage?
+    @State private var pendingDeleteMessage: ChatMessage?
+    /// A brief inline banner for a failed edit/delete (the optimistic change
+    /// already reverted itself — this just tells the member why).
+    @State private var actionError: String?
+    @State private var actionErrorDismiss: Task<Void, Never>?
 
     init(conversation: ChatConversation) { _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation)) }
+
+    private func flashActionError(_ message: String) {
+        Haptics.error()
+        actionErrorDismiss?.cancel()
+        withAnimation { actionError = message }
+        actionErrorDismiss = Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation { actionError = nil }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -257,6 +326,31 @@ struct ChatThreadView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
         }
+        .sheet(item: $editingMessage) { message in
+            EditMessageSheet(message: message) { newBody in
+                await vm.editMessage(message.messageId, newBody: newBody)
+            }
+        }
+        // Deleting is irreversible for everyone in the thread — always confirm.
+        .confirmationDialog(
+            "Delete this message?",
+            isPresented: Binding(get: { pendingDeleteMessage != nil },
+                                  set: { if !$0 { pendingDeleteMessage = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let message = pendingDeleteMessage else { return }
+                pendingDeleteMessage = nil
+                Haptics.action()
+                Task {
+                    let ok = await vm.deleteMessage(message.messageId)
+                    if !ok { flashActionError("Couldn't delete this message — try again.") }
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteMessage = nil }
+        } message: {
+            Text("This can't be undone.")
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -270,9 +364,10 @@ struct ChatThreadView: View {
             // top of the keyboard while typing), and when the keyboard is closed
             // we pad past RootView's overlaid navy tab bar so both stay visible.
             MessagesList(rows: buildRows(vm.allMessages, multi: vm.isSpace),
-                         keyboardVisible: keyboardVisible) { m, emoji in
-                Task { await vm.react(m, emoji) }
-            }
+                         keyboardVisible: keyboardVisible,
+                         onReact: { m, emoji in Task { await vm.react(m, emoji) } },
+                         onEdit: { m in editingMessage = m },
+                         onDelete: { m in pendingDeleteMessage = m })
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
         }
     }
@@ -281,6 +376,14 @@ struct ChatThreadView: View {
     // composer on the home indicator and floats it on the keyboard while typing.
     private var bottomBar: some View {
         VStack(spacing: 0) {
+            if let actionError {
+                Text(actionError)
+                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 7)
+                    .background(Nuru.danger.opacity(0.08))
+                    .transition(.opacity)
+            }
             // The line that makes a member actually answer. Their fear is not
             // the label — it is "is the whole church about to read this?" So the
             // screen says the true thing, plainly, right where they type. It can
@@ -439,6 +542,8 @@ private struct MessagesList: View {
     let rows: [ThreadRow]
     let keyboardVisible: Bool
     var onReact: (ChatMessage, String) -> Void
+    var onEdit: (ChatMessage) -> Void
+    var onDelete: (ChatMessage) -> Void
 
     /// Insert-animations arm only after the first layout, so opening a thread
     /// never plays a whole screen of entrance transitions at once.
@@ -455,9 +560,10 @@ private struct MessagesList: View {
                     ConfidencePill()
                     if rows.isEmpty { EmptyThread() }
                     ForEach(rows) { row in
-                        MessageRow(row: row, hideSeparator: row.id == rows.first?.id) { emoji in
-                            onReact(row.m, emoji)
-                        }
+                        MessageRow(row: row, hideSeparator: row.id == rows.first?.id,
+                                   onReact: { emoji in onReact(row.m, emoji) },
+                                   onEdit: { onEdit(row.m) },
+                                   onDelete: { onDelete(row.m) })
                         .id(row.id)
                         // New bubbles rise in; the rest of the list never replays.
                         .transition(.asymmetric(
@@ -624,6 +730,8 @@ private struct MessageRow: View {
     let row: ThreadRow
     let hideSeparator: Bool
     var onReact: (String) -> Void
+    var onEdit: () -> Void
+    var onDelete: () -> Void
 
     private var m: ChatMessage { row.m }
     private var accent: Color {
@@ -659,7 +767,8 @@ private struct MessageRow: View {
     private var column: some View {
         VStack(alignment: m.mine ? .trailing : .leading, spacing: 6) {
             AuroraBubble(m: m, accent: accent, showAuthor: row.showAuthor,
-                         showTail: row.showTail, onReact: onReact)
+                         showTail: row.showTail, onReact: onReact,
+                         onEdit: onEdit, onDelete: onDelete)
             if m.aiTag == "prayer" && !m.mine { PrayerChip(m: m, onReact: onReact) }
         }
     }
@@ -695,6 +804,8 @@ private struct AuroraBubble: View {
     let showAuthor: Bool
     let showTail: Bool
     var onReact: (String) -> Void
+    var onEdit: () -> Void = {}
+    var onDelete: () -> Void = {}
 
     /// A message the room has rallied around gets a soft golden glow.
     private var celebrated: Bool { m.reactions.reduce(0) { $0 + $1.count } >= 8 }
@@ -764,6 +875,25 @@ private struct AuroraBubble: View {
             Divider()
             Button { UIPasteboard.general.string = m.body } label: {
                 Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+        // Author-only — never offered on someone else's message, a system row,
+        // or a broadcast copy the member didn't write themselves.
+        if m.mine {
+            Divider()
+            if m.msgType != "voice" && m.msgType != "image" {
+                Button {
+                    Haptics.tap()
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            Button(role: .destructive) {
+                Haptics.tap()
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -1178,6 +1308,67 @@ private struct ComposerBar: View {
     }
 }
 
+
+// MARK: - Edit message (own text messages only)
+
+/// Small sheet, prefilled with the current body — PATCH /chat/messages/{id}.
+/// `onSave` returns whether the server accepted it; a `false` keeps the sheet
+/// open with an inline error instead of dismissing on a change that didn't land.
+private struct EditMessageSheet: View {
+    let message: ChatMessage
+    var onSave: (String) async -> Bool
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var saving = false
+    @State private var error: String?
+
+    init(message: ChatMessage, onSave: @escaping (String) async -> Bool) {
+        self.message = message
+        self.onSave = onSave
+        _text = State(initialValue: message.body)
+    }
+
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        PSheetShell(title: "Edit message") {
+            VStack(alignment: .leading, spacing: Nuru.S.md) {
+                TextField("Message", text: $text, axis: .vertical)
+                    .font(.inter(14)).foregroundStyle(Nuru.navy)
+                    .lineLimit(3...8)
+                    .padding(.horizontal, Nuru.S.base).padding(.vertical, 12)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+
+                if let error {
+                    Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
+                }
+
+                GoldSheetButton(title: "Save", busy: saving, disabled: trimmed.isEmpty) {
+                    Task { await save() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func save() async {
+        guard !trimmed.isEmpty else { return }
+        // Nothing actually changed — no need to round-trip the server.
+        if trimmed == message.body { dismiss(); return }
+        saving = true; error = nil
+        defer { saving = false }
+        let ok = await onSave(trimmed)
+        if ok {
+            Haptics.success()
+            dismiss()
+        } else {
+            Haptics.error()
+            error = "Couldn't save — please try again."
+        }
+    }
+}
 
 /// The classic recording pulse — a red dot breathing at ~1 Hz.
 private struct RecordingDot: View {

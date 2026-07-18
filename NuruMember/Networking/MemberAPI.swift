@@ -752,6 +752,22 @@ extension MemberAPI {
         return try await APIClient.shared.post("chat/messages/\(messageId)/reactions", body: Body(emoji: emoji), as: Res.self).on
     }
 
+    /// PATCH /chat/messages/{id} — author-only edit; the server enforces
+    /// authorship (404 otherwise) and sets `is_edited = true`.
+    @discardableResult
+    static func editChatMessage(_ messageId: String, body: String) async throws -> ChatMessageMutationResult {
+        struct Body: Encodable { let body: String }
+        return try await APIClient.shared.patch("chat/messages/\(messageId)", body: Body(body: body), as: ChatMessageMutationResult.self)
+    }
+
+    /// DELETE /chat/messages/{id} — author-only soft delete; the server
+    /// enforces authorship (404 otherwise). Deleted messages stop coming back
+    /// on the next GET /chat/conversations/{id}.
+    @discardableResult
+    static func deleteChatMessage(_ messageId: String) async throws -> ChatMessageMutationResult {
+        try await APIClient.shared.delete("chat/messages/\(messageId)", as: ChatMessageMutationResult.self)
+    }
+
     // MARK: Community — Prayer Wall (public, opt-in)
 
     /// GET /prayer-wall?sort= — the congregation's shared prayer requests.
