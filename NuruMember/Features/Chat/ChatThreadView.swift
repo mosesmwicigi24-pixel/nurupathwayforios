@@ -1385,11 +1385,16 @@ private struct ReadTicksView: View {
     let read: Bool
     var dark = false
 
+    /// The broadcast rule, everywhere: ONE blue tick = delivered (the copy is
+    /// in their thread — not a hope), TWO blue ticks = seen (their
+    /// last_read_at covers it). WhatsApp-blue on every surface, per the owner
+    /// spec — no gold, no gray states.
     var body: some View {
-        Text("✓✓")
+        Text(read ? "✓✓" : "✓")
             .font(.inter(9.5, .semibold))
             .kerning(-1)
-            .foregroundStyle(read ? Aurora.gold : (dark ? Color.white.opacity(0.55) : Aurora.meta))
+            .foregroundStyle(Color(hex: 0x2F80ED))
+            .opacity(dark ? 1 : 0.95)
     }
 }
 
