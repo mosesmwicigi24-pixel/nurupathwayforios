@@ -309,11 +309,20 @@ struct BroadcastDetailView: View {
                     Avatar(url: r.avatarUrl, name: r.fullName, size: 30)
                     Text(r.fullName).font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
                     Spacer(minLength: 0)
-                    HStack(spacing: -4) {
-                        Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-                        if r.seen { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
+                    // Product decision (matches Android + the web portal): the
+                    // tick itself is always WhatsApp-blue — delivered is a
+                    // server-side fact, not a maybe. Only the label dims for
+                    // "Delivered" and lights up blue once they've actually seen it.
+                    HStack(spacing: 5) {
+                        HStack(spacing: -4) {
+                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+                            if r.seen { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
+                        }
+                        .foregroundStyle(Color(hex: 0x3DA8E0))
+                        Text(r.seen ? "Seen" : "Delivered")
+                            .font(.inter(11, .semibold))
+                            .foregroundStyle(r.seen ? Color(hex: 0x3DA8E0) : Nuru.ink600)
                     }
-                    .foregroundStyle(r.seen ? Color(hex: 0x3DA8E0) : Nuru.ink600.opacity(0.45))
                 }
                 .padding(.horizontal, Nuru.S.md).padding(.vertical, 8)
                 if r.id != d.recipients.last?.id {

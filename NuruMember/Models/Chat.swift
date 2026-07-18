@@ -190,6 +190,23 @@ struct ChatMessage: Codable, Sendable, Identifiable {
     }
 }
 
+/// Shared response shape for the author-only mutation endpoints:
+/// PATCH /chat/messages/{id} → { message_id, body, is_edited }
+/// DELETE /chat/messages/{id} → { message_id, deleted }
+struct ChatMessageMutationResult: Codable, Sendable {
+    let messageId: String
+    let body: String?
+    let isEdited: Bool?
+    let deleted: Bool?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        messageId = (try? c.decodeIfPresent(String.self, forKey: .messageId)) ?? ""
+        body = try? c.decodeIfPresent(String.self, forKey: .body)
+        isEdited = try? c.decodeIfPresent(Bool.self, forKey: .isEdited)
+        deleted = try? c.decodeIfPresent(Bool.self, forKey: .deleted)
+    }
+}
+
 struct ChatThreadDetail: Codable, Sendable {
     let conversationId: String
     let kind: String
