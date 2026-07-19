@@ -29,7 +29,7 @@ final class SyncCoordinator: ObservableObject {
     private let pullDomains = [
         "prayer_entries", "saved_verses", "event_rsvps", "module_progress",
         "module_reflections", "gift_assessments", "enrollments",
-        "discussion_threads", "discussion_comments",
+        "discussion_threads", "discussion_comments", "member_thoughts",
     ]
 
     init(store: EncryptedSQLiteStore = EncryptedSQLiteStore()) {

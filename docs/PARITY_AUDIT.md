@@ -280,3 +280,94 @@ idle simulator). Committed in 4 pieces on `feat/chat-four-tabs`
 (`28fa934` API surface, `612eb42` four-tab restructure, `809ba9c`
 `PastoralLock`, `ad70f83` thread contexts/menu/gate); this doc update is a
 5th. Not pushed / no PR opened (per task instruction).
+
+## 2026-07-20 — Selah (My Thoughts) + AI Prayer Points: Prayer Room tabs 3 & 4 (branch feat/selah-prayer-points, this repo only, client against LIVE backend pathway#391)
+
+Prayer Room grew from three tabs (Private · Corporate · Answered) to four
+(Private · Corporate · Selah · Prayer Points). Answered lost its top-level
+slot but not its function — `PrayerJournalView`'s own Active/Answered chips
+already show whenever it isn't force-pinned, so nothing about Answered was
+removed, only relocated (no external call site passed `.answered` as an
+`initialTab`, confirmed by grep before the cut).
+
+**Selah — My Thoughts** (`SelahView.swift`, `ThoughtsViewModel`): a private
+rich-text + pen journal against the now-live `/me/thoughts` REST surface,
+wired through the SAME offline mutation queue as the prayer journal
+(`SyncCoordinator.enqueue(domain: "member_thoughts", op: "upsert"/"delete")` —
+confirmed server-side in `sync/service.ts:304-316` before wiring). One-time
+explainer card (`@AppStorage("nuru.selah.explainerDismissed")`, the
+`readerNight` idiom) with the owner's exact copy; empty state "Selah. Pause
+here — write your first thought."; list rows show title/preview/relative time
++ a pencil glyph when a thought carries a drawing.
+
+**The editor** (`SelahEditorView.swift` + `SelahRichEditor.swift`) is a
+full-screen `UITextView` bridge (`RichTextEditor`/`RichEditorController`) —
+Bold, Italic, a 6-swatch color menu, and a 4-face font menu (Inter/Fraunces/
+Georgia/Noteworthy — two brand fonts + two free system fonts, deliberately
+not bundling new assets) all persist PER SPAN via `ThoughtSpan{start,end,
+bold?,italic?,color?,font?}`, extracted by walking the edited
+`NSAttributedString`'s runs and merging adjacent identical runs (capped at
+the server's 2000-span max). **Line spacing is honestly scoped as a GLOBAL
+preference, not per-span** — the backend's `ThoughtSpan` has no spacing
+field (confirmed reading `thoughts/service.ts`'s zod schema before building),
+so a per-run line-height would silently do nothing for the rest of the note;
+spacing is instead `@AppStorage("nuru.selah.lineSpacing")` applied to the
+whole `UITextView`, same idiom as `readerNight`. Stated plainly rather than
+silently shipping a control that doesn't actually round-trip.
+
+**Pen drawing** (`SelahDrawingSheet.swift`) is real PencilKit (`PKCanvasView`,
+`.anyInput` policy, `PKToolPicker`), gated to `UIDevice.current
+.userInterfaceIdiom == .pad` — Apple Pencil doesn't exist for iPhone, so the
+"Draw" toolbar entry point is hidden there rather than offering a dead end.
+A drawing exports to PNG (`PKDrawing.image(from:scale:)`) and uploads through
+the EXISTING `chat/attachments/sign` → Cloudinary flow
+(`MemberAPI.signChatAttachment(kind: "image")` + `uploadChatAttachment`) —
+confirmed the backend's `kind` enum accepts `"image"` before reusing it, no
+new upload path invented. Delivered `secure_url`s append to `drawing_urls`;
+removable locally before Save (no server-side cleanup of the orphaned
+Cloudinary asset — same practice as every other attachment flow in this app).
+
+**Prayer Points** (`PrayerPointsView.swift`) against the intelligence layer's
+`PrayerAiService` (`intelligence/prayer.ts`, read before wiring): (a) an
+assist composer — seed points → `POST /me/prayer/assist` → an editable draft
+in the member's own voice, mirroring `AiDraftButton`'s visual idiom (purple→
+gold orb, "Use draft"/"Discard") without reusing the component itself (the
+wire shape differs — `assistantChat` summarizes a thread, `/me/prayer/assist`
+takes a bare `seed`); (b) "Gather my prayer points" → `POST /me/prayer/points`
+→ an editable, removable, copy-all numbered list, the corpus generator. Both
+consent-gate on `ai_opt_out` — there is no separate "Sunday Letter consent
+prompt" component in this codebase to reuse (checked `LetterView.swift`; the
+letter itself just doesn't compose server-side when opted out), so this ships
+its own gate card using the exact copy from `ProfileView`'s "Nuru
+Intelligence" section, with a one-tap "Turn on AI personalization" CTA that
+calls the same `MemberAPI.setAiConsent` the Profile toggle uses.
+
+**Sync plumbing**: `member_thoughts` added to `SyncEngine.pullIdField`
+(`"thought_id"`) and `SyncCoordinator.pullDomains`, matching `prayer_entries`
+— confirmed `member_thoughts` is in the backend's pull-domain map
+(`sync/service.ts:64`) before adding, so background delta pulls now warm the
+Selah cache the same way they warm the prayer journal's.
+
+**Honest limits**: (1) line spacing is global, not per-thought (schema
+constraint, explained above); (2) drawings are add/remove-locally only — no
+in-place re-editing of a saved stroke once uploaded (ships a flattened PNG,
+matching the task's "clearly-scoped" fallback for anything beyond a fully-
+working rich editor + real pen capture); (3) the rich editor's formatting
+menus (color/font) apply to the current UITextView selection or, with an
+empty selection, to `typingAttributes` going forward — full parity with how
+Notes/Pages behave, no gap here.
+
+Files: `Models/Thought.swift`, `Networking/MemberAPI+Thoughts.swift`,
+`Features/Community/SelahRichEditor.swift`, `Features/Community/
+SelahDrawingSheet.swift`, `Features/Community/SelahEditorView.swift`,
+`Features/Community/SelahView.swift`, `Features/Community/
+PrayerPointsView.swift`, `Features/Community/PrayerRoomView.swift` (tabs),
+`Offline/SyncCoordinator.swift` + `Offline/OfflineStore.swift`
+(`member_thoughts` pull wiring).
+
+Verified: `xcodebuild -scheme NuruMember -configuration Debug -destination
+"id=8265F608-4A98-4E95-9074-7C54BEC4684A" -derivedDataPath build/dd build` →
+BUILD SUCCEEDED; `... test` → 10/10 green (simulator needed an explicit
+`xcrun simctl boot` first — it was Shutdown, same transient-environment class
+as the prior session's launch failure, not a code issue). Not pushed / no PR
+opened (per task instruction).

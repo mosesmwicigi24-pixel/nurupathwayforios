@@ -1,16 +1,24 @@
 // My Prayer Room — the single destination that replaces the old separate
-// "Prayer Wall" and "Prayer Journal" entries. Two tabs over one screen:
-// Private Prayer (the member's own journal, PrayerJournalView, embedded) and
-// Corporate Prayer (the congregation's wall, PrayerWallView, embedded). Both
-// child views keep their real behavior (compose, share-to-wall, react,
-// comment, voice notes) — only their own header/back-button chrome is
-// suppressed in favor of this screen's shared header + segmented control.
+// "Prayer Wall" and "Prayer Journal" entries. FOUR tabs over one screen:
+// Private Prayer (the member's own journal, PrayerJournalView, embedded),
+// Corporate Prayer (the congregation's wall, PrayerWallView, embedded), Selah
+// (My Thoughts — a private rich-text + pen journal, SelahView), and Prayer
+// Points (the AI assist + corpus generator, PrayerPointsView). Child views
+// keep their real behavior (compose, share-to-wall, react, comment, voice
+// notes) — only their own header/back-button chrome is suppressed in favor of
+// this screen's shared header + segmented control.
+//
+// "Answered" used to be its own top-level tab; it now folds into Private's
+// own Active/Answered chips (PrayerJournalView already shows them whenever it
+// isn't pinned to a forced tab) so the room stays at a clean four across —
+// nothing about Answered itself was removed, just its top-level slot.
 import SwiftUI
 
 enum PrayerRoomTab: Hashable {
     case privatePrayer
     case corporatePrayer
-    case answered
+    case selah
+    case prayerPoints
 }
 
 struct PrayerRoomView: View {
@@ -28,7 +36,8 @@ struct PrayerRoomView: View {
                 switch tab {
                 case .privatePrayer: PrayerJournalView(embedded: true)
                 case .corporatePrayer: PrayerWallView(embedded: true)
-                case .answered: PrayerJournalView(embedded: true, forcedTab: .answered)
+                case .selah: SelahView()
+                case .prayerPoints: PrayerPointsView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -81,15 +90,21 @@ struct PrayerRoomView: View {
 
     // MARK: Segmented control (capsule pills, navy gradient active — Chat idiom)
 
+    // Four tabs no longer fit one equal-width row on a phone, so the capsule
+    // scrolls horizontally (iPad still shows all four at a glance); each pill
+    // now sizes to its own label instead of splitting the strip evenly.
     private var segmentedControl: some View {
-        HStack(spacing: 4) {
-            segmentButton(.privatePrayer, "Private")
-            segmentButton(.corporatePrayer, "Corporate")
-            segmentButton(.answered, "Answered")
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                segmentButton(.privatePrayer, "Private")
+                segmentButton(.corporatePrayer, "Corporate")
+                segmentButton(.selah, "Selah")
+                segmentButton(.prayerPoints, "Prayer Points")
+            }
+            .padding(4)
+            .background(Color.white, in: Capsule())
+            .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
         }
-        .padding(4)
-        .background(Color.white, in: Capsule())
-        .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
 
     private func segmentButton(_ t: PrayerRoomTab, _ label: String) -> some View {
@@ -102,7 +117,7 @@ struct PrayerRoomView: View {
                 .font(.nChipLabel)
                 .foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 .lineLimit(1).minimumScaleFactor(0.85)
-                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(
                     selected
