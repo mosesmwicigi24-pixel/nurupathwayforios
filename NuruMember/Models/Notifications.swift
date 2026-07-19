@@ -12,6 +12,12 @@ struct NotifPayload: Codable, Sendable {
     let name: String?
     let moduleId: String?
     let announcementId: String?
+    /// Read with a Friend (reading-social groups.ts `notify()` calls) —
+    /// `plan_group_invite_received` carries `invite_token` so a notification
+    /// tap can open the SAME invite-preview screen a nuru://join/{token} deep
+    /// link opens; the other plan_group_* templates carry only `group_id`.
+    let inviteToken: String?
+    let groupId: String?
 }
 
 struct NotificationRow: Codable, Sendable, Identifiable {

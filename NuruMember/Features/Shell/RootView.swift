@@ -50,8 +50,10 @@ enum AppTab: Hashable, CaseIterable {
     }
 }
 
-/// A cross-tab deep link into the Plans tab — the catalogue root or one plan.
-enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow) }
+/// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
+/// or the "Read with a Friend" hub (a plan_group_* notification without a
+/// redeemable invite token — the group itself is one tap away from the hub).
+enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case readWithFriendHub }
 
 /// The selected primary tab, hoisted out of RootView so any screen can switch
 /// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
@@ -78,11 +80,16 @@ final class TabRouter: ObservableObject {
     @Published var eventLink: CalendarOccurrence?
     /// Announcement to open on the Home stack (from a tapped iOS notification).
     @Published var announcementLink: String?
+    /// A "Read with a Friend" invite token to open on the Plans stack — set by
+    /// a nuru://join/{token} deep link (RootView.onOpenURL) or a
+    /// plan_group_invite_received notification tap.
+    @Published var readingInviteToken: String?
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
     func openEvent(_ o: CalendarOccurrence) { eventLink = o; selected = .events }
     func openAnnouncement(_ id: String) { announcementLink = id; selected = .home }
+    func openReadingInvite(_ token: String) { readingInviteToken = token; selected = .plans }
 }
 
 struct RootView: View {
@@ -185,6 +192,7 @@ struct RootView: View {
             let announcementId = info["announcementId"] as? String ?? ""
             let moduleId = info["moduleId"] as? String ?? ""
             let level = info["levelNumber"] as? Int ?? 0
+            let inviteToken = info["inviteToken"] as? String ?? ""
             if !announcementId.isEmpty {
                 tabs.openAnnouncement(announcementId)
             } else if !moduleId.isEmpty {
@@ -199,20 +207,35 @@ struct RootView: View {
                 tabs.selected = .profile
             } else if template.hasPrefix("reflection") {
                 tabs.selected = .pathway
+            } else if template == "plan_group_invite_received", !inviteToken.isEmpty {
+                // Read with a Friend — same surface a nuru://join/{token} deep
+                // link opens (see onOpenURL below).
+                tabs.openReadingInvite(inviteToken)
+            } else if template.hasPrefix("plan_group") {
+                // Progress/joined pings without a token to redeem — land on
+                // the hub; the specific group is one tap away from there.
+                tabs.openPlans(.readWithFriendHub)
             } else {
                 NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
             }
         }
         // Home-screen widgets deep-link with nuru:// URLs — route to the tab
-        // (or open the radio player) the widget promises.
+        // (or open the radio player) the widget promises. Also the
+        // Read-with-a-Friend deep link: nuru://join/{token} (the SAME scheme
+        // the public /join/{token} landing page attempts before falling back
+        // to the store — docs/READING_SOCIAL_PLAN.md §5).
         .onOpenURL { url in
-            switch url.host ?? url.absoluteString.replacingOccurrences(of: "nuru://", with: "") {
+            let host = url.host ?? url.absoluteString.replacingOccurrences(of: "nuru://", with: "")
+            switch host {
             case "pathway": tabs.selected = .pathway
             case "plans":   tabs.selected = .plans
             case "chat":    tabs.selected = .chat
             case "events":  tabs.selected = .events
             case "give":    tabs.selected = .give
             case "radio":   NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
+            case "join":
+                let token = url.pathComponents.last(where: { $0 != "/" }) ?? url.lastPathComponent
+                if !token.isEmpty { tabs.openReadingInvite(token) }
             default:        tabs.selected = .home
             }
         }
@@ -309,8 +332,22 @@ private struct PlansTab: View {
             .onReceive(tabs.$planLink) { link in
                 guard let link else { return }
                 path = NavigationPath()
-                if case .plan(let row) = link { path.append(row) }
+                switch link {
+                case .plan(let row): path.append(row)
+                case .readWithFriendHub: path.append(GrowDestination.readWithFriendHub)
+                case .catalogue: break
+                }
                 DispatchQueue.main.async { tabs.planLink = nil }
+            }
+            // A nuru://join/{token} deep link or a plan_group_invite_received
+            // notification tap — push the invite preview with the catalogue
+            // (and the hub, if already open) as the back stop.
+            .onReceive(tabs.$readingInviteToken) { token in
+                guard let token else { return }
+                path = NavigationPath()
+                path.append(GrowDestination.readWithFriendHub)
+                path.append(ReadingInviteRef(token: token))
+                DispatchQueue.main.async { tabs.readingInviteToken = nil }
             }
     }
 }

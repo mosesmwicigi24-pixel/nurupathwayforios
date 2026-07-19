@@ -455,27 +455,27 @@ struct ReadingPlansView: View {
         }
     }
 
-    // MARK: invitation
+    // MARK: invitation — the Read with a Friend hub (spec §3)
 
     private var invitationCard: some View {
-        ShareLink(item: "Walk with me through a reading plan on Nuru Pathway — a little of the Word every day. Get the app and let's keep each other going.") {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
-                Icon(.users, size: 19, color: PL.gold)
-            }.frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
-                Text("Invite your cell to a plan and keep each other going.").font(.nCardMeta).foregroundStyle(PL.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+        NavigationLink(value: GrowDestination.readWithFriendHub) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
+                    Icon(.users, size: 19, color: PL.gold)
+                }.frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
+                    Text("Invite your cell to a plan and keep each other going.").font(.nCardMeta).foregroundStyle(PL.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 16, color: PL.ink3)
             }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: PL.ink3)
-        }
-        .padding(16)
-        .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
+            .padding(16)
+            .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
         }
         .buttonStyle(.pressable)
     }
@@ -550,6 +550,10 @@ struct PlanDetailView: View {
     /// Which locked day the member just reached for — drives the nudge back to
     /// the day they're actually on.
     @State private var lockedNudgeFor: Int?
+    /// Read with a Friend (spec §6): create-or-get my group for this plan,
+    /// mint an open invite, hand the /join/{token} link to the share sheet.
+    @State private var invitingBusy = false
+    @State private var inviteError: String?
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -852,17 +856,51 @@ struct PlanDetailView: View {
                 }
             }
             .buttonStyle(.pressable)
-            ShareLink(item: "Join me on \"\(d.title)\" — a \(d.dayCount)-day journey in the Word on Nuru Pathway.") {
-                HStack(spacing: 6) { Icon(.share2, size: 15, color: PL.navy); Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy) }
-                    .frame(minHeight: 48).padding(.horizontal, 16)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
+            Button {
+                Haptics.tap()
+                Task { await startReadWithFriendInvite(d) }
+            } label: {
+                HStack(spacing: 6) {
+                    if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 15, color: PL.navy) }
+                    Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+                }
+                .frame(minHeight: 48).padding(.horizontal, 16)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .disabled(invitingBusy)
         }
         .padding(.horizontal, 20).padding(.top, 12)
         .padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+        .alert("Couldn't send that invite", isPresented: Binding(get: { inviteError != nil }, set: { if !$0 { inviteError = nil } })) {
+            Button("OK") { inviteError = nil }
+        } message: {
+            Text(inviteError ?? "")
+        }
+    }
+
+    /// Real Read-with-a-Friend invite (spec §6, replacing the old text-only
+    /// ShareLink): create-or-get MY shared group for this plan, mint a fresh
+    /// open-link invite, and hand the public /join/{token} URL + a rich
+    /// message to the system share sheet (WhatsApp/social/copy — one URL,
+    /// every channel).
+    private func startReadWithFriendInvite(_ d: ReadingPlanDetail) async {
+        guard !invitingBusy else { return }
+        invitingBusy = true
+        defer { invitingBusy = false }
+        do {
+            let group = try await MemberAPI.createOrGetReadingGroup(planId: d.planId)
+            let invite = try await MemberAPI.createReadingInvite(groupId: group.groupId)
+            let url = MemberAPI.readingJoinURL(token: invite.token)
+            let message = readingInviteMessage(planTitle: d.title, dayCount: d.dayCount, joinUrl: url)
+            Haptics.success()
+            presentSystemShareSheet([message])
+        } catch {
+            Haptics.error()
+            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+        }
     }
 
     private func ctaLabel(_ text: String) -> some View {

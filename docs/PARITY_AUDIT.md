@@ -1,4 +1,65 @@
 
+## 2026-07-20 — Read with a Friend R3 client (branch feat/read-with-friend-ui, this repo only)
+Reading & Social R1 backend (pathway#392, `/v1/reading/*` — shared plan
+groups, invites, public `/join/{token}` OG page) now has iOS client UI. Read
+`pathway/docs/READING_SOCIAL_REDESIGN.md` §3/§6 + `docs/READING_SOCIAL_PLAN.md`
+and the backend module (`packages/backend/src/modules/reading-social/{groups,
+invites,tokens,publicPage,index}.ts`, read-only) for the exact wire shapes;
+built in a dedicated worktree (`.worktrees/rwf`) per the two-agent isolation
+instruction — never pushed, commit is local only.
+
+**New:** `Models/ReadingSocial.swift` (tolerant DTOs — `ReadingGroupRow`,
+`ReadingGroupMember`, `ReadingInviteRow`, `ReadingInvitePreview`,
+`ReadingInviteAcceptResult`); `Networking/MemberAPI+ReadingSocial.swift` (the
+11 new calls: create-or-get group, list/get/archive/leave, create/list/revoke
+invite, invite preview/accept/decline); `Features/Grow/ReadWithFriendView.swift`
+— the hub (`ReadWithFriendHubView`, my active shared groups with per-friend
+"Doris · Day 3 of 7" rows), group detail (`ReadingGroupDetailView` — roster +
+progress bars, invite-a-friend via a new `FriendPickerSheet` that reuses
+`MemberAPI.listConnections()`, share-link, leave/archive, pending-invites
+list with revoke, refetches on every appear), and the invite-preview/accept/
+decline screen (`ReadingInvitePreviewView`) pushed from a deep link or a
+notification tap.
+
+**Wired:** the Plans tab's "Read with a friend" card (`ReadingPlansView.swift`
+`invitationCard`) now pushes the hub instead of a static text-only `ShareLink`.
+`PlanDetailView`'s "Invite" button (`ctaBar`) now creates-or-gets a real group
+for that plan, mints an open invite, and hands the public
+`https://pathway.nuruplace.org/join/{token}` link + a rich message ("Join me
+reading "<title>" on Nuru Pathway — a N-day plan. <url>") to the system share
+sheet (`presentSystemShareSheet`, the same `UIActivityViewController` pattern
+`ProfileView`'s certificate share uses) — WhatsApp/social/copy/QR all read the
+one URL.
+
+**Incoming:** `nuru://join/{token}` extends the EXISTING custom-scheme
+handler in `RootView.onOpenURL` (previously host-only routing for widgets) —
+`host == "join"` extracts the token and calls the new
+`TabRouter.openReadingInvite(token)`, which lands on Plans → the hub → the
+invite-preview screen (accept joins + enrolls + connects; decline is
+targeted-invite-only, matching the backend's 403 on open links). A
+`plan_group_invite_received` notification tap does the SAME thing — extended
+`NotifPayload`/`LocalNotifier` to carry `invite_token`/`group_id` through
+`userInfo`; other `plan_group_*` templates (accepted/joined/day-completed,
+no redeemable token) land on the hub instead.
+
+**Deep-link limit (honest, not silently deferred):** only the `nuru://`
+custom scheme is wired, per `docs/READING_SOCIAL_PLAN.md` §5 tier 2/3 — no
+`https://pathway.nuruplace.org/join/{token}` Universal Link. That needs an
+`apple-app-site-association` hosted at the domain root (backend/infra work,
+out of this client-only session) PLUS an Associated Domains entitlement this
+repo has never had (`docs/READING_SOCIAL_PLAN.md` §3: "no `*.entitlements`
+file exists anywhere in the tree"). Until AASA ships, the public `/join/{token}`
+page's own inline-script fallback (already live server-side) still opens the
+app via the custom scheme when installed, or falls through to the App Store
+after ~1200ms when not — the three-tier fallback the backend already built;
+this client half only had to honor the scheme it defines, which it now does.
+
+**Verify:** `xcodebuild -scheme NuruMember -configuration Debug -destination
+"id=8265F608-4A98-4E95-9074-7C54BEC4684A" build` → BUILD SUCCEEDED; `test` →
+10/10 (`ModelDecodingTests`, pre-existing suite, untouched — no reading-social
+unit tests added this session; the DTOs are exercised by the tolerant-decode
+pattern used throughout, consistent with how `ChatConnections.swift` shipped).
+
 ## Session 17c — Trail nodes keep the module number (iOS 46 / Android 2.14.0)
 **PRs:** ios#57 · android#22. Field feedback: the ✓ replaced the module number
 after completion (and ▶ replaced it on the next module) — members lost their

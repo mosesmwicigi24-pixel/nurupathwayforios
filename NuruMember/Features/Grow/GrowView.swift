@@ -17,6 +17,8 @@ enum GrowDestination: Hashable {
     case gifts
     case giftsAssessment
     case resources
+    /// "Read with a Friend" hub — my active shared-plan groups (spec §3).
+    case readWithFriendHub
 }
 
 extension View {
@@ -36,12 +38,19 @@ extension View {
                 case .gifts:         GiftsView()
                 case .giftsAssessment: GiftsAssessmentView()
                 case .resources:     ResourcesLibraryView()
+                case .readWithFriendHub: ReadWithFriendHubView()
                 }
             }
             .navigationDestination(for: ReadingPlanRow.self) { PlanDetailView(plan: $0) }
             .navigationDestination(for: PlanDayRef.self) { PlanDayView(ref: $0) }
             .navigationDestination(for: PlanSegmentRef.self) { PlanSegmentView(ref: $0) }
             .navigationDestination(for: TalkRoute.self) { TalkItOverView(route: $0) }
+            // Read with a Friend — group detail (by full row or by id alone,
+            // e.g. from a notification or a deep link) + the invite preview
+            // pushed after a nuru://join/{token} deep link opens the app.
+            .navigationDestination(for: ReadingGroupRow.self) { ReadingGroupDetailView(groupId: $0.groupId, preloaded: $0) }
+            .navigationDestination(for: ReadingGroupIdRef.self) { ReadingGroupDetailView(groupId: $0.groupId) }
+            .navigationDestination(for: ReadingInviteRef.self) { ReadingInvitePreviewView(token: $0.token) }
             .navigationDestination(for: CommunityRoute.self) { r in
                 switch r {
                 // "Prayer wall" is now the Corporate Prayer tab inside My
