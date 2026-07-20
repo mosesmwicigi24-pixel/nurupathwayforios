@@ -93,7 +93,7 @@ struct LetterView: View {
             Text(letter.body)
                 .font(.fraunces(17, .regular))
                 .foregroundStyle(Color(hex: 0x2A3441))
-                .lineSpacing(7)
+                .nuruLineSpacing(7)
                 .fixedSize(horizontal: false, vertical: true)
 
             HStack {

@@ -977,12 +977,13 @@ struct HomeView: View {
                         .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
                 }
                 .padding([.horizontal, .top], Nuru.S.base)
-                Text(vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”")
-                    .font(.fraunces(18)).foregroundStyle(HomeFig.navy).lineSpacing(5).padding(.top, Nuru.S.md)
-                    .padding(.horizontal, Nuru.S.base)
-                Text("\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")")
-                    .font(.inter(13, .semibold)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.sm)
-                    .padding(.horizontal, Nuru.S.base)
+                VerseQuoteCard(
+                    verse: vm.verse?.text ?? "Your word is a lamp to my feet, and a light for my path.",
+                    reference: vm.verse?.reference ?? "Psalm 119:105",
+                    cardStyle: false
+                )
+                .padding(.top, Nuru.S.md)
+                .padding(.horizontal, Nuru.S.base)
             }
             verseCardBody
         }

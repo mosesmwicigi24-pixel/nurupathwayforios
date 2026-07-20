@@ -244,6 +244,18 @@ enum MLMarkdown {
                       attribution: nil)
     }
 
+    /// True when a blockquote's attribution reads like a scripture reference —
+    /// "Romans 12:2", "1 Corinthians 13:4-7", "Galatians 1:10 (WEB)" — as
+    /// opposed to a person's name or a generic dash-off attribution. Deliberately
+    /// conservative (requires a "chapter:verse" shape) so an ordinary quote with
+    /// no scripture reference never gets hijacked into the verse-card styling.
+    static func isScriptureReference(_ s: String) -> Bool {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, t.count <= 40 else { return false }
+        let pattern = #"^[1-3]?\s?[A-Za-z][A-Za-z.\s]{1,28}\d{1,3}:\d{1,3}(-\d{1,3})?"#
+        return t.range(of: pattern, options: .regularExpression) != nil
+    }
+
     private static func stripWrappingQuotes(_ s: String) -> String {
         var t = s
         let opens: Set<Character> = ["\"", "\u{201C}"]
@@ -318,7 +330,17 @@ struct MLMarkdownView: View {
         case let .numbered(items):
             MLNumberedList(items: items)
         case let .quote(body, attribution):
-            MLQuoteCard(verse: body, attribution: attribution)
+            // A blockquote whose attribution reads like "Romans 12:2" (a real
+            // scripture reference, not a person's name or a generic dash-off)
+            // renders as the shared VerseQuoteCard so scripture looks the same
+            // everywhere it's quoted. An ordinary blockquote — no attribution,
+            // or one that isn't a Book chapter:verse — keeps its plain callout.
+            if let attribution, MLMarkdown.isScriptureReference(attribution) {
+                VerseQuoteCard(verse: body, reference: attribution,
+                                background: ML.surface, ink: ML.navy, gold: ML.gold)
+            } else {
+                MLQuoteCard(verse: body, attribution: attribution)
+            }
         case let .table(header, rows):
             MLTableBlock(header: header, rows: rows)
         case .rule:
@@ -336,7 +358,7 @@ private struct MLParagraphText: View {
     var body: some View {
         Text(MLMarkdown.inline(text))
             .font(.inter(15)).foregroundStyle(ML.bodyInk)
-            .lineSpacing(6)
+            .nuruLineSpacing(6)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -374,7 +396,7 @@ private struct MLBulletList: View {
                     Circle().fill(ML.navy).frame(width: 5, height: 5).offset(y: -2)
                     Text(MLMarkdown.inline(item))
                         .font(.inter(15)).foregroundStyle(ML.bodyInk)
-                        .lineSpacing(6)
+                        .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -394,7 +416,7 @@ private struct MLNumberedList: View {
                         .frame(minWidth: 20, alignment: .trailing)
                     Text(MLMarkdown.inline(pair.1))
                         .font(.inter(15)).foregroundStyle(ML.bodyInk)
-                        .lineSpacing(6)
+                        .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
@@ -413,7 +435,7 @@ private struct MLQuoteCard: View {
             Text(MLMarkdown.inline(verse))
                 .font(.fraunces(16.5, .regular)).italic()
                 .foregroundStyle(ML.navy)
-                .lineSpacing(5)
+                .nuruLineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let attribution {

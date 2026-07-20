@@ -1,9 +1,9 @@
 // Selah's quiet page — the rich-text + pen editor for one thought. New-or-
 // existing, always full screen (this is the "write what's on your heart"
-// surface, not a quick sheet). Bold/italic/color/font persist per span
-// (ThoughtSpan); line spacing is a global preference (see SelahRichEditor.swift
-// header note); drawings upload via the existing chat/attachments flow and are
-// attached as `drawing_urls`.
+// surface, not a quick sheet). Bold/italic/color/font/spacing all persist per
+// span (ThoughtSpan — see SelahRichEditor.swift); the member's global reading
+// line-spacing preference applies on top at render time; drawings upload via
+// the existing chat/attachments flow and are attached as `drawing_urls`.
 import SwiftUI
 
 /// A new-or-existing thought being edited.
@@ -221,7 +221,7 @@ struct SelahEditorView: View {
     private var saveButton: some View {
         Button {
             Haptics.action()
-            let (body, spans) = SelahRichText.extract(liveAttributed)
+            let (body, spans) = SelahRichText.extract(liveAttributed, documentSpacing: spacing)
             draft.body = body
             draft.spans = spans
             onSave(draft)

@@ -361,6 +361,73 @@ struct HomeWeekChain: View {
     }
 }
 
+// MARK: - Verse quote card (shared — the ONE way scripture renders as a quoted
+// excerpt anywhere in the app)
+
+/// Cream/parchment card with a left gold accent bar, a hanging gold curly-quote
+/// glyph, the verse set in Fraunces serif, and an uppercase, letter-spaced
+/// reference beneath — Home's verse-for-today, Pathway lesson blockquotes that
+/// carry scripture, and each Plan day's passage all share this ONE component
+/// (DRY — don't fork the styling per surface). Respects the member's global
+/// text-size (font helpers) and line-spacing (`.nuruLineSpacing`) preferences.
+struct VerseQuoteCard: View {
+    let verse: String
+    let reference: String
+    /// When true (default) the card supplies its own cream background, gold
+    /// border and corner radius — use for a standalone quote. Set false to
+    /// embed just the bar + glyph + text inside a container that already
+    /// provides the surrounding card chrome (e.g. Home's verse-for-today card).
+    var cardStyle: Bool = true
+    var background: Color = Nuru.surface
+    var ink: Color = Nuru.navyDeep
+    var gold: Color = Nuru.gold
+    var referenceColor: Color = Nuru.ink400
+    var verseSize: CGFloat = 18
+
+    /// Strip any wrapping curly/straight quotes from the source text — the
+    /// hanging glyph IS the quote mark, so the verse text itself never doubles it.
+    private var displayVerse: String {
+        var t = verse.trimmingCharacters(in: .whitespacesAndNewlines)
+        let opens: Set<Character> = ["\"", "\u{201C}"]
+        let closes: Set<Character> = ["\"", "\u{201D}"]
+        if let f = t.first, opens.contains(f) { t.removeFirst() }
+        if let l = t.last, closes.contains(l) { t.removeLast() }
+        return t.trimmingCharacters(in: .whitespaces)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2).fill(gold).frame(width: 3)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 6) {
+                    Text("\u{201C}")
+                        .font(.fraunces(30, .semibold)).foregroundStyle(gold)
+                        .offset(y: -8).accessibilityHidden(true)
+                    Text(displayVerse)
+                        .font(.fraunces(verseSize)).foregroundStyle(ink)
+                        .nuruLineSpacing(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(reference.uppercased())
+                    .font(.inter(11, .semibold)).kerning(1.4)
+                    .foregroundStyle(referenceColor)
+            }
+        }
+        .padding(cardStyle ? 18 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if cardStyle {
+                RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).fill(background)
+            }
+        }
+        .overlay {
+            if cardStyle {
+                RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(gold.opacity(0.25), lineWidth: 1)
+            }
+        }
+    }
+}
+
 // MARK: - Encouragement ("You're one reflection away…" / "Beautifully done today.")
 
 /// Nuru's daily word in the header — the AI blessing written for this member.
@@ -375,7 +442,7 @@ struct HomePersonalWord: View {
             Text(text)
                 .font(.fraunces(14)).italic()
                 .foregroundStyle(Color(hex: 0x475569))
-                .lineSpacing(3)
+                .nuruLineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .gentleEntrance()
@@ -429,7 +496,7 @@ struct HomeEncouragementCard: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Text(line)
                 .font(.fraunces(14)).italic().foregroundStyle(Color(hex: 0x1F2937))
-                .lineSpacing(3)
+                .nuruLineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }

@@ -76,7 +76,7 @@ struct VerseTableauHeader: View {
                     if let t = verseText, !t.isEmpty {
                         Text("\u{201C}\(t)\u{201D}")
                             .font(verseFont).foregroundStyle(.white)
-                            .lineSpacing(4)
+                            .nuruLineSpacing(4)
                             .lineLimit(5)
                             .minimumScaleFactor(0.8)
                             .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
@@ -141,7 +141,7 @@ struct VerseShareCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 Text("\u{201C}\(verseText)\u{201D}")
                     .font(.fraunces(verseText.count > 200 ? 17 : 21))
-                    .foregroundStyle(.white).lineSpacing(5)
+                    .foregroundStyle(.white).nuruLineSpacing(5)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(reference) · \(version.uppercased())")
                     .font(.inter(13, .bold)).kerning(0.4)

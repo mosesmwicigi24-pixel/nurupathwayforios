@@ -319,7 +319,7 @@ private struct CurrentVerseCard: View {
                 Text("\u{201C}\(verse.verseText)\u{201D}")
                     .font(.fraunces(20, .medium))
                     .foregroundStyle(Nuru.navy)
-                    .lineSpacing(6)
+                    .nuruLineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
                 Text(verse.reference)
@@ -366,7 +366,7 @@ private struct LibraryVerseRow: View {
                 Text("\u{201C}\(verse.verseText)\u{201D}")
                     .font(.nCardBody)
                     .foregroundStyle(Nuru.navy)
-                    .lineSpacing(4)
+                    .nuruLineSpacing(4)
                     .multilineTextAlignment(.leading)
                     .fixedSize(horizontal: false, vertical: true)
             }

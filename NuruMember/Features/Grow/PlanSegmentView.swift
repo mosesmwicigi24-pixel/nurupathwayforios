@@ -221,8 +221,7 @@ struct PlanSegmentView: View {
                 switch seg.kind.lowercased() {
                 case "scripture":
                     DayPullQuote(text: (seg.content?.isEmpty == false ? seg.content! : (seg.reference ?? seg.title)),
-                                 caption: seg.reference ?? "Scripture",
-                                 quoted: seg.content?.isEmpty == false)
+                                 caption: seg.reference ?? "Scripture")
                 case "reading":
                     if let c = seg.content, !c.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -653,7 +652,7 @@ struct TalkItOverView: View {
             ForEach(Array(promptLines.enumerated()), id: \.offset) { _, q in
                 Text(q)
                     .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
-                    .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineSpacing(5).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)

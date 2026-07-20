@@ -1709,29 +1709,16 @@ private final class FireworksSound {
 
 // MARK: - Day reader section components (single-scroll reading)
 
-/// Gold pull-quote. Never double-quotes: verse text already carries curly quotes.
+/// The day's passage/verse — same shared VerseQuoteCard every scripture quote
+/// in the app uses, tinted for the reader's day/night palette.
 struct DayPullQuote: View {
-    let text: String; let caption: String; var quoted = true
+    let text: String; let caption: String
     @Environment(\.readerPalette) private var pal
-    private var display: String {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let already = t.hasPrefix("\u{201C}") || t.hasPrefix("\"")
-        return (quoted && !already) ? "\u{201C}\(t)\u{201D}" : t
-    }
     var body: some View {
-        HStack(spacing: 0) {
-            Rectangle().fill(pal.gold).frame(width: 3)
-            VStack(alignment: .leading, spacing: 8) {
-                Icon(.quote, size: 16, color: pal.gold)
-                Text(display).font(.fraunces(17, .regular)).italic().foregroundStyle(pal.ink).lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(caption.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(pal.inkDim)
-            }
-            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(pal.verseBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.gold.opacity(0.3), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        VerseQuoteCard(
+            verse: text, reference: caption,
+            background: pal.verseBg, ink: pal.ink, gold: pal.gold, referenceColor: pal.inkDim
+        )
     }
 }
 
@@ -1746,7 +1733,7 @@ struct DayPassage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
-                Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).lineSpacing(7)
+                Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).nuruLineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1767,7 +1754,7 @@ struct DayTalk: View {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
                     Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
-                    Text(q).font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink).lineSpacing(5)
+                    Text(q).font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink).nuruLineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1791,7 +1778,7 @@ struct DayPrayer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !prayer.isEmpty {
-                Text(prayer).font(.fraunces(16, .regular)).foregroundStyle(pal.ink).lineSpacing(6)
+                Text(prayer).font(.fraunces(16, .regular)).foregroundStyle(pal.ink).nuruLineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let b = blessing {

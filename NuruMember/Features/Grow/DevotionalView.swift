@@ -169,7 +169,7 @@ private struct VerseCard: View {
                     Text("\u{201C}\(text)\u{201D}")
                         .font(.fraunces(16, .regular))
                         .foregroundStyle(Nuru.navy)
-                        .lineSpacing(6)
+                        .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -198,7 +198,7 @@ private struct BodyParagraphs: View {
                 Text(p)
                     .font(.inter(14, .regular))
                     .foregroundStyle(Nuru.ink)
-                    .lineSpacing(7)
+                    .nuruLineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -240,7 +240,7 @@ private struct ReflectionCard: View {
                 Text(prompt ?? "What is God saying to you today?")
                     .font(.nCardBody)
                     .foregroundStyle(Nuru.muted)
-                    .lineSpacing(3)
+                    .nuruLineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
 
                 field

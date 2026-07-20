@@ -20,6 +20,11 @@ struct ThoughtSpan: Codable, Sendable, Hashable {
     var color: String? = nil
     /// A UIFont name from SelahFonts (e.g. "Fraunces-Regular").
     var font: String? = nil
+    /// Per-span line-height multiplier, 0.8–2.5 (mirrors backend
+    /// packages/backend/src/modules/thoughts/service.ts). The member's global
+    /// reading line-spacing preference (Nuru.lineSpacing) applies on top of
+    /// this at render time — this is the note's own per-paragraph choice.
+    var spacing: Double? = nil
 }
 
 struct Thought: Codable, Sendable, Identifiable {

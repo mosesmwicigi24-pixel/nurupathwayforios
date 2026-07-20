@@ -1,4 +1,99 @@
 
+## 2026-07-20 — Reading typography/spacing global pass (branch feat/reading-typography-global, this repo only)
+A coordinated 4-part pass making text size AND line spacing genuinely global
+(same idiom, same reach) and giving scripture ONE quote-card look everywhere
+it appears, plus closing the Selah spacing round-trip the backend just shipped.
+
+**1. Global line-spacing preference (mirrors Text size exactly).**
+`Theme/NuruTheme.swift`: added `Nuru.lineSpacingKey = "nuru.lineSpacing"` +
+`static var lineSpacing: CGFloat` (UserDefaults-backed, clamped 0.85–1.35 —
+same idiom as `Nuru.textScale`), plus the hook SwiftUI actually needs:
+`NuruReadingSpacing: ViewModifier` and `View.nuruLineSpacing(_ base: CGFloat =
+4)` / `.nuruReading(_:)`, both resolving to `.lineSpacing(base *
+Nuru.lineSpacing)`. `Features/Profile/SettingsView.swift`: a new "Line
+spacing" segmented control beside Text size — Compact/Default/Relaxed →
+0.85/1.0/1.35, `@AppStorage(Nuru.lineSpacingKey)`, each chip's own two
+hairlines spaced by the chip's own multiplier so the leading difference is
+visible in the picker itself, not just in body text.
+
+**2. Reading surfaces routed through `.nuruLineSpacing(_:)`.** Swapped
+`.lineSpacing(n)` → `.nuruLineSpacing(n)` (same base value, now scaled by the
+preference) on: `HomeCards.swift` (HomePersonalWord, HomeEncouragementCard),
+`VerseTableau.swift` (VerseTableauHeader, VerseShareCard), `EchoCard.swift`
+(body + quote), `LetterView.swift` (letter body), `DevotionalView.swift`
+(verse card, body paragraphs, reflection prompt), `MemoryVerseView.swift`
+(current-verse hero, library row), `LessonMarkdown.swift` (paragraph, bullet,
+numbered, quote card), `PlanSegmentView.swift` (Talk it Over prompt),
+`ReadingPlansView.swift` (DayPassage, DayTalk, DayPrayer; DayPullQuote now
+goes through VerseQuoteCard below). Left tight UI chrome alone (list-preview
+snippets with `lineLimit`, banners, buttons, table grids) — text size already
+reached all these same surfaces via the font helpers, so the two preferences
+now cover identical ground.
+
+**3. Shared `VerseQuoteCard`.** New in `Features/Home/HomeCards.swift`: cream
+parchment card (`Nuru.surface`), left gold accent bar, hanging gold ‟ glyph,
+Fraunces verse in navy, uppercase letter-spaced gray reference — built by
+combining HomeEncouragementCard/HomePersonalWord's card+glyph styling with
+EchoCard's accent bar (no new parchment color or quote glyph invented). Takes
+optional color overrides + a `cardStyle` flag (full standalone card vs. bar+
+text only, for embedding inside a container that already has its own card
+chrome) so ONE component serves every context:
+- **Home** — `HomeView.swift`'s "classic cream" verse-for-today fallback now
+  renders `VerseQuoteCard(cardStyle: false)` inside the existing outer card.
+- **Pathway lessons** — `LessonMarkdown.swift`: a blockquote whose attribution
+  matches `MLMarkdown.isScriptureReference(_:)` (a conservative "Book
+  chapter:verse" regex, ≤40 chars) renders as `VerseQuoteCard`; an ordinary
+  blockquote (no attribution, or one that isn't a reference) keeps the plain
+  `MLQuoteCard` styling — no hijacking of non-scripture quotes.
+- **Plans** — `ReadingPlansView.swift`'s `DayPullQuote` (the day's
+  scripture segment in `PlanSegmentView.swift`) now IS a `VerseQuoteCard`,
+  tinted via the existing `readerPalette` (day/night reading mode) instead of
+  fixed colors — the night-mode reading experience is preserved.
+
+**4. Selah per-span spacing (closes the backend round-trip).**
+`Models/Thought.swift`: `ThoughtSpan.spacing: Double?` (0.8–2.5 multiplier,
+matches `packages/backend/src/modules/thoughts/service.ts` exactly).
+`Features/Community/SelahRichEditor.swift`: `SelahSpacing` now exposes a
+`multiplier` (0.85/1.0/1.35 — same 3-tier scale as the new global Settings
+control) instead of raw points; `SelahRichText.paragraphStyle(forMultiplier:)`
+is the one place points get computed (`anchorPoints(6) * multiplier *
+Nuru.lineSpacing` — the global reading preference layers on top of the note's
+own choice, exactly as the backend comment on `ThoughtSpan.spacing`
+describes). `build()` applies per-span overrides via this helper; `extract()`
+reads each run's `NSParagraphStyle.lineSpacing` back, and — mirroring how
+bold/italic/color/font already differ-from-baseline and merge adjacent runs —
+records `ThoughtSpan.spacing` only when a run's spacing differs from the
+note's current document default. `RichEditorController.applySpacing` now
+applies to the current **selection** (a true per-span override, like the
+other toolbar traits) when there is one, and falls back to the whole note
+(preserving the pre-existing "space this whole thought out" gesture) when
+there isn't. `SelahEditorView.swift` passes `documentSpacing:` into
+`extract()`; `SelahView.swift`'s `spanDict` now serializes `spacing` into the
+sync payload the mutation queue sends to the backend — without this the
+round-trip was extract-only and never actually reached the server.
+
+**Honest limits:** (a) the Selah toolbar's "document default" spacing is
+still a single device-wide `@AppStorage` (pre-existing design, not introduced
+here) rather than per-thought — reopening a different note can show a
+different doc-default baseline than it was written with, though any EXPLICIT
+per-span override always round-trips correctly regardless. (b) `VerseTableauHeader`'s photo-tableau verse (the art-backed "beheld" rendering,
+distinct from the "classic cream" fallback) keeps its own bespoke overlay
+styling rather than becoming a `VerseQuoteCard`, since it renders over a
+photograph with a navy scrim, not a parchment card — it does route through
+`.nuruLineSpacing` per item 2 above, but is not visually identical to the
+quote card. (c) `MLMarkdown.isScriptureReference` is a regex heuristic — an
+attribution shaped exactly like "Book chapter:verse" but that ISN'T actually
+scripture (unlikely in lesson content) would render as a verse card; this
+trade-off was chosen over a more invasive "explicit scripture field" schema
+change, which the lesson content model doesn't currently carry.
+
+**Verify:** `xcodebuild -scheme NuruMember -configuration Debug -destination
+"id=8265F608-4A98-4E95-9074-7C54BEC4684A" build` → BUILD SUCCEEDED; `test` →
+10/10 (`ModelDecodingTests`, pre-existing suite, untouched — no new unit tests
+added this session for the UI/typography changes, which have no independent
+model layer to unit-test beyond what ModelDecodingTests already covers for
+`Thought`/`ThoughtSpan`'s tolerant decode).
+
 ## 2026-07-20 — Read with a Friend R3 client (branch feat/read-with-friend-ui, this repo only)
 Reading & Social R1 backend (pathway#392, `/v1/reading/*` — shared plan
 groups, invites, public `/join/{token}` OG page) now has iOS client UI. Read

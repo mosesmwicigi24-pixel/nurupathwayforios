@@ -67,6 +67,7 @@ final class ThoughtsViewModel: ObservableObject {
         if let i = s.italic { d["italic"] = AnyCodable(i) }
         if let c = s.color { d["color"] = AnyCodable(c) }
         if let f = s.font { d["font"] = AnyCodable(f) }
+        if let sp = s.spacing { d["spacing"] = AnyCodable(sp) }
         return AnyCodable(d)
     }
 

@@ -1,14 +1,15 @@
 // Selah's rich-text engine: a UITextView wrapped for SwiftUI (bold, italic,
-// color, font — the four traits `ThoughtSpan` can persist) plus the plain-
-// text ↔ NSAttributedString ↔ [ThoughtSpan] round-trip that keeps the wire
-// shape exactly what ThoughtsService.ThoughtUpsert expects.
+// color, font, spacing — the five traits `ThoughtSpan` can persist) plus the
+// plain-text ↔ NSAttributedString ↔ [ThoughtSpan] round-trip that keeps the
+// wire shape exactly what ThoughtsService.ThoughtUpsert expects.
 //
-// "Spacing" (owner spec) is real but intentionally NOT per-span: the backend's
-// ThoughtSpan has no spacing field (only start/end/bold/italic/color/font), so
-// baking a line-height into one run would silently do nothing for the rest of
-// the note. Line spacing is instead a single global reading/writing preference
-// (`@AppStorage`, same idiom as `readerNight`) applied to every Selah page —
-// honest to what the schema can actually carry, still a real working control.
+// Spacing round-trips per span, the same way bold/italic/color/font do: the
+// toolbar's spacing menu writes a `ThoughtSpan.spacing` multiplier (0.8–2.5,
+// matching packages/backend/src/modules/thoughts/service.ts) over the current
+// selection — or the whole note when nothing is selected, the common "space
+// this whole thought out" gesture. The member's global reading line-spacing
+// preference (Nuru.lineSpacing, Theme/NuruTheme.swift) is layered on top at
+// build() time, exactly like every other reading surface in the app.
 import SwiftUI
 import UIKit
 
@@ -32,7 +33,11 @@ enum SelahFont: String, CaseIterable, Identifiable {
     func uiFont(size: CGFloat) -> UIFont { UIFont(name: rawValue, size: size) ?? .systemFont(ofSize: size) }
 }
 
-/// Line spacing presets (global preference — see header note).
+/// Line spacing presets — the toolbar menu writes one of these onto the
+/// current selection (or the whole note) as a `ThoughtSpan.spacing`
+/// multiplier. Same three-tier scale as the app-wide Settings → Line spacing
+/// control (Compact/Default/Relaxed → 0.85/1.0/1.35) so a member's sense of
+/// "cozy vs relaxed" means the same thing everywhere.
 enum SelahSpacing: String, CaseIterable, Identifiable {
     case cozy, comfortable, relaxed
     var id: String { rawValue }
@@ -43,12 +48,17 @@ enum SelahSpacing: String, CaseIterable, Identifiable {
         case .relaxed: return "Relaxed"
         }
     }
-    var points: CGFloat {
+    /// The per-span multiplier persisted to `ThoughtSpan.spacing`.
+    var multiplier: Double {
         switch self {
-        case .cozy: return 3
-        case .comfortable: return 7
-        case .relaxed: return 12
+        case .cozy: return 0.85
+        case .comfortable: return 1.0
+        case .relaxed: return 1.35
         }
+    }
+    /// Nearest preset for a stored multiplier (used to redraw the doc default).
+    static func nearest(_ multiplier: Double) -> SelahSpacing {
+        allCases.min(by: { abs($0.multiplier - multiplier) < abs($1.multiplier - multiplier) }) ?? .comfortable
     }
 }
 
@@ -88,16 +98,26 @@ enum SelahRichText {
     static let baseSize: CGFloat = 16
     static let baseFontName = SelahFont.inter.rawValue
     static let baseColorHex = SelahColor.ink.rawValue
+    /// Points at a 1.0 multiplier, before either the per-span spacing choice
+    /// or the global Nuru.lineSpacing preference are applied.
+    static let anchorPoints: CGFloat = 6
+
+    /// The paragraph style for a given spacing multiplier — the per-span
+    /// override AND the document base both go through this, so the global
+    /// reading preference (Nuru.lineSpacing) always applies on top.
+    static func paragraphStyle(forMultiplier multiplier: Double) -> NSMutableParagraphStyle {
+        let style = NSMutableParagraphStyle()
+        style.lineSpacing = anchorPoints * CGFloat(multiplier) * Nuru.lineSpacing
+        return style
+    }
 
     /// Compose the editor's starting attributed string from the stored plain
     /// body + its formatting spans (server truth → on-screen truth).
     static func build(body: String, spans: [ThoughtSpan]?, spacing: SelahSpacing) -> NSAttributedString {
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = spacing.points
         let base: [NSAttributedString.Key: Any] = [
             .font: UIFont(name: baseFontName, size: baseSize) ?? .systemFont(ofSize: baseSize),
             .foregroundColor: UIColor(hex: baseColorHex) ?? .black,
-            .paragraphStyle: style,
+            .paragraphStyle: paragraphStyle(forMultiplier: spacing.multiplier),
         ]
         let ns = NSMutableAttributedString(string: body, attributes: base)
         let length = (body as NSString).length
@@ -121,16 +141,23 @@ enum SelahRichText {
             if let hex = span.color, let c = UIColor(hex: hex) {
                 ns.addAttribute(.foregroundColor, value: c, range: range)
             }
+            if let m = span.spacing {
+                ns.addAttribute(.paragraphStyle, value: paragraphStyle(forMultiplier: m), range: range)
+            }
         }
         return ns
     }
 
     /// Reverse direction: scan the edited attributed string's runs and emit one
-    /// ThoughtSpan per run whose bold/italic/color/font differs from baseline.
-    /// Adjacent runs with identical formatting are merged into one span.
-    static func extract(_ attr: NSAttributedString) -> (body: String, spans: [ThoughtSpan]) {
+    /// ThoughtSpan per run whose bold/italic/color/font/spacing differs from
+    /// baseline. Adjacent runs with identical formatting are merged into one
+    /// span. `documentSpacing` is the note's current default (the toolbar's
+    /// no-selection choice) — a run's spacing round-trips as an explicit
+    /// per-span override only when it differs from that default.
+    static func extract(_ attr: NSAttributedString, documentSpacing: SelahSpacing) -> (body: String, spans: [ThoughtSpan]) {
         var spans: [ThoughtSpan] = []
         var pending: ThoughtSpan?
+        let docPoints = paragraphStyle(forMultiplier: documentSpacing.multiplier).lineSpacing
         attr.enumerateAttributes(in: NSRange(location: 0, length: attr.length), options: []) { attrs, range, _ in
             let font = attrs[.font] as? UIFont
             let traits = font?.fontDescriptor.symbolicTraits ?? []
@@ -140,9 +167,19 @@ enum SelahRichText {
             let fontFamily = font.flatMap { f in SelahFont.allCases.first { $0.rawValue == f.fontName }?.rawValue }
                 ?? (font?.fontName != baseFontName ? font?.fontName : nil)
 
+            // A run's own paragraph style differs from the document default →
+            // an explicit per-span spacing override, stored as a 0.8–2.5 multiplier.
+            let runPoints = (attrs[.paragraphStyle] as? NSParagraphStyle)?.lineSpacing
+            let spacingOverride: Double? = {
+                guard let pts = runPoints, abs(pts - docPoints) > 0.4 else { return nil }
+                let raw = Double(pts / max(Nuru.lineSpacing, 0.01) / anchorPoints)
+                return min(max(raw, 0.8), 2.5)
+            }()
+
             let differsFromBase = isBold || isItalic
                 || (colorHex != nil && colorHex != baseColorHex)
                 || (fontFamily != nil && fontFamily != baseFontName)
+                || spacingOverride != nil
             guard differsFromBase else {
                 if let p = pending { spans.append(p); pending = nil }
                 return
@@ -151,9 +188,10 @@ enum SelahRichText {
                 start: range.location, end: range.location + range.length,
                 bold: isBold ? true : nil, italic: isItalic ? true : nil,
                 color: (colorHex != nil && colorHex != baseColorHex) ? colorHex : nil,
-                font: (fontFamily != nil && fontFamily != baseFontName) ? fontFamily : nil)
+                font: (fontFamily != nil && fontFamily != baseFontName) ? fontFamily : nil,
+                spacing: spacingOverride)
             if var p = pending, p.end == span.start, p.bold == span.bold, p.italic == span.italic,
-               p.color == span.color, p.font == span.font {
+               p.color == span.color, p.font == span.font, p.spacing == span.spacing {
                 p.end = span.end
                 pending = p
             } else {
@@ -247,14 +285,17 @@ final class RichEditorController: ObservableObject {
         }
     }
 
+    /// Selection present → per-span override (persists as `ThoughtSpan.spacing`
+    /// on just that range, like bold/italic/color/font). No selection → the
+    /// whole note, the common "space this thought out" gesture, which also
+    /// becomes the document's default for future typing.
     func applySpacing(_ spacing: SelahSpacing) {
         guard let tv = textView else { return }
-        let mutable = NSMutableAttributedString(attributedString: tv.attributedText)
-        let full = NSRange(location: 0, length: mutable.length)
-        let style = NSMutableParagraphStyle()
-        style.lineSpacing = spacing.points
-        mutable.addAttribute(.paragraphStyle, value: style, range: full)
+        let style = SelahRichText.paragraphStyle(forMultiplier: spacing.multiplier)
         let selection = tv.selectedRange
+        let mutable = NSMutableAttributedString(attributedString: tv.attributedText)
+        let range = selection.length > 0 ? selection : NSRange(location: 0, length: mutable.length)
+        mutable.addAttribute(.paragraphStyle, value: style, range: range)
         tv.attributedText = mutable
         tv.selectedRange = selection
         var typing = tv.typingAttributes
