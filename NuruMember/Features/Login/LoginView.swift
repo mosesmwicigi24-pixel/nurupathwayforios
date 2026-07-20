@@ -172,8 +172,8 @@ struct LoginView: View {
         }
         switch mode {
         case .reset:
-            field("RESET TOKEN", icon: .lock, id: .token) {
-                plainField("Paste the token from your email", text: $token, id: .token)
+            field("RESET CODE", icon: .lock, id: .token) {
+                plainField("Enter the code from your email", text: $token, id: .token, autocap: .characters)
             }
         case .mfa:
             field("VERIFICATION CODE", icon: .lock, id: .code) {
@@ -323,7 +323,7 @@ struct LoginView: View {
     private var subhead: String {
         switch mode {
         case .register: return "Begin your discipleship journey on Pathway."
-        case .forgot: return "Enter your account email and we'll send you a reset link."
+        case .forgot: return "Enter your account email and we'll email you a reset code."
         case .reset: return "Choose a new password for your account."
         case .mfa: return "Enter the 6-digit code from your authenticator app, or a recovery code."
         case .login: return ""
@@ -334,7 +334,7 @@ struct LoginView: View {
         switch mode {
         case .login: return busy ? "Signing in…" : "Log in"
         case .register: return busy ? "Creating…" : "Create account"
-        case .forgot: return busy ? "Sending…" : "Send reset link"
+        case .forgot: return busy ? "Sending…" : "Send reset code"
         case .reset: return busy ? "Saving…" : "Reset password"
         case .mfa: return busy ? "Verifying…" : "Verify & sign in"
         }
@@ -392,13 +392,13 @@ struct LoginView: View {
             case .forgot:
                 guard !email.trimmed.isEmpty else { error = "Enter your account email."; return }
                 if let devToken = try await MemberAPI.forgotPassword(email.trimmed) {
-                    token = devToken; notice = "Reset link generated (dev). Set your new password below."
+                    token = devToken; notice = "Reset code generated (dev). Set your new password below."
                     withAnimation(.easeInOut(duration: 0.22)) { mode = .reset }
                 } else {
-                    notice = "If an account exists for that email, a reset link is on its way."
+                    notice = "If an account exists for that email, a reset code is on its way. Enter it below."
                 }
             case .reset:
-                guard !token.trimmed.isEmpty else { error = "Paste the reset token from your email."; return }
+                guard !token.trimmed.isEmpty else { error = "Enter the reset code from your email."; return }
                 guard newPassword.count >= 8 else { error = "Password must be at least 8 characters."; return }
                 try await MemberAPI.resetPassword(token: token.trimmed, newPassword: newPassword)
                 Haptics.success()
@@ -421,7 +421,7 @@ struct LoginView: View {
             if case .http(let status, _, _, _) = e, status == 409 { return "An account with this email already exists." }
             return "Couldn't create your account. Try again."
         case .forgot: return "Couldn't request a reset. Try again."
-        case .reset: return "That reset link is invalid or has expired."
+        case .reset: return "That reset code is invalid or has expired."
         }
     }
 }
