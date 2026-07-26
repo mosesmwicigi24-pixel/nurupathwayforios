@@ -9,4 +9,12 @@ enum NuruSafeArea {
         let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
+
+    /// Bottom safe-area inset (home-indicator band) of the key window —
+    /// surfaces docked "above the tab bar" (Nuru Live's mini-window) need this
+    /// PLUS the tab bar's own on-screen height to clear it, not just a guess.
+    static var bottom: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.bottom ?? 0
+    }
 }
