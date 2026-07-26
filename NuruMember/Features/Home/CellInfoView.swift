@@ -35,12 +35,17 @@ final class CellInfoViewModel: ObservableObject {
 
 struct CellInfoView: View {
     @StateObject private var vm = CellInfoViewModel()
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
     // Nuru Live (L2) — this cell's LIVE banner opens the same full-screen
     // player as Home's church banner; "Watch replays" opens the same list,
     // scoped to this cell.
     @State private var openLiveItem: LivePlayableItem?
     @State private var openReplays = false
+    // Nuru Live (L3, broadcaster) — this screen's own Go Live button, forced
+    // to scope=cell (no picker) since we're already inside one specific cell.
+    @State private var showGoLiveSheet = false
+    @State private var goLiveSession: GoLiveSession?
 
     var body: some View {
         ZStack {
@@ -62,6 +67,7 @@ struct CellInfoView: View {
                             emptyCard
                         } else {
                             if let live = vm.liveStream { cellLiveCard(live) }
+                            if LiveBroadcastEligibility.showCellEntryPoint(auth.profile) { goLiveButton }
                             leaderCard
                             if hasRhythm { rhythmCard }
                             if let n = vm.cell?.next { nextGatheringCard(n) }
@@ -85,6 +91,31 @@ struct CellInfoView: View {
         .sheet(isPresented: $openReplays) {
             LiveReplaysView(scope: "cell", cellId: vm.cell?.cellGroupId, cellName: vm.name)
         }
+        .sheet(isPresented: $showGoLiveSheet) {
+            GoLiveSetupSheet(forcedCell: (id: auth.profile?.cellGroupId ?? "", name: vm.name)) {
+                goLiveSession = $0
+            }
+        }
+        .fullScreenCover(item: $goLiveSession) { GoLiveBroadcastView(session: $0) }
+    }
+
+    // MARK: Nuru Live (L3) — this cell's own Go Live button, forced scope=cell
+
+    private var goLiveButton: some View {
+        Button { Haptics.tap(); showGoLiveSheet = true } label: {
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.megaphone, size: 15, color: Nuru.navy)
+                    .frame(width: 32, height: 32)
+                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Text("Go live to your cell").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 15, color: Nuru.navy.opacity(0.6))
+            }
+        }
+        .buttonStyle(.pressable)
+        .padding(Nuru.S.base)
+        .background(Nuru.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
     }
 
     // MARK: Nuru Live — this cell's LIVE banner (same treatment as Home's church one)

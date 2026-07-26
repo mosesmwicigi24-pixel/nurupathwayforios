@@ -287,6 +287,9 @@ struct HomeView: View {
     // Nuru Live (L2, viewer-only) — the church-scope LIVE banner's player + replays.
     @State private var openLiveItem: LivePlayableItem?
     @State private var openReplays = false
+    // Nuru Live (L3, broadcaster) — Home's header "Go Live" icon.
+    @State private var showGoLiveSheet = false
+    @State private var goLiveSession: GoLiveSession?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
     // third discipline lands mid-session. Opacity-only, and Reduce Motion never
@@ -482,6 +485,10 @@ struct HomeView: View {
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
         .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church") }
         .sheet(isPresented: $openReplays) { LiveReplaysView(scope: "church") }
+        .sheet(isPresented: $showGoLiveSheet) {
+            GoLiveSetupSheet { goLiveSession = $0 }
+        }
+        .fullScreenCover(item: $goLiveSession) { GoLiveBroadcastView(session: $0) }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
                 // Read on the server — clear the knock locally too.
@@ -599,6 +606,22 @@ struct HomeView: View {
                         .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.pressable).padding(.leading, 8)
+                // Nuru Live (L3) — gold "Go Live" affordance, visible ONLY when
+                // the signed-in profile actually holds the `live:go` grant
+                // (client-side advisory gate; the server is the real one).
+                if LiveBroadcastEligibility.canGoLive(auth.profile) {
+                    Button {
+                        Haptics.tap()
+                        showGoLiveSheet = true
+                    } label: {
+                        Image(systemName: "video.fill").font(.system(size: 16))
+                            .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
+                            .background(Nuru.gold, in: Circle())
+                            .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+                    }
+                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .accessibilityLabel("Go live")
+                }
                 progressRing.padding(.leading, 8)
             }
             Text("\(greeting), \(firstName).")
