@@ -355,6 +355,13 @@ struct GivingStatementView: View {
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+                // "Named giving" (custom sheet, optional): the member's own
+                // label for this gift, when set.
+                if let name = g.accountName, !name.isEmpty {
+                    Text("\u{201C}\(name)\u{201D}")
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x5B6472))
+                        .lineLimit(1)
+                }
                 // Show the M-Pesa SMS receipt code (UG3J29U3OL) once settled;
                 // never the internal checkout id — hide the line if absent.
                 if let ref = g.receiptCode, !ref.isEmpty {

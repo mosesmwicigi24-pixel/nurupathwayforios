@@ -15,6 +15,9 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     /// e.g. UG3J29U3OL). Present once a mobile-money gift settles; null for
     /// older gifts / non-mobile-money methods.
     var receiptCode: String? = nil
+    /// "Named giving" (custom sheet, optional): the member's own label for this
+    /// gift (e.g. "Tithe", "Building Fund"), as entered. Null when not used.
+    var accountName: String? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -32,6 +35,7 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
         method = try? c.decodeIfPresent(String.self, forKey: .method)
         providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
         receiptCode = try? c.decodeIfPresent(String.self, forKey: .receiptCode)
+        accountName = try? c.decodeIfPresent(String.self, forKey: .accountName)
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
     }
@@ -86,6 +90,9 @@ struct GivingDetail: Codable, Sendable {
     let method: String?
     let providerRef: String?
     var receiptCode: String? = nil   // M-Pesa SMS receipt code (e.g. UG3J29U3OL)
+    /// "Named giving" (custom sheet, optional): the member's own label for this
+    /// gift, as entered. Null when not used.
+    var accountName: String? = nil
     let createdAt: String
     let settledAt: String?
     let scheduleId: String?
@@ -100,6 +107,7 @@ struct GivingDetail: Codable, Sendable {
         method = try? c.decodeIfPresent(String.self, forKey: .method)
         providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
         receiptCode = try? c.decodeIfPresent(String.self, forKey: .receiptCode)
+        accountName = try? c.decodeIfPresent(String.self, forKey: .accountName)
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
         scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
