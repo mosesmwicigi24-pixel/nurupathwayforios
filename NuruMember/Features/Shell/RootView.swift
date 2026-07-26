@@ -1,12 +1,18 @@
 // The signed-in shell — the native port of navigation/RootNavigator.tsx +
-// BottomTabBar.tsx. Seven primary destinations on a custom navy bar with a gold
-// active icon + label + top indicator dot (Home · Pathway · Plans · Events ·
-// Chat · Give · Profile). The system tab bar is hidden; we draw our own to match
-// the RN design exactly.
+// BottomTabBar.tsx. Nuru Live L4 (docs/LIVE_STREAMING.md) restructured the bar
+// from seven destinations down to Home · Pathway · Plans · You · Live: "You"
+// folds Events + Chat + Profile together (the owner's spec), and — since the
+// owner's bar has no seat for Give either — Give rides along inside "You" too
+// rather than losing its front door. "Live" only appears for members holding
+// the `live:go` permission (LiveBroadcastEligibility); everyone else keeps a
+// four-tab bar and watches through Home / the cell card as before. A custom
+// navy bar draws a gold active icon + label + top indicator dot; the system
+// tab bar is hidden so we can match the design exactly (and so a conditional
+// 5th/4th tab doesn't fight a stock TabView's own layout).
 import SwiftUI
 
 enum AppTab: Hashable, CaseIterable {
-    case home, pathway, plans, events, chat, give, profile
+    case home, pathway, plans, you, live
 
     /// Debug-only: lets a screenshot script open the app on a chosen tab via the
     /// NURU_TAB launch env var (e.g. SIMCTL_CHILD_NURU_TAB=pathway). Defaults home.
@@ -15,10 +21,8 @@ enum AppTab: Hashable, CaseIterable {
         switch ProcessInfo.processInfo.environment["NURU_TAB"] {
         case "pathway": return .pathway
         case "plans": return .plans
-        case "events": return .events
-        case "chat": return .chat
-        case "give": return .give
-        case "profile": return .profile
+        case "you": return .you
+        case "live": return .live
         default: return .home
         }
         #else
@@ -31,10 +35,8 @@ enum AppTab: Hashable, CaseIterable {
         case .home: return "Home"
         case .pathway: return "Pathway"
         case .plans: return "Plans"
-        case .events: return "Events"
-        case .chat: return "Chat"
-        case .give: return "Give"
-        case .profile: return "Profile"
+        case .you: return "You"
+        case .live: return "Live"
         }
     }
     var icon: Lucide {
@@ -42,8 +44,31 @@ enum AppTab: Hashable, CaseIterable {
         case .home: return .house
         case .pathway: return .bookOpen
         case .plans: return .bookMarked
-        case .events: return .calendarDays
+        case .you: return .user
+        case .live: return .camera
+        }
+    }
+}
+
+/// The four screens folded into the "You" tab (L4). Chat is the default/
+/// "heart" segment per the owner's spec; Events, Give and Profile are peers
+/// reached through the same capsule segmented control Chat already uses
+/// internally (My Space / Chat / My Discipler / My Pastor) — just one level up.
+enum YouSegment: Hashable, CaseIterable {
+    case chat, events, give, profile
+
+    var label: String {
+        switch self {
+        case .chat: return "Chat"
+        case .events: return "Events"
+        case .give: return "Give"
+        case .profile: return "Profile"
+        }
+    }
+    var icon: Lucide {
+        switch self {
         case .chat: return .messageCircle
+        case .events: return .calendarDays
         case .give: return .handHeart
         case .profile: return .user
         }
@@ -84,18 +109,24 @@ final class TabRouter: ObservableObject {
     /// a nuru://join/{token} deep link (RootView.onOpenURL) or a
     /// plan_group_invite_received notification tap.
     @Published var readingInviteToken: String?
+    /// Which segment of the "You" tab a cross-tab link (notification tap,
+    /// widget URL, a Home "See events" / "Give now" button) should land on.
+    /// YouTabView consumes this (pushes its own segment state) and clears it.
+    @Published var youSegment: YouSegment?
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
-    func openEvent(_ o: CalendarOccurrence) { eventLink = o; selected = .events }
+    func openEvent(_ o: CalendarOccurrence) { eventLink = o; openYou(.events) }
     func openAnnouncement(_ id: String) { announcementLink = id; selected = .home }
     func openReadingInvite(_ token: String) { readingInviteToken = token; selected = .plans }
+    func openYou(_ seg: YouSegment) { youSegment = seg; selected = .you }
 }
 
 struct RootView: View {
     @EnvironmentObject private var tabs: TabRouter
+    @EnvironmentObject private var auth: AuthStore
     // Tabs that have been opened at least once — kept alive so their state (scroll,
-    // loaded data) survives switching, without loading all seven on launch.
+    // loaded data) survives switching, without loading all five on launch.
     @State private var loaded: Set<AppTab> = [AppTab.initialTab]
     @EnvironmentObject private var sync: SyncCoordinator
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
@@ -116,13 +147,23 @@ struct RootView: View {
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
 
-    // A hand-rolled tab container instead of TabView: a stock TabView with 7 tabs
-    // collapses tabs 5–7 into a system "More" navigation controller on iPhone, which
-    // wrapped Chat/Give/Profile in a nav bar (the stray ‹ + "More" screen) and blocked
-    // their full-bleed headers. Rendering the selected tab directly avoids all of it.
+    /// The tabs actually shown on the bar: "Live" only for a member whose /me
+    /// permissions include `live:go` (client-side advisory gate — the server
+    /// re-checks on every write regardless, same rule ModuleView/GoLiveSetupSheet
+    /// already use). Everyone else gets the four-tab bar the owner's spec shows
+    /// for non-broadcasters.
+    private var visibleTabs: [AppTab] {
+        AppTab.allCases.filter { $0 != .live || LiveBroadcastEligibility.canGoLive(auth.profile) }
+    }
+
+    // A hand-rolled tab container instead of TabView: a stock TabView with this
+    // many tabs collapses the tail into a system "More" navigation controller on
+    // iPhone, which wrapped Chat/Give/Profile in a nav bar (the stray ‹ + "More"
+    // screen) and blocked their full-bleed headers. Rendering the selected tab
+    // directly avoids all of it (and lets the tab COUNT itself vary by profile).
     var body: some View {
         ZStack {
-            ForEach(AppTab.allCases, id: \.self) { t in
+            ForEach(visibleTabs, id: \.self) { t in
                 if loaded.contains(t) {
                     tabView(t)
                         .opacity(t == tabs.selected ? 1 : 0)
@@ -173,7 +214,7 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) {
             if !tabs.chromeHidden {
-                NuruTabBar(selection: $tabs.selected)
+                NuruTabBar(selection: $tabs.selected, tabs: visibleTabs)
                     .ignoresSafeArea(edges: .bottom)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
             }
@@ -200,11 +241,11 @@ struct RootView: View {
             } else if template.hasPrefix("level"), level > 0 {
                 tabs.openPathway(.level(level))
             } else if template.hasPrefix("event") {
-                tabs.selected = .events
+                tabs.openYou(.events)
             } else if template.hasPrefix("giving") || template.hasPrefix("payment") {
-                tabs.selected = .give
+                tabs.openYou(.give)
             } else if template.hasPrefix("badge") || template.hasPrefix("certificate") {
-                tabs.selected = .profile
+                tabs.openYou(.profile)
             } else if template.hasPrefix("reflection") {
                 tabs.selected = .pathway
             } else if template == "plan_group_invite_received", !inviteToken.isEmpty {
@@ -229,9 +270,18 @@ struct RootView: View {
             switch host {
             case "pathway": tabs.selected = .pathway
             case "plans":   tabs.selected = .plans
-            case "chat":    tabs.selected = .chat
-            case "events":  tabs.selected = .events
-            case "give":    tabs.selected = .give
+            // Pre-L4 widget/shortcut hosts — still land on the right content,
+            // now inside the You tab's matching segment (Give/Events/Chat no
+            // longer own a bottom-bar slot).
+            case "chat":    tabs.openYou(.chat)
+            case "events":  tabs.openYou(.events)
+            case "give":    tabs.openYou(.give)
+            case "you":     tabs.selected = .you
+            case "live":
+                // Only navigate if this member actually has a Live tab —
+                // otherwise silently fall through to the default (Home) rather
+                // than selecting a tab that isn't on the bar.
+                if LiveBroadcastEligibility.canGoLive(auth.profile) { tabs.selected = .live }
             case "radio":   NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
             case "join":
                 let token = url.pathComponents.last(where: { $0 != "/" }) ?? url.lastPathComponent
@@ -258,6 +308,17 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showLocationInvite) { LocationInviteSheet() }
+        // The You tab's icon badge (and its Chat segment chip) must be right
+        // even for a member who hasn't opened the You tab yet this session —
+        // ChatInboxViewModel itself keeps it current once Chat has loaded, but
+        // this seeds/refreshes it in the background the same way HomeView
+        // polls the radio ON AIR state.
+        .task {
+            while !Task.isCancelled {
+                await ChatBadge.shared.refresh()
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+        }
     }
 
     // Type-ERASED per tab (AnyView): otherwise RootView.body's type embeds all
@@ -272,10 +333,8 @@ struct RootView: View {
         case .home:    return AnyView(HomeView())
         case .pathway: return AnyView(PathwayView())
         case .plans:   return AnyView(PlansTab())
-        case .events:  return AnyView(EventsView())
-        case .chat:    return AnyView(ChatView())
-        case .give:    return AnyView(GivingView())
-        case .profile: return AnyView(ProfileView())
+        case .you:     return AnyView(YouTabView())
+        case .live:    return AnyView(NuruLiveTabView())
         }
     }
 }
@@ -355,6 +414,14 @@ private struct PlansTab: View {
 /// Custom bottom bar: navy, gold active (icon + label + top dot), dim inactive.
 private struct NuruTabBar: View {
     @Binding var selection: AppTab
+    /// The tabs to render, in order — RootView passes the profile-filtered
+    /// list (Live only for a `live:go` holder) so this bar never offers a tab
+    /// that doesn't exist for the signed-in member.
+    let tabs: [AppTab]
+    /// The dms-unread + pending-connection-request count — surfaced on the
+    /// You tab's icon exactly like the Chat segment's own chip (ChatBadge is
+    /// the one shared source both read from).
+    @ObservedObject private var chatBadge = ChatBadge.shared
     /// The gold indicator is ONE shared capsule that springs between tabs
     /// (matched geometry) instead of blinking out of one slot and into another.
     @Namespace private var indicator
@@ -362,7 +429,7 @@ private struct NuruTabBar: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            ForEach(AppTab.allCases, id: \.self) { t in
+            ForEach(tabs, id: \.self) { t in
                 let focused = selection == t
                 Button {
                     // Re-taps on the current tab are a no-op — no haptic, no bounce.
@@ -371,13 +438,16 @@ private struct NuruTabBar: View {
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selection = t }
                 } label: {
                     VStack(spacing: 3) {
-                        Icon(t.icon, size: 21, color: focused ? Nuru.navy : Self.inactive)
-                            // One subtle bounce on arrival: each selection change runs
-                            // the phase cycle once, and only the newly-focused icon
-                            // actually scales (others stay at 1).
-                            .phaseAnimator([false, true], trigger: selection) { icon, bouncing in
-                                icon.scaleEffect(bouncing && focused && !reduceMotion ? 1.12 : 1)
-                            } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
+                        ZStack(alignment: .topTrailing) {
+                            Icon(t.icon, size: 21, color: focused ? Nuru.navy : Self.inactive)
+                                // One subtle bounce on arrival: each selection change runs
+                                // the phase cycle once, and only the newly-focused icon
+                                // actually scales (others stay at 1).
+                                .phaseAnimator([false, true], trigger: selection) { icon, bouncing in
+                                    icon.scaleEffect(bouncing && focused && !reduceMotion ? 1.12 : 1)
+                                } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
+                            if t == .you, chatBadge.count > 0 { badgeDot(chatBadge.count) }
+                        }
                         Text(t.label).font(.inter(10.5, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
                     }
                     .frame(maxWidth: .infinity)
@@ -402,6 +472,17 @@ private struct NuruTabBar: View {
         .padding(.bottom, Self.safeBottom)
         .background(Nuru.paper)
         .overlay(alignment: .top) { Rectangle().fill(Nuru.border).frame(height: 1) }
+    }
+
+    /// Small red count pill — capped "9+" — top-trailing of the You icon.
+    private func badgeDot(_ n: Int) -> some View {
+        Text(n > 9 ? "9+" : "\(n)")
+            .font(.inter(9, .bold)).foregroundStyle(.white)
+            .padding(.horizontal, n > 9 ? 4 : 0)
+            .frame(minWidth: 15, minHeight: 15)
+            .background(Color(hex: 0xDC2626), in: Capsule())
+            .overlay(Capsule().stroke(Nuru.paper, lineWidth: 1.5))
+            .offset(x: 11, y: -4)
     }
 
     // Cream tab-bar palette (member-app look): navy active, muted-gray inactive,

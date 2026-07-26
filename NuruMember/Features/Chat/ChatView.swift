@@ -111,6 +111,15 @@ final class ChatInboxViewModel: ObservableObject {
             PastoralPrefs.muted = row.muted
         }
         loading = false
+        publishBadge()
+    }
+
+    /// Keeps the You tab's icon badge + segment chip in sync with the SAME
+    /// number the Chat segment button already computes inline (L4 restructure
+    /// — Chat now lives inside the You tab, so its unread needs to reach
+    /// outside this view model; see ChatBadge).
+    private func publishBadge() {
+        ChatBadge.shared.set(dms.reduce(0) { $0 + $1.unread } + pendingIncomingCount)
     }
 
     /// My Discipler tab tap → GET /chat/discipler/conversation (lazily creates
@@ -242,6 +251,7 @@ final class ChatInboxViewModel: ObservableObject {
         async let connectionsReq = try? MemberAPI.listConnections()
         if let inc = await incomingReq { incomingRequests = inc }
         if let c = await connectionsReq { connections = c }
+        publishBadge()
     }
 
     /// POST .../decline.
@@ -251,6 +261,7 @@ final class ChatInboxViewModel: ObservableObject {
         defer { connectingPersonId = nil }
         _ = try? await MemberAPI.declineConnectionRequest(req.requestId)
         if let inc = try? await MemberAPI.listConnectionRequests(direction: "incoming") { incomingRequests = inc }
+        publishBadge()
     }
 
     /// POST /chat/spaces/{id}/join then refresh — the space moves to "your
@@ -313,6 +324,12 @@ private func chatTime(_ iso: String?) -> String {
 }
 
 struct ChatView: View {
+    /// True when hosted as the "Chat" segment inside the You tab (L4) rather
+    /// than as its own top-level tab — the You tab's own segmented-control bar
+    /// already clears the status bar, so this header's hero block only needs
+    /// a little breathing room, not a second 60pt reservation for it.
+    var embeddedInYou: Bool = false
+
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var vm = ChatInboxViewModel()
     @State private var path = NavigationPath()
@@ -425,7 +442,7 @@ struct ChatView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, embeddedInYou ? Nuru.S.base : 60)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
