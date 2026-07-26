@@ -12,6 +12,10 @@ final class CellInfoViewModel: ObservableObject {
     @Published var cell: CellSummary.Cell?
     @Published var loading = true
     @Published var error: String?
+    /// GET /live/now, filtered to the "cell" scope row (if any) — the server
+    /// already scopes that row to the caller's OWN cell, so no cell id is sent
+    /// up; this is this screen's own single fetch, not a second endpoint.
+    @Published var liveStream: LiveStreamSummary?
 
     var name: String { featured?.name ?? cell?.name ?? "Your cell" }
     var isEmpty: Bool { featured == nil && cell == nil }
@@ -20,8 +24,10 @@ final class CellInfoViewModel: ObservableObject {
         loading = true; error = nil
         async let fc = try? MemberAPI.featuredCell()
         async let cs = try? MemberAPI.cellSummary()
+        async let live = try? MemberAPI.fetchLiveNow()
         featured = await fc ?? nil
         cell = (await cs)?.cell
+        liveStream = (await live ?? []).first { $0.scope == "cell" }
         if isEmpty { error = "Couldn't load your cell." }
         loading = false
     }
@@ -30,6 +36,11 @@ final class CellInfoViewModel: ObservableObject {
 struct CellInfoView: View {
     @StateObject private var vm = CellInfoViewModel()
     @Environment(\.dismiss) private var dismiss
+    // Nuru Live (L2) — this cell's LIVE banner opens the same full-screen
+    // player as Home's church banner; "Watch replays" opens the same list,
+    // scoped to this cell.
+    @State private var openLiveItem: LivePlayableItem?
+    @State private var openReplays = false
 
     var body: some View {
         ZStack {
@@ -50,10 +61,12 @@ struct CellInfoView: View {
                         } else if vm.isEmpty {
                             emptyCard
                         } else {
+                            if let live = vm.liveStream { cellLiveCard(live) }
                             leaderCard
                             if hasRhythm { rhythmCard }
                             if let n = vm.cell?.next { nextGatheringCard(n) }
                             statsGrid
+                            watchReplaysButton
                             openCommunityButton
                         }
                     }
@@ -66,6 +79,39 @@ struct CellInfoView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.isEmpty { await vm.load() } }
+        .fullScreenCover(item: $openLiveItem) { item in
+            LiveViewerPlayerView(item: item, replaysScope: "cell", replaysCellId: vm.cell?.cellGroupId, replaysCellName: vm.name)
+        }
+        .sheet(isPresented: $openReplays) {
+            LiveReplaysView(scope: "cell", cellId: vm.cell?.cellGroupId, cellName: vm.name)
+        }
+    }
+
+    // MARK: Nuru Live — this cell's LIVE banner (same treatment as Home's church one)
+
+    private func cellLiveCard(_ stream: LiveStreamSummary) -> some View {
+        HomeLiveBannerCard(
+            stream: stream,
+            onWatch: { Haptics.action(); openLiveItem = .live(stream) },
+            onReplays: { openReplays = true }
+        )
+    }
+
+    private var watchReplaysButton: some View {
+        Button { Haptics.tap(); openReplays = true } label: {
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.calendarClock, size: 15, color: Nuru.goldChipText)
+                    .frame(width: 32, height: 32)
+                    .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Text("Watch replays").font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 15, color: Nuru.faint)
+            }
+        }
+        .buttonStyle(.pressable)
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     /// One shimmering placeholder card (loading state only).

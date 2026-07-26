@@ -156,6 +156,14 @@ actor APIClient {
 
     var hasSession: Bool { accessToken != nil }
 
+    /// The API's ORIGIN with the versioned `/v1` surface stripped — for
+    /// resolving server-relative paths that live BESIDE the API, not under it
+    /// (Nuru Live's `hls_url` / `recording_url`, e.g. "/live/church/index.m3u8",
+    /// which nginx serves directly, never through `/v1`).
+    var originURL: URL {
+        baseURL.lastPathComponent == "v1" ? baseURL.deletingLastPathComponent() : baseURL
+    }
+
     func setOnSessionExpired(_ fn: @escaping @Sendable () -> Void) { onSessionExpired = fn }
 
     func setSession(access: String?, refresh: String?) {

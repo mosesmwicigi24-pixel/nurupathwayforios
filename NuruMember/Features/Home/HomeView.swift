@@ -48,6 +48,11 @@ final class HomeViewModel: ObservableObject {
     @Published var onAir: RadioProgram?
     /// The ONE admin-featured event (portal homepage toggle) — nil when unset.
     @Published var featuredEvent: FeaturedEvent?
+    /// GET /live/now rows — a live church stream (if any) plus a live stream
+    /// for the member's OWN cell (server-scoped; never re-filtered by cell
+    /// here). Empty most of the time; the LIVE banner only renders while a
+    /// church-scope row is present.
+    @Published var liveStreams: [LiveStreamSummary] = []
 
     @Published var loading = true
     @Published var error: String?
@@ -86,6 +91,7 @@ final class HomeViewModel: ObservableObject {
         async let hev = try? MemberAPI.homeEvents()
         async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
+        async let live = try? MemberAPI.fetchLiveNow()
 
         self.letter = (await letter) ?? nil
         self.pathway = await pathway
@@ -128,6 +134,7 @@ final class HomeViewModel: ObservableObject {
         self.homeEvents = await hev ?? []
         self.onAir = Self.liveOnly((await radio) ?? nil)
         self.featuredEvent = (await fev) ?? nil
+        self.liveStreams = await live ?? []
 
         if self.pathway == nil { error = "Couldn't load your dashboard." }
         loading = false
@@ -231,6 +238,15 @@ final class HomeViewModel: ObservableObject {
         return p
     }
 
+    /// Nuru Live re-check — piggybacks Home's existing refresh cycle (this is
+    /// called from a 60s timer that only RUNS while something is confirmed
+    /// live; see HomeView's `.task(id: vm.liveStreams.isEmpty)`), so the LIVE
+    /// banner's "started Xm ago · N watching" line stays current and the
+    /// banner disappears promptly once the stream ends.
+    func refreshLiveNow() async {
+        liveStreams = (try? await MemberAPI.fetchLiveNow()) ?? []
+    }
+
     // Two-month calendar window around today (drives the Live-now banner; the
     // "Upcoming" section now renders GET /home/events curated rows instead).
     private static var calFrom: String {
@@ -268,6 +284,9 @@ struct HomeView: View {
     @State private var verseShareDialog = false
     @State private var verseShareImage: VerseImagePayload?
     @State private var openedLetter: PastoralLetter?   // Sunday Letter sheet
+    // Nuru Live (L2, viewer-only) — the church-scope LIVE banner's player + replays.
+    @State private var openLiveItem: LivePlayableItem?
+    @State private var openReplays = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
     // third discipline lands mid-session. Opacity-only, and Reduce Motion never
@@ -312,6 +331,13 @@ struct HomeView: View {
         // inserts at the top, every other row must keep its identity — offset
         // keys made SwiftUI tear down and rebuild every card below it.
         var s: [(id: String, view: AnyView)] = []
+        // Nuru Live — the church-scope LIVE banner sits at the very TOP of the
+        // whole feed, above even the load-error strip: a live broadcast is the
+        // most urgent thing on the screen. Hidden entirely when nothing church-
+        // scope is live (no fake "off air" chrome on Home).
+        if let live = churchLiveStream {
+            s.append(("livebanner", AnyView(liveBannerCard(live))))
+        }
         // The whole dashboard failed (offline / server down) — a quiet retry
         // strip on top; the sections below degrade gracefully as usual.
         if vm.error != nil && vm.pathway == nil {
@@ -454,6 +480,8 @@ struct HomeView: View {
             DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
+        .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church") }
+        .sheet(isPresented: $openReplays) { LiveReplaysView(scope: "church") }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
                 // Read on the server — clear the knock locally too.
@@ -479,6 +507,20 @@ struct HomeView: View {
         }
         // The floating radio pill now lives in RootView (island-style, top
         // center, on EVERY tab) — playback still runs through RadioCenter.
+        // Nuru Live — a 60s re-check, but ONLY while a stream is confirmed
+        // live: `.task(id:)` re-runs this whenever the id flips, so the loop
+        // starts the instant `load()`/pull-to-refresh finds a live row and is
+        // torn down (SwiftUI cancels the previous task) the instant it doesn't —
+        // no aggressive polling loop running for the 99% of the time nothing
+        // is live.
+        .task(id: vm.liveStreams.isEmpty) {
+            guard !vm.liveStreams.isEmpty else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled else { return }
+                await vm.refreshLiveNow()
+            }
+        }
     }
 
     /// DEBUG-only: deep-link into a pushed screen for screenshot verification
@@ -740,6 +782,21 @@ struct HomeView: View {
             posterUrl: info.occ.primaryImageUrl,
             startsInMin: info.startsInMin
         ) { tabs.openEvent(info.occ) }   // events live on the Events tab
+    }
+
+    // MARK: 0d — Nuru Live LIVE banner (church scope; the cell twin lives in
+    // CellInfoView, filtered from this SAME /live/now response — no second call)
+
+    private var churchLiveStream: LiveStreamSummary? {
+        vm.liveStreams.first { $0.scope == "church" }
+    }
+
+    private func liveBannerCard(_ stream: LiveStreamSummary) -> some View {
+        HomeLiveBannerCard(
+            stream: stream,
+            onWatch: { Haptics.action(); openLiveItem = .live(stream) },
+            onReplays: { openReplays = true }
+        )
     }
 
     // MARK: 1 — Priority strip (reflection due; appears at top AND before progress)

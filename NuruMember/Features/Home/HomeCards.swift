@@ -802,6 +802,87 @@ struct HomeOnAirCard: View {
 }
 
 
+// MARK: - Nuru Live LIVE banner (church-scope stream — pinned at the very top
+// of Home while live; the cell-scope twin lives in CellInfoView)
+
+/// The prominent "we're live" card: pulsing red LIVE dot, title, "started Xm
+/// ago · N watching", a gold "Watch live" CTA and a quieter "Replays" link.
+/// Audio-kind streams show a waveform glyph instead of a camera — there is no
+/// video to preview.
+struct HomeLiveBannerCard: View {
+    let stream: LiveStreamSummary
+    let onWatch: () -> Void
+    let onReplays: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    private var metaLine: String {
+        let started = LiveFormat.startedAgo(stream.startedAt) ?? "live now"
+        return "\(started) · \(stream.viewerCount) watching"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button { Haptics.tap(); onWatch() } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle().fill(HomeFig.gold.opacity(0.16)).frame(width: 44, height: 44)
+                            Icon(stream.isAudio ? .audioLines : .camera, size: 19, color: HomeFig.gold)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 5) {
+                                Circle().fill(Color.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
+                                Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(HomeFig.liveRed, in: Capsule())
+                            Text(stream.title).font(.inter(15, .bold)).foregroundStyle(.white).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+                    }
+                    Text(metaLine)
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
+                        .padding(.top, 8)
+                }
+            }
+            .buttonStyle(.pressableSubtle)
+
+            HStack(spacing: 10) {
+                Button { Haptics.tap(); onWatch() } label: {
+                    HStack(spacing: 6) {
+                        Icon(.play, size: 12, color: HomeFig.navy)
+                        Text("Watch live").font(.inter(12, .bold)).foregroundStyle(HomeFig.navy)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(HomeFig.gold, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                Button { Haptics.tap(); onReplays() } label: {
+                    Text("Replays").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
+        }
+        .padding(14)
+        .background(
+            LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark], startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(HomeFig.liveRed.opacity(0.4), lineWidth: 1))
+        .shadow(color: HomeFig.liveRed.opacity(0.2), radius: 10, y: 5)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
+        }
+    }
+}
+
 // MARK: - "New today" pulsing dot (devotional tile in the Grow grid)
 
 struct HomePulseDot: View {
