@@ -490,15 +490,18 @@ extension MemberAPI {
     }
 
     /// POST /giving/intents — create a real gift intent (server-authoritative).
+    /// `accountName` is "named giving" (custom sheet, optional): rides the
+    /// M-Pesa STK push AccountReference (sanitized server-side) and persists on
+    /// the transaction for receipts/statements/portal Finance.
     static func giving(fund: String, amountMinor: Int, currency: String,
-                       method: String, phoneNumber: String? = nil) async throws -> GivingIntentResult {
+                       method: String, phoneNumber: String? = nil, accountName: String? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
-            let method: String; let phoneNumber: String?; let idempotencyKey: String
+            let method: String; let phoneNumber: String?; let accountName: String?; let idempotencyKey: String
         }
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
-                       method: method, phoneNumber: phoneNumber, idempotencyKey: UUID().uuidString),
+                       method: method, phoneNumber: phoneNumber, accountName: accountName, idempotencyKey: UUID().uuidString),
             as: GivingIntentResult.self)
     }
 
