@@ -9,8 +9,10 @@
 /* Begin PBXBuildFile section */
 		1F49253E25E96E56CF6E97A8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
 		5CC7B488EBD80946899A64C0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA0216FE218D406A8E8CFD9 /* HaishinKit */; };
 		ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */; };
 		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0A2919201E148762801CB /* RTMPHaishinKit */; };
 		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
 /* End PBXBuildFile section */
 
@@ -74,6 +76,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */,
+				DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -189,6 +193,10 @@
 				2000000000000000000000D1 /* NuruMember */,
 			);
 			name = NuruMember;
+			packageProductDependencies = (
+				6DA0216FE218D406A8E8CFD9 /* HaishinKit */,
+				A1C0A2919201E148762801CB /* RTMPHaishinKit */,
+			);
 			productName = NuruMember;
 			productReference = 2000000000000000000000F1 /* NuruMember.app */;
 			productType = "com.apple.product-type.application";
@@ -235,6 +243,9 @@
 				Base,
 			);
 			mainGroup = 2000000000000000000000B1;
+			packageReferences = (
+				6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */,
+			);
 			productRefGroup = 2000000000000000000000C1 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -449,7 +460,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID protects the Broadcast — the private conversations between you and every member. Only you can open them.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone only when a discipler records a voice note for their congregation on a lesson.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone when a discipler records a voice note, and when a broadcaster goes live.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -484,7 +495,7 @@
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID protects the Broadcast — the private conversations between you and every member. Only you can open them.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone only when a discipler records a voice note for their congregation on a lesson.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone when a discipler records a voice note, and when a broadcaster goes live.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -617,6 +628,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/HaishinKit/HaishinKit.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.2.5;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6DA0216FE218D406A8E8CFD9 /* HaishinKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */;
+			productName = HaishinKit;
+		};
+		A1C0A2919201E148762801CB /* RTMPHaishinKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */;
+			productName = RTMPHaishinKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2000000000000000000000A1 /* Project object */;
 }

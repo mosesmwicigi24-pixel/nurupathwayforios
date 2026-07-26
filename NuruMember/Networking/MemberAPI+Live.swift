@@ -1,9 +1,28 @@
-// Nuru Live — viewer endpoints (L2, viewer-only; no broadcaster UI). Wire
-// shapes mirror packages/backend/src/modules/live/{index.ts,service.ts}
-// exactly; see Models/Live.swift for the tolerant DTOs.
+// Nuru Live — viewer endpoints (L2) + broadcaster endpoints (L3). Wire shapes
+// mirror packages/backend/src/modules/live/{index.ts,service.ts} exactly; see
+// Models/Live.swift for the tolerant DTOs.
 import Foundation
 
 extension MemberAPI {
+    /// POST /live/streams — mint a new stream + publish key. Gated client-side
+    /// (advisory only — see LiveBroadcastEligibility) on `live:go`; the server
+    /// re-checks scope eligibility regardless (403 FORBIDDEN_SCOPE) and
+    /// enforces "one live stream per scope" (409 CONFLICT).
+    static func startLiveStream(scope: String, cellId: String?, title: String, kind: String) async throws -> CreatedLiveStream {
+        struct Body: Encodable { let scope: String; let cellId: String?; let title: String; let kind: String }
+        return try await APIClient.shared.post("live/streams",
+                                               body: Body(scope: scope, cellId: cellId, title: title, kind: kind),
+                                               as: CreatedLiveStream.self)
+    }
+
+    /// POST /live/streams/{id}/end — idempotent (a second call, e.g. after a
+    /// retry timeout, is a no-op that returns the same ended state). We don't
+    /// need the response body: the broadcast screen already tracks its own
+    /// elapsed time and peak viewer count client-side across its 15s polls.
+    static func endLiveStream(streamId: String) async throws {
+        _ = try await APIClient.shared.postEmpty("live/streams/\(streamId)/end", as: EmptyResponse.self)
+    }
+
     /// GET /live/now — church stream (if live) plus a cell stream ONLY for the
     /// caller's own cell. The server already scopes this; callers just filter
     /// the returned rows by `scope` (never re-scope by cell client-side).

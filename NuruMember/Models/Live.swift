@@ -141,3 +141,50 @@ struct LivePlayableItem: Identifiable, Hashable {
             viewerCount: nil, heartbeatStreamId: nil)
     }
 }
+
+// MARK: - Broadcaster-only wire model (L3) — POST /live/streams response.
+//
+//   POST /live/streams { scope, cell_id?, title, kind } → { stream_id, rtmp_url,
+//   stream_key, path }. `rtmp_url` is the bare MediaMTX target with NO stream
+//   key or query string on it — BroadcastController combines the two into the
+//   real RTMP connect URL (see `publishURL` below).
+
+struct CreatedLiveStream: Decodable, Sendable {
+    let streamId: String
+    let rtmpUrl: String
+    let streamKey: String
+    let path: String          // "church" | "cell/{cellId}" — informational only
+
+    private enum CodingKeys: String, CodingKey {
+        case streamId, rtmpUrl, streamKey, path
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        streamId = try c.decode(String.self, forKey: .streamId)
+        rtmpUrl = (try? c.decodeIfPresent(String.self, forKey: .rtmpUrl)) ?? ""
+        streamKey = (try? c.decodeIfPresent(String.self, forKey: .streamKey)) ?? ""
+        path = (try? c.decodeIfPresent(String.self, forKey: .path)) ?? ""
+    }
+
+    /// The actual RTMP connect URL for `RTMPConnection.connect(_:)`.
+    ///
+    /// MediaMTX's own documented OBS usage is: Server = `rtmp://host/mypath`,
+    /// Stream Key = blank. ffmpeg confirms the same thing works when the whole
+    /// URL (including query string) is treated as one opaque connect target
+    /// with nothing appended as a separate stream name. HaishinKit's
+    /// RTMPConnection mirrors that exactly — `makeConnectionMessage()` builds
+    /// the RTMP "app" from the connect URL's path PLUS its query string
+    /// verbatim (`app = path; if query { app += "?" + query }`), so the
+    /// credentials below travel as part of the app/connect target, not as a
+    /// stream name. `RTMPStream.publish("")` (empty streamName) is the other
+    /// half of this — see BroadcastController.connect(_:).
+    var publishURL: String {
+        var comps = URLComponents(string: rtmpUrl)
+        var items = comps?.queryItems ?? []
+        items.append(URLQueryItem(name: "user", value: streamId))
+        items.append(URLQueryItem(name: "pass", value: streamKey))
+        comps?.queryItems = items
+        return comps?.string ?? "\(rtmpUrl)?user=\(streamId)&pass=\(streamKey)"
+    }
+}

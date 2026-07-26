@@ -47,6 +47,11 @@ struct UserProfile: Codable, Sendable, Identifiable {
     let avatarUrl: String?
     let mfaEnabled: Bool?
     let rowVersion: Int
+    /// Nuru Live (L3) — RBAC grants from GET /me, e.g. "live:go". CLIENT-SIDE
+    /// ADVISORY ONLY: used to decide whether to show a "Go Live" affordance at
+    /// all; the server re-checks the real grant on every POST /live/streams
+    /// regardless. Defaults to [] so older cached /me payloads still decode.
+    let permissions: [String]
 
     var id: String { userId }
 
@@ -72,6 +77,7 @@ struct UserProfile: Codable, Sendable, Identifiable {
         avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
         mfaEnabled = try? c.decodeIfPresent(Bool.self, forKey: .mfaEnabled)
         rowVersion = (try? c.decodeIfPresent(Int.self, forKey: .rowVersion)) ?? 0
+        permissions = (try? c.decodeIfPresent([String].self, forKey: .permissions)) ?? []
     }
 }
 
