@@ -265,6 +265,16 @@ final class HomeViewModel: ObservableObject {
     }
 }
 
+extension HomeView {
+    /// Clearance for a surface docked "above the tab bar" from WITHIN Home's
+    /// own view tree (the mini-window pop-up) — the tab bar itself is a
+    /// SIBLING overlay one level up in RootView, so this can't rely on
+    /// SwiftUI layout and instead mirrors NuruTabBar's own on-screen height
+    /// (6pt top padding + 44pt icon row + its bottom clearance) plus the
+    /// device's real safe-area inset.
+    static var tabBarClearance: CGFloat { NuruSafeArea.bottom + 58 }
+}
+
 private let verseReactionEmojis = ["❤️", "🙏", "🔥", "🙌", "👍"]
 private let videoReactionEmojis = ["🙏", "🔥", "🎉", "👏"]
 private struct GrowTile { let label, sub: String; let icon: Lucide; let tint, fg: UInt32; let dest: AnyHashable }
@@ -287,6 +297,10 @@ struct HomeView: View {
     // Nuru Live (L2, viewer-only) — the church-scope LIVE banner's player + replays.
     @State private var openLiveItem: LivePlayableItem?
     @State private var openReplays = false
+    // Nuru Live discovery — the shared "invite loudly, never hijack" center
+    // that also drives the app-wide LIVE bar and notification routing; Home
+    // feeds it every /live/now poll and shows its mini-window pop-up.
+    @ObservedObject private var liveDiscovery = LiveDiscoveryCenter.shared
     // Nuru Live (L3, broadcaster) — Home's header "Go Live" icon.
     @State private var showGoLiveSheet = false
     @State private var goLiveSession: GoLiveSession?
@@ -499,8 +513,27 @@ struct HomeView: View {
                 }
             }
         }
+        // Nuru Live discovery — the mini-window pop-up: a MUTED autoplaying
+        // preview docked above the tab bar for the first stream this session
+        // hasn't seen yet. "Join live" opens the SAME full player the banner's
+        // "Watch live" does (unmuted); ✕ collapses it to the ordinary LIVE
+        // banner card above and never re-pops for this stream_id again.
+        .overlay(alignment: .bottom) {
+            if let id = liveDiscovery.popupStreamId,
+               let stream = liveDiscovery.streams.first(where: { $0.streamId == id }) {
+                LiveMiniPopup(
+                    stream: stream,
+                    onJoin: { liveDiscovery.markSeen(stream.streamId); openLiveItem = .live(stream) },
+                    onDismiss: { liveDiscovery.dismissPopup(stream.streamId) }
+                )
+                .padding(.bottom, Self.tabBarClearance)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: liveDiscovery.popupStreamId)
         .task {
             if vm.pathway == nil { await vm.load() }
+            liveDiscovery.ingest(vm.liveStreams)
             deepLinkForScreenshots()
         }
         // Radio poll — re-check now-playing every 45s while Home is visible so the
@@ -514,18 +547,19 @@ struct HomeView: View {
         }
         // The floating radio pill now lives in RootView (island-style, top
         // center, on EVERY tab) — playback still runs through RadioCenter.
-        // Nuru Live — a 60s re-check, but ONLY while a stream is confirmed
-        // live: `.task(id:)` re-runs this whenever the id flips, so the loop
-        // starts the instant `load()`/pull-to-refresh finds a live row and is
-        // torn down (SwiftUI cancels the previous task) the instant it doesn't —
-        // no aggressive polling loop running for the 99% of the time nothing
-        // is live.
-        .task(id: vm.liveStreams.isEmpty) {
-            guard !vm.liveStreams.isEmpty else { return }
+        // Nuru Live discovery — an UNCONDITIONAL 60s re-check while Home is
+        // visible (this used to gate on `vm.liveStreams.isEmpty` and only poll
+        // once something was already known live, but discovering a BRAND NEW
+        // stream is the whole point of the mini-window pop-up, so it can't
+        // wait for a stream to already be known). Every result is folded into
+        // the shared LiveDiscoveryCenter, which decides whether to pop the
+        // mini-window (a stream_id this session hasn't surfaced yet).
+        .task {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled else { return }
                 await vm.refreshLiveNow()
+                liveDiscovery.ingest(vm.liveStreams)
             }
         }
     }

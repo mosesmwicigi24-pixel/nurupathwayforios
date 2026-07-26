@@ -134,11 +134,23 @@ struct RootView: View {
     // The app-wide station — drives the floating island pill on every tab.
     @ObservedObject private var radio = RadioCenter.shared
     @State private var radioOpen = false
+    // Nuru Live discovery — "invite loudly, never hijack": the app-wide LIVE
+    // bar (every tab but Home) and the ONE place a notification tap or bar tap
+    // presents the full-screen player from outside Home's own surfaces.
+    @ObservedObject private var liveDiscovery = LiveDiscoveryCenter.shared
     // Location-first onboarding: invite ONCE after first login; refresh silently
     // on every open for members already sharing (Profile keeps the off switch).
     @AppStorage("nuru.locationInviteShown") private var locationInviteShown = false
     @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
     @State private var showLocationInvite = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotionForLiveBar
+
+    /// The app-wide LIVE bar shows on every tab except Home (which has its own
+    /// banner + mini-window) while a watchable stream exists and the player it
+    /// would open isn't already the thing on screen.
+    private var showAppLiveBar: Bool {
+        !liveDiscovery.streams.isEmpty && tabs.selected != .home && liveDiscovery.requestedItem == nil
+    }
 
     /// Height of the top safe-area inset (status-bar / Dynamic Island band) so the
     /// cream stripe covers exactly that region. Falls back to 59 (Dynamic Island).
@@ -214,12 +226,38 @@ struct RootView: View {
         }
         .overlay(alignment: .bottom) {
             if !tabs.chromeHidden {
-                NuruTabBar(selection: $tabs.selected, tabs: visibleTabs)
-                    .ignoresSafeArea(edges: .bottom)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                VStack(spacing: 0) {
+                    // App-wide LIVE bar — every tab EXCEPT Home (which has its
+                    // own banner + mini-window), and never while the player
+                    // this bar itself would open is already on screen.
+                    if showAppLiveBar, let stream = liveDiscovery.newestWatchable {
+                        AppLiveBar(stream: stream) {
+                            liveDiscovery.markSeen(stream.streamId)
+                            liveDiscovery.requestedItem = .live(stream)
+                        }
+                        .transition(reduceMotionForLiveBar ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+                    }
+                    NuruTabBar(selection: $tabs.selected, tabs: visibleTabs)
+                }
+                .ignoresSafeArea(edges: .bottom)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.22), value: tabs.chromeHidden)
+        .animation(.easeInOut(duration: 0.25), value: showAppLiveBar)
+        // The ONE place a discovery surface (the bar above, or a routed
+        // `live_stream_started` notification tap below) presents the full
+        // player from OUTSIDE Home's own banner/mini-window taps.
+        .fullScreenCover(item: Binding(
+            get: { liveDiscovery.requestedItem },
+            set: { liveDiscovery.requestedItem = $0 }
+        )) { item in
+            // Replays default to the item's own scope (church → church replays,
+            // a cell item → that cell's) — same rule every other player
+            // presentation follows (Home banner, cell card, LiveReplaysView).
+            let source = liveDiscovery.streams.first { $0.streamId == item.id }
+            LiveViewerPlayerView(item: item, replaysScope: source?.scope, replaysCellId: source?.cellId)
+        }
         // Celebration layer — server-milestone confetti cards + gold banners
         // (rhythm complete, streak marks, new badges, prayer posted, gift
         // confirmed). Mounted ONCE here, above every tab and the tab bar.
@@ -256,6 +294,21 @@ struct RootView: View {
                 // Progress/joined pings without a token to redeem — land on
                 // the hub; the specific group is one tap away from there.
                 tabs.openPlans(.readWithFriendHub)
+            } else if template.hasPrefix("live") {
+                // A tapped `live_stream_started` push must land IN THE PLAYER —
+                // re-check /live/now (the stream may have already ended by the
+                // time the tap lands) and open the newest watchable stream;
+                // fall back to Home (which shows its own banner/mini-window
+                // if something else is live) when there's nothing left to join.
+                Task {
+                    await liveDiscovery.refresh()
+                    if let stream = liveDiscovery.newestWatchable {
+                        liveDiscovery.markSeen(stream.streamId)
+                        liveDiscovery.requestedItem = .live(stream)
+                    } else {
+                        tabs.selected = .home
+                    }
+                }
             } else {
                 NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
             }
@@ -316,6 +369,12 @@ struct RootView: View {
         .task {
             while !Task.isCancelled {
                 await ChatBadge.shared.refresh()
+                // Nuru Live discovery — piggybacks this same 60s cadence
+                // (gentle, foreground-only — this `.task` is cancelled the
+                // instant RootView leaves the screen) so the app-wide LIVE bar
+                // and a routed notification tap both see fresh /live/now data
+                // without a second polling loop.
+                await liveDiscovery.refresh()
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
             }
         }
