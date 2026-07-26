@@ -1960,7 +1960,7 @@ struct HomeView: View {
     // GET /home/featured-event was declared but rendered by no client until now.
     private func featuredGatheringCard(_ fe: FeaturedEvent) -> some View {
         Button {
-            Haptics.selection(); tabs.selected = .events
+            Haptics.selection(); tabs.openYou(.events)
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 if let u = fe.primaryImageUrl.flatMap(URL.init) {
@@ -2003,7 +2003,7 @@ struct HomeView: View {
             HStack {
                 Text("GATHERINGS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
-                Button { Haptics.selection(); tabs.selected = .events } label: {
+                Button { Haptics.selection(); tabs.openYou(.events) } label: {
                     Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
                 }.buttonStyle(.pressable)
             }
@@ -2117,7 +2117,7 @@ struct HomeView: View {
     // MARK: 18 — Support God's work (give panel — centered ceremony layout)
 
     private var giveBanner: some View {
-        HomeGiveCard { tabs.selected = .give }
+        HomeGiveCard { tabs.openYou(.give) }
     }
 
     // MARK: derived / helpers

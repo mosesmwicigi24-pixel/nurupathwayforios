@@ -13,6 +13,12 @@ import UIKit
 import PhotosUI
 
 struct ProfileView: View {
+    /// True when hosted as the "Profile" segment inside the You tab (L4)
+    /// rather than as its own top-level tab — the You tab's own segmented
+    /// control already clears the status bar, so this header needs only a
+    /// little breathing room, not a second 60pt reservation for it.
+    var embeddedInYou: Bool = false
+
     @EnvironmentObject private var auth: AuthStore
 
     /// Pushes SettingsView. @SceneStorage (not @State): RootView re-`.id`s the
@@ -216,7 +222,7 @@ struct ProfileView: View {
             }
             .gentleEntrance()
         }
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, 24)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, embeddedInYou ? Nuru.S.base : 60).padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
