@@ -1,0 +1,143 @@
+// Nuru Live — viewer-side wire models (L2). Shapes mirror
+// packages/backend/src/modules/live/{index.ts,service.ts} exactly:
+//   GET  /live/now                       → { data: [LiveStreamSummary] }
+//   POST /live/streams/{id}/heartbeat     → { ok: true } (see MemberAPI+Live.swift)
+//   GET  /live/recordings?scope=&cell_id= → { data: [LiveRecordingRow] }
+//
+// `hls_url` / `recording_url` arrive RELATIVE to the API's ORIGIN (not its
+// `/v1` surface) — resolved in MemberAPI+Live.swift, never here.
+import Foundation
+
+/// One row of GET /live/now — a stream the caller may watch right now (the
+/// server already scopes cell rows to the caller's own cell; no client-side
+/// filtering needed beyond picking `scope` apart for Home vs the cell card).
+struct LiveStreamSummary: Decodable, Sendable, Identifiable, Hashable {
+    let streamId: String
+    let scope: String            // "church" | "cell"
+    let cellId: String?
+    let title: String
+    let kind: String              // "video" | "audio"
+    let startedAt: String        // ISO 8601
+    let hlsUrl: String            // relative — resolve against APIClient.originURL
+    let startedByName: String
+    let viewerCount: Int
+
+    var id: String { streamId }
+    var isChurch: Bool { scope == "church" }
+    var isAudio: Bool { kind == "audio" }
+
+    private enum CodingKeys: String, CodingKey {
+        case streamId, scope, cellId, title, kind, startedAt, hlsUrl, startedByName, viewerCount
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        streamId = try c.decode(String.self, forKey: .streamId)
+        scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? "church"
+        cellId = try? c.decodeIfPresent(String.self, forKey: .cellId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? "Live now"
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "video"
+        startedAt = (try? c.decodeIfPresent(String.self, forKey: .startedAt)) ?? ""
+        hlsUrl = (try? c.decodeIfPresent(String.self, forKey: .hlsUrl)) ?? ""
+        startedByName = (try? c.decodeIfPresent(String.self, forKey: .startedByName)) ?? ""
+        viewerCount = (try? c.decodeIfPresent(Int.self, forKey: .viewerCount)) ?? 0
+    }
+}
+
+/// One row of GET /live/recordings. No duration field exists server-side —
+/// deliberately omitted from every UI that renders this row.
+struct LiveRecordingRow: Decodable, Sendable, Identifiable, Hashable {
+    let streamId: String
+    let scope: String            // "church" | "cell"
+    let cellId: String?
+    let title: String
+    let kind: String              // "video" | "audio"
+    let startedAt: String
+    let endedAt: String
+    let recordingUrl: String      // relative — resolve against APIClient.originURL
+
+    var id: String { streamId }
+    var isAudio: Bool { kind == "audio" }
+
+    private enum CodingKeys: String, CodingKey {
+        case streamId, scope, cellId, title, kind, startedAt, endedAt, recordingUrl
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        streamId = try c.decode(String.self, forKey: .streamId)
+        scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? "church"
+        cellId = try? c.decodeIfPresent(String.self, forKey: .cellId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? "Replay"
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "video"
+        startedAt = (try? c.decodeIfPresent(String.self, forKey: .startedAt)) ?? ""
+        endedAt = (try? c.decodeIfPresent(String.self, forKey: .endedAt)) ?? ""
+        recordingUrl = (try? c.decodeIfPresent(String.self, forKey: .recordingUrl)) ?? ""
+    }
+}
+
+// MARK: - Shared date/time formatting (Home banner, cell card, replays list, player chrome)
+
+enum LiveFormat {
+    private static func parse(_ iso: String) -> Date? {
+        ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+    }
+
+    /// "started just now" / "started 12m ago" / "started 2h ago" — nil when the
+    /// timestamp doesn't parse (never shows a bogus number).
+    static func startedAgo(_ iso: String) -> String? {
+        guard let d = parse(iso) else { return nil }
+        let mins = max(0, Int(Date().timeIntervalSince(d) / 60))
+        if mins < 1 { return "started just now" }
+        if mins < 60 { return "started \(mins)m ago" }
+        let hrs = mins / 60
+        return "started \(hrs)h ago"
+    }
+
+    /// "Jul 20, 2026" — for the Replays list.
+    static func dateLabel(_ iso: String) -> String {
+        guard let d = parse(iso) else { return "" }
+        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"
+        return f.string(from: d)
+    }
+}
+
+// MARK: - Unified playable item (drives the one full-screen player for both
+// a live stream and a recorded replay)
+
+/// Everything `LiveViewerPlayerView` needs, whether the source is a live
+/// stream (heartbeat active, "LIVE" chrome) or a finished recording (no
+/// heartbeat, plain playback). Built via the two factories below so every
+/// call site shares the exact same title/subtitle formatting.
+struct LivePlayableItem: Identifiable, Hashable {
+    let id: String
+    let title: String
+    let subtitle: String?
+    let kind: String              // "video" | "audio"
+    let isLive: Bool
+    let mediaPath: String         // relative hls_url / recording_url
+    let viewerCount: Int?
+    /// Non-nil only for a real live stream — its presence is what starts the
+    /// 30s heartbeat in the player; a recording never heartbeats.
+    let heartbeatStreamId: String?
+
+    var isAudio: Bool { kind == "audio" }
+
+    static func live(_ s: LiveStreamSummary) -> LivePlayableItem {
+        let started = LiveFormat.startedAgo(s.startedAt) ?? "live now"
+        return LivePlayableItem(
+            id: s.streamId, title: s.title,
+            subtitle: "\(started) · \(s.viewerCount) watching",
+            kind: s.kind, isLive: true, mediaPath: s.hlsUrl,
+            viewerCount: s.viewerCount, heartbeatStreamId: s.streamId)
+    }
+
+    static func recording(_ r: LiveRecordingRow, cellName: String? = nil) -> LivePlayableItem {
+        let scopeLabel = r.scope == "church" ? "Church" : (cellName ?? "Cell")
+        return LivePlayableItem(
+            id: r.streamId, title: r.title,
+            subtitle: "\(scopeLabel) · \(LiveFormat.dateLabel(r.startedAt))",
+            kind: r.kind, isLive: false, mediaPath: r.recordingUrl,
+            viewerCount: nil, heartbeatStreamId: nil)
+    }
+}
