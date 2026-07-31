@@ -35,7 +35,7 @@
 // backgrounded, network flip, MediaMTX closing the session) is recovered
 // automatically by re-entering the SAME retry loop with a fresh window
 // (`handleFailedOrClosed`) rather than sticking on an error. `.failed` (with
-// a Retry affordance in GuestTileRail) is reached ONLY after the retry
+// a Retry affordance in LiveStageView) is reached ONLY after the retry
 // window genuinely expires.
 import CoreMedia
 import Foundation
@@ -54,7 +54,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     }
 
     @Published private(set) var state: State = .connecting
-    /// Bound by GuestTileRail's `WebRTCVideoView`. Audio needs no equivalent
+    /// Bound by LiveStageView's `WebRTCVideoView`. Audio needs no equivalent
     /// published property — once the remote audio track exists, WebRTC plays
     /// it out on its own; there's nothing for SwiftUI to bind.
     @Published private(set) var videoTrack: RTCVideoTrack?
@@ -145,7 +145,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         credentialPass = nil
     }
 
-    /// The Retry affordance in GuestTileRail — only reachable from `.failed`,
+    /// The Retry affordance in LiveStageView — only reachable from `.failed`,
     /// i.e. after the retry window already expired once. Reuses the same
     /// WHEP URL/credentials from the original `start()` (still held, since
     /// only `stop()` clears them) rather than requiring the guest to fully
@@ -305,7 +305,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     /// L6c — adds a SECOND renderer to the just-arrived remote video track
     /// (WebRTC supports multiple sinks per track) that converts frames to
     /// CMSampleBuffers for `onVideoFrame`, alongside whatever `WebRTCVideoView`
-    /// GuestTileRail already bound. A no-op if BroadcastController never set
+    /// LiveStageView already bound. A no-op if BroadcastController never set
     /// `onVideoFrame` (e.g. an audio-only session has no compositor).
     private func attachCompositorSink(to track: RTCVideoTrack) {
         guard let onVideoFrame else { return }

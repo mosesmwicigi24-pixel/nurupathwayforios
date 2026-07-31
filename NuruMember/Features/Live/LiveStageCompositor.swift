@@ -1,48 +1,72 @@
-// Nuru Live L6c — the finale: composites the ONE outgoing RTMP stream so
-// every viewer sees everyone on stage, not just the host's own camera.
+// Nuru Live L6c/L7 — composites the ONE outgoing RTMP stream so every
+// viewer sees everyone on stage, not just the host's own camera, Zoom-style:
+// one full-bleed main tile (whoever's spotlighted) + a rail of thumbnails
+// down the right edge for everyone else, tap-to-expand reversible.
 //
-// Mechanism (confirmed by reading the checked-out HaishinKit 2.2.5 source —
-// DerivedData/.../SourcePackages/checkouts/HaishinKit.swift/HaishinKit/Sources/
-// Screen/*, Mixer/MediaMixer.swift, Mixer/VideoMixer.swift — not guessed):
-// HaishinKit ships its own offscreen compositor. `MediaMixer.screen` is a
-// `Screen` — a `ScreenObjectContainer` that, once
-// `mixer.setVideoMixerSettings(.init(mode: .offscreen, mainTrack:))` is set,
-// renders every `VideoTrackScreenObject` child on a display-link loop into
-// ONE composited `CVPixelBuffer`/`CMSampleBuffer` fed to every output whose
-// `videoTrackId == .max` (both `RTMPStream`, the publish path, and — unless
-// repinned, see BroadcastController's `selectTrack(0, ...)` call on `mtView`
-// — the local camera preview). `VideoMixer.append(track:sampleBuffer:)`
-// confirms `.offscreen` mode is a pure "feed the compositor" path — in
-// `.passthrough` mode (this app's ENTIRE pre-L6c history) the SAME
-// `mixer.append(_:track:)` calls just short-circuit straight to the output
-// with no compositing at all, so switching to `.offscreen` here changes
-// nothing about how the host camera / Document / Screen sources feed track 0
-// — it only adds the ability to layer MORE tracks on top.
+// L7 REWRITE — root-causing two defects the L6c version had (owner report,
+// live-tested):
 //
-// `Screen`'s own BUILT-IN `videoTrackScreenObject` (added once, in
-// `Screen.init()`) is the "full-frame" object — its `track` is exactly
-// `VideoMixerSettings.mainTrack`, reassignable at ANY time via
-// `setVideoMixerSettings` without recreating anything. That reassignment IS
-// the active-speaker swap: retarget `mainTrack` to a guest's track number and
-// their video is instantly full-frame, no new screen object, no dimension
-// change (the OUTPUT canvas — `Screen.size`, locked once in `activate(...)`
-// to the session's already-locked encode size — never moves).
+// DEFECT A — "the 1080x1920 portrait seems to be lost a bit" once a guest
+// becomes active. PROVEN root cause (read, not guessed, in the checked-out
+// HaishinKit 2.2.5 source — Screen.swift, VideoTrackScreenObject.swift):
+// `Screen`'s BUILT-IN `videoTrackScreenObject` — the object
+// `setVideoMixerSettings(mainTrack:)` retargets — is `internal` to
+// HaishinKit, unreachable from this module, so its `videoGravity` is
+// PERMANENTLY stuck at the library default `.resizeAspect`. And
+// `VideoTrackScreenObject.makeBounds` special-cases `.resizeAspect` to
+// ASPECT-FIT the source image inside its bounds (scaling the object's own
+// rect down, not the image up) — harmless for the host (their 1080x1920
+// camera buffer already matches the canvas exactly: scale=1, no-op), but
+// for L6c's guest tracks (960x540 landscape, per the task brief) becoming
+// `mainTrack` this fit-scales them into a ~1080×608 band pinned to the
+// top-left with the rest of the 1080x1920 canvas showing through
+// underneath — a severe, real letterbox, not a metaphor. The CANVAS size
+// itself (`Screen.size`, locked once in `activate()`) never moved — this
+// was a rendering-gravity bug, not a dimension bug, which is exactly why
+// "log the encoder dimensions" alone wouldn't have caught it (they're
+// unchanged) and why this rewrite ALSO changes the compositing strategy,
+// not just adds logging.
 //
-// Everyone who ISN'T currently `mainTrack` gets their own small
-// `VideoTrackScreenObject` + `TextScreenObject` name label, positioned in a
-// rounded-rectangle rail (bottom in portrait, right edge in landscape) via
-// plain top-left `layoutMargin` offsets — `ScreenObject.makeBounds` resolves
-// `.left`/`.top` alignment straight to `layoutMargin.left/top`, so the rail
-// math below just computes an absolute (x, y, w, h) rect per slot and hands
-// it over as a margin pair; no nested containers needed.
+// DEFECT B — "the host video is completely replaced by invited guest."
+// Root cause: L6c's `setMainTrack` retargeted the SAME built-in object
+// away from the host entirely, and BroadcastController auto-drove that
+// retarget from a raw audio-level threshold the instant any guest made
+// noise — there was no "composite," just a full swap, and no user control
+// over it either.
+//
+// THE FIX for both, in one move: NEVER retarget the built-in object again
+// after `activate()` — it stays pinned to the host (track 0) for the
+// entire broadcast, so its `.resizeAspect` quirk only ever applies to a
+// track that already matches canvas geometry exactly (no letterbox,
+// provably, for as long as that pin holds). Spotlighting a GUEST instead
+// draws a SEPARATE, fully app-owned `VideoTrackScreenObject` — `mainOverlay`
+// — on top of it, full-canvas, with `videoGravity = .resizeAspectFill`
+// (which THIS module CAN set, since we own the object). Being added to
+// `screen` after the built-in object, it occludes it completely
+// (`ScreenObjectContainer.draw` draws children in insertion order, later =
+// on top — confirmed by reading `ScreenObjectContainer.swift`), so
+// whichever track `mainOverlay.track` points at is rendered full-bleed,
+// aspect-filled, zero letterbox — host or guest, no exceptions. Spotlight
+// swaps are now a single `@ScreenActor` property write on OUR OWN object
+// (`mainOverlay.track = target`) — `mixer.setVideoMixerSettings` is called
+// EXACTLY ONCE per broadcast, in `activate()`, and never again: guest
+// join/leave/spotlight changes touch zero mixer/encoder state, which is
+// what makes "identical geometry and bitrate regardless of guest count" a
+// property of the code rather than a hope. `activate()` and every rail
+// mutation log `mixer.screen.size` so that invariant is provable from logs,
+// not just argued in a comment.
+//
+// Layout math (rail-tile rects, corner radius) is delegated to
+// LiveStageLayout — the SAME file BroadcastController's SwiftUI stage
+// (LiveStageView) calls for the host's own local preview, so compositor
+// output and host preview can't independently drift.
 //
 // Every mutation of `screen` (adding/removing/repositioning objects) MUST
 // happen on `ScreenActor` — the actor HaishinKit itself uses for every
-// `screen.*` touch inside `MediaMixer` (see e.g. `setVideoMixerSettings`'s
-// `Task { @ScreenActor in screen.videoTrackScreenObject.track = ... }`).
-// Making this whole type `@ScreenActor`-isolated mirrors that convention
-// exactly, rather than sprinkling ad hoc `Task { @ScreenActor in }` blocks
-// through BroadcastController.
+// `screen.*` touch inside `MediaMixer`. Making this whole type
+// `@ScreenActor`-isolated mirrors that convention exactly, rather than
+// sprinkling ad hoc `Task { @ScreenActor in }` blocks through
+// BroadcastController.
 import AVFoundation
 import HaishinKit
 import UIKit
@@ -55,19 +79,21 @@ final class LiveStageCompositor {
     private let mixer: MediaMixer
 
     private var encodeSize: CGSize = .zero
-    private var isLandscape = false
-    private(set) var mainTrack: UInt8 = 0
+    private(set) var spotlighted: UInt8 = LiveStageSpotlight.host
 
     /// Insertion order — host (track 0) first, then guests in join order.
-    /// Whoever ISN'T `mainTrack` is laid out into the rail in this order.
+    /// Whoever ISN'T `spotlighted` is laid out into the rail in this order
+    /// (stable — LiveStageLayout.railRects preserves array order 1:1).
     private var participants: [UInt8] = []
+    private var names: [UInt8: String] = [:]
+    private var mutedTracks: Set<UInt8> = []
     private var videoObjects: [UInt8: VideoTrackScreenObject] = [:]
     private var labelObjects: [UInt8: TextScreenObject] = [:]
 
-    private static let marginFraction: CGFloat = 0.03
-    private static let spacingFraction: CGFloat = 0.018
-    private static let tileWidthFraction: CGFloat = 0.20
-    private static let cornerRadiusFraction: CGFloat = 0.02
+    /// App-owned full-canvas overlay — see header comment. `nil` `.track`
+    /// state is never observed after `activate()`; it always mirrors
+    /// `spotlighted`.
+    private var mainOverlay: VideoTrackScreenObject?
 
     init(mixer: MediaMixer) {
         self.mixer = mixer
@@ -75,72 +101,95 @@ final class LiveStageCompositor {
 
     /// Locks the compositor's output canvas to the session's ALREADY-locked
     /// encode size (`BroadcastController.captureGeometry()`'s result — same
-    /// value handed to `stream.setVideoSettings`) and switches the mixer into
-    /// offscreen rendering with the host's own camera (track 0) as the sole,
-    /// full-frame participant. Must run BEFORE `mixer.startRunning()` —
-    /// `MediaMixer.startRunning()` reads `videoMixerSettings.mode` once, at
-    /// call time, to decide whether to spin up the display-link render loop.
+    /// value handed to `stream.setVideoSettings`), switches the mixer into
+    /// offscreen rendering with the host (track 0) as the built-in object's
+    /// permanent target, and adds `mainOverlay` — the app-owned full-bleed
+    /// tile every future spotlight swap actually retargets. Must run BEFORE
+    /// `mixer.startRunning()` — `MediaMixer.startRunning()` reads
+    /// `videoMixerSettings.mode` once, at call time, to decide whether to
+    /// spin up the display-link render loop.
+    ///
+    /// THIS is the only call, ever, to `mixer.setVideoMixerSettings` for
+    /// the lifetime of the broadcast — see header comment. Logs
+    /// `mixer.screen.size` so "canvas never moves" is provable from device
+    /// logs, not just asserted.
     func activate(encodeSize: CGSize) async {
         self.encodeSize = encodeSize
-        isLandscape = encodeSize.width > encodeSize.height
         mixer.screen.size = encodeSize
-        // `Screen.videoTrackScreenObject` (the built-in "main" object) is
-        // `internal` to HaishinKit — not reachable from this module — so its
-        // `videoGravity` stays the library default (`.resizeAspect`). That's
-        // a no-op in the common case (the host's own camera buffer is
-        // already exactly `encodeSize`, so aspect-fit == aspect-fill with
-        // nothing to letterbox); a guest with a different aspect ratio
-        // becoming the active speaker will letterbox rather than fill when
-        // full-frame. Flagged honestly in PARITY_AUDIT.md rather than
-        // reaching for a private-API workaround.
         participants = [0]
-        mainTrack = 0
+        names[0] = "You"
+        spotlighted = 0
         await mixer.setVideoMixerSettings(VideoMixerSettings(mode: .offscreen, mainTrack: 0))
+
+        let overlay = VideoTrackScreenObject()
+        overlay.track = 0
+        overlay.videoGravity = .resizeAspectFill
+        overlay.cornerRadius = 0
+        do {
+            try mixer.screen.addChild(overlay)
+            mainOverlay = overlay
+        } catch {
+            compositorLogger.error("activate — addChild(mainOverlay) failed: \(String(describing: error), privacy: .public)")
+        }
+
         addTile(track: 0, name: "You")
         relayout()
+        compositorLogger.notice("activate — encodeSize=\(encodeSize.width, privacy: .public)x\(encodeSize.height, privacy: .public) screen.size=\(self.mixer.screen.size.width, privacy: .public)x\(self.mixer.screen.size.height, privacy: .public)")
     }
 
     /// A newly accepted guest joins the stage — adds their rail tile (video
     /// starts as an empty rounded rect and fills in the moment their first
     /// `mixer.append(_:track:)` frame arrives; see BroadcastController's
     /// `WhepSubscriber.onVideoFrame` wiring) and reflows every other tile's
-    /// position to make room.
+    /// position to make room. Never touches the mixer/encoder — canvas size
+    /// is logged before and after specifically to prove that.
     func addRailTile(track: UInt8, name: String) {
         guard !participants.contains(track) else {
             compositorLogger.notice("addRailTile — track \(track, privacy: .public) already a participant, ignoring")
             return
         }
-        compositorLogger.notice("addRailTile — track \(track, privacy: .public)")
+        let before = mixer.screen.size
+        compositorLogger.notice("addRailTile — track \(track, privacy: .public) screen.size(before)=\(before.width, privacy: .public)x\(before.height, privacy: .public)")
         participants.append(track)
+        names[track] = name
         addTile(track: track, name: name)
         relayout()
+        let after = mixer.screen.size
+        compositorLogger.notice("addRailTile — track \(track, privacy: .public) screen.size(after)=\(after.width, privacy: .public)x\(after.height, privacy: .public)")
     }
 
     /// A guest left (declined, removed, or the pulse roster swept them) —
-    /// tears down their screen objects and reflows the remaining rail.
+    /// tears down their screen objects and reflows the remaining rail. If
+    /// they were spotlighted, `BroadcastController` will already have
+    /// called `spotlight(track: 0)` (via `LiveStageSpotlight.participantLeft`)
+    /// before this runs, so `mainOverlay` never dangles on a torn-down
+    /// track.
     func removeRailTile(track: UInt8) {
         guard participants.contains(track) else {
             compositorLogger.notice("removeRailTile — track \(track, privacy: .public) not a participant, ignoring")
             return
         }
-        compositorLogger.notice("removeRailTile — track \(track, privacy: .public)")
+        let before = mixer.screen.size
+        compositorLogger.notice("removeRailTile — track \(track, privacy: .public) screen.size(before)=\(before.width, privacy: .public)x\(before.height, privacy: .public)")
         participants.removeAll { $0 == track }
+        names.removeValue(forKey: track)
+        mutedTracks.remove(track)
         if let video = videoObjects.removeValue(forKey: track) { mixer.screen.removeChild(video) }
         if let label = labelObjects.removeValue(forKey: track) { mixer.screen.removeChild(label) }
-        // The active speaker just left — fall back to the host rather than
-        // leaving `mainTrack` pointing at a torn-down object.
-        if mainTrack == track { mainTrack = 0 }
         relayout()
+        let after = mixer.screen.size
+        compositorLogger.notice("removeRailTile — track \(track, privacy: .public) screen.size(after)=\(after.width, privacy: .public)x\(after.height, privacy: .public)")
     }
 
-    /// Swaps who's full-frame. A no-op if `track` isn't a known participant
-    /// (e.g. a guest that already left) or is already main — callers (the
-    /// active-speaker loop in BroadcastController) don't need to re-check
+    /// Swaps who's full-frame by retargeting ONLY `mainOverlay` — never the
+    /// mixer/encoder. A no-op if `track` isn't a known participant (e.g. a
+    /// guest that already left) or is already spotlighted — callers (the
+    /// stage-tap handler in BroadcastController) don't need to re-check
     /// membership themselves.
-    func setMainTrack(_ track: UInt8) async {
-        guard participants.contains(track), track != mainTrack else { return }
-        mainTrack = track
-        await mixer.setVideoMixerSettings(VideoMixerSettings(mode: .offscreen, mainTrack: track))
+    func spotlight(track: UInt8) {
+        guard participants.contains(track), track != spotlighted else { return }
+        spotlighted = track
+        mainOverlay?.track = track
         relayout()
     }
 
@@ -154,9 +203,30 @@ final class LiveStageCompositor {
             if let video = videoObjects.removeValue(forKey: track) { mixer.screen.removeChild(video) }
             if let label = labelObjects.removeValue(forKey: track) { mixer.screen.removeChild(label) }
         }
+        if let overlay = mainOverlay { mixer.screen.removeChild(overlay) }
+        mainOverlay = nil
         participants.removeAll()
-        mainTrack = 0
+        names.removeAll()
+        mutedTracks.removeAll()
+        spotlighted = LiveStageSpotlight.host
         await mixer.setVideoMixerSettings(.default)
+    }
+
+    /// Best-effort mic-muted indicator on a guest's rail tile — see
+    /// BroadcastController's header comment on `guestMuteHeuristic` for the
+    /// honest limitation: WebRTC's `MediaStreamTrack.enabled` is a
+    /// LOCAL-only flag (not synced to the remote peer) and no server field
+    /// carries a guest's own mute state today, so this is driven by a
+    /// sustained-silence heuristic, not a definitive "they tapped mute"
+    /// signal. Folded into the name label (◦ prefix) since HaishinKit's
+    /// screen-object toolkit has no icon/glyph primitive — plain text is
+    /// the only thing `TextScreenObject` can render.
+    func setMuted(track: UInt8, isMuted: Bool) {
+        guard participants.contains(track) else { return }
+        if isMuted { mutedTracks.insert(track) } else { mutedTracks.remove(track) }
+        guard let label = labelObjects[track] else { return }
+        let name = names[track] ?? ""
+        label.string = isMuted ? "\u{1F507} \(name)" : name
     }
 
     // MARK: - Internal
@@ -190,63 +260,47 @@ final class LiveStageCompositor {
     }
 
     private var tileSize: CGSize {
-        let short = min(encodeSize.width, encodeSize.height)
-        let width = short * Self.tileWidthFraction
-        return CGSize(width: width, height: width * 4 / 3)
+        LiveStageLayout.railRects(count: 1, canvas: encodeSize).first?.size ?? .zero
     }
 
     private var cornerRadius: CGFloat {
-        min(encodeSize.width, encodeSize.height) * Self.cornerRadiusFraction
+        LiveStageLayout.cornerRadius(canvas: encodeSize)
     }
 
-    /// Recomputes from scratch every time (add/remove/main-swap) rather than
-    /// incrementally — simpler to reason about and cheap: at most 6 guests +
-    /// the host, once per event, never per-frame.
+    /// Recomputes from scratch every time (add/remove/spotlight-swap) rather
+    /// than incrementally — simpler to reason about and cheap: at most 6
+    /// guests + the host, once per event, never per-frame.
     private func relayout() {
         guard encodeSize != .zero else { return }
-        let short = min(encodeSize.width, encodeSize.height)
-        let margin = short * Self.marginFraction
-        let spacing = short * Self.spacingFraction
-        let size = tileSize
-        let railTracks = participants.filter { $0 != mainTrack }
+        let railTracks = participants.filter { $0 != spotlighted }
+        let rects = LiveStageLayout.railRects(count: railTracks.count, canvas: encodeSize)
+        let radius = cornerRadius
 
         for (index, track) in railTracks.enumerated() {
-            let rect = railRect(index: index, size: size, margin: margin, spacing: spacing)
+            guard index < rects.count else { continue }
+            let rect = rects[index]
             if let video = videoObjects[track] {
                 video.isVisible = true
                 video.size = rect.size
                 video.horizontalAlignment = .left
                 video.verticalAlignment = .top
                 video.layoutMargin = UIEdgeInsets(top: rect.minY, left: rect.minX, bottom: 0, right: 0)
-                video.cornerRadius = cornerRadius
+                video.cornerRadius = radius
             }
             if let label = labelObjects[track] {
                 label.isVisible = true
                 label.size = CGSize(width: max(0, rect.width - 12), height: 0)
                 label.horizontalAlignment = .left
                 label.verticalAlignment = .top
-                let labelY = max(rect.minY, rect.maxY - size.height * 0.22)
+                let labelY = max(rect.minY, rect.maxY - rect.height * 0.22)
                 label.layoutMargin = UIEdgeInsets(top: labelY, left: rect.minX + 6, bottom: 0, right: 0)
             }
         }
 
-        // The active speaker's own rail tile+label are hidden — they're
-        // already shown full-frame via the built-in
-        // `screen.videoTrackScreenObject` (its `track` == `mainTrack`), so
-        // never double them up.
-        videoObjects[mainTrack]?.isVisible = false
-        labelObjects[mainTrack]?.isVisible = false
-    }
-
-    private func railRect(index: Int, size: CGSize, margin: CGFloat, spacing: CGFloat) -> CGRect {
-        if isLandscape {
-            let x = encodeSize.width - margin - size.width
-            let y = margin + CGFloat(index) * (size.height + spacing)
-            return CGRect(x: x, y: y, width: size.width, height: size.height)
-        } else {
-            let x = margin + CGFloat(index) * (size.width + spacing)
-            let y = encodeSize.height - margin - size.height
-            return CGRect(x: x, y: y, width: size.width, height: size.height)
-        }
+        // The spotlighted participant's own rail tile+label are hidden —
+        // they're already shown full-frame via `mainOverlay`, so never
+        // double them up.
+        videoObjects[spotlighted]?.isVisible = false
+        labelObjects[spotlighted]?.isVisible = false
     }
 }
