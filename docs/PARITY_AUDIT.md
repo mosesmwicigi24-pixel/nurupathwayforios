@@ -1,4 +1,138 @@
 
+## 2026-07-31 — Nuru Live taste pass: draggable/collapsible chat, banner auto-collapse, TikTok-style chrome polish, Audience picker, Live hub redesign (branch feat/live-taste, this repo only)
+Owner spec: "I like what we have — add good taste, subtle changes that make
+this beautiful" (TikTok Live Studio as a reference point, kept in Nuru's own
+gold/navy/paper palette, not TikTok's). Built on top of build 93 (Broadcast
+Studio). Worked in an isolated worktree (`.worktrees/live-taste`, branch
+`feat/live-taste` off `origin/main`); commits are local, not pushed.
+
+**1. Guest banner too big/persistent — fixed.** `LiveViewerPlayerView`'s gold
+"invited on stage" / "on stage soon" card now auto-collapses ~3s after
+appearing into a small tappable corner pill (`collapsedGuestPill`), reusing
+the SAME mechanism whether the status is freshly `invited` or just flipped to
+`accepted` after a response (`scheduleGuestBannerAutoCollapse`, keyed off
+`pulse.guests` changing) — the banner shows big once per fresh status, then
+tucks away; tapping the pill re-expands it. `.animation(reduceMotion ? nil :
+.spring(...), value: guestBannerCollapsed)` respects Reduce Motion.
+
+**2/3. Floating chat — draggable, collapsible, shared with the broadcaster.**
+`LiveFloatingChatOverlay.swift` rewritten: default size dropped to ~55%
+width × ~26% height (was 66%/32%); a new header (drag handle + collapse
+chevron) is the ONLY draggable region on the expanded card, so the message
+list/composer never fight the pan gesture; `DragGesture(minimumDistance: 8)`
++ `@GestureState` accumulate into a `settledOffset` that survives the 💬
+visibility toggle and the collapse/expand round-trip for as long as the
+player screen stays mounted ("remembered for the session"); collapsing
+shrinks the card to a single round chat-bubble button (also draggable via
+`.simultaneousGesture`, so its own tap still resolves). Position is clamped
+to on-screen bounds, clear of the top HUD and bottom rail/controls. The call
+site changed from an anchored `.overlay(alignment: .bottomLeading) {
+.frame(...) }` to a full-bleed `.overlay { }` so `.position(...)` can place
+the card/bubble anywhere. `GoLiveBroadcastView` now presents this SAME
+component (`chatOverlayVisible`, toggled by the existing 💬 control) instead
+of the modal `LiveChatSheet` — `LiveChatSheet.swift` is left in place,
+unreferenced, per the owner's "keep the sheet code but stop presenting it."
+
+**4. TikTok-inspired chrome polish.** Host chip: "Host" plain text replaced
+with a small gold "HOST" pill next to the name (avatar stays the initials
+`Avatar(url: nil, ...)` idiom — confirmed `LiveStreamSummary`/
+`LivePlayableItem` carry no `avatarUrl`, only `startedByName`, so there is no
+real image to show yet; documented inline). The eye-glyph "N watching" pill
+beside LIVE, and the soft translucent circular rail/HUD buttons, were already
+in place from build 92/93 and are unchanged. Added a gentle fade + 10pt
+slide-down entrance for the whole chrome layer and the interaction rail
+(`chromeSettled`, `withAnimation(.spring(...))`), skipped entirely under
+Reduce Motion.
+
+**5. Go Live audience picker.** `GoLiveSetupSheet`'s "WHERE" section became
+"AUDIENCE": "Everyone — all connected members" vs "A cell / class". The cell
+option now lists the broadcaster's OWN cells — reusing the EXISTING
+`MemberAPI.disciples()` roster fetch (`GET /disciples`) rather than minting a
+new endpoint, per the ask. This is also a genuine correctness fix, not just
+UI: the server's actual scope=cell authorization (`service.ts createStream`)
+is Admin/SuperAdmin OR the cell in the caller's `leader_assignments` — NOT
+`profile.cell_group_id` (personal membership), which is what
+`LiveBroadcastEligibility.cellEligible` used as a proxy everywhere else. The
+roster is scoped by that same `leader_assignments` set, so every distinct
+cell it surfaces is guaranteed to authorize. Falls back to the old
+single-"My cell" proxy when the roster call is empty/403s (a non-leader
+member) — unchanged behavior for everyone this is new for. Wire contract
+unchanged (`scope: church|cell`, `cell_id`).
+
+**6. Banner-on-broadcaster screenshot bug — root cause found and fixed at
+the source, not patched at the symptom.** `LiveChatSheet`/guest banner code
+never runs on `GoLiveBroadcastView` — grepped for every call site and
+confirmed the guest-invite chrome lives ONLY in `LiveViewerPlayerView`. The
+real bug: `LiveDiscoveryCenter.ingest(_:)` folded `/live/now` rows into
+`streams` with NO filter for "and don't tell me about MY OWN live stream" —
+the wire has no such distinction (`startedByName` only, no `startedBy`
+user id in `LiveNowRow`/`LiveStreamSummary`). A broadcaster who minimized
+their own broadcast could tap the app-wide LIVE bar (or Home's mini-window,
+or a routed `live_stream_started` push) for THEIR OWN stream and land in
+`LiveViewerPlayerView` — the screenshot's guest chrome rendering over what
+should have been their own broadcast surface. Fixed at the source:
+`ingest(_:)` now drops `BroadcastCenter.shared.controller?.session.stream
+.streamId` from `streams` before anything downstream (bar/mini-window/
+notification-tap) ever sees it — a broadcaster can never be offered their
+own stream to "watch" from any of the three discovery surfaces. Added a
+second, cheap defense-in-depth guard directly in `guestInviteCard` (never
+render when `item.id` matches the active `BroadcastCenter` session) in case
+some future change reintroduces a path into the viewer for one's own stream;
+documented as "should never trigger — the backend also refuses to let a
+broadcaster invite themselves as a guest of their own stream."
+
+**7. Live hub redesign (`NuruLiveTabView.swift`) — scope extension mid-task
+(owner: "on Android it's bare; bring iOS's to the same elevated design").**
+Replaced the plain header/card/list layout with a navy "studio card" hero
+(Fraunces "Nuru Live" + caption, large gold Go Live pill with a camera glyph
+and a breathing ring — `Reduce Motion` → static; swaps to a "● LIVE now —
+watch" row when someone ELSE has the church stream live, since starting a
+second one would just 409 anyway). Replaced the embedded read-only Replays
+list with "My Broadcasts": `GET /live/recordings/mine` (new
+`MemberAPI.fetchMyRecordings()` / `LiveMyRecordingRow` — server field is
+`url`, not `recording_url`, since it's a distinct response shape from
+`GET /live/recordings`), navy thumbnail tile + kind glyph, Fraunces title,
+scope chip + date, and a `Menu` (⋮) per row: Play (existing
+`LiveViewerPlayerView` via a new `LivePlayableItem.myRecording(_:)`
+factory), Download/Share (`ShareLink` over the ABSOLUTE URL — resolved via
+the EXISTING `MemberAPI.resolveLiveMediaURL`, which already prefixes the
+API's origin exactly the way the owner's ask described, so no
+environment-specific host got hardcoded), and Delete → the SAME confirmation
+copy/flow as #8 below → `DELETE /live/recordings/{id}` (new
+`MemberAPI.deleteLiveRecording(streamId:)`) then removes the row locally.
+Tasteful empty state ("No broadcasts yet…") and an error state with retry,
+matching `LiveReplaysView`'s existing idiom. `LiveReplaysView` itself and
+its callers (Home, `CellInfoView`) are untouched — "My Broadcasts" is
+additive, not a replacement of the read-only Replays surface everyone else
+still uses.
+
+**8. End-of-broadcast stewardship (`GoLiveBroadcastView.summaryView`).**
+Added "Keep in Replays" (gold, primary — needs no API call; keeping is
+simply the default, so it and dismissing any other way both just call
+`BroadcastCenter.shared.clear()`) and a quiet red "Delete recording" text
+button beneath it, gated behind the same confirmation dialog copy the owner
+specified ("Delete '<title>'? The recording will be gone forever." / "Delete
+forever" / "Cancel") → `DELETE /live/recordings/{streamId}`. Best-effort: the
+recording registrar runs a background sweep (inline attempt + ~2min worker
+backstop, per the live module's own OPS FOLLOW-UP note) so a recording may
+not be registered yet the instant this screen appears — a delete attempt in
+that window 404s server-side and is swallowed silently (nothing to steward
+yet, and "keep" — doing nothing — is already correct).
+
+**Honest limits.** No backend is reachable from this sandbox (Home's own
+dashboard fails to load with "Couldn't load your dashboard" on a clean
+launch) — the Live tab, Go Live flow, guest-invite banner, and My Broadcasts
+list could NOT be exercised interactively against a live stream/session in
+this pass. Verification is: `xcodebuild … build` → BUILD SUCCEEDED,
+`xcodebuild … test` → all 21 baseline tests green, and a plain app-launch
+smoke check (no crash, Home renders, session persisted from a prior run).
+Every UI change was reasoned through against the existing wire contracts and
+this codebase's own idioms (Nuru tokens, `Icon`/`Avatar`/`.pressable`,
+`Envelope<T>`/`EmptyResponse`) rather than screenshotted end-to-end. The
+`live:go` permission wasn't present on the signed-in profile in this
+session, so the Live tab itself didn't even render in the smoke check
+(matches existing, unchanged gating in `RootView.visibleTabs`).
+
 ## 2026-07-31 — Nuru Live "Broadcast Studio": persistence, honest backgrounding, Document/Screen sources (branch feat/broadcast-studio, this repo only)
 Owner spec: richer broadcast stage, screen/document sharing, and the stream
 must not die when leaving the broadcast screen. Built on top of build 92

@@ -1,17 +1,30 @@
-// Nuru Live — the VIEWER-side floating chat overlay (owner's exact vision,
-// 2026-07-31 viewer redesign). REPLACES the modal `LiveChatSheet` on the
-// viewer player only: anchored bottom-left, translucent dark material,
-// roughly 2/3 screen width and the lower 1/3 of the screen, showing the last
-// ~6 messages (gold sender name, white body) with a soft top fade and
-// auto-scroll, plus its own translucent composer pill. 💬 in
-// `LiveViewerPlayerView`'s rail toggles visibility (opacity/hit-testing only
-// — this stays MOUNTED and polling the whole time the player is live, so
-// toggling it off and back on never loses the conversation or restarts the
-// 3s poll).
+// Nuru Live — the shared floating chat overlay (2026-07-31 viewer redesign;
+// taste pass same day made it draggable/collapsible and extended it to the
+// BROADCASTER screen too). REPLACES the modal `LiveChatSheet` on BOTH the
+// viewer player and the broadcast screen (`GoLiveBroadcastView`) — chat is
+// never a sheet that eats the whole stage anymore, just a small floating
+// card. `LiveChatSheet.swift` itself is left in place (unreferenced) rather
+// than deleted, in case a future surface still wants a full-screen thread.
 //
-// The BROADCASTER side is untouched: GoLiveBroadcastView still presents the
-// modal `LiveChatSheet.swift` exactly as it did before this pass — that file
-// is not modified here.
+// TASTE PASS additions (owner feedback: "not movable, occupies too much
+// space"):
+//   - Draggable from its own header (or the bubble itself when collapsed) —
+//     `DragGesture(minimumDistance:)` so a plain tap on the header's ✕/⌄
+//     controls, or the bubble, still registers as a tap rather than being
+//     eaten by the gesture.
+//   - Smaller default footprint: ~55% width × ~26% height (was 66%/32%).
+//   - A collapse control shrinks the whole thing to a single round chat
+//     bubble (also draggable) — tapping the bubble re-expands the card.
+//   - Position is REMEMBERED FOR THE SESSION: `settledOffset` is plain
+//     `@State`, so it survives the 💬 visibility toggle and the
+//     expand/collapse round-trip (the view stays mounted for as long as the
+//     player screen itself is open) — but a fresh stream gets a fresh view
+//     identity (`.id(item.id)` at the call site) and starts back at the
+//     default corner, which is the right behavior for a new broadcast.
+//
+// Presentation changed too: this is now a FULL-BLEED `.overlay { }` at the
+// call site (no `alignment:`/`.frame` there) so `.position(...)` below can
+// place it anywhere on screen — see LiveViewerPlayerView / GoLiveBroadcastView.
 import SwiftUI
 
 /// Owns the same 3s since-cursor poll `LiveChatSheet` uses, factored out so
@@ -101,6 +114,24 @@ struct LiveFloatingChatOverlay: View {
 
     @StateObject private var chat: LiveFloatingChatController
     @FocusState private var composerFocused: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Live drag delta (only non-zero mid-gesture) + the settled offset from
+    /// the default bottom-leading corner — see the header comment for what
+    /// "remembered for the session" means here.
+    @GestureState private var dragTranslation: CGSize = .zero
+    @State private var settledOffset: CGSize = .zero
+    @State private var collapsed = false
+
+    private static let widthFraction: CGFloat = 0.55
+    private static let heightFraction: CGFloat = 0.26
+    private static let bubbleDiameter: CGFloat = 54
+    private static let margin: CGFloat = 12
+    /// Clears the rail/controls row at the bottom of either host screen.
+    private static let bottomInset: CGFloat = 96
+    /// Clears the top HUD (close ✕ / LIVE pill / host chip on the viewer;
+    /// minimize / LIVE pill / timer on the broadcaster).
+    private static let topInset: CGFloat = 150
 
     init(streamId: String, myUserId: String?, handsRaisedCount: Int, visible: Binding<Bool>) {
         self.streamId = streamId
@@ -114,8 +145,61 @@ struct LiveFloatingChatOverlay: View {
         Array(chat.messages.suffix(LiveFloatingChatController.visibleWindow))
     }
 
+    private var screen: CGSize { UIScreen.main.bounds.size }
+    private var cardSize: CGSize {
+        CGSize(width: screen.width * Self.widthFraction, height: screen.height * Self.heightFraction)
+    }
+    private var currentSize: CGSize {
+        collapsed ? CGSize(width: Self.bubbleDiameter, height: Self.bubbleDiameter) : cardSize
+    }
+    /// Default top-left corner (bottom-leading anchored) before any drag.
+    private var defaultOrigin: CGPoint {
+        CGPoint(x: Self.margin, y: screen.height - Self.bottomInset - cardSize.height)
+    }
+    /// Top-left corner after the settled + in-flight drag offset, clamped so
+    /// the card/bubble can never drift off-screen or behind the top/bottom HUD.
+    private var origin: CGPoint {
+        let raw = CGPoint(
+            x: defaultOrigin.x + settledOffset.width + dragTranslation.width,
+            y: defaultOrigin.y + settledOffset.height + dragTranslation.height)
+        let minX = Self.margin
+        let maxX = max(minX, screen.width - currentSize.width - Self.margin)
+        let minY = Self.topInset
+        let maxY = max(minY, screen.height - Self.bottomInset - currentSize.height)
+        return CGPoint(x: min(max(raw.x, minX), maxX), y: min(max(raw.y, minY), maxY))
+    }
+
+    /// Drag from the header (card) or the bubble itself — a `minimumDistance`
+    /// so a plain tap on the header's own collapse button, or a tap on the
+    /// bubble, still resolves as a tap rather than being swallowed here.
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .updating($dragTranslation) { value, state, _ in state = value.translation }
+            .onEnded { value in
+                settledOffset.width += value.translation.width
+                settledOffset.height += value.translation.height
+            }
+    }
+
     var body: some View {
+        Group {
+            if collapsed { bubbleButton } else { card }
+        }
+        .frame(width: currentSize.width, height: currentSize.height)
+        .position(x: origin.x + currentSize.width / 2, y: origin.y + currentSize.height / 2)
+        .opacity(visible ? 1 : 0)
+        .allowsHitTesting(visible)
+        .animation(.easeInOut(duration: 0.2), value: visible)
+        .animation(reduceMotion ? nil : .spring(response: 0.32, dampingFraction: 0.82), value: collapsed)
+        .task { chat.start() }
+        .onDisappear { chat.stop() }
+    }
+
+    // MARK: Card (expanded) — draggable header + message list + composer
+
+    private var card: some View {
         VStack(alignment: .leading, spacing: 8) {
+            header
             if handsRaisedCount > 0 {
                 HStack(spacing: 5) {
                     Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .semibold))
@@ -139,11 +223,55 @@ struct LiveFloatingChatOverlay: View {
         // player one level up).
         .environment(\.colorScheme, .dark)
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.12), lineWidth: 1))
-        .opacity(visible ? 1 : 0)
-        .allowsHitTesting(visible)
-        .animation(.easeInOut(duration: 0.2), value: visible)
-        .task { chat.start() }
-        .onDisappear { chat.stop() }
+        .transition(.scale(scale: 0.4, anchor: .topLeading).combined(with: .opacity))
+    }
+
+    /// Drag handle + collapse control — the ONLY part of the card the drag
+    /// gesture is attached to, so scrolling the message list or typing in
+    /// the composer is never fought over with a pan gesture on the card.
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.white.opacity(0.4))
+            Text("LIVE CHAT").font(.inter(9, .bold)).kerning(1).foregroundStyle(.white.opacity(0.6))
+            Spacer(minLength: 0)
+            Button {
+                Haptics.tap()
+                collapsed = true
+            } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 22, height: 22)
+                    .background(Color.white.opacity(0.14), in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Collapse live chat")
+        }
+        .contentShape(Rectangle())
+        .gesture(dragGesture)
+    }
+
+    // MARK: Bubble (collapsed) — single draggable round button, re-expands on tap
+
+    private var bubbleButton: some View {
+        Button {
+            Haptics.tap()
+            collapsed = false
+        } label: {
+            ZStack {
+                Circle().fill(.ultraThinMaterial)
+                Circle().stroke(Color.white.opacity(0.2), lineWidth: 1)
+                Image(systemName: "message.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(Nuru.gold)
+            }
+        }
+        .environment(\.colorScheme, .dark)
+        .buttonStyle(.pressable)
+        .simultaneousGesture(dragGesture)
+        .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
+        .accessibilityLabel("Show live chat")
+        .transition(.scale(scale: 0.4, anchor: .topLeading).combined(with: .opacity))
     }
 
     // MARK: Message list — last ~6, gold name + white body, soft top fade,

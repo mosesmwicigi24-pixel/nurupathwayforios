@@ -25,6 +25,17 @@ struct GoLiveSetupSheet: View {
     @State private var conflictMessage: String?
     @State private var permissionMessage: String?
     @State private var forbiddenAlert = false
+    // Audience — taste pass (2026-07-31): "A cell / class" now lists the
+    // broadcaster's OWN cells, not just a generic "My cell" label. See
+    // `cellOptions` below for where this comes from.
+    @State private var myLedCells: [LedCell] = []
+    @State private var selectedCellId: String?
+
+    /// One cell the signed-in member may go live to under scope=cell.
+    private struct LedCell: Identifiable, Hashable {
+        let id: String
+        let name: String
+    }
 
     init(forcedCell: (id: String, name: String)? = nil, onStarted: @escaping (GoLiveSession) -> Void) {
         self.forcedCell = forcedCell
@@ -37,10 +48,31 @@ struct GoLiveSetupSheet: View {
     private var churchEligible: Bool {
         forcedCell == nil && LiveBroadcastEligibility.churchEligible(auth.profile)
     }
-    private var cellEligible: Bool {
-        forcedCell != nil || LiveBroadcastEligibility.cellEligible(auth.profile)
+
+    /// The cells this member may broadcast to under scope=cell. The server's
+    /// own authorization for scope=cell (service.ts `createStream`) is
+    /// Admin/SuperAdmin OR the cell appearing in the caller's
+    /// `leader_assignments` — NOT `profile.cell_group_id` (that's just their
+    /// own personal cell MEMBERSHIP, a cheap proxy `LiveBroadcastEligibility.
+    /// cellEligible` uses elsewhere for a plain single-cell affordance).
+    /// `GET /disciples` (the existing discipler-roster fetch — reused here
+    /// rather than minting a new endpoint) is scoped by that same
+    /// `leader_assignments` set, so every distinct cell it surfaces is
+    /// guaranteed to authorize — same "never a false positive" invariant
+    /// `LiveBroadcastEligibility` documents, just a more precise signal for
+    /// a leader who leads more than one cell. Falls back to the personal-
+    /// membership proxy (a single "My cell" option) when the roster fetch
+    /// comes back empty — a non-leader member, or `/disciples` 403ing for a
+    /// role below Instructor+ (best-effort `try?` in `loadMyLedCells`) —
+    /// which is exactly today's existing behavior, unchanged for everyone
+    /// this picker is new for.
+    private var cellOptions: [LedCell] {
+        if !myLedCells.isEmpty { return myLedCells }
+        if let id = auth.profile?.cellGroupId, !id.isEmpty { return [LedCell(id: id, name: "My cell")] }
+        return []
     }
-    private var hasEligibleScope: Bool { churchEligible || cellEligible }
+    private var cellSectionAvailable: Bool { forcedCell != nil || !cellOptions.isEmpty }
+    private var hasEligibleScope: Bool { churchEligible || cellSectionAvailable }
     private var trimmedTitle: String { title.trimmingCharacters(in: .whitespacesAndNewlines) }
     private var titleValid: Bool { (1...200).contains(trimmedTitle.count) }
     private var canStart: Bool { titleValid && hasEligibleScope && !starting }
@@ -66,6 +98,7 @@ struct GoLiveSetupSheet: View {
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .onAppear { correctScopeIfNeeded() }
+        .task { await loadMyLedCells() }
         .alert("You may not go live here", isPresented: $forbiddenAlert) {
             Button("OK") { dismiss() }
         } message: {
@@ -78,8 +111,30 @@ struct GoLiveSetupSheet: View {
     /// scope actually IS eligible rather than leaving Start permanently
     /// disabled on an option nobody can use.
     private func correctScopeIfNeeded() {
-        if scope == .church, !churchEligible, cellEligible { scope = .cell }
-        else if scope == .cell, !cellEligible, churchEligible { scope = .church }
+        if scope == .church, !churchEligible, cellSectionAvailable { scope = .cell }
+        else if scope == .cell, !cellSectionAvailable, churchEligible { scope = .church }
+        if selectedCellId == nil { selectedCellId = cellOptions.first?.id }
+    }
+
+    /// Best-effort — a plain member's `/disciples` call 403s (Instructor+
+    /// only) and that's fine: `cellOptions` already falls back to the
+    /// personal-cell proxy when `myLedCells` stays empty. `forcedCell != nil`
+    /// (CellInfoView's entry point) skips this entirely — that flow never
+    /// shows a cell picker at all.
+    private func loadMyLedCells() async {
+        guard forcedCell == nil else { return }
+        guard let roster = try? await MemberAPI.disciples() else { return }
+        var seenIds = Set<String>()
+        var cells: [LedCell] = []
+        for row in roster.data {
+            guard let id = row.cellGroupId, !id.isEmpty, !seenIds.contains(id) else { continue }
+            seenIds.insert(id)
+            let name = row.cellName?.isEmpty == false ? row.cellName! : "Cell"
+            cells.append(LedCell(id: id, name: name))
+        }
+        guard !cells.isEmpty else { return }
+        myLedCells = cells
+        if selectedCellId == nil { selectedCellId = cellOptions.first?.id }
     }
 
     // MARK: Sections
@@ -128,25 +183,63 @@ struct GoLiveSetupSheet: View {
 
     @ViewBuilder private var scopeSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("WHERE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("AUDIENCE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             if let forcedCell {
                 scopeLabelRow(icon: .users, text: forcedCell.name)
-            } else if churchEligible && cellEligible {
+            } else if churchEligible && cellSectionAvailable {
                 HStack(spacing: 4) {
-                    segmentButton("Church", selected: scope == .church) { scope = .church }
-                    segmentButton("My cell", selected: scope == .cell) { scope = .cell }
+                    segmentButton("Everyone", selected: scope == .church) { scope = .church }
+                    segmentButton("A cell / class", selected: scope == .cell) { scope = .cell }
                 }
                 .padding(4)
                 .background(Nuru.surface, in: Capsule())
                 .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+                if scope == .church {
+                    Text("Everyone — all connected members").font(.inter(11)).foregroundStyle(Nuru.muted)
+                        .padding(.horizontal, 4)
+                } else {
+                    cellPicker
+                }
             } else if churchEligible {
-                scopeLabelRow(icon: .megaphone, text: "Church")
-            } else if cellEligible {
-                scopeLabelRow(icon: .users, text: "My cell")
+                scopeLabelRow(icon: .megaphone, text: "Everyone — all connected members")
+            } else if cellSectionAvailable {
+                cellPicker
             } else {
                 Text("You don't have a church or cell to go live in yet.")
                     .font(.inter(12)).foregroundStyle(Nuru.muted)
             }
+        }
+    }
+
+    /// The specific-cell list shown once "A cell / class" is the active
+    /// audience: a single labelled row when there's only one option (matches
+    /// the old "My cell" look exactly), or a tappable list of radio rows
+    /// when a leader has more than one cell to choose from.
+    @ViewBuilder private var cellPicker: some View {
+        if cellOptions.count > 1 {
+            VStack(spacing: 6) {
+                ForEach(cellOptions) { cell in
+                    Button {
+                        Haptics.selection()
+                        selectedCellId = cell.id
+                    } label: {
+                        let isSelected = selectedCellId == cell.id
+                        HStack(spacing: 8) {
+                            Icon(.users, size: 13, color: Nuru.goldChipText)
+                            Text(cell.name).font(.inter(13, isSelected ? .bold : .semibold)).foregroundStyle(Nuru.navy)
+                            Spacer(minLength: 0)
+                            if isSelected { Icon(.checkCircle2, size: 15, color: Nuru.gold) }
+                        }
+                        .padding(.horizontal, Nuru.S.md).padding(.vertical, 10)
+                        .background(isSelected ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(isSelected ? Nuru.gold.opacity(0.5) : Nuru.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        } else if let only = cellOptions.first {
+            scopeLabelRow(icon: .users, text: only.name)
         }
     }
 
@@ -240,7 +333,9 @@ struct GoLiveSetupSheet: View {
         }
 
         let finalScope: LiveBroadcastScopeChoice = forcedCell != nil ? .cell : scope
-        let cellId: String? = finalScope == .cell ? (forcedCell?.id ?? auth.profile?.cellGroupId) : nil
+        let cellId: String? = finalScope == .cell
+            ? (forcedCell?.id ?? selectedCellId ?? cellOptions.first?.id ?? auth.profile?.cellGroupId)
+            : nil
 
         do {
             let created = try await MemberAPI.startLiveStream(

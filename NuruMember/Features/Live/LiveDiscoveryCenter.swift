@@ -53,10 +53,25 @@ final class LiveDiscoveryCenter: ObservableObject {
     /// first row this session hasn't already seen — a stream just noticed for
     /// the first time (whether it started seconds or minutes ago), never a
     /// second time for the same stream_id.
+    ///
+    /// GUARD (owner bug report, 2026-07-31 taste pass): `/live/now` has no
+    /// notion of "and don't tell ME about MY OWN stream" — the row for a
+    /// broadcaster's own currently-live stream comes back exactly like
+    /// anyone else's. Left unfiltered, that let a broadcaster who minimized
+    /// their own broadcast tap the app-wide LIVE bar (or Home's mini-window,
+    /// or a routed `live_stream_started` push for their own stream) straight
+    /// into `LiveViewerPlayerView` for the stream THEY are publishing — the
+    /// screenshot bug was that view's guest-invite/"on stage soon" chrome
+    /// rendering on top of what should have been their own broadcast surface.
+    /// The one and only currently-active `BroadcastCenter` session (if any)
+    /// is always this device's own — dropping its stream_id here means none
+    /// of the three discovery surfaces (bar/mini-window/notification) can
+    /// EVER offer a broadcaster their own stream as something to "watch".
     func ingest(_ rows: [LiveStreamSummary]) {
-        streams = rows
+        let ownStreamId = BroadcastCenter.shared.controller?.session.stream.streamId
+        streams = ownStreamId == nil ? rows : rows.filter { $0.streamId != ownStreamId }
         guard popupStreamId == nil else { return }   // one mini-window at a time
-        if let fresh = rows.first(where: { !seen.contains($0.streamId) }) {
+        if let fresh = streams.first(where: { !seen.contains($0.streamId) }) {
             popupStreamId = fresh.streamId
         }
     }

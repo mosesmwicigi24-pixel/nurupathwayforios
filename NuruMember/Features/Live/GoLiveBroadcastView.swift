@@ -36,9 +36,18 @@ struct GoLiveBroadcastView: View {
     // both fed by controller.pulse (the same 3s poll that already tracks
     // viewer count).
     @State private var showHandsSheet = false
-    @State private var showChatSheet = false
+    // Taste pass (2026-07-31): the broadcaster now gets the SAME compact,
+    // draggable `LiveFloatingChatOverlay` the viewer uses instead of the
+    // modal `LiveChatSheet` — chat toggles on/off in place rather than
+    // covering the whole stage. `LiveChatSheet.swift` itself is left as-is,
+    // just no longer presented from here.
+    @State private var chatOverlayVisible = false
     // Broadcast Studio — Camera / Document / Screen source switcher.
     @State private var showSourceSheet = false
+    // End-of-broadcast stewardship (Keep in Replays / Delete recording).
+    @State private var confirmDeleteRecording = false
+    @State private var deletingRecording = false
+    @State private var recordingDeleted = false
 
     init(controller: BroadcastController) {
         self.controller = controller
@@ -55,6 +64,18 @@ struct GoLiveBroadcastView: View {
             if controller.phase == .live || isReconnecting {
                 FloatingReactionsOverlay(queue: reactionQueue)
                     .padding(.bottom, 112).padding(.trailing, 14)
+            }
+        }
+        .overlay {
+            // Shared floating chat — full-bleed so it can be dragged anywhere
+            // (see LiveFloatingChatOverlay's header comment). Replaces the
+            // modal LiveChatSheet on this screen too, matching the viewer.
+            if controller.phase == .live || isReconnecting {
+                LiveFloatingChatOverlay(
+                    streamId: controller.session.stream.streamId, myUserId: auth.profile?.userId,
+                    handsRaisedCount: controller.pulse?.hands.count ?? 0,
+                    visible: $chatOverlayVisible
+                )
             }
         }
         .preferredColorScheme(.dark)
@@ -91,10 +112,6 @@ struct GoLiveBroadcastView: View {
         }
         .sheet(isPresented: $showHandsSheet) {
             LiveHandsGuestsSheet(controller: controller)
-        }
-        .sheet(isPresented: $showChatSheet) {
-            LiveChatSheet(streamId: controller.session.stream.streamId, myUserId: auth.profile?.userId)
-                .presentationDetents([.medium])
         }
         .sheet(isPresented: $showSourceSheet) {
             BroadcastSourceSheet(controller: controller)
@@ -213,29 +230,83 @@ struct GoLiveBroadcastView: View {
         }
     }
 
+    /// End-of-broadcast stewardship (owner taste pass, 2026-07-31): the
+    /// registrar's recording sweep runs in the background (best-effort
+    /// inline attempt + a ~2min worker backstop — see the module's own
+    /// OPS FOLLOW-UP note), so a recording may not exist yet the instant
+    /// this screen appears; deleting one that isn't registered yet is a
+    /// harmless no-op (`deleteRecording` best-effort catches the resulting
+    /// NOT_FOUND). "Keep in Replays" needs no API call at all — keeping is
+    /// simply the default, so dismissing this screen any other way (or not
+    /// deleting) already achieves it.
     private var summaryView: some View {
         let duration = (controller.endedAt ?? Date()).timeIntervalSince(controller.startedAt ?? controller.endedAt ?? Date())
         return VStack(spacing: 18) {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.16)).frame(width: 96, height: 96)
-                Icon(.checkCircle2, size: 36, color: Nuru.gold)
+                Icon(recordingDeleted ? .trash2 : .checkCircle2, size: 36, color: Nuru.gold)
             }
             Text("You're offline now").font(.fraunces(22, .semibold)).foregroundStyle(.white)
             Text("You were live for \(formatDuration(duration)) · peak \(controller.peakViewerCount) watching")
                 .font(.inter(13)).foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center).padding(.horizontal, 32)
+            if recordingDeleted {
+                Text("Recording deleted").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.5))
+            }
             Button {
                 Haptics.tap()
                 BroadcastCenter.shared.clear()
             } label: {
-                Text("Done").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
+                Text(recordingDeleted ? "Done" : "Keep in Replays").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 50)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.pressable)
             .padding(.horizontal, 40)
+            if !recordingDeleted {
+                Button {
+                    Haptics.tap()
+                    confirmDeleteRecording = true
+                } label: {
+                    HStack(spacing: 6) {
+                        if deletingRecording {
+                            ProgressView().tint(Color(hex: 0xDC2626).opacity(0.8)).scaleEffect(0.7)
+                        } else {
+                            Icon(.trash2, size: 12, color: Color(hex: 0xDC2626).opacity(0.85))
+                        }
+                        Text("Delete recording").font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0xDC2626).opacity(0.85))
+                    }
+                }
+                .buttonStyle(.plain)
+                .disabled(deletingRecording)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .confirmationDialog("Delete this recording?", isPresented: $confirmDeleteRecording, titleVisibility: .visible) {
+            Button("Delete forever", role: .destructive) {
+                Haptics.action()
+                Task { await deleteRecording() }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Delete '\(controller.session.title)'? The recording will be gone forever.")
+        }
+    }
+
+    private func deleteRecording() async {
+        guard !deletingRecording else { return }
+        deletingRecording = true
+        defer { deletingRecording = false }
+        do {
+            try await MemberAPI.deleteLiveRecording(streamId: controller.session.stream.streamId)
+            Haptics.success()
+            recordingDeleted = true
+        } catch {
+            Haptics.error()
+            // Best-effort: most likely the registrar hasn't attached a
+            // recording_url yet (NOT_FOUND) — nothing to steward in that
+            // case, and "Keep in Replays" (doing nothing) is already correct.
+        }
     }
 
     /// A defensive re-check of camera/mic access failed once this screen
@@ -420,10 +491,10 @@ struct GoLiveBroadcastView: View {
             }
 
             handButton
-            controlButton(icon: "message.fill", active: false) {
-                Haptics.tap(); showChatSheet = true
+            controlButton(icon: "message.fill", active: chatOverlayVisible) {
+                Haptics.tap(); chatOverlayVisible.toggle()
             }
-            .accessibilityLabel("Live chat")
+            .accessibilityLabel(chatOverlayVisible ? "Hide live chat" : "Show live chat")
         }
         .padding(.horizontal, 8)
         .padding(.bottom, 28)

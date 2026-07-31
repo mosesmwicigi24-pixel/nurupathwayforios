@@ -46,6 +46,22 @@ extension MemberAPI {
         return try await APIClient.shared.get("live/recordings", query: q, as: Envelope<LiveRecordingRow>.self).data
     }
 
+    /// GET /live/recordings/mine — the caller's OWN ended broadcasts (or every
+    /// non-deleted recording for a `live:manage` holder), owner-managed
+    /// keep/delete stewardship. Backs "My Broadcasts" on the Live tab —
+    /// distinct from `fetchRecordings`, the read-only list everyone sees.
+    static func fetchMyRecordings() async throws -> [LiveMyRecordingRow] {
+        try await APIClient.shared.get("live/recordings/mine", as: Envelope<LiveMyRecordingRow>.self).data
+    }
+
+    /// DELETE /live/recordings/{id} — soft-deletes (the stream's own owner or
+    /// a `live:manage` holder only, enforced server-side; a second call is a
+    /// silent no-op). `recording_id == stream_id` always (a recording is 1:1
+    /// with the stream that produced it), so any stream_id works here.
+    static func deleteLiveRecording(streamId: String) async throws {
+        _ = try await APIClient.shared.delete("live/recordings/\(streamId)", as: EmptyResponse.self)
+    }
+
     /// Resolve a server-relative live-media path (`hls_url` / `recording_url`)
     /// against the API's ORIGIN, not its `/v1` surface — these are nginx
     /// routes sitting beside the API (e.g. "/live/church/index.m3u8"), never

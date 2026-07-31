@@ -76,6 +76,44 @@ struct LiveRecordingRow: Decodable, Sendable, Identifiable, Hashable {
     }
 }
 
+/// One row of GET /live/recordings/mine — the caller's OWN ended broadcasts
+/// ("My Broadcasts" on the Live tab), or every non-deleted recording for a
+/// `live:manage` holder. Distinct shape from `LiveRecordingRow` (server field
+/// is `url`, not `recording_url`, and it carries `recording_id` — always
+/// `== stream_id`, since a recording is 1:1 with the stream that produced it,
+/// but the server names it explicitly so this row is self-describing).
+struct LiveMyRecordingRow: Decodable, Sendable, Identifiable, Hashable {
+    let recordingId: String
+    let streamId: String
+    let scope: String            // "church" | "cell"
+    let cellId: String?
+    let title: String
+    let kind: String              // "video" | "audio"
+    let startedAt: String
+    let endedAt: String
+    let url: String               // relative — resolve against APIClient.originURL
+
+    var id: String { recordingId }
+    var isAudio: Bool { kind == "audio" }
+
+    private enum CodingKeys: String, CodingKey {
+        case recordingId, streamId, scope, cellId, title, kind, startedAt, endedAt, url
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        recordingId = (try? c.decodeIfPresent(String.self, forKey: .recordingId)) ?? ""
+        streamId = (try? c.decodeIfPresent(String.self, forKey: .streamId)) ?? ""
+        scope = (try? c.decodeIfPresent(String.self, forKey: .scope)) ?? "church"
+        cellId = try? c.decodeIfPresent(String.self, forKey: .cellId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? "Broadcast"
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "video"
+        startedAt = (try? c.decodeIfPresent(String.self, forKey: .startedAt)) ?? ""
+        endedAt = (try? c.decodeIfPresent(String.self, forKey: .endedAt)) ?? ""
+        url = (try? c.decodeIfPresent(String.self, forKey: .url)) ?? ""
+    }
+}
+
 // MARK: - Shared date/time formatting (Home banner, cell card, replays list, player chrome)
 
 enum LiveFormat {
@@ -144,6 +182,17 @@ struct LivePlayableItem: Identifiable, Hashable {
             id: r.streamId, title: r.title,
             subtitle: "\(scopeLabel) · \(LiveFormat.dateLabel(r.startedAt))",
             kind: r.kind, isLive: false, mediaPath: r.recordingUrl,
+            viewerCount: nil, heartbeatStreamId: nil, broadcasterName: nil)
+    }
+
+    /// "My Broadcasts" row → the player — same idiom as `.recording(_:)`,
+    /// against the `LiveMyRecordingRow` shape (`url`, not `recording_url`).
+    static func myRecording(_ r: LiveMyRecordingRow) -> LivePlayableItem {
+        let scopeLabel = r.scope == "church" ? "Church" : "Your cell"
+        return LivePlayableItem(
+            id: r.streamId, title: r.title,
+            subtitle: "\(scopeLabel) · \(LiveFormat.dateLabel(r.startedAt))",
+            kind: r.kind, isLive: false, mediaPath: r.url,
             viewerCount: nil, heartbeatStreamId: nil, broadcasterName: nil)
     }
 }

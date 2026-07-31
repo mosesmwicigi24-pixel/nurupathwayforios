@@ -224,18 +224,24 @@ struct LiveViewerPlayerView: View {
     /// IG-style double-tap-the-video-to-love bursts — one big heart per tap,
     /// positioned at the tap point, self-removing after its pop animation.
     @State private var bigHearts: [BigHeartBurst] = []
+    // Guest banner auto-collapse (owner taste pass, 2026-07-31): the gold
+    // invite/"on stage soon" card is loud by design (it needs to be seen),
+    // but persisting full-size for the rest of the stream buries the
+    // content under it. It shows expanded for ~3s on every FRESH status
+    // (invited → shown big; the moment it flips to accepted after a
+    // response → shown big again), then auto-collapses into a small
+    // tappable corner pill. `lastGuestBannerStatus` is what detects "fresh".
+    @State private var guestBannerCollapsed = false
+    @State private var lastGuestBannerStatus: String?
+    @State private var guestBannerCollapseTask: Task<Void, Never>?
+    // Gentle entrance for the chrome itself (host chip, LIVE/watching pills) —
+    // Reduce Motion just skips the fade/slide and shows everything settled.
+    @State private var chromeSettled = false
 
     private struct BigHeartBurst: Identifiable {
         let id = UUID()
         let point: CGPoint
     }
-
-    /// Fallback sizing for the floating chat overlay (~2/3 width, lower ~1/3
-    /// height, per spec) — `GeometryReader`-free since every other bit of
-    /// full-bleed chrome in this screen already sizes off the device screen
-    /// rather than threading a geometry proxy through (see SelahDrawingSheet
-    /// for this codebase's existing `UIScreen.main` precedent).
-    private var screenSize: CGSize { UIScreen.main.bounds.size }
 
     init(item: LivePlayableItem, replaysScope: String? = nil, replaysCellId: String? = nil, replaysCellName: String? = nil) {
         self.item = item
@@ -295,30 +301,33 @@ struct LiveViewerPlayerView: View {
         .overlay(alignment: .trailing) {
             if item.isLive, controller.phase == .playing {
                 interactionRail.padding(.trailing, 12).padding(.bottom, 90)
+                    .opacity(chromeSettled ? 1 : 0)
+                    .offset(x: chromeSettled ? 0 : 14)
             }
         }
-        .overlay(alignment: .bottomLeading) {
-            // Floating chat — anchored bottom-left, ~2/3 width, lower ~1/3 of
-            // the screen (owner's exact vision, replacing the modal sheet on
-            // the viewer side). Stays MOUNTED whenever the player is live so
-            // its 3s poll never resets — 💬 in the rail only toggles its own
-            // opacity/hit-testing, not its presence in the tree.
+        .overlay {
+            // Floating chat — draggable, self-positioning (full-bleed overlay
+            // so it can be dragged anywhere on screen; see
+            // LiveFloatingChatOverlay's own header comment). Stays MOUNTED
+            // whenever the player is live so its 3s poll never resets — 💬 in
+            // the rail only toggles its own opacity/hit-testing, not its
+            // presence in the tree.
             if item.isLive, controller.phase == .playing {
                 LiveFloatingChatOverlay(
                     streamId: item.id, myUserId: auth.profile?.userId,
                     handsRaisedCount: pulseController.pulse?.hands.count ?? 0,
                     visible: $chatOverlayVisible
                 )
-                .frame(width: screenSize.width * 0.66, height: screenSize.height * 0.32)
-                .padding(.leading, 12)
-                .padding(.bottom, 96)
             }
         }
-        .overlay(alignment: .top) {
+        .overlay(alignment: guestBannerCollapsed ? .topTrailing : .top) {
             if item.isLive, controller.phase == .playing {
-                guestInviteCard.padding(.top, 168)
+                guestInviteCard
+                    .padding(.top, guestBannerCollapsed ? 104 : 168)
+                    .padding(.trailing, guestBannerCollapsed ? 14 : 0)
             }
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82), value: guestBannerCollapsed)
         .preferredColorScheme(.dark)
         .task { await controller.start(mediaPath: item.mediaPath) }
         .task {
@@ -328,6 +337,7 @@ struct LiveViewerPlayerView: View {
         .onDisappear {
             controller.stop()
             pulseController.stop()
+            guestBannerCollapseTask?.cancel()
         }
         .onChange(of: pulseController.freshReactions) { _, fresh in
             guard !fresh.isEmpty else { return }
@@ -338,8 +348,32 @@ struct LiveViewerPlayerView: View {
             guard !handActionInFlight, let myId = auth.profile?.userId else { return }
             handRaised = (hands ?? []).contains { $0.userId == myId }
         }
+        .onChange(of: pulseController.pulse?.guests) { _, guests in
+            scheduleGuestBannerAutoCollapse(for: guests)
+        }
         .sheet(isPresented: $showReplays) {
             LiveReplaysView(scope: replaysScope, cellId: replaysCellId, cellName: replaysCellName)
+        }
+    }
+
+    /// Owner taste pass — the gold guest banner shows big on any FRESH status
+    /// (`lastGuestBannerStatus` changing), then collapses to a corner pill 3s
+    /// later. Re-fires (and re-expands) the instant `respondToInvite` flips
+    /// `invited` → `accepted`, so accepting is never followed by the banner
+    /// silently vanishing mid-collapse — the user sees the confirmed
+    /// "on stage soon" state at full size before it, too, tucks away.
+    private func scheduleGuestBannerAutoCollapse(for guests: [LiveGuestRow]?) {
+        guard let myId = auth.profile?.userId else { return }
+        let status = guests?.first(where: { $0.userId == myId })?.status
+        guard status != lastGuestBannerStatus else { return }
+        lastGuestBannerStatus = status
+        guestBannerCollapseTask?.cancel()
+        guestBannerCollapsed = false
+        guard status == "invited" || status == "accepted" else { return }
+        guestBannerCollapseTask = Task {
+            try? await Task.sleep(nanoseconds: 3_000_000_000)
+            guard !Task.isCancelled else { return }
+            guestBannerCollapsed = true
         }
     }
 
@@ -469,21 +503,58 @@ struct LiveViewerPlayerView: View {
     /// The gold "invited on stage" card — shown while MY guest row is
     /// `invited`; swaps to the honest "joining soon" banner once `accepted`
     /// (L6 video itself is the next phase, so this never claims more than
-    /// the plumbing that actually exists today).
+    /// the plumbing that actually exists today). Auto-collapses to
+    /// `collapsedGuestPill` 3s after appearing (`scheduleGuestBannerAutoCollapse`).
+    ///
+    /// DEFENSE-IN-DEPTH (owner screenshot bug, see LiveDiscoveryCenter.ingest's
+    /// header comment for the actual root cause/fix): a guest row can only
+    /// ever exist for a DIFFERENT stream than the one I'm broadcasting — the
+    /// backend refuses to let a broadcaster invite themselves as a guest of
+    /// their own stream — so the `item.id == BroadcastCenter...streamId`
+    /// check below should never actually trigger. It costs nothing to keep
+    /// as a second line of defense against this exact class of bug
+    /// recurring some other way (e.g. a future change to how streams get
+    /// discovered).
     @ViewBuilder private var guestInviteCard: some View {
-        if let myId = auth.profile?.userId,
+        if item.id == BroadcastCenter.shared.controller?.session.stream.streamId {
+            EmptyView()
+        } else if let myId = auth.profile?.userId,
            let mine = pulseController.pulse?.guests.first(where: { $0.userId == myId }) {
-            switch mine.status {
-            case "invited":
-                guestInviteBanner
-            case "accepted":
-                guestAcceptedBanner
-            default:
-                EmptyView()
+            if guestBannerCollapsed {
+                collapsedGuestPill(status: mine.status)
+            } else {
+                switch mine.status {
+                case "invited":
+                    guestInviteBanner
+                case "accepted":
+                    guestAcceptedBanner
+                default:
+                    EmptyView()
+                }
             }
         } else {
             EmptyView()
         }
+    }
+
+    /// The small tappable corner pill the full banner collapses into.
+    private func collapsedGuestPill(status: String) -> some View {
+        Button {
+            Haptics.tap()
+            guestBannerCollapseTask?.cancel()
+            guestBannerCollapsed = false
+        } label: {
+            HStack(spacing: 6) {
+                Icon(status == "invited" ? .handHeart : .checkCircle2, size: 12, color: Nuru.navy)
+                Text(status == "invited" ? "Invited on stage" : "On stage soon")
+                    .font(.inter(10.5, .bold)).foregroundStyle(Nuru.navy)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 7)
+            .background(Nuru.gold, in: Capsule())
+            .shadow(color: .black.opacity(0.25), radius: 8, y: 3)
+        }
+        .buttonStyle(.pressable)
+        .transition(.scale(scale: 0.6).combined(with: .opacity))
     }
 
     private var guestInviteBanner: some View {
@@ -591,13 +662,17 @@ struct LiveViewerPlayerView: View {
             // recording, which never reaches this branch anyway since it
             // isn't `item.isLive`).
             if item.isLive, let name = item.broadcasterName {
-                HStack(spacing: 8) {
+                HStack(spacing: 7) {
+                    // No `avatarUrl` on `LiveStreamSummary`/`LivePlayableItem`
+                    // (only `startedByName` travels the wire today) — the
+                    // initials idiom `Avatar(url: nil, ...)` already used here
+                    // stands in until the wire carries one.
                     Avatar(url: nil, name: name, size: 28)
                         .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(name).font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
-                        Text("Host").font(.inter(9.5)).foregroundStyle(.white.opacity(0.6))
-                    }
+                    Text(name).font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
+                    Text("HOST").font(.inter(8, .bold)).kerning(0.8).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, 6).padding(.vertical, 2.5)
+                        .background(Nuru.gold, in: Capsule())
                 }
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.black.opacity(0.32), in: Capsule())
@@ -631,6 +706,15 @@ struct LiveViewerPlayerView: View {
         // to reach the true screen edge, matching the top one.
         .ignoresSafeArea(edges: item.isAudio ? Edge.Set() : [.top, .bottom])
         .allowsHitTesting(true)
+        // TikTok-style gentle entrance — the chrome settles in with a soft
+        // fade + slide-down rather than snapping on the instant playback
+        // starts. Reduce Motion skips straight to the settled state.
+        .opacity(chromeSettled ? 1 : 0)
+        .offset(y: chromeSettled ? 0 : -10)
+        .onAppear {
+            guard !reduceMotion else { chromeSettled = true; return }
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.82).delay(0.05)) { chromeSettled = true }
+        }
     }
 
     // MARK: Ended state — never a spinner that hangs forever
