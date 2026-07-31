@@ -52,7 +52,7 @@ extension MemberAPI {
         try await APIClient.shared.get("live/streams/\(streamId)/pulse", as: LivePulse.self)
     }
 
-    // MARK: L6 guest scaffolding — state machine now, video in the next phase.
+    // MARK: L6 guests — state machine (L6a) + real WebRTC video (L6b)
 
     /// POST /live/streams/{id}/guests/{userId} — broadcaster only, ≤6 active
     /// guests. No request body; the path alone identifies the invitee.
@@ -72,5 +72,14 @@ extension MemberAPI {
     /// guest, OR a guest removing themselves (self = leave).
     static func removeLiveGuest(streamId: String, userId: String) async throws {
         _ = try await APIClient.shared.delete("live/streams/\(streamId)/guests/\(userId)", as: EmptyResponse.self)
+    }
+
+    /// GET /live/streams/{id}/guests/me/ingest — the calling user's own WHIP
+    /// publish credentials (see `GuestIngest`'s header comment). 403
+    /// FORBIDDEN_SCOPE if the caller isn't currently an accepted guest of a
+    /// live stream — GuestStagePiP surfaces that as an honest error chip
+    /// with Retry, never a silent loop.
+    static func fetchLiveGuestIngest(streamId: String) async throws -> GuestIngest {
+        try await APIClient.shared.get("live/streams/\(streamId)/guests/me/ingest", as: GuestIngest.self)
     }
 }

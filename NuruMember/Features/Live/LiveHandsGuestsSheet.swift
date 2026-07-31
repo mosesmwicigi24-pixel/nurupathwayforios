@@ -144,12 +144,26 @@ struct LiveHandsGuestsSheet: View {
         }
     }
 
+    /// L6b — real video: an accepted guest's row now reflects the actual
+    /// WhepSubscriber state (BroadcastController.guestTiles) instead of the
+    /// old static "video in the next update" placeholder.
+    private func guestVideoStatusText(_ guest: LiveGuestRow) -> String {
+        guard guest.status == "accepted" else { return "Invited — waiting to accept" }
+        guard let tile = controller.guestTiles.first(where: { $0.userId == guest.userId }) else { return "Connecting…" }
+        switch tile.subscriber.state {
+        case .connecting: return "Connecting…"
+        case .live: return "On stage now"
+        case .failed: return "Video trouble — still on the guest list"
+        case .ended: return "Connecting…"
+        }
+    }
+
     private func guestRow(_ guest: LiveGuestRow) -> some View {
         HStack(spacing: 12) {
             Avatar(url: guest.avatarUrl, name: guest.fullName, size: 38)
             VStack(alignment: .leading, spacing: 2) {
                 Text(guest.fullName).font(.nRowTitle).foregroundStyle(Nuru.ink)
-                Text(guest.status == "accepted" ? "Joining soon — video in the next update" : "Invited — waiting to accept")
+                Text(guestVideoStatusText(guest))
                     .font(.nCardMeta).foregroundStyle(guest.status == "accepted" ? Nuru.success : Nuru.muted)
             }
             Spacer(minLength: 8)

@@ -119,11 +119,18 @@ struct LiveGuestRow: Decodable, Sendable, Identifiable, Equatable {
     let fullName: String
     let avatarUrl: String?
     let status: String
+    /// L6b — the MediaMTX WHEP URL the STREAM'S OWN OWNER subscribes to for
+    /// this guest's real WebRTC video (`.../webrtc/guest/<streamId>/<userId>/whep`).
+    /// Present only for the broadcaster's own pulse poll and only once the
+    /// guest is `accepted` — absent for every other caller (viewers, the
+    /// guest themselves) and absent for `invited`/`declined`/`removed`/`ended`
+    /// rows, so decodes tolerantly to nil rather than erroring.
+    let whepUrl: String?
 
     var id: String { userId }
     var isActive: Bool { status == "invited" || status == "accepted" }
 
-    private enum CodingKeys: String, CodingKey { case userId, fullName, avatarUrl, status }
+    private enum CodingKeys: String, CodingKey { case userId, fullName, avatarUrl, status, whepUrl }
 
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -131,6 +138,30 @@ struct LiveGuestRow: Decodable, Sendable, Identifiable, Equatable {
         fullName = (try? c.decodeIfPresent(String.self, forKey: .fullName)) ?? "Member"
         avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
         status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "invited"
+        whepUrl = try? c.decodeIfPresent(String.self, forKey: .whepUrl)
+    }
+}
+
+/// GET /live/streams/{id}/guests/me/ingest — the CALLING user's own WHIP
+/// publish credentials, valid only while their `pulse.guests` row is
+/// `accepted` on a LIVE stream (403 FORBIDDEN_SCOPE otherwise). `whipUrl` is
+/// the bare MediaMTX WHIP endpoint
+/// (`.../webrtc/guest/<streamId>/<userId>/whip`); WhipPublisher appends
+/// `?user=<userId>&pass=<token>` itself (MediaMTX's credential-based
+/// WHIP/WHEP auth — see docs/LIVE_INTERACTIVE.md and BroadcastController's
+/// header comment on the RTMP equivalent).
+struct GuestIngest: Decodable, Sendable {
+    let whipUrl: String
+    let token: String
+    let path: String
+
+    private enum CodingKeys: String, CodingKey { case whipUrl, token, path }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        whipUrl = (try? c.decodeIfPresent(String.self, forKey: .whipUrl)) ?? ""
+        token = (try? c.decodeIfPresent(String.self, forKey: .token)) ?? ""
+        path = (try? c.decodeIfPresent(String.self, forKey: .path)) ?? ""
     }
 }
 

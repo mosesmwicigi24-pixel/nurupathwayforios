@@ -132,6 +132,17 @@ final class LiveViewerPlayerController: ObservableObject {
         player?.pause()
     }
 
+    /// L6b — auto-mute HLS playback while I'm publishing myself onto the
+    /// stage as a guest (self-echo: my own voice would otherwise come back
+    /// over the HLS pipeline's several-second delay). Purely a local volume
+    /// gate — never touches AVAudioSession itself, which WhipPublisher/WebRTC
+    /// owns while a guest publish is active (see WebRTCAudioCoexistence's
+    /// header comment for why the HOST side needs a different fix and the
+    /// viewer side doesn't).
+    func setSelfEchoMuted(_ muted: Bool) {
+        player?.isMuted = muted
+    }
+
     private func startHeartbeat() {
         guard let heartbeatStreamId else { return }   // recordings never heartbeat
         heartbeatTask?.cancel()
@@ -234,6 +245,13 @@ struct LiveViewerPlayerView: View {
     @State private var guestBannerCollapsed = false
     @State private var lastGuestBannerStatus: String?
     @State private var guestBannerCollapseTask: Task<Void, Never>?
+    // L6b — real WebRTC video once MY guest row is `accepted`: WhipPublisher
+    // owns the actual camera+mic publish; `guestStageActive` just guards
+    // against starting it twice for the same accepted window (see
+    // `syncGuestStage`). GuestStagePiP (the draggable self-preview) replaces
+    // the old static "video in the next update" banner entirely.
+    @StateObject private var guestPublisher = WhipPublisher()
+    @State private var guestStageActive = false
     // Gentle entrance for the chrome itself (host chip, LIVE/watching pills) —
     // Reduce Motion just skips the fade/slide and shows everything settled.
     @State private var chromeSettled = false
@@ -328,6 +346,18 @@ struct LiveViewerPlayerView: View {
             }
         }
         .animation(reduceMotion ? nil : .spring(response: 0.35, dampingFraction: 0.82), value: guestBannerCollapsed)
+        .overlay {
+            // L6b — the draggable self-preview once I'm an accepted guest.
+            // Full-bleed so GuestStagePiP can position/drag itself, same
+            // idiom as the floating chat overlay.
+            if guestStageActive {
+                GuestStagePiP(
+                    publisher: guestPublisher,
+                    onLeave: { Task { await leaveGuestStage() } },
+                    onRetry: { Task { await retryGuestStage() } }
+                )
+            }
+        }
         .preferredColorScheme(.dark)
         .task { await controller.start(mediaPath: item.mediaPath) }
         .task {
@@ -338,6 +368,8 @@ struct LiveViewerPlayerView: View {
             controller.stop()
             pulseController.stop()
             guestBannerCollapseTask?.cancel()
+            guestStageActive = false
+            Task { await guestPublisher.stop() }
         }
         .onChange(of: pulseController.freshReactions) { _, fresh in
             guard !fresh.isEmpty else { return }
@@ -350,18 +382,71 @@ struct LiveViewerPlayerView: View {
         }
         .onChange(of: pulseController.pulse?.guests) { _, guests in
             scheduleGuestBannerAutoCollapse(for: guests)
+            syncGuestStage(guests)
+        }
+        .onChange(of: guestStageActive) { _, active in
+            controller.setSelfEchoMuted(active)
         }
         .sheet(isPresented: $showReplays) {
             LiveReplaysView(scope: replaysScope, cellId: replaysCellId, cellName: replaysCellName)
         }
     }
 
-    /// Owner taste pass — the gold guest banner shows big on any FRESH status
-    /// (`lastGuestBannerStatus` changing), then collapses to a corner pill 3s
-    /// later. Re-fires (and re-expands) the instant `respondToInvite` flips
-    /// `invited` → `accepted`, so accepting is never followed by the banner
-    /// silently vanishing mid-collapse — the user sees the confirmed
-    /// "on stage soon" state at full size before it, too, tucks away.
+    // MARK: L6b — guest stage lifecycle (real WHIP publish)
+
+    /// Starts publishing the FIRST time my `pulse.guests` row reads
+    /// "accepted"; tears down the instant it stops being that (host removed
+    /// me, I left via `leaveGuestStage`, or the stream ended and the pulse
+    /// loop stops delivering my row at all — `guests` still resolves to nil
+    /// status in that case, which the `default` branch below treats the same
+    /// as removed).
+    private func syncGuestStage(_ guests: [LiveGuestRow]?) {
+        guard let myId = auth.profile?.userId else { return }
+        let status = guests?.first(where: { $0.userId == myId })?.status
+        switch status {
+        case "accepted":
+            guard !guestStageActive else { return }
+            guestStageActive = true
+            Task { await beginGuestPublishing() }
+        default:
+            guard guestStageActive else { return }
+            guestStageActive = false
+            Task { await guestPublisher.stop() }
+        }
+    }
+
+    private func beginGuestPublishing() async {
+        guard let myId = auth.profile?.userId else { return }
+        guard let ingest = try? await MemberAPI.fetchLiveGuestIngest(streamId: item.id) else {
+            guestPublisher.markFailed("Couldn't join the stage — try again.")
+            return
+        }
+        await guestPublisher.start(whipURLString: ingest.whipUrl, user: myId, pass: ingest.token)
+    }
+
+    private func retryGuestStage() async {
+        guestPublisher.resetToIdle()
+        await beginGuestPublishing()
+    }
+
+    /// The self-preview's "Leave stage" pill — stops publishing AND tells the
+    /// server (self = leave, per the pinned guest contract), then refreshes
+    /// the pulse immediately so the banner/rail elsewhere reflect it without
+    /// waiting out the rest of the 5s poll window.
+    private func leaveGuestStage() async {
+        guestStageActive = false
+        await guestPublisher.stop()
+        if let myId = auth.profile?.userId {
+            try? await MemberAPI.removeLiveGuest(streamId: item.id, userId: myId)
+        }
+        await pulseController.pollNow()
+    }
+
+    /// Owner taste pass — the gold guest INVITE banner shows big on any FRESH
+    /// "invited" status, then collapses to a corner pill 3s later. Scoped to
+    /// `invited` only (L6b): once accepted, GuestStagePiP's own draggable
+    /// self-preview takes over as the "you're on stage" chrome — there's no
+    /// longer a static banner for that status to show/collapse.
     private func scheduleGuestBannerAutoCollapse(for guests: [LiveGuestRow]?) {
         guard let myId = auth.profile?.userId else { return }
         let status = guests?.first(where: { $0.userId == myId })?.status
@@ -369,7 +454,7 @@ struct LiveViewerPlayerView: View {
         lastGuestBannerStatus = status
         guestBannerCollapseTask?.cancel()
         guestBannerCollapsed = false
-        guard status == "invited" || status == "accepted" else { return }
+        guard status == "invited" else { return }
         guestBannerCollapseTask = Task {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             guard !Task.isCancelled else { return }
@@ -519,34 +604,31 @@ struct LiveViewerPlayerView: View {
         if item.id == BroadcastCenter.shared.controller?.session.stream.streamId {
             EmptyView()
         } else if let myId = auth.profile?.userId,
-           let mine = pulseController.pulse?.guests.first(where: { $0.userId == myId }) {
+           let mine = pulseController.pulse?.guests.first(where: { $0.userId == myId }),
+           mine.status == "invited" {
+            // "accepted" no longer renders here at all — GuestStagePiP (a
+            // separate full-bleed overlay, see `body`) is the entire "you're
+            // on stage" chrome once accepted.
             if guestBannerCollapsed {
-                collapsedGuestPill(status: mine.status)
+                collapsedGuestPill
             } else {
-                switch mine.status {
-                case "invited":
-                    guestInviteBanner
-                case "accepted":
-                    guestAcceptedBanner
-                default:
-                    EmptyView()
-                }
+                guestInviteBanner
             }
         } else {
             EmptyView()
         }
     }
 
-    /// The small tappable corner pill the full banner collapses into.
-    private func collapsedGuestPill(status: String) -> some View {
+    /// The small tappable corner pill the invite banner collapses into.
+    private var collapsedGuestPill: some View {
         Button {
             Haptics.tap()
             guestBannerCollapseTask?.cancel()
             guestBannerCollapsed = false
         } label: {
             HStack(spacing: 6) {
-                Icon(status == "invited" ? .handHeart : .checkCircle2, size: 12, color: Nuru.navy)
-                Text(status == "invited" ? "Invited on stage" : "On stage soon")
+                Icon(.handHeart, size: 12, color: Nuru.navy)
+                Text("Invited on stage")
                     .font(.inter(10.5, .bold)).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -589,18 +671,6 @@ struct LiveViewerPlayerView: View {
         .padding(14)
         .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
-        .padding(.horizontal, 24)
-    }
-
-    private var guestAcceptedBanner: some View {
-        HStack(spacing: 8) {
-            Icon(.checkCircle2, size: 14, color: Nuru.navy)
-            Text("You're on stage soon — video joins in the next update")
-                .font(.inter(11, .semibold)).foregroundStyle(Nuru.navy)
-                .multilineTextAlignment(.leading)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 9)
-        .background(Nuru.gold.opacity(0.92), in: Capsule())
         .padding(.horizontal, 24)
     }
 

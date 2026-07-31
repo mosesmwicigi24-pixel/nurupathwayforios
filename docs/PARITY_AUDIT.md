@@ -1,4 +1,177 @@
 
+## 2026-07-31 — Nuru Live L6b: real guest video over WHIP/WHEP (branch feat/live-l6b-guest-video, this repo only)
+Replaces every "video joins in the next update" placeholder from L6a with
+real WebRTC video/audio — guests actually publish, the host actually sees
+and hears them. Built against the LIVE, already-deployed MediaMTX WHIP/WHEP
+endpoint (`https://pathway.nuruplace.org/webrtc/`) and the pinned wire facts
+handed down for this pass; verified those facts against the actual backend
+source (`packages/backend/src/modules/live/service.ts` — `guestIngest`,
+`authGuestPublish`, `authGuestRead`, `guestPathFor`) before writing a line of
+client code, since "PINNED... do not change" is only as good as what's
+actually running.
+
+**1. Dependency.** Added SPM package `https://github.com/stasel/WebRTC`
+(binary Google WebRTC build, M150/150.0.0 — the current latest release,
+confirmed via the GitHub API rather than guessed) to
+`NuruMember.xcodeproj/project.pbxproj`, mirroring the existing HaishinKit
+`XCRemoteSwiftPackageReference`/`XCSwiftPackageProductDependency` pattern
+exactly. `NuruMember/` is a `PBXFileSystemSynchronizedRootGroup` (Xcode 16
+file-system-synchronized group), so every new Swift file below needed zero
+manual "add to target" pbxproj surgery — only the package itself did.
+
+**2. Wire layer.** `Models/LiveInteractions.swift`: `LiveGuestRow` gains
+`whepUrl: String?` (owner-only, accepted-only — decodes tolerantly to nil
+for everyone else, matching the backend's own `whep_url?` field); new
+`GuestIngest` DTO for `GET /live/streams/{id}/guests/me/ingest`.
+`Networking/MemberAPI+LiveInteractions.swift`: `fetchLiveGuestIngest`.
+
+**3. `WebRTCSupport.swift`** (new, shared plumbing): one app-wide
+`RTCPeerConnectionFactory` (`WebRTCFactory`); `RTCConfiguration` with a
+public STUN server (`stun.l.google.com:19302` — needed so a device behind
+NAT gathers a usable server-reflexive candidate; MediaMTX itself needs
+none, it's already on a public IP with UDP 8189 open) + `.unifiedPlan` +
+`.gatherOnce`; a no-op `RTCPeerConnectionDelegate` base class
+(`WebRTCPeerConnectionObserver`, `nonisolated` methods hopping to
+`@MainActor` — WhipPublisher/WhepSubscriber each only override the 1-2
+callbacks they actually care about); `WebRTCSDP` (offer/setLocal/setRemote
+wrapped in `withCheckedThrowingContinuation`, deliberately NOT relying on
+Swift's auto-bridged async sugar for ObjC completion handlers — couldn't
+verify the exact auto-generated signatures without a live compile, and
+guessing wrong there is a silent trap); gather-then-send ICE waiting (capped
+4s, per the task's own pinned guidance — no trickle-ICE signaling channel
+needed for a one-shot WHIP/WHEP POST); `WhipHTTP` (raw `URLSession` POST/
+DELETE against MediaMTX directly — not `APIClient`, since this is
+`application/sdp` with query-string credentials, not the Nuru API's bearer-
+JSON contract); `WebRTCCamera` (front camera, closest-to-640×480 format,
+capped fps); `WebRTCVideoView` (`UIViewRepresentable` around
+`RTCMTLVideoView`, same idiom as HaishinKit's own `MTHKViewRepresentable`).
+
+**4. `WhipPublisher.swift`** (new) — the GUEST's outbound publish: sendonly
+mic (Opus) + front-camera (~640×480@≤24fps, capped 800kbps via
+`RTCRtpEncodingParameters.maxBitrateBps`) transceivers, offer → gather →
+POST `whipUrl?user=<myUserId>&pass=<token>` → answer, `.idle → .connecting →
+.live/.failed` state machine (a `generation` counter guards every awaited
+step against a stale start racing a stop — e.g. a fast accepted→removed→
+accepted flap). `toggleMute()` flips the local audio track's `isEnabled`.
+`stop()` best-effort DELETEs the WHIP session resource before tearing down
+the peer connection and capturer.
+
+**5. `WhepSubscriber.swift`** (new) — the HOST's inbound subscribe, one
+instance per accepted guest: recvonly (constraint-based
+`OfferToReceiveAudio/Video`), same offer/gather/POST/answer dance against
+`whepUrl?user=<streamId>&pass=<streamKey>` (the STREAM's own broadcast
+credentials — the owner, not the guest). Remote video track arrives via
+`didAdd rtpReceiver:streams:`; remote audio needs no explicit handling —
+WebRTC plays it out on its own once the track exists.
+
+**6. Host wiring** (`BroadcastController.swift`) — `syncGuestSubscribers`,
+called from the existing 3s `pollPulse()` right after `pulse = p`: diffs
+`pulse.guests` (accepted + `whepUrl != nil`) against a
+`[userId: WhepSubscriber]` dict, starting new ones and stopping/dropping
+fallen-off ones; publishes `guestTiles: [GuestTileState]` for the UI.
+Cleaned up in `teardown()` alongside everything else. `GuestTileRail.swift`
+(new) renders up to 6 rounded 96×128 tiles (camera feed once `.live`,
+spinner while `.connecting`, warning glyph if `.failed`) as ONE draggable
+unit over the preview — same drag-anywhere idiom as
+`LiveFloatingChatOverlay` (`GestureState` translation + settled offset,
+clamped on-screen), default top-leading (the one open corner: hands/source
+buttons are top-trailing, chat defaults bottom-leading). Wired into
+`GoLiveBroadcastView` as a full-bleed `.overlay`.
+`LiveHandsGuestsSheet.swift`'s guest row now reads the REAL state
+("Connecting…" / "On stage now" / "Video trouble — still on the guest
+list") instead of the old static "video in the next update" line.
+
+**7. Guest wiring** (`GuestStageOverlay.swift`, new + `LiveViewerPlayerView.
+swift`) — `syncGuestStage`, called from the existing `pulse.guests`
+`onChange`: the FIRST time my own row reads `accepted`, fetches
+`GuestIngest` and starts `WhipPublisher`; the instant it stops being
+`accepted` (removed, declined, left, stream ended), stops it. Replaces the
+old static "You're on stage soon — video joins in the next update" gold
+banner ENTIRELY with `GuestStagePiP` — a draggable self-preview tile
+(spinner while connecting, real `WebRTCVideoView` self-preview once live, a
+mic-mute toggle, an honest error+Retry chip on failure) plus a red "Leave
+stage" pill (`removeLiveGuest(userId: me)` = self-leave, per the existing
+L5 contract). The gold INVITE banner (`status == "invited"`, not yet
+accepted) is untouched — same auto-collapse-to-pill taste-pass behavior as
+before, just no longer also covering "accepted". HLS playback auto-mutes
+(`LiveViewerPlayerController.setSelfEchoMuted`) for the whole "I'm an
+accepted guest" window — not just once WHIP goes live — with a small "Muted
+while on stage" caption, so my own voice never echoes back over the HLS
+pipeline's several-second delay.
+
+**8. AVAudioSession coexistence** (`WebRTCAudioCoexistence`, in
+`WebRTCSupport.swift`) — the HOST device runs HaishinKit (own outgoing mic)
+and WebRTC (a guest's incoming audio) against the SAME shared
+`AVAudioSession` at once. WebRTC's `RTCAudioSession` auto-configures/
+activates that session itself by default the moment a peer connection with
+audio goes live; HaishinKit's `AVCaptureSession` already does the same for
+the broadcaster's own mic
+(`automaticallyConfiguresApplicationAudioSession = true`, confirmed by
+reading `VideoCaptureUnit.swift` in the resolved HaishinKit checkout — same
+precedent as `BroadcastController`'s own background-capture comment).
+`useManualAudio = true` + `isAudioEnabled = true`, set once (lazily, the
+first time a WhepSubscriber spins up) tells WebRTC to stop touching
+`setCategory`/`setActive` itself and just run its audio unit against
+whatever session HaishinKit already has active — `.playAndRecord` already
+supports simultaneous playback, so a guest's decoded audio should play out
+over it without WebRTC ever fighting HaishinKit for the category/activation
+state. The GUEST/viewer side deliberately does NOT get this treatment —
+there, WebRTC is the only framework touching audio capture at all (AVPlayer's
+own `.playback` category has no recording claim to defend), so leaving
+WebRTC's automatic session management on is correct: it needs to promote
+`.playback` → `.playAndRecord` itself the moment publishing starts.
+**Caveat, stated plainly:** this is designed from reading both frameworks'
+documented/source behavior, not verified against a live device with a real
+second guest — there is no way to exercise "does the broadcaster's mic
+glitch when a guest joins" from `xcodebuild test`.
+
+**9. Congregation-hears-guests (the reach goal) — did NOT ship, honestly.**
+Read the actual libwebrtc ObjC headers at `webrtc.googlesource.com/src`
+(`sdk/objc/api/peerconnection/RTCAudioTrack.h`, `RTCAudioSource.h`) before
+attempting anything: there is NO public `RTCAudioRenderer`/audio-sink API on
+`RTCAudioTrack` for iOS (unlike `RTCVideoTrack.addRenderer(_:)`, which very
+much exists and is what the video tiles use) — only a raw `volume` knob on
+`RTCAudioSource`. The one real path is a custom `RTCAudioDeviceModule`
+(`sdk/objc/components/audio/RTCAudioDevice.h`): implementing the
+`RTCAudioDeviceDelegate` block-pull protocol to intercept the factory's
+ALREADY-MIXED playout PCM (every guest's audio pre-mixed together by
+libwebrtc, which is actually exactly the shape needed for
+`MediaMixer.append(_:AVAudioBuffer, when:track:)`) and feed it into
+HaishinKit's mix as an extra audio track. That's a full custom AudioUnit-
+level replacement of WebRTC's audio I/O for the whole factory — real scope
+(thread-safety, interruption handling, sample-rate negotiation), and with no
+live device + real second guest to verify against in this pass, shipping it
+unverified risked silently breaking a real broadcast's audio for a feature
+that might not even engage right. Implemented the honest fallback instead:
+**guests are audible to the HOST only** (over the coexistence fix in §8),
+clearly labeled here as L6c work rather than silently declared done.
+
+**Files:** `NuruMember.xcodeproj/project.pbxproj` (WebRTC SPM package),
+`Config/NuruMember-Info.plist` + the two `INFOPLIST_KEY_NSMicrophone
+UsageDescription` build settings (copy now mentions guests, not just
+broadcasters), `Models/LiveInteractions.swift`, `Networking/
+MemberAPI+LiveInteractions.swift`, `Features/Live/WebRTCSupport.swift`
+(new), `Features/Live/WhipPublisher.swift` (new), `Features/Live/
+WhepSubscriber.swift` (new), `Features/Live/GuestStageOverlay.swift` (new),
+`Features/Live/GuestTileRail.swift` (new), `Features/Live/
+BroadcastController.swift`, `Features/Live/GoLiveBroadcastView.swift`,
+`Features/Live/LiveViewerPlayerView.swift`, `Features/Live/
+LiveHandsGuestsSheet.swift`.
+
+**Verified:** `xcodebuild -scheme NuruMember -configuration Debug
+-destination "id=8265F608-4A98-4E95-9074-7C54BEC4684A" -derivedDataPath
+build/dd build` → BUILD SUCCEEDED (SPM resolve included, M150 binary
+resolved clean); `... test` → 21/21 green (the existing baseline — no new
+unit tests this pass: the entire surface added is live WebRTC/network
+negotiation against a real MediaMTX server, which `xcodebuild test` has no
+way to exercise without a live signaling peer and camera/mic hardware,
+matching the existing precedent set by `BroadcastController.
+handleBackgrounded`'s own caveat). Not pushed / no PR opened (per task
+instruction — isolated worktree, commit only).
+
+**Android parity pending** — not started this pass; `nuru-android` still
+shows whatever L6a scaffolding text it has for an accepted guest.
+
 ## 2026-07-31 — Nuru Live taste pass: draggable/collapsible chat, banner auto-collapse, TikTok-style chrome polish, Audience picker, Live hub redesign (branch feat/live-taste, this repo only)
 Owner spec: "I like what we have — add good taste, subtle changes that make
 this beautiful" (TikTok Live Studio as a reference point, kept in Nuru's own

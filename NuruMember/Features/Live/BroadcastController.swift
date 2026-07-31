@@ -83,6 +83,21 @@ final class BroadcastController: ObservableObject {
     private var isFirstPulsePoll = true
     private var pulsePollTask: Task<Void, Never>?
 
+    // MARK: L6b — real WebRTC video for accepted guests. One WhepSubscriber
+    // per accepted guest whose pulse row now carries a `whep_url` (owner-only
+    // field — see LiveGuestRow's header comment), diffed against the roster
+    // on every pulse poll (`syncGuestSubscribers`, called from `pollPulse`).
+
+    struct GuestTileState: Identifiable {
+        let userId: String
+        let fullName: String
+        let subscriber: WhepSubscriber
+        var id: String { userId }
+    }
+
+    @Published private(set) var guestTiles: [GuestTileState] = []
+    private var guestSubscribers: [String: WhepSubscriber] = [:]
+
     // MARK: Broadcast Studio — source switcher (Camera / Document / Screen)
     // and the honest background-video story. See AppScreenCapture.swift /
     // DocumentPagerView.swift for the Document/Screen capture mechanics.
@@ -370,6 +385,40 @@ final class BroadcastController: ObservableObject {
         if seenReactionKeys.count > 500 { seenReactionKeys.removeAll() }
         pulse = p
         if !newOnes.isEmpty { freshReactions = newOnes }
+        syncGuestSubscribers(p.guests)
+    }
+
+    /// For each ACCEPTED guest with a `whep_url`, ensure a WhepSubscriber
+    /// exists and is connecting/connected; tear down any subscriber whose
+    /// guest fell out of that set (declined, removed, or the stream swept
+    /// every row to `ended`). Capped at 6 active guests server-side already
+    /// (LiveHandsGuestsSheet's own invite cap), so this never needs its own
+    /// limit.
+    private func syncGuestSubscribers(_ guests: [LiveGuestRow]) {
+        let accepted = guests.filter { $0.status == "accepted" && $0.whepUrl != nil }
+        let acceptedIds = Set(accepted.map(\.userId))
+        for (userId, sub) in guestSubscribers where !acceptedIds.contains(userId) {
+            Task { await sub.stop() }
+            guestSubscribers.removeValue(forKey: userId)
+        }
+        if !accepted.isEmpty { WebRTCAudioCoexistence.configureForHostSideGuestAudio() }
+        for guest in accepted where guestSubscribers[guest.userId] == nil {
+            guard let whepUrl = guest.whepUrl else { continue }
+            let sub = WhepSubscriber()
+            guestSubscribers[guest.userId] = sub
+            let streamId = session.stream.streamId
+            let streamKey = session.stream.streamKey
+            Task { await sub.start(whepURLString: whepUrl, user: streamId, pass: streamKey) }
+        }
+        guestTiles = accepted.compactMap { g in
+            guestSubscribers[g.userId].map { GuestTileState(userId: g.userId, fullName: g.fullName, subscriber: $0) }
+        }
+    }
+
+    private func teardownGuestSubscribers() {
+        for (_, sub) in guestSubscribers { Task { await sub.stop() } }
+        guestSubscribers.removeAll()
+        guestTiles = []
     }
 
     // MARK: Controls
@@ -568,6 +617,7 @@ final class BroadcastController: ObservableObject {
         retryTask?.cancel(); retryTask = nil
         stopViewerPolling()
         stopPulsePolling()
+        teardownGuestSubscribers()
         sourceGeneration += 1
         if videoSource != .camera { await screenCapture.stop() }
         documentSource.reset()

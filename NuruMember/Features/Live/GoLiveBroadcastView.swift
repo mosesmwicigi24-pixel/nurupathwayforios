@@ -67,6 +67,15 @@ struct GoLiveBroadcastView: View {
             }
         }
         .overlay {
+            // L6b — the rail of live guest video tiles (WhepSubscriber per
+            // accepted guest, see BroadcastController.guestTiles). Full-bleed
+            // so GuestTileRail can position/drag itself, same idiom as the
+            // floating chat overlay just below.
+            if controller.phase == .live || isReconnecting {
+                GuestTileRail(tiles: controller.guestTiles)
+            }
+        }
+        .overlay {
             // Shared floating chat — full-bleed so it can be dragged anywhere
             // (see LiveFloatingChatOverlay's header comment). Replaces the
             // modal LiveChatSheet on this screen too, matching the viewer.
