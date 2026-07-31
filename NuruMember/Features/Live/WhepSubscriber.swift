@@ -22,6 +22,9 @@
 import CoreMedia
 import Foundation
 import WebRTC
+import os
+
+private let whepLogger = Logger(subsystem: "org.nuruplace.member", category: "WhepSubscriber")
 
 @MainActor
 final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
@@ -66,6 +69,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     /// credentials double as their WHEP-subscribe credentials — see the
     /// header comment).
     func start(whepURLString: String, user: String, pass: String) async {
+        whepLogger.notice("start — generation=\(self.generation + 1, privacy: .public)")
         WebRTCAudioCoexistence.configureForHostSideGuestAudio()
         generation += 1
         let myGeneration = generation
@@ -119,6 +123,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     }
 
     func stop() async {
+        whepLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
         generation += 1
         let resource = resourceURL
         state = .ended
@@ -126,7 +131,15 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         teardownPeerConnection()
     }
 
+    /// Lifetime-ordering is load-bearing here: the video renderer sink is
+    /// detached from the track BEFORE the peer connection (and therefore the
+    /// track itself) is closed — a native WebRTC object must never be
+    /// touched after teardown starts. `frameSampler`/`sampledTrack` are
+    /// nilled out immediately after so any late-arriving delegate callback
+    /// (e.g. a straggler `didAdd rtpReceiver` racing a fast accept→remove)
+    /// has nothing left to attach to.
     private func teardownPeerConnection() {
+        whepLogger.notice("teardownPeerConnection")
         statsTask?.cancel()
         statsTask = nil
         if let sampledTrack, let frameSampler { sampledTrack.remove(frameSampler) }
@@ -189,10 +202,21 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
 
     // MARK: RTCPeerConnectionDelegate (optional callbacks we actually use)
 
+    /// Both delegate callbacks below hop onto MainActor via a fresh `Task`,
+    /// which does not run synchronously with the WebRTC thread that
+    /// triggered it — by the time it actually executes, `stop()` (called
+    /// from a fast accept→remove→re-accept, or the drop-watchdog tearing
+    /// every guest down) may have ALREADY closed and replaced
+    /// `self.peerConnection`. Comparing identity against the `peerConnection`
+    /// param each callback receives (WebRTC always passes the SPECIFIC
+    /// instance that fired it) is what stops a stale callback from a
+    /// torn-down connection from resurrecting state — or worse, calling
+    /// `teardownPeerConnection()` — against a DIFFERENT, currently-live
+    /// connection that happens to share this same `WhepSubscriber` instance.
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.peerConnection === peerConnection else { return }
             self.videoTrack = track
             self.attachCompositorSink(to: track)
         }
@@ -200,7 +224,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
 
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.peerConnection === peerConnection else { return }
             switch newState {
             case .connected:
                 if self.state == .connecting { self.state = .live }

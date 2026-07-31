@@ -20,6 +20,9 @@
 import AVFoundation
 import Foundation
 import WebRTC
+import os
+
+private let whipLogger = Logger(subsystem: "org.nuruplace.member", category: "WhipPublisher")
 
 @MainActor
 final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
@@ -59,6 +62,7 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
     /// comment).
     func start(whipURLString: String, user: String, pass: String) async {
         guard state == .idle || isTerminal(state) else { return }
+        whipLogger.notice("start — generation=\(self.generation + 1, privacy: .public)")
         generation += 1
         let myGeneration = generation
         state = .connecting
@@ -163,6 +167,7 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
 
     func stop() async {
         guard state != .idle else { return }
+        whipLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
         generation += 1
         let resource = resourceURL
         state = .ended
@@ -173,7 +178,12 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
         state = .idle
     }
 
+    /// Lifetime-ordering, same discipline as `WhepSubscriber.teardownPeerConnection`:
+    /// stop the camera capturer BEFORE closing the peer connection it feeds,
+    /// then nil every reference so nothing downstream can touch a
+    /// native WebRTC object after this returns.
     private func teardownPeerConnection() {
+        whipLogger.notice("teardownPeerConnection")
         capturer?.stopCapture()
         capturer = nil
         peerConnection?.close()
@@ -200,9 +210,16 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
 
     // MARK: RTCPeerConnectionDelegate (optional callbacks we actually use)
 
+    /// Identity-checked against `self.peerConnection` before touching any
+    /// state — see `WhepSubscriber`'s identical guard (same file family,
+    /// same reasoning) for why: this `Task` hop doesn't run synchronously
+    /// with the WebRTC thread that triggered it, so a fast leave→rejoin
+    /// (`stop()` then `start()` again) could otherwise let a stale callback
+    /// from the OLD, already-closed connection mutate state that now belongs
+    /// to a brand-new one.
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         Task { @MainActor [weak self] in
-            guard let self else { return }
+            guard let self, self.peerConnection === peerConnection else { return }
             switch newState {
             case .connected:
                 if self.state == .connecting { self.state = .live }

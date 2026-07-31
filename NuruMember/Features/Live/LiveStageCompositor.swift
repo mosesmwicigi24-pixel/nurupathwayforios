@@ -46,6 +46,9 @@
 import AVFoundation
 import HaishinKit
 import UIKit
+import os
+
+private let compositorLogger = Logger(subsystem: "org.nuruplace.member", category: "LiveStageCompositor")
 
 @ScreenActor
 final class LiveStageCompositor {
@@ -103,7 +106,11 @@ final class LiveStageCompositor {
     /// `WhepSubscriber.onVideoFrame` wiring) and reflows every other tile's
     /// position to make room.
     func addRailTile(track: UInt8, name: String) {
-        guard !participants.contains(track) else { return }
+        guard !participants.contains(track) else {
+            compositorLogger.notice("addRailTile — track \(track, privacy: .public) already a participant, ignoring")
+            return
+        }
+        compositorLogger.notice("addRailTile — track \(track, privacy: .public)")
         participants.append(track)
         addTile(track: track, name: name)
         relayout()
@@ -112,7 +119,11 @@ final class LiveStageCompositor {
     /// A guest left (declined, removed, or the pulse roster swept them) —
     /// tears down their screen objects and reflows the remaining rail.
     func removeRailTile(track: UInt8) {
-        guard participants.contains(track) else { return }
+        guard participants.contains(track) else {
+            compositorLogger.notice("removeRailTile — track \(track, privacy: .public) not a participant, ignoring")
+            return
+        }
+        compositorLogger.notice("removeRailTile — track \(track, privacy: .public)")
         participants.removeAll { $0 == track }
         if let video = videoObjects.removeValue(forKey: track) { mixer.screen.removeChild(video) }
         if let label = labelObjects.removeValue(forKey: track) { mixer.screen.removeChild(label) }
@@ -155,7 +166,15 @@ final class LiveStageCompositor {
         video.track = track
         video.videoGravity = .resizeAspectFill
         video.cornerRadius = cornerRadius
-        try? mixer.screen.addChild(video)
+        do {
+            try mixer.screen.addChild(video)
+        } catch {
+            // Never propagate — a failed screen-object add must degrade to
+            // "this guest's tile stays a blank rounded rect" (their WHEP
+            // subscriber is still live and unaffected), never take down the
+            // compositor or the host's own publish.
+            compositorLogger.error("addTile — addChild(video) failed for track \(track, privacy: .public): \(String(describing: error), privacy: .public)")
+        }
         videoObjects[track] = video
 
         let label = TextScreenObject()

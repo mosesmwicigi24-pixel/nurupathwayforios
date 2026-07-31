@@ -17,6 +17,7 @@ import CoreVideo
 import Foundation
 import SwiftUI
 import WebRTC
+import os
 
 // MARK: - Shared factory
 
@@ -295,10 +296,13 @@ enum WebRTCCamera {
 /// HaishinKit's compositor directly, rotation is baked into the pixel buffer
 /// here via `CIImage.oriented(_:)` so guest video isn't sideways on stage.
 final class RTCFrameToSampleBufferSampler: NSObject, RTCVideoRenderer {
+    private static let logger = Logger(subsystem: "org.nuruplace.member", category: "RTCFrameToSampleBufferSampler")
+
     private let ciContext: CIContext
     private let onSampleBuffer: (CMSampleBuffer) -> Void
     private var pixelBufferPool: CVPixelBufferPool?
     private var pooledSize: CGSize = .zero
+    private var hasLoggedFirstFrame = false
 
     init(ciContext: CIContext, onSampleBuffer: @escaping (CMSampleBuffer) -> Void) {
         self.ciContext = ciContext
@@ -311,8 +315,20 @@ final class RTCFrameToSampleBufferSampler: NSObject, RTCVideoRenderer {
         // separate pre-rotation size callback would only race it.
     }
 
+    /// Fires on WebRTC's decode thread (not hard-realtime like
+    /// `GuestAudioPlayoutDevice`'s CoreAudio callback, but still a busy
+    /// worker thread) at guest frame rate (~24-30fps) — so this logs only
+    /// the FIRST frame as a one-time breadcrumb, never per-frame.
     func renderFrame(_ frame: RTCVideoFrame?) {
-        guard let frame, let sampleBuffer = makeSampleBuffer(from: frame) else { return }
+        guard let frame else { return }
+        guard let sampleBuffer = makeSampleBuffer(from: frame) else {
+            Self.logger.error("renderFrame — makeSampleBuffer returned nil, dropping this frame")
+            return
+        }
+        if !hasLoggedFirstFrame {
+            hasLoggedFirstFrame = true
+            Self.logger.notice("first guest video frame sampled — \(frame.width, privacy: .public)x\(frame.height, privacy: .public)")
+        }
         onSampleBuffer(sampleBuffer)
     }
 
@@ -323,6 +339,9 @@ final class RTCFrameToSampleBufferSampler: NSObject, RTCVideoRenderer {
         if pixelBufferPool == nil || pooledSize != size {
             pixelBufferPool = Self.makePool(size: size)
             pooledSize = size
+            if pixelBufferPool == nil {
+                Self.logger.fault("makeSampleBuffer — CVPixelBufferPoolCreate failed for size \(size.width, privacy: .public)x\(size.height, privacy: .public)")
+            }
         }
         guard let pool = pixelBufferPool else { return nil }
         var pixelBuffer: CVPixelBuffer?

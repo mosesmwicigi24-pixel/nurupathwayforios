@@ -39,6 +39,9 @@ import HaishinKit
 import RTMPHaishinKit
 import UIKit
 import VideoToolbox
+import os
+
+private let liveLogger = Logger(subsystem: "org.nuruplace.member", category: "BroadcastController")
 
 @MainActor
 final class BroadcastController: ObservableObject {
@@ -357,10 +360,24 @@ final class BroadcastController: ObservableObject {
         await handleDropped()
     }
 
+    /// WATCHDOG (production reliability doctrine — host-stability audit): a
+    /// dropped RTMP publish must never reconnect with the guest WebRTC layer
+    /// still attached. Tear every guest subscriber + compositor rail tile +
+    /// the shared guest-audio pull down FIRST — before touching backoff/
+    /// retry at all — so `reattemptPublish()` restores the HOST'S OWN
+    /// publish in isolation, rather than potentially reconnecting straight
+    /// back into whatever conflict (real or merely coincidental with the
+    /// drop) guests may have been part of. Accepted guests still on the
+    /// pulse roster reattach on their own within one poll cycle (≤3s) once
+    /// `phase` is back to `.live` — `syncGuestSubscribers` rebuilds from
+    /// scratch every poll (see that method) — so nothing is lost, only
+    /// resequenced: host stability first, guests after.
     private func handleDropped() async {
         guard !intentionallyStopped else { return }
+        liveLogger.notice("handleDropped — tearing down guest layer before retry (attempt=\(self.retryAttempt, privacy: .public))")
         stopViewerPolling()
         stopPulsePolling()
+        teardownGuestSubscribers()
         guard retryAttempt < Self.backoffSeconds.count else {
             phase = .failed("Lost connection to the stream after several tries.")
             return
@@ -474,7 +491,24 @@ final class BroadcastController: ObservableObject {
     private func syncGuestSubscribers(_ guests: [LiveGuestRow]) {
         let accepted = guests.filter { $0.status == "accepted" && $0.whepUrl != nil }
         let acceptedIds = Set(accepted.map(\.userId))
+        // NOTE on same-poll track reuse (host-stability audit): a track
+        // number freed by a leaving guest below CAN be immediately handed to
+        // a newly-joining guest later in this SAME call. That could, in
+        // theory, let one straggler frame from the just-stopped subscriber's
+        // WebRTC decode thread land on the new guest's rail tile for a
+        // single frame. Deliberately left as-is rather than "fixed" by
+        // withholding the track for a cycle: doing that risks a WORSE bug —
+        // if every current guest leaves and a full new set joins in the same
+        // poll (e.g. a host bulk-removes and re-invites), withholding all 6
+        // tracks would force multiple new guests to collide on the same
+        // fallback track. Confirmed by reading HaishinKit's actual
+        // `Screen.append`/`VideoMixer.append` (Sources/Screen/Screen.swift,
+        // Sources/Mixer/VideoMixer.swift) that a stray frame for an unknown
+        // or reassigned track is silently dropped/redrawn, never a crash —
+        // so the "fix" would trade a real crash-shaped regression for a
+        // cosmetic one-frame flicker that provably cannot occur.
         for (userId, sub) in guestSubscribers where !acceptedIds.contains(userId) {
+            liveLogger.notice("guest leaving stage — userId=\(userId, privacy: .private)")
             Task { await sub.stop() }
             guestSubscribers.removeValue(forKey: userId)
             if let track = guestTrackIndices.removeValue(forKey: userId) {
@@ -485,6 +519,7 @@ final class BroadcastController: ObservableObject {
         if !accepted.isEmpty { WebRTCAudioCoexistence.configureForHostSideGuestAudio() }
         for guest in accepted where guestSubscribers[guest.userId] == nil {
             guard let whepUrl = guest.whepUrl else { continue }
+            liveLogger.notice("guest joining stage — userId=\(guest.userId, privacy: .private)")
             let sub = WhepSubscriber()
             guestSubscribers[guest.userId] = sub
             let track = allocateGuestTrack()
@@ -524,6 +559,8 @@ final class BroadcastController: ObservableObject {
     }
 
     private func teardownGuestSubscribers() {
+        guard !guestSubscribers.isEmpty else { return }
+        liveLogger.notice("teardownGuestSubscribers — stopping \(self.guestSubscribers.count, privacy: .public) guest subscriber(s)")
         for (userId, sub) in guestSubscribers {
             Task { await sub.stop() }
             if let track = guestTrackIndices[userId], let compositor = stageCompositor {

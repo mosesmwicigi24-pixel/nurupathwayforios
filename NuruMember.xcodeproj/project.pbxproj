@@ -12,6 +12,7 @@
 		A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA0216FE218D406A8E8CFD9 /* HaishinKit */; };
 		ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */; };
 		1AE1C1F0A5A94B3097D6C201 /* LiveInteractionsDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */; };
+		2155FB891D4D49C395110CB5 /* GuestAudioPlayoutDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */; };
 		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0A2919201E148762801CB /* RTMPHaishinKit */; };
 		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
@@ -57,6 +58,7 @@
 		7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NuruMemberTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
 		1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveInteractionsDecodingTests.swift; sourceTree = "<group>"; };
+		DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GuestAudioPlayoutDeviceTests.swift; sourceTree = "<group>"; };
 		E694577B48D734E91F73C524 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -109,6 +111,7 @@
 			children = (
 				D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */,
 				1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */,
+				DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */,
 			);
 			name = NuruMemberTests;
 			path = NuruMemberTests;
@@ -302,6 +305,7 @@
 			files = (
 				ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */,
 				1AE1C1F0A5A94B3097D6C201 /* LiveInteractionsDecodingTests.swift in Sources */,
+				2155FB891D4D49C395110CB5 /* GuestAudioPlayoutDeviceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

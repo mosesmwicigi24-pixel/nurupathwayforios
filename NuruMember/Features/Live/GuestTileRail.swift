@@ -79,9 +79,20 @@ private struct GuestTileView: View {
             case .live:
                 WebRTCVideoView(track: subscriber.videoTrack)
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            case .failed:
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 14)).foregroundStyle(Nuru.gold.opacity(0.85))
+            case .failed(let message):
+                // Honest error surfacing (host-stability audit) — a host
+                // whose guest tile fails must SEE why, not just a bare
+                // triangle. Small enough to fit the 96×128 tile without
+                // crowding the name label below it.
+                VStack(spacing: 3) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 13)).foregroundStyle(Nuru.gold.opacity(0.9))
+                    Text(message).font(.inter(7, .semibold)).foregroundStyle(.white.opacity(0.85))
+                        .multilineTextAlignment(.center).lineLimit(3)
+                        .padding(.horizontal, 5)
+                }
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel("\(fullName): \(message)")
             case .ended:
                 EmptyView()
             }

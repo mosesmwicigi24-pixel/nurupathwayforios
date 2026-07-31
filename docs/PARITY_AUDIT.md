@@ -1,3 +1,168 @@
+## 2026-07-31 — Host-stability audit + hardening: guest join must never take down the host's broadcast (iOS, branch fix/live-host-stability, this repo only)
+
+Triggered by a confirmed Android production bug: the moment a guest tapped
+Accept, the HOST APP'S PROCESS DIED — a hard native crash, not a graceful
+error. A later correction sharpened the ask mid-audit: prioritize
+process-killing hazards (native lifetime/threading bugs) over audio-session
+conflicts. This pass audited every guest-related native surface added in
+L6b/L6c/L6d (`WhepSubscriber`, `WhipPublisher`, `LiveStageCompositor`,
+`RTCFrameToSampleBufferSampler`, `GuestAudioPlayoutDevice`,
+`BroadcastController`'s guest wiring) against that lens and hardened
+regardless of whether a matching iOS crash could be reproduced (it can't be,
+from `xcodebuild test` — no test can exercise a live two-device WebRTC
+session).
+
+**Highest-confidence finding — a genuine, sustained hard-realtime-thread
+violation in `GuestAudioPlayoutDevice` (today's L6d code, the newest guest
+surface, and the one whose timing lines up exactly with "the moment a guest
+joins"):** its CoreAudio RemoteIO render callback — fires ~100×/sec for as
+long as ANY guest is on stage — was allocating a brand-new `AVAudioPCMBuffer`
+(a malloc) AND spawning a Swift concurrency `Task` (allocator/executor
+machinery not documented realtime-safe) on EVERY call. Apple's realtime-audio
+guidance is explicit that a render callback must never allocate or touch
+anything that can allocate/lock internally; try/catch cannot save a process
+from a stall/crash on this thread since Swift error handling doesn't run
+there. **Fixed**: the render callback now does ONLY a bounds-checked memcpy
+into a preallocated round-robin pool of 8 `AVAudioPCMBuffer`s (built once,
+off the realtime thread, in `setUpAudioUnit()`) and a plain
+`DispatchQueue.global().async` hand-off — the actual `Task`/`mixer.append`
+work now happens off the realtime thread entirely. Trade-off stated plainly
+in the code: this is a bounded pool, not a provably wait-free ring buffer —
+under extreme actor backpressure (~80ms of stall) a slot could be reused
+before its reader finishes, tearing one chunk of audio; never a crash or a
+stall. A fully wait-free (raw-pointer/atomics-only) design would close that
+gap but is a materially larger lift than fits this pass and carries its own
+risk to build untested against real device audio timing.
+
+**Second finding — a real lifetime-ordering gap, not a hypothesis:**
+`WhepSubscriber`'s and `WhipPublisher`'s `RTCPeerConnectionDelegate`
+callbacks (`didAdd rtpReceiver:streams:`, `didChange newState:`) hop onto
+MainActor via a fresh `Task` that does not run synchronously with the WebRTC
+thread that triggered it. Neither compared the firing `peerConnection`
+against `self.peerConnection` before mutating state — a fast
+accept→remove→re-accept (or the new drop-watchdog below tearing every guest
+down) could let a STALE callback from an already-closed connection touch
+state that now belongs to a brand-new one, in the worst case calling
+`teardownPeerConnection()` on a connection that's actually fine. Fixed with
+an identity guard (`self.peerConnection === peerConnection`) in both files,
+both callbacks.
+
+**Third finding — verified NOT a crash vector, worth stating for the
+record:** the coordinator specifically flagged "a double-attach or
+attach-then-immediate-detach" as a prime crash shape, and there IS a real
+one in `BroadcastController.syncGuestSubscribers`: a guest track number freed
+by one guest leaving can be immediately reused by a different guest joining
+in the SAME poll cycle, while the departing `WhepSubscriber`'s in-flight
+WebRTC decode-thread frames are still winding down. Read HaishinKit's actual
+`Screen.append`/`VideoMixer.append` (`Sources/Screen/Screen.swift`,
+`Sources/Mixer/VideoMixer.swift`) rather than guessing: both silently no-op
+on an unmatched/reassigned track, no dictionary force-unwrap, no crash — so
+this is a real but purely cosmetic one-frame-flicker risk, left as-is and
+documented in code rather than "fixed" with a change (withholding freed
+tracks for a cycle) that would introduce a WORSE regression: if every
+current guest left and a full new set joined in the same poll, withholding
+all 6 tracks would force multiple new guests onto the same fallback track.
+
+**Watchdog (requirement 2):** `BroadcastController.handleDropped()` now
+tears down the entire guest WebRTC layer (`teardownGuestSubscribers()` —
+every `WhepSubscriber`, every compositor rail tile) FIRST, before touching
+backoff/retry at all, so `reattemptPublish()` restores the host's own publish
+in isolation rather than potentially reconnecting straight back into
+whatever conflict (real or coincidental) accompanied the drop. Accepted
+guests still on the roster reattach on their own within one poll cycle (≤3s)
+once `phase` is back to `.live` — `syncGuestSubscribers` rebuilds from
+scratch every poll — so nothing is lost, only resequenced.
+
+**Honest error surfacing (requirement 3):** the guest-side `GuestStagePiP`
+already showed a message + Retry on failure (pre-existing). The HOST-side
+`GuestTileRail` did not — a failed guest tile showed only a bare warning
+triangle with no indication why. Now shows the `WhepSubscriber.State.failed`
+message text (small, 3-line-capped) plus a combined accessibility label,
+matching the guest side's honesty.
+
+**Audio-session interruption (requirement 4):** HaishinKit's own
+`MediaMixer` already handles `AVAudioSession.interruptionNotification`
+internally for the host's own mic capture (confirmed in
+`Sources/Mixer/MediaMixer.swift` — suspends on `.began`, resumes on `.ended`
+if `.shouldResume`) — this was already correct and needed no changes.
+`GuestAudioPlayoutDevice`'s independently-created RemoteIO AudioUnit had NO
+interruption handling at all: CoreAudio does not promise it resumes
+rendering on its own once the shared session reactivates, only that
+HaishinKit's OWN capture gets that treatment. Left unhandled, a phone
+call/Siri mid-broadcast could silently and PERMANENTLY kill guest audio (no
+crash, no error, just silence for the rest of the broadcast) without ever
+touching the host's mic/publish. Added an observer that restarts ONLY this
+class's own AudioUnit on `.ended`/`shouldResume` — never calls
+`AVAudioSession.setCategory`/`setActive` itself, preserving the documented
+ownership split (HaishinKit's `AVCaptureSession` owns session
+category/activation).
+
+**Breadcrumb logging:** added `os.Logger` (lock-free, realtime-safe storage,
+unlike `NSLog`/`print`) at every native-touching lifecycle boundary across
+`GuestAudioPlayoutDevice`, `WhepSubscriber`, `WhipPublisher`,
+`LiveStageCompositor`, `BroadcastController`'s guest sync/teardown, and
+`RTCFrameToSampleBufferSampler` — first-render/first-frame breadcrumbs, every
+init/start/stop/teardown, and every failure path, so a future real
+reproduction points at the exact call rather than a bare crash log. None of
+these log per-frame/per-render-cycle (would itself be a performance/noise
+hazard) except the one-time first-call breadcrumbs.
+
+**Is the SPECIFIC Android crash shape possible on iOS? Evidence, not
+plausibility:** iOS's guest-audio path is structurally different from what
+Android's `addSink`-based custom audio source likely does — `GuestAudioPlayoutDevice`'s
+recording half is HARD-DISABLED (`startRecording() -> false`, input bus
+explicitly disabled in the AudioUnit setup), so it can never grab the
+microphone the way a mic-conflict hypothesis would require, and it makes
+ZERO `AVAudioSession` category/mode/`setActive` calls of its own (confirmed
+by reading the file, not guessed) — HaishinKit's `AVCaptureSession` is the
+sole session owner throughout. So the ANDROID root cause (if it's a mic/audio-
+mode conflict) does not have a structural analogue here. However, this audit
+DID find a genuine, sustained hard-realtime-thread violation in the exact
+same newly-added file, firing at the exact same "guest joins" moment,
+which is a well-documented class of iOS audio-thread stall/crash — that is
+the far more likely candidate for what an iOS analogue of this bug would
+look like, and it's now fixed. No device reproduction exists in either
+direction; this conclusion rests on reading Apple's/WebRTC's/HaishinKit's
+actual documented and source-level behavior, stated as evidence-based, not
+device-verified, per this repo's own standing caveat convention.
+
+**External-URL-escape audit (the other requested check, an Android bug
+where an `https://pathway.nuruplace.org/media/...` asset was handed to an
+EXTERNAL browser producing a 96MB `.mov` download prompt):** grepped every
+`UIApplication.shared.open`/`Link(destination:)`/`openURL` call site across
+the whole app. There is no `Link(destination:)` usage anywhere in this
+codebase. Every live-media asset (`hls_url`/`recording_url`) routes through
+`MemberAPI.resolveLiveMediaURL` into `LiveViewerPlayerView`'s in-app
+`AVPlayer`/`AVPlayerViewController` — never external. The recordings list's
+"Download / Share" menu item uses `ShareLink` (the native iOS share sheet, an
+explicit user-initiated affordance), not an external open. The only
+`UIApplication.shared.open` call sites are all genuinely-external
+destinations: Settings deep link (camera/mic permission), `mailto:`/`tel:`,
+Stripe/giving checkout, a QR-scanned check-in URL, and the admin-curated
+external Resources Library (articles/links, not Nuru-hosted media). This
+Android failure mode does not exist on iOS.
+
+**Files touched:** `Features/Live/GuestAudioPlayoutDevice.swift` (realtime
+pool + interruption handling — the bulk of this pass),
+`Features/Live/BroadcastController.swift` (watchdog reorder + breadcrumbs),
+`Features/Live/WhepSubscriber.swift` + `WhipPublisher.swift` (identity
+guards + breadcrumbs), `Features/Live/LiveStageCompositor.swift` (breadcrumbs
++ addChild failure logging), `Features/Live/WebRTCSupport.swift`
+(`RTCFrameToSampleBufferSampler` breadcrumbs + failure logging),
+`Features/Live/GuestTileRail.swift` (host-side error text). New:
+`NuruMemberTests/GuestAudioPlayoutDeviceTests.swift` (5 tests for the one
+piece of genuinely pure logic introduced — the pool round-robin index;
+everything else in this pass needs a real AudioUnit/AVAudioSession/WebRTC ADM
+callback to exercise, which XCTest can't safely fake, stated honestly rather
+than claiming coverage that doesn't exist).
+
+Verified: `xcodebuild -project NuruMember.xcodeproj -scheme NuruMember
+-configuration Debug -destination "id=8265F608-4A98-4E95-9074-7C54BEC4684A"
+-derivedDataPath build/dd build` → BUILD SUCCEEDED; `... test` → 26/26 green
+(21 pre-existing + 5 new). Committed on branch `fix/live-host-stability`
+(worktree `.worktrees/hostfix`); not pushed, no PR opened, per task
+instruction.
+
 ## 2026-07-31 — L6d: guest audio reaches the CONGREGATION, not just the host (iOS) — closes the last parity gap flagged in L6c below
 
 Android has shipped congregation-audible guest audio since L3 (taps each

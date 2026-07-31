@@ -80,14 +80,34 @@
 import AVFoundation
 import AudioToolbox
 import WebRTC
+import os
 
 /// Custom `RTCAudioDevice` — see this file's header comment for the full
 /// mechanism and why the recording half is intentionally unimplemented.
+///
+/// HARDENING (production reliability doctrine — host-stability audit,
+/// prompted by a confirmed Android crash: the host app's PROCESS DIES the
+/// instant a guest joins). `render(...)` below fires on CoreAudio's own
+/// hard-realtime RemoteIO thread. Before this pass, `forwardToMixer`
+/// allocated a brand-new `AVAudioPCMBuffer` (a malloc every call) AND
+/// spawned a Swift concurrency `Task` — both are undocumented-as-realtime-
+/// safe operations — on EVERY render callback, for as long as any guest is
+/// on stage (~100 calls/sec). That is a sustained, not occasional, realtime-
+/// thread violation, and it starts firing at EXACTLY "the moment a guest's
+/// audio goes live" — the same timing as the reported Android crash. try/
+/// catch cannot save a process from a stall/crash on this thread (Swift
+/// error handling doesn't run there), so the fix is prevention: the render
+/// callback below now does ONLY a bounds-checked memcpy into a preallocated
+/// pool slot and a plain GCD hop — no PCM buffer allocation, no `Task`, on
+/// the realtime thread. See `poolSize`'s doc comment for the full mechanism
+/// and its one remaining, honestly-stated trade-off.
 final class GuestAudioPlayoutDevice: NSObject {
     /// One instance for the whole app process — mirrors `WebRTCFactory.shared`'s
     /// own "build once, every `RTCPeerConnection` shares it" pattern. Safe
     /// because only one broadcast can be live on a given device at a time.
     static let shared = GuestAudioPlayoutDevice()
+
+    private static let logger = Logger(subsystem: "org.nuruplace.member", category: "GuestAudioPlayoutDevice")
 
     /// Fires once per render cycle (~every 10ms while a guest is live) with
     /// freshly-pulled guest PCM + the CoreAudio host time it was pulled at.
@@ -121,7 +141,51 @@ final class GuestAudioPlayoutDevice: NSObject {
     private(set) var isPlayoutInitializedFlag = false
     private(set) var isPlayingFlag = false
 
+    // MARK: Realtime-thread hand-off pool — see this file's header comment.
+    //
+    // A small round-robin pool of PREALLOCATED `AVAudioPCMBuffer`s, built
+    // once off the realtime thread (in `setUpAudioUnit()`, before playout
+    // ever starts). The render callback below only ever picks the next slot
+    // (a single unsynchronized integer increment — safe because CoreAudio
+    // guarantees `render(...)` is never re-entered concurrently for one
+    // AudioUnit instance, so there is exactly one writer, always) and
+    // memcpy's into it — no allocation.
+    //
+    // Trade-off, stated plainly: this is a bounded pool, not a provably
+    // wait-free ring buffer with real backpressure. If the mixer actor is
+    // ever backed up long enough that a slot gets reused before its GCD
+    // reader (dispatched in `forwardToMixer`) has finished reading it — needs
+    // roughly `poolSize` render cycles' worth of stall, ~80ms at the sizing
+    // below — that one chunk's audio would be torn rather than cleanly
+    // dropped. A fully wait-free design (raw pointers/atomics only, no
+    // Swift/ObjC allocation anywhere in the hand-off) would close that gap
+    // but is a materially larger lift, and building it without a device to
+    // profile real actor contention under load is its own risk. This is the
+    // pragmatic middle ground: it removes BOTH confirmed, sustained,
+    // every-callback hazards (PCM buffer malloc + Task spawn) from the
+    // realtime thread; the residual risk is a rare torn audio sample, never
+    // a crash or a stall.
+    private static let poolSize = 8
+    private var pooledBuffers: [AVAudioPCMBuffer] = []
+    private var poolWriteIndex = 0
+    private var poolFrameCapacity: AVAudioFrameCount = 0
+    private var hasLoggedFirstRender = false
+
+    private var interruptionObserver: NSObjectProtocol?
+
     private override init() { super.init() }
+
+    /// The one piece of genuinely pure logic in this file's realtime-thread
+    /// hand-off (see `poolSize`'s doc comment) — pulled out as a `static`
+    /// free function specifically so it's unit-testable without touching
+    /// CoreAudio/AudioUnit at all. Every other path in this file needs a
+    /// real AudioUnit/AVAudioSession/WebRTC ADM callback to exercise, which
+    /// XCTest can't safely fake — flagged honestly rather than claiming
+    /// coverage that doesn't exist.
+    static func nextPoolIndex(current: Int, capacity: Int) -> Int {
+        guard capacity > 0 else { return 0 }
+        return (current + 1) % capacity
+    }
 }
 
 // MARK: - RTCAudioDevice
@@ -157,12 +221,17 @@ extension GuestAudioPlayoutDevice: RTCAudioDevice {
             sampleRate = delegate.preferredOutputSampleRate
         }
         isInitialized = true
+        hasLoggedFirstRender = false
+        observeInterruptions()
+        Self.logger.notice("initialize — sampleRate=\(self.sampleRate, privacy: .public)")
         return true
     }
 
     func terminateDevice() -> Bool {
+        Self.logger.notice("terminateDevice")
         stopPlayout()
         teardownAudioUnit()
+        stopObservingInterruptions()
         delegate = nil
         isInitialized = false
         isPlayoutInitializedFlag = false
@@ -171,8 +240,12 @@ extension GuestAudioPlayoutDevice: RTCAudioDevice {
 
     func initializePlayout() -> Bool {
         guard !isPlayoutInitializedFlag else { return true }
-        guard setUpAudioUnit() else { return false }
+        guard setUpAudioUnit() else {
+            Self.logger.fault("initializePlayout — setUpAudioUnit failed")
+            return false
+        }
         isPlayoutInitializedFlag = true
+        Self.logger.notice("initializePlayout — ok")
         return true
     }
 
@@ -181,6 +254,7 @@ extension GuestAudioPlayoutDevice: RTCAudioDevice {
         guard !isPlayingFlag else { return true }
         let status = AudioOutputUnitStart(audioUnit)
         isPlayingFlag = status == noErr
+        Self.logger.notice("startPlayout — status=\(status, privacy: .public) playing=\(self.isPlayingFlag, privacy: .public)")
         return isPlayingFlag
     }
 
@@ -188,7 +262,64 @@ extension GuestAudioPlayoutDevice: RTCAudioDevice {
         guard isPlayingFlag, let audioUnit else { isPlayingFlag = false; return true }
         let status = AudioOutputUnitStop(audioUnit)
         isPlayingFlag = false
+        Self.logger.notice("stopPlayout — status=\(status, privacy: .public)")
         return status == noErr
+    }
+}
+
+// MARK: - AVAudioSession interruption resilience
+//
+// A phone call, Siri, or another app's audio session interruption mid-
+// broadcast forcibly halts EVERY audio unit touching the hardware,
+// including this one — CoreAudio does not promise our independently-
+// created RemoteIO unit resumes rendering on its own once the shared
+// `AVAudioSession` reactivates; only that HaishinKit's OWN capture (owned
+// by `AVCaptureSession`, per this file's header comment on the documented
+// ownership split) is guaranteed that treatment. Left unhandled, a
+// mid-broadcast interruption could silently and PERMANENTLY kill guest
+// audio (no crash, no error surfaced, just silence for the rest of the
+// broadcast) without ever touching the host's own mic/publish. This
+// observer exists ONLY to restart OUR OWN AudioUnit — it never calls
+// `AVAudioSession.setCategory`/`setActive` itself, preserving that split.
+private extension GuestAudioPlayoutDevice {
+    func observeInterruptions() {
+        guard interruptionObserver == nil else { return }
+        interruptionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: nil
+        ) { [weak self] notification in
+            self?.handleInterruption(notification)
+        }
+    }
+
+    func stopObservingInterruptions() {
+        if let interruptionObserver { NotificationCenter.default.removeObserver(interruptionObserver) }
+        interruptionObserver = nil
+    }
+
+    func handleInterruption(_ notification: Notification) {
+        guard
+            let userInfo = notification.userInfo,
+            let typeValue = userInfo[AVAudioSessionInterruptionTypeKey] as? UInt,
+            let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+        else { return }
+        switch type {
+        case .began:
+            Self.logger.notice("AVAudioSession interruption began — suspending guest-audio playout")
+            // Idempotent/defensive — the OS has very likely already silenced
+            // our render callback; this just keeps `isPlayingFlag` honest so
+            // a later `.ended` reliably restarts it.
+            _ = stopPlayout()
+        case .ended:
+            let optionsValue = userInfo[AVAudioSessionInterruptionOptionKey] as? UInt
+            let options = AVAudioSession.InterruptionOptions(rawValue: optionsValue ?? 0)
+            Self.logger.notice("AVAudioSession interruption ended — shouldResume=\(options.contains(.shouldResume), privacy: .public)")
+            guard options.contains(.shouldResume), isPlayoutInitializedFlag else { return }
+            _ = startPlayout()
+        @unknown default:
+            break
+        }
     }
 }
 
@@ -210,6 +341,13 @@ private extension GuestAudioPlayoutDevice {
             return false
         }
         pcmFormat = format
+        // Built here — off the realtime thread, BEFORE playout ever starts —
+        // never in the render callback. Sized generously (~170ms/slot at
+        // 48kHz) so a larger-than-typical callback frame count never
+        // overflows a slot; `forwardToMixer` drops (never overruns) a chunk
+        // that's somehow still too big for this. See this class's `poolSize`
+        // doc comment for the full mechanism.
+        preparePool(format: format, frameCapacity: 8192)
 
         var desc = AudioComponentDescription(
             componentType: kAudioUnitType_Output,
@@ -264,12 +402,25 @@ private extension GuestAudioPlayoutDevice {
         return true
     }
 
+    /// Off the realtime thread — called only from `setUpAudioUnit()`.
+    func preparePool(format: AVAudioFormat, frameCapacity: AVAudioFrameCount) {
+        pooledBuffers = (0..<Self.poolSize).compactMap { _ in AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCapacity) }
+        poolFrameCapacity = pooledBuffers.isEmpty ? 0 : frameCapacity
+        poolWriteIndex = 0
+        if pooledBuffers.count < Self.poolSize {
+            Self.logger.fault("preparePool — only allocated \(self.pooledBuffers.count, privacy: .public)/\(Self.poolSize, privacy: .public) slots")
+        }
+    }
+
     func teardownAudioUnit() {
         guard let audioUnit else { return }
         AudioUnitUninitialize(audioUnit)
         AudioComponentInstanceDispose(audioUnit)
         self.audioUnit = nil
         pcmFormat = nil
+        pooledBuffers = []
+        poolFrameCapacity = 0
+        poolWriteIndex = 0
     }
 
     /// Called from the AudioUnit render callback below — CoreAudio's OWN
@@ -285,18 +436,52 @@ private extension GuestAudioPlayoutDevice {
         return status
     }
 
+    /// REALTIME-THREAD CODE — see this file's header comment and the
+    /// `poolSize` doc comment before touching this function. Allocates
+    /// NOTHING and spawns NO `Task`/GCD work itself beyond the final
+    /// `DispatchQueue.async` hand-off, which carries only plain value types
+    /// (a buffer REFERENCE already owned by the pool, and a raw `UInt64`
+    /// host time) across to the non-realtime consumer.
     func forwardToMixer(ioData: UnsafeMutablePointer<AudioBufferList>, frameCount: UInt32, hostTime: UInt64) {
-        guard let format = pcmFormat else { return }
+        if !hasLoggedFirstRender {
+            hasLoggedFirstRender = true
+            // A single os_log call — os_log's own storage is a lock-free
+            // ring buffer, documented safe even on hard-realtime threads
+            // (unlike NSLog/print), so this one-time breadcrumb is fine
+            // here; nothing else in this function logs per-callback.
+            Self.logger.notice("first guest-audio render callback — frameCount=\(frameCount, privacy: .public)")
+        }
+        guard !pooledBuffers.isEmpty else { return }
         guard let onPCM = lock.withLocked({ _onPCM }) else { return }
         guard frameCount > 0, hostTime > 0 else { return }
-        guard let pcmBuffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: frameCount) else { return }
-        pcmBuffer.frameLength = frameCount
+        guard frameCount <= poolFrameCapacity else {
+            // Should never happen at the fixed session sample rate this
+            // device negotiates, but a torn/oversized callback must be
+            // DROPPED here, never written past the end of a pooled buffer.
+            Self.logger.fault("forwardToMixer — frameCount \(frameCount, privacy: .public) exceeds pool slot capacity \(self.poolFrameCapacity, privacy: .public), dropping")
+            return
+        }
         let bufferList = UnsafeMutableAudioBufferListPointer(ioData)
-        guard bufferList.count > 0, let src = bufferList[0].mData, let dst = pcmBuffer.int16ChannelData?[0] else { return }
+        guard bufferList.count > 0, let src = bufferList[0].mData else { return }
+
+        // Single writer (CoreAudio never re-enters `render(...)` concurrently
+        // for one AudioUnit instance) — no lock needed around this index.
+        let slot = poolWriteIndex
+        poolWriteIndex = GuestAudioPlayoutDevice.nextPoolIndex(current: poolWriteIndex, capacity: pooledBuffers.count)
+        let pcmBuffer = pooledBuffers[slot]
+        guard let dst = pcmBuffer.int16ChannelData?[0] else { return }
+        pcmBuffer.frameLength = frameCount
         let byteCount = min(Int(bufferList[0].mDataByteSize), Int(frameCount) * MemoryLayout<Int16>.size * Int(Self.channelCount))
         memcpy(dst, src, byteCount)
-        let time = AVAudioTime(hostTime: hostTime)
-        onPCM(pcmBuffer, time)
+
+        // Hop OFF the realtime thread before touching Swift concurrency —
+        // `Task { }`'s allocator/executor machinery is not documented as
+        // realtime-safe, so it must never run on CoreAudio's own render
+        // thread. `AVAudioTime` is constructed on the OTHER side of this hop
+        // (from the plain `UInt64` captured here), not before it.
+        DispatchQueue.global(qos: .userInteractive).async {
+            onPCM(pcmBuffer, AVAudioTime(hostTime: hostTime))
+        }
     }
 }
 
