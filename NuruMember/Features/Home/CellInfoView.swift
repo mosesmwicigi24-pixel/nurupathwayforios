@@ -44,8 +44,10 @@ struct CellInfoView: View {
     @State private var openReplays = false
     // Nuru Live (L3, broadcaster) — this screen's own Go Live button, forced
     // to scope=cell (no picker) since we're already inside one specific cell.
+    // The controller itself lives in BroadcastCenter (app-wide) — see
+    // RootView for the single fullScreenCover presentation + floating island.
+    @ObservedObject private var broadcast = BroadcastCenter.shared
     @State private var showGoLiveSheet = false
-    @State private var goLiveSession: GoLiveSession?
 
     var body: some View {
         ZStack {
@@ -99,21 +101,26 @@ struct CellInfoView: View {
         }
         .sheet(isPresented: $showGoLiveSheet) {
             GoLiveSetupSheet(forcedCell: (id: auth.profile?.cellGroupId ?? "", name: vm.name)) {
-                goLiveSession = $0
+                BroadcastCenter.shared.start(session: $0)
             }
         }
-        .fullScreenCover(item: $goLiveSession) { GoLiveBroadcastView(session: $0) }
     }
 
     // MARK: Nuru Live (L3) — this cell's own Go Live button, forced scope=cell
 
     private var goLiveButton: some View {
-        Button { Haptics.tap(); showGoLiveSheet = true } label: {
+        Button {
+            Haptics.tap()
+            // Already broadcasting (minimized elsewhere) — reopen it rather
+            // than minting a second stream on top.
+            if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
+        } label: {
             HStack(spacing: Nuru.S.sm) {
                 Icon(.megaphone, size: 15, color: Nuru.navy)
                     .frame(width: 32, height: 32)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Text("Go live to your cell").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Text(broadcast.controller != nil ? "You're live — tap to return" : "Go live to your cell")
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 15, color: Nuru.navy.opacity(0.6))
             }

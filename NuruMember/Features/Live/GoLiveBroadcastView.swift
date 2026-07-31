@@ -1,25 +1,34 @@
-// Nuru Live L3 — the broadcast screen. Present with `.fullScreenCover(item:)`
-// once GoLiveSetupSheet's POST /live/streams succeeds. Video shows a camera
-// preview (HaishinKit's MTHKView, wrapped via MTHKViewRepresentable); audio
-// shows the Radio screen's waveform language standing in for a video surface
+// Nuru Live L3 — the broadcast screen. RootView presents this via ONE
+// `fullScreenCover` bound to BroadcastCenter.shared (see BroadcastCenter.swift),
+// so this view is a thin "remote control" over a controller it doesn't own —
+// exactly like RadioPlayerView is a remote control over RadioCenter.shared.
+// Video shows a camera preview (HaishinKit's MTHKView, wrapped via
+// MTHKViewRepresentable) OR the Document pager OR the Screen-share
+// placeholder, depending on `controller.videoSource`; audio-kind broadcasts
+// show the Radio screen's waveform language standing in for a video surface
 // that doesn't exist. Both show the same LIVE HUD (pulsing dot, elapsed
-// timer, "N watching") and controls (mute, flip camera, End).
+// timer, "N watching") and controls (mute, flip camera / back-to-camera,
+// source switcher, End, ✋, 💬).
 //
-// There is deliberately NO plain close/✕ while `.live` or `.reconnecting` —
-// the only way out of an active broadcast is the End button's confirmation,
-// so a stray swipe can never abandon a stream mid-air. A close IS offered
-// while `.configuring` (before anything is actually publishing) and once
-// `.ended` (summary/permission-denied), both of which already call `end()`
-// through BroadcastController before the view can be dismissed.
+// "Broadcast Studio" arc — leave-the-page persistence: the chevron-down
+// MINIMIZES (BroadcastCenter.shared.minimize()) rather than ending anything;
+// the controller keeps mixing/publishing exactly as before, and RootView's
+// floating island becomes the "you're still live" surface on every other
+// screen. There is deliberately still NO plain close while `.live` or
+// `.reconnecting` beyond minimize — the only way to actually STOP a
+// broadcast is the End button's confirmation (here or on the island), so a
+// stray tap can never abandon a stream mid-air, and leaving the screen never
+// does either.
 import AVKit
 import HaishinKit
 import SwiftUI
 
 struct GoLiveBroadcastView: View {
-    @StateObject private var controller: BroadcastController
+    @ObservedObject var controller: BroadcastController
+    @ObservedObject private var documentSource: DocumentSource
+    @ObservedObject private var broadcast = BroadcastCenter.shared
     @StateObject private var reactionQueue = ReactionBurstQueue()
     @EnvironmentObject private var auth: AuthStore
-    @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmEnd = false
@@ -28,9 +37,12 @@ struct GoLiveBroadcastView: View {
     // viewer count).
     @State private var showHandsSheet = false
     @State private var showChatSheet = false
+    // Broadcast Studio — Camera / Document / Screen source switcher.
+    @State private var showSourceSheet = false
 
-    init(session: GoLiveSession) {
-        _controller = StateObject(wrappedValue: BroadcastController(session: session))
+    init(controller: BroadcastController) {
+        self.controller = controller
+        self.documentSource = controller.documentSource
     }
 
     var body: some View {
@@ -47,15 +59,23 @@ struct GoLiveBroadcastView: View {
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(controller.phase == .live && controller.isVideo)
-        .task { await controller.start() }
-        .onDisappear { Task { await controller.end() } }
-        // Both kinds end cleanly on background — see BroadcastController.
-        // handleBackgrounded's doc comment for the documented tradeoff
-        // (iOS suspends camera capture in the background regardless; giving
-        // audio the same simple/safe treatment was the deliberate call here
-        // rather than wiring a background-audio session category).
+        // NOTE: no `.task { await controller.start() }` here — BroadcastCenter
+        // calls `start()` exactly once, the moment the setup sheet hands back
+        // a session (see `BroadcastCenter.start(session:)`), independent of
+        // whether this view is even on screen. Re-presenting after a
+        // minimize/restore cycle must NOT re-run it.
+        //
+        // NOTE: no `.onDisappear` teardown either — this view disappears on
+        // ordinary minimize (chevron / island round-trip) just as often as on
+        // a real End, and the whole point of this arc is that the former
+        // must never stop publishing. Every path that actually ends the
+        // broadcast calls `controller.end()` (or, before anything started,
+        // `BroadcastCenter.shared.clear()`) explicitly — see the End
+        // confirmation below, `failedView`'s End button, the island's own End
+        // control, and `closeButton`.
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { controller.handleBackgrounded() }
+            else if phase == .active { controller.handleForegrounded() }
         }
         .onChange(of: controller.freshReactions) { _, fresh in
             guard !fresh.isEmpty else { return }
@@ -75,6 +95,9 @@ struct GoLiveBroadcastView: View {
         .sheet(isPresented: $showChatSheet) {
             LiveChatSheet(streamId: controller.session.stream.streamId, myUserId: auth.profile?.userId)
                 .presentationDetents([.medium])
+        }
+        .sheet(isPresented: $showSourceSheet) {
+            BroadcastSourceSheet(controller: controller)
         }
     }
 
@@ -104,11 +127,28 @@ struct GoLiveBroadcastView: View {
     }
 
     @ViewBuilder private var liveSurface: some View {
-        if controller.isVideo {
-            MTHKViewRepresentable(previewSource: controller, videoGravity: .resizeAspectFill)
+        switch controller.videoSource {
+        case .camera:
+            if controller.isVideo {
+                MTHKViewRepresentable(previewSource: controller, videoGravity: .resizeAspectFill)
+                    .ignoresSafeArea()
+            } else {
+                LiveBroadcastAudioBackdrop(title: controller.session.title)
+            }
+        case .document:
+            DocumentPagerView(source: documentSource, pageIndex: $controller.documentPageIndex)
                 .ignoresSafeArea()
-        } else {
-            LiveBroadcastAudioBackdrop(title: controller.session.title)
+        case .screen:
+            ScreenShareActiveView()
+        }
+        if documentSource.isLoading {
+            ZStack {
+                Color.black.opacity(0.55).ignoresSafeArea()
+                VStack(spacing: 10) {
+                    ProgressView().tint(Nuru.gold)
+                    Text("Opening document…").font(.inter(12)).foregroundStyle(.white.opacity(0.8))
+                }
+            }
         }
         if case .reconnecting(let attempt) = controller.phase {
             reconnectingOverlay(attempt: attempt)
@@ -161,6 +201,7 @@ struct GoLiveBroadcastView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 24)
+        .overlay(alignment: .topLeading) { minimizeButton }
     }
 
     @ViewBuilder private var endedView: some View {
@@ -185,7 +226,7 @@ struct GoLiveBroadcastView: View {
                 .multilineTextAlignment(.center).padding(.horizontal, 32)
             Button {
                 Haptics.tap()
-                dismiss()
+                BroadcastCenter.shared.clear()
             } label: {
                 Text("Done").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 50)
@@ -222,7 +263,7 @@ struct GoLiveBroadcastView: View {
             }
             .buttonStyle(.pressable)
             .padding(.horizontal, 40)
-            Button { Haptics.tap(); dismiss() } label: {
+            Button { Haptics.tap(); BroadcastCenter.shared.clear() } label: {
                 Text("Close").font(.inter(13, .semibold)).foregroundStyle(.white.opacity(0.7))
             }
             .buttonStyle(.plain)
@@ -236,7 +277,11 @@ struct GoLiveBroadcastView: View {
         if controller.phase == .live || isReconnecting {
             VStack {
                 topBadges
+                if controller.videoPausedInBackground { cameraPausedPill.padding(.top, 6) }
                 Spacer()
+                if controller.videoSource == .document, !documentSource.pages.isEmpty {
+                    documentPageBadge.padding(.bottom, 10)
+                }
                 controlsRow
             }
         }
@@ -249,6 +294,7 @@ struct GoLiveBroadcastView: View {
 
     private var topBadges: some View {
         HStack(alignment: .top) {
+            minimizeButton
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 5) {
                     PulsingBroadcastDot()
@@ -262,6 +308,7 @@ struct GoLiveBroadcastView: View {
                     .background(Color.black.opacity(0.35), in: Capsule())
             }
             Spacer(minLength: 8)
+            if controller.isVideo { sourceButton }
             VStack(alignment: .trailing, spacing: 6) {
                 if let startedAt = controller.startedAt {
                     TimelineView(.periodic(from: .now, by: 1)) { ctx in
@@ -286,6 +333,58 @@ struct GoLiveBroadcastView: View {
         }
     }
 
+    /// Leave-the-page persistence — minimizes to RootView's floating island
+    /// WITHOUT touching the controller. See BroadcastCenter.minimize().
+    private var minimizeButton: some View {
+        Button {
+            Haptics.tap()
+            broadcast.minimize()
+        } label: {
+            Icon(.chevronDown, size: 15, color: .white)
+                .frame(width: 32, height: 32)
+                .background(Color.black.opacity(0.4), in: Circle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Minimize — keep broadcasting")
+    }
+
+    /// Opens the Camera/Document/Screen picker — tinted gold whenever an
+    /// alternate source is active, so it doubles as a "you're not on camera"
+    /// indicator at a glance.
+    private var sourceButton: some View {
+        Button {
+            Haptics.tap()
+            showSourceSheet = true
+        } label: {
+            Image(systemName: "rectangle.on.rectangle")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(controller.videoSource == .camera ? .white : Nuru.navy)
+                .frame(width: 32, height: 32)
+                .background(controller.videoSource == .camera ? Color.black.opacity(0.4) : Nuru.gold, in: Circle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Broadcast source")
+        .padding(.trailing, 6)
+    }
+
+    private var cameraPausedPill: some View {
+        HStack(spacing: 6) {
+            Icon(.mic, size: 10, color: Nuru.gold)
+            Text("Audio live — camera paused in background")
+                .font(.inter(10, .semibold)).foregroundStyle(.white)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 5)
+        .background(Color.black.opacity(0.55), in: Capsule())
+        .frame(maxWidth: .infinity)
+    }
+
+    private var documentPageBadge: some View {
+        Text("Page \(controller.documentPageIndex + 1) of \(documentSource.pages.count)")
+            .font(.inter(11, .semibold)).foregroundStyle(.white)
+            .padding(.horizontal, 11).padding(.vertical, 5)
+            .background(Color.black.opacity(0.5), in: Capsule())
+    }
+
     private var controlsRow: some View {
         HStack(spacing: 14) {
             controlButton(icon: controller.isMuted ? "mic.slash.fill" : "mic.fill", active: controller.isMuted) {
@@ -304,10 +403,17 @@ struct GoLiveBroadcastView: View {
             .buttonStyle(.pressable)
 
             if controller.isVideo {
-                controlButton(icon: "arrow.triangle.2.circlepath.camera.fill", active: false) {
-                    Haptics.tap(); controller.flipCamera()
+                if controller.videoSource == .camera {
+                    controlButton(icon: "arrow.triangle.2.circlepath.camera.fill", active: false) {
+                        Haptics.tap(); controller.flipCamera()
+                    }
+                    .accessibilityLabel("Flip camera")
+                } else {
+                    controlButton(icon: "camera.fill", active: false) {
+                        Haptics.tap(); Task { await controller.selectCamera() }
+                    }
+                    .accessibilityLabel("Back to camera")
                 }
-                .accessibilityLabel("Flip camera")
             } else {
                 // Keeps the row visually balanced for audio-only.
                 Color.clear.frame(width: 48, height: 48)
@@ -364,11 +470,15 @@ struct GoLiveBroadcastView: View {
         .buttonStyle(.pressable)
     }
 
+    /// Only reachable pre-live (`.configuring`) — a hard abort BEFORE
+    /// anything started publishing, so it fully clears the broadcast
+    /// (`BroadcastCenter.shared.clear()`, not a minimize) rather than
+    /// leaving a half-started controller behind.
     private var closeButton: some View {
         Button {
             Haptics.tap()
             Task { await controller.end() }
-            dismiss()
+            BroadcastCenter.shared.clear()
         } label: {
             Icon(.x, size: 18, color: .white)
                 .frame(width: 38, height: 38)
@@ -396,6 +506,34 @@ private struct PulsingBroadcastDot: View {
                 guard !reduceMotion else { return }
                 withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) { dim = true }
             }
+    }
+}
+
+// MARK: - Screen-share placeholder — what's on screen (and therefore what
+// ReplayKit captures) if the broadcaster stays on THIS screen instead of
+// minimizing to go show something elsewhere in the app. See
+// BroadcastController.selectScreen's doc comment: the capture keeps running
+// across a minimize/restore round-trip, so this view is only ever a
+// starting point, not the whole feature.
+
+private struct ScreenShareActiveView: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(colors: [Nuru.navy, Nuru.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+            VStack(spacing: 16) {
+                ZStack {
+                    Circle().fill(Nuru.gold.opacity(0.14)).frame(width: 108, height: 108)
+                    Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1.5).frame(width: 108, height: 108)
+                    Image(systemName: "rectangle.on.rectangle")
+                        .font(.system(size: 32, weight: .medium)).foregroundStyle(Nuru.gold)
+                }
+                Text("Sharing this screen").font(.fraunces(19, .semibold)).foregroundStyle(.white)
+                Text("Minimize (the ⌄ up top) and browse Nuru — viewers see whatever you show them, and your mic stays live the whole time.")
+                    .font(.inter(12)).foregroundStyle(.white.opacity(0.7))
+                    .multilineTextAlignment(.center).padding(.horizontal, 40)
+            }
+        }
+        .ignoresSafeArea()
     }
 }
 

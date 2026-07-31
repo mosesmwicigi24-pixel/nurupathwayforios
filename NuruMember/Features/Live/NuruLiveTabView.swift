@@ -11,8 +11,8 @@ import SwiftUI
 
 struct NuruLiveTabView: View {
     @EnvironmentObject private var auth: AuthStore
+    @ObservedObject private var broadcast = BroadcastCenter.shared
     @State private var showGoLiveSheet = false
-    @State private var goLiveSession: GoLiveSession?
 
     var body: some View {
         NavigationStack {
@@ -33,9 +33,8 @@ struct NuruLiveTabView: View {
             .toolbar(.hidden, for: .navigationBar)
         }
         .sheet(isPresented: $showGoLiveSheet) {
-            GoLiveSetupSheet { goLiveSession = $0 }
+            GoLiveSetupSheet { BroadcastCenter.shared.start(session: $0) }
         }
-        .fullScreenCover(item: $goLiveSession) { GoLiveBroadcastView(session: $0) }
     }
 
     // MARK: Header — the same cream hero-band idiom every folded tab uses.
@@ -64,7 +63,9 @@ struct NuruLiveTabView: View {
     private var goLiveCard: some View {
         Button {
             Haptics.tap()
-            showGoLiveSheet = true
+            // Already broadcasting (minimized elsewhere) — reopen it rather
+            // than minting a second stream on top.
+            if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
         } label: {
             HStack(spacing: 14) {
                 ZStack {
@@ -73,7 +74,8 @@ struct NuruLiveTabView: View {
                 }
                 .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Go live now").font(.nCardTitle).foregroundStyle(Nuru.ink)
+                    Text(broadcast.controller != nil ? "You're live — tap to return" : "Go live now")
+                        .font(.nCardTitle).foregroundStyle(Nuru.ink)
                     Text("Church or your cell — video or audio").font(.nCardMeta).foregroundStyle(Nuru.muted)
                 }
                 Spacer(minLength: 0)

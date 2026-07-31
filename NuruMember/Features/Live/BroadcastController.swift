@@ -71,6 +71,7 @@ final class BroadcastController: ObservableObject {
     // (same start/stop call sites) rather than a second poller: GET
     // /live/streams/{id}/pulse every 3s per docs/LIVE_INTERACTIVE.md, driving
     // the ✋ hand badge, the guests sheet, and the floating reaction overlay.
+
     @Published private(set) var pulse: LivePulse?
     /// Reactions newly seen since the previous pulse poll — GoLiveBroadcastView
     /// consumes these once (spawns a particle per entry) then calls
@@ -81,6 +82,36 @@ final class BroadcastController: ObservableObject {
     private var seenReactionKeys: Set<String> = []
     private var isFirstPulsePoll = true
     private var pulsePollTask: Task<Void, Never>?
+
+    // MARK: Broadcast Studio — source switcher (Camera / Document / Screen)
+    // and the honest background-video story. See AppScreenCapture.swift /
+    // DocumentPagerView.swift for the Document/Screen capture mechanics.
+
+    enum VideoSource: Equatable { case camera, document, screen }
+    @Published private(set) var videoSource: VideoSource = .camera
+    /// User-facing message for a failed source switch (screen recording
+    /// declined, PDF failed to open, …) — surfaced by BroadcastSourceSheet.
+    @Published private(set) var sourceError: String?
+    /// The picked PDF's rendered pages + the broadcaster's current page —
+    /// owned here (not just inside DocumentSource) so GoLiveBroadcastView's
+    /// pager binding survives the view being torn down and rebuilt across a
+    /// minimize/restore cycle.
+    let documentSource = DocumentSource()
+    @Published var documentPageIndex: Int = 0
+    private let screenCapture = AppScreenCapture()
+    /// Bumped on every source switch — a ReplayKit buffer captured in the
+    /// closure below is only appended if it's still tagged with the
+    /// generation that started it, so a frame in flight from a JUST-stopped
+    /// capture (async race between `stop()` and the next `start()`/camera
+    /// reattach) can never land on the wrong track.
+    private var sourceGeneration = 0
+
+    /// True for the (usually brief) window between an app backgrounding
+    /// during a VIDEO broadcast and it foregrounding again — the camera
+    /// itself pauses/resumes automatically (see `handleBackgrounded`'s doc
+    /// comment); this just drives a small "camera paused" affordance so the
+    /// broadcaster isn't left guessing why the preview froze.
+    @Published private(set) var videoPausedInBackground = false
 
     var isVideo: Bool { session.kind == .video }
 
@@ -353,7 +384,7 @@ final class BroadcastController: ObservableObject {
     }
 
     func flipCamera() {
-        guard isVideo else { return }
+        guard isVideo, videoSource == .camera else { return }
         Task {
             let newPosition: AVCaptureDevice.Position = cameraPosition == .back ? .front : .back
             guard let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: newPosition) else { return }
@@ -365,15 +396,93 @@ final class BroadcastController: ObservableObject {
         }
     }
 
+    // MARK: Source switcher — Camera / Document / Screen
+
+    /// Returns to the live camera feed — reattaches the capture device that
+    /// `startAlternateSource(_:)` below detached, and stops whichever
+    /// alternate source (ReplayKit capture backs both Document and Screen)
+    /// was active.
+    func selectCamera() async {
+        guard isVideo, videoSource != .camera else { return }
+        sourceGeneration += 1
+        await screenCapture.stop()
+        documentSource.reset()
+        let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition)
+        try? await mixer.attachVideo(device, track: 0)
+        await mixer.setVideoOrientation(captureOrientation)
+        videoSource = .camera
+        sourceError = nil
+    }
+
+    /// Loads the picked PDF, detaches the camera, and starts ReplayKit's
+    /// in-app capture so DocumentPagerView — the ONLY thing on screen while
+    /// this is active — is what viewers actually see.
+    func selectDocument(url: URL) async {
+        guard isVideo else { return }
+        sourceError = nil
+        await documentSource.load(from: url)
+        guard let error = documentSource.loadError else {
+            documentPageIndex = 0
+            await startAlternateSource(.document)
+            return
+        }
+        sourceError = error
+    }
+
+    /// Shares this app's own screen: detaches the camera and starts the same
+    /// ReplayKit capture Document mode uses, but pointed at whatever's
+    /// currently rendered rather than a fixed pager — including after the
+    /// broadcaster minimizes and browses elsewhere in Nuru (BroadcastCenter
+    /// keeps this controller, and therefore the capture, alive regardless of
+    /// which screen is on top).
+    func selectScreen() async {
+        guard isVideo else { return }
+        sourceError = nil
+        await startAlternateSource(.screen)
+    }
+
+    /// Shared detach-camera + start-ReplayKit-capture path for Document and
+    /// Screen — the only difference between them is what's rendered on
+    /// screen while capture is running (DocumentPagerView vs. whatever the
+    /// broadcaster navigates to), not the mechanism.
+    private func startAlternateSource(_ source: VideoSource) async {
+        sourceGeneration += 1
+        let generation = sourceGeneration
+        try? await mixer.attachVideo(nil, track: 0)
+        do {
+            try await screenCapture.start { [weak self] buffer in
+                Task { @MainActor in
+                    guard let self, self.sourceGeneration == generation else { return }
+                    await self.mixer.append(buffer, track: 0)
+                }
+            }
+            videoSource = source
+        } catch {
+            sourceError = source == .document
+                ? "Couldn't start sharing — screen recording was declined."
+                : "Couldn't share your screen — screen recording was declined."
+            // Recording never started: put the camera back rather than
+            // stranding the broadcast on a black track.
+            let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition)
+            try? await mixer.attachVideo(device, track: 0)
+            await mixer.setVideoOrientation(captureOrientation)
+            videoSource = .camera
+        }
+    }
+
     // MARK: End / teardown
 
-    /// User-confirmed End, a background-triggered end, a give-up-after-
-    /// retries End, or the view's own `.onDisappear` (belt-and-suspenders
-    /// teardown so the idle timer / stream can never be left dangling on an
-    /// abnormal dismiss) — all funnel through here. `endInFlight` is set
-    /// synchronously before the first `await`, so two concurrent callers
-    /// (e.g. a manual End racing the view's onDisappear) can never both pass
-    /// the guard — MainActor reentrancy only happens at suspension points.
+    /// User-confirmed End (from the broadcast screen OR the floating island —
+    /// both call this same method on the SAME hoisted controller, see
+    /// BroadcastCenter) or a give-up-after-retries End — all funnel through
+    /// here. Deliberately NOT called on mere navigation away from the
+    /// broadcast screen (minimize) or app backgrounding — see BroadcastCenter
+    /// and `handleBackgrounded()`'s doc comments; the whole point of this
+    /// arc is that leaving the screen must not stop publishing.
+    /// `endInFlight` is set synchronously before the first `await`, so two
+    /// concurrent callers (e.g. a manual End racing a background-triggered
+    /// path) can never both pass the guard — MainActor reentrancy only
+    /// happens at suspension points.
     func end() async {
         guard phase != .ended, !endInFlight else { return }
         endInFlight = true
@@ -398,20 +507,58 @@ final class BroadcastController: ObservableObject {
         phase = .ended
     }
 
-    /// App backgrounded while live (video kind — see GoLiveBroadcastView's
-    /// scenePhase handler for the documented video/audio tradeoff): iOS
-    /// aggressively suspends camera capture in the background regardless of
-    /// anything we do, so "try to keep publishing" would just silently die.
-    /// Ending cleanly here is the honest choice — the summary screen still
-    /// shows real elapsed/peak numbers.
+    /// App backgrounded during a VIDEO broadcast. iOS forbids camera capture
+    /// in the background — but HaishinKit's `MediaMixer` ALREADY handles
+    /// that, entirely on its own: `mixer.startRunning()` (called from
+    /// `configureMixer()`) registers its own
+    /// `UIApplication.didEnterBackgroundNotification` /
+    /// `willEnterForegroundNotification` observers (confirmed by reading
+    /// `MediaMixer.swift` in the resolved 2.2.5 checkout) and calls
+    /// `VideoCaptureUnit.suspend()` / `.resume()` internally.
+    /// `suspend()` DETACHES the camera's `AVCaptureSession` connection
+    /// (`session.detachCapture(capture)` — read in `VideoCaptureUnit.swift`)
+    /// while leaving the MIC's connection attached and the session running;
+    /// `resume()` re-attaches the camera on foreground. So the mic keeps
+    /// capturing, the RTMP audio track keeps flowing, and the camera track
+    /// simply stops (then restarts) advancing — with zero code from us.
+    ///
+    /// This depends on the app's `UIBackgroundModes: audio` entitlement,
+    /// already declared for Nuru Radio (Config/NuruMember-Info.plist) and
+    /// shared app-wide, PLUS an active AVAudioSession RECORDING session,
+    /// which `AVCaptureSession` configures automatically for an attached
+    /// audio input (`automaticallyConfiguresApplicationAudioSession`
+    /// defaults `true`; HaishinKit never overrides it) — the same
+    /// "recording audio content" background-mode grant Apple documents,
+    /// mirroring exactly how Radio already survives backgrounding via
+    /// "playing audible content". Audio-only broadcasts never attach a video
+    /// device in the first place, so nothing changes for them either way.
+    ///
+    /// So the ONLY thing this method does now is flag `videoPausedInBackground`
+    /// for a small "camera paused" affordance — it used to `end()` the whole
+    /// broadcast here, which was never an iOS/HaishinKit requirement, just
+    /// this app being unnecessarily conservative. Genuinely exhausted retries
+    /// or a real drop still route to `.failed`/`end()` through the existing
+    /// connection-status handling, backgrounded or not.
+    ///
+    /// Caveat, stated plainly: there is no way to exercise "does the RTMP
+    /// socket really stay alive for an hour in the background" from
+    /// `xcodebuild test` — no test can background the app mid-capture. This
+    /// is the same well-established AVFoundation pattern broadcast apps use
+    /// (detach video, keep an audio-only capture session running under the
+    /// `audio` background mode), backed by reading HaishinKit's actual
+    /// source rather than assumed — but real-world verification is a
+    /// device/TestFlight concern, not a unit-test one.
     func handleBackgrounded() {
-        guard phase == .live || isReconnectingOrConfiguring else { return }
-        Task { await end() }
+        guard isVideo, phase == .live else { return }
+        videoPausedInBackground = true
     }
 
-    private var isReconnectingOrConfiguring: Bool {
-        if case .reconnecting = phase { return true }
-        return phase == .configuring
+    /// Foregrounded again — HaishinKit already re-attached the camera by the
+    /// time `willEnterForegroundNotification` fires; this just clears the
+    /// "camera paused" affordance.
+    func handleForegrounded() {
+        guard videoPausedInBackground else { return }
+        videoPausedInBackground = false
     }
 
     private func teardown() async {
@@ -421,6 +568,9 @@ final class BroadcastController: ObservableObject {
         retryTask?.cancel(); retryTask = nil
         stopViewerPolling()
         stopPulsePolling()
+        sourceGeneration += 1
+        if videoSource != .camera { await screenCapture.stop() }
+        documentSource.reset()
         _ = try? await stream.close()
         try? await connection.close()
         await mixer.stopRunning()

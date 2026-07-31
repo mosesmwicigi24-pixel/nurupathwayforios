@@ -134,6 +134,12 @@ struct RootView: View {
     // The app-wide station — drives the floating island pill on every tab.
     @ObservedObject private var radio = RadioCenter.shared
     @State private var radioOpen = false
+    // Nuru Live "Broadcast Studio" — the app-wide broadcast engine. Leaving
+    // the broadcast screen (any tab, any navigation) never stops publishing;
+    // RootView owns the ONE full-screen presentation (mirroring the radio
+    // player and the live viewer below) plus the floating "still live"
+    // island shown everywhere else. See BroadcastCenter.swift.
+    @ObservedObject private var broadcast = BroadcastCenter.shared
     // Nuru Live discovery — "invite loudly, never hijack": the app-wide LIVE
     // bar (every tab but Home) and the ONE place a notification tap or bar tap
     // presents the full-screen player from outside Home's own surfaces.
@@ -224,6 +230,29 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .nuruOpenRadio)) { _ in
             radioOpen = true
         }
+        // Nuru Live "Broadcast Studio" — the ONE full-screen broadcast
+        // presentation, bound to BroadcastCenter rather than any per-screen
+        // `@State`, so minimizing from ANY tab and restoring from the island
+        // always reattaches to the SAME controller instead of losing it.
+        .fullScreenCover(isPresented: Binding(
+            get: { broadcast.controller != nil && broadcast.presented },
+            set: { newValue in if !newValue { broadcast.presented = false } }
+        )) {
+            if let c = broadcast.controller { GoLiveBroadcastView(controller: c) }
+        }
+        // The floating "you're still live" island — every tab, while a
+        // broadcast is active and its full-screen surface is minimized.
+        // Docked below the radio pill's row so the rare "listening to Radio
+        // while broadcasting" overlap never collides.
+        .overlay(alignment: .top) {
+            if let c = broadcast.controller, !broadcast.presented {
+                BroadcastMiniPlayer(controller: c) { broadcast.restore() }
+                    .padding(.top, RadioMiniPlayer.dockTop + RadioMiniPlayer.dockHeight + 10)
+                    .transition(.opacity)
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.75), value: broadcast.controller != nil)
+        .animation(.easeInOut(duration: 0.2), value: broadcast.presented)
         .overlay(alignment: .bottom) {
             if !tabs.chromeHidden {
                 VStack(spacing: 0) {

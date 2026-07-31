@@ -301,9 +301,11 @@ struct HomeView: View {
     // that also drives the app-wide LIVE bar and notification routing; Home
     // feeds it every /live/now poll and shows its mini-window pop-up.
     @ObservedObject private var liveDiscovery = LiveDiscoveryCenter.shared
-    // Nuru Live (L3, broadcaster) — Home's header "Go Live" icon.
+    // Nuru Live (L3, broadcaster) — Home's header "Go Live" icon. The
+    // controller itself lives in BroadcastCenter (app-wide), not here — see
+    // RootView for the single fullScreenCover presentation + floating island.
+    @ObservedObject private var broadcast = BroadcastCenter.shared
     @State private var showGoLiveSheet = false
-    @State private var goLiveSession: GoLiveSession?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
     // third discipline lands mid-session. Opacity-only, and Reduce Motion never
@@ -501,9 +503,8 @@ struct HomeView: View {
         .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church").id($0.id) }
         .sheet(isPresented: $openReplays) { LiveReplaysView(scope: "church") }
         .sheet(isPresented: $showGoLiveSheet) {
-            GoLiveSetupSheet { goLiveSession = $0 }
+            GoLiveSetupSheet { BroadcastCenter.shared.start(session: $0) }
         }
-        .fullScreenCover(item: $goLiveSession) { GoLiveBroadcastView(session: $0) }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
                 // Read on the server — clear the knock locally too.
@@ -673,7 +674,9 @@ struct HomeView: View {
                 if LiveBroadcastEligibility.canGoLive(auth.profile) {
                     Button {
                         Haptics.tap()
-                        showGoLiveSheet = true
+                        // Already broadcasting (minimized elsewhere) — reopen
+                        // it rather than minting a second stream on top.
+                        if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
                     } label: {
                         Image(systemName: "video.fill").font(.system(size: 16))
                             .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)

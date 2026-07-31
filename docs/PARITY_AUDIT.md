@@ -1,4 +1,126 @@
 
+## 2026-07-31 — Nuru Live "Broadcast Studio": persistence, honest backgrounding, Document/Screen sources (branch feat/broadcast-studio, this repo only)
+Owner spec: richer broadcast stage, screen/document sharing, and the stream
+must not die when leaving the broadcast screen. Built on top of build 92
+(L5 broadcaster HUD + viewer redesign + orientation fix). Files: new
+`BroadcastCenter.swift`, `BroadcastMiniPlayer.swift`, `AppScreenCapture.swift`,
+`DocumentPagerView.swift`, `BroadcastSourceSheet.swift`; rewritten
+`GoLiveBroadcastView.swift`; extended `BroadcastController.swift`; RootView +
+the three "Go Live" entry points (`NuruLiveTabView`, `HomeView`,
+`CellInfoView`) repointed at the new app-wide holder.
+
+**1. Stage polish — audited, not changed.** Re-checked the preview/chrome
+against the spec (full-bleed, chrome floating, safe-area-respected): the
+camera surface already used `MTHKViewRepresentable(...).ignoresSafeArea()`,
+`topBadges` already sat inside the system safe-area inset by default (no
+letterboxing under the notch/Dynamic Island), and `controlsRow`'s
+`.padding(.bottom, 28)` already cleared the home indicator. Nothing to fix;
+documented rather than churned.
+
+**2. Leave-the-page persistence — the headline fix.** The bug: `GoLiveBroadcastView`
+owned its `BroadcastController` as a `@StateObject` and tore it down (`.onDisappear
+{ end() }`) the instant the view left the hierarchy — any navigation away
+killed the stream. Fixed by hoisting the controller's lifetime into a new
+app-wide singleton, `BroadcastCenter` (mirrors `RadioCenter` exactly):
+`BroadcastCenter.shared.start(session:)` mints the controller once (called
+from the three Go Live entry points instead of each owning a local
+`@State goLiveSession` + its own `.fullScreenCover(item:)`); RootView owns
+the ONE `fullScreenCover(isPresented:)` bound to
+`broadcast.controller != nil && broadcast.presented`, plus a floating
+"● LIVE mm:ss — tap to return" island (`BroadcastMiniPlayer`, docked below
+the radio pill's row) shown whenever a broadcast is active and minimized. A
+new chevron-down control in the broadcast HUD calls `BroadcastCenter.minimize()`
+— sets `presented = false`, dismissing the cover, WITHOUT touching the
+controller; the mixer/RTMP keep running untouched. `GoLiveBroadcastView.
+onDisappear` is gone entirely — every path that actually ends a broadcast
+(the End confirmation, the island's own ✕, `failedView`'s End, a
+pre-live abort) calls `controller.end()` or `BroadcastCenter.clear()`
+explicitly. Re-tapping "Go live" while already broadcasting restores the
+existing session (`broadcast.restore()`) instead of minting a second stream.
+`BroadcastCenter` auto-`clear()`s once `phase == .ended` ONLY while
+minimized — while the full-screen surface is up, the summary/
+permission-denied view still needs to render before anything is cleared.
+
+**3. Backgrounding honesty.** Read `MediaMixer.swift` + `VideoCaptureUnit.swift`
+in the resolved HaishinKit 2.2.5 checkout: `mixer.startRunning()` already
+registers its OWN `UIApplication.didEnterBackgroundNotification` /
+`willEnterForegroundNotification` observers and calls
+`VideoCaptureUnit.suspend()`/`.resume()` — `suspend()` detaches ONLY the
+camera's `AVCaptureSession` connection (`session.detachCapture(capture)`),
+leaving the mic's connection attached and the session running, then
+`resume()` re-attaches the camera on foreground. So HaishinKit was already
+doing exactly what the spec asked for (pause video, keep audio, auto-resume)
+— the only reason a broadcast used to die on backgrounding was
+`BroadcastController.handleBackgrounded()` itself calling `end()`
+unconditionally. That call is gone; `handleBackgrounded()` now just flags a
+`videoPausedInBackground` published bool (drives a small "Audio live —
+camera paused" HUD pill), relying on the app's existing `UIBackgroundModes:
+audio` entitlement (already shipped for Nuru Radio) plus the
+`AVCaptureSession`-managed `AVAudioSession` recording session that attaching
+a mic device configures automatically. Audio-only broadcasts were never
+touched by this bug in the first place (no camera to lose) but WERE
+unconditionally ended by the old code too — also fixed. **Honest limitation:**
+there is no way to exercise "does the RTMP socket really survive an hour
+backgrounded" from `xcodebuild test`, and this sandbox has no physical
+device to background mid-broadcast against a real MediaMTX — this rests on
+reading HaishinKit's actual source (cited above) plus the same
+well-established AVFoundation pattern Radio already proves works for audio
+in this exact app, not an end-to-end device trace.
+
+**4. Source switcher — Camera / Document / Screen.** New `sourceButton` in
+the HUD opens `BroadcastSourceSheet`. **Document** (priority item, fully
+built): `.fileImporter` PDF pick → `DocumentSource` rasterizes every page to
+a `UIImage` via PDFKit (`PDFPage.draw(with:to:)`, off the main thread) →
+`DocumentPagerView` (SwiftUI `TabView` + `.page` style) becomes the ENTIRE
+on-screen surface. **Screen** ("Share my screen (this app)", also built):
+same underlying mechanism. Both route through `AppScreenCapture`, a thin
+wrapper over `RPScreenRecorder.startCapture(handler:)` — ReplayKit's
+IN-APP capture API (no Broadcast Upload Extension, no system picker,
+confirmed this needs neither by reading Apple's ReplayKit docs) — which
+hands back live `CMSampleBuffer`s that get fed straight into
+`MediaMixer.append(_ sampleBuffer:track:)`, a PUBLIC manual-append entry
+point confirmed by reading `MediaMixer.swift` in the resolved checkout
+("Appends a CMSampleBuffer" — routes into the SAME `VideoMixer` pipeline a
+physical `AVCaptureDevice` feeds). Before appending, the camera is detached
+from track 0 (`mixer.attachVideo(nil, track: 0)`) so there's exactly one
+producer at a time; a `sourceGeneration` counter guards against a stale
+buffer from a just-stopped capture landing on the wrong track during the
+async switch. `RPScreenRecorder.isMicrophoneEnabled = false` keeps
+HaishinKit's own mic tap the ONE audio pipeline throughout every source
+switch. Screen mode deliberately does NOT auto-minimize (kept the scope to
+the append pipeline + picker UI, not new island-interaction states); its own
+screen explains "minimize (⌄) and browse Nuru" — because `AppScreenCapture`
+lives on `BroadcastController`, independent of which view is on screen,
+capture genuinely keeps running (and keeps feeding the mixer) across a
+minimize/restore round-trip, so free navigation while screen-sharing DOES
+work as built, just isn't the state the sheet auto-drives you into.
+**Honest limitation:** ReplayKit capture, PDF rendering, and the append path
+were verified by reading HaishinKit/ReplayKit's actual APIs and by a clean
+`xcodebuild build`/`test` pass — NOT by an on-device screen-record + RTMP
+round-trip (no eligible `live:go` test account + no reachable backend in
+this sandbox to drive the full flow end-to-end). The first real
+`RPScreenRecorder` permission prompt and its interaction with an
+already-running `AVCaptureSession` (camera) is the highest-risk untested
+edge — worth a manual device pass before this ships to real broadcasters.
+
+**5. L5 HUD across navigation.** ✋/💬 sheets, the reaction overlay, and the
+3s pulse poll all live on `BroadcastController` untouched — since the
+controller itself never tears down on minimize/restore, all of it keeps
+working exactly as build 92 shipped it, verified by inspection (no changes
+needed to `LiveHandsGuestsSheet.swift` / `LiveChatSheet.swift` / the pulse
+poll in `BroadcastController`).
+
+**Verify:** `xcodebuild build` → BUILD SUCCEEDED (1 pre-existing, unrelated
+warning from `appintentsmetadataprocessor`, no compiler warnings in any new
+or touched file). `xcodebuild test` → 21/21 green (unchanged baseline —
+this arc added no new unit-testable surface; `BroadcastController` needs a
+camera/mic/RTMP server to exercise meaningfully). Ran the built app in the
+iPhone 17 Pro Max simulator: launches clean, navigates Home/You without
+crashing; could NOT reach the Live tab itself (signed-in test profile isn't
+`live:go`-eligible and no backend was running against `localhost:8080` in
+this sandbox), so the actual broadcast/capture path is unverified beyond
+compile + source-reading — flagged above, not hidden.
+
 ## 2026-07-31 — Nuru Live viewer redesign: best-in-class chrome + 🔥 reaction (branch feat/live-viewer-polish, this repo only)
 Redesigns the VIEWER side of the L5 interactive stage (previous entry below)
 into TikTok/IG/YouTube-Live-grade chrome, on top of build 91's shipped API
