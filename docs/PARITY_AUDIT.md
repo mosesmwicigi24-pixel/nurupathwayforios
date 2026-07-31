@@ -1,3 +1,92 @@
+## 2026-07-31 — L6d: guest audio reaches the CONGREGATION, not just the host (iOS) — closes the last parity gap flagged in L6c below
+
+Android has shipped congregation-audible guest audio since L3 (taps each
+guest's decoded PCM via `org.webrtc.AudioTrack.addSink`, mixes it into the
+outgoing RTMP through a custom RootEncoder audio source). iOS's libwebrtc
+surface exposes no equivalent sink on `RTCAudioTrack` — re-confirmed against
+the real stasel/WebRTC 150 headers in this pass, matching the prior agent's
+finding — so the only real path is the one `RTCPeerConnectionFactory.h`
+itself documents: a custom `RTCAudioDevice`.
+
+**Header evidence, read from the resolved
+`WebRTC.xcframework/ios-arm64/WebRTC.framework/Headers/` build (not
+guessed):**
+- `RTCPeerConnectionFactory` has
+  `-initWithEncoderFactory:decoderFactory:audioDevice:`, taking an
+  `id<RTCAudioDevice>` — genuinely exposed in this WebRTC distribution.
+- `RTCAudioDeviceDelegate.getPlayoutData` pulls ONE stream of 16-bit-integer
+  PCM "from native ADM to play" — singular. Every `RTCPeerConnection`
+  created from the SAME factory shares that factory's one native ADM, and
+  WebRTC's own pipeline mixes every simultaneously-active remote audio track
+  into that one playout stream before handing it to us — so unlike
+  Android's per-guest `addSink`, this is ALREADY pre-mixed, one pull for
+  every guest combined.
+- One Swift-name guess was wrong and caught by the compiler, not shipped
+  blind: `initializeWithDelegate:` imports as `initialize(with:)`, not
+  `initializeWithDelegate(_:)` (Swift's Clang-importer suffix-elision rule,
+  same pattern already visible elsewhere in this codebase's
+  `peerConnectionWithConfiguration:` → `peerConnection(with:...)`).
+
+**What shipped — new `GuestAudioPlayoutDevice.swift`:** a custom
+`RTCAudioDevice` backed by one output-only `kAudioUnitSubType_RemoteIO`
+AudioUnit. Its render callback synchronously calls
+`delegate.getPlayoutData(...)` to pull already-mixed guest PCM straight into
+the AudioUnit's own output buffer — one call, two jobs: (1) whatever's in
+that buffer plays out the device's active route automatically (host keeps
+HEARING guests locally, same mechanism, not a second one), and (2) a copy is
+handed to `onPCM`, which `BroadcastController.configureMixer()` wires to
+`mixer.append(_:when:track:1)`. The host's own mic stays track 0;
+HaishinKit's own multi-track mixer (`MediaMixer(multiTrackAudioMixingEnabled:
+true)` — was `false`/default, under which `AudioMixerBySingleTrack.append`
+SILENTLY DROPS any non-`mainTrack` audio, confirmed by reading
+`AudioMixerBySingleTrack.swift`; this is why simply adding the WebRTC device
+without this flag would have looked correct and produced nothing) mixes the
+two into the one outgoing RTMP audio, resampling track 1's Int16 PCM to the
+mixer's own output format via `AudioMixerTrack`'s OWN internal
+`AVAudioConverter` (confirmed in `AudioMixerTrack.swift` — HaishinKit already
+does exactly the "resample with AVAudioConverter" step per track, so this
+pass doesn't duplicate it with a second converter).
+
+**Deliberately scoped to playout only.** Every `WhepSubscriber` peer
+connection is recvonly (no local audio track), so native ADM never needs
+this device's recording half — it's implemented as a documented no-op
+(`startRecording() -> false`, `isRecording` always `false`) rather than a
+half-built capture path that would have meant reimplementing microphone
+capture alongside HaishinKit's OWN `AVCaptureSession`-based mic capture on
+the same device. This custom device lives on a NEW, host-only factory
+(`WebRTCFactory.hostGuestAudio`) — `WebRTCFactory.shared`, which
+`WhipPublisher` uses for a GUEST's own outbound mic+camera publish, is
+completely untouched and keeps WebRTC's normal default ADM.
+
+**Echo — the honest trade-off, not swept under the rug.** With a custom
+audio device installed, WebRTC's own voice-processing/AEC path (tied to
+`RTCAudioSession`) is bypassed for this factory entirely — the header is
+explicit that a custom `RTCAudioDevice` implementation is "fully responsible"
+for its own audio path. HaishinKit's mic capture (`AVCaptureSession`,
+`.playAndRecord`) has no AEC of its own either. So the host's mic WILL pick
+up whatever the speaker plays, including guest audio this device renders,
+with zero cross-framework echo cancellation. No code change closes that
+without either (a) building a full duplex custom ADM that also owns mic
+capture through a voice-processing AudioUnit (a much larger, riskier change
+this pass deliberately didn't take — see "deliberately scoped" above), or
+(b) requiring earphones. The existing, standard mitigation for any
+multi-participant broadcast — hosts wearing earphones/AirPods — removes the
+acoustic coupling entirely; that's the assumption this ships under.
+
+Verified: `xcodebuild build` BUILD SUCCEEDED (one compiler-caught rename
+fixed, see above); `test` 21/21 green.
+
+Honest limits: not exercised against a live multi-guest broadcast on real
+hardware — no test in `xcodebuild test` can drive a real RemoteIO render
+callback with real guest audio, mirroring the same caveat already logged for
+L6c's compositor and the backgrounding behavior in `BroadcastController`.
+Channel count is mono (1) by design — HaishinKit's own `AudioMixerTrack`
+already special-cases mono→stereo upmixing (`channelMap = [0, 0]`), so this
+isn't a shortcut, it's using a code path HaishinKit already treats as
+first-class. `deviceOutputSampleRate`/IO buffer duration mirror whatever
+`RTCAudioDeviceDelegate` reports as preferred at `initialize(with:)` time
+rather than a hardcoded guess.
+
 ## 2026-07-31 — L6c: guest stage composited into the outgoing broadcast (iOS)
 
 The congregation now SEES guests, not only the host. `LiveStageCompositor.swift`

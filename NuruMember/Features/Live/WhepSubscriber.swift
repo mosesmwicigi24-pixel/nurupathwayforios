@@ -86,7 +86,11 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
 
         let config = WebRTCFactory.configuration()
         let pcConstraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
-        guard let pc = WebRTCFactory.shared.peerConnection(with: config, constraints: pcConstraints, delegate: self) else {
+        // L6d — the host-only factory with the custom `RTCAudioDevice`
+        // installed (see WebRTCSupport.swift), so this guest's decoded audio
+        // lands in `GuestAudioPlayoutDevice` instead of going straight to
+        // the speaker via WebRTC's own default session management.
+        guard let pc = WebRTCFactory.hostGuestAudio.peerConnection(with: config, constraints: pcConstraints, delegate: self) else {
             state = .failed("Couldn't start the connection.")
             return
         }

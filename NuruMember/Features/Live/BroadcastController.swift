@@ -153,7 +153,18 @@ final class BroadcastController: ObservableObject {
 
     private let connection: RTMPConnection
     private let stream: RTMPStream
-    private let mixer = MediaMixer()
+    // L6d — multi-track audio mixing enabled so guest audio (track 1, see
+    // `GuestAudioPlayoutDevice`) can be mixed alongside the host's own mic
+    // (track 0) into the ONE outgoing RTMP audio. With this left `false`
+    // (HaishinKit's default, and this app's entire pre-L6d history),
+    // `AudioMixerBySingleTrack.append` silently DROPS anything that isn't
+    // `settings.mainTrack` (confirmed by reading AudioMixerBySingleTrack.swift
+    // in the resolved HaishinKit 2.2.5 checkout) — guest audio would compile
+    // and run with no error, just never reach a single viewer. Audio-only
+    // sessions get this too: guest audio mixing isn't gated on `isVideo`
+    // anywhere else in this file (`syncGuestSubscribers` runs for both), so
+    // it shouldn't be gated here either.
+    private let mixer = MediaMixer(multiTrackAudioMixingEnabled: true)
     private var mtView: MediaMixerOutput?
     private var isMixerReady = false
 
@@ -208,6 +219,17 @@ final class BroadcastController: ObservableObject {
 
     private func configureMixer() async {
         try? await mixer.attachAudio(AVCaptureDevice.default(for: .audio))
+        // L6d — every accepted guest's mixed audio (pulled by
+        // GuestAudioPlayoutDevice from a dedicated, host-only WebRTC audio
+        // device — see that file's header comment) lands on track 1;
+        // HaishinKit mixes it with the host's own mic (track 0, attached
+        // just above) into the ONE outgoing RTMP audio. `mixerRef` (not
+        // `self`) because this closure fires from CoreAudio's own realtime
+        // render thread, same reasoning as `onVideoFrame` below.
+        let mixerRef = mixer
+        GuestAudioPlayoutDevice.shared.onPCM = { pcm, time in
+            Task { await mixerRef.append(pcm, when: time, track: 1) }
+        }
         if isVideo {
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition)
             try? await mixer.attachVideo(device, track: 0)
@@ -769,6 +791,11 @@ final class BroadcastController: ObservableObject {
         stopPulsePolling()
         stopActiveSpeakerTracking()
         teardownGuestSubscribers()
+        // L6d — stop feeding this (now-dead) mixer; a stale closure holding
+        // `mixerRef` past teardown would otherwise keep the actor alive and
+        // spam `mixer.append` calls into a stopped MediaMixer for as long as
+        // any guest audio device instance stays live app-wide.
+        GuestAudioPlayoutDevice.shared.onPCM = nil
         if let compositor = stageCompositor { await compositor.teardown() }
         stageCompositor = nil
         sourceGeneration += 1

@@ -33,6 +33,24 @@ enum WebRTCFactory {
         return RTCPeerConnectionFactory(encoderFactory: encoderFactory, decoderFactory: decoderFactory)
     }()
 
+    /// L6d — HOST-ONLY factory for `WhepSubscriber`'s guest-audio
+    /// subscriptions, built with a custom `RTCAudioDevice`
+    /// (`GuestAudioPlayoutDevice.shared`) so every accepted guest's decoded
+    /// audio — pre-mixed by native ADM, since every `WhepSubscriber` peer
+    /// connection on the host shares this ONE factory → ONE ADM → ONE
+    /// `getPlayoutData` stream (confirmed against `RTCAudioDevice.h`, not
+    /// guessed) — lands in our hands instead of going straight to the
+    /// speaker via WebRTC's own session management. See
+    /// GuestAudioPlayoutDevice.swift for the full mechanism and the
+    /// deliberate scope limit (playout only). `WhipPublisher` (a guest's own
+    /// outbound mic+camera) keeps using `shared` above, completely
+    /// untouched, with WebRTC's normal default ADM.
+    static let hostGuestAudio: RTCPeerConnectionFactory = {
+        let encoderFactory = RTCDefaultVideoEncoderFactory()
+        let decoderFactory = RTCDefaultVideoDecoderFactory()
+        return RTCPeerConnectionFactory(encoderFactory: encoderFactory, decoderFactory: decoderFactory, audioDevice: GuestAudioPlayoutDevice.shared)
+    }()
+
     /// One Metal-backed `CIContext` shared by every guest's
     /// `RTCFrameToSampleBufferSampler` (L6c stage compositing) — building a
     /// `CIContext` spins up its own Metal command queue/shader cache, so
