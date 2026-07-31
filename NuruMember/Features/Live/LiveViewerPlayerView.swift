@@ -323,6 +323,15 @@ struct LiveViewerPlayerView: View {
                         handleDoubleTapHeart(at: value.location)
                     })
             }
+        }
+        .overlay(alignment: .top) {
+            // Pinned via `.overlay(alignment: .top)`, NOT a plain ZStack
+            // child — this ZStack's default alignment is `.center`, and
+            // unlike the old `chrome` (which force-filled the frame with a
+            // trailing `Spacer` so its own top-alignment governed things),
+            // `topBar` is just its own intrinsic ~60pt height. Without an
+            // explicit top alignment it would render vertically CENTERED,
+            // not pinned under the safe area.
             if controller.phase != .ended { topBar }
         }
         .overlay {

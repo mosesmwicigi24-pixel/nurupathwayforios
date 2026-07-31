@@ -160,17 +160,24 @@ struct LiveFloatingChatOverlay: View {
     private static let heightFraction: CGFloat = 0.26
     private static let bubbleDiameter: CGFloat = 54
     private static let margin: CGFloat = 12
+    /// This view positions itself with `.position()` against raw
+    /// `UIScreen.main.bounds` — NOT SwiftUI's automatic safe-area-aware
+    /// layout — so these constants must include the system safe area
+    /// themselves (see GuestStagePiP's identical reasoning; both views share
+    /// this idiom).
+    ///
     /// Clears the bottom dock (owner redesign, 2026-08-01 — see
-    /// LiveDockChrome.swift) on either host screen. Sized for the TALLER
-    /// two-row guest-on-stage dock so this never overlaps it even though
-    /// most of the time (a plain viewer's one-row dock) that leaves a little
-    /// unused clearance above the dock — safer than the alternative.
+    /// LiveDockChrome.swift) on either host screen: home indicator (~34pt) +
+    /// the TALLER two-row guest-on-stage dock + margin, so this never
+    /// overlaps it even though most of the time (a plain viewer's one-row
+    /// dock) that leaves a little unused clearance above the dock — safer
+    /// than the alternative.
     private static let bottomInset: CGFloat = 210
     /// Clears the new ONE-LINE top row (close ✕ / host chip / title / LIVE /
     /// counters on the viewer; minimize / LIVE pill / timer on the
-    /// broadcaster) — much shorter than the old three-row chrome this used
-    /// to clear.
-    private static let topInset: CGFloat = 76
+    /// broadcaster): system safe area (~59pt) + the row's own ~60pt height +
+    /// margin.
+    private static let topInset: CGFloat = 132
 
     init(streamId: String, myUserId: String?, myFullName: String? = nil, myAvatarUrl: String? = nil,
          handsRaisedCount: Int, visible: Binding<Bool>) {

@@ -43,11 +43,18 @@ struct GuestStagePiP: View {
     private static let tileSize = CGSize(width: 92, height: 122)
     private static let handleDiameter: CGFloat = 46
     private static let margin: CGFloat = 14
-    /// Clears the single top row (see LiveViewerPlayerView's `topBar`).
-    private static let topInset: CGFloat = 78
-    /// Clears the two-row bottom dock (see LiveDockLayout.rows — up to two
-    /// rows of 44pt controls once a guest is on stage).
-    private static let bottomInset: CGFloat = 196
+    /// Clears the single top row (see LiveViewerPlayerView's `topBar`). This
+    /// view positions itself with `.position()` against raw
+    /// `UIScreen.main.bounds` — NOT SwiftUI's automatic safe-area-aware
+    /// layout — so, unlike `topBar`'s own padding (which only has to
+    /// account for its OWN ~60pt height, safe area handled for free), this
+    /// constant must include BOTH the system safe area (Dynamic Island/
+    /// status bar, ~59pt) AND the top row's own height, plus a margin.
+    private static let topInset: CGFloat = 132
+    /// Same reasoning, bottom edge: home indicator (~34pt) + the WIDEST the
+    /// bottom dock ever gets (two rows once a guest is on stage, see
+    /// LiveDockLayout.rows) + margin.
+    private static let bottomInset: CGFloat = 200
 
     private var screen: CGSize { UIScreen.main.bounds.size }
     private var currentSize: CGSize {

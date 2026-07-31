@@ -451,11 +451,13 @@ struct GoLiveBroadcastView: View {
 
     /// ONE bottom dock (owner spec) — every broadcaster control, same
     /// grammar/component set as the viewer/guest dock. `.broadcaster` items
-    /// always fit a single row (see LiveDockLayout.rows).
+    /// fit a single row UNLESS the document page indicator bumps it to two
+    /// (see LiveDockLayout.rows).
     private var liveBottomDock: some View {
         let hasDocumentPage = controller.videoSource == .document && !documentSource.pages.isEmpty
+        let rows = LiveDockLayout.rows(role: .broadcaster, isVideo: controller.isVideo, hasDocumentPage: hasDocumentPage)
         return VStack(spacing: 10) {
-            ForEach(Array(LiveDockLayout.rows(role: .broadcaster, isVideo: controller.isVideo, hasDocumentPage: hasDocumentPage).enumerated()), id: \.offset) { _, row in
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 16) {
                     ForEach(row) { dockButton(for: $0) }
                 }
@@ -464,7 +466,7 @@ struct GoLiveBroadcastView: View {
         .padding(.horizontal, 20)
         .padding(.bottom, 24)
         .frame(maxWidth: .infinity)
-        .background(alignment: .bottom) { LiveChromeScrim.bottom(height: 150) }
+        .background(alignment: .bottom) { LiveChromeScrim.bottom(height: rows.count > 1 ? 210 : 150) }
     }
 
     @ViewBuilder
