@@ -57,6 +57,11 @@ final class BroadcastController: ObservableObject {
     @Published private(set) var endedReason: EndedReason = .summary
     @Published private(set) var cameraPosition: AVCaptureDevice.Position = .back
     @Published private(set) var isMuted = false
+    /// Capture orientation chosen from how the phone is held at go-live and
+    /// LOCKED for the session (re-applied after a camera flip). Changing the
+    /// encoded dimensions mid-publish would break viewers' players, so we don't
+    /// rotate live — same behaviour as every pro broadcast app.
+    private(set) var captureOrientation: AVCaptureVideoOrientation = .portrait
     @Published private(set) var startedAt: Date?
     @Published private(set) var endedAt: Date?
     @Published private(set) var viewerCount = 0
@@ -99,6 +104,10 @@ final class BroadcastController: ObservableObject {
     /// already exists server-side, so we must call /end ourselves rather
     /// than leaving it orphaned.
     func start() async {
+        // Start the accelerometer feed early so UIDevice.current.orientation is
+        // valid by the time configureMixer() reads it (the permission awaits
+        // below give it time to settle).
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
         if isVideo {
             guard await LiveBroadcastPermissions.requestCamera() == .granted else {
                 await endOrphanedStream(reason: .permissionDenied)
@@ -120,8 +129,13 @@ final class BroadcastController: ObservableObject {
         if isVideo {
             let device = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: cameraPosition)
             try? await mixer.attachVideo(device, track: 0)
+            // Follow the phone: portrait → 1080×1920, landscape → 1920×1080.
+            // Orientation is read once, here, and locked for the whole session.
+            let geo = captureGeometry()
+            captureOrientation = geo.orientation
+            await mixer.setVideoOrientation(geo.orientation)
             try? await stream.setVideoSettings(VideoCodecSettings(
-                videoSize: CGSize(width: 1920, height: 1080),
+                videoSize: geo.size,
                 bitRate: 6_000_000,
                 profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
                 scalingMode: .trim,
@@ -135,6 +149,24 @@ final class BroadcastController: ObservableObject {
         await mixer.startRunning()
         isMixerReady = true
         if let mtView { await mixer.addOutput(mtView) }
+    }
+
+    /// The capture orientation + encode size for how the phone is PHYSICALLY held.
+    /// The app UI is portrait-locked, so `interfaceOrientation` is useless here —
+    /// we read the device's accelerometer orientation directly so the broadcaster
+    /// can frame portrait OR landscape just by turning the phone at go-live.
+    /// UIDeviceOrientation.landscapeLeft/Right are INVERTED relative to
+    /// AVCaptureVideoOrientation (a long-standing AVFoundation quirk), hence the
+    /// crossed mapping. faceUp/faceDown/unknown default to portrait.
+    private func captureGeometry() -> (orientation: AVCaptureVideoOrientation, size: CGSize) {
+        let landscape = CGSize(width: 1920, height: 1080)
+        let portrait = CGSize(width: 1080, height: 1920)
+        switch UIDevice.current.orientation {
+        case .landscapeLeft: return (.landscapeRight, landscape)
+        case .landscapeRight: return (.landscapeLeft, landscape)
+        case .portraitUpsideDown: return (.portraitUpsideDown, portrait)
+        default: return (.portrait, portrait)   // portrait, faceUp/Down, unknown
+        }
     }
 
     private func connectAndPublish() async {
@@ -269,6 +301,7 @@ final class BroadcastController: ObservableObject {
             try? await mixer.attachVideo(device, track: 0) { unit in
                 unit.isVideoMirrored = (newPosition == .front)
             }
+            await mixer.setVideoOrientation(captureOrientation)   // re-attach resets it — keep the locked orientation
             cameraPosition = newPosition
         }
     }
@@ -334,6 +367,7 @@ final class BroadcastController: ObservableObject {
         try? await mixer.attachAudio(nil)
         if isVideo { try? await mixer.attachVideo(nil, track: 0) }
         UIApplication.shared.isIdleTimerDisabled = false
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
     }
 }
 
