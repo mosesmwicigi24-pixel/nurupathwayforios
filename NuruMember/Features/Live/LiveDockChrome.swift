@@ -123,22 +123,37 @@ enum LiveDockLayout {
 
     /// Splits a role's items into visual rows so a wide set (guest-on-stage:
     /// up to 10 controls) never has to shrink tap targets below the 44pt
-    /// minimum to fit one line. `.viewer` and `.broadcaster` top out at 5-6
-    /// items and always fit a single row; `.guestOnStage` splits into
-    /// "engagement" (reactions/raise-hand/chat — what any viewer already
-    /// has) on top and "stage hardware" (camera/switch/mic/speaker/leave) on
-    /// the row below, so the two concerns read as distinct clusters within
-    /// the ONE dock container rather than one undifferentiated wall of icons.
+    /// minimum to fit one line, and no row ever exceeds ~5 items (roughly
+    /// what a one-handed 44pt-target row can hold on a phone width without
+    /// crowding — see LiveDockChromeTests.testNoRowExceedsFiveItems).
+    ///
+    ///  - `.viewer` always fits one row (5 items, max).
+    ///  - `.guestOnStage` splits into "engagement" (reactions/raise-hand/
+    ///    chat — what any viewer already has) on top and "stage hardware"
+    ///    (camera/switch/mic/speaker/leave) below, so the two concerns read
+    ///    as distinct clusters rather than one undifferentiated wall of icons.
+    ///  - `.broadcaster` fits one row UNLESS `hasDocumentPage` pushes it to
+    ///    6 — in which case the document page indicator (a passive label,
+    ///    not a tap target) gets bumped to its own second row rather than
+    ///    crowding the primary control row past 5.
     static func rows(role: LiveDockRole, isVideo: Bool = true, hasDocumentPage: Bool = false) -> [[LiveDockItem]] {
         let all = items(role: role, isVideo: isVideo, hasDocumentPage: hasDocumentPage)
-        guard role == .guestOnStage else { return [all] }
-        let engagementIds: Set<String> = [
-            LiveDockItem.reaction(.love).id, LiveDockItem.reaction(.fire).id, LiveDockItem.reaction(.like).id,
-            LiveDockItem.raiseHand.id, LiveDockItem.chat.id
-        ]
-        let engagement = all.filter { engagementIds.contains($0.id) }
-        let stage = all.filter { !engagementIds.contains($0.id) }
-        return [engagement, stage]
+        switch role {
+        case .viewer:
+            return [all]
+        case .guestOnStage:
+            let engagementIds: Set<String> = [
+                LiveDockItem.reaction(.love).id, LiveDockItem.reaction(.fire).id, LiveDockItem.reaction(.like).id,
+                LiveDockItem.raiseHand.id, LiveDockItem.chat.id
+            ]
+            let engagement = all.filter { engagementIds.contains($0.id) }
+            let stage = all.filter { !engagementIds.contains($0.id) }
+            return [engagement, stage]
+        case .broadcaster:
+            guard hasDocumentPage else { return [all] }
+            let controls = all.filter { $0 != .documentPage }
+            return [controls, [.documentPage]]
+        }
     }
 }
 

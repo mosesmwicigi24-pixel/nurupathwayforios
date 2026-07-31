@@ -92,12 +92,20 @@ final class LiveDockLayoutTests: XCTestCase {
         XCTAssertEqual(LiveDockLayout.rows(role: .viewer).count, 1)
     }
 
-    func testBroadcasterRowsIsAlwaysOneRowRegardlessOfFlags() {
+    func testBroadcasterRowsIsOneRowWithoutADocumentPage() {
         for isVideo in [true, false] {
-            for hasDoc in [true, false] {
-                XCTAssertEqual(LiveDockLayout.rows(role: .broadcaster, isVideo: isVideo, hasDocumentPage: hasDoc).count, 1)
-            }
+            XCTAssertEqual(LiveDockLayout.rows(role: .broadcaster, isVideo: isVideo, hasDocumentPage: false).count, 1)
         }
+    }
+
+    /// Six items (mic, switchCamera, end, raiseHand, chat, documentPage)
+    /// would crowd past the 5-item row cap — the document page indicator (a
+    /// passive label, not a tap target) gets bumped to its own second row.
+    func testBroadcasterWithDocumentPageSplitsPageIndicatorOntoItsOwnRow() {
+        let rows = LiveDockLayout.rows(role: .broadcaster, isVideo: true, hasDocumentPage: true)
+        XCTAssertEqual(rows.count, 2)
+        XCTAssertEqual(rows[0], [.mic, .switchCamera, .end, .raiseHand, .chat])
+        XCTAssertEqual(rows[1], [.documentPage])
     }
 
     func testGuestOnStageSplitsIntoExactlyTwoRows() {
