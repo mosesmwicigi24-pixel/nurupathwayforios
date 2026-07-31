@@ -19,6 +19,7 @@
 //      plays it out automatically over the app's active AVAudioSession route
 //      — see WebRTCAudioCoexistence's header comment for how that coexists
 //      with HaishinKit's own mic capture on this same device).
+import CoreMedia
 import Foundation
 import WebRTC
 
@@ -36,10 +37,29 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     /// published property — once the remote audio track exists, WebRTC plays
     /// it out on its own; there's nothing for SwiftUI to bind.
     @Published private(set) var videoTrack: RTCVideoTrack?
+    /// L6c active-speaker signal — WebRTC's standard "inbound-rtp"/audioLevel
+    /// stat (0.0–1.0), polled every second once connected. BroadcastController
+    /// compares this across all live guest tiles to decide who goes
+    /// full-frame on the composited stage; see `fetchAudioLevel()` below for
+    /// why a plain stats poll rather than a raw-buffer RMS meter (the
+    /// approach BroadcastController's own header comment rules out for the
+    /// LOCAL mic, for a different reason — no equivalent metering API at
+    /// all there; here, WebRTC's stats API already reports it).
+    @Published private(set) var audioLevel: Double = 0
+
+    /// L6c stage-compositing sink — set by BroadcastController.syncGuestSubscribers
+    /// BEFORE `start()`, so it's already in place the moment the remote video
+    /// track (and therefore `attachCompositorSink`) arrives. Fires on
+    /// WebRTC's decode thread via `RTCFrameToSampleBufferSampler`, so this
+    /// must stay `@Sendable` — see that type's header comment.
+    var onVideoFrame: (@Sendable (CMSampleBuffer) -> Void)?
 
     private var peerConnection: RTCPeerConnection?
     private var resourceURL: URL?
     private var generation = 0
+    private var statsTask: Task<Void, Never>?
+    private var frameSampler: RTCFrameToSampleBufferSampler?
+    private weak var sampledTrack: RTCVideoTrack?
 
     /// `whepURLString` is `LiveGuestRow.whepUrl`; `user`/`pass` are the
     /// STREAM's own id + stream key (the broadcaster's own publish
@@ -103,10 +123,64 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     }
 
     private func teardownPeerConnection() {
+        statsTask?.cancel()
+        statsTask = nil
+        if let sampledTrack, let frameSampler { sampledTrack.remove(frameSampler) }
+        frameSampler = nil
+        sampledTrack = nil
         peerConnection?.close()
         peerConnection = nil
         videoTrack = nil
         resourceURL = nil
+        audioLevel = 0
+    }
+
+    /// L6c — adds a SECOND renderer to the just-arrived remote video track
+    /// (WebRTC supports multiple sinks per track) that converts frames to
+    /// CMSampleBuffers for `onVideoFrame`, alongside whatever `WebRTCVideoView`
+    /// GuestTileRail already bound. A no-op if BroadcastController never set
+    /// `onVideoFrame` (e.g. an audio-only session has no compositor).
+    private func attachCompositorSink(to track: RTCVideoTrack) {
+        guard let onVideoFrame else { return }
+        let sampler = RTCFrameToSampleBufferSampler(ciContext: WebRTCFactory.compositingContext, onSampleBuffer: onVideoFrame)
+        frameSampler = sampler
+        sampledTrack = track
+        track.add(sampler)
+    }
+
+    /// Polls WebRTC's standard stats API for this guest's inbound audio
+    /// level once a second — the same signal browsers use for "active
+    /// speaker" highlighting. `statistics(completionHandler:)` isn't
+    /// async-native, so it's bridged via a continuation; the completion fires
+    /// on WebRTC's own signaling thread, which is fine — continuations are
+    /// thread-safe, and the result hop back onto `self` (MainActor, since
+    /// this whole type is) happens naturally via `await` below.
+    private func startStatsPolling() {
+        guard statsTask == nil else { return }
+        statsTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                let level = await self.fetchAudioLevel()
+                guard !Task.isCancelled else { return }
+                self.audioLevel = level
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
+            }
+        }
+    }
+
+    private func fetchAudioLevel() async -> Double {
+        guard let pc = peerConnection else { return 0 }
+        return await withCheckedContinuation { continuation in
+            pc.statistics { report in
+                var level: Double = 0
+                for stat in report.statistics.values where stat.type == "inbound-rtp" {
+                    guard let kind = stat.values["kind"] as? String, kind == "audio" else { continue }
+                    if let value = stat.values["audioLevel"] as? NSNumber {
+                        level = value.doubleValue
+                    }
+                }
+                continuation.resume(returning: level)
+            }
+        }
     }
 
     // MARK: RTCPeerConnectionDelegate (optional callbacks we actually use)
@@ -114,7 +188,9 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didAdd rtpReceiver: RTCRtpReceiver, streams mediaStreams: [RTCMediaStream]) {
         guard let track = rtpReceiver.track as? RTCVideoTrack else { return }
         Task { @MainActor [weak self] in
-            self?.videoTrack = track
+            guard let self else { return }
+            self.videoTrack = track
+            self.attachCompositorSink(to: track)
         }
     }
 
@@ -124,6 +200,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
             switch newState {
             case .connected:
                 if self.state == .connecting { self.state = .live }
+                self.startStatsPolling()
             case .failed:
                 self.state = .failed("Lost connection to this guest's video.")
                 self.teardownPeerConnection()

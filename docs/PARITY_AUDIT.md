@@ -1,3 +1,25 @@
+## 2026-07-31 — L6c: guest stage composited into the outgoing broadcast (iOS)
+
+The congregation now SEES guests, not only the host. `LiveStageCompositor.swift`
+drives HaishinKit's OWN offscreen compositor (`MediaMixer.screen`, a
+`ScreenObjectContainer`) — confirmed by reading the resolved 2.2.5 sources, not
+guessed: switching `setVideoMixerSettings(mode: .offscreen, mainTrack:)` turns
+the mixer from passthrough into a display-link compositing loop that renders
+every `VideoTrackScreenObject` into ONE `CMSampleBuffer` for the RTMP output.
+Guest WHEP frames land on tracks 1...6; the host camera/Document/Screen source
+keeps feeding track 0 exactly as before. Active-speaker promotion is a
+`mainTrack` retarget (instant full-frame swap, no new objects, no encode-size
+change — `Screen.size` stays pinned to the session's locked geometry, so
+viewers' players never break). Rail thumbnails are child screen objects that
+reflow as guests join/leave.
+
+Verified: `xcodebuild build` BUILD SUCCEEDED; `test` 21/21 green.
+
+Honest limits: not yet exercised against a live multi-guest broadcast on real
+devices; guest audio still reaches the HOST only on iOS (no public audio-sink
+API on RTCAudioTrack — Android ships congregation audio via AudioTrack.addSink;
+closing that gap needs a custom RTCAudioDeviceModule, tracked as follow-up).
+
 
 ## 2026-07-31 — Nuru Live L6b: real guest video over WHIP/WHEP (branch feat/live-l6b-guest-video, this repo only)
 Replaces every "video joins in the next update" placeholder from L6a with

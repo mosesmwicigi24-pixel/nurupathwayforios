@@ -98,6 +98,27 @@ final class BroadcastController: ObservableObject {
     @Published private(set) var guestTiles: [GuestTileState] = []
     private var guestSubscribers: [String: WhepSubscriber] = [:]
 
+    // MARK: L6c — composites the host (or Document/Screen source) plus every
+    // live guest into the ONE outgoing RTMP stream, via LiveStageCompositor
+    // (HaishinKit's own offscreen Screen compositor — see that type's header
+    // comment for the mechanism). `nil` for audio-only sessions, which never
+    // attach video in the first place.
+    private var stageCompositor: LiveStageCompositor?
+    /// Guest userId → the mixer TRACK NUMBER their video is appended on
+    /// (1...6 — host camera/Document/Screen is always track 0). Allocated on
+    /// join, freed on leave, so a guest who rejoins never inherits a stale
+    /// track's in-flight compositor state.
+    private var guestTrackIndices: [String: UInt8] = [:]
+    private var usedGuestTracks: Set<UInt8> = []
+    private var activeSpeakerTask: Task<Void, Never>?
+    private var currentMainTrack: UInt8 = 0
+    private var lastMainSwitch = Date.distantPast
+    /// Minimum time between active-speaker swaps — otherwise two guests
+    /// trading brief audio peaks would flicker the "who's full-frame" choice
+    /// every poll.
+    private static let mainSwitchHoldSeconds: TimeInterval = 2
+    private static let speakerLevelThreshold: Double = 0.02
+
     // MARK: Broadcast Studio — source switcher (Camera / Document / Screen)
     // and the honest background-video story. See AppScreenCapture.swift /
     // DocumentPagerView.swift for the Document/Screen capture mechanics.
@@ -203,13 +224,47 @@ final class BroadcastController: ObservableObject {
                 bitRateMode: .average,
                 maxKeyFrameIntervalDuration: 2
             ))
+            // L6c — switch the mixer into offscreen compositing BEFORE
+            // startRunning() (which reads the mode once, at call time, to
+            // decide whether to spin up the display-link render loop) and
+            // lock the compositor's canvas to this SAME geo.size — the task's
+            // own hard rule is that the encoded dimensions never move
+            // mid-publish, so the compositor must render into exactly what
+            // the encoder was just configured for, not HaishinKit's 1280×720
+            // default.
+            let compositor = await LiveStageCompositor(mixer: mixer)
+            await compositor.activate(encodeSize: geo.size)
+            stageCompositor = compositor
+            currentMainTrack = 0
+            startActiveSpeakerTracking()
         }
         try? await stream.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
         await mixer.addOutput(stream)
         try? await mixer.setFrameRate(30)
         await mixer.startRunning()
         isMixerReady = true
-        if let mtView { await mixer.addOutput(mtView) }
+        if let mtView {
+            await mixer.addOutput(mtView)
+            await pinPreviewToRawCamera(mtView)
+        }
+    }
+
+    /// Both `RTMPStream` (publish) and `MTHKView` (the broadcaster's own
+    /// camera preview) default to `videoTrackId == .max` — "give me whatever
+    /// the mixer's final output is". Once L6c switches the mixer to
+    /// `.offscreen`, that final output is the FULL COMPOSITE (main + rail),
+    /// which is exactly right for `stream` but would make the local preview
+    /// show the rail TWICE — once baked into the composited pixels, once
+    /// again as the existing SwiftUI `GuestTileRail` overlay drawn on top of
+    /// it. `selectTrack(0, ...)` repins the preview to track 0's RAW,
+    /// un-composited passthrough (`MediaMixer`'s `videoIO.inputs` stream,
+    /// which — confirmed in `VideoMixer.append`/`MediaMixer.startRunning` —
+    /// fires unconditionally regardless of mixer mode), restoring the exact
+    /// pre-L6c preview behaviour: the broadcaster always sees their own raw
+    /// camera (or Document/Screen source — also track 0), never the rail.
+    private func pinPreviewToRawCamera(_ view: MediaMixerOutput) async {
+        guard isVideo else { return }
+        await view.selectTrack(0, mediaType: .video)
     }
 
     /// The capture orientation + encode size for how the phone is PHYSICALLY held.
@@ -400,12 +455,30 @@ final class BroadcastController: ObservableObject {
         for (userId, sub) in guestSubscribers where !acceptedIds.contains(userId) {
             Task { await sub.stop() }
             guestSubscribers.removeValue(forKey: userId)
+            if let track = guestTrackIndices.removeValue(forKey: userId) {
+                usedGuestTracks.remove(track)
+                if let compositor = stageCompositor { Task { await compositor.removeRailTile(track: track) } }
+            }
         }
         if !accepted.isEmpty { WebRTCAudioCoexistence.configureForHostSideGuestAudio() }
         for guest in accepted where guestSubscribers[guest.userId] == nil {
             guard let whepUrl = guest.whepUrl else { continue }
             let sub = WhepSubscriber()
             guestSubscribers[guest.userId] = sub
+            let track = allocateGuestTrack()
+            guestTrackIndices[guest.userId] = track
+            if let compositor = stageCompositor {
+                let name = guest.fullName
+                Task { await compositor.addRailTile(track: track, name: name) }
+            }
+            // L6c — capture the mixer REFERENCE directly (not through `self`)
+            // so this closure, invoked from WebRTC's decode thread via
+            // RTCFrameToSampleBufferSampler, never needs to cross back onto
+            // BroadcastController's MainActor just to read a stored property.
+            let mixerRef = mixer
+            sub.onVideoFrame = { sampleBuffer in
+                Task { await mixerRef.append(sampleBuffer, track: track) }
+            }
             let streamId = session.stream.streamId
             let streamKey = session.stream.streamKey
             Task { await sub.start(whepURLString: whepUrl, user: streamId, pass: streamKey) }
@@ -415,10 +488,80 @@ final class BroadcastController: ObservableObject {
         }
     }
 
+    /// Smallest free track in 1...6 — host is always 0, guests are capped at
+    /// 6 server-side already (LiveHandsGuestsSheet's own invite cap), so this
+    /// never needs to grow past that range. Reuses track 6 rather than
+    /// crashing/dropping a guest in the (shouldn't-happen) case every slot is
+    /// somehow taken.
+    private func allocateGuestTrack() -> UInt8 {
+        for candidate: UInt8 in 1...6 where !usedGuestTracks.contains(candidate) {
+            usedGuestTracks.insert(candidate)
+            return candidate
+        }
+        return 6
+    }
+
     private func teardownGuestSubscribers() {
-        for (_, sub) in guestSubscribers { Task { await sub.stop() } }
+        for (userId, sub) in guestSubscribers {
+            Task { await sub.stop() }
+            if let track = guestTrackIndices[userId], let compositor = stageCompositor {
+                Task { await compositor.removeRailTile(track: track) }
+            }
+        }
         guestSubscribers.removeAll()
+        guestTrackIndices.removeAll()
+        usedGuestTracks.removeAll()
         guestTiles = []
+    }
+
+    // MARK: L6c — active speaker: whoever's loudest goes full-frame on the
+    // composited stage; everyone else (host included) reflows into the rail.
+    // See LiveStageCompositor.setMainTrack — a no-op guard there means this
+    // never needs to re-validate track membership itself.
+
+    private func startActiveSpeakerTracking() {
+        activeSpeakerTask?.cancel()
+        activeSpeakerTask = Task { [weak self] in
+            while let self, !Task.isCancelled {
+                await self.updateActiveSpeaker()
+                try? await Task.sleep(nanoseconds: 1_500_000_000)
+            }
+        }
+    }
+
+    private func stopActiveSpeakerTracking() {
+        activeSpeakerTask?.cancel()
+        activeSpeakerTask = nil
+    }
+
+    /// Priority per the task brief: loudest guest (via WhepSubscriber's WebRTC
+    /// stats-based `audioLevel`) → else the most recently accepted guest
+    /// (`guestTiles.last`, since `syncGuestSubscribers` appends in roster
+    /// order) → else the host. Document/Screen source always pins to track 0
+    /// instead — the document/screen IS the big surface in those modes,
+    /// unaffected by who's talking (task requirement 4).
+    private func updateActiveSpeaker() async {
+        guard isVideo, let compositor = stageCompositor else { return }
+        guard videoSource == .camera else {
+            guard currentMainTrack != 0 else { return }
+            currentMainTrack = 0
+            await compositor.setMainTrack(0)
+            return
+        }
+        let live = guestTiles.filter { $0.subscriber.state == .live }
+        var target: UInt8 = 0
+        if let loudest = live.max(by: { $0.subscriber.audioLevel < $1.subscriber.audioLevel }),
+           loudest.subscriber.audioLevel > Self.speakerLevelThreshold,
+           let track = guestTrackIndices[loudest.userId] {
+            target = track
+        } else if let mostRecent = live.last, let track = guestTrackIndices[mostRecent.userId] {
+            target = track
+        }
+        guard target != currentMainTrack else { return }
+        guard Date().timeIntervalSince(lastMainSwitch) > Self.mainSwitchHoldSeconds else { return }
+        currentMainTrack = target
+        lastMainSwitch = Date()
+        await compositor.setMainTrack(target)
     }
 
     // MARK: Controls
@@ -506,6 +649,13 @@ final class BroadcastController: ObservableObject {
                 }
             }
             videoSource = source
+            // Document/Screen is always the big surface (task requirement
+            // 4) — pin immediately rather than waiting out the active-speaker
+            // loop's next ~1.5s tick.
+            if let compositor = stageCompositor, currentMainTrack != 0 {
+                currentMainTrack = 0
+                Task { await compositor.setMainTrack(0) }
+            }
         } catch {
             sourceError = source == .document
                 ? "Couldn't start sharing — screen recording was declined."
@@ -617,7 +767,10 @@ final class BroadcastController: ObservableObject {
         retryTask?.cancel(); retryTask = nil
         stopViewerPolling()
         stopPulsePolling()
+        stopActiveSpeakerTracking()
         teardownGuestSubscribers()
+        if let compositor = stageCompositor { await compositor.teardown() }
+        stageCompositor = nil
         sourceGeneration += 1
         if videoSource != .camera { await screenCapture.stop() }
         documentSource.reset()
@@ -637,7 +790,10 @@ extension BroadcastController: MTHKViewRepresentable.PreviewSource {
     nonisolated func connect(to view: MTHKView) {
         Task { @MainActor in
             self.mtView = view
-            if self.isMixerReady { await self.mixer.addOutput(view) }
+            if self.isMixerReady {
+                await self.mixer.addOutput(view)
+                await self.pinPreviewToRawCamera(view)
+            }
         }
     }
 }

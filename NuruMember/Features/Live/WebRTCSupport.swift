@@ -11,7 +11,9 @@
 // the same way HaishinKit already is (XCRemoteSwiftPackageReference +
 // XCSwiftPackageProductDependency on the NuruMember target).
 import AVFoundation
+import CoreImage
 import CoreMedia
+import CoreVideo
 import Foundation
 import SwiftUI
 import WebRTC
@@ -30,6 +32,12 @@ enum WebRTCFactory {
         let decoderFactory = RTCDefaultVideoDecoderFactory()
         return RTCPeerConnectionFactory(encoderFactory: encoderFactory, decoderFactory: decoderFactory)
     }()
+
+    /// One Metal-backed `CIContext` shared by every guest's
+    /// `RTCFrameToSampleBufferSampler` (L6c stage compositing) — building a
+    /// `CIContext` spins up its own Metal command queue/shader cache, so
+    /// there's no reason to pay that per guest, only once for the app.
+    static let compositingContext = CIContext(options: [.useSoftwareRenderer: false])
 
     /// A single public STUN server so the client gathers a server-reflexive
     /// (public IP:port) candidate — without one, a device behind NAT would
@@ -237,6 +245,154 @@ enum WebRTCCamera {
     static func fps(for format: AVCaptureDevice.Format, target: Int32 = 24) -> Int {
         let maxSupported = format.videoSupportedFrameRateRanges.map { Int32($0.maxFrameRate) }.max() ?? target
         return Int(min(target, maxSupported))
+    }
+}
+
+// MARK: - Guest video → CMSampleBuffer bridge (L6c stage compositing)
+
+/// Converts one guest's incoming WebRTC video frames into `CMSampleBuffer`s
+/// HaishinKit's `MediaMixer` can `append(_:track:)` — see
+/// `LiveStageCompositor` for the compositing side and BroadcastController's
+/// `syncGuestSubscribers` for where this gets wired to a `WhepSubscriber`.
+///
+/// `renderFrame(_:)` fires on WebRTC's own decode thread — exactly like the
+/// existing `WebRTCVideoView.Coordinator` binding (`track.add(view)`). WebRTC
+/// supports multiple simultaneous renderers per track, so this is a SECOND
+/// sink added to the same track alongside the host's local guest-tile
+/// preview (`GuestTileRail`, unchanged) — one decode, two consumers, not two
+/// decodes.
+///
+/// Always normalizes through `buffer.toI420()` — the one representation
+/// EVERY `RTCVideoFrameBuffer` can produce (hardware `RTCCVPixelBuffer`
+/// decode OR software `RTCI420Buffer`, per `RTCVideoFrameBuffer.h`'s
+/// `toI420()` requirement) — rather than special-casing the CVPixelBuffer
+/// path, so guests negotiating either H.264 (hardware decode) or VP8/VP9
+/// (software) composite through the identical code path. Guests are already
+/// capped to small, low-bitrate tiles (`WebRTCCamera.format` targets 640px,
+/// `WebRTCSDP.capVideoBitrate` caps ~800kbps), so the extra conversion is
+/// cheap against the compositor's 30fps budget.
+///
+/// Also un-rotates: `RTCVideoFrame.rotation` is metadata WebRTC's own
+/// renderers apply at DISPLAY time — since this bypasses that and feeds
+/// HaishinKit's compositor directly, rotation is baked into the pixel buffer
+/// here via `CIImage.oriented(_:)` so guest video isn't sideways on stage.
+final class RTCFrameToSampleBufferSampler: NSObject, RTCVideoRenderer {
+    private let ciContext: CIContext
+    private let onSampleBuffer: (CMSampleBuffer) -> Void
+    private var pixelBufferPool: CVPixelBufferPool?
+    private var pooledSize: CGSize = .zero
+
+    init(ciContext: CIContext, onSampleBuffer: @escaping (CMSampleBuffer) -> Void) {
+        self.ciContext = ciContext
+        self.onSampleBuffer = onSampleBuffer
+    }
+
+    func setSize(_ size: CGSize) {
+        // No-op — the output pixel buffer pool is (re)created lazily in
+        // `renderFrame` from the frame's own already-rotated dimensions, so a
+        // separate pre-rotation size callback would only race it.
+    }
+
+    func renderFrame(_ frame: RTCVideoFrame?) {
+        guard let frame, let sampleBuffer = makeSampleBuffer(from: frame) else { return }
+        onSampleBuffer(sampleBuffer)
+    }
+
+    private func makeSampleBuffer(from frame: RTCVideoFrame) -> CMSampleBuffer? {
+        guard let image = uprightImage(from: frame) else { return nil }
+        let size = image.extent.size
+        guard size.width > 0, size.height > 0 else { return nil }
+        if pixelBufferPool == nil || pooledSize != size {
+            pixelBufferPool = Self.makePool(size: size)
+            pooledSize = size
+        }
+        guard let pool = pixelBufferPool else { return nil }
+        var pixelBuffer: CVPixelBuffer?
+        CVPixelBufferPoolCreatePixelBuffer(nil, pool, &pixelBuffer)
+        guard let outBuffer = pixelBuffer else { return nil }
+        ciContext.render(image, to: outBuffer)
+
+        var formatDescription: CMFormatDescription?
+        CMVideoFormatDescriptionCreateForImageBuffer(allocator: kCFAllocatorDefault, imageBuffer: outBuffer, formatDescriptionOut: &formatDescription)
+        guard let formatDescription else { return nil }
+
+        let pts = CMTime(value: frame.timeStampNs, timescale: 1_000_000_000)
+        var timingInfo = CMSampleTimingInfo(duration: .invalid, presentationTimeStamp: pts, decodeTimeStamp: .invalid)
+        var sampleBuffer: CMSampleBuffer?
+        CMSampleBufferCreateReadyWithImageBuffer(
+            allocator: kCFAllocatorDefault,
+            imageBuffer: outBuffer,
+            formatDescription: formatDescription,
+            sampleTiming: &timingInfo,
+            sampleBufferOut: &sampleBuffer
+        )
+        return sampleBuffer
+    }
+
+    /// Builds an upright `CIImage` from the I420 planes every
+    /// `RTCVideoFrameBuffer` can produce — see this type's header comment for
+    /// why this is the one path for both HW- and SW-decoded guests.
+    private func uprightImage(from frame: RTCVideoFrame) -> CIImage? {
+        let i420 = frame.buffer.toI420()
+        guard let planar = Self.makePlanarPixelBuffer(from: i420) else { return nil }
+        var image = CIImage(cvPixelBuffer: planar)
+        // RTCVideoRotation's raw values (0/90/180/270) are stable — reading
+        // `.rawValue` sidesteps any ambiguity in how the ObjC NS_ENUM case
+        // names import into Swift.
+        switch frame.rotation.rawValue {
+        case 90: image = image.oriented(CGImagePropertyOrientation.right)
+        case 180: image = image.oriented(CGImagePropertyOrientation.down)
+        case 270: image = image.oriented(CGImagePropertyOrientation.left)
+        default: break
+        }
+        // `.oriented` can report an extent with a non-zero origin — normalize
+        // back to (0,0) so the pixel buffer render below isn't offset.
+        let origin = image.extent.origin
+        if origin != .zero {
+            image = image.transformed(by: CGAffineTransform(translationX: -origin.x, y: -origin.y))
+        }
+        return image
+    }
+
+    private static func makePlanarPixelBuffer(from i420: any RTCI420BufferProtocol) -> CVPixelBuffer? {
+        var pixelBuffer: CVPixelBuffer?
+        let attrs: [CFString: Any] = [kCVPixelBufferIOSurfacePropertiesKey: [:]]
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            Int(i420.width),
+            Int(i420.height),
+            kCVPixelFormatType_420YpCbCr8PlanarFullRange,
+            attrs as CFDictionary,
+            &pixelBuffer
+        )
+        guard status == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+        copyPlane(src: i420.dataY, srcStride: Int(i420.strideY), dst: buffer, plane: 0, height: Int(i420.height))
+        copyPlane(src: i420.dataU, srcStride: Int(i420.strideU), dst: buffer, plane: 1, height: Int(i420.chromaHeight))
+        copyPlane(src: i420.dataV, srcStride: Int(i420.strideV), dst: buffer, plane: 2, height: Int(i420.chromaHeight))
+        return buffer
+    }
+
+    private static func copyPlane(src: UnsafePointer<UInt8>, srcStride: Int, dst: CVPixelBuffer, plane: Int, height: Int) {
+        guard let dstBase = CVPixelBufferGetBaseAddressOfPlane(dst, plane) else { return }
+        let dstStride = CVPixelBufferGetBytesPerRowOfPlane(dst, plane)
+        let rowBytes = min(srcStride, dstStride)
+        for row in 0..<height {
+            memcpy(dstBase.advanced(by: row * dstStride), src.advanced(by: row * srcStride), rowBytes)
+        }
+    }
+
+    private static func makePool(size: CGSize) -> CVPixelBufferPool? {
+        let attrs: [CFString: Any] = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey: Int(size.width),
+            kCVPixelBufferHeightKey: Int(size.height),
+            kCVPixelBufferIOSurfacePropertiesKey: [:]
+        ]
+        var pool: CVPixelBufferPool?
+        CVPixelBufferPoolCreate(nil, nil, attrs as CFDictionary, &pool)
+        return pool
     }
 }
 
