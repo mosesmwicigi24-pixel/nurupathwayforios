@@ -32,6 +32,20 @@ struct LiveChatMessage: Decodable, Sendable, Identifiable, Equatable {
         case messageId, userId, fullName, avatarUrl, body, sentAt
     }
 
+    /// Plain memberwise init — used to build the OPTIMISTIC bubble
+    /// `LiveFloatingChatController.send()` shows immediately, before the
+    /// server confirms (owner latency ask, 2026-08-01: "make interactions
+    /// ... feel instant"). Every other call site decodes from the wire via
+    /// `init(from:)` below.
+    init(messageId: String, userId: String, fullName: String, avatarUrl: String?, body: String, sentAt: String) {
+        self.messageId = messageId
+        self.userId = userId
+        self.fullName = fullName
+        self.avatarUrl = avatarUrl
+        self.body = body
+        self.sentAt = sentAt
+    }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         messageId = (try? c.decodeIfPresent(String.self, forKey: .messageId)) ?? UUID().uuidString

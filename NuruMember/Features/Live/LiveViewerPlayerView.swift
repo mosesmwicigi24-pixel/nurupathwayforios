@@ -74,7 +74,30 @@ final class LiveViewerPlayerController: ObservableObject {
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
         let item = AVPlayerItem(url: url)
+        // LATENCY (owner ask, 2026-08-01) — configure the LIVE-edge distance
+        // as tight as the client can request; server-side HLS target-latency/
+        // part-duration tuning is a separate, already-scoped piece of work
+        // (explicitly NOT touched here). Skipped for a replay (`!isLive`) —
+        // there is no "live edge" for a finished recording, and these knobs
+        // are meaningless (at best a no-op, at worst fighting normal VOD
+        // scrub/buffer behavior) against one.
+        if isLive {
+            item.automaticallyPreservesTimeOffsetFromLive = true
+            item.configuredTimeOffsetFromLive = CMTime(seconds: 3, preferredTimescale: 1)
+            // Small forward buffer — the player starts playing sooner
+            // (faster join) and stays closer to the live edge instead of
+            // building a deep cushion, trading a little more rebuffer risk
+            // for latency. The existing stall/ended handling (`noteStall`/
+            // `markEnded`, 15s grace) is what makes that trade acceptable.
+            item.preferredForwardBufferDuration = 2
+        }
         let avPlayer = AVPlayer(playerItem: item)
+        // Don't wait to build a buffer before starting playback — join the
+        // stream as fast as the network allows rather than optimizing for a
+        // stutter-free start. Applies to replays too (a faster non-live join
+        // is still strictly better there, nothing live-edge-specific about
+        // this one).
+        avPlayer.automaticallyWaitsToMinimizeStalling = false
         player = avPlayer
         observe(item: item, player: avPlayer)
         avPlayer.play()
@@ -300,7 +323,16 @@ struct LiveViewerPlayerView: View {
                         handleDoubleTapHeart(at: value.location)
                     })
             }
-            if controller.phase != .ended { chrome }
+        }
+        .overlay(alignment: .top) {
+            // Pinned via `.overlay(alignment: .top)`, NOT a plain ZStack
+            // child — this ZStack's default alignment is `.center`, and
+            // unlike the old `chrome` (which force-filled the frame with a
+            // trailing `Spacer` so its own top-alignment governed things),
+            // `topBar` is just its own intrinsic ~60pt height. Without an
+            // explicit top alignment it would render vertically CENTERED,
+            // not pinned under the safe area.
+            if controller.phase != .ended { topBar }
         }
         .overlay {
             // The big hearts themselves — absolutely positioned at the tap
@@ -313,14 +345,18 @@ struct LiveViewerPlayerView: View {
         .overlay(alignment: .bottomTrailing) {
             if item.isLive, controller.phase == .playing {
                 FloatingReactionsOverlay(queue: reactionQueue)
-                    .padding(.bottom, 230).padding(.trailing, 66)
+                    .padding(.bottom, dockHeight + 20).padding(.trailing, 24)
             }
         }
-        .overlay(alignment: .trailing) {
+        .overlay(alignment: .bottom) {
+            // ONE bottom dock — owner spec: "EVERY control lives there".
+            // Replaces the old right-edge floating rail; sits on its own
+            // gradient scrim (LiveChromeScrim.bottom, applied inside
+            // `liveBottomDock`) instead of floating bare over the content.
             if item.isLive, controller.phase == .playing {
-                interactionRail.padding(.trailing, 12).padding(.bottom, 90)
+                liveBottomDock
                     .opacity(chromeSettled ? 1 : 0)
-                    .offset(x: chromeSettled ? 0 : 14)
+                    .offset(y: chromeSettled ? 0 : 14)
             }
         }
         .overlay {
@@ -333,15 +369,20 @@ struct LiveViewerPlayerView: View {
             if item.isLive, controller.phase == .playing {
                 LiveFloatingChatOverlay(
                     streamId: item.id, myUserId: auth.profile?.userId,
+                    myFullName: auth.profile?.fullName, myAvatarUrl: auth.profile?.avatarUrl,
                     handsRaisedCount: pulseController.pulse?.hands.count ?? 0,
                     visible: $chatOverlayVisible
                 )
             }
         }
         .overlay(alignment: guestBannerCollapsed ? .topTrailing : .top) {
+            // Top padding tuned to clear the new ONE-LINE top bar (owner
+            // redesign, 2026-08-01) — much shorter than the old three-row
+            // chrome this used to clear, so the banner now sits right under
+            // it instead of far down the screen.
             if item.isLive, controller.phase == .playing {
                 guestInviteCard
-                    .padding(.top, guestBannerCollapsed ? 104 : 168)
+                    .padding(.top, guestBannerCollapsed ? 66 : 92)
                     .padding(.trailing, guestBannerCollapsed ? 14 : 0)
             }
         }
@@ -353,7 +394,6 @@ struct LiveViewerPlayerView: View {
             if guestStageActive {
                 GuestStagePiP(
                     publisher: guestPublisher,
-                    onLeave: { Task { await leaveGuestStage() } },
                     onRetry: { Task { await retryGuestStage() } }
                 )
             }
@@ -485,47 +525,107 @@ struct LiveViewerPlayerView: View {
         }
     }
 
-    // MARK: L5+ — reaction / hand / chat rail (TikTok-style vertical stack,
-    // trailing edge) + the gold guest-invite card when a pastor has invited ME.
+    // MARK: ONE bottom dock (owner redesign, 2026-08-01) — replaces the old
+    // right-edge floating rail. Role flips to `.guestOnStage` the instant my
+    // own `guestPublisher` is actively publishing, which fans the dock out
+    // to a second row of stage-hardware controls (camera/switch/mic/
+    // speaker/leave) — see LiveDockLayout.rows for the pure ordering logic
+    // this reads, pinned by LiveDockChromeTests.
 
-    private var interactionRail: some View {
-        VStack(spacing: 14) {
-            reactionButton(.love)
-            reactionButton(.fire)
-            reactionButton(.like)
-            handToggleButton
-            railButton(icon: "message.fill", active: chatOverlayVisible) {
-                Haptics.tap(); chatOverlayVisible.toggle()
+    private var dockRole: LiveDockRole { guestStageActive ? .guestOnStage : .viewer }
+    /// Real (not guessed) height budget for the two overlays that must clear
+    /// this dock without overlapping it — the floating reactions burst and
+    /// LiveFloatingChatOverlay's own clamp. One row ≈ 78pt (44pt tile +
+    /// caption + padding); a guest-on-stage dock adds a second row.
+    private var dockHeight: CGFloat {
+        LiveDockLayout.rows(role: dockRole).count > 1 ? 168 : 92
+    }
+
+    private var liveBottomDock: some View {
+        VStack(spacing: 10) {
+            ForEach(Array(LiveDockLayout.rows(role: dockRole).enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 16) {
+                    ForEach(row) { dockButton(for: $0) }
+                }
             }
-            .accessibilityLabel(chatOverlayVisible ? "Hide live chat" : "Show live chat")
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 14)
+        .frame(maxWidth: .infinity)
+        .background(alignment: .bottom) { LiveChromeScrim.bottom(height: dockHeight + 90) }
+    }
+
+    @ViewBuilder
+    private func dockButton(for item: LiveDockItem) -> some View {
+        switch item {
+        case .reaction(let kind):
+            LiveDockIconButton(
+                systemImage: kind.systemImage,
+                caption: reactionCount(kind).flatMap { $0 > 0 ? LiveCountFormat.abbreviated($0) : nil },
+                accessibilityLabel: reactionAccessibilityLabel(kind)
+            ) { fireReaction(emoji: kind.emoji) }
+        case .raiseHand:
+            LiveDockIconButton(
+                systemImage: "hand.raised.fill", active: handRaised,
+                accessibilityLabel: handRaised ? "Lower hand" : "Raise hand"
+            ) { toggleHand() }
+        case .chat:
+            LiveDockIconButton(
+                systemImage: "message.fill", active: chatOverlayVisible,
+                accessibilityLabel: chatOverlayVisible ? "Hide live chat" : "Show live chat"
+            ) { Haptics.tap(); chatOverlayVisible.toggle() }
+        case .camera:
+            LiveDockIconButton(
+                systemImage: guestPublisher.isVideoEnabled ? "video.fill" : "video.slash.fill",
+                active: !guestPublisher.isVideoEnabled, disabled: guestPublisher.state != .live,
+                accessibilityLabel: guestPublisher.isVideoEnabled ? "Turn your camera off" : "Turn your camera on"
+            ) { Haptics.tap(); guestPublisher.toggleVideo() }
+        case .switchCamera:
+            LiveDockIconButton(
+                systemImage: "arrow.triangle.2.circlepath.camera.fill",
+                disabled: guestPublisher.state != .live,
+                accessibilityLabel: "Switch camera"
+            ) { Haptics.tap(); Task { await guestPublisher.flipCamera() } }
+        case .mic:
+            LiveDockIconButton(
+                systemImage: guestPublisher.isMuted ? "mic.slash.fill" : "mic.fill",
+                active: guestPublisher.isMuted, disabled: guestPublisher.state != .live,
+                accessibilityLabel: guestPublisher.isMuted ? "Unmute your mic" : "Mute your mic"
+            ) { Haptics.tap(); guestPublisher.toggleMute() }
+        case .speaker:
+            LiveDockIconButton(
+                systemImage: guestPublisher.isSpeakerOn ? "speaker.wave.2.fill" : "speaker.fill",
+                active: !guestPublisher.isSpeakerOn, disabled: guestPublisher.state != .live,
+                accessibilityLabel: guestPublisher.isSpeakerOn ? "Switch to earpiece" : "Switch to speaker"
+            ) { Haptics.tap(); guestPublisher.toggleSpeaker() }
+        case .leave:
+            LiveDockDangerButton(title: "Leave stage") {
+                Haptics.action(); Task { await leaveGuestStage() }
+            }
+        case .end, .documentPage:
+            EmptyView()   // viewer/guest dock never shows broadcaster-only items
         }
     }
 
-    /// One reaction button + its TikTok-style abbreviated count underneath
-    /// ("999" / "1.2K" / "10K"), sourced from the pulse's server-side tally
-    /// so it reflects everyone's reactions, not just mine.
-    private func reactionButton(_ kind: LiveReactionKind) -> some View {
-        VStack(spacing: 3) {
-            Button {
-                fireReaction(emoji: kind.emoji)
-            } label: {
-                Image(systemName: kind.systemImage)
-                    .font(.system(size: 20))
-                    .foregroundStyle(kind.tint)
-                    .frame(width: 44, height: 44)
-                    .background(Color.black.opacity(0.35), in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-            if let n = reactionCount(kind), n > 0 {
-                Text(LiveCountFormat.abbreviated(n))
-                    .font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.85))
-                    .shadow(color: .black.opacity(0.5), radius: 2)
-            }
+    /// One cooldown (mirrors the server's ≥1s/user rate limit across every
+    /// reaction kind, not per-kind) and one optimistic particle spawn —
+    /// shared by the dock's reaction buttons AND the double-tap-the-video
+    /// gesture.
+    private func fireReaction(emoji: String) {
+        guard !reactionCooldown else { return }
+        Haptics.love()
+        reactionQueue.spawn(emoji: emoji, reduceMotion: reduceMotion)   // optimistic, instant
+        reactionCooldown = true
+        Task {
+            try? await MemberAPI.reactToLiveStream(streamId: item.id, emoji: emoji)
+            try? await Task.sleep(nanoseconds: 900_000_000)   // mirrors the server's ≥1s/user rate limit
+            reactionCooldown = false
         }
-        .accessibilityLabel(reactionAccessibilityLabel(kind))
     }
 
+    /// TikTok-style abbreviated count ("999"/"1.2K") under a reaction
+    /// button, sourced from the pulse's server-side tally so it reflects
+    /// everyone's reactions, not just mine.
     private func reactionCount(_ kind: LiveReactionKind) -> Int? {
         guard let r = pulseController.pulse?.reactions else { return nil }
         switch kind {
@@ -543,46 +643,16 @@ struct LiveViewerPlayerView: View {
         }
     }
 
-    /// Shared by the rail buttons AND the double-tap-the-video gesture — one
-    /// cooldown (mirrors the server's ≥1s/user rate limit across every
-    /// reaction kind, not per-kind) and one optimistic particle spawn.
-    private func fireReaction(emoji: String) {
-        guard !reactionCooldown else { return }
-        Haptics.love()
-        reactionQueue.spawn(emoji: emoji, reduceMotion: reduceMotion)   // optimistic, instant
-        reactionCooldown = true
+    private func toggleHand() {
+        guard !handActionInFlight else { return }
+        handActionInFlight = true
+        let newValue = !handRaised
+        handRaised = newValue   // optimistic — instant per the owner's latency ask
+        Haptics.tap()
         Task {
-            try? await MemberAPI.reactToLiveStream(streamId: item.id, emoji: emoji)
-            try? await Task.sleep(nanoseconds: 900_000_000)   // mirrors the server's ≥1s/user rate limit
-            reactionCooldown = false
+            try? await MemberAPI.setLiveHandRaised(streamId: item.id, raised: newValue)
+            handActionInFlight = false
         }
-    }
-
-    private var handToggleButton: some View {
-        railButton(icon: "hand.raised.fill", active: handRaised) {
-            guard !handActionInFlight else { return }
-            handActionInFlight = true
-            let newValue = !handRaised
-            handRaised = newValue   // optimistic
-            Haptics.tap()
-            Task {
-                try? await MemberAPI.setLiveHandRaised(streamId: item.id, raised: newValue)
-                handActionInFlight = false
-            }
-        }
-        .accessibilityLabel(handRaised ? "Lower hand" : "Raise hand")
-    }
-
-    private func railButton(icon: String, active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(active ? Nuru.navy : .white)
-                .frame(width: 44, height: 44)
-                .background(active ? Nuru.gold : Color.black.opacity(0.35), in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
     }
 
     /// The gold "invited on stage" card — shown while MY guest row is
@@ -682,8 +752,13 @@ struct LiveViewerPlayerView: View {
         await pulseController.pollNow()
     }
 
-    // MARK: Chrome — close ✕ · LIVE pill + eye "N watching" chip ·
-    // broadcaster identity chip (IG-style) · title/subtitle · bottom scrim
+    // MARK: ONE top row (owner redesign, 2026-08-01) — close ✕ · host avatar
+    // + name · stream title · LIVE pill · counters (viewers, hands raised),
+    // all on a SINGLE line directly under the safe area. Replaces the old
+    // three stacked rows (close+badges, host chip, title/subtitle) — see
+    // LiveDockChrome.swift's header comment for why the top scrim ignores
+    // safe area on its own while this HStack's controls stay safely inset by
+    // SwiftUI's own default layout.
 
     /// Prefers the live pulse's own count (fresher, updates every 5s) over
     /// the snapshot `item.viewerCount` was built from; falls back to that
@@ -692,89 +767,70 @@ struct LiveViewerPlayerView: View {
         pulseController.pulse?.viewerCount ?? item.viewerCount
     }
 
-    private var chrome: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                Button { Haptics.tap(); dismiss() } label: {
-                    Icon(.x, size: 18, color: .white)
-                        .frame(width: 38, height: 38)
-                        .background(Color.white.opacity(0.18), in: Circle())
-                }
-                .buttonStyle(.pressable)
-                Spacer(minLength: 8)
-                VStack(alignment: .trailing, spacing: 6) {
-                    if item.isLive {
-                        HStack(spacing: 5) {
-                            PulsingLiveDot()
-                            Text("LIVE").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(.white)
-                        }
-                        .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(Color(hex: 0xDC2626), in: Capsule())
-                    }
-                    if let vc = displayViewerCount {
-                        HStack(spacing: 4) {
-                            Icon(.eye, size: 10, color: .white.opacity(0.9))
-                            Text("\(LiveCountFormat.abbreviated(vc)) watching")
-                                .font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.9))
-                                .contentTransition(.numericText())
-                                .animation(.easeOut(duration: 0.25), value: vc)
-                        }
-                        .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(Color.black.opacity(0.45), in: Capsule())
-                    }
-                }
-            }
-            .padding(.horizontal, 16).padding(.top, 10)
+    private var handsRaisedCount: Int { pulseController.pulse?.hands.count ?? 0 }
 
-            // Broadcaster identity chip — IG-style avatar + name, only when
-            // we actually know who's live (`LivePlayableItem.broadcasterName`,
-            // piped from `LiveStreamSummary.startedByName`; nil for a
-            // recording, which never reaches this branch anyway since it
-            // isn't `item.isLive`).
+    /// Host name + stream title on ONE line via SwiftUI `Text` concatenation
+    /// (each segment keeps its own font/weight) — the subtitle and the old
+    /// separate "HOST" tag are dropped here in the name of fitting
+    /// everything on one line without crowding; the subtitle is still shown
+    /// in Replays/discovery, it just isn't essential chrome while watching.
+    private var nameTitleLine: Text {
+        var line = Text("")
+        var hasName = false
+        if item.isLive, let name = item.broadcasterName {
+            line = Text(name).font(.inter(13, .bold)).foregroundStyle(.white)
+            hasName = true
+        }
+        if hasName, !item.title.isEmpty {
+            line = line + Text("  ·  ").font(.inter(11)).foregroundStyle(.white.opacity(0.45))
+        }
+        return line + Text(item.title).font(.inter(12, .medium)).foregroundStyle(.white.opacity(0.85))
+    }
+
+    private var topBar: some View {
+        HStack(spacing: 9) {
+            // 44pt — owner's tap-target floor, honored for every control on
+            // this screen, top row included (the old close ✕ was 38pt).
+            Button { Haptics.tap(); dismiss() } label: {
+                Icon(.x, size: 15, color: .white)
+                    .frame(width: 44, height: 44)
+                    .background(Color.white.opacity(0.18), in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Close")
+
             if item.isLive, let name = item.broadcasterName {
-                HStack(spacing: 7) {
-                    // No `avatarUrl` on `LiveStreamSummary`/`LivePlayableItem`
-                    // (only `startedByName` travels the wire today) — the
-                    // initials idiom `Avatar(url: nil, ...)` already used here
-                    // stands in until the wire carries one.
-                    Avatar(url: nil, name: name, size: 28)
-                        .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
-                    Text(name).font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
-                    Text("HOST").font(.inter(8, .bold)).kerning(0.8).foregroundStyle(Nuru.navy)
-                        .padding(.horizontal, 6).padding(.vertical, 2.5)
-                        .background(Nuru.gold, in: Capsule())
-                }
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(Color.black.opacity(0.32), in: Capsule())
-                .padding(.horizontal, 16).padding(.top, 10)
+                Avatar(url: nil, name: name, size: 24)
+                    .overlay(Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.2))
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.title).font(.fraunces(17, .semibold)).foregroundStyle(.white)
-                    .lineLimit(2)
-                if let sub = item.subtitle, !sub.isEmpty {
-                    Text(sub).font(.inter(12)).foregroundStyle(.white.opacity(0.7))
-                }
-            }
-            .padding(.horizontal, 16).padding(.top, 8)
+            nameTitleLine
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .layoutPriority(1)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 6)
+
+            if item.isLive {
+                HStack(spacing: 4) {
+                    PulsingLiveDot()
+                    Text("LIVE").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 7).padding(.vertical, 3)
+                .background(Color(hex: 0xDC2626), in: Capsule())
+            }
+            if let vc = displayViewerCount {
+                LiveTopStatChip(systemImage: "eye.fill", value: LiveCountFormat.abbreviated(vc))
+                    .contentTransition(.numericText())
+                    .animation(.easeOut(duration: 0.25), value: vc)
+            }
+            if handsRaisedCount > 0 {
+                LiveTopStatChip(systemImage: "hand.raised.fill", value: "\(handsRaisedCount)", tint: Nuru.gold)
+            }
         }
-        // Full-bleed bottom scrim (owner spec: "top+bottom gradient scrims")
-        // — keeps the rail/chat/captions legible over a bright frame, same
-        // idiom as the existing top scrim below.
-        .background(alignment: .bottom) {
-            LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
-                .frame(height: 260)
-                .allowsHitTesting(false)
-        }
-        .background(alignment: .top) {
-            LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
-                .frame(height: 170)
-        }
-        // Bottom too now (used to be top-only) — the new bottom scrim needs
-        // to reach the true screen edge, matching the top one.
-        .ignoresSafeArea(edges: item.isAudio ? Edge.Set() : [.top, .bottom])
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(alignment: .top) { LiveChromeScrim.top() }
         .allowsHitTesting(true)
         // TikTok-style gentle entrance — the chrome settles in with a soft
         // fade + slide-down rather than snapping on the instant playback
@@ -821,7 +877,7 @@ struct LiveViewerPlayerView: View {
         .background(
             LinearGradient(colors: [Nuru.navy, Nuru.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
         )
-        // Still gets its own close ✕ even though `chrome` is hidden in this phase.
+        // Still gets its own close ✕ even though `topBar` is hidden in this phase.
         .overlay(alignment: .topLeading) {
             Button { Haptics.tap(); dismiss() } label: {
                 Icon(.x, size: 18, color: .white)

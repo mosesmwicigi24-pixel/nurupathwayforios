@@ -62,7 +62,7 @@ struct GoLiveBroadcastView: View {
         .overlay(alignment: .bottomTrailing) {
             if controller.phase == .live || isReconnecting {
                 FloatingReactionsOverlay(queue: reactionQueue)
-                    .padding(.bottom, 112).padding(.trailing, 14)
+                    .padding(.bottom, 160).padding(.trailing, 24)
             }
         }
         .overlay {
@@ -72,6 +72,7 @@ struct GoLiveBroadcastView: View {
             if controller.phase == .live || isReconnecting {
                 LiveFloatingChatOverlay(
                     streamId: controller.session.stream.streamId, myUserId: auth.profile?.userId,
+                    myFullName: auth.profile?.fullName, myAvatarUrl: auth.profile?.avatarUrl,
                     handsRaisedCount: controller.pulse?.hands.count ?? 0,
                     visible: $chatOverlayVisible
                 )
@@ -344,18 +345,20 @@ struct GoLiveBroadcastView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // MARK: HUD chrome — pulsing dot + elapsed + "N watching", controls
+    // MARK: HUD chrome (owner redesign, 2026-08-01) — ONE top row (minimize ·
+    // LIVE pill · title · source switcher · elapsed · counters) + ONE bottom
+    // dock holding every control, same grammar as LiveViewerPlayerView (see
+    // LiveDockChrome.swift). The document page indicator now lives IN the
+    // dock (`.documentPage`) instead of floating as its own pill above the
+    // controls row.
 
     @ViewBuilder private var hud: some View {
         if controller.phase == .live || isReconnecting {
-            VStack {
-                topBadges
-                if controller.videoPausedInBackground { cameraPausedPill.padding(.top, 6) }
+            VStack(spacing: 0) {
+                topBar
+                if controller.videoPausedInBackground { cameraPausedPill.padding(.top, 8) }
                 Spacer()
-                if controller.videoSource == .document, !documentSource.pages.isEmpty {
-                    documentPageBadge.padding(.bottom, 10)
-                }
-                controlsRow
+                liveBottomDock
             }
         }
     }
@@ -365,56 +368,44 @@ struct GoLiveBroadcastView: View {
         return false
     }
 
-    private var topBadges: some View {
-        HStack(alignment: .top) {
+    private var topBar: some View {
+        HStack(spacing: 8) {
             minimizeButton
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 5) {
-                    PulsingBroadcastDot()
-                    Text("LIVE").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(Color(hex: 0xDC2626), in: Capsule())
-                Text(controller.session.title).font(.inter(12, .semibold)).foregroundStyle(.white)
-                    .lineLimit(1)
-                    .padding(.horizontal, 9).padding(.vertical, 4)
-                    .background(Color.black.opacity(0.35), in: Capsule())
+            HStack(spacing: 4) {
+                PulsingBroadcastDot()
+                Text("LIVE").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(.white)
             }
-            Spacer(minLength: 8)
+            .padding(.horizontal, 7).padding(.vertical, 3)
+            .background(Color(hex: 0xDC2626), in: Capsule())
+            Text(controller.session.title).font(.inter(12, .medium)).foregroundStyle(.white.opacity(0.9))
+                .lineLimit(1).truncationMode(.tail).layoutPriority(1)
+            Spacer(minLength: 6)
             if controller.isVideo { sourceButton }
-            VStack(alignment: .trailing, spacing: 6) {
-                if let startedAt = controller.startedAt {
-                    TimelineView(.periodic(from: .now, by: 1)) { ctx in
-                        Text(formatDuration(ctx.date.timeIntervalSince(startedAt)))
-                            .font(.inter(11, .semibold)).monospacedDigit().foregroundStyle(.white)
-                            .padding(.horizontal, 9).padding(.vertical, 4)
-                            .background(Color.black.opacity(0.45), in: Capsule())
-                    }
+            if let startedAt = controller.startedAt {
+                TimelineView(.periodic(from: .now, by: 1)) { ctx in
+                    LiveTopStatChip(systemImage: "clock.fill", value: formatDuration(ctx.date.timeIntervalSince(startedAt)))
                 }
-                HStack(spacing: 4) {
-                    Icon(.users, size: 10, color: .white.opacity(0.9))
-                    Text("\(controller.viewerCount) watching").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.9))
-                }
-                .padding(.horizontal, 9).padding(.vertical, 4)
-                .background(Color.black.opacity(0.45), in: Capsule())
+            }
+            LiveTopStatChip(systemImage: "eye.fill", value: LiveCountFormat.abbreviated(controller.viewerCount))
+            if let hands = controller.pulse?.hands.count, hands > 0 {
+                LiveTopStatChip(systemImage: "hand.raised.fill", value: "\(hands)", tint: Nuru.gold)
             }
         }
-        .padding(.horizontal, 16).padding(.top, 10)
-        .background(alignment: .top) {
-            LinearGradient(colors: [.black.opacity(0.55), .clear], startPoint: .top, endPoint: .bottom)
-                .frame(height: 140)
-        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .background(alignment: .top) { LiveChromeScrim.top() }
     }
 
     /// Leave-the-page persistence — minimizes to RootView's floating island
     /// WITHOUT touching the controller. See BroadcastCenter.minimize().
+    /// 44pt — owner's tap-target floor, honored here too (was 32pt).
     private var minimizeButton: some View {
         Button {
             Haptics.tap()
             broadcast.minimize()
         } label: {
             Icon(.chevronDown, size: 15, color: .white)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .background(Color.black.opacity(0.4), in: Circle())
         }
         .buttonStyle(.pressable)
@@ -432,12 +423,11 @@ struct GoLiveBroadcastView: View {
             Image(systemName: "rectangle.on.rectangle")
                 .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(controller.videoSource == .camera ? .white : Nuru.navy)
-                .frame(width: 32, height: 32)
+                .frame(width: 44, height: 44)
                 .background(controller.videoSource == .camera ? Color.black.opacity(0.4) : Nuru.gold, in: Circle())
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("Broadcast source")
-        .padding(.trailing, 6)
     }
 
     private var cameraPausedPill: some View {
@@ -454,52 +444,63 @@ struct GoLiveBroadcastView: View {
     private var documentPageBadge: some View {
         Text("Page \(controller.documentPageIndex + 1) of \(documentSource.pages.count)")
             .font(.inter(11, .semibold)).foregroundStyle(.white)
-            .padding(.horizontal, 11).padding(.vertical, 5)
-            .background(Color.black.opacity(0.5), in: Capsule())
+            .padding(.horizontal, 11).frame(height: 44)
+            .background(Color.white.opacity(0.14), in: Capsule())
+            .overlay(Capsule().stroke(Color.white.opacity(0.2), lineWidth: 1))
     }
 
-    private var controlsRow: some View {
-        HStack(spacing: 14) {
-            controlButton(icon: controller.isMuted ? "mic.slash.fill" : "mic.fill", active: controller.isMuted) {
-                Haptics.tap(); controller.toggleMute()
+    /// ONE bottom dock (owner spec) — every broadcaster control, same
+    /// grammar/component set as the viewer/guest dock. `.broadcaster` items
+    /// fit a single row UNLESS the document page indicator bumps it to two
+    /// (see LiveDockLayout.rows).
+    private var liveBottomDock: some View {
+        let hasDocumentPage = controller.videoSource == .document && !documentSource.pages.isEmpty
+        let rows = LiveDockLayout.rows(role: .broadcaster, isVideo: controller.isVideo, hasDocumentPage: hasDocumentPage)
+        return VStack(spacing: 10) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: 16) {
+                    ForEach(row) { dockButton(for: $0) }
+                }
             }
-            .accessibilityLabel(controller.isMuted ? "Unmute" : "Mute")
+        }
+        .padding(.horizontal, 20)
+        .padding(.bottom, 24)
+        .frame(maxWidth: .infinity)
+        .background(alignment: .bottom) { LiveChromeScrim.bottom(height: rows.count > 1 ? 210 : 150) }
+    }
 
-            Button {
-                Haptics.action()
-                confirmEnd = true
-            } label: {
-                Text("End").font(.inter(14, .bold)).foregroundStyle(.white)
-                    .frame(width: 78, height: 48)
-                    .background(Color(hex: 0xDC2626), in: Capsule())
-            }
-            .buttonStyle(.pressable)
-
-            if controller.isVideo {
-                if controller.videoSource == .camera {
-                    controlButton(icon: "arrow.triangle.2.circlepath.camera.fill", active: false) {
-                        Haptics.tap(); controller.flipCamera()
-                    }
-                    .accessibilityLabel("Flip camera")
-                } else {
-                    controlButton(icon: "camera.fill", active: false) {
-                        Haptics.tap(); Task { await controller.selectCamera() }
-                    }
-                    .accessibilityLabel("Back to camera")
+    @ViewBuilder
+    private func dockButton(for item: LiveDockItem) -> some View {
+        switch item {
+        case .mic:
+            LiveDockIconButton(
+                systemImage: controller.isMuted ? "mic.slash.fill" : "mic.fill", active: controller.isMuted,
+                accessibilityLabel: controller.isMuted ? "Unmute" : "Mute"
+            ) { Haptics.tap(); controller.toggleMute() }
+        case .switchCamera:
+            if controller.videoSource == .camera {
+                LiveDockIconButton(systemImage: "arrow.triangle.2.circlepath.camera.fill", accessibilityLabel: "Flip camera") {
+                    Haptics.tap(); controller.flipCamera()
                 }
             } else {
-                // Keeps the row visually balanced for audio-only.
-                Color.clear.frame(width: 48, height: 48)
+                LiveDockIconButton(systemImage: "camera.fill", accessibilityLabel: "Back to camera") {
+                    Haptics.tap(); Task { await controller.selectCamera() }
+                }
             }
-
+        case .end:
+            LiveDockDangerButton(title: "End") { Haptics.action(); confirmEnd = true }
+        case .raiseHand:
             handButton
-            controlButton(icon: "message.fill", active: chatOverlayVisible) {
-                Haptics.tap(); chatOverlayVisible.toggle()
-            }
-            .accessibilityLabel(chatOverlayVisible ? "Hide live chat" : "Show live chat")
+        case .chat:
+            LiveDockIconButton(
+                systemImage: "message.fill", active: chatOverlayVisible,
+                accessibilityLabel: chatOverlayVisible ? "Hide live chat" : "Show live chat"
+            ) { Haptics.tap(); chatOverlayVisible.toggle() }
+        case .documentPage:
+            documentPageBadge
+        case .reaction, .camera, .speaker, .leave:
+            EmptyView()   // broadcaster dock never shows guest-only items
         }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 28)
     }
 
     /// ✋ raised-hand queue — gold badge counts hands from the 3s pulse poll.
@@ -529,18 +530,6 @@ struct GoLiveBroadcastView: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("Raised hands, \(count)")
-    }
-
-    private func controlButton(icon: String, active: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: icon)
-                .font(.system(size: 18, weight: .semibold))
-                .foregroundStyle(active ? Nuru.navy : .white)
-                .frame(width: 48, height: 48)
-                .background(active ? Nuru.gold : Color.white.opacity(0.14), in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
     }
 
     /// Only reachable pre-live (`.configuring`) — a hard abort BEFORE
