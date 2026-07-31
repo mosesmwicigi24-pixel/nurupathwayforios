@@ -314,7 +314,7 @@ enum WebRTCCamera {
 /// existing `WebRTCVideoView.Coordinator` binding (`track.add(view)`). WebRTC
 /// supports multiple simultaneous renderers per track, so this is a SECOND
 /// sink added to the same track alongside the host's local guest-tile
-/// preview (`GuestTileRail`, unchanged) — one decode, two consumers, not two
+/// preview (`LiveStageView`, unchanged) — one decode, two consumers, not two
 /// decodes.
 ///
 /// Always normalizes through `buffer.toI420()` — the one representation

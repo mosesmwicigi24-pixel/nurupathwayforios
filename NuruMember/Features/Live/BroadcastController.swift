@@ -95,17 +95,23 @@ final class BroadcastController: ObservableObject {
         let userId: String
         let fullName: String
         let subscriber: WhepSubscriber
+        /// The compositor track number (1...6) — the SwiftUI stage
+        /// (LiveStageView) needs this to know which tile is spotlighted and
+        /// to drive `tapStageTile(_:)`.
+        let track: UInt8
         var id: String { userId }
     }
 
     @Published private(set) var guestTiles: [GuestTileState] = []
     private var guestSubscribers: [String: WhepSubscriber] = [:]
 
-    // MARK: L6c — composites the host (or Document/Screen source) plus every
-    // live guest into the ONE outgoing RTMP stream, via LiveStageCompositor
-    // (HaishinKit's own offscreen Screen compositor — see that type's header
-    // comment for the mechanism). `nil` for audio-only sessions, which never
-    // attach video in the first place.
+    // MARK: L6c/L7 — composites the host (or Document/Screen source) plus
+    // every live guest into the ONE outgoing RTMP stream, via
+    // LiveStageCompositor (HaishinKit's own offscreen Screen compositor —
+    // see that type's header comment for the mechanism, and its L7 rewrite
+    // note for the root-caused portrait-geometry + host-replaced defects).
+    // `nil` for audio-only sessions, which never attach video in the first
+    // place.
     private var stageCompositor: LiveStageCompositor?
     /// Guest userId → the mixer TRACK NUMBER their video is appended on
     /// (1...6 — host camera/Document/Screen is always track 0). Allocated on
@@ -113,14 +119,26 @@ final class BroadcastController: ObservableObject {
     /// track's in-flight compositor state.
     private var guestTrackIndices: [String: UInt8] = [:]
     private var usedGuestTracks: Set<UInt8> = []
-    private var activeSpeakerTask: Task<Void, Never>?
-    private var currentMainTrack: UInt8 = 0
-    private var lastMainSwitch = Date.distantPast
-    /// Minimum time between active-speaker swaps — otherwise two guests
-    /// trading brief audio peaks would flicker the "who's full-frame" choice
-    /// every poll.
-    private static let mainSwitchHoldSeconds: TimeInterval = 2
-    private static let speakerLevelThreshold: Double = 0.02
+
+    // MARK: L7 — Zoom-style manual spotlight (replaces L6c's automatic
+    // active-speaker auto-promotion, which was exactly the "guest REPLACES
+    // the host" defect from the owner's live test: any guest making noise
+    // instantly swapped the whole frame with no user control). Host is main
+    // by default; `tapStageTile(_:)` — driven by taps on LiveStageView, the
+    // SwiftUI stage BOTH the host's own preview and, via
+    // `stageCompositor.spotlight`, every viewer's composited frame render —
+    // is now the ONLY thing that moves the spotlight.
+    @Published private(set) var stageSpotlight = LiveStageSpotlight()
+    /// Best-effort "this guest is probably muted" heuristic surfaced on
+    /// their rail tile — see LiveStageCompositor.setMuted's header comment
+    /// for the honest limitation: WebRTC's mute flag is LOCAL-only and
+    /// isn't synced to the host, and no server field carries it either, so
+    /// this is sustained-near-silence over several pulse polls, not a
+    /// definitive "they tapped mute" signal.
+    @Published private(set) var guestMuteHeuristic: [String: Bool] = [:]
+    private var lowAudioStreak: [String: Int] = [:]
+    private static let muteHeuristicThreshold: Double = 0.02
+    private static let muteHeuristicStreak = 3
 
     // MARK: Broadcast Studio — source switcher (Camera / Document / Screen)
     // and the honest background-video story. See AppScreenCapture.swift /
@@ -260,8 +278,7 @@ final class BroadcastController: ObservableObject {
             let compositor = await LiveStageCompositor(mixer: mixer)
             await compositor.activate(encodeSize: geo.size)
             stageCompositor = compositor
-            currentMainTrack = 0
-            startActiveSpeakerTracking()
+            stageSpotlight = LiveStageSpotlight()
         }
         try? await stream.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
         await mixer.addOutput(stream)
@@ -280,7 +297,7 @@ final class BroadcastController: ObservableObject {
     /// `.offscreen`, that final output is the FULL COMPOSITE (main + rail),
     /// which is exactly right for `stream` but would make the local preview
     /// show the rail TWICE — once baked into the composited pixels, once
-    /// again as the existing SwiftUI `GuestTileRail` overlay drawn on top of
+    /// again as the existing SwiftUI `LiveStageView` overlay drawn on top of
     /// it. `selectTrack(0, ...)` repins the preview to track 0's RAW,
     /// un-composited passthrough (`MediaMixer`'s `videoIO.inputs` stream,
     /// which — confirmed in `VideoMixer.append`/`MediaMixer.startRunning` —
@@ -511,9 +528,22 @@ final class BroadcastController: ObservableObject {
             liveLogger.notice("guest leaving stage — userId=\(userId, privacy: .private)")
             Task { await sub.stop() }
             guestSubscribers.removeValue(forKey: userId)
+            guestMuteHeuristic.removeValue(forKey: userId)
+            lowAudioStreak.removeValue(forKey: userId)
             if let track = guestTrackIndices.removeValue(forKey: userId) {
                 usedGuestTracks.remove(track)
-                if let compositor = stageCompositor { Task { await compositor.removeRailTile(track: track) } }
+                // If this guest was spotlighted, fall back to host BEFORE
+                // tearing down their rail tile — LiveStageSpotlight makes
+                // this explicit rather than leaving the compositor's
+                // `mainOverlay` pointed at a track that's about to stop
+                // producing frames.
+                stageSpotlight.participantLeft(track)
+                if let compositor = stageCompositor {
+                    Task {
+                        await compositor.spotlight(track: stageSpotlight.spotlighted)
+                        await compositor.removeRailTile(track: track)
+                    }
+                }
             }
         }
         if !accepted.isEmpty { WebRTCAudioCoexistence.configureForHostSideGuestAudio() }
@@ -541,7 +571,36 @@ final class BroadcastController: ObservableObject {
             Task { await sub.start(whepURLString: whepUrl, user: streamId, pass: streamKey) }
         }
         guestTiles = accepted.compactMap { g in
-            guestSubscribers[g.userId].map { GuestTileState(userId: g.userId, fullName: g.fullName, subscriber: $0) }
+            guard let sub = guestSubscribers[g.userId], let track = guestTrackIndices[g.userId] else { return nil }
+            return GuestTileState(userId: g.userId, fullName: g.fullName, subscriber: sub, track: track)
+        }
+        updateMuteHeuristic()
+    }
+
+    /// Sustained-near-silence heuristic for the rail's mic-muted indicator —
+    /// see `guestMuteHeuristic`'s header comment for why this is a heuristic
+    /// and not a definitive signal. Runs at pulse cadence (3s, the same poll
+    /// that calls this) rather than a separate faster loop: a rail label
+    /// doesn't need sub-second responsiveness, and reusing the existing
+    /// cadence is one less task to leak/cancel.
+    private func updateMuteHeuristic() {
+        var stillPresent: Set<String> = []
+        for tile in guestTiles {
+            stillPresent.insert(tile.userId)
+            let quiet = tile.subscriber.audioLevel < Self.muteHeuristicThreshold
+            let streak = quiet ? (lowAudioStreak[tile.userId] ?? 0) + 1 : 0
+            lowAudioStreak[tile.userId] = streak
+            let likelyMuted = streak >= Self.muteHeuristicStreak
+            if guestMuteHeuristic[tile.userId] != likelyMuted {
+                guestMuteHeuristic[tile.userId] = likelyMuted
+                if let compositor = stageCompositor {
+                    Task { await compositor.setMuted(track: tile.track, isMuted: likelyMuted) }
+                }
+            }
+        }
+        for userId in guestMuteHeuristic.keys where !stillPresent.contains(userId) {
+            guestMuteHeuristic.removeValue(forKey: userId)
+            lowAudioStreak.removeValue(forKey: userId)
         }
     }
 
@@ -570,57 +629,30 @@ final class BroadcastController: ObservableObject {
         guestSubscribers.removeAll()
         guestTrackIndices.removeAll()
         usedGuestTracks.removeAll()
+        guestMuteHeuristic.removeAll()
+        lowAudioStreak.removeAll()
         guestTiles = []
+        stageSpotlight.reset()
     }
 
-    // MARK: L6c — active speaker: whoever's loudest goes full-frame on the
-    // composited stage; everyone else (host included) reflows into the rail.
-    // See LiveStageCompositor.setMainTrack — a no-op guard there means this
-    // never needs to re-validate track membership itself.
+    // MARK: L7 — Zoom-style manual spotlight. Host is main by default;
+    // tapping a rail thumbnail in LiveStageView (the SwiftUI stage — both
+    // the host's own preview AND, via `stageCompositor.spotlight`, what
+    // every viewer's composited frame shows) is the ONLY thing that ever
+    // moves it. See `LiveStageSpotlight` for the promote/demote/revert
+    // rules (pure, unit-tested in isolation).
 
-    private func startActiveSpeakerTracking() {
-        activeSpeakerTask?.cancel()
-        activeSpeakerTask = Task { [weak self] in
-            while let self, !Task.isCancelled {
-                await self.updateActiveSpeaker()
-                try? await Task.sleep(nanoseconds: 1_500_000_000)
-            }
-        }
-    }
-
-    private func stopActiveSpeakerTracking() {
-        activeSpeakerTask?.cancel()
-        activeSpeakerTask = nil
-    }
-
-    /// Priority per the task brief: loudest guest (via WhepSubscriber's WebRTC
-    /// stats-based `audioLevel`) → else the most recently accepted guest
-    /// (`guestTiles.last`, since `syncGuestSubscribers` appends in roster
-    /// order) → else the host. Document/Screen source always pins to track 0
-    /// instead — the document/screen IS the big surface in those modes,
-    /// unaffected by who's talking (task requirement 4).
-    private func updateActiveSpeaker() async {
-        guard isVideo, let compositor = stageCompositor else { return }
-        guard videoSource == .camera else {
-            guard currentMainTrack != 0 else { return }
-            currentMainTrack = 0
-            await compositor.setMainTrack(0)
-            return
-        }
-        let live = guestTiles.filter { $0.subscriber.state == .live }
-        var target: UInt8 = 0
-        if let loudest = live.max(by: { $0.subscriber.audioLevel < $1.subscriber.audioLevel }),
-           loudest.subscriber.audioLevel > Self.speakerLevelThreshold,
-           let track = guestTrackIndices[loudest.userId] {
-            target = track
-        } else if let mostRecent = live.last, let track = guestTrackIndices[mostRecent.userId] {
-            target = track
-        }
-        guard target != currentMainTrack else { return }
-        guard Date().timeIntervalSince(lastMainSwitch) > Self.mainSwitchHoldSeconds else { return }
-        currentMainTrack = target
-        lastMainSwitch = Date()
-        await compositor.setMainTrack(target)
+    /// `track` is 0 for the host's own tile, or a guest's compositor track
+    /// (from `GuestTileState.track`) for a guest tile. A no-op if the video
+    /// source isn't the camera (Document/Screen always pins to host — see
+    /// `startAlternateSource`) or the compositor isn't active (audio-only
+    /// sessions never build one).
+    func tapStageTile(_ track: UInt8) {
+        guard isVideo, videoSource == .camera, let compositor = stageCompositor else { return }
+        guard track == 0 || guestTrackIndices.values.contains(track) else { return }
+        stageSpotlight.tap(track)
+        let target = stageSpotlight.spotlighted
+        Task { await compositor.spotlight(track: target) }
     }
 
     // MARK: Controls
@@ -708,12 +740,11 @@ final class BroadcastController: ObservableObject {
                 }
             }
             videoSource = source
-            // Document/Screen is always the big surface (task requirement
-            // 4) — pin immediately rather than waiting out the active-speaker
-            // loop's next ~1.5s tick.
-            if let compositor = stageCompositor, currentMainTrack != 0 {
-                currentMainTrack = 0
-                Task { await compositor.setMainTrack(0) }
+            // Document/Screen is always the big surface, independent of
+            // whatever was spotlighted on camera before the switch.
+            if let compositor = stageCompositor, stageSpotlight.spotlighted != 0 {
+                stageSpotlight.reset()
+                Task { await compositor.spotlight(track: 0) }
             }
         } catch {
             sourceError = source == .document
@@ -826,7 +857,6 @@ final class BroadcastController: ObservableObject {
         retryTask?.cancel(); retryTask = nil
         stopViewerPolling()
         stopPulsePolling()
-        stopActiveSpeakerTracking()
         teardownGuestSubscribers()
         // L6d — stop feeding this (now-dead) mixer; a stale closure holding
         // `mixerRef` past teardown would otherwise keep the actor alive and

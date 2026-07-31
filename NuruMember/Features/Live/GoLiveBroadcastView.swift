@@ -20,7 +20,6 @@
 // stray tap can never abandon a stream mid-air, and leaving the screen never
 // does either.
 import AVKit
-import HaishinKit
 import SwiftUI
 
 struct GoLiveBroadcastView: View {
@@ -64,15 +63,6 @@ struct GoLiveBroadcastView: View {
             if controller.phase == .live || isReconnecting {
                 FloatingReactionsOverlay(queue: reactionQueue)
                     .padding(.bottom, 112).padding(.trailing, 14)
-            }
-        }
-        .overlay {
-            // L6b — the rail of live guest video tiles (WhepSubscriber per
-            // accepted guest, see BroadcastController.guestTiles). Full-bleed
-            // so GuestTileRail can position/drag itself, same idiom as the
-            // floating chat overlay just below.
-            if controller.phase == .live || isReconnecting {
-                GuestTileRail(tiles: controller.guestTiles)
             }
         }
         .overlay {
@@ -156,8 +146,11 @@ struct GoLiveBroadcastView: View {
         switch controller.videoSource {
         case .camera:
             if controller.isVideo {
-                MTHKViewRepresentable(previewSource: controller, videoGravity: .resizeAspectFill)
-                    .ignoresSafeArea()
+                // L7 — LiveStageView owns BOTH the host's own camera tile
+                // AND the guest rail/spotlight (see its header comment for
+                // why they're one view now, not a camera background plus a
+                // separately-positioned GuestTileRail overlay drawn on top).
+                LiveStageView(controller: controller)
             } else {
                 LiveBroadcastAudioBackdrop(title: controller.session.title)
             }
