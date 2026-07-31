@@ -82,17 +82,28 @@ private struct GuestTileView: View {
             case .failed(let message):
                 // Honest error surfacing (host-stability audit) — a host
                 // whose guest tile fails must SEE why, not just a bare
-                // triangle. Small enough to fit the 96×128 tile without
-                // crowding the name label below it.
+                // triangle. This is ONLY reached after the retry window
+                // (WhepRetryPolicy.window, ~60s) genuinely expired — see
+                // WhepSubscriber's header comment — so a Retry affordance
+                // (re-runs the exact same retry loop, WhepSubscriber.retry())
+                // belongs here, not a dead end.
                 VStack(spacing: 3) {
                     Image(systemName: "exclamationmark.triangle.fill")
                         .font(.system(size: 13)).foregroundStyle(Nuru.gold.opacity(0.9))
                     Text(message).font(.inter(7, .semibold)).foregroundStyle(.white.opacity(0.85))
                         .multilineTextAlignment(.center).lineLimit(3)
                         .padding(.horizontal, 5)
+                    Button {
+                        Task { await subscriber.retry() }
+                    } label: {
+                        Text("Retry").font(.inter(7, .bold)).foregroundStyle(Nuru.gold)
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(Capsule().fill(Color.white.opacity(0.15)))
+                    }
                 }
                 .accessibilityElement(children: .combine)
                 .accessibilityLabel("\(fullName): \(message)")
+                .accessibilityAction(named: "Retry") { Task { await subscriber.retry() } }
             case .ended:
                 EmptyView()
             }

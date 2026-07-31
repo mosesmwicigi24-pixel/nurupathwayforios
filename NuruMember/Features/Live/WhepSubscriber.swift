@@ -24,6 +24,19 @@
 //      plays it out automatically over the app's active AVAudioSession route
 //      — see WebRTCAudioCoexistence's header comment for how that coexists
 //      with HaishinKit's own mic capture on this same device).
+//
+// RETRY (2026-07-31 production fix — see WhepRetryPolicy's header comment
+// for the full production-log evidence): the WHEP subscribe above is no
+// longer one-shot. `start()` drives a bounded-exponential-backoff retry loop
+// (`runRetryLoop`/`performAttempt`) that treats "no stream is available"
+// (404), "deadline exceeded while waiting tracks", and any other
+// non-terminal error as "not yet" rather than failure, and keeps the tile in
+// `.connecting` while it retries. Once live, a later drop (guest
+// backgrounded, network flip, MediaMTX closing the session) is recovered
+// automatically by re-entering the SAME retry loop with a fresh window
+// (`handleFailedOrClosed`) rather than sticking on an error. `.failed` (with
+// a Retry affordance in GuestTileRail) is reached ONLY after the retry
+// window genuinely expires.
 import CoreMedia
 import Foundation
 import WebRTC
@@ -64,33 +77,136 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
 
     private var peerConnection: RTCPeerConnection?
     private var resourceURL: URL?
-    /// Stashed from `start()`'s params so `stop()` can re-authenticate the
-    /// DELETE the same way (see `WhipHTTP.delete`'s header comment).
+    /// Session identity — stashed from `start()`'s params. Unlike the
+    /// connection-scoped fields `teardownPeerConnection()` clears on every
+    /// attempt, these survive across retries AND across an automatic
+    /// reconnect after a drop (`handleFailedOrClosed`), since both need the
+    /// SAME WHEP URL/credentials to try again. Only `stop()` clears them.
+    private var savedWhepURL: String?
     private var credentialUser: String?
     private var credentialPass: String?
     private var generation = 0
     private var statsTask: Task<Void, Never>?
+    private var retryTask: Task<Void, Never>?
+    private var attemptWatchdogTask: Task<Void, Never>?
+    private var connectContinuation: CheckedContinuation<AttemptOutcome, Never>?
     private var frameSampler: RTCFrameToSampleBufferSampler?
     private weak var sampledTrack: RTCVideoTrack?
+
+    private enum AttemptOutcome { case connected, retry, terminal(String), cancelled }
 
     /// `whepURLString` is `LiveGuestRow.whepUrl`; `user`/`pass` are the
     /// STREAM's own id + stream key (the broadcaster's own publish
     /// credentials double as their WHEP-subscribe credentials — see the
     /// header comment). Sent as an HTTP Basic `Authorization` header, never
     /// in the URL — see `WhipBasicAuth`.
+    ///
+    /// Kicks off the retry loop and awaits its FIRST resolution (connected,
+    /// terminal, or window-expired) — matching the original one-shot
+    /// signature callers already use (`Task { await sub.start(...) }`).
+    /// Recovery from a LATER drop happens independently, off this call, via
+    /// `handleFailedOrClosed`.
     func start(whepURLString: String, user: String, pass: String) async {
-        whepLogger.notice("start — generation=\(self.generation + 1, privacy: .public)")
-        WebRTCAudioCoexistence.configureForHostSideGuestAudio()
         generation += 1
         let myGeneration = generation
-        state = .connecting
+        whepLogger.notice("start — generation=\(myGeneration, privacy: .public)")
+        WebRTCAudioCoexistence.configureForHostSideGuestAudio()
+        savedWhepURL = whepURLString
         credentialUser = user
         credentialPass = pass
+        state = .connecting
+        let task = Task { [weak self] in
+            guard let self else { return }
+            await self.runRetryLoop(generation: myGeneration, startedAt: Date())
+        }
+        retryTask = task
+        await task.value
+    }
 
+    func stop() async {
+        whepLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
+        generation += 1
+        retryTask?.cancel()
+        retryTask = nil
+        attemptWatchdogTask?.cancel()
+        attemptWatchdogTask = nil
+        if let continuation = connectContinuation {
+            connectContinuation = nil
+            continuation.resume(returning: .cancelled)
+        }
+        let resource = resourceURL
+        let user = credentialUser
+        let pass = credentialPass
+        state = .ended
+        if let resource, let user, let pass { await WhipHTTP.delete(resource, user: user, pass: pass) }
+        teardownPeerConnection()
+        savedWhepURL = nil
+        credentialUser = nil
+        credentialPass = nil
+    }
+
+    /// The Retry affordance in GuestTileRail — only reachable from `.failed`,
+    /// i.e. after the retry window already expired once. Reuses the same
+    /// WHEP URL/credentials from the original `start()` (still held, since
+    /// only `stop()` clears them) rather than requiring the guest to fully
+    /// leave and rejoin the stage.
+    func retry() async {
+        guard case .failed = state else { return }
+        guard let whepURLString = savedWhepURL, let user = credentialUser, let pass = credentialPass else { return }
+        await start(whepURLString: whepURLString, user: user, pass: pass)
+    }
+
+    // MARK: - Retry loop
+
+    /// Bounded-exponential-backoff attempts (`WhepRetryPolicy`) until
+    /// connected, a terminal error, cancellation, or the retry window
+    /// expires. Re-entered with a FRESH window both from `start()` and from
+    /// `handleFailedOrClosed` (an established subscription dropping is a new
+    /// problem, not a continuation of the original join attempt).
+    private func runRetryLoop(generation myGeneration: Int, startedAt: Date) async {
+        guard let whepURLString = savedWhepURL, let user = credentialUser, let pass = credentialPass else { return }
         guard let url = URL(string: whepURLString) else {
+            guard myGeneration == generation else { return }
             state = .failed("Bad stage link.")
             return
         }
+        var attempt = 0
+        while myGeneration == generation, !Task.isCancelled {
+            attempt += 1
+            let outcome = await performAttempt(url: url, user: user, pass: pass, generation: myGeneration)
+            guard myGeneration == generation, !Task.isCancelled else { return }
+            switch outcome {
+            case .connected, .cancelled:
+                return
+            case .terminal(let message):
+                whepLogger.notice("attempt \(attempt, privacy: .public) terminal — \(message, privacy: .public)")
+                state = .failed(message)
+                teardownPeerConnection()
+                return
+            case .retry:
+                if WhepRetryPolicy.isWindowExpired(startedAt: startedAt) {
+                    whepLogger.notice("retry window expired after \(attempt, privacy: .public) attempt(s)")
+                    state = .failed("Couldn't connect to this guest's video.")
+                    teardownPeerConnection()
+                    return
+                }
+                state = .connecting
+                let delay = WhepRetryPolicy.backoffDelay(forAttempt: attempt)
+                whepLogger.notice("attempt \(attempt, privacy: .public) not ready — retrying in \(delay, privacy: .public)s")
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+        }
+    }
+
+    /// One full WHIP/WHEP HTTP exchange, then — if it succeeds — waits
+    /// (bounded by `WhepRetryPolicy.attemptWatchdog`) for the delegate to
+    /// report either `.connected` or a drop (`.failed`/`.closed`, e.g.
+    /// MediaMTX's "deadline exceeded while waiting tracks"). Always tears
+    /// down whatever peer connection existed from a PRIOR attempt first —
+    /// each attempt starts from a clean slate.
+    private func performAttempt(url: URL, user: String, pass: String, generation myGeneration: Int) async -> AttemptOutcome {
+        teardownPeerConnection()
+        guard myGeneration == generation else { return .cancelled }
 
         let config = WebRTCFactory.configuration()
         let pcConstraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
@@ -99,8 +215,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         // lands in `GuestAudioPlayoutDevice` instead of going straight to
         // the speaker via WebRTC's own default session management.
         guard let pc = WebRTCFactory.hostGuestAudio.peerConnection(with: config, constraints: pcConstraints, delegate: self) else {
-            state = .failed("Couldn't start the connection.")
-            return
+            return .terminal("Couldn't start the connection.")
         }
         peerConnection = pc
 
@@ -110,31 +225,56 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
                 optionalConstraints: nil)
             let offer = try await WebRTCSDP.createOffer(pc, constraints: constraints)
             try await WebRTCSDP.setLocal(pc, offer)
-            guard myGeneration == generation else { return }
+            guard myGeneration == generation, peerConnection === pc else { return .cancelled }
             await WebRTCSDP.waitForIceGatheringComplete(pc)
-            guard myGeneration == generation else { return }
+            guard myGeneration == generation, peerConnection === pc else { return .cancelled }
             let finalOfferSDP = pc.localDescription?.sdp ?? offer.sdp
             let result = try await WhipHTTP.post(sdpOffer: finalOfferSDP, to: url, user: user, pass: pass)
-            guard myGeneration == generation else { return }
+            guard myGeneration == generation, peerConnection === pc else { return .cancelled }
             resourceURL = result.resourceURL
             let answer = RTCSessionDescription(type: .answer, sdp: result.answerSDP)
             try await WebRTCSDP.setRemote(pc, answer)
+            guard myGeneration == generation, peerConnection === pc else { return .cancelled }
         } catch {
-            guard myGeneration == generation else { return }
-            state = .failed("Couldn't connect to this guest's video.")
-            teardownPeerConnection()
+            guard myGeneration == generation, peerConnection === pc else { return .cancelled }
+            switch WhepRetryPolicy.classify(error) {
+            case .retryable: return .retry
+            case .terminal(let message): return .terminal(message)
+            case .cancelled: return .cancelled
+            }
+        }
+
+        // Remote description accepted — the exchange itself succeeded. Now
+        // wait for the delegate to report the ACTUAL connection outcome:
+        // `.connected` resolves this attempt as success; `.failed`/`.closed`
+        // (MediaMTX's own "deadline exceeded while waiting tracks" surfaces
+        // here) resolves it as retryable. The watchdog is only a safety net
+        // in case neither ever fires.
+        return await withCheckedContinuation { (continuation: CheckedContinuation<AttemptOutcome, Never>) in
+            guard myGeneration == generation, peerConnection === pc else {
+                continuation.resume(returning: .cancelled)
+                return
+            }
+            connectContinuation = continuation
+            attemptWatchdogTask = Task { [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(WhepRetryPolicy.attemptWatchdog * 1_000_000_000))
+                guard !Task.isCancelled, let self else { return }
+                self.resolvePendingAttempt(.retry, pc: pc)
+            }
         }
     }
 
-    func stop() async {
-        whepLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
-        generation += 1
-        let resource = resourceURL
-        let user = credentialUser
-        let pass = credentialPass
-        state = .ended
-        if let resource, let user, let pass { await WhipHTTP.delete(resource, user: user, pass: pass) }
-        teardownPeerConnection()
+    /// Resumes the in-flight attempt's continuation exactly once — called
+    /// from the delegate (`.connected`/`.failed`/`.closed`) or the attempt
+    /// watchdog, whichever fires first. Guarded on `peerConnection === pc`
+    /// so a stale resolution (from an already-superseded attempt) is a
+    /// silent no-op instead of resolving the WRONG attempt's continuation.
+    private func resolvePendingAttempt(_ outcome: AttemptOutcome, pc: RTCPeerConnection) {
+        guard peerConnection === pc, let continuation = connectContinuation else { return }
+        connectContinuation = nil
+        attemptWatchdogTask?.cancel()
+        attemptWatchdogTask = nil
+        continuation.resume(returning: outcome)
     }
 
     /// Lifetime-ordering is load-bearing here: the video renderer sink is
@@ -144,6 +284,10 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     /// nilled out immediately after so any late-arriving delegate callback
     /// (e.g. a straggler `didAdd rtpReceiver` racing a fast accept→remove)
     /// has nothing left to attach to.
+    ///
+    /// Connection-scoped only — deliberately does NOT clear
+    /// `savedWhepURL`/`credentialUser`/`credentialPass`, which must survive
+    /// across retries and automatic reconnects. Only `stop()` clears those.
     private func teardownPeerConnection() {
         whepLogger.notice("teardownPeerConnection")
         statsTask?.cancel()
@@ -155,8 +299,6 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         peerConnection = nil
         videoTrack = nil
         resourceURL = nil
-        credentialUser = nil
-        credentialPass = nil
         audioLevel = 0
     }
 
@@ -230,21 +372,55 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         }
     }
 
+    /// `.connected` resolves a pending in-flight attempt as success (if
+    /// there is one) and marks the tile live. `.failed`/`.closed` either
+    /// resolves a pending attempt as retryable (still mid-handshake — see
+    /// `performAttempt`'s continuation), or, if there was no pending
+    /// attempt, means an already-LIVE subscription just dropped (guest
+    /// backgrounded, network flip, or MediaMTX itself closing the session —
+    /// "deadline exceeded while waiting tracks" is exactly this case when it
+    /// arrives late). That drop is recovered automatically by re-entering
+    /// the retry loop with a fresh window, never left stuck on an error.
+    /// `.disconnected` is deliberately left alone — WebRTC's own ICE layer
+    /// routinely self-heals a brief `.disconnected` back to `.connected`
+    /// without our help; only `.failed`/`.closed` are treated as a real drop.
     nonisolated func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCPeerConnectionState) {
         Task { @MainActor [weak self] in
             guard let self, self.peerConnection === peerConnection else { return }
             switch newState {
             case .connected:
-                if self.state == .connecting { self.state = .live }
-                self.startStatsPolling()
-            case .failed:
-                self.state = .failed("Lost connection to this guest's video.")
-                self.teardownPeerConnection()
-            case .closed, .disconnected, .new, .connecting:
+                self.handleConnected(pc: peerConnection)
+            case .failed, .closed:
+                self.handleFailedOrClosed(pc: peerConnection)
+            case .disconnected, .new, .connecting:
                 break
             @unknown default:
                 break
             }
+        }
+    }
+
+    private func handleConnected(pc: RTCPeerConnection) {
+        resolvePendingAttempt(.connected, pc: pc)
+        state = .live
+        startStatsPolling()
+    }
+
+    private func handleFailedOrClosed(pc: RTCPeerConnection) {
+        if connectContinuation != nil {
+            resolvePendingAttempt(.retry, pc: pc)
+            return
+        }
+        guard state == .live else { return }
+        whepLogger.notice("established subscription dropped — reconnecting")
+        generation += 1
+        let myGeneration = generation
+        teardownPeerConnection()
+        state = .connecting
+        retryTask?.cancel()
+        retryTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runRetryLoop(generation: myGeneration, startedAt: Date())
         }
     }
 }
