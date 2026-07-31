@@ -9,9 +9,14 @@
 //   1. Build a recvonly RTCPeerConnection (constraints ask to receive both
 //      audio and video — MediaMTX auto-creates matching transceivers).
 //   2. createOffer → setLocalDescription → wait for ICE gathering.
-//   3. POST to `whepURL?user=<streamId>&pass=<streamKey>` — the HOST
-//      authenticates with the STREAM's own broadcast credentials (the
-//      stream owner, not the guest), per the pinned wire contract.
+//   3. POST to the bare `whepURL`, authenticated with an HTTP **Basic**
+//      `Authorization` header carrying `user=<streamId>`,
+//      `pass=<streamKey>` — the HOST authenticates with the STREAM's own
+//      broadcast credentials (the stream owner, not the guest), per the
+//      pinned wire contract. Header, not `?user=&pass=` query params — see
+//      `WhipBasicAuth` in WebRTCSupport.swift: MediaMTX v1.19.3 silently
+//      ignores those query params for WHIP/WHEP (proven against production
+//      2026-07-31).
 //   4. 201 back: SDP answer + Location (DELETE to unsubscribe).
 //   5. setRemoteDescription(answer). The remote video/audio tracks arrive via
 //      the `didAdd rtpReceiver:streams:` delegate callback — video is bound
@@ -59,6 +64,10 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
 
     private var peerConnection: RTCPeerConnection?
     private var resourceURL: URL?
+    /// Stashed from `start()`'s params so `stop()` can re-authenticate the
+    /// DELETE the same way (see `WhipHTTP.delete`'s header comment).
+    private var credentialUser: String?
+    private var credentialPass: String?
     private var generation = 0
     private var statsTask: Task<Void, Never>?
     private var frameSampler: RTCFrameToSampleBufferSampler?
@@ -67,23 +76,18 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
     /// `whepURLString` is `LiveGuestRow.whepUrl`; `user`/`pass` are the
     /// STREAM's own id + stream key (the broadcaster's own publish
     /// credentials double as their WHEP-subscribe credentials — see the
-    /// header comment).
+    /// header comment). Sent as an HTTP Basic `Authorization` header, never
+    /// in the URL — see `WhipBasicAuth`.
     func start(whepURLString: String, user: String, pass: String) async {
         whepLogger.notice("start — generation=\(self.generation + 1, privacy: .public)")
         WebRTCAudioCoexistence.configureForHostSideGuestAudio()
         generation += 1
         let myGeneration = generation
         state = .connecting
+        credentialUser = user
+        credentialPass = pass
 
-        guard var comps = URLComponents(string: whepURLString) else {
-            state = .failed("Bad stage link.")
-            return
-        }
-        var items = comps.queryItems ?? []
-        items.append(URLQueryItem(name: "user", value: user))
-        items.append(URLQueryItem(name: "pass", value: pass))
-        comps.queryItems = items
-        guard let url = comps.url else {
+        guard let url = URL(string: whepURLString) else {
             state = .failed("Bad stage link.")
             return
         }
@@ -110,7 +114,7 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
             await WebRTCSDP.waitForIceGatheringComplete(pc)
             guard myGeneration == generation else { return }
             let finalOfferSDP = pc.localDescription?.sdp ?? offer.sdp
-            let result = try await WhipHTTP.post(sdpOffer: finalOfferSDP, to: url)
+            let result = try await WhipHTTP.post(sdpOffer: finalOfferSDP, to: url, user: user, pass: pass)
             guard myGeneration == generation else { return }
             resourceURL = result.resourceURL
             let answer = RTCSessionDescription(type: .answer, sdp: result.answerSDP)
@@ -126,8 +130,10 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         whepLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
         generation += 1
         let resource = resourceURL
+        let user = credentialUser
+        let pass = credentialPass
         state = .ended
-        if let resource { await WhipHTTP.delete(resource) }
+        if let resource, let user, let pass { await WhipHTTP.delete(resource, user: user, pass: pass) }
         teardownPeerConnection()
     }
 
@@ -149,6 +155,8 @@ final class WhepSubscriber: WebRTCPeerConnectionObserver, ObservableObject {
         peerConnection = nil
         videoTrack = nil
         resourceURL = nil
+        credentialUser = nil
+        credentialPass = nil
         audioLevel = 0
     }
 

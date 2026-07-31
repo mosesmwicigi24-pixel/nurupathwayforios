@@ -874,8 +874,18 @@ struct HomeView: View {
     // MARK: 0d — Nuru Live LIVE banner (church scope; the cell twin lives in
     // CellInfoView, filtered from this SAME /live/now response — no second call)
 
+    /// Defensive guard, belt-and-braces on top of `LiveDiscoveryCenter.
+    /// ingest`'s own self-exclusion filter: `vm.liveStreams` is fetched
+    /// DIRECTLY (`HomeViewModel.load`/`refreshLiveNow`, not read from
+    /// `LiveDiscoveryCenter.streams`), so it needs its own exclusion too — a
+    /// broadcaster must never see their OWN stream offered back as "Watch
+    /// live" on this banner (parity audit 2026-07-31, Android twin: PR #87's
+    /// `HomeScreen.kt` `churchLive` guard — same bypass class: a screen that
+    /// fetches `/live/now` itself instead of reading the already-filtered
+    /// discovery centre).
     private var churchLiveStream: LiveStreamSummary? {
-        vm.liveStreams.first { $0.scope == "church" }
+        let ownStreamId = BroadcastCenter.shared.controller?.session.stream.streamId
+        return vm.liveStreams.first { $0.scope == "church" && $0.streamId != ownStreamId }
     }
 
     private func liveBannerCard(_ stream: LiveStreamSummary) -> some View {

@@ -27,7 +27,16 @@ final class CellInfoViewModel: ObservableObject {
         async let live = try? MemberAPI.fetchLiveNow()
         featured = await fc ?? nil
         cell = (await cs)?.cell
-        liveStream = (await live ?? []).first { $0.scope == "cell" }
+        // Defensive guard, belt-and-braces on top of LiveDiscoveryCenter's
+        // own self-exclusion filter: this screen fetches GET /live/now
+        // DIRECTLY (not through `LiveDiscoveryCenter.streams`), so it needs
+        // its own exclusion too — a broadcaster must never be offered THEIR
+        // OWN cell broadcast as something to "Watch live" (parity audit
+        // 2026-07-31; see LiveDiscoveryCenter.ingest's header for the
+        // original church-scope bug this mirrors, and HomeView's identical
+        // `churchLiveStream` guard).
+        let ownStreamId = BroadcastCenter.shared.controller?.session.stream.streamId
+        liveStream = (await live ?? []).first { $0.scope == "cell" && $0.streamId != ownStreamId }
         if isEmpty { error = "Couldn't load your cell." }
         loading = false
     }

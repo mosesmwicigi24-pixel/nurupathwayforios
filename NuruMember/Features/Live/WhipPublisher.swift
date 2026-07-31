@@ -11,8 +11,13 @@
 //      (H.264/VP8, whatever the negotiated codec ends up being — MediaMTX
 //      handles both) track.
 //   2. createOffer → setLocalDescription → wait for ICE gathering to finish.
-//   3. POST the complete offer SDP to `whipURL?user=<myUserId>&pass=<token>`
-//      (MediaMTX's credential-based WHIP auth — see docs/LIVE_INTERACTIVE.md).
+//   3. POST the complete offer SDP to the bare `whipURL`, authenticated with
+//      an HTTP **Basic** `Authorization` header (`user=<myUserId>`,
+//      `pass=<token>`) — see `WhipBasicAuth` in WebRTCSupport.swift for why
+//      it's a header and not `?user=&pass=` query params (MediaMTX
+//      v1.19.3 silently ignores those for WHIP/WHEP; proven against
+//      production 2026-07-31 — that's what made guest video unable to ever
+//      authenticate).
 //   4. 201 back: SDP answer body + `Location` header (the session resource —
 //      DELETE it to leave the stage).
 //   5. setRemoteDescription(answer). Connection state flips to `.live` once
@@ -43,6 +48,11 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
     private var localAudioTrack: RTCAudioTrack?
     private var capturer: RTCCameraVideoCapturer?
     private var resourceURL: URL?
+    /// Stashed from `start()`'s params so `stop()` can re-authenticate the
+    /// DELETE the same way (see `WhipHTTP.delete`'s header comment on why
+    /// that's sent even though MediaMTX doesn't currently require it there).
+    private var credentialUser: String?
+    private var credentialPass: String?
     /// Guards against a stale `start()` call (e.g. a fast accepted→removed→
     /// accepted flap) racing a `stop()` and reviving a connection that
     /// should be dead — every awaited step below checks this before touching
@@ -57,25 +67,19 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
     }
 
     /// `whipURLString` is the bare MediaMTX endpoint from `GuestIngest.whipUrl`;
-    /// `user`/`pass` are appended here as the WHIP query-string credentials
-    /// (my own userId + the one-time guest token — see `GuestIngest`'s header
-    /// comment).
+    /// `user`/`pass` (my own userId + the one-time guest token — see
+    /// `GuestIngest`'s header comment) are sent as an HTTP Basic
+    /// `Authorization` header, never in the URL — see `WhipBasicAuth`.
     func start(whipURLString: String, user: String, pass: String) async {
         guard state == .idle || isTerminal(state) else { return }
         whipLogger.notice("start — generation=\(self.generation + 1, privacy: .public)")
         generation += 1
         let myGeneration = generation
         state = .connecting
+        credentialUser = user
+        credentialPass = pass
 
-        guard var comps = URLComponents(string: whipURLString) else {
-            state = .failed("That stage link looks wrong.")
-            return
-        }
-        var items = comps.queryItems ?? []
-        items.append(URLQueryItem(name: "user", value: user))
-        items.append(URLQueryItem(name: "pass", value: pass))
-        comps.queryItems = items
-        guard let url = comps.url else {
+        guard let url = URL(string: whipURLString) else {
             state = .failed("That stage link looks wrong.")
             return
         }
@@ -136,7 +140,7 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
             await WebRTCSDP.waitForIceGatheringComplete(pc)
             guard myGeneration == generation else { return }
             let finalOfferSDP = pc.localDescription?.sdp ?? offer.sdp
-            let result = try await WhipHTTP.post(sdpOffer: finalOfferSDP, to: url)
+            let result = try await WhipHTTP.post(sdpOffer: finalOfferSDP, to: url, user: user, pass: pass)
             guard myGeneration == generation else { return }
             resourceURL = result.resourceURL
             let answer = RTCSessionDescription(type: .answer, sdp: result.answerSDP)
@@ -170,8 +174,10 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
         whipLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
         generation += 1
         let resource = resourceURL
+        let user = credentialUser
+        let pass = credentialPass
         state = .ended
-        if let resource { await WhipHTTP.delete(resource) }
+        if let resource, let user, let pass { await WhipHTTP.delete(resource, user: user, pass: pass) }
         teardownPeerConnection()
         // Reset to `.idle` AFTER teardown so a fresh `start()` (re-accepted
         // after a re-invite) is free to run again.
@@ -191,6 +197,8 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
         localVideoTrack = nil
         localAudioTrack = nil
         resourceURL = nil
+        credentialUser = nil
+        credentialPass = nil
     }
 
     private func isTerminal(_ state: State) -> Bool {
