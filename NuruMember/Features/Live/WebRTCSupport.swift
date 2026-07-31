@@ -202,20 +202,45 @@ enum WebRTCSDP {
 }
 
 // MARK: - WHIP/WHEP HTTP exchange (raw — not APIClient; this hits MediaMTX
-// directly, not the Nuru API, and auth is query-string credentials per the
-// pinned wire contract, not a bearer token)
+// directly, not the Nuru API. Auth is HTTP Basic, NOT query-string
+// credentials — see `WhipBasicAuth`'s header comment for why.)
 
 struct WhipExchangeResult { let answerSDP: String; let resourceURL: URL? }
 
+/// MediaMTX (confirmed against the deployed v1.19.3) ignores `?user=&pass=`
+/// query parameters on the WHIP/WHEP POST entirely — a controlled experiment
+/// against production (2026-07-31: real guest device, empty user reached our
+/// `/v1/live/auth` webhook even with the query string present) proved it.
+/// The SAME request with an HTTP **Basic** `Authorization` header DID carry
+/// the real username through. This type is the one place that builds that
+/// header, so `WhipPublisher`/`WhepSubscriber` never touch credentials
+/// directly and can't regress back to the query-string form.
+///
+/// Query-string credentials are also a plain leak risk (URLs land in proxy
+/// logs, `os_log`, crash reports) that a header doesn't have — another
+/// reason to prefer Basic even where it happens to also work.
+enum WhipBasicAuth {
+    static func headerValue(user: String, pass: String) -> String {
+        let raw = "\(user):\(pass)"
+        let encoded = Data(raw.utf8).base64EncodedString()
+        return "Basic \(encoded)"
+    }
+
+    static func apply(user: String, pass: String, to request: inout URLRequest) {
+        request.setValue(headerValue(user: user, pass: pass), forHTTPHeaderField: "Authorization")
+    }
+}
+
 enum WhipHTTP {
-    /// POST the local SDP offer to a WHIP/WHEP URL (already carrying
-    /// `?user=&pass=` — see `WhipPublisher`/`WhepSubscriber`). MediaMTX
-    /// answers 201 with the SDP answer as the body and a `Location` header
-    /// pointing at the session resource (DELETE it to leave/stop).
-    static func post(sdpOffer: String, to url: URL) async throws -> WhipExchangeResult {
+    /// POST the local SDP offer to a bare WHIP/WHEP URL (no credentials in
+    /// the URL — see `WhipBasicAuth`). MediaMTX answers 201 with the SDP
+    /// answer as the body and a `Location` header pointing at the session
+    /// resource (DELETE it to leave/stop).
+    static func post(sdpOffer: String, to url: URL, user: String, pass: String) async throws -> WhipExchangeResult {
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
         req.setValue("application/sdp", forHTTPHeaderField: "Content-Type")
+        WhipBasicAuth.apply(user: user, pass: pass, to: &req)
         req.httpBody = Data(sdpOffer.utf8)
         req.timeoutInterval = 15
         let (data, response) = try await URLSession.shared.data(for: req)
@@ -233,9 +258,20 @@ enum WhipHTTP {
     /// Best-effort session teardown — a failed DELETE (network blip, session
     /// already reaped server-side) must never block the local peer connection
     /// from closing.
-    static func delete(_ url: URL) async {
+    ///
+    /// MediaMTX's own WHIP/WHEP DELETE (and PATCH/trickle-ICE, unused here
+    /// since we gather-then-send) handlers are keyed purely by the opaque
+    /// session-secret UUID already embedded in the `Location` resource URL —
+    /// verified against the mediamtx source (`onWHIPDelete`/`onWHIPPatch`
+    /// parse+validate that UUID and never consult the authHTTP webhook), so
+    /// this endpoint does NOT require the Basic header the POST needs. We
+    /// send it anyway (harmless, and the caller already has the credentials
+    /// in scope) as cheap defense-in-depth against a future MediaMTX version
+    /// tightening that.
+    static func delete(_ url: URL, user: String, pass: String) async {
         var req = URLRequest(url: url)
         req.httpMethod = "DELETE"
+        WhipBasicAuth.apply(user: user, pass: pass, to: &req)
         req.timeoutInterval = 8
         _ = try? await URLSession.shared.data(for: req)
     }
