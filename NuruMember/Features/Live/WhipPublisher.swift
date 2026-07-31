@@ -43,6 +43,22 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
     @Published private(set) var isMuted = false
     /// Bound by GuestStagePiP's self-preview `WebRTCVideoView`.
     @Published private(set) var localVideoTrack: RTCVideoTrack?
+    /// Owner redesign (2026-08-01) — the dock's camera on/off toggle.
+    /// `RTCVideoTrack.isEnabled = false` stops frames leaving this device
+    /// (MediaMTX/the host keep the last frame or a black frame, same as any
+    /// WebRTC video mute) without tearing down the peer connection.
+    @Published private(set) var isVideoEnabled = true
+    /// The dock's switch-camera control reads this to pick the right glyph/
+    /// label; `flipCamera()` below is the only writer.
+    @Published private(set) var cameraPosition: AVCaptureDevice.Position = .front
+    /// The dock's speaker toggle. Defaults true — the moment publishing goes
+    /// `.live`, `peerConnection(_:didChange:)` below forces the output route
+    /// to the speaker (WebRTC's own `RTCAudioSession` defaults this
+    /// mic+camera session to mode `.voiceChat`, which otherwise routes to
+    /// the EARPIECE — wrong for a member holding their phone up like a
+    /// camera, not a call). Best-effort: `overrideOutputAudioPort` failing
+    /// leaves the system default route in place rather than crashing.
+    @Published private(set) var isSpeakerOn = true
 
     private var peerConnection: RTCPeerConnection?
     private var localAudioTrack: RTCAudioTrack?
@@ -169,6 +185,46 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
         isMuted = !track.isEnabled
     }
 
+    /// Dock camera on/off — see `isVideoEnabled`'s header comment.
+    func toggleVideo() {
+        guard let track = localVideoTrack else { return }
+        track.isEnabled.toggle()
+        isVideoEnabled = track.isEnabled
+    }
+
+    /// Front/back swap for the guest's OWN outbound camera — same
+    /// device-swap idiom as `BroadcastController.flipCamera()`, just against
+    /// this type's raw `RTCCameraVideoCapturer` instead of HaishinKit's
+    /// mixer. Best-effort: if the new-position device/format can't start
+    /// (e.g. a device with no back camera), stays on the current camera
+    /// rather than tearing down the whole stage connection over it.
+    func flipCamera() async {
+        guard let capturer, state == .live else { return }
+        let newPosition: AVCaptureDevice.Position = cameraPosition == .front ? .back : .front
+        guard let device = WebRTCCamera.device(position: newPosition),
+              let format = WebRTCCamera.format(for: device) else { return }
+        let fps = WebRTCCamera.fps(for: format)
+        do {
+            try await startCapture(capturer, device: device, format: format, fps: fps)
+            cameraPosition = newPosition
+        } catch {
+            whipLogger.error("flipCamera — startCapture failed, staying on current camera: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Dock speaker toggle — see `isSpeakerOn`'s header comment. A plain
+    /// `AVAudioSession` route override, not a WebRTC-specific call: safe to
+    /// invoke regardless of who last configured the session's category.
+    func toggleSpeaker() {
+        let session = AVAudioSession.sharedInstance()
+        do {
+            try session.overrideOutputAudioPort(isSpeakerOn ? .none : .speaker)
+            isSpeakerOn.toggle()
+        } catch {
+            whipLogger.error("toggleSpeaker — overrideOutputAudioPort failed: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     func stop() async {
         guard state != .idle else { return }
         whipLogger.notice("stop — generation=\(self.generation + 1, privacy: .public)")
@@ -199,6 +255,11 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
         resourceURL = nil
         credentialUser = nil
         credentialPass = nil
+        // Fresh state for the NEXT time this instance goes live (re-accept
+        // after a leave, or a retry) — a stale "camera off"/"back camera"
+        // from a previous stage window must never carry into a new one.
+        isVideoEnabled = true
+        cameraPosition = .front
     }
 
     private func isTerminal(_ state: State) -> Bool {
@@ -230,7 +291,15 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
             guard let self, self.peerConnection === peerConnection else { return }
             switch newState {
             case .connected:
-                if self.state == .connecting { self.state = .live }
+                if self.state == .connecting {
+                    self.state = .live
+                    // Force the speaker route the moment publishing actually
+                    // goes live — see `isSpeakerOn`'s header comment on why
+                    // WebRTC's own default (earpiece, mode .voiceChat) is
+                    // wrong here. Best-effort; a failure just leaves the
+                    // system's current route in place.
+                    try? AVAudioSession.sharedInstance().overrideOutputAudioPort(.speaker)
+                }
             case .failed:
                 self.state = .failed("Lost connection to the stage.")
                 self.teardownPeerConnection()

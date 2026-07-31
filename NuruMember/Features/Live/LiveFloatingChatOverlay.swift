@@ -36,6 +36,12 @@ final class LiveFloatingChatController: ObservableObject {
     @Published private(set) var loading = true
     @Published var draft = ""
     @Published private(set) var sending = false
+    /// Owner latency ask (2026-08-01): "render optimistically before the
+    /// server confirms". A message id in here is showing on screen ahead of
+    /// the server's own confirmation — `bubble(_:)` dims it very slightly so
+    /// it never LIES about being confirmed, just feels instant rather than
+    /// waiting out a round trip.
+    @Published private(set) var pendingMessageIds: Set<String> = []
 
     /// Only the trailing window is ever RENDERED (owner spec: "last ~6
     /// messages") — the full session history is kept here regardless, so a
@@ -44,10 +50,20 @@ final class LiveFloatingChatController: ObservableObject {
     private static let maxLength = 500
 
     private let streamId: String
+    /// My own identity — needed to build the optimistic bubble locally,
+    /// before the server hands back a real `LiveChatMessage` for it.
+    private let myUserId: String?
+    private let myFullName: String?
+    private let myAvatarUrl: String?
     private var cursor: String?
     private var pollTask: Task<Void, Never>?
 
-    init(streamId: String) { self.streamId = streamId }
+    init(streamId: String, myUserId: String? = nil, myFullName: String? = nil, myAvatarUrl: String? = nil) {
+        self.streamId = streamId
+        self.myUserId = myUserId
+        self.myFullName = myFullName
+        self.myAvatarUrl = myAvatarUrl
+    }
 
     func start() {
         guard pollTask == nil else { return }
@@ -77,11 +93,28 @@ final class LiveFloatingChatController: ObservableObject {
         sending = true
         defer { sending = false }
         draft = ""
+        // Optimistic — the member's own message appears in the thread
+        // INSTANTLY, before the network round-trip resolves (owner latency
+        // ask). Swapped for the server's real row on success; on failure the
+        // bubble is left up rather than yanked back (the send may well have
+        // landed server-side despite a client-side error — the next poll
+        // reconciles either way, same honesty policy as every other
+        // optimistic action on this screen).
+        let pendingId = "pending-\(UUID().uuidString)"
+        let optimistic = LiveChatMessage(
+            messageId: pendingId, userId: myUserId ?? "", fullName: myFullName ?? "You",
+            avatarUrl: myAvatarUrl, body: text, sentAt: ISO8601DateFormatter().string(from: Date())
+        )
+        pendingMessageIds.insert(pendingId)
+        messages.append(optimistic)
         guard let sent = try? await MemberAPI.sendLiveMessage(streamId: streamId, body: text) else { return }
-        if !messages.contains(where: { $0.messageId == sent.messageId }) {
+        pendingMessageIds.remove(pendingId)
+        if let idx = messages.firstIndex(where: { $0.messageId == pendingId }) {
+            messages[idx] = sent
+        } else if !messages.contains(where: { $0.messageId == sent.messageId }) {
             messages.append(sent)
-            cursor = sent.sentAt
         }
+        cursor = sent.sentAt
     }
 
     private func loadInitial() async {
@@ -127,18 +160,26 @@ struct LiveFloatingChatOverlay: View {
     private static let heightFraction: CGFloat = 0.26
     private static let bubbleDiameter: CGFloat = 54
     private static let margin: CGFloat = 12
-    /// Clears the rail/controls row at the bottom of either host screen.
-    private static let bottomInset: CGFloat = 96
-    /// Clears the top HUD (close ✕ / LIVE pill / host chip on the viewer;
-    /// minimize / LIVE pill / timer on the broadcaster).
-    private static let topInset: CGFloat = 150
+    /// Clears the bottom dock (owner redesign, 2026-08-01 — see
+    /// LiveDockChrome.swift) on either host screen. Sized for the TALLER
+    /// two-row guest-on-stage dock so this never overlaps it even though
+    /// most of the time (a plain viewer's one-row dock) that leaves a little
+    /// unused clearance above the dock — safer than the alternative.
+    private static let bottomInset: CGFloat = 210
+    /// Clears the new ONE-LINE top row (close ✕ / host chip / title / LIVE /
+    /// counters on the viewer; minimize / LIVE pill / timer on the
+    /// broadcaster) — much shorter than the old three-row chrome this used
+    /// to clear.
+    private static let topInset: CGFloat = 76
 
-    init(streamId: String, myUserId: String?, handsRaisedCount: Int, visible: Binding<Bool>) {
+    init(streamId: String, myUserId: String?, myFullName: String? = nil, myAvatarUrl: String? = nil,
+         handsRaisedCount: Int, visible: Binding<Bool>) {
         self.streamId = streamId
         self.myUserId = myUserId
         self.handsRaisedCount = handsRaisedCount
         _visible = visible
-        _chat = StateObject(wrappedValue: LiveFloatingChatController(streamId: streamId))
+        _chat = StateObject(wrappedValue: LiveFloatingChatController(
+            streamId: streamId, myUserId: myUserId, myFullName: myFullName, myAvatarUrl: myAvatarUrl))
     }
 
     private var recent: [LiveChatMessage] {
@@ -314,6 +355,9 @@ struct LiveFloatingChatOverlay: View {
          + Text(m.body).font(.inter(12.5)).foregroundStyle(.white))
         .fixedSize(horizontal: false, vertical: true)
         .lineLimit(4)
+        // Optimistic bubble, not yet confirmed by the server — dimmed just
+        // enough to be honest about that without looking broken.
+        .opacity(chat.pendingMessageIds.contains(m.messageId) ? 0.6 : 1)
     }
 
     // MARK: Composer — translucent input pill + send button
