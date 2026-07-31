@@ -55,6 +55,7 @@ enum Lucide: String {
     case squareCheckBig = "\u{E16A}"
     case audioLines = "\u{E55A}"
     case hand = "\u{E1D7}"
+    case thumbsUp = "\u{E18A}"
     case calendar = "\u{E063}"
     case gift = "\u{E0E1}"
     case graduationCap = "\u{E234}"

@@ -1,4 +1,82 @@
 
+## 2026-07-31 — Nuru Live L5 interactive stage (branch feat/live-interactions, this repo only)
+iOS member app builds the interactive layer on top of the shipped L0-L4 live
+pipeline, coded exactly to the PINNED wire contract in
+`docs/LIVE_INTERACTIVE.md` (backend built to the same doc in parallel — every
+DTO decodes tolerantly, optionals + defaults, same discipline as
+`Models/Live.swift`).
+
+**1. Wire layer.** `Models/LiveInteractions.swift`: `LiveChatMessage`,
+`LiveMessagesEnvelope`, `LivePulse` (+ `LiveReactionCounts`,
+`LiveRecentReaction`, `LiveHandRow`, `LiveGuestRow`) — the one poll shape
+driving the whole overlay. `Networking/MemberAPI+LiveInteractions.swift`:
+`reactToLiveStream`, `setLiveHandRaised`, `fetchLiveMessages`/`sendLiveMessage`,
+`fetchLivePulse`, and the L6 guest scaffolding (`inviteLiveGuest`,
+`respondToLiveGuestInvite`, `removeLiveGuest`). New Lucide icon case
+`thumbsUp` (`\u{E18A}`, confirmed present in the bundled 1784-glyph font).
+Covered by `NuruMemberTests/LiveInteractionsDecodingTests.swift` (8 cases:
+full-payload + empty-object tolerance for chat messages, the messages
+envelope, and the pulse; guest `isActive`; hand-row name default).
+
+**2. Broadcaster** (`Features/Live/GoLiveBroadcastView.swift` +
+`BroadcastController.swift`). Controls row grows to
+`[mic, End, flip, ✋, 💬]`. The pulse poll (GET `/live/streams/{id}/pulse`,
+3s) is folded directly into `BroadcastController` alongside its existing
+`startViewerPolling()` — same start/stop call sites (`connectAndPublish`,
+`reattemptPublish`, `handleDropped`, `teardown`) rather than a second poller,
+since that controller already owns the RTMP lifecycle the poll must track.
+✋ carries a gold badge (raised-hand count) → `LiveHandsGuestsSheet.swift`
+(medium/large detent): hand rows with "Invite to join" (disabled + "6 guests
+max" at the cap) and a "Lower" affordance that is LOCAL-ONLY — the pinned
+`POST /hand {raised}` always targets the calling user, so there is no
+broadcaster-authority parameter to force someone else's hand down; "Lower"
+just clears that row from the sheet's own view for the rest of the stream.
+Guests section lists invited/accepted with Remove; accepted rows read
+"Joining soon — video in the next update" (L6 video is the next phase — this
+never claims more than the plumbing that exists today). 💬 opens
+`LiveChatSheet.swift` (shared with the viewer). Floating reactions
+(`Features/Live/LiveReactionEffects.swift`, `FloatingReactionsOverlay` +
+`ReactionBurstQueue`) rise bottom-right from `pulse.recent_reactions`, capped
+at 10 concurrent, Reduce-Motion swaps to a static counter chip; the first
+poll after going live seeds the seen-set without spawning anything, so
+opening the screen never floods it with a stream's whole reaction history at
+once.
+
+**3. Viewer** (`Features/Live/LiveViewerPlayerView.swift` +
+new `LivePulseController.swift`, 5s poll, independent instance since the
+player's lifecycle is just "on screen" rather than tied to RTMP). ❤️/👍 rail
+buttons fire `reactToLiveStream` with instant local optimistic particles
+(same `ReactionBurstQueue`) plus ambient particles from others via the pulse,
+haptic on tap, ~900ms client-side cooldown mirroring the server's ≥1s/user
+rate limit. ✋ toggle: optimistic local flip, reconciled from
+`pulse.hands` on the next poll (skipped while a toggle is in flight so it
+never fights the user's own tap). 💬 opens the shared `LiveChatSheet`. Guest
+invite: if `pulse.guests` contains ME as `invited`, a gold "You're invited on
+stage" card offers Accept/Decline (`respondToLiveGuestInvite`); once
+`accepted`, it becomes the same honest "joining soon" banner as the
+broadcaster's sheet. The whole interactive overlay is gated to a GENUINE
+live stream (`item.isLive`) — never shown over a finished replay, since the
+pinned contract's endpoints require a live stream anyway and pretending a
+recording has a live audience would be dishonest chrome.
+
+**4. Shared.** `LiveChatSheet.swift` — one component, both call sites
+(`.presentationDetents([.medium])`): 3s-polled since-cursor message list +
+composer, light Aurora-style bubbles (`Nuru.myBubble` for mine, white +
+sender name for others), 500-char cap, no read receipts/offline
+queue/edit/delete — deliberately lighter than the full 1:1 chat thread.
+
+**Naming note:** `ReactionBurstQueue`'s particle type is
+`LiveReactionParticle` (not `ReactionParticle`) — `RadioPlayerView.swift`
+already owns that name for its own reaction-bar effect; kept distinct to
+avoid a module-wide redeclaration collision.
+
+**Verified:** `xcodebuild … build` → BUILD SUCCEEDED; `xcodebuild … test` →
+18/18 green (10 pre-existing + 8 new).
+
+**Android parity pending** — not started this pass; L5 interactions
+(raise-hand/reactions/chat) and the L6 guest-invite scaffolding still need a
+Kotlin/Compose pass in `nuru-android` against the same pinned contract.
+
 ## 2026-07-20 — Reading typography/spacing global pass (branch feat/reading-typography-global, this repo only)
 A coordinated 4-part pass making text size AND line spacing genuinely global
 (same idiom, same reach) and giving scripture ONE quote-card look everywhere

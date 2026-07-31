@@ -67,6 +67,21 @@ final class BroadcastController: ObservableObject {
     @Published private(set) var viewerCount = 0
     @Published private(set) var peakViewerCount = 0
 
+    // MARK: L5 interactive pulse — folded in alongside viewer-count polling
+    // (same start/stop call sites) rather than a second poller: GET
+    // /live/streams/{id}/pulse every 3s per docs/LIVE_INTERACTIVE.md, driving
+    // the ✋ hand badge, the guests sheet, and the floating reaction overlay.
+    @Published private(set) var pulse: LivePulse?
+    /// Reactions newly seen since the previous pulse poll — GoLiveBroadcastView
+    /// consumes these once (spawns a particle per entry) then calls
+    /// `clearFreshReactions()`. The first poll seeds the seen-set without
+    /// publishing anything, so going live never floods the HUD with a
+    /// stream's entire reaction history at once.
+    @Published private(set) var freshReactions: [LiveRecentReaction] = []
+    private var seenReactionKeys: Set<String> = []
+    private var isFirstPulsePoll = true
+    private var pulsePollTask: Task<Void, Never>?
+
     var isVideo: Bool { session.kind == .video }
 
     private let connection: RTMPConnection
@@ -178,6 +193,7 @@ final class BroadcastController: ObservableObject {
             phase = .live
             UIApplication.shared.isIdleTimerDisabled = true
             startViewerPolling()
+            startPulsePolling()
         } catch {
             await handleDropped()
         }
@@ -221,6 +237,7 @@ final class BroadcastController: ObservableObject {
     private func handleDropped() async {
         guard !intentionallyStopped else { return }
         stopViewerPolling()
+        stopPulsePolling()
         guard retryAttempt < Self.backoffSeconds.count else {
             phase = .failed("Lost connection to the stream after several tries.")
             return
@@ -244,6 +261,7 @@ final class BroadcastController: ObservableObject {
             phase = .live
             retryAttempt = 0
             startViewerPolling()
+            startPulsePolling()
         } catch {
             await handleDropped()
         }
@@ -280,6 +298,47 @@ final class BroadcastController: ObservableObject {
               let mine = rows.first(where: { $0.streamId == session.stream.streamId }) else { return }
         viewerCount = mine.viewerCount
         peakViewerCount = max(peakViewerCount, mine.viewerCount)
+    }
+
+    // MARK: L5 pulse — hand queue + guests roster + reaction feed, one GET
+    // every 3s (see the header comment above `pulse`'s declaration).
+
+    private func startPulsePolling() {
+        pulsePollTask?.cancel()
+        pulsePollTask = Task { [weak self] in
+            guard let self else { return }
+            while !Task.isCancelled {
+                await self.pollPulse()
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
+            }
+        }
+    }
+
+    private func stopPulsePolling() {
+        pulsePollTask?.cancel()
+        pulsePollTask = nil
+    }
+
+    /// Out-of-cadence refresh — called by LiveHandsGuestsSheet right after an
+    /// invite/remove so the sheet reflects the change immediately rather than
+    /// waiting out the rest of the 3s window.
+    func pollPulseNow() async { await pollPulse() }
+
+    func clearFreshReactions() { freshReactions = [] }
+
+    private func pollPulse() async {
+        guard let p = try? await MemberAPI.fetchLivePulse(streamId: session.stream.streamId) else { return }
+        var newOnes: [LiveRecentReaction] = []
+        for r in p.recentReactions {
+            let key = "\(r.emoji)|\(r.at)"
+            guard !seenReactionKeys.contains(key) else { continue }
+            seenReactionKeys.insert(key)
+            if !isFirstPulsePoll { newOnes.append(r) }
+        }
+        isFirstPulsePoll = false
+        if seenReactionKeys.count > 500 { seenReactionKeys.removeAll() }
+        pulse = p
+        if !newOnes.isEmpty { freshReactions = newOnes }
     }
 
     // MARK: Controls
@@ -361,6 +420,7 @@ final class BroadcastController: ObservableObject {
         streamStatusTask?.cancel(); streamStatusTask = nil
         retryTask?.cancel(); retryTask = nil
         stopViewerPolling()
+        stopPulsePolling()
         _ = try? await stream.close()
         try? await connection.close()
         await mixer.stopRunning()

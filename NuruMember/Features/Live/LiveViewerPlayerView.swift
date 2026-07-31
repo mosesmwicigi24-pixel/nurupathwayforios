@@ -179,6 +179,8 @@ struct LiveViewerPlayerView: View {
     let item: LivePlayableItem
     @StateObject private var controller: LiveViewerPlayerController
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @EnvironmentObject private var auth: AuthStore
     @State private var showReplays = false
     /// Replays opened from here default to the item's own scope (church item
     /// → church replays; a cell item → that cell's replays) so "Replays" from
@@ -187,6 +189,18 @@ struct LiveViewerPlayerView: View {
     let replaysCellId: String?
     let replaysCellName: String?
 
+    // L5 interactive stage — reactions/hand/chat/guest-invite. Gated to a
+    // GENUINE live stream (never a recording): the pinned contract's stream
+    // must be live for these endpoints anyway, and pretending a finished
+    // replay has a live audience would be dishonest chrome.
+    @StateObject private var pulseController: LivePulseController
+    @StateObject private var reactionQueue = ReactionBurstQueue()
+    @State private var showChatSheet = false
+    @State private var handRaised = false
+    @State private var handActionInFlight = false
+    @State private var reactionCooldown = false
+    @State private var respondingToInvite = false
+
     init(item: LivePlayableItem, replaysScope: String? = nil, replaysCellId: String? = nil, replaysCellName: String? = nil) {
         self.item = item
         self.replaysScope = replaysScope
@@ -194,6 +208,7 @@ struct LiveViewerPlayerView: View {
         self.replaysCellName = replaysCellName
         _controller = StateObject(wrappedValue: LiveViewerPlayerController(
             isLive: item.isLive, heartbeatStreamId: item.heartbeatStreamId))
+        _pulseController = StateObject(wrappedValue: LivePulseController(streamId: item.id, intervalSeconds: 5))
     }
 
     var body: some View {
@@ -213,12 +228,188 @@ struct LiveViewerPlayerView: View {
             }
             if controller.phase != .ended { chrome }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if item.isLive, controller.phase == .playing {
+                FloatingReactionsOverlay(queue: reactionQueue)
+                    .padding(.bottom, 190).padding(.trailing, 68)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if item.isLive, controller.phase == .playing {
+                interactionRail.padding(.trailing, 12).padding(.bottom, 90)
+            }
+        }
+        .overlay(alignment: .top) {
+            if item.isLive, controller.phase == .playing {
+                guestInviteCard.padding(.top, 150)
+            }
+        }
         .preferredColorScheme(.dark)
         .task { await controller.start(mediaPath: item.mediaPath) }
-        .onDisappear { controller.stop() }
+        .task {
+            guard item.isLive else { return }
+            pulseController.start()
+        }
+        .onDisappear {
+            controller.stop()
+            pulseController.stop()
+        }
+        .onChange(of: pulseController.freshReactions) { _, fresh in
+            guard !fresh.isEmpty else { return }
+            for r in fresh { reactionQueue.spawn(emoji: r.emoji, reduceMotion: reduceMotion) }
+            pulseController.clearFreshReactions()
+        }
+        .onChange(of: pulseController.pulse?.hands) { _, hands in
+            guard !handActionInFlight, let myId = auth.profile?.userId else { return }
+            handRaised = (hands ?? []).contains { $0.userId == myId }
+        }
+        .sheet(isPresented: $showChatSheet) {
+            LiveChatSheet(streamId: item.id, myUserId: auth.profile?.userId)
+                .presentationDetents([.medium])
+        }
         .sheet(isPresented: $showReplays) {
             LiveReplaysView(scope: replaysScope, cellId: replaysCellId, cellName: replaysCellName)
         }
+    }
+
+    // MARK: L5 — reaction / hand / chat rail (bottom-trailing, TikTok/IG-live
+    // idiom) + the gold guest-invite card when a pastor has invited ME.
+
+    private var interactionRail: some View {
+        VStack(spacing: 16) {
+            reactionButton(emoji: "love", systemImage: "heart.fill", tint: Color(hex: 0xE0245E))
+            reactionButton(emoji: "like", systemImage: "hand.thumbsup.fill", tint: Nuru.gold)
+            handToggleButton
+            railButton(icon: "message.fill") {
+                Haptics.tap(); showChatSheet = true
+            }
+            .accessibilityLabel("Live chat")
+        }
+    }
+
+    private func reactionButton(emoji: String, systemImage: String, tint: Color) -> some View {
+        Button {
+            guard !reactionCooldown else { return }
+            Haptics.love()
+            reactionQueue.spawn(emoji: emoji, reduceMotion: reduceMotion)   // optimistic, instant
+            reactionCooldown = true
+            Task {
+                try? await MemberAPI.reactToLiveStream(streamId: item.id, emoji: emoji)
+                try? await Task.sleep(nanoseconds: 900_000_000)   // mirrors the server's ≥1s/user rate limit
+                reactionCooldown = false
+            }
+        } label: {
+            Image(systemName: systemImage)
+                .font(.system(size: 20))
+                .foregroundStyle(tint)
+                .frame(width: 44, height: 44)
+                .background(Color.black.opacity(0.35), in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(emoji == "love" ? "Send a love reaction" : "Send a like reaction")
+    }
+
+    private var handToggleButton: some View {
+        railButton(icon: "hand.raised.fill", active: handRaised) {
+            guard !handActionInFlight else { return }
+            handActionInFlight = true
+            let newValue = !handRaised
+            handRaised = newValue   // optimistic
+            Haptics.tap()
+            Task {
+                try? await MemberAPI.setLiveHandRaised(streamId: item.id, raised: newValue)
+                handActionInFlight = false
+            }
+        }
+        .accessibilityLabel(handRaised ? "Lower hand" : "Raise hand")
+    }
+
+    private func railButton(icon: String, active: Bool = false, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(active ? Nuru.navy : .white)
+                .frame(width: 44, height: 44)
+                .background(active ? Nuru.gold : Color.black.opacity(0.35), in: Circle())
+                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+    }
+
+    /// The gold "invited on stage" card — shown while MY guest row is
+    /// `invited`; swaps to the honest "joining soon" banner once `accepted`
+    /// (L6 video itself is the next phase, so this never claims more than
+    /// the plumbing that actually exists today).
+    @ViewBuilder private var guestInviteCard: some View {
+        if let myId = auth.profile?.userId,
+           let mine = pulseController.pulse?.guests.first(where: { $0.userId == myId }) {
+            switch mine.status {
+            case "invited":
+                guestInviteBanner
+            case "accepted":
+                guestAcceptedBanner
+            default:
+                EmptyView()
+            }
+        } else {
+            EmptyView()
+        }
+    }
+
+    private var guestInviteBanner: some View {
+        VStack(spacing: 12) {
+            HStack(spacing: 10) {
+                Icon(.handHeart, size: 18, color: Nuru.navy)
+                Text("You're invited on stage").font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
+            }
+            HStack(spacing: 10) {
+                Button {
+                    Haptics.action()
+                    Task { await respondToInvite(accept: true) }
+                } label: {
+                    Text("Accept").font(.inter(13, .bold)).foregroundStyle(.white)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(Nuru.navy, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                Button {
+                    Haptics.tap()
+                    Task { await respondToInvite(accept: false) }
+                } label: {
+                    Text("Decline").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .frame(maxWidth: .infinity).frame(height: 38)
+                        .background(Color.white.opacity(0.5), in: Capsule())
+                }
+                .buttonStyle(.pressable)
+            }
+        }
+        .disabled(respondingToInvite)
+        .opacity(respondingToInvite ? 0.6 : 1)
+        .padding(14)
+        .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .shadow(color: .black.opacity(0.3), radius: 12, y: 5)
+        .padding(.horizontal, 24)
+    }
+
+    private var guestAcceptedBanner: some View {
+        HStack(spacing: 8) {
+            Icon(.checkCircle2, size: 14, color: Nuru.navy)
+            Text("You're on stage soon — video joins in the next update")
+                .font(.inter(11, .semibold)).foregroundStyle(Nuru.navy)
+                .multilineTextAlignment(.leading)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 9)
+        .background(Nuru.gold.opacity(0.92), in: Capsule())
+        .padding(.horizontal, 24)
+    }
+
+    private func respondToInvite(accept: Bool) async {
+        guard !respondingToInvite else { return }
+        respondingToInvite = true
+        defer { respondingToInvite = false }
+        try? await MemberAPI.respondToLiveGuestInvite(streamId: item.id, accept: accept)
+        await pulseController.pollNow()
     }
 
     // MARK: Chrome — close ✕ · LIVE badge + viewer count · title/subtitle

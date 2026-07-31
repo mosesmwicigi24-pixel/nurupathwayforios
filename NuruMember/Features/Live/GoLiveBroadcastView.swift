@@ -17,10 +17,17 @@ import SwiftUI
 
 struct GoLiveBroadcastView: View {
     @StateObject private var controller: BroadcastController
+    @StateObject private var reactionQueue = ReactionBurstQueue()
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var confirmEnd = false
+    // L5 interactive stage — ✋ hand queue / guests sheet and 💬 live chat,
+    // both fed by controller.pulse (the same 3s poll that already tracks
+    // viewer count).
+    @State private var showHandsSheet = false
+    @State private var showChatSheet = false
 
     init(session: GoLiveSession) {
         _controller = StateObject(wrappedValue: BroadcastController(session: session))
@@ -31,6 +38,12 @@ struct GoLiveBroadcastView: View {
             Nuru.navyDeep.ignoresSafeArea()
             content
             hud
+        }
+        .overlay(alignment: .bottomTrailing) {
+            if controller.phase == .live || isReconnecting {
+                FloatingReactionsOverlay(queue: reactionQueue)
+                    .padding(.bottom, 112).padding(.trailing, 14)
+            }
         }
         .preferredColorScheme(.dark)
         .statusBarHidden(controller.phase == .live && controller.isVideo)
@@ -44,12 +57,24 @@ struct GoLiveBroadcastView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .background { controller.handleBackgrounded() }
         }
+        .onChange(of: controller.freshReactions) { _, fresh in
+            guard !fresh.isEmpty else { return }
+            for r in fresh { reactionQueue.spawn(emoji: r.emoji, reduceMotion: reduceMotion) }
+            controller.clearFreshReactions()
+        }
         .confirmationDialog("End this stream?", isPresented: $confirmEnd, titleVisibility: .visible) {
             Button("End stream", role: .destructive) {
                 Haptics.action()
                 Task { await controller.end() }
             }
             Button("Keep going", role: .cancel) {}
+        }
+        .sheet(isPresented: $showHandsSheet) {
+            LiveHandsGuestsSheet(controller: controller)
+        }
+        .sheet(isPresented: $showChatSheet) {
+            LiveChatSheet(streamId: controller.session.stream.streamId, myUserId: auth.profile?.userId)
+                .presentationDetents([.medium])
         }
     }
 
@@ -262,7 +287,7 @@ struct GoLiveBroadcastView: View {
     }
 
     private var controlsRow: some View {
-        HStack(spacing: 20) {
+        HStack(spacing: 14) {
             controlButton(icon: controller.isMuted ? "mic.slash.fill" : "mic.fill", active: controller.isMuted) {
                 Haptics.tap(); controller.toggleMute()
             }
@@ -273,7 +298,7 @@ struct GoLiveBroadcastView: View {
                 confirmEnd = true
             } label: {
                 Text("End").font(.inter(14, .bold)).foregroundStyle(.white)
-                    .frame(width: 92, height: 48)
+                    .frame(width: 78, height: 48)
                     .background(Color(hex: 0xDC2626), in: Capsule())
             }
             .buttonStyle(.pressable)
@@ -284,11 +309,47 @@ struct GoLiveBroadcastView: View {
                 }
                 .accessibilityLabel("Flip camera")
             } else {
-                // Keeps the End button visually centered for audio-only.
+                // Keeps the row visually balanced for audio-only.
                 Color.clear.frame(width: 48, height: 48)
             }
+
+            handButton
+            controlButton(icon: "message.fill", active: false) {
+                Haptics.tap(); showChatSheet = true
+            }
+            .accessibilityLabel("Live chat")
         }
+        .padding(.horizontal, 8)
         .padding(.bottom, 28)
+    }
+
+    /// ✋ raised-hand queue — gold badge counts hands from the 3s pulse poll.
+    private var handButton: some View {
+        let count = controller.pulse?.hands.count ?? 0
+        return Button {
+            Haptics.tap()
+            showHandsSheet = true
+        } label: {
+            ZStack(alignment: .topTrailing) {
+                Image(systemName: "hand.raised.fill")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 48, height: 48)
+                    .background(Color.white.opacity(0.14), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
+                if count > 0 {
+                    Text("\(min(count, 99))")
+                        .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, count > 9 ? 5 : 0)
+                        .frame(minWidth: 18, minHeight: 18)
+                        .background(Nuru.gold, in: Circle())
+                        .overlay(Circle().stroke(Nuru.navyDeep, lineWidth: 1.5))
+                        .offset(x: 5, y: -5)
+                }
+            }
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Raised hands, \(count)")
     }
 
     private func controlButton(icon: String, active: Bool, action: @escaping () -> Void) -> some View {
