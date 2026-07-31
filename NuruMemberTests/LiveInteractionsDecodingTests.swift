@@ -67,7 +67,7 @@ final class LiveInteractionsDecodingTests: XCTestCase {
 
     func testLivePulseDecodesFullWirePayload() throws {
         let p = try decode(LivePulse.self, """
-        {"viewer_count":42,"reactions":{"like":10,"love":7},
+        {"viewer_count":42,"reactions":{"like":10,"love":7,"fire":3},
          "recent_reactions":[{"emoji":"love","at":"2026-07-31T09:00:01Z"}],
          "hands":[{"user_id":"u1","full_name":"Grace","avatar_url":null,"raised_at":"2026-07-31T09:00:00Z"}],
          "guests":[{"user_id":"u2","full_name":"Sam","avatar_url":null,"status":"accepted"}]}
@@ -75,10 +75,30 @@ final class LiveInteractionsDecodingTests: XCTestCase {
         XCTAssertEqual(p.viewerCount, 42)
         XCTAssertEqual(p.reactions.like, 10)
         XCTAssertEqual(p.reactions.love, 7)
+        XCTAssertEqual(p.reactions.fire, 3)
         XCTAssertEqual(p.recentReactions.first?.emoji, "love")
         XCTAssertEqual(p.hands.first?.fullName, "Grace")
         XCTAssertEqual(p.guests.first?.status, "accepted")
         XCTAssertTrue(p.guests.first?.isActive == true)
+    }
+
+    /// The backend added `fire` as a third reaction kind alongside like/love
+    /// AFTER L5 shipped (owner ask, 2026-07-31) — a pulse response from
+    /// before that must still decode cleanly, with `fire` defaulting to 0
+    /// rather than the whole payload failing.
+    func testLiveReactionCountsTreatsFireAsOptional() throws {
+        let counts = try decode(LiveReactionCounts.self, #"{"like":5,"love":2}"#)
+        XCTAssertEqual(counts.like, 5)
+        XCTAssertEqual(counts.love, 2)
+        XCTAssertEqual(counts.fire, 0)
+    }
+
+    func testLiveReactionKindMapsFireEmojiAndRoundTrips() {
+        XCTAssertEqual(LiveReactionKind(emoji: "fire").emoji, "fire")
+        XCTAssertEqual(LiveReactionKind(emoji: "love").emoji, "love")
+        // An unrecognized/legacy emoji string falls back to "like" rather
+        // than crashing the reaction rail or the particle overlay.
+        XCTAssertEqual(LiveReactionKind(emoji: "🤷").emoji, "like")
     }
 
     func testLiveGuestRowIsActiveOnlyWhileInvitedOrAccepted() throws {
@@ -94,5 +114,15 @@ final class LiveInteractionsDecodingTests: XCTestCase {
         let h = try decode(LiveHandRow.self, #"{"user_id":"u1"}"#)
         XCTAssertEqual(h.userId, "u1")
         XCTAssertEqual(h.fullName, "Member")
+    }
+
+    // MARK: LiveCountFormat — the rail's TikTok-style abbreviated counters
+
+    func testLiveCountFormatAbbreviatesLikeTikTok() {
+        XCTAssertEqual(LiveCountFormat.abbreviated(0), "0")
+        XCTAssertEqual(LiveCountFormat.abbreviated(999), "999")
+        XCTAssertEqual(LiveCountFormat.abbreviated(1200), "1.2K")
+        XCTAssertEqual(LiveCountFormat.abbreviated(10_000), "10K")
+        XCTAssertEqual(LiveCountFormat.abbreviated(3_400_000), "3.4M")
     }
 }

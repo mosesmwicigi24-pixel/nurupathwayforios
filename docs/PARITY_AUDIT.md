@@ -1,4 +1,129 @@
 
+## 2026-07-31 — Nuru Live viewer redesign: best-in-class chrome + 🔥 reaction (branch feat/live-viewer-polish, this repo only)
+Redesigns the VIEWER side of the L5 interactive stage (previous entry below)
+into TikTok/IG/YouTube-Live-grade chrome, on top of build 91's shipped API
+layer — `LiveViewerPlayerController`, `LivePulseController`, `MemberAPI
++LiveInteractions.swift` are untouched; this pass is UI + one small model
+addition. The BROADCASTER side (`GoLiveBroadcastView.swift`,
+`LiveChatSheet.swift`, `LiveHandsGuestsSheet.swift`) is untouched too.
+
+**1. 🔥 fire reaction (3rd kind, owner ask).** `LiveReactionCounts` gains a
+`fire` field (tolerant default 0 — a pulse response from before the backend
+added it still decodes). `LiveReactionKind` (`LiveReactionEffects.swift`)
+gains `.fire` (`flame.fill`, orange `0xF97316`) alongside `.love`/`.like`,
+plus an `emoji` accessor so the rail can post the right string back to `POST
+.../reactions`. Since `ReactionBurstQueue`/`FloatingReactionsOverlay` were
+already generic over `LiveReactionKind(emoji:)`, the broadcaster's own
+ambient-particle HUD picks up 🔥 automatically with no broadcaster-file
+changes.
+
+**2. Full-bleed chrome** (`LiveViewerPlayerView.swift`). Top scrim unchanged;
+added a matching bottom scrim (`.ignoresSafeArea` now covers `.top` AND
+`.bottom` for the video kind, was top-only) so the new rail/chat never fight
+a bright frame. LIVE pill unchanged; the viewer-count chip switched from a
+`users` glyph to `eye` (owner spec) and now prefers the live 5s pulse's own
+`viewer_count` over the static snapshot `item.viewerCount` was built from,
+both abbreviated through a new `LiveCountFormat.abbreviated` (999 / 1.2K /
+10K / 3.4M — TikTok-style, tested). New IG-style broadcaster identity chip
+(avatar-initials + name + "Host") renders under the top row whenever
+`LivePlayableItem.broadcasterName` is set — a new field piped straight from
+`LiveStreamSummary.startedByName` in the `.live()` factory (no wire change,
+just carrying an already-fetched field through; `.recording()` leaves it
+nil, and the chip only ever shows for `item.isLive` anyway).
+
+**3. Right-side vertical action rail** (TikTok idiom, replaces the old
+bottom-trailing-ish stack). ❤️ 🔥 👍 each with a TikTok-abbreviated count
+underneath sourced from `pulse.reactions`, then ✋ (gold-filled while raised,
+unchanged logic) then 💬 (now a VISIBILITY TOGGLE for the floating chat
+overlay below, not a sheet presenter). Reaction taps route through one new
+shared `fireReaction(emoji:)` — same optimistic particle spawn + haptic +
+~900ms cooldown as before, just de-duplicated across three buttons instead of
+copy-pasted for two.
+
+**4. Double-tap-the-video = ❤️** — a transparent `SpatialTapGesture(count:
+2)` layer, scoped to `item.isLive` (so a replay's native
+`AVPlayerViewController` scrub/tap-to-toggle-controls behavior is never
+touched), sitting UNDER the chrome/rail/chat overlays so their own buttons
+still win the hit-test at their own bounds. Pops a big heart
+(`BigHeartBurstView`, spring scale + fade, ~0.9s) at the exact tap point and
+calls the same `fireReaction("love")` the rail uses. Reduce Motion: no flying
+heart, reaction still fires (matches the rest of L5's Reduce Motion
+contract).
+
+**5. Floating chat overlay** (new `LiveFloatingChatOverlay.swift`) —
+REPLACES the modal `LiveChatSheet` on the viewer side per the owner's exact
+brief: anchored bottom-leading, ~66% width × ~32% height, `.ultraThinMaterial`
+forced to its dark variant (`.environment(\.colorScheme, .dark)` — this is
+video-overlay chrome, not a themed app surface), last 6 messages (gold name +
+white body inline, decorative top fade, auto-scroll on new arrivals), its own
+translucent composer pill, and a small gold "✋ N raised" chip when
+`pulse.hands` is non-empty (a viewer has no hands-sheet of their own — this
+is the only visibility they get into that state). Owns its own 3s
+since-cursor poll (`LiveFloatingChatController`, functionally identical to
+`LiveChatSheet`'s) and stays MOUNTED for the whole `isLive && .playing`
+window regardless of the 💬 toggle — toggling only flips opacity/hit-testing,
+so hiding and re-showing chat never drops messages or restarts the poll.
+
+**6. Home header LIVE entry** (`HomeView.swift`) — a 40pt chip in the same
+slot family as the radio icon (pulsing red ring `HomeLiveHeaderRing` +
+waveform glyph), shown only while `churchLiveStream` (the existing /live/now
+state from build 88, already driving the feed's top banner) is non-nil; tap
+opens the same full player the banner's "Watch live" does. No new polling —
+rides the state Home already has.
+
+**7. FLICKER GUARD — found and fixed a real reuse bug.** Traced how
+`LiveViewerPlayerView` is presented at all four call sites
+(`HomeView`/`CellInfoView`/`LiveReplaysView`/`RootView`, all
+`.fullScreenCover(item:)`) against `LivePlayableItem: Identifiable`.
+`fullScreenCover(item:)` does NOT dismiss/re-present when its bound item goes
+from one non-nil value straight to a DIFFERENT non-nil value — only a
+transition through `nil` does. **RootView's own handler already does exactly
+that**: a `live_stream_started` notification tap (and the app-wide
+`AppLiveBar` tap) sets `liveDiscovery.requestedItem = .live(stream)`
+unconditionally, with no nil-check first. Without an identity break, SwiftUI
+would keep the SAME `LiveViewerPlayerView` instance across that call — its
+`@StateObject` player/pulse controller would NOT reinitialize, and `.task {
+controller.start(...) }` would NOT rerun (plain `.task` only fires on an
+identity change) — so a viewer who already had the player open on stream A,
+then tapped a push for newly-started stream B, would go on watching STREAM
+A's frames under stream B's chrome/title/pulse, until they closed and
+reopened the player by hand. Fixed by appending `.id(item.id)` to the
+returned view at all four call sites, forcing a fresh view (and fresh
+player/pulse controller, freshly fetched against the NEW stream_id) whenever
+the stream_id actually changes. The other three call sites only ever go
+`nil → item` today so weren't actively hit, but carry the same guard since
+nothing stops a future caller from doing what RootView already does.
+Separately audited `LiveMiniPopup`'s `MutedPreviewController` (Home's muted
+preview) — safe: `LiveDiscoveryCenter.ingest()` only ever sets a NEW
+`popupStreamId` while the current one is `nil` (`guard popupStreamId == nil
+else { return }`), so that surface always tears down through nil first and
+never hits the same reuse class.
+
+**Honest limits:** no live backend/broadcast was available to drive the
+built-and-verified UI end-to-end on device this pass (build succeeds, unit
+tests cover the new model/format logic, and the app launches clean with the
+header change visible in a screenshot) — the interactive chrome itself
+(rail, floating chat, double-tap heart, identity chip) is unverified by eye
+against a REAL live stream. The broadcaster identity chip shows a generic
+"Host" caption rather than a real title/role, since no such field exists on
+the pinned wire contract (`LiveStreamSummary` only carries `startedByName`)
+and none was invented for it.
+
+Files: `Features/Live/LiveViewerPlayerView.swift`, new `Features/Live/
+LiveFloatingChatOverlay.swift`, `Features/Live/LiveReactionEffects.swift`,
+`Features/Home/HomeView.swift`, `Features/Home/CellInfoView.swift`,
+`Features/Live/LiveReplaysView.swift`, `Features/Shell/RootView.swift`,
+`Models/Live.swift`, `Models/LiveInteractions.swift`,
+`NuruMemberTests/LiveInteractionsDecodingTests.swift` (+3: fire-count
+tolerance, fire emoji mapping, `LiveCountFormat` abbreviation).
+
+**Verified:** `xcodebuild … build` → BUILD SUCCEEDED; `xcodebuild … test` →
+21/21 green (18 pre-existing + 3 new). Not pushed / no PR opened (per task
+instruction) — built in an isolated worktree (`.worktrees/live-viewer`,
+branch `feat/live-viewer-polish`) off `origin/main` at build 91.
+
+**Android parity pending** — not started this pass.
+
 ## 2026-07-31 — Nuru Live L5 interactive stage (branch feat/live-interactions, this repo only)
 iOS member app builds the interactive layer on top of the shipped L0-L4 live
 pipeline, coded exactly to the PINNED wire contract in

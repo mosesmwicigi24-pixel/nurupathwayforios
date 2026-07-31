@@ -120,6 +120,11 @@ struct LivePlayableItem: Identifiable, Hashable {
     /// Non-nil only for a real live stream — its presence is what starts the
     /// 30s heartbeat in the player; a recording never heartbeats.
     let heartbeatStreamId: String?
+    /// `LiveStreamSummary.startedByName`, piped through for the viewer
+    /// chrome's IG-style broadcaster identity chip — nil for a recording
+    /// (no equivalent field on `LiveRecordingRow`, and a finished replay
+    /// isn't "someone live" chrome anyway).
+    let broadcasterName: String?
 
     var isAudio: Bool { kind == "audio" }
 
@@ -129,7 +134,8 @@ struct LivePlayableItem: Identifiable, Hashable {
             id: s.streamId, title: s.title,
             subtitle: "\(started) · \(s.viewerCount) watching",
             kind: s.kind, isLive: true, mediaPath: s.hlsUrl,
-            viewerCount: s.viewerCount, heartbeatStreamId: s.streamId)
+            viewerCount: s.viewerCount, heartbeatStreamId: s.streamId,
+            broadcasterName: s.startedByName.isEmpty ? nil : s.startedByName)
     }
 
     static func recording(_ r: LiveRecordingRow, cellName: String? = nil) -> LivePlayableItem {
@@ -138,7 +144,7 @@ struct LivePlayableItem: Identifiable, Hashable {
             id: r.streamId, title: r.title,
             subtitle: "\(scopeLabel) · \(LiveFormat.dateLabel(r.startedAt))",
             kind: r.kind, isLive: false, mediaPath: r.recordingUrl,
-            viewerCount: nil, heartbeatStreamId: nil)
+            viewerCount: nil, heartbeatStreamId: nil, broadcasterName: nil)
     }
 }
 

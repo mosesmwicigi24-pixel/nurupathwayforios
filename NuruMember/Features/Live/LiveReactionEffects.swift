@@ -8,14 +8,58 @@
 // instead of suppressing the feature entirely.
 import SwiftUI
 
-/// "like" | "love" → the glyph + tint a particle renders as.
+/// "like" | "love" | "fire" → the glyph + tint a particle renders as. "fire"
+/// added alongside like/love (owner ask, 2026-07-31) — the backend accepts it
+/// as a third `emoji` value on the same pinned `POST .../reactions` endpoint.
 enum LiveReactionKind {
-    case like, love
+    case like, love, fire
 
-    init(emoji: String) { self = emoji == "love" ? .love : .like }
+    init(emoji: String) {
+        switch emoji {
+        case "love": self = .love
+        case "fire": self = .fire
+        default: self = .like
+        }
+    }
 
-    var systemImage: String { self == .love ? "heart.fill" : "hand.thumbsup.fill" }
-    var tint: Color { self == .love ? Color(hex: 0xE0245E) : Nuru.gold }
+    var emoji: String { self == .love ? "love" : self == .fire ? "fire" : "like" }
+    var systemImage: String {
+        switch self {
+        case .love: return "heart.fill"
+        case .fire: return "flame.fill"
+        case .like: return "hand.thumbsup.fill"
+        }
+    }
+    var tint: Color {
+        switch self {
+        case .love: return Color(hex: 0xE0245E)
+        case .fire: return Color(hex: 0xF97316)
+        case .like: return Nuru.gold
+        }
+    }
+}
+
+/// TikTok-style abbreviated counter — "999", "1.2K", "10K", "3.4M". Never
+/// shows more than one decimal, and drops a trailing ".0" ("10.0K" → "10K").
+enum LiveCountFormat {
+    static func abbreviated(_ n: Int) -> String {
+        switch n {
+        case ..<1000:
+            return "\(n)"
+        case ..<1_000_000:
+            return format(Double(n) / 1000, suffix: "K")
+        default:
+            return format(Double(n) / 1_000_000, suffix: "M")
+        }
+    }
+
+    private static func format(_ value: Double, suffix: String) -> String {
+        let rounded = (value * 10).rounded() / 10
+        if rounded == rounded.rounded() {
+            return "\(Int(rounded))\(suffix)"
+        }
+        return String(format: "%.1f%@", rounded, suffix)
+    }
 }
 
 private struct LiveReactionParticle: Identifiable {

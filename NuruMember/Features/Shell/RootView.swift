@@ -256,7 +256,25 @@ struct RootView: View {
             // a cell item → that cell's) — same rule every other player
             // presentation follows (Home banner, cell card, LiveReplaysView).
             let source = liveDiscovery.streams.first { $0.streamId == item.id }
+            // `.id(item.id)` — FLICKER GUARD. This is the one call site that
+            // actually hits the bug: a second `live_stream_started` push can
+            // set `liveDiscovery.requestedItem` to a NEW stream while this
+            // cover is already presenting a DIFFERENT one (see the handler
+            // below, and the AppLiveBar tap) — the binding goes non-nil to
+            // non-nil, never back through nil. `fullScreenCover(item:)` does
+            // NOT dismiss/re-present for that transition; it keeps the same
+            // presented view and just re-invokes this closure. Without an
+            // explicit `.id`, `LiveViewerPlayerView` would keep its existing
+            // view identity across that call — its `@StateObject` player and
+            // pulse controller would NOT reinitialize, `.task { controller
+            // .start(...) }` would NOT rerun (plain `.task` only fires on
+            // identity change), and the viewer would silently keep showing
+            // the PREVIOUS stream's frames under the new stream's chrome.
+            // `.id(item.id)` forces SwiftUI to treat a different stream_id as
+            // a brand-new view, tearing down the old player/pulse controller
+            // and constructing fresh ones against a freshly-fetched item.
             LiveViewerPlayerView(item: item, replaysScope: source?.scope, replaysCellId: source?.cellId)
+                .id(item.id)
         }
         // Celebration layer — server-milestone confetti cards + gold banners
         // (rhythm complete, streak marks, new badges, prayer posted, gift

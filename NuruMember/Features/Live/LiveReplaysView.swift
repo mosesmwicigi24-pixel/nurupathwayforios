@@ -47,7 +47,10 @@ struct LiveReplaysView: View {
             }
         }
         .task { await load() }
-        .fullScreenCover(item: $playingItem) { LiveViewerPlayerView(item: $0, replaysScope: scope, replaysCellId: cellId, replaysCellName: cellName) }
+        // `.id($0.id)` — flicker guard, see LiveViewerPlayerView's header note.
+        .fullScreenCover(item: $playingItem) {
+            LiveViewerPlayerView(item: $0, replaysScope: scope, replaysCellId: cellId, replaysCellName: cellName).id($0.id)
+        }
     }
 
     @ViewBuilder private var content: some View {

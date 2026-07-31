@@ -86,7 +86,13 @@ struct CellInfoView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.isEmpty { await vm.load() } }
         .fullScreenCover(item: $openLiveItem) { item in
+            // `.id(item.id)` — see LiveViewerPlayerView's flicker-guard note:
+            // without it, a rebind of `openLiveItem` to a DIFFERENT stream
+            // while the cover is still up reuses the same view identity (and
+            // its @StateObject player) instead of tearing down and starting
+            // fresh, so the old stream's frames would keep showing.
             LiveViewerPlayerView(item: item, replaysScope: "cell", replaysCellId: vm.cell?.cellGroupId, replaysCellName: vm.name)
+                .id(item.id)
         }
         .sheet(isPresented: $openReplays) {
             LiveReplaysView(scope: "cell", cellId: vm.cell?.cellGroupId, cellName: vm.name)

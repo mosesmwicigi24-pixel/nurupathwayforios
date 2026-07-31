@@ -18,6 +18,23 @@
 // playlists don't end on their own), or a stall that doesn't clear within 15s.
 // Any of these retire playback into a terminal "ended" state with a "Replays"
 // link — never a spinner that hangs forever.
+//
+// FLICKER GUARD (2026-07-31 viewer redesign): every call site that presents
+// this view via `.fullScreenCover(item:)` now appends `.id(item.id)` to the
+// returned view (CellInfoView, HomeView, RootView, LiveReplaysView). Reason:
+// `fullScreenCover(item:)` does NOT dismiss/re-present when its bound item
+// changes from one non-nil value straight to a DIFFERENT non-nil value (only
+// a transition through `nil` does that) — it keeps the same presented view
+// and just re-invokes the content closure. Without `.id`, this struct would
+// keep its existing SwiftUI identity across that call, so its `@StateObject`
+// controller/pulse controller would NOT reinitialize and `.task { controller
+// .start(...) }` would NOT rerun (plain `.task` only fires on an identity
+// change) — the viewer would silently go on showing the PREVIOUS stream's
+// frames under the new stream's chrome. RootView is the one call site that
+// can actually hit this (a second `live_stream_started` push, or the app-wide
+// LIVE bar, rebinding `requestedItem` while a different stream is already
+// open); the other three only ever go nil → item, but carry the guard too
+// since nothing stops a future call site from doing the same.
 import AVFoundation
 import AVKit
 import SwiftUI
@@ -195,11 +212,30 @@ struct LiveViewerPlayerView: View {
     // replay has a live audience would be dishonest chrome.
     @StateObject private var pulseController: LivePulseController
     @StateObject private var reactionQueue = ReactionBurstQueue()
-    @State private var showChatSheet = false
+    // The floating chat overlay REPLACES the modal LiveChatSheet on the
+    // viewer side (owner's exact vision) — visible by default, like an IG
+    // Live comment stream; 💬 in the rail toggles it. The broadcaster keeps
+    // the modal sheet unchanged (GoLiveBroadcastView).
+    @State private var chatOverlayVisible = true
     @State private var handRaised = false
     @State private var handActionInFlight = false
     @State private var reactionCooldown = false
     @State private var respondingToInvite = false
+    /// IG-style double-tap-the-video-to-love bursts — one big heart per tap,
+    /// positioned at the tap point, self-removing after its pop animation.
+    @State private var bigHearts: [BigHeartBurst] = []
+
+    private struct BigHeartBurst: Identifiable {
+        let id = UUID()
+        let point: CGPoint
+    }
+
+    /// Fallback sizing for the floating chat overlay (~2/3 width, lower ~1/3
+    /// height, per spec) — `GeometryReader`-free since every other bit of
+    /// full-bleed chrome in this screen already sizes off the device screen
+    /// rather than threading a geometry proxy through (see SelahDrawingSheet
+    /// for this codebase's existing `UIScreen.main` precedent).
+    private var screenSize: CGSize { UIScreen.main.bounds.size }
 
     init(item: LivePlayableItem, replaysScope: String? = nil, replaysCellId: String? = nil, replaysCellName: String? = nil) {
         self.item = item
@@ -226,12 +262,34 @@ struct LiveViewerPlayerView: View {
             case .ended:
                 endedState
             }
+            // Double-tap-to-love, TikTok/IG-style. Scoped to a genuine live
+            // stream only — a replay keeps AVPlayerViewController's native
+            // scrub/tap-to-toggle-controls behavior untouched (this L5 layer
+            // never mounts over a finished recording anyway). A transparent
+            // full-bleed tap target UNDER the chrome/rail/chat overlays below:
+            // their own Buttons still win the hit-test at their own bounds,
+            // this only catches taps in the open video area.
+            if item.isLive, controller.phase == .playing {
+                Color.clear
+                    .contentShape(Rectangle())
+                    .gesture(SpatialTapGesture(count: 2).onEnded { value in
+                        handleDoubleTapHeart(at: value.location)
+                    })
+            }
             if controller.phase != .ended { chrome }
+        }
+        .overlay {
+            // The big hearts themselves — absolutely positioned at the tap
+            // point, never hit-testable so they can never eat a later tap.
+            ForEach(bigHearts) { burst in
+                BigHeartBurstView().position(burst.point)
+            }
+            .allowsHitTesting(false)
         }
         .overlay(alignment: .bottomTrailing) {
             if item.isLive, controller.phase == .playing {
                 FloatingReactionsOverlay(queue: reactionQueue)
-                    .padding(.bottom, 190).padding(.trailing, 68)
+                    .padding(.bottom, 230).padding(.trailing, 66)
             }
         }
         .overlay(alignment: .trailing) {
@@ -239,9 +297,26 @@ struct LiveViewerPlayerView: View {
                 interactionRail.padding(.trailing, 12).padding(.bottom, 90)
             }
         }
+        .overlay(alignment: .bottomLeading) {
+            // Floating chat — anchored bottom-left, ~2/3 width, lower ~1/3 of
+            // the screen (owner's exact vision, replacing the modal sheet on
+            // the viewer side). Stays MOUNTED whenever the player is live so
+            // its 3s poll never resets — 💬 in the rail only toggles its own
+            // opacity/hit-testing, not its presence in the tree.
+            if item.isLive, controller.phase == .playing {
+                LiveFloatingChatOverlay(
+                    streamId: item.id, myUserId: auth.profile?.userId,
+                    handsRaisedCount: pulseController.pulse?.hands.count ?? 0,
+                    visible: $chatOverlayVisible
+                )
+                .frame(width: screenSize.width * 0.66, height: screenSize.height * 0.32)
+                .padding(.leading, 12)
+                .padding(.bottom, 96)
+            }
+        }
         .overlay(alignment: .top) {
             if item.isLive, controller.phase == .playing {
-                guestInviteCard.padding(.top, 150)
+                guestInviteCard.padding(.top, 168)
             }
         }
         .preferredColorScheme(.dark)
@@ -263,51 +338,105 @@ struct LiveViewerPlayerView: View {
             guard !handActionInFlight, let myId = auth.profile?.userId else { return }
             handRaised = (hands ?? []).contains { $0.userId == myId }
         }
-        .sheet(isPresented: $showChatSheet) {
-            LiveChatSheet(streamId: item.id, myUserId: auth.profile?.userId)
-                .presentationDetents([.medium])
-        }
         .sheet(isPresented: $showReplays) {
             LiveReplaysView(scope: replaysScope, cellId: replaysCellId, cellName: replaysCellName)
         }
     }
 
-    // MARK: L5 — reaction / hand / chat rail (bottom-trailing, TikTok/IG-live
-    // idiom) + the gold guest-invite card when a pastor has invited ME.
+    // MARK: Double-tap-to-love (video area)
 
-    private var interactionRail: some View {
-        VStack(spacing: 16) {
-            reactionButton(emoji: "love", systemImage: "heart.fill", tint: Color(hex: 0xE0245E))
-            reactionButton(emoji: "like", systemImage: "hand.thumbsup.fill", tint: Nuru.gold)
-            handToggleButton
-            railButton(icon: "message.fill") {
-                Haptics.tap(); showChatSheet = true
-            }
-            .accessibilityLabel("Live chat")
+    private func handleDoubleTapHeart(at point: CGPoint) {
+        // fireReaction() already fires the .love() haptic (and no-ops silently
+        // under the shared cooldown) — the big heart pop is purely visual and
+        // never gated by that cooldown, exactly like IG's double-tap, which
+        // always pops even if the last one was a moment ago.
+        if reduceMotion {
+            // Reduce Motion: no flying/popping heart — just the reaction
+            // itself, same as every other reaction path under Reduce Motion
+            // (ReactionBurstQueue's own static-counter fallback covers it).
+            fireReaction(emoji: "love")
+            return
+        }
+        let burst = BigHeartBurst(point: point)
+        bigHearts.append(burst)
+        fireReaction(emoji: "love")
+        Task {
+            try? await Task.sleep(nanoseconds: 900_000_000)
+            bigHearts.removeAll { $0.id == burst.id }
         }
     }
 
-    private func reactionButton(emoji: String, systemImage: String, tint: Color) -> some View {
-        Button {
-            guard !reactionCooldown else { return }
-            Haptics.love()
-            reactionQueue.spawn(emoji: emoji, reduceMotion: reduceMotion)   // optimistic, instant
-            reactionCooldown = true
-            Task {
-                try? await MemberAPI.reactToLiveStream(streamId: item.id, emoji: emoji)
-                try? await Task.sleep(nanoseconds: 900_000_000)   // mirrors the server's ≥1s/user rate limit
-                reactionCooldown = false
+    // MARK: L5+ — reaction / hand / chat rail (TikTok-style vertical stack,
+    // trailing edge) + the gold guest-invite card when a pastor has invited ME.
+
+    private var interactionRail: some View {
+        VStack(spacing: 14) {
+            reactionButton(.love)
+            reactionButton(.fire)
+            reactionButton(.like)
+            handToggleButton
+            railButton(icon: "message.fill", active: chatOverlayVisible) {
+                Haptics.tap(); chatOverlayVisible.toggle()
             }
-        } label: {
-            Image(systemName: systemImage)
-                .font(.system(size: 20))
-                .foregroundStyle(tint)
-                .frame(width: 44, height: 44)
-                .background(Color.black.opacity(0.35), in: Circle())
-                .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+            .accessibilityLabel(chatOverlayVisible ? "Hide live chat" : "Show live chat")
         }
-        .buttonStyle(.pressable)
-        .accessibilityLabel(emoji == "love" ? "Send a love reaction" : "Send a like reaction")
+    }
+
+    /// One reaction button + its TikTok-style abbreviated count underneath
+    /// ("999" / "1.2K" / "10K"), sourced from the pulse's server-side tally
+    /// so it reflects everyone's reactions, not just mine.
+    private func reactionButton(_ kind: LiveReactionKind) -> some View {
+        VStack(spacing: 3) {
+            Button {
+                fireReaction(emoji: kind.emoji)
+            } label: {
+                Image(systemName: kind.systemImage)
+                    .font(.system(size: 20))
+                    .foregroundStyle(kind.tint)
+                    .frame(width: 44, height: 44)
+                    .background(Color.black.opacity(0.35), in: Circle())
+                    .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+            if let n = reactionCount(kind), n > 0 {
+                Text(LiveCountFormat.abbreviated(n))
+                    .font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.85))
+                    .shadow(color: .black.opacity(0.5), radius: 2)
+            }
+        }
+        .accessibilityLabel(reactionAccessibilityLabel(kind))
+    }
+
+    private func reactionCount(_ kind: LiveReactionKind) -> Int? {
+        guard let r = pulseController.pulse?.reactions else { return nil }
+        switch kind {
+        case .love: return r.love
+        case .fire: return r.fire
+        case .like: return r.like
+        }
+    }
+
+    private func reactionAccessibilityLabel(_ kind: LiveReactionKind) -> String {
+        switch kind {
+        case .love: return "Send a love reaction"
+        case .fire: return "Send a fire reaction"
+        case .like: return "Send a like reaction"
+        }
+    }
+
+    /// Shared by the rail buttons AND the double-tap-the-video gesture — one
+    /// cooldown (mirrors the server's ≥1s/user rate limit across every
+    /// reaction kind, not per-kind) and one optimistic particle spawn.
+    private func fireReaction(emoji: String) {
+        guard !reactionCooldown else { return }
+        Haptics.love()
+        reactionQueue.spawn(emoji: emoji, reduceMotion: reduceMotion)   // optimistic, instant
+        reactionCooldown = true
+        Task {
+            try? await MemberAPI.reactToLiveStream(streamId: item.id, emoji: emoji)
+            try? await Task.sleep(nanoseconds: 900_000_000)   // mirrors the server's ≥1s/user rate limit
+            reactionCooldown = false
+        }
     }
 
     private var handToggleButton: some View {
@@ -412,7 +541,15 @@ struct LiveViewerPlayerView: View {
         await pulseController.pollNow()
     }
 
-    // MARK: Chrome — close ✕ · LIVE badge + viewer count · title/subtitle
+    // MARK: Chrome — close ✕ · LIVE pill + eye "N watching" chip ·
+    // broadcaster identity chip (IG-style) · title/subtitle · bottom scrim
+
+    /// Prefers the live pulse's own count (fresher, updates every 5s) over
+    /// the snapshot `item.viewerCount` was built from; falls back to that
+    /// snapshot until the first pulse poll lands.
+    private var displayViewerCount: Int? {
+        pulseController.pulse?.viewerCount ?? item.viewerCount
+    }
 
     private var chrome: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -433,10 +570,13 @@ struct LiveViewerPlayerView: View {
                         .padding(.horizontal, 9).padding(.vertical, 4)
                         .background(Color(hex: 0xDC2626), in: Capsule())
                     }
-                    if let vc = item.viewerCount {
+                    if let vc = displayViewerCount {
                         HStack(spacing: 4) {
-                            Icon(.users, size: 10, color: .white.opacity(0.9))
-                            Text("\(vc) watching").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.9))
+                            Icon(.eye, size: 10, color: .white.opacity(0.9))
+                            Text("\(LiveCountFormat.abbreviated(vc)) watching")
+                                .font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.9))
+                                .contentTransition(.numericText())
+                                .animation(.easeOut(duration: 0.25), value: vc)
                         }
                         .padding(.horizontal, 9).padding(.vertical, 4)
                         .background(Color.black.opacity(0.45), in: Capsule())
@@ -444,6 +584,25 @@ struct LiveViewerPlayerView: View {
                 }
             }
             .padding(.horizontal, 16).padding(.top, 10)
+
+            // Broadcaster identity chip — IG-style avatar + name, only when
+            // we actually know who's live (`LivePlayableItem.broadcasterName`,
+            // piped from `LiveStreamSummary.startedByName`; nil for a
+            // recording, which never reaches this branch anyway since it
+            // isn't `item.isLive`).
+            if item.isLive, let name = item.broadcasterName {
+                HStack(spacing: 8) {
+                    Avatar(url: nil, name: name, size: 28)
+                        .overlay(Circle().stroke(Color.white.opacity(0.55), lineWidth: 1.5))
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(name).font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
+                        Text("Host").font(.inter(9.5)).foregroundStyle(.white.opacity(0.6))
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(Color.black.opacity(0.32), in: Capsule())
+                .padding(.horizontal, 16).padding(.top, 10)
+            }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title).font(.fraunces(17, .semibold)).foregroundStyle(.white)
@@ -456,11 +615,21 @@ struct LiveViewerPlayerView: View {
 
             Spacer(minLength: 0)
         }
+        // Full-bleed bottom scrim (owner spec: "top+bottom gradient scrims")
+        // — keeps the rail/chat/captions legible over a bright frame, same
+        // idiom as the existing top scrim below.
+        .background(alignment: .bottom) {
+            LinearGradient(colors: [.clear, Color.black.opacity(0.6)], startPoint: .top, endPoint: .bottom)
+                .frame(height: 260)
+                .allowsHitTesting(false)
+        }
         .background(alignment: .top) {
             LinearGradient(colors: [.black.opacity(0.7), .clear], startPoint: .top, endPoint: .bottom)
                 .frame(height: 170)
         }
-        .ignoresSafeArea(edges: item.isAudio ? Edge.Set() : Edge.Set.top)
+        // Bottom too now (used to be top-only) — the new bottom scrim needs
+        // to reach the true screen edge, matching the top one.
+        .ignoresSafeArea(edges: item.isAudio ? Edge.Set() : [.top, .bottom])
         .allowsHitTesting(true)
     }
 
@@ -508,6 +677,29 @@ struct LiveViewerPlayerView: View {
             .buttonStyle(.pressable)
             .padding(.horizontal, 16).padding(.top, 10)
         }
+    }
+}
+
+/// One IG-style big heart pop for the video's double-tap gesture — scales up
+/// past 1x then settles back down while fading out, over ~0.9s. Purely
+/// decorative (`allowsHitTesting(false)` at the call site); never renders
+/// under Reduce Motion (the caller skips spawning one in that case).
+private struct BigHeartBurstView: View {
+    @State private var scale: CGFloat = 0.4
+    @State private var opacity: Double = 1
+
+    var body: some View {
+        Image(systemName: "heart.fill")
+            .font(.system(size: 88))
+            .foregroundStyle(Color(hex: 0xE0245E))
+            .shadow(color: .black.opacity(0.35), radius: 8)
+            .scaleEffect(scale)
+            .opacity(opacity)
+            .onAppear {
+                withAnimation(.spring(response: 0.35, dampingFraction: 0.55)) { scale = 1.15 }
+                withAnimation(.easeIn(duration: 0.25).delay(0.5)) { opacity = 0 }
+                withAnimation(.easeOut(duration: 0.5).delay(0.35)) { scale = 1.0 }
+            }
     }
 }
 

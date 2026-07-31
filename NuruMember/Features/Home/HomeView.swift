@@ -497,7 +497,8 @@ struct HomeView: View {
             DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
-        .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church") }
+        // `.id($0.id)` — flicker guard, see LiveViewerPlayerView's header note.
+        .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church").id($0.id) }
         .sheet(isPresented: $openReplays) { LiveReplaysView(scope: "church") }
         .sheet(isPresented: $showGoLiveSheet) {
             GoLiveSetupSheet { goLiveSession = $0 }
@@ -640,6 +641,32 @@ struct HomeView: View {
                         .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.pressable).padding(.leading, 8)
+                // Nuru Live header entry (2026-07-31 viewer redesign) — same
+                // visual family as the radio icon just before it (pulsing red
+                // ring, small glyph), shown ONLY while a church-scope stream
+                // is actually live (`churchLiveStream`, the same /live/now
+                // state that already drives the feed's top banner — no
+                // second poll). Tap opens the SAME full player the banner's
+                // "Watch live" does.
+                if let live = churchLiveStream {
+                    Button {
+                        Haptics.action()
+                        liveDiscovery.markSeen(live.streamId)
+                        openLiveItem = .live(live)
+                    } label: {
+                        ZStack {
+                            Circle().fill(Color(hex: 0xFEE2E2))
+                            Circle().stroke(Color(hex: 0xDC2626).opacity(0.35), lineWidth: 1)
+                            HomeLiveHeaderRing()
+                            Image(systemName: "waveform")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color(hex: 0xDC2626))
+                        }
+                        .frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .accessibilityLabel("Live now — \(live.title)")
+                }
                 // Nuru Live (L3) — gold "Go Live" affordance, visible ONLY when
                 // the signed-in profile actually holds the `live:go` grant
                 // (client-side advisory gate; the server is the real one).
@@ -2299,6 +2326,26 @@ private struct HomeLoadErrorCard: View {
         .padding(12)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+}
+
+// MARK: - Header LIVE entry ring (2026-07-31 viewer redesign) — a slow
+// breathing red ring around the header's live glyph, same "something is
+// happening right now" language as the LIVE badge's pulsing dot elsewhere
+// in this feature, just reshaped for a 40pt circular icon slot.
+
+private struct HomeLiveHeaderRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expand = false
+    var body: some View {
+        Circle()
+            .stroke(Color(hex: 0xDC2626), lineWidth: 1.5)
+            .scaleEffect(expand ? 1.28 : 1)
+            .opacity(expand ? 0 : 0.8)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) { expand = true }
+            }
     }
 }
 

@@ -76,15 +76,20 @@ struct LiveRecentReaction: Decodable, Sendable, Equatable {
 struct LiveReactionCounts: Decodable, Sendable, Equatable {
     let like: Int
     let love: Int
+    /// Third reaction kind, added alongside like/love (owner ask, 2026-07-31)
+    /// — decodes tolerantly to 0 so this client keeps working against a
+    /// pulse response from before the backend added it.
+    let fire: Int
 
-    private enum CodingKeys: String, CodingKey { case like, love }
+    private enum CodingKeys: String, CodingKey { case like, love, fire }
 
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         like = (try? c.decodeIfPresent(Int.self, forKey: .like)) ?? 0
         love = (try? c.decodeIfPresent(Int.self, forKey: .love)) ?? 0
+        fire = (try? c.decodeIfPresent(Int.self, forKey: .fire)) ?? 0
     }
-    init(like: Int = 0, love: Int = 0) { self.like = like; self.love = love }
+    init(like: Int = 0, love: Int = 0, fire: Int = 0) { self.like = like; self.love = love; self.fire = fire }
 }
 
 /// One raised hand — `pulse.hands`.
