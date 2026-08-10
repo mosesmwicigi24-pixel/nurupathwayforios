@@ -370,7 +370,17 @@ struct HomeView: View {
         s.append(("verse", AnyView(verseCard)))                                                    // 0 · Verse of the day (leads the feed)
         if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0a2 · Featured video (start here)
         if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0b · Live now
-        if let lt = vm.letter, lt.isUnread { s.append(("letter", AnyView(letterKnock(lt)))) }       // 0c · A letter for you (unread Sunday Letter)
+        // 0c · The Sunday Letter — an unread letter gets the gold "knock"; a
+        // read one gets a quiet row (still reachable, never urgent); no
+        // letter yet still says WHEN one arrives rather than showing nothing
+        // — the ritual is the point (owner brief, feat/sunday-letter-v2).
+        if let lt = vm.letter, lt.isUnread {
+            s.append(("letter", AnyView(letterKnock(lt))))
+        } else if let lt = vm.letter {
+            s.append(("letter", AnyView(letterReadRow(lt))))
+        } else {
+            s.append(("letter", AnyView(letterArrivalCard)))
+        }
         s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0d · The hour's prayer line (liturgy, Phase 4)
         s.append(("echo", AnyView(HomeEchoCard())))                                               // 0e · Today's echo — the app remembers you (Wave 1)
         if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority (top)
@@ -507,10 +517,13 @@ struct HomeView: View {
         }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
-                // Read on the server — clear the knock locally too.
+                // Read on the server — clear the knock locally too. Every v2
+                // field carries over unchanged; only readAt flips.
                 if let cur = vm.letter, cur.letterId == lt.letterId {
-                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, body: cur.body,
-                                               scriptureRef: cur.scriptureRef, createdAt: cur.createdAt,
+                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, title: cur.title,
+                                               salutation: cur.salutation, theme: cur.theme, imageKey: cur.imageKey,
+                                               body: cur.body, scriptureRef: cur.scriptureRef, highlights: cur.highlights,
+                                               nextStep: cur.nextStep, shareLine: cur.shareLine, createdAt: cur.createdAt,
                                                readAt: ISO8601DateFormatter().string(from: Date()))
                 }
             }
@@ -860,6 +873,68 @@ struct HomeView: View {
             .shadow(color: Color(hex: 0xC9A227).opacity(0.18), radius: 10, y: 5)
         }
         .buttonStyle(.pressableSubtle)
+    }
+
+    /// 0c (read) — the SAME letter once it's no longer new: a quiet row, not
+    /// a knock, so a member can always find their way back to it (and the
+    /// archive one tap further) without Home manufacturing false urgency for
+    /// something they've already read.
+    private func letterReadRow(_ lt: PastoralLetter) -> some View {
+        Button {
+            Haptics.tap()
+            openedLetter = lt
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.85))
+                        .frame(width: 38, height: 38)
+                    Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                        .foregroundStyle(Color(hex: 0x8A97AA))
+                    Text(lt.title).font(.fraunces(14, .semibold)).foregroundStyle(.white).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 14, color: Color(hex: 0x5C6B80))
+            }
+            .padding(13)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.09), lineWidth: 1))
+        }
+        .buttonStyle(.pressableSubtle)
+    }
+
+    /// 0c (anticipation) — no letter has arrived yet (a brand-new member, or
+    /// simply mid-week). Says WHEN rather than showing nothing: the ritual —
+    /// knowing something is coming — is the point, not just the payoff.
+    private var letterArrivalCard: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [Color(hex: 0x2C3B52), Color(hex: 0x18213A)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 44, height: 44)
+                Icon(.mail, size: 18, color: Color(hex: 0xB9C4D4))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                    .foregroundStyle(Color(hex: 0x8A97AA))
+                Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
+                Text("A short pastoral note, written from your own week.")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x8A97AA))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(
+            LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(Color.white.opacity(0.08), lineWidth: 1))
     }
 
     private func liveNowCard(_ info: (occ: CalendarOccurrence, startsInMin: Int?)) -> some View {
