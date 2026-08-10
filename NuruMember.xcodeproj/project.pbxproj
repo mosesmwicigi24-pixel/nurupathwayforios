@@ -22,6 +22,8 @@
 		DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0A2919201E148762801CB /* RTMPHaishinKit */; };
 		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
 		00DF0D31CD0B4129A03FF01E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 5F55E2A2E353454EBF8BDAB0 /* WebRTC */; };
+		1DBD78C7949A4ED39537CCD9 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = FF4AAF541A444C1799F1187B /* FirebaseCore */; };
+		E498EEF2CB2E48ADB2E10242 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = B31CA011440D4412828AFCC8 /* FirebaseCrashlytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -94,6 +96,8 @@
 				A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */,
 				DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */,
 				00DF0D31CD0B4129A03FF01E /* WebRTC in Frameworks */,
+				1DBD78C7949A4ED39537CCD9 /* FirebaseCore in Frameworks */,
+				E498EEF2CB2E48ADB2E10242 /* FirebaseCrashlytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -206,6 +210,7 @@
 				200000000000000000000111 /* Frameworks */,
 				200000000000000000000121 /* Resources */,
 				C9149281DCBC8B6B8ED84B35 /* Embed Foundation Extensions */,
+				82F2DBF0F7E8467BA06EA5F4 /* Upload Crashlytics dSYMs */,
 			);
 			buildRules = (
 			);
@@ -220,6 +225,8 @@
 				6DA0216FE218D406A8E8CFD9 /* HaishinKit */,
 				A1C0A2919201E148762801CB /* RTMPHaishinKit */,
 				5F55E2A2E353454EBF8BDAB0 /* WebRTC */,
+				FF4AAF541A444C1799F1187B /* FirebaseCore */,
+				B31CA011440D4412828AFCC8 /* FirebaseCrashlytics */,
 			);
 			productName = NuruMember;
 			productReference = 2000000000000000000000F1 /* NuruMember.app */;
@@ -270,6 +277,7 @@
 			packageReferences = (
 				6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */,
 				BEFB74ADCF2F405A8251E699 /* XCRemoteSwiftPackageReference "WebRTC" */,
+				5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 			);
 			productRefGroup = 2000000000000000000000C1 /* Products */;
 			projectDirPath = "";
@@ -305,6 +313,33 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		82F2DBF0F7E8467BA06EA5F4 /* Upload Crashlytics dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}.debug.dylib",
+			);
+			name = "Upload Crashlytics dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Uploads dSYMs so Crashlytics can symbolicate native + Swift stack traces.\n# Dependencies are SwiftPM-only (no CocoaPods in this repo); the path below\n# is where Xcode checks out firebase-ios-sdk for SPM.\n#\n# GUARD: verified directly against this SDK (12.17.0) that Crashlytics/run's\n# own validation step (`upload-symbols --build-phase --validate`) exits 13\n# (\"Could not get GOOGLE_APP_ID in Google Services file\") when no\n# GoogleService-Info.plist is present, and `run` treats a nonzero validate\n# as a hard failure — i.e. calling it unguarded WOULD BREAK EVERY BUILD\n# until the real plist exists. So, same no-op-until-configured guarantee as\n# CrashReporting.swift's launch guard: check the plist is actually in the\n# built app bundle before ever invoking Crashlytics/run.\nPLIST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/GoogleService-Info.plist\"\nCRASHLYTICS_RUN=\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nif [ ! -f \"$PLIST\" ]; then\n  echo \"note: GoogleService-Info.plist not found — skipping Crashlytics dSYM upload (expected until Firebase config is added)\"\nelif [ -f \"$CRASHLYTICS_RUN\" ]; then\n  \"$CRASHLYTICS_RUN\"\nelse\n  echo \"warning: Crashlytics run script not found at $CRASHLYTICS_RUN (package not resolved yet?) — skipping dSYM upload\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		200000000000000000000101 /* Sources */ = {
@@ -678,6 +713,14 @@
 				minimumVersion = 150.0.0;
 			};
 		};
+		5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.17.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -695,6 +738,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = BEFB74ADCF2F405A8251E699 /* XCRemoteSwiftPackageReference "WebRTC" */;
 			productName = WebRTC;
+		};
+		FF4AAF541A444C1799F1187B /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		B31CA011440D4412828AFCC8 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
