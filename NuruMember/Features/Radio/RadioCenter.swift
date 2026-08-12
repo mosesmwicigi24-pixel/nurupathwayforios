@@ -211,6 +211,28 @@ final class RadioCenter: ObservableObject {
         }
     }
 
+    // MARK: - Ducking (feat/liturgy-audio — the liturgy voice needs to be
+    // heard over the station without silently cutting worship music off)
+
+    /// Remembers the pre-duck volume so `unduck()` restores it exactly.
+    private var duckedVolume: Float?
+
+    /// Lower the station's output so another in-app voice (the liturgy
+    /// reader) can be heard clearly over it. A no-op if the station isn't
+    /// tuned or is already ducked — safe to call unconditionally.
+    func duck(to level: Float = 0.12) {
+        guard let player, duckedVolume == nil else { return }
+        duckedVolume = player.volume
+        player.volume = level
+    }
+
+    /// Restore the station's normal volume after a duck.
+    func unduck() {
+        guard let player, let prev = duckedVolume else { return }
+        player.volume = prev
+        duckedVolume = nil
+    }
+
     // MARK: - Player observation
 
     private func observe(item: AVPlayerItem, of avPlayer: AVPlayer, live: Bool) {
@@ -295,6 +317,7 @@ final class RadioCenter: ObservableObject {
         player = nil
         currentTime = 0
         duration = 0
+        duckedVolume = nil   // the old AVPlayer instance is gone — nothing left to restore
     }
 
     /// Rebuild the live player after the stream drops. Backoff 2/3/5/8s, up to
