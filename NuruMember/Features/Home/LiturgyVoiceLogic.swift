@@ -13,11 +13,11 @@
 //     device-supplied candidate list; pure so the fallback ladder (enhanced →
 //     default quality → nil, Commonwealth English before US) is provable
 //     without depending on whatever voices happen to be on THIS machine.
-//   • LiturgyAudioSource — PHASE 2 SEAM. `.recorded(URL)` is unused today
-//     (see LiturgyVoice.swift/LiturgyCards.swift), but `preferred(...)` is
-//     the one function that will need to change when the backend adds a
-//     pastor-recorded liturgy URL — everything downstream already speaks
-//     this enum.
+//   • LiturgyAudioSource — LIVE (feat/liturgy-recorded-voice): `.recorded(URL)`
+//     plays a pastor's own reading of the hour's liturgy when one exists (see
+//     LiturgyVoice.swift/LiturgyCards.swift); `preferred(...)` is the one
+//     function the call site defers to, so everything downstream just speaks
+//     this enum without caring which source it came from.
 import Foundation
 
 // MARK: - Spoken text shaping
@@ -194,20 +194,20 @@ enum LiturgyVoiceSelector {
     }
 }
 
-// MARK: - Audio source (today: synthesis only — PHASE 2 seam for a recording)
+// MARK: - Audio source (a pastor's own recording, when he's made one — else synthesis)
 
 enum LiturgyAudioSource: Equatable {
     case synthesized([LiturgySpeechSegment])
-    /// PHASE 2, not built: a pastor-recorded reading of the liturgy. The
-    /// engine (LiturgyVoice.swift) already knows how to play this — the only
-    /// missing piece is a URL on the wire (HomeLiturgy has none yet).
+    /// A pastor-recorded reading of this band's liturgy. The engine
+    /// (LiturgyVoice.swift) plays this exactly like synthesis — same session
+    /// hold, ducking, interruption handling, state machine.
     case recorded(URL)
 
-    /// Recorded audio is ALWAYS preferred over synthesis when present — the
-    /// whole point of leaving this seam. Today every call site passes
-    /// `recordedUrlString: nil` (no such field exists on HomeLiturgy yet), so
-    /// this always resolves to `.synthesized`; the day the backend adds one,
-    /// the call site changes by ONE argument and the engine needs no changes.
+    /// Recorded audio is ALWAYS preferred over synthesis when present. Most
+    /// bands, most of the time, have no recording — seven bands a day is 49 a
+    /// week, nobody sustains that, so `recordedUrlString: nil` is the PERMANENT
+    /// normal case, not a gap — and this falls back to `.synthesized` exactly
+    /// as gracefully as it always has, on nil, blank, or an unparseable URL.
     static func preferred(recordedUrlString: String?, segments: [LiturgySpeechSegment]) -> LiturgyAudioSource {
         let trimmed = (recordedUrlString ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty, let url = URL(string: trimmed) {

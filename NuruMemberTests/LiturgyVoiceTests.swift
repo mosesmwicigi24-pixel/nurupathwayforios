@@ -1,9 +1,10 @@
-// Liturgy voice (feat/liturgy-audio) — pins the PURE logic in
-// LiturgyVoiceLogic.swift: how a Scripture reference becomes spoken words,
-// how a HomeLiturgy's fields become an ordered reading, the playback state
-// machine, voice-selection fallback, and the Phase 2 recorded-audio seam.
-// None of this touches AVSpeechSynthesizer/AVAudioSession — see
-// LiturgyVoice.swift for the (untestable-on-CI) engine that drives it.
+// Liturgy voice (feat/liturgy-audio, feat/liturgy-recorded-voice) — pins the
+// PURE logic in LiturgyVoiceLogic.swift: how a Scripture reference becomes
+// spoken words, how a HomeLiturgy's fields become an ordered reading, the
+// playback state machine, voice-selection fallback, and the recorded-vs-
+// synthesized audio-source selection. None of this touches
+// AVSpeechSynthesizer/AVAudioSession — see LiturgyVoice.swift for the
+// (untestable-on-CI) engine that drives it.
 import XCTest
 @testable import NuruMember
 
@@ -233,9 +234,28 @@ final class LiturgyVoiceTests: XCTestCase {
         XCTAssertEqual(LiturgyAudioSource.preferred(recordedUrlString: "   ", segments: segments), .synthesized(segments))
     }
 
-    /// This is the state of the world TODAY — HomeLiturgy has no
-    /// recorded-audio field, so every call site passes nil and every
-    /// liturgy speaks synthesized, exactly as the owner asked to ship now.
+    /// A malformed URL string (one `URL(string:)` itself fails to parse) must
+    /// fall back exactly like nil/blank — never crash, never go silent. This
+    /// is distinct from the blank-string case above: the string is non-empty
+    /// but still unusable as a URL. NOTE: a raw space in the PATH is not
+    /// enough to trip this on modern Foundation — it auto-percent-encodes
+    /// path/query characters (`"…/morning file.m4a"` parses fine as
+    /// `…/morning%20file.m4a`). A space inside the HOST component, though,
+    /// is genuinely unparseable — that's what actually exercises this branch.
+    func testFallsBackToSynthesisWhenTheURLStringIsMalformed() {
+        let segments = [LiturgySpeechSegment(text: "Grace meets you here.", pauseAfter: 0)]
+        XCTAssertNil(URL(string: "https://media nuru.app/liturgy/morning.m4a"),
+                      "This fixture must itself be unparseable — otherwise this test proves nothing.")
+        XCTAssertEqual(
+            LiturgyAudioSource.preferred(recordedUrlString: "https://media nuru.app/liturgy/morning.m4a",
+                                          segments: segments),
+            .synthesized(segments))
+    }
+
+    /// A band with no recording — the PERMANENT normal case (mixed coverage
+    /// by design, not a gap to fill; see LiturgyVoiceLogic.swift's header).
+    /// The recorded-audio field exists on the wire now, but most bands, most
+    /// of the time, will still carry no URL, and must still speak synthesized.
     func testTodaysDefaultIsAlwaysSynthesizedWithNoRecordedUrlField() {
         let segments = LiturgySpeechText.segments(line: "Grace meets you here.", charge: nil,
                                                     verseLineText: nil, verseLineReference: nil, scriptureRef: "Psalm 23:1")
