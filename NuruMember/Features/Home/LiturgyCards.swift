@@ -253,16 +253,24 @@ struct HomeLiturgyCard: View {
         }
     }
 
+    /// Speaker = "tap to listen" (idle); pause/play mirror VoiceMessageBubble's
+    /// own convention elsewhere in the app once playback is actually underway,
+    /// so a mid-reading pause reads as resumable rather than as a reset.
+    private var listenIcon: Lucide {
+        switch voice.state {
+        case .idle: return .volume2
+        case .playing: return .pause
+        case .paused: return .play
+        }
+    }
+
     /// A small gold-on-navy circular toggle — never auto-plays, tap only.
-    /// Icon swaps play/pause states the same way VoiceMessageBubble does
-    /// elsewhere in the app, so the whole app answers a "listen" tap the
-    /// same visual way.
     private func listenButton(_ lit: HomeLiturgy) -> some View {
         Button {
             Haptics.tap()
             voice.toggle(spokenSource(for: lit))
         } label: {
-            Icon(voice.state == .playing ? .pause : .volume2, size: 12, color: Color(hex: 0xF2DDA0))
+            Icon(listenIcon, size: 12, color: Color(hex: 0xF2DDA0))
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.3), in: Circle())
                 .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
