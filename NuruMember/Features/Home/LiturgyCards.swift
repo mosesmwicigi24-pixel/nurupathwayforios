@@ -1,14 +1,18 @@
 // The liturgy Home + celebrations rail (intelligence Phase 4).
 //   • HomeLiturgyCard — Home breathes with the hours: the current part's prayer
 //     line (morning/midday/evening/night), coloured by the church season.
-//     Self-loading; collapses to nothing until the line arrives.
+//     Self-loading; collapses to nothing until the line arrives. Gives the
+//     hour a VOICE (feat/liturgy-audio) — a tap-only listen control reads the
+//     line + Scripture aloud on-device (LiturgyVoice.swift); never auto-plays.
 //   • CelebrationsRail — the congregation's recent milestones (server-detected,
 //     Phase 4 moments) with one-tap blessings (🙌 ❤️ 🔥), optimistic updates.
 import SwiftUI
 
 struct HomeLiturgyCard: View {
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var tabs: TabRouter
     @State private var lit: HomeLiturgy?
+    @StateObject private var voice = LiturgyVoiceEngine()
 
     private func partLabel(_ p: String) -> String {
         switch p {
@@ -157,12 +161,51 @@ struct HomeLiturgyCard: View {
                 }
             }
         }
-        .task { lit = try? await MemberAPI.homeLiturgy() }
+        // A decline toast (VoiceOver running / currently broadcasting / a
+        // session hiccup) — floats over the card without touching its
+        // carefully-budgeted height (tableauHeight), auto-dismisses itself.
+        .overlay(alignment: .top) {
+            if let reason = voice.declineReason {
+                Text(reason)
+                    .font(.inter(11, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.black.opacity(0.8), in: Capsule())
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: reason) {
+                        try? await Task.sleep(nanoseconds: 3_500_000_000)
+                        guard !Task.isCancelled else { return }
+                        withAnimation { voice.declineReason = nil }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: voice.declineReason)
+        .onChange(of: voice.declineReason) { _, reason in if reason != nil { Haptics.error() } }
+        .task {
+            voice.stop()   // a fresh fetch replaces the text — never keep reading the old one
+            lit = try? await MemberAPI.homeLiturgy()
+        }
         .onChange(of: scenePhase) { _, phase in
             // The tab shell keeps Home alive for the whole session — without
             // this an overnight-resident app shows yesterday's card forever.
-            if phase == .active { Task { lit = try? await MemberAPI.homeLiturgy() } }
+            if phase == .active {
+                Task { voice.stop(); lit = try? await MemberAPI.homeLiturgy() }
+            } else {
+                voice.stop()   // backgrounding/locking — never keep talking off-screen
+            }
         }
+        // Switching tabs never removes this view (RootView keeps every
+        // loaded tab mounted at opacity 0 — see RootView.body) so
+        // `.onDisappear` alone would NOT catch "the member left Home for
+        // Pathway/Plans/You/Live". This is the signal that does.
+        .onChange(of: tabs.selected) { _, selected in
+            if selected != .home { voice.stop() }
+        }
+        // Belt-and-suspenders for any OTHER way this view genuinely leaves
+        // the hierarchy (it normally won't, per the note above).
+        .onDisappear { voice.stop() }
     }
 
     /// The hour + brand row — shared by the tableau (top overlay) and the
@@ -183,7 +226,58 @@ struct HomeLiturgyCard: View {
                 .lineLimit(1)
             Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
             Spacer(minLength: 0)
+            listenButton(lit)
         }
+    }
+
+    // MARK: - Listen control (feat/liturgy-audio)
+
+    /// What the voice engine should say for this liturgy — mirrors exactly
+    /// what the card SHOWS (line → charge → verse-line-or-scriptureRef).
+    /// `recordedUrlString: nil` — the PHASE 2 seam (see LiturgyVoiceLogic.swift):
+    /// HomeLiturgy has no pastor-recorded-audio field yet, so this always
+    /// resolves to synthesis; the day the backend adds one, this one line
+    /// changes and the engine needs no rewrite.
+    private func spokenSource(for lit: HomeLiturgy) -> LiturgyAudioSource {
+        .preferred(recordedUrlString: nil, segments: LiturgySpeechText.segments(
+            line: lit.line, charge: lit.charge,
+            verseLineText: lit.verseLine?.text, verseLineReference: lit.verseLine?.reference,
+            scriptureRef: lit.scriptureRef))
+    }
+
+    private var listenAccessibilityLabel: String {
+        switch voice.state {
+        case .idle: return "Listen to today's liturgy"
+        case .playing: return "Pause the liturgy reading"
+        case .paused: return "Resume the liturgy reading"
+        }
+    }
+
+    /// Speaker = "tap to listen" (idle); pause/play mirror VoiceMessageBubble's
+    /// own convention elsewhere in the app once playback is actually underway,
+    /// so a mid-reading pause reads as resumable rather than as a reset.
+    private var listenIcon: Lucide {
+        switch voice.state {
+        case .idle: return .volume2
+        case .playing: return .pause
+        case .paused: return .play
+        }
+    }
+
+    /// A small gold-on-navy circular toggle — never auto-plays, tap only.
+    private func listenButton(_ lit: HomeLiturgy) -> some View {
+        Button {
+            Haptics.tap()
+            voice.toggle(spokenSource(for: lit))
+        } label: {
+            Icon(listenIcon, size: 12, color: Color(hex: 0xF2DDA0))
+                .frame(width: 24, height: 24)
+                .background(Color.black.opacity(0.3), in: Circle())
+                .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(listenAccessibilityLabel)
+        .accessibilityHint("Reads the current hour's prayer line and Bible reference aloud, on this device.")
     }
 }
 
