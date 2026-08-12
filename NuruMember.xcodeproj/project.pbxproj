@@ -12,6 +12,7 @@
 		A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA0216FE218D406A8E8CFD9 /* HaishinKit */; };
 		ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */; };
 		99900E55D19AED44A6097A04 /* SundayLetterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F88539430BED8B14C0153AF /* SundayLetterTests.swift */; };
+		2DB55733AFA86B039404A7B0 /* LiturgyVoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */; };
 		1AE1C1F0A5A94B3097D6C201 /* LiveInteractionsDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */; };
 		2155FB891D4D49C395110CB5 /* GuestAudioPlayoutDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */; };
 		D44F50FF1A7741D69BBA9768 /* WhipBasicAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B78F37184A54D1E87236580 /* WhipBasicAuthTests.swift */; };
@@ -66,6 +67,7 @@
 		7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NuruMemberTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
 		5F88539430BED8B14C0153AF /* SundayLetterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SundayLetterTests.swift; sourceTree = "<group>"; };
+		1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiturgyVoiceTests.swift; sourceTree = "<group>"; };
 		1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveInteractionsDecodingTests.swift; sourceTree = "<group>"; };
 		DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GuestAudioPlayoutDeviceTests.swift; sourceTree = "<group>"; };
 		2B78F37184A54D1E87236580 /* WhipBasicAuthTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WhipBasicAuthTests.swift; sourceTree = "<group>"; };
@@ -134,6 +136,7 @@
 				02447D9726EC44E083127526 /* LiveReactionKindTests.swift */,
 				F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */,
 				C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */,
+				1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */,
 			);
 			name = NuruMemberTests;
 			path = NuruMemberTests;
@@ -365,6 +368,7 @@
 				4298D72347954E72B66689F6 /* LiveReactionKindTests.swift in Sources */,
 				E8E95F72C72B3A623C715BAC /* LiveStageTests.swift in Sources */,
 				EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */,
+				2DB55733AFA86B039404A7B0 /* LiturgyVoiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
