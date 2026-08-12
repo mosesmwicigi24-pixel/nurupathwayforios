@@ -11,8 +11,17 @@ import SwiftUI
 struct HomeLiturgyCard: View {
     @Environment(\.scenePhase) private var scenePhase
     @EnvironmentObject private var tabs: TabRouter
+    @EnvironmentObject private var auth: AuthStore
     @State private var lit: HomeLiturgy?
     @StateObject private var voice = LiturgyVoiceEngine()
+    @State private var showRecordingsManager = false
+
+    /// Admin/SuperAdmin only — narrower than the Instructor+ ladder used for
+    /// module voice notes elsewhere (ModuleView.swift's `canLeaveVoiceNote`);
+    /// the backend gates admin/liturgy/recordings with requireRole("Admin").
+    private var canManageRecordings: Bool {
+        ["Admin", "SuperAdmin"].contains(auth.profile?.role ?? "")
+    }
 
     private func partLabel(_ p: String) -> String {
         switch p {
@@ -206,6 +215,9 @@ struct HomeLiturgyCard: View {
         // Belt-and-suspenders for any OTHER way this view genuinely leaves
         // the hierarchy (it normally won't, per the note above).
         .onDisappear { voice.stop() }
+        .sheet(isPresented: $showRecordingsManager) {
+            LiturgyRecordingsSheet()
+        }
     }
 
     /// The hour + brand row — shared by the tableau (top overlay) and the
@@ -226,20 +238,40 @@ struct HomeLiturgyCard: View {
                 .lineLimit(1)
             Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
             Spacer(minLength: 0)
+            if canManageRecordings { recordManageButton }
             listenButton(lit)
         }
+    }
+
+    // MARK: - Record-your-voice affordance (Admin/SuperAdmin only)
+
+    /// A small, unobtrusive control next to the listen button — opens the
+    /// full 7-band recorder list (LiturgyRecorder.swift). Never shown to a
+    /// member; never a badge/counter (see that file's header for why).
+    private var recordManageButton: some View {
+        Button {
+            Haptics.tap()
+            showRecordingsManager = true
+        } label: {
+            Icon(.mic, size: 12, color: Color(hex: 0xF2DDA0))
+                .frame(width: 24, height: 24)
+                .background(Color.black.opacity(0.3), in: Circle())
+                .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Manage your recorded liturgy readings")
     }
 
     // MARK: - Listen control (feat/liturgy-audio)
 
     /// What the voice engine should say for this liturgy — mirrors exactly
     /// what the card SHOWS (line → charge → verse-line-or-scriptureRef).
-    /// `recordedUrlString: nil` — the PHASE 2 seam (see LiturgyVoiceLogic.swift):
-    /// HomeLiturgy has no pastor-recorded-audio field yet, so this always
-    /// resolves to synthesis; the day the backend adds one, this one line
-    /// changes and the engine needs no rewrite.
+    /// `recordedUrlString: lit.recordedAudioUrl` — the pastor's own voice for
+    /// this band when he's recorded one; null (most bands, most of the time —
+    /// mixed coverage is permanent, not a gap) falls back to synthesis via
+    /// `LiturgyAudioSource.preferred` (see LiturgyVoiceLogic.swift).
     private func spokenSource(for lit: HomeLiturgy) -> LiturgyAudioSource {
-        .preferred(recordedUrlString: nil, segments: LiturgySpeechText.segments(
+        .preferred(recordedUrlString: lit.recordedAudioUrl, segments: LiturgySpeechText.segments(
             line: lit.line, charge: lit.charge,
             verseLineText: lit.verseLine?.text, verseLineReference: lit.verseLine?.reference,
             scriptureRef: lit.scriptureRef))
