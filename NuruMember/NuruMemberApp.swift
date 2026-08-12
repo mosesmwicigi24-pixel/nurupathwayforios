@@ -12,6 +12,9 @@ struct NuruMemberApp: App {
     @Environment(\.scenePhase) private var scenePhase
 
     init() {
+        // Crash-reporting bring-up: safe no-op until a real
+        // GoogleService-Info.plist exists (see CrashReporting.swift).
+        CrashReporting.configureIfAvailable()
         configureNuruCaches()
         Nuru.registerFonts()
         Self.configureAppearance()
