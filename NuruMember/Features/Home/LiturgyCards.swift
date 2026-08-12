@@ -121,6 +121,7 @@ struct HomeLiturgyCard: View {
                                         .foregroundStyle(Color(hex: 0xE0B85E))
                                         .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
                                 }
+                                pastorVoiceButton(lit)
                             }
                             .padding(18)
                         }
@@ -154,6 +155,7 @@ struct HomeLiturgyCard: View {
                                 .font(.inter(10, .bold)).kerning(1.4)
                                 .foregroundStyle(Color(hex: 0xE0B85E))
                         }
+                        pastorVoiceButton(lit)
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,15 +273,56 @@ struct HomeLiturgyCard: View {
     /// mixed coverage is permanent, not a gap) falls back to synthesis via
     /// `LiturgyAudioSource.preferred` (see LiturgyVoiceLogic.swift).
     private func spokenSource(for lit: HomeLiturgy) -> LiturgyAudioSource {
-        .preferred(recordedUrlString: lit.recordedAudioUrl, segments: LiturgySpeechText.segments(
+        // Deliberately NOT `.preferred(recordedUrlString:…)`. Listen always
+        // synthesises TODAY'S TEXT, because the liturgy is recomposed daily
+        // (new spine, new memory) while a recording is a STANDING per-band
+        // asset the pastor replaces occasionally. Letting the recording
+        // silently take over this button meant a member read one thing on the
+        // card and heard the pastor say something else — which reads as a bug,
+        // not a blessing. His voice now has its own control below.
+        .synthesized(LiturgySpeechText.segments(
             line: lit.line, charge: lit.charge,
             verseLineText: lit.verseLine?.text, verseLineReference: lit.verseLine?.reference,
             scriptureRef: lit.scriptureRef))
     }
 
+    /// The pastor's own standing word for THIS hour — a separate thing from
+    /// the day's liturgy, and labelled as such. Absent for most bands most of
+    /// the time; mixed coverage is permanent and normal, so there is no empty
+    /// state, no "not yet recorded", nothing to complete.
+    @ViewBuilder
+    private func pastorVoiceButton(_ lit: HomeLiturgy) -> some View {
+        if let raw = lit.recordedAudioUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty, let url = URL(string: raw) {
+            Button {
+                Haptics.tap()
+                voice.toggle(.recorded(url))
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(.volume2, size: 11, color: Color(hex: 0xF2DDA0))
+                    Text("A word for this hour — Pastor Moses")
+                        .font(.inter(11, .semibold))
+                        .foregroundStyle(Color(hex: 0xF2DDA0))
+                    if let secs = lit.recordedAudioDurationSec, secs > 0 {
+                        Text("\(secs)s")
+                            .font(.inter(10))
+                            .foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.7))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.3), in: Capsule())
+                .overlay(Capsule().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Play Pastor Moses's own word for this hour")
+            .accessibilityHint("His recorded blessing for this time of day. Separate from the written liturgy above.")
+        }
+    }
+
     private var listenAccessibilityLabel: String {
         switch voice.state {
-        case .idle: return "Listen to today's liturgy"
+        case .idle: return "Listen to today's liturgy read aloud"
         case .playing: return "Pause the liturgy reading"
         case .paused: return "Resume the liturgy reading"
         }
@@ -309,7 +352,7 @@ struct HomeLiturgyCard: View {
         }
         .buttonStyle(.pressable)
         .accessibilityLabel(listenAccessibilityLabel)
-        .accessibilityHint("Reads the current hour's prayer line and Bible reference aloud, on this device.")
+        .accessibilityHint("Reads the words shown above aloud, on this device.")
     }
 }
 
