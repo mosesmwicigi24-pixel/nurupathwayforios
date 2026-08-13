@@ -18,6 +18,13 @@ struct HomeLiturgy: Codable, Sendable {
     var band: String? = nil        // one of the 7 time-of-day bands (server-only art selection)
     var charge: String? = nil      // a second, subdued exhortation line
     var verseLine: LiturgyVerseLine? = nil
+    // Pastor's-own-voice (feat/liturgy-recorded-voice) — both null whenever the
+    // CURRENT band has no recording, which is the normal case for most bands,
+    // most of the time (mixed coverage is permanent, not a gap to fill). See
+    // LiturgyVoiceLogic.swift's LiturgyAudioSource.preferred for how this
+    // resolves to recorded-vs-synthesized playback.
+    var recordedAudioUrl: String? = nil
+    var recordedAudioDurationSec: Int? = nil
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         part = (try? c.decodeIfPresent(String.self, forKey: .part)) ?? "morning"
@@ -29,6 +36,8 @@ struct HomeLiturgy: Codable, Sendable {
         band = try? c.decodeIfPresent(String.self, forKey: .band)
         charge = try? c.decodeIfPresent(String.self, forKey: .charge)
         verseLine = try? c.decodeIfPresent(LiturgyVerseLine.self, forKey: .verseLine)
+        recordedAudioUrl = try? c.decodeIfPresent(String.self, forKey: .recordedAudioUrl)
+        recordedAudioDurationSec = try? c.decodeIfPresent(Int.self, forKey: .recordedAudioDurationSec)
     }
 }
 

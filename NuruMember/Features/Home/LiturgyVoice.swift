@@ -27,13 +27,11 @@
 //   - Handles a phone-call interruption by pausing (not stopping) — iOS
 //     hands back `.shouldResume` when the call ends and playback picks up
 //     from the same word, mirroring RadioCenter/ChatVoicePlayer.
-//   - PHASE 2 seam: `LiturgyAudioSource.recorded(URL)` already has a real
-//     playback path here (`playRecorded`), sharing the exact same session/
-//     duck/interruption/state-machine plumbing as synthesis. Nothing calls
-//     it today — HomeLiturgy has no recorded-audio field yet — but the day
-//     the backend adds one, only the call site in LiturgyCards.swift needs
-//     to change (pass the URL instead of `nil`); this engine needs no
-//     rewrite.
+//   - LIVE (feat/liturgy-recorded-voice): `LiturgyAudioSource.recorded(URL)`
+//     plays a pastor's own reading via `playRecorded`, sharing the exact same
+//     session/duck/interruption/state-machine plumbing as synthesis.
+//     LiturgyCards.swift picks recorded-vs-synthesized per band; this engine
+//     doesn't care which it got — it just plays the source it's handed.
 import AVFoundation
 import Combine
 import UIKit
@@ -222,7 +220,7 @@ final class LiturgyVoiceEngine: NSObject, ObservableObject {
         return AVSpeechSynthesisVoice(identifier: chosen.identifier)
     }()
 
-    // MARK: - Recorded (PHASE 2 seam — no caller today, see file header)
+    // MARK: - Recorded (a pastor's own voice — live, see file header)
 
     private func playRecorded(_ url: URL) {
         let item = AVPlayerItem(url: url)
