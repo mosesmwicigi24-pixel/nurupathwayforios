@@ -32,6 +32,8 @@ struct ProfileView: View {
 
     // Sheets
     @State private var editingField: PField?
+    /// Drives the MEMBER ID row's brief "COPIED" confirmation.
+    @State private var justCopied = false
     @State private var viewingBadge: PBadgeItem?
     @State private var showAllBadges = false
     @AppStorage("streakQuiet") private var streakQuiet = false
@@ -353,11 +355,36 @@ struct ProfileView: View {
                     Text("MEMBER ID").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                     Icon(.lock, size: 9, color: Color(hex: 0x74808F))
                 }
-                Text(memberIdLabel).font(.fraunces(13, .semibold)).foregroundStyle(Nuru.navy)
+                Text(memberIdLabel)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Nuru.navy)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .textSelection(.enabled)
             }
             Spacer(minLength: 0)
-            Text("PERMANENT").font(.inter(9, .semibold)).kerning(0.9).foregroundStyle(Color(hex: 0x74808F))
+            // 36 characters is not something anyone retypes, so the whole row
+            // copies. "PERMANENT" becomes "COPIED" for a beat — the label is
+            // the confirmation, so the layout never shifts.
+            Text(justCopied ? "COPIED" : "PERMANENT")
+                .font(.inter(9, .semibold)).kerning(0.9)
+                .foregroundStyle(justCopied ? Color(hex: 0xA8861C) : Color(hex: 0x74808F))
+                .animation(.easeOut(duration: 0.18), value: justCopied)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let uid = p?.userId else { return }
+            UIPasteboard.general.string = uid
+            Haptics.tap()
+            withAnimation { justCopied = true }
+            Task {
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                withAnimation { justCopied = false }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Member ID, permanent. Double tap to copy.")
+        .accessibilityValue(memberIdLabel)
         .padding(10)
         .background(
             LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.surface], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -367,12 +394,20 @@ struct ProfileView: View {
         .padding(.bottom, Nuru.S.sm)
     }
 
-    /// NRU-<uuid prefix>-<join year> — derived from the real user id + enrollment.
-    private var memberIdLabel: String {
-        guard let uid = p?.userId, let first = uid.split(separator: "-").first else { return "—" }
-        let year = auth.me?.enrollment.map { String($0.startedAt.prefix(4)) }
-        return "NRU-\(first.uppercased())" + (year.map { "-\($0)" } ?? "")
-    }
+    /// The member's `user_id` — the actual server-issued identifier, in full.
+    ///
+    /// This used to render "NRU-" + the first eight characters + the join year.
+    /// That read like an official reference and was not one: it could not be
+    /// pasted into a query, looked up in the portal, or quoted to anyone,
+    /// because no such value exists anywhere in the system. Android derived its
+    /// own variant from the LAST eight characters with the year hardcoded to
+    /// 2026, so the same member saw two different "member IDs" depending on
+    /// which phone they opened.
+    ///
+    /// A UUID is not pretty. It is, however, the one identifier the owner
+    /// assigns and nothing else can change — every other field on this screen
+    /// is editable — so it is what belongs under "MEMBER ID".
+    private var memberIdLabel: String { p?.userId ?? "—" }
 
     /// Languages spoken — display-only: PATCH /me has no spoken-languages field
     /// (only `locale`), so the default is derived from the member's real locale.
