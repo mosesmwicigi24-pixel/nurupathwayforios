@@ -211,14 +211,23 @@ struct ProfileView: View {
                         Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
                             .lineLimit(1).truncationMode(.middle)
                     }
-                    HStack(spacing: 4) {
-                        Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
-                        Text("Level \(auth.me?.enrollment?.currentLevel ?? 1)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    // Only when there IS a level. This read
+                    // `currentLevel ?? 1` and so told every member without an
+                    // enrollment that they were on Level 1 — which for 28 people
+                    // was false for up to 42 days while they waited to be placed
+                    // (backend #420 / migration 193). A missing standing must
+                    // look missing; inventing a reassuring one is how nobody
+                    // noticed they were stuck.
+                    if let level = auth.me?.enrollment?.currentLevel {
+                        HStack(spacing: 4) {
+                            Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
+                            Text("Level \(level)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Color.white, in: Capsule())
+                        .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+                        .padding(.top, 2)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
-                    .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
             }
@@ -597,11 +606,20 @@ struct ProfileView: View {
         rows.append(PMilestone(id: "baptism", label: "Baptism",
                                meta: baptized ? "Recorded — welcome to the family" : "Not yet recorded",
                                status: baptized ? .done : .future))
-        let level = max(auth.me?.enrollment?.currentLevel ?? 1, 1)
-        for l in 1..<level {
-            rows.append(PMilestone(id: "lvl\(l)", label: "Level \(l) completed", meta: "Completed", status: .done))
+        // Without an enrollment there is no level in progress to report. The
+        // old `?? 1` printed "Level 1 · in progress · Keep going" to members who
+        // had not been placed on the pathway at all — an encouragement to keep
+        // doing something they had never been able to start.
+        if let level = auth.me?.enrollment?.currentLevel, level >= 1 {
+            for l in 1..<level {
+                rows.append(PMilestone(id: "lvl\(l)", label: "Level \(l) completed", meta: "Completed", status: .done))
+            }
+            rows.append(PMilestone(id: "lvl\(level)", label: "Level \(level) · in progress", meta: "Keep going", status: .active))
+        } else {
+            rows.append(PMilestone(id: "lvl-pending", label: "Your pathway",
+                                   meta: "Starting soon — your leader is setting you up",
+                                   status: .future))
         }
-        rows.append(PMilestone(id: "lvl\(level)", label: "Level \(level) · in progress", meta: "Keep going", status: .active))
         rows.append(PMilestone(id: "completion", label: "Pathway completion", meta: "Your journey continues", status: .future))
         return rows
     }
@@ -1047,7 +1065,11 @@ private struct CertificateCardView: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(cert.title).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                    Text("Level \(cert.levelNumber ?? 1) · Issued \(formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10)))")
+                    // A certificate with no level_number is not a Level 1
+                    // certificate — it is a certificate whose level we do not
+                    // have. Say the issue date and stop.
+                    Text(cert.levelNumber.map { "Level \($0) · Issued " } .map { $0 + (formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10))) }
+                         ?? "Issued \(formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10)))")
                         .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 Spacer(minLength: 0)
