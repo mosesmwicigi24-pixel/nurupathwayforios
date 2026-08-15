@@ -287,9 +287,16 @@ struct ProfileView: View {
 
     // MARK: Personal information
 
-    /// Editable field definitions — PATCH /me accepts these (email is the login
-    /// identity and intentionally NOT writable, §5.8 mass-assignment guard).
+    /// Editable field definitions — PATCH /me accepts these.
+    ///
+    /// Email joined the list on 2026-08-15 (owner ruling: user_id is the
+    /// assigned identifier, everything else may change). It had been withheld as
+    /// "the login identity", but a credential a member cannot correct is a trap
+    /// rather than a safeguard — an address mistyped at signup used to need an
+    /// admin. The server trims and lowercases it, refuses one another live
+    /// account holds (409), and records the change.
     private static let fields: [PField] = [
+        PField(id: "email", label: "Email", icon: .mail, kind: .email),
         PField(id: "name", label: "Full name", icon: .user, kind: .text),
         PField(id: "phone", label: "Phone", icon: .phone, kind: .phone),
         PField(id: "dob", label: "Date of birth", icon: .calendar, kind: .date),
@@ -309,6 +316,7 @@ struct ProfileView: View {
     private func currentValue(for f: PField) -> String {
         switch f.id {
         case "name": return p?.fullName ?? ""
+        case "email": return p?.email ?? ""
         case "phone": return p?.phoneNumber ?? ""
         case "dob": return String((p?.dateOfBirth ?? "").prefix(10))
         case "gender": return p?.gender ?? ""
@@ -321,6 +329,7 @@ struct ProfileView: View {
     private func displayValue(for f: PField) -> String {
         switch f.id {
         case "name": return p?.fullName ?? "—"
+        case "email": return p?.email ?? "Not set"
         case "phone": return p?.phoneNumber ?? "Not set"
         case "dob": return formattedDOB
         case "gender":
@@ -335,8 +344,6 @@ struct ProfileView: View {
     private var personalInfo: some View {
         sectionCard("PERSONAL INFORMATION", icon: .user) {
             memberIdRow
-            infoRow(.mail, "EMAIL", p?.email ?? "—")   // login identity — not editable (§5.8)
-            Divider()
             ForEach(Self.fields) { f in
                 Button { Haptics.tap(); editingField = f } label: {
                     infoRow(f.icon, f.label.uppercased(), displayValue(for: f), editable: true)
@@ -780,7 +787,7 @@ func formatISODay(_ iso: String) -> String? {
 private struct POption: Hashable { let value: String; let label: String }
 
 private struct PField: Identifiable {
-    enum Kind { case text, phone, date, select }
+    enum Kind { case text, phone, email, date, select }
     let id: String
     let label: String
     let icon: Lucide
@@ -792,6 +799,7 @@ private struct PField: Identifiable {
 /// `rowVersion` drives the server's optimistic-concurrency check.
 private struct UpdateMeBody: Encodable {
     var fullName: String?
+    var email: String?
     var phoneNumber: String?
     var gender: String?
     var city: String?
@@ -1329,9 +1337,14 @@ private struct EditFieldSheet: View {
                         .datePickerStyle(.wheel)
                         .labelsHidden()
                         .frame(maxWidth: .infinity)
-                case .text, .phone:
+                case .text, .phone, .email:
                     TextField(field.label, text: $text)
-                        .keyboardType(field.kind == .phone ? .phonePad : .default)
+                        .keyboardType(field.kind == .phone ? .phonePad : field.kind == .email ? .emailAddress : .default)
+                        // An address typed with autocapitalisation is a login
+                        // that silently fails; the server lowercases it anyway,
+                        // but the member should see what will be saved.
+                        .textInputAutocapitalization(field.kind == .email ? .never : .sentences)
+                        .autocorrectionDisabled(field.kind == .email)
                         .font(.inter(14)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, Nuru.S.base).frame(height: 48)
                         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1363,7 +1376,7 @@ private struct EditFieldSheet: View {
         case .date:
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
             return f.string(from: date)
-        case .text, .phone: return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .text, .phone, .email: return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -1375,6 +1388,7 @@ private struct EditFieldSheet: View {
         var body = UpdateMeBody(rowVersion: rowVersion)
         switch field.id {
         case "name": body.fullName = value
+        case "email": body.email = value
         case "phone": body.phoneNumber = value
         case "dob": body.dateOfBirth = value
         case "gender": body.gender = value
