@@ -297,6 +297,8 @@ struct HomeView: View {
     // Nuru Live (L2, viewer-only) — the church-scope LIVE banner's player + replays.
     @State private var openLiveItem: LivePlayableItem?
     @State private var openReplays = false
+    /// Church service check-in, presented from the header's scan button.
+    @State private var showServiceScanner = false
     // Nuru Live discovery — the shared "invite loudly, never hijack" center
     // that also drives the app-wide LIVE bar and notification routing; Home
     // feeds it every /live/now poll and shows its mini-window pop-up.
@@ -509,6 +511,13 @@ struct HomeView: View {
             DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
+        // Church check-in — presented, not pushed, so the camera is a modal the
+        // member dismisses back to exactly where they were.
+        .fullScreenCover(isPresented: $showServiceScanner) {
+            ServiceCheckInView(memberName: auth.profile?.fullName ?? "",
+                               memberPhone: auth.profile?.phoneNumber ?? "",
+                               memberEmail: auth.profile?.email)
+        }
         // `.id($0.id)` — flicker guard, see LiveViewerPlayerView's header note.
         .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church").id($0.id) }
         .sheet(isPresented: $openReplays) { LiveReplaysView(scope: "church") }
@@ -630,6 +639,22 @@ struct HomeView: View {
                         .lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Church check-in. First in the row because it is the most
+                // time-critical thing a member does from this screen: they are
+                // walking through the door and the QR is already on the wall,
+                // so it must not cost a trip through the You tab to reach.
+                Button {
+                    Haptics.tap()
+                    showServiceScanner = true
+                } label: {
+                    Icon(.qrCode, size: 18, color: Color(hex: 0xA8861C))
+                        .frame(width: 40, height: 40)
+                        .background(Color(hex: 0xFFF4DA), in: Circle())
+                        .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Scan to check in")
+                .padding(.trailing, 8)
                 NavigationLink(value: AppRoute.notifications) {
                     ZStack(alignment: .topTrailing) {
                         Icon(.bell, size: 18, color: Color(hex: 0xA8861C))
