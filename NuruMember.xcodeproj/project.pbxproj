@@ -20,6 +20,7 @@
 		BA244F042CAF4D95B69CE9D6 /* WhepRetryPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0550504149BF4DC8B1585EAE /* WhepRetryPolicyTests.swift */; };
 		4298D72347954E72B66689F6 /* LiveReactionKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02447D9726EC44E083127526 /* LiveReactionKindTests.swift */; };
 		E8E95F72C72B3A623C715BAC /* LiveStageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */; };
+		A1B2C3D4E5F60718293A4B5D /* ServiceQRParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* ServiceQRParseTests.swift */; };
 		EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */; };
 		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0A2919201E148762801CB /* RTMPHaishinKit */; };
@@ -76,6 +77,7 @@
 		0550504149BF4DC8B1585EAE /* WhepRetryPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WhepRetryPolicyTests.swift; sourceTree = "<group>"; };
 		02447D9726EC44E083127526 /* LiveReactionKindTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveReactionKindTests.swift; sourceTree = "<group>"; };
 		F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveStageTests.swift; sourceTree = "<group>"; };
+		A1B2C3D4E5F60718293A4B5C /* ServiceQRParseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceQRParseTests.swift; sourceTree = "<group>"; };
 		C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveDockChromeTests.swift; sourceTree = "<group>"; };
 		E694577B48D734E91F73C524 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -140,6 +142,7 @@
 				C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */,
 				1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */,
 				1A84FD50DB9FFE34C1B7CB9B /* LiturgyRecorderLogicTests.swift */,
+				A1B2C3D4E5F60718293A4B5C /* ServiceQRParseTests.swift */,
 			);
 			name = NuruMemberTests;
 			path = NuruMemberTests;
@@ -370,6 +373,7 @@
 				BA244F042CAF4D95B69CE9D6 /* WhepRetryPolicyTests.swift in Sources */,
 				4298D72347954E72B66689F6 /* LiveReactionKindTests.swift in Sources */,
 				E8E95F72C72B3A623C715BAC /* LiveStageTests.swift in Sources */,
+				A1B2C3D4E5F60718293A4B5D /* ServiceQRParseTests.swift in Sources */,
 				EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */,
 				2DB55733AFA86B039404A7B0 /* LiturgyVoiceTests.swift in Sources */,
 				68898C13C713F999F0BF9C5B /* LiturgyRecorderLogicTests.swift in Sources */,
