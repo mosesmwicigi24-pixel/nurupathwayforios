@@ -107,6 +107,11 @@ struct GivingReceiptView: View {
                     ZStack { Circle().fill(Nuru.successBg).frame(width: 64, height: 64); Icon(.badgeCheck, size: 30, color: Nuru.success) }
                     Text(money(d.amountMinor, d.currency)).font(.fraunces(36, .bold)).foregroundStyle(Nuru.ink)
                     Text("to \(d.fund.capitalized)").font(.nBody).foregroundStyle(Nuru.muted)
+                    // "Named giving" (custom sheet, optional): the member's own
+                    // label for this gift, shown right under the fund.
+                    if let name = d.accountName, !name.isEmpty {
+                        Text("\u{201C}\(name)\u{201D}").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    }
                     statusChip(d.status)
                 }
                 .frame(maxWidth: .infinity).padding(Nuru.S.lg).receiptCard()
@@ -117,6 +122,7 @@ struct GivingReceiptView: View {
                     detailRow("Date", whenString(d.settledAt ?? d.createdAt))
                     Divider()
                     if let m = d.method { detailRow("Method", m.capitalized); Divider() }
+                    if let name = d.accountName, !name.isEmpty { detailRow("Gift name", name); Divider() }
                     detailRow("Currency", d.currency.uppercased())
                     // Prefer the M-Pesa SMS receipt code; the internal checkout
                     // id is only a last resort on a formal receipt page.

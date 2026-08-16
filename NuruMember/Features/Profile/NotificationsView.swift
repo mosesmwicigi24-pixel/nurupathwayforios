@@ -89,12 +89,15 @@ struct NotificationsView: View {
                 markRead(n); Haptics.tap(); dismiss()
                 tabs.openPathway(.level(lvl))
             } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else if let tab = tabDest(t) {
+        } else if let dest = tabDest(t) {
             Button {
                 markRead(n)
                 Haptics.tap()
                 dismiss()
-                tabs.selected = tab
+                switch dest {
+                case .tab(let tab): tabs.selected = tab
+                case .you(let seg): tabs.openYou(seg)
+                }
             } label: { row(n) }.buttonStyle(.pressableSubtle)
         } else {
             Button {
@@ -109,12 +112,15 @@ struct NotificationsView: View {
         if n.isUnread { Task { await vm.open(n) } }
     }
 
-    /// Template families whose home is a whole tab, not one pushed page.
-    private func tabDest(_ t: String) -> AppTab? {
-        if t.hasPrefix("event") { return .events }
-        if t.hasPrefix("giving") || t.hasPrefix("payment") { return .give }
-        if t.hasPrefix("badge") || t.hasPrefix("certificate") { return .profile }
-        if t.hasPrefix("level") || t.hasPrefix("reflection") { return .pathway }
+    /// Template families whose home is a whole tab, not one pushed page — since
+    /// L4, Events/Give/Profile no longer own a bottom-bar slot of their own,
+    /// so those land on the You tab's matching segment instead of a plain tab.
+    private enum NotifTarget { case tab(AppTab); case you(YouSegment) }
+    private func tabDest(_ t: String) -> NotifTarget? {
+        if t.hasPrefix("event") { return .you(.events) }
+        if t.hasPrefix("giving") || t.hasPrefix("payment") { return .you(.give) }
+        if t.hasPrefix("badge") || t.hasPrefix("certificate") { return .you(.profile) }
+        if t.hasPrefix("level") || t.hasPrefix("reflection") { return .tab(.pathway) }
         return nil
     }
 

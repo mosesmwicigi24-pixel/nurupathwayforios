@@ -22,6 +22,10 @@ final class HomeViewModel: ObservableObject {
     // Verse
     @Published var verse: (text: String, reference: String, version: String)?
     @Published var verseReason: String?
+    @Published var verseArt: VerseArt?   // the day's tableau photograph (server-curated)
+    /// Seven-bands addition — when present, replaces the "Chosen for your
+    /// season" ribbon with a personal encouragement quote + attribution.
+    @Published var verseEncouragement: Encouragement?
     @Published var reactions: VerseReactions?
     @Published var verseSaved = false
 
@@ -36,11 +40,19 @@ final class HomeViewModel: ObservableObject {
     @Published var announcements: [MyAnnouncement] = []
     @Published var cell: CellSummary.Cell?
     @Published var events: [CalendarOccurrence] = []
+    /// GET /home/events — up to 5 curated, soonest-first rows for the "Upcoming"
+    /// section. Server-capped and pre-sorted; rendered exactly as received.
+    @Published var homeEvents: [HomeEventRow] = []
     /// The radio broadcast that is live RIGHT NOW (nil = off air). The now-playing
     /// endpoint also returns the next scheduled show — that must stay off Home.
     @Published var onAir: RadioProgram?
     /// The ONE admin-featured event (portal homepage toggle) — nil when unset.
     @Published var featuredEvent: FeaturedEvent?
+    /// GET /live/now rows — a live church stream (if any) plus a live stream
+    /// for the member's OWN cell (server-scoped; never re-filtered by cell
+    /// here). Empty most of the time; the LIVE banner only renders while a
+    /// church-scope row is present.
+    @Published var liveStreams: [LiveStreamSummary] = []
 
     @Published var loading = true
     @Published var error: String?
@@ -76,8 +88,10 @@ final class HomeViewModel: ObservableObject {
         async let anns = try? MemberAPI.myAnnouncements()
         async let summary = try? MemberAPI.cellSummary()
         async let cal = try? MemberAPI.calendar(from: Self.calFrom, to: Self.calTo)
+        async let hev = try? MemberAPI.homeEvents()
         async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
+        async let live = try? MemberAPI.fetchLiveNow()
 
         self.letter = (await letter) ?? nil
         self.pathway = await pathway
@@ -100,6 +114,8 @@ final class HomeViewModel: ObservableObject {
                 verse = (passage.text, passage.reference, passage.version)
             }
             verseReason = v.reason
+            verseArt = (v.art?.url.isEmpty == false) ? v.art : nil
+            verseEncouragement = v.encouragement
         }
 
         self.welcomeVideo = await video ?? nil
@@ -113,8 +129,12 @@ final class HomeViewModel: ObservableObject {
         self.announcements = await anns ?? []
         self.cell = (await summary)?.cell
         self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
+        // Rendered exactly as received — the server caps at 5 and orders
+        // soonest-first; the client never caps, sorts, or filters.
+        self.homeEvents = await hev ?? []
         self.onAir = Self.liveOnly((await radio) ?? nil)
         self.featuredEvent = (await fev) ?? nil
+        self.liveStreams = await live ?? []
 
         if self.pathway == nil { error = "Couldn't load your dashboard." }
         loading = false
@@ -164,7 +184,30 @@ final class HomeViewModel: ObservableObject {
     }
 
     // Verse
-    func reactVerse(_ emoji: String) async { reactions = try? await MemberAPI.setVerseReaction(emoji) }
+    /// Toggle my reaction to today's verse. OPTIMISTIC: the tap shows instantly
+    /// (one reaction per member/day — tapping my current emoji removes it, a
+    /// different one MOVES it), then we reconcile with the server. A dropped or
+    /// failed request rolls back to the prior counts instead of blanking them
+    /// (the old `try?` swallowed errors into nil, so a slow tap read as "nothing
+    /// happened" — the reported bug).
+    func reactVerse(_ emoji: String) async {
+        let previous = reactions
+        var r = reactions ?? VerseReactions()
+        func drop(_ e: String) {
+            let n = (r.counts[e] ?? 0) - 1
+            if n > 0 { r.counts[e] = n } else { r.counts[e] = nil }
+        }
+        if r.mine == emoji {
+            drop(emoji); r.mine = nil                    // tapped my own → remove
+        } else {
+            if let old = r.mine { drop(old) }            // move off the old one
+            r.counts[emoji, default: 0] += 1; r.mine = emoji
+        }
+        r.total = r.counts.values.reduce(0, +)
+        reactions = r                                    // instant feedback
+        do { reactions = try await MemberAPI.setVerseReaction(emoji) }
+        catch { reactions = previous }                   // server said no → restore
+    }
     func saveVerse() async {
         guard !verseSaved, let v = verse else { return }
         verseSaved = true
@@ -195,7 +238,17 @@ final class HomeViewModel: ObservableObject {
         return p
     }
 
-    // Two-month calendar window around today (drives section 15's mini month grid).
+    /// Nuru Live re-check — piggybacks Home's existing refresh cycle (this is
+    /// called from a 60s timer that only RUNS while something is confirmed
+    /// live; see HomeView's `.task(id: vm.liveStreams.isEmpty)`), so the LIVE
+    /// banner's "started Xm ago · N watching" line stays current and the
+    /// banner disappears promptly once the stream ends.
+    func refreshLiveNow() async {
+        liveStreams = (try? await MemberAPI.fetchLiveNow()) ?? []
+    }
+
+    // Two-month calendar window around today (drives the Live-now banner; the
+    // "Upcoming" section now renders GET /home/events curated rows instead).
     private static var calFrom: String {
         let cal = Calendar.current
         let start = cal.date(from: cal.dateComponents([.year, .month], from: Date())) ?? Date()
@@ -210,6 +263,16 @@ final class HomeViewModel: ObservableObject {
     private static func isoDay(_ d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; return f.string(from: d)
     }
+}
+
+extension HomeView {
+    /// Clearance for a surface docked "above the tab bar" from WITHIN Home's
+    /// own view tree (the mini-window pop-up) — the tab bar itself is a
+    /// SIBLING overlay one level up in RootView, so this can't rely on
+    /// SwiftUI layout and instead mirrors NuruTabBar's own on-screen height
+    /// (6pt top padding + 44pt icon row + its bottom clearance) plus the
+    /// device's real safe-area inset.
+    static var tabBarClearance: CGFloat { NuruSafeArea.bottom + 58 }
 }
 
 private let verseReactionEmojis = ["❤️", "🙏", "🔥", "🙌", "👍"]
@@ -228,7 +291,21 @@ struct HomeView: View {
     @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     @State private var sharePayload: SharePayload?
+    @State private var verseShareDialog = false
+    @State private var verseShareImage: VerseImagePayload?
     @State private var openedLetter: PastoralLetter?   // Sunday Letter sheet
+    // Nuru Live (L2, viewer-only) — the church-scope LIVE banner's player + replays.
+    @State private var openLiveItem: LivePlayableItem?
+    @State private var openReplays = false
+    // Nuru Live discovery — the shared "invite loudly, never hijack" center
+    // that also drives the app-wide LIVE bar and notification routing; Home
+    // feeds it every /live/now poll and shows its mini-window pop-up.
+    @ObservedObject private var liveDiscovery = LiveDiscoveryCenter.shared
+    // Nuru Live (L3, broadcaster) — Home's header "Go Live" icon. The
+    // controller itself lives in BroadcastCenter (app-wide), not here — see
+    // RootView for the single fullScreenCover presentation + floating island.
+    @ObservedObject private var broadcast = BroadcastCenter.shared
+    @State private var showGoLiveSheet = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
     // third discipline lands mid-session. Opacity-only, and Reduce Motion never
@@ -248,7 +325,7 @@ struct HomeView: View {
             GrowTile(label: "Reading plan", sub: "Continue your plan", icon: .bookMarked, tint: 0xEEF2FF, fg: 0x6366F1, dest: GrowDestination.readingPlans),
             GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFEF3C7, fg: 0xB45309, dest: GrowDestination.memoryVerses),
             GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF5E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
-            GrowTile(label: "Prayer Wall", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
+            GrowTile(label: "My Prayer Room", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
         ]
     }
 
@@ -273,22 +350,44 @@ struct HomeView: View {
         // inserts at the top, every other row must keep its identity — offset
         // keys made SwiftUI tear down and rebuild every card below it.
         var s: [(id: String, view: AnyView)] = []
+        // Nuru Live — the church-scope LIVE banner sits at the very TOP of the
+        // whole feed, above even the load-error strip: a live broadcast is the
+        // most urgent thing on the screen. Hidden entirely when nothing church-
+        // scope is live (no fake "off air" chrome on Home).
+        if let live = churchLiveStream {
+            s.append(("livebanner", AnyView(liveBannerCard(live))))
+        }
         // The whole dashboard failed (offline / server down) — a quiet retry
         // strip on top; the sections below degrade gracefully as usual.
         if vm.error != nil && vm.pathway == nil {
             s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
         }
-        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first)
-        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0 · Live now
-        if let lt = vm.letter, lt.isUnread { s.append(("letter", AnyView(letterKnock(lt)))) }       // 0b · A letter for you (unread Sunday Letter)
-        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0c · The hour's prayer line (liturgy, Phase 4)
-        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0d · Today's echo — the app remembers you (Wave 1)
+        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first, only while live)
+        // Today's verse leads the feed — right under the header (owner ask): the
+        // daily Word first, then the featured welcome video. The thin ON AIR bar
+        // stays pinned above both while a broadcast is live (never bury the live
+        // station); with no broadcast the verse is the first card after the greeting.
+        s.append(("verse", AnyView(verseCard)))                                                    // 0 · Verse of the day (leads the feed)
+        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0a2 · Featured video (start here)
+        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0b · Live now
+        // 0c · The Sunday Letter — an unread letter gets the gold "knock"; a
+        // read one gets a quiet row (still reachable, never urgent); no
+        // letter yet still says WHEN one arrives rather than showing nothing
+        // — the ritual is the point (owner brief, feat/sunday-letter-v2).
+        if let lt = vm.letter, lt.isUnread {
+            s.append(("letter", AnyView(letterKnock(lt))))
+        } else if let lt = vm.letter {
+            s.append(("letter", AnyView(letterReadRow(lt))))
+        } else {
+            s.append(("letter", AnyView(letterArrivalCard)))
+        }
+        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // 0d · The hour's prayer line (liturgy, Phase 4)
+        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0e · Today's echo — the app remembers you (Wave 1)
         if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority (top)
         if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
         s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
+        s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
         if let rp = resumePlan { s.append(("planresume", AnyView(planResumeBanner(rp)))) }              // 2c · Continue your plan (resume nudge)
-        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 3
-        s.append(("verse", AnyView(verseCard)))                                                    // 4
         if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }                // 5
         s.append(("celebrations", AnyView(CelebrationsRail())))                                           // 5b · Celebrate the family (moments, Phase 4)
         s.append(("minis", AnyView(minisRow)))                                                     // 6
@@ -308,12 +407,21 @@ struct HomeView: View {
         s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
         if reflectionDue { s.append(("priority2", AnyView(priorityStrip))) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
+        s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
         s.append(("grow", AnyView(growSection)))                                                  // 14
         if let fe = vm.featuredEvent { s.append(("event", AnyView(featuredGatheringCard(fe)))) }   // 14b · admin-featured event
-        s.append(("upcoming", AnyView(upcomingSection)))                                              // 15
+        if !vm.homeEvents.isEmpty { s.append(("upcoming", AnyView(upcomingSection))) }                // 15 · curated rows; empty → whole section (header too) hides
         s.append(("encourage", AnyView(oneReflectionBanner)))                                          // 16
         s.append(("cohort", AnyView(cohortSection)))                                                // 17
         s.append(("give", AnyView(giveBanner)))                                                   // 18
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted visual verification: NURU_UITEST_TOP=<row id> hoists that row
+        // to the top of the feed so a headless screenshot can behold it.
+        if let top = ProcessInfo.processInfo.environment["NURU_UITEST_TOP"],
+           let idx = s.firstIndex(where: { $0.id == top }), idx > 0 {
+            s.insert(s.remove(at: idx), at: 0)
+        }
+        #endif
         return s
     }
 
@@ -329,7 +437,14 @@ struct HomeView: View {
                     // Each group boundary erases the tuple, keeping every type small.
                     // 20pt between sections — the 16pt grid read congested with
                     // this many cards; each one gets room to breathe (owner ask).
-                    VStack(spacing: 20) {
+                    // Spacing-by-padding: each row OWNS its 20pt skirt as part
+                    // of its layout frame instead of negotiating VStack spacing
+                    // with its neighbour. On the owner's device something kept
+                    // collapsing inter-row spacing around the radio/liturgy/echo
+                    // rows (two fixes survived in the sim, not in the field) —
+                    // intrinsic padding is part of the row's own geometry and
+                    // cannot be eaten by identity, insertion, or animation.
+                    VStack(spacing: 0) {
                         ForEach(Array(feedSections.enumerated()), id: \.element.id) { i, section in
                             // One-shot entrance, OPACITY ONLY. The old 12pt rise
                             // painted rows away from their layout slot, and two
@@ -340,6 +455,7 @@ struct HomeView: View {
                             // by construction.
                             let entering = feedStaged && i < 8
                             section.view
+                                .padding(.bottom, 20)
                                 .opacity(entering && !feedRisen ? 0 : 1)
                                 .animation(entering ? .easeOut(duration: 0.45).delay(Double(i) * 0.04) : nil,
                                            value: feedRisen)
@@ -347,7 +463,7 @@ struct HomeView: View {
                     }
                     .padding(.horizontal, Nuru.S.base)
                     .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.tabBarSpace)
+                    .padding(.bottom, Nuru.tabBarSpace - 20)  // last row brings its own 20pt skirt
                 }
             }
             .ignoresSafeArea(edges: .top)
@@ -393,18 +509,46 @@ struct HomeView: View {
             DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
+        // `.id($0.id)` — flicker guard, see LiveViewerPlayerView's header note.
+        .fullScreenCover(item: $openLiveItem) { LiveViewerPlayerView(item: $0, replaysScope: "church").id($0.id) }
+        .sheet(isPresented: $openReplays) { LiveReplaysView(scope: "church") }
+        .sheet(isPresented: $showGoLiveSheet) {
+            GoLiveSetupSheet { BroadcastCenter.shared.start(session: $0) }
+        }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
-                // Read on the server — clear the knock locally too.
+                // Read on the server — clear the knock locally too. Every v2
+                // field carries over unchanged; only readAt flips.
                 if let cur = vm.letter, cur.letterId == lt.letterId {
-                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, body: cur.body,
-                                               scriptureRef: cur.scriptureRef, createdAt: cur.createdAt,
+                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, title: cur.title,
+                                               salutation: cur.salutation, theme: cur.theme, imageKey: cur.imageKey,
+                                               body: cur.body, scriptureRef: cur.scriptureRef, highlights: cur.highlights,
+                                               nextStep: cur.nextStep, shareLine: cur.shareLine, createdAt: cur.createdAt,
                                                readAt: ISO8601DateFormatter().string(from: Date()))
                 }
             }
         }
+        // Nuru Live discovery — the mini-window pop-up: a MUTED autoplaying
+        // preview docked above the tab bar for the first stream this session
+        // hasn't seen yet. "Join live" opens the SAME full player the banner's
+        // "Watch live" does (unmuted); ✕ collapses it to the ordinary LIVE
+        // banner card above and never re-pops for this stream_id again.
+        .overlay(alignment: .bottom) {
+            if let id = liveDiscovery.popupStreamId,
+               let stream = liveDiscovery.streams.first(where: { $0.streamId == id }) {
+                LiveMiniPopup(
+                    stream: stream,
+                    onJoin: { liveDiscovery.markSeen(stream.streamId); openLiveItem = .live(stream) },
+                    onDismiss: { liveDiscovery.dismissPopup(stream.streamId) }
+                )
+                .padding(.bottom, Self.tabBarClearance)
+                .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.4, dampingFraction: 0.85), value: liveDiscovery.popupStreamId)
         .task {
             if vm.pathway == nil { await vm.load() }
+            liveDiscovery.ingest(vm.liveStreams)
             deepLinkForScreenshots()
         }
         // Radio poll — re-check now-playing every 45s while Home is visible so the
@@ -418,6 +562,21 @@ struct HomeView: View {
         }
         // The floating radio pill now lives in RootView (island-style, top
         // center, on EVERY tab) — playback still runs through RadioCenter.
+        // Nuru Live discovery — an UNCONDITIONAL 60s re-check while Home is
+        // visible (this used to gate on `vm.liveStreams.isEmpty` and only poll
+        // once something was already known live, but discovering a BRAND NEW
+        // stream is the whole point of the mini-window pop-up, so it can't
+        // wait for a stream to already be known). Every result is folded into
+        // the shared LiveDiscoveryCenter, which decides whether to pop the
+        // mini-window (a stream_id this session hasn't surfaced yet).
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+                guard !Task.isCancelled else { return }
+                await vm.refreshLiveNow()
+                liveDiscovery.ingest(vm.liveStreams)
+            }
+        }
     }
 
     /// DEBUG-only: deep-link into a pushed screen for screenshot verification
@@ -496,6 +655,50 @@ struct HomeView: View {
                         .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
                 }
                 .buttonStyle(.pressable).padding(.leading, 8)
+                // Nuru Live header entry (2026-07-31 viewer redesign) — same
+                // visual family as the radio icon just before it (pulsing red
+                // ring, small glyph), shown ONLY while a church-scope stream
+                // is actually live (`churchLiveStream`, the same /live/now
+                // state that already drives the feed's top banner — no
+                // second poll). Tap opens the SAME full player the banner's
+                // "Watch live" does.
+                if let live = churchLiveStream {
+                    Button {
+                        Haptics.action()
+                        liveDiscovery.markSeen(live.streamId)
+                        openLiveItem = .live(live)
+                    } label: {
+                        ZStack {
+                            Circle().fill(Color(hex: 0xFEE2E2))
+                            Circle().stroke(Color(hex: 0xDC2626).opacity(0.35), lineWidth: 1)
+                            HomeLiveHeaderRing()
+                            Image(systemName: "waveform")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(Color(hex: 0xDC2626))
+                        }
+                        .frame(width: 40, height: 40)
+                    }
+                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .accessibilityLabel("Live now — \(live.title)")
+                }
+                // Nuru Live (L3) — gold "Go Live" affordance, visible ONLY when
+                // the signed-in profile actually holds the `live:go` grant
+                // (client-side advisory gate; the server is the real one).
+                if LiveBroadcastEligibility.canGoLive(auth.profile) {
+                    Button {
+                        Haptics.tap()
+                        // Already broadcasting (minimized elsewhere) — reopen
+                        // it rather than minting a second stream on top.
+                        if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
+                    } label: {
+                        Image(systemName: "video.fill").font(.system(size: 16))
+                            .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
+                            .background(Nuru.gold, in: Circle())
+                            .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+                    }
+                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .accessibilityLabel("Go live")
+                }
                 progressRing.padding(.leading, 8)
             }
             Text("\(greeting), \(firstName).")
@@ -672,6 +875,68 @@ struct HomeView: View {
         .buttonStyle(.pressableSubtle)
     }
 
+    /// 0c (read) — the SAME letter once it's no longer new: a quiet row, not
+    /// a knock, so a member can always find their way back to it (and the
+    /// archive one tap further) without Home manufacturing false urgency for
+    /// something they've already read.
+    private func letterReadRow(_ lt: PastoralLetter) -> some View {
+        Button {
+            Haptics.tap()
+            openedLetter = lt
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.85))
+                        .frame(width: 38, height: 38)
+                    Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                        .foregroundStyle(Color(hex: 0x8A97AA))
+                    Text(lt.title).font(.fraunces(14, .semibold)).foregroundStyle(.white).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 14, color: Color(hex: 0x5C6B80))
+            }
+            .padding(13)
+            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                .stroke(Color.white.opacity(0.09), lineWidth: 1))
+        }
+        .buttonStyle(.pressableSubtle)
+    }
+
+    /// 0c (anticipation) — no letter has arrived yet (a brand-new member, or
+    /// simply mid-week). Says WHEN rather than showing nothing: the ritual —
+    /// knowing something is coming — is the point, not just the payoff.
+    private var letterArrivalCard: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [Color(hex: 0x2C3B52), Color(hex: 0x18213A)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 44, height: 44)
+                Icon(.mail, size: 18, color: Color(hex: 0xB9C4D4))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                    .foregroundStyle(Color(hex: 0x8A97AA))
+                Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
+                Text("A short pastoral note, written from your own week.")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x8A97AA))
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .background(
+            LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(Color.white.opacity(0.08), lineWidth: 1))
+    }
+
     private func liveNowCard(_ info: (occ: CalendarOccurrence, startsInMin: Int?)) -> some View {
         HomeLiveNowCard(
             title: info.occ.title,
@@ -679,6 +944,31 @@ struct HomeView: View {
             posterUrl: info.occ.primaryImageUrl,
             startsInMin: info.startsInMin
         ) { tabs.openEvent(info.occ) }   // events live on the Events tab
+    }
+
+    // MARK: 0d — Nuru Live LIVE banner (church scope; the cell twin lives in
+    // CellInfoView, filtered from this SAME /live/now response — no second call)
+
+    /// Defensive guard, belt-and-braces on top of `LiveDiscoveryCenter.
+    /// ingest`'s own self-exclusion filter: `vm.liveStreams` is fetched
+    /// DIRECTLY (`HomeViewModel.load`/`refreshLiveNow`, not read from
+    /// `LiveDiscoveryCenter.streams`), so it needs its own exclusion too — a
+    /// broadcaster must never see their OWN stream offered back as "Watch
+    /// live" on this banner (parity audit 2026-07-31, Android twin: PR #87's
+    /// `HomeScreen.kt` `churchLive` guard — same bypass class: a screen that
+    /// fetches `/live/now` itself instead of reading the already-filtered
+    /// discovery centre).
+    private var churchLiveStream: LiveStreamSummary? {
+        let ownStreamId = BroadcastCenter.shared.controller?.session.stream.streamId
+        return vm.liveStreams.first { $0.scope == "church" && $0.streamId != ownStreamId }
+    }
+
+    private func liveBannerCard(_ stream: LiveStreamSummary) -> some View {
+        HomeLiveBannerCard(
+            stream: stream,
+            onWatch: { Haptics.action(); openLiveItem = .live(stream) },
+            onReplays: { openReplays = true }
+        )
     }
 
     // MARK: 1 — Priority strip (reflection due; appears at top AND before progress)
@@ -787,12 +1077,19 @@ struct HomeView: View {
             .padding(.horizontal, Nuru.S.base)
 
             VStack(alignment: .leading, spacing: 0) {
+                // Caption + fallback sub-line, never the same words twice: when the
+                // authored caption IS the fallback copy (or absent), show it once
+                // (Android's dedup rule, ported).
+                let fallback = "Start here — what the journey looks like"
                 if let cap = v.caption, !cap.isEmpty {
                     // Clean sans title block (Figma) — the serif stays on ceremony cards.
                     Text(cap).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
+                    if cap != fallback {
+                        Text(fallback).font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
+                    }
+                } else {
+                    Text(fallback).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
                 }
-                Text("Start here — what the journey looks like")
-                    .font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {
@@ -887,21 +1184,61 @@ struct HomeView: View {
 
     private var verseCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
-                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
-                Spacer(minLength: 0)
-                Text((vm.verse?.version ?? "WEB").uppercased())
-                    .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Nuru.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
+            if let art = vm.verseArt {
+                // The tableau: the day's photograph carries the verse (owner ask —
+                // "something beautiful to behold" breaking the wall of text).
+                VerseTableauHeader(
+                    art: art,
+                    verseText: vm.verse?.text,
+                    reference: "\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")",
+                    version: vm.verse?.version ?? "WEB"
+                )
+            } else {
+                // No art (offline first paint / older backend): the classic cream reading.
+                HStack(spacing: 6) {
+                    Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
+                    Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                    Text((vm.verse?.version ?? "WEB").uppercased())
+                        .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
+                }
+                .padding([.horizontal, .top], Nuru.S.base)
+                VerseQuoteCard(
+                    verse: vm.verse?.text ?? "Your word is a lamp to my feet, and a light for my path.",
+                    reference: vm.verse?.reference ?? "Psalm 119:105",
+                    cardStyle: false
+                )
+                .padding(.top, Nuru.S.md)
+                .padding(.horizontal, Nuru.S.base)
             }
-            Text(vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”")
-                .font(.fraunces(18)).foregroundStyle(HomeFig.navy).lineSpacing(5).padding(.top, Nuru.S.md)
-            Text("\(vm.verse?.reference ?? "Psalm 119:105") · \(vm.verse?.version ?? "WEB")")
-                .font(.inter(13, .semibold)).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.sm)
-            if let reason = vm.verseReason, !reason.isEmpty {
+            verseCardBody
+        }
+        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+    }
+
+    /// Season ribbon + reactions/save/share — shared by both verse renderings.
+    private var verseCardBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let enc = vm.verseEncouragement, !enc.text.isEmpty {
+                // Seven-bands: a personal encouragement quote replaces the
+                // season ribbon when the server provides one.
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(enc.text)
+                        .font(.fraunces(13.5).italic()).foregroundStyle(Nuru.ink)
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                    if !enc.author.isEmpty {
+                        Text("— \(enc.author)")
+                            .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .padding(.top, 8)
+            } else if let reason = vm.verseReason, !reason.isEmpty {
                 // The season ribbon — Nuru discerned this from THEIR recent
                 // prayers and reactions, so it reads as a personal choosing,
                 // not an algorithm's footnote.
@@ -944,15 +1281,42 @@ struct HomeView: View {
                     pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
                         .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
                 }.buttonStyle(.pressable)
-                Button { Haptics.tap(); sharePayload = SharePayload(text: verseShareText()) } label: {
+                Button { Haptics.tap(); shareVerseTapped() } label: {
                     pill(icon: .share2, label: "Share", tint: HomeFig.navy)
                 }.buttonStyle(.pressable)
             }
             .padding(.top, Nuru.S.md)
         }
         .padding(Nuru.S.base)
-        .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+        .confirmationDialog("Share today's verse", isPresented: $verseShareDialog, titleVisibility: .visible) {
+            Button("Share as a picture") { Task { await shareVerseAsImage() } }
+            Button("Send in chat") { sharePayload = SharePayload(text: verseShareText()) }
+            Button("Cancel", role: .cancel) {}
+        }
+        .sheet(item: $verseShareImage) { payload in
+            VerseShareSheet(image: payload.image)
+                .presentationDetents([.medium, .large])
+        }
+    }
+
+    /// With a tableau the member chooses picture vs chat; without art the old
+    /// text-to-chat share fires directly (nothing to photograph).
+    private func shareVerseTapped() {
+        if vm.verseArt != nil { verseShareDialog = true }
+        else { sharePayload = SharePayload(text: verseShareText()) }
+    }
+
+    private func shareVerseAsImage() async {
+        guard let art = vm.verseArt else { return }
+        let text = vm.verse?.text ?? "Your word is a lamp to my feet, and a light for my path."
+        let ref = vm.verse?.reference ?? "Psalm 119:105"
+        let ver = vm.verse?.version ?? "WEB"
+        if let img = await VerseImageShare.render(art: art, verseText: text, reference: ref, version: ver) {
+            verseShareImage = VerseImagePayload(image: img)
+        } else {
+            // Couldn't fetch/render the picture (offline, CDN hiccup) — share the words.
+            sharePayload = SharePayload(text: verseShareText())
+        }
     }
 
     private func pill(icon: Lucide, label: String, tint: Color) -> some View {
@@ -986,7 +1350,7 @@ struct HomeView: View {
                 Text("PRAY FOR ONE ANOTHER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer()
                 NavigationLink(value: CommunityRoute.prayerWall) {
-                    sectionLink("Open wall")
+                    sectionLink("My Prayer Room")
                 }.buttonStyle(.plain)
             }
             // A single post hugs its content (no pager, no dead space); multiple
@@ -999,8 +1363,16 @@ struct HomeView: View {
                 .padding(.top, Nuru.S.sm)
             } else {
                 TabView(selection: $prayPage) {
+                    // Buttons, NOT NavigationLinks: links hosted inside a paged
+                    // TabView can fire with a NEIGHBOR page's value (the pager
+                    // forwards taps across hosted pages) — the member tapped
+                    // one prayer and landed on another. A button resolves its
+                    // own captured post, then navigates programmatically.
                     ForEach(Array(vm.prayerPosts.enumerated()), id: \.element.postId) { i, post in
-                        NavigationLink(value: CommunityRoute.prayer(post.postId)) {
+                        Button {
+                            Haptics.tap()
+                            path.append(CommunityRoute.prayer(post.postId))
+                        } label: {
                             prayerPostView(post, inPager: true)
                         }.buttonStyle(.pressableSubtle)
                         .tag(i)
@@ -1094,17 +1466,32 @@ struct HomeView: View {
     // MARK: 6 — Reading-plan + Prayer-journal minis
 
     private var minisRow: some View {
-        HStack(spacing: Nuru.S.md) {
+        // Equal fixed heights + explicit contentShape + clipped: each card's
+        // tap zone is EXACTLY its visible surface. (The GeometryReader inside
+        // the plan card made the row's height ambiguous, letting neighbors'
+        // hit areas bleed — a Prayer Room tap could land on the card below.)
+        HStack(alignment: .top, spacing: Nuru.S.md) {
             // Resume the plan directly when one is in progress; otherwise open the
             // catalogue — always on the Plans tab (its home), never inside Home.
             Button {
                 Haptics.tap()
                 tabs.openPlans(resumePlan.map { .plan($0) } ?? .catalogue)
-            } label: { readingPlanMini }
+            } label: {
+                readingPlanMini
+                    .frame(height: 128)
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .clipped()
+            }
             .buttonStyle(.pressable)
-            NavigationLink(value: GrowDestination.prayerJournal) { prayerJournalMini }.buttonStyle(.pressable)
+            NavigationLink(value: GrowDestination.prayerJournal) {
+                prayerJournalMini
+                    .frame(height: 128)
+                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+                    .clipped()
+            }
+            .buttonStyle(.pressable)
         }
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(height: 128)
     }
 
     private var readingPlanMini: some View {
@@ -1154,7 +1541,7 @@ struct HomeView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color(hex: 0xFEF3C7), in: Capsule())
             }
-            Text("PRAYER JOURNAL").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
+            Text("MY PRAYER ROOM").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
             Text(latest?.title ?? "Your prayers").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
             Text(latest?.body ?? "Start journaling your prayers").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).lineLimit(1).padding(.top, 2)
             Spacer(minLength: 0)
@@ -1709,7 +2096,7 @@ struct HomeView: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: 15 — Upcoming (label outside; full-width mini month + next-event row)
+    // MARK: 15 — Upcoming (label outside; up to 5 curated event rows)
 
     private var upcomingSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -1722,7 +2109,7 @@ struct HomeView: View {
     // GET /home/featured-event was declared but rendered by no client until now.
     private func featuredGatheringCard(_ fe: FeaturedEvent) -> some View {
         Button {
-            Haptics.selection(); tabs.selected = .events
+            Haptics.selection(); tabs.openYou(.events)
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 if let u = fe.primaryImageUrl.flatMap(URL.init) {
@@ -1754,25 +2141,31 @@ struct HomeView: View {
         return out.string(from: d)
     }
 
+    // The curated rows (GET /home/events): the month grid that used to live here
+    // is gone (owner ask) — the Events tab keeps the full calendar. Up to 5 rows,
+    // exactly as the server sent them (soonest-first, server-capped): thumb, gold
+    // relative-time kicker, title, venue, and the member's RSVP state (or the
+    // RSVP call-to-action). Each row pushes the SAME event-detail destination the
+    // RSVP/QR flows use (CalendarOccurrence by occurrence_id).
     private var upcomingCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
-                Text(monthTitle().uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
+                Text("GATHERINGS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
-                Button { Haptics.selection(); tabs.selected = .events } label: {
+                Button { Haptics.selection(); tabs.openYou(.events) } label: {
                     Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
                 }.buttonStyle(.pressable)
             }
-            miniMonth
-            if let occ = nextUpcoming {
-                Button { Haptics.tap(); path.append(occ) } label: {
+            ForEach(vm.homeEvents) { e in
+                Button { Haptics.tap(); path.append(CalendarOccurrence(homeEvent: e)) } label: {
                     HomeUpcomingEventRow(
-                        kicker: eventKicker(occ),
-                        soon: eventSoon(occ),
-                        title: occ.title,
-                        sub: occ.going > 0 ? "\(occ.going) going" : (occ.location ?? "Next gathering"),
-                        subHighlight: occ.going > 0,
-                        imageUrl: occ.primaryImageUrl)
+                        kicker: eventKicker(e.startsAt),
+                        soon: eventSoon(e.startsAt),
+                        title: e.title,
+                        sub: (e.venue?.isEmpty == false ? e.venue! : "Next gathering"),
+                        subHighlight: false,
+                        imageUrl: e.primaryImageUrl,
+                        rsvpStatus: e.myRsvp)
                 }.buttonStyle(.pressable)
             }
         }
@@ -1780,79 +2173,19 @@ struct HomeView: View {
         .cardSurface()
     }
 
-    private var nextUpcoming: CalendarOccurrence? {
-        vm.events.first {
-            (parseISO($0.startAt) ?? .distantPast) >= Calendar.current.startOfDay(for: Date())
-        } ?? vm.events.first
-    }
-
-    private func monthTitle() -> String {
-        let f = DateFormatter(); f.dateFormat = "MMMM"
-        return f.string(from: Date())
-    }
-
-    private func eventKicker(_ occ: CalendarOccurrence) -> String {
-        guard let d = parseISO(occ.startAt) else { return timeLine(occ.startAt) }
+    private func eventKicker(_ startAt: String) -> String {
+        guard let d = parseISO(startAt) else { return timeLine(startAt) }
         let cal = Calendar.current
         let day: String
         if cal.isDateInToday(d) { day = "Today" }
         else if cal.isDateInTomorrow(d) { day = "Tomorrow" }
         else { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; day = f.string(from: d) }
-        return "\(day) · \(timeLine(occ.startAt))"
+        return "\(day) · \(timeLine(startAt))"
     }
 
-    private func eventSoon(_ occ: CalendarOccurrence) -> Bool {
-        guard let d = parseISO(occ.startAt) else { return false }
+    private func eventSoon(_ startAt: String) -> Bool {
+        guard let d = parseISO(startAt) else { return false }
         return d.timeIntervalSinceNow < 48 * 3600
-    }
-
-    private var miniMonth: some View {
-        let cal = Calendar.current
-        let today = Date()
-        let monthStart = cal.date(from: cal.dateComponents([.year, .month], from: today)) ?? today
-        let daysInMonth = cal.range(of: .day, in: .month, for: monthStart)?.count ?? 30
-        // Monday-first leading offset
-        let firstWeekday = cal.component(.weekday, from: monthStart) // 1=Sun…7=Sat
-        let lead = (firstWeekday + 5) % 7
-        let cells: [Int?] = Array(repeating: nil, count: lead) + (1...daysInMonth).map { Optional($0) }
-        let eventDays: Set<Int> = Set(vm.events.compactMap { occ -> Int? in
-            guard let d = ISO8601DateFormatter.nuru.date(from: occ.startAt) ?? ISO8601DateFormatter().date(from: occ.startAt) else { return nil }
-            guard cal.isDate(d, equalTo: monthStart, toGranularity: .month) else { return nil }
-            return cal.component(.day, from: d)
-        })
-        let todayNum = cal.isDate(today, equalTo: monthStart, toGranularity: .month) ? cal.component(.day, from: today) : -1
-        let cols = Array(repeating: GridItem(.flexible(), spacing: 2), count: 7)
-
-        return VStack(spacing: 6) {
-            LazyVGrid(columns: cols, spacing: 2) {
-                ForEach(Array(["M","T","W","T","F","S","S"].enumerated()), id: \.offset) { _, d in
-                    Text(d).font(.inter(9, .semibold)).foregroundStyle(Nuru.ink400).frame(maxWidth: .infinity)
-                }
-            }
-            LazyVGrid(columns: cols, spacing: 4) {
-                ForEach(Array(cells.enumerated()), id: \.offset) { _, day in
-                    if let day {
-                        let isToday = day == todayNum
-                        ZStack {
-                            if isToday { Circle().fill(Nuru.navy).frame(width: 24, height: 24) }
-                            VStack(spacing: 1) {
-                                Text("\(day)")
-                                    .font(.inter(11, isToday ? .bold : .medium))
-                                    .foregroundStyle(isToday ? Nuru.onNavy : Nuru.ink)
-                                if eventDays.contains(day) && !isToday {
-                                    Circle().fill(Nuru.gold).frame(width: 4, height: 4)
-                                } else {
-                                    Color.clear.frame(width: 4, height: 4)
-                                }
-                            }
-                        }
-                        .frame(height: 26)
-                    } else {
-                        Color.clear.frame(height: 26)
-                    }
-                }
-            }
-        }
     }
 
     // MARK: 16 — Encouragement ("one reflection away" / "beautifully done")
@@ -1933,7 +2266,7 @@ struct HomeView: View {
     // MARK: 18 — Support God's work (give panel — centered ceremony layout)
 
     private var giveBanner: some View {
-        HomeGiveCard { tabs.selected = .give }
+        HomeGiveCard { tabs.openYou(.give) }
     }
 
     // MARK: derived / helpers
@@ -1999,10 +2332,6 @@ struct HomeView: View {
     private func durationLabel(_ sec: Int) -> String {
         let m = sec / 60, s = sec % 60
         return String(format: "%d:%02d", m, s)
-    }
-    private func openURL(_ s: String?) {
-        guard let s, let u = URL(string: s) else { return }
-        UIApplication.shared.open(u)
     }
     /// Parse an ISO timestamp tolerantly.
     private func parseISO(_ iso: String) -> Date? {
@@ -2085,6 +2414,26 @@ private struct HomeLoadErrorCard: View {
         .padding(12)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+}
+
+// MARK: - Header LIVE entry ring (2026-07-31 viewer redesign) — a slow
+// breathing red ring around the header's live glyph, same "something is
+// happening right now" language as the LIVE badge's pulsing dot elsewhere
+// in this feature, just reshaped for a 40pt circular icon slot.
+
+private struct HomeLiveHeaderRing: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var expand = false
+    var body: some View {
+        Circle()
+            .stroke(Color(hex: 0xDC2626), lineWidth: 1.5)
+            .scaleEffect(expand ? 1.28 : 1)
+            .opacity(expand ? 0 : 0.8)
+            .onAppear {
+                guard !reduceMotion else { return }
+                withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) { expand = true }
+            }
     }
 }
 

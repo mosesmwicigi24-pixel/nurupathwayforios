@@ -12,6 +12,10 @@ final class CellInfoViewModel: ObservableObject {
     @Published var cell: CellSummary.Cell?
     @Published var loading = true
     @Published var error: String?
+    /// GET /live/now, filtered to the "cell" scope row (if any) — the server
+    /// already scopes that row to the caller's OWN cell, so no cell id is sent
+    /// up; this is this screen's own single fetch, not a second endpoint.
+    @Published var liveStream: LiveStreamSummary?
 
     var name: String { featured?.name ?? cell?.name ?? "Your cell" }
     var isEmpty: Bool { featured == nil && cell == nil }
@@ -20,8 +24,19 @@ final class CellInfoViewModel: ObservableObject {
         loading = true; error = nil
         async let fc = try? MemberAPI.featuredCell()
         async let cs = try? MemberAPI.cellSummary()
+        async let live = try? MemberAPI.fetchLiveNow()
         featured = await fc ?? nil
         cell = (await cs)?.cell
+        // Defensive guard, belt-and-braces on top of LiveDiscoveryCenter's
+        // own self-exclusion filter: this screen fetches GET /live/now
+        // DIRECTLY (not through `LiveDiscoveryCenter.streams`), so it needs
+        // its own exclusion too — a broadcaster must never be offered THEIR
+        // OWN cell broadcast as something to "Watch live" (parity audit
+        // 2026-07-31; see LiveDiscoveryCenter.ingest's header for the
+        // original church-scope bug this mirrors, and HomeView's identical
+        // `churchLiveStream` guard).
+        let ownStreamId = BroadcastCenter.shared.controller?.session.stream.streamId
+        liveStream = (await live ?? []).first { $0.scope == "cell" && $0.streamId != ownStreamId }
         if isEmpty { error = "Couldn't load your cell." }
         loading = false
     }
@@ -29,7 +44,19 @@ final class CellInfoViewModel: ObservableObject {
 
 struct CellInfoView: View {
     @StateObject private var vm = CellInfoViewModel()
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
+    // Nuru Live (L2) — this cell's LIVE banner opens the same full-screen
+    // player as Home's church banner; "Watch replays" opens the same list,
+    // scoped to this cell.
+    @State private var openLiveItem: LivePlayableItem?
+    @State private var openReplays = false
+    // Nuru Live (L3, broadcaster) — this screen's own Go Live button, forced
+    // to scope=cell (no picker) since we're already inside one specific cell.
+    // The controller itself lives in BroadcastCenter (app-wide) — see
+    // RootView for the single fullScreenCover presentation + floating island.
+    @ObservedObject private var broadcast = BroadcastCenter.shared
+    @State private var showGoLiveSheet = false
 
     var body: some View {
         ZStack {
@@ -50,10 +77,13 @@ struct CellInfoView: View {
                         } else if vm.isEmpty {
                             emptyCard
                         } else {
+                            if let live = vm.liveStream { cellLiveCard(live) }
+                            if LiveBroadcastEligibility.showCellEntryPoint(auth.profile) { goLiveButton }
                             leaderCard
                             if hasRhythm { rhythmCard }
                             if let n = vm.cell?.next { nextGatheringCard(n) }
                             statsGrid
+                            watchReplaysButton
                             openCommunityButton
                         }
                     }
@@ -66,6 +96,75 @@ struct CellInfoView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.isEmpty { await vm.load() } }
+        .fullScreenCover(item: $openLiveItem) { item in
+            // `.id(item.id)` — see LiveViewerPlayerView's flicker-guard note:
+            // without it, a rebind of `openLiveItem` to a DIFFERENT stream
+            // while the cover is still up reuses the same view identity (and
+            // its @StateObject player) instead of tearing down and starting
+            // fresh, so the old stream's frames would keep showing.
+            LiveViewerPlayerView(item: item, replaysScope: "cell", replaysCellId: vm.cell?.cellGroupId, replaysCellName: vm.name)
+                .id(item.id)
+        }
+        .sheet(isPresented: $openReplays) {
+            LiveReplaysView(scope: "cell", cellId: vm.cell?.cellGroupId, cellName: vm.name)
+        }
+        .sheet(isPresented: $showGoLiveSheet) {
+            GoLiveSetupSheet(forcedCell: (id: auth.profile?.cellGroupId ?? "", name: vm.name)) {
+                BroadcastCenter.shared.start(session: $0)
+            }
+        }
+    }
+
+    // MARK: Nuru Live (L3) — this cell's own Go Live button, forced scope=cell
+
+    private var goLiveButton: some View {
+        Button {
+            Haptics.tap()
+            // Already broadcasting (minimized elsewhere) — reopen it rather
+            // than minting a second stream on top.
+            if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
+        } label: {
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.megaphone, size: 15, color: Nuru.navy)
+                    .frame(width: 32, height: 32)
+                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Text(broadcast.controller != nil ? "You're live — tap to return" : "Go live to your cell")
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 15, color: Nuru.navy.opacity(0.6))
+            }
+        }
+        .buttonStyle(.pressable)
+        .padding(Nuru.S.base)
+        .background(Nuru.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
+    }
+
+    // MARK: Nuru Live — this cell's LIVE banner (same treatment as Home's church one)
+
+    private func cellLiveCard(_ stream: LiveStreamSummary) -> some View {
+        HomeLiveBannerCard(
+            stream: stream,
+            onWatch: { Haptics.action(); openLiveItem = .live(stream) },
+            onReplays: { openReplays = true }
+        )
+    }
+
+    private var watchReplaysButton: some View {
+        Button { Haptics.tap(); openReplays = true } label: {
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.calendarClock, size: 15, color: Nuru.goldChipText)
+                    .frame(width: 32, height: 32)
+                    .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Text("Watch replays").font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 15, color: Nuru.faint)
+            }
+        }
+        .buttonStyle(.pressable)
+        .padding(Nuru.S.base)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     /// One shimmering placeholder card (loading state only).

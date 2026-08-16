@@ -33,12 +33,12 @@ struct HomeEchoCard: View {
                     }
                     Text(e.body)
                         .font(.inter(14.5)).foregroundStyle(Nuru.ink)
-                        .lineSpacing(4)
+                        .nuruLineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                     if let q = e.quote, !q.isEmpty {
                         Text("\u{201C}\(q)\u{201D}")
                             .font(.fraunces(16)).italic().foregroundStyle(Nuru.navyMid)
-                            .lineSpacing(5)
+                            .nuruLineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 12)
                             .overlay(alignment: .leading) {

@@ -62,6 +62,61 @@ struct CalendarOccurrence: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+/// GET /home/events — one of up to 5 soonest upcoming occurrences from
+/// portal-curated (show_on_home) series, soonest-first. The SERVER caps the
+/// list at 5 — the client never caps, sorts, or filters; render what arrives.
+struct HomeEventRow: Codable, Sendable, Identifiable, Hashable {
+    let occurrenceId: String
+    let seriesId: String
+    let title: String
+    let venue: String?
+    let startsAt: String
+    let primaryImageUrl: String?
+    /// "going" | "maybe" | "declined" | nil (no RSVP yet).
+    let myRsvp: String?
+
+    var id: String { occurrenceId }
+
+    static func == (a: HomeEventRow, b: HomeEventRow) -> Bool { a.occurrenceId == b.occurrenceId }
+    func hash(into h: inout Hasher) { h.combine(occurrenceId) }
+
+    private enum CodingKeys: String, CodingKey {
+        case occurrenceId, seriesId, title, venue, startsAt, primaryImageUrl, myRsvp
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        occurrenceId = try c.decode(String.self, forKey: .occurrenceId)
+        seriesId = (try? c.decodeIfPresent(String.self, forKey: .seriesId)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        venue = try? c.decodeIfPresent(String.self, forKey: .venue)
+        startsAt = (try? c.decodeIfPresent(String.self, forKey: .startsAt)) ?? ""
+        primaryImageUrl = try? c.decodeIfPresent(String.self, forKey: .primaryImageUrl)
+        myRsvp = try? c.decodeIfPresent(String.self, forKey: .myRsvp)
+    }
+}
+
+extension CalendarOccurrence {
+    /// A minimal occurrence built from a Home curated row — enough to push the
+    /// existing event-detail destination (EventDetailView re-fetches the full
+    /// record by occurrenceId; RSVP/QR flows use these same ids).
+    init(homeEvent e: HomeEventRow) {
+        occurrenceId = e.occurrenceId
+        seriesId = e.seriesId
+        title = e.title
+        description = nil
+        location = e.venue
+        category = nil
+        primaryImageUrl = e.primaryImageUrl
+        startAt = e.startsAt
+        endAt = ""
+        status = nil
+        rescheduled = nil
+        going = 0
+        attendees = nil
+    }
+}
+
 /// GET /calendar/series — a followable event series (Events "Series you follow").
 struct EventSeries: Codable, Sendable, Identifiable {
     let seriesId: String

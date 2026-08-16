@@ -101,8 +101,8 @@ final class EventsViewModel: ObservableObject {
         todayStart = start
         selectedDay = start
         let f = ISO8601DateFormatter()
-        from = f.string(from: Calendar.current.date(byAdding: .day, value: -7, to: start)!)
-        to = f.string(from: Calendar.current.date(byAdding: .day, value: 60, to: start)!)
+        from = f.string(from: Calendar.current.date(byAdding: .day, value: -7, to: start) ?? start)
+        to = f.string(from: Calendar.current.date(byAdding: .day, value: 60, to: start) ?? start)
     }
 
     func load() async {
@@ -265,6 +265,12 @@ final class EventsViewModel: ObservableObject {
 }
 
 struct EventsView: View {
+    /// True when hosted as the "Events" segment inside the You tab (L4)
+    /// rather than as its own top-level tab — the You tab's own segmented
+    /// control already clears the status bar, so this header needs only a
+    /// little breathing room, not a second 60pt reservation for it.
+    var embeddedInYou: Bool = false
+
     @StateObject private var vm = EventsViewModel()
     @EnvironmentObject private var tabs: TabRouter
     @State private var path = NavigationPath()
@@ -349,7 +355,7 @@ struct EventsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, embeddedInYou ? Nuru.S.base : 60).padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {

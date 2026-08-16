@@ -13,11 +13,14 @@ final class DiscipleshipHubViewModel: ObservableObject {
     @Published var hub: Discipleship?
     @Published var loading = true
     @Published var error: String?
-    /// The existing DM thread with the discipler, when there is one — matched by
-    /// the hub's `dmConversationId` against the chat inbox (falling back to a
-    /// peer-user-id / title match the way the mentor screen does for older rows).
+    /// The DISCIPLER thread with my CURRENT assignment, when already open — the
+    /// same GET /chat/discipler/conversation resolution the My Discipler tab
+    /// (Chat Redesign C3b) uses, NOT the legacy `dmConversationId` / POST
+    /// /chat/dms path. That legacy path minted (or reused) a plain DIRECT dm,
+    /// so it never got the DISCIPLER privacy banner or admin-invisibility —
+    /// this hero CTA now always resolves the server-typed thread instead.
     @Published var disciplerDm: ChatConversation?
-    /// True while POST /chat/dms is creating the discipler DM on the hero tap.
+    /// True while resolving/creating the discipler thread on the hero tap.
     @Published var startingDm = false
 
     func load() async {
@@ -26,40 +29,29 @@ final class DiscipleshipHubViewModel: ObservableObject {
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your discipleship." }
         loading = false
 
-        // Resolve the DM thread if the member has one, so the hero CTA becomes a
-        // direct deep link instead of a create-then-push. Best-effort.
-        if let d = hub?.discipler, hub?.canMessage == true,
-           let inbox = try? await MemberAPI.chatInbox() {
-            disciplerDm = Self.findDm(hub: hub, discipler: d, in: inbox.conversations)
+        // Read-only best-effort: if the DISCIPLER thread already exists, the
+        // inbox's `type` field (Chat Redesign C4) finds it without creating
+        // anything just by opening this screen. The hero CTA below is what
+        // actually resolves (and lazily creates) it via the discipler endpoint.
+        if hub?.canMessage == true, let inbox = try? await MemberAPI.chatInbox() {
+            disciplerDm = inbox.conversations.first { $0.kind == "dm" && $0.type == "DISCIPLER" }
         }
     }
 
-    /// Prefer the hub's authoritative conversation id, then a peer-user-id match,
-    /// then a name match (older inbox rows) — mirrors MentorViewModel.findDm.
-    static func findDm(hub: Discipleship?, discipler d: Discipleship.Discipler,
-                       in conversations: [ChatConversation]) -> ChatConversation? {
-        if let id = hub?.dmConversationId,
-           let row = conversations.first(where: { $0.conversationId == id }) { return row }
-        let dms = conversations.filter { $0.kind == "dm" }
-        return dms.first { $0.peerUserId == d.userId }
-            ?? dms.first {
-                $0.title?.compare(d.fullName, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
-            }
-    }
-
-    /// No DM yet → create (or fetch — the server dedupes) the 1:1 with the
-    /// discipler via POST /chat/dms, then return the conversation to push.
+    /// GET /chat/discipler/conversation — resolves (lazily creating) the
+    /// DISCIPLER thread with my CURRENT assignment, then returns the
+    /// conversation to push with `context: .discipler`.
     func startDisciplerDm() async -> ChatConversation? {
         guard let d = hub?.discipler, !startingDm else { return nil }
         startingDm = true
         defer { startingDm = false }
-        guard let id = try? await MemberAPI.createDm(peerUserId: d.userId) else { return nil }
+        guard let id = try? await MemberAPI.disciplerConversation() else { return nil }
         let inbox = try? await MemberAPI.chatInbox()
         let dm = inbox?.conversations.first { $0.conversationId == id } ?? ChatConversation(
             conversationId: id, kind: "dm", isPublic: false, title: d.fullName,
             topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
             lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: d.avatarUrl,
-            peerUserId: d.userId)
+            peerUserId: d.userId, type: "DISCIPLER")
         disciplerDm = dm
         return dm
     }
@@ -97,11 +89,15 @@ struct DiscipleshipHubView: View {
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        // Lets the Message CTA push the discipler's DM thread from this stack.
-        .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
-        // Programmatic push for the just-created DM (POST /chat/dms on tap).
+        // Lets the Message CTA push the discipler's thread from this stack —
+        // ThreadRoute + `.discipler` (not a bare ChatConversation) so it gets
+        // the SAME privacy banner + admin-invisibility rendering as the My
+        // Discipler tab (Chat Redesign C3b), not the legacy dm_conversation_id
+        // treatment.
+        .navigationDestination(for: ThreadRoute.self) { ChatThreadView(conversation: $0.conversation, context: $0.context) }
+        // Programmatic push for the just-resolved thread on the hero tap.
         .navigationDestination(isPresented: $openCreatedDm) {
-            if let dm = vm.disciplerDm { ChatThreadView(conversation: dm) }
+            if let dm = vm.disciplerDm { ChatThreadView(conversation: dm, context: .discipler) }
         }
         .task { if vm.hub == nil { await vm.load() } }
     }
@@ -187,7 +183,7 @@ struct DiscipleshipHubView: View {
     private func messageHero(_ hub: Discipleship, discipler d: Discipleship.Discipler) -> some View {
         if hub.canMessage {
             if let dm = vm.disciplerDm {
-                NavigationLink(value: dm) { messageLabel(d, busy: false) }
+                NavigationLink(value: ThreadRoute(conversation: dm, context: .discipler)) { messageLabel(d, busy: false) }
                     .buttonStyle(.pressable)
                     .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             } else {

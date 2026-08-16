@@ -361,6 +361,73 @@ struct HomeWeekChain: View {
     }
 }
 
+// MARK: - Verse quote card (shared — the ONE way scripture renders as a quoted
+// excerpt anywhere in the app)
+
+/// Cream/parchment card with a left gold accent bar, a hanging gold curly-quote
+/// glyph, the verse set in Fraunces serif, and an uppercase, letter-spaced
+/// reference beneath — Home's verse-for-today, Pathway lesson blockquotes that
+/// carry scripture, and each Plan day's passage all share this ONE component
+/// (DRY — don't fork the styling per surface). Respects the member's global
+/// text-size (font helpers) and line-spacing (`.nuruLineSpacing`) preferences.
+struct VerseQuoteCard: View {
+    let verse: String
+    let reference: String
+    /// When true (default) the card supplies its own cream background, gold
+    /// border and corner radius — use for a standalone quote. Set false to
+    /// embed just the bar + glyph + text inside a container that already
+    /// provides the surrounding card chrome (e.g. Home's verse-for-today card).
+    var cardStyle: Bool = true
+    var background: Color = Nuru.surface
+    var ink: Color = Nuru.navyDeep
+    var gold: Color = Nuru.gold
+    var referenceColor: Color = Nuru.ink400
+    var verseSize: CGFloat = 18
+
+    /// Strip any wrapping curly/straight quotes from the source text — the
+    /// hanging glyph IS the quote mark, so the verse text itself never doubles it.
+    private var displayVerse: String {
+        var t = verse.trimmingCharacters(in: .whitespacesAndNewlines)
+        let opens: Set<Character> = ["\"", "\u{201C}"]
+        let closes: Set<Character> = ["\"", "\u{201D}"]
+        if let f = t.first, opens.contains(f) { t.removeFirst() }
+        if let l = t.last, closes.contains(l) { t.removeLast() }
+        return t.trimmingCharacters(in: .whitespaces)
+    }
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            RoundedRectangle(cornerRadius: 2).fill(gold).frame(width: 3)
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 6) {
+                    Text("\u{201C}")
+                        .font(.fraunces(30, .semibold)).foregroundStyle(gold)
+                        .offset(y: -8).accessibilityHidden(true)
+                    Text(displayVerse)
+                        .font(.fraunces(verseSize)).foregroundStyle(ink)
+                        .nuruLineSpacing(6)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(reference.uppercased())
+                    .font(.inter(11, .semibold)).kerning(1.4)
+                    .foregroundStyle(referenceColor)
+            }
+        }
+        .padding(cardStyle ? 18 : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            if cardStyle {
+                RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).fill(background)
+            }
+        }
+        .overlay {
+            if cardStyle {
+                RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(gold.opacity(0.25), lineWidth: 1)
+            }
+        }
+    }
+}
+
 // MARK: - Encouragement ("You're one reflection away…" / "Beautifully done today.")
 
 /// Nuru's daily word in the header — the AI blessing written for this member.
@@ -375,7 +442,7 @@ struct HomePersonalWord: View {
             Text(text)
                 .font(.fraunces(14)).italic()
                 .foregroundStyle(Color(hex: 0x475569))
-                .lineSpacing(3)
+                .nuruLineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .gentleEntrance()
@@ -429,7 +496,7 @@ struct HomeEncouragementCard: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Text(line)
                 .font(.fraunces(14)).italic().foregroundStyle(Color(hex: 0x1F2937))
-                .lineSpacing(3)
+                .nuruLineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -488,6 +555,11 @@ struct HomeUpcomingEventRow: View {
     let sub: String           // "3 going" or the location
     let subHighlight: Bool    // gold-bold when it's a going-count
     let imageUrl: String?
+    /// The member's RSVP for this occurrence — "going" | "maybe" | "declined" | nil.
+    /// nil (the default) keeps the original static gold-on-navy "RSVP" call-to-action;
+    /// a real status swaps in a tinted state pill (same palette as the Events tab's
+    /// RSVP row — EvD in EventDetailView.swift).
+    var rsvpStatus: String? = nil
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
 
@@ -524,9 +596,7 @@ struct HomeUpcomingEventRow: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 8)
-            Text("RSVP").font(.inter(9, .bold)).foregroundStyle(HomeFig.gold)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(HomeFig.navy, in: Capsule())
+            rsvpPill
         }
         .padding(10)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -534,6 +604,30 @@ struct HomeUpcomingEventRow: View {
             guard !reduceMotion else { return }
             withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
         }
+    }
+
+    /// nil → the original gold-on-navy "RSVP" call-to-action. A real status swaps
+    /// in a tinted state pill — same hexes as the Events tab's RSVP row (EvD in
+    /// EventDetailView.swift; that enum is private to its file, so reused by value).
+    @ViewBuilder private var rsvpPill: some View {
+        switch rsvpStatus {
+        case "going":
+            rsvpStatePill("Going", fg: Color(hex: 0x166534), bg: Color(hex: 0x16A34A).opacity(0.14))
+        case "maybe":
+            rsvpStatePill("Maybe", fg: Color(hex: 0xB45309), bg: Color(hex: 0xD97706).opacity(0.14))
+        case "declined":
+            rsvpStatePill("Can't go", fg: Color(hex: 0x59667C), bg: Color(hex: 0x74808F).opacity(0.14))
+        default:
+            Text("RSVP").font(.inter(9, .bold)).foregroundStyle(HomeFig.gold)
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(HomeFig.navy, in: Capsule())
+        }
+    }
+
+    private func rsvpStatePill(_ label: String, fg: Color, bg: Color) -> some View {
+        Text(label).font(.inter(9, .bold)).foregroundStyle(fg)
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(bg, in: Capsule())
     }
 }
 
@@ -708,31 +802,84 @@ struct HomeOnAirCard: View {
 }
 
 
-// MARK: - Equalizer wave (Apple-Music-style dancing bars while radio plays)
+// MARK: - Nuru Live LIVE banner (church-scope stream — pinned at the very top
+// of Home while live; the cell-scope twin lives in CellInfoView)
 
-/// Five capsule bars bouncing on staggered, slightly-detuned loops so the wave
-/// reads organic rather than metronomic. Purely decorative — honors Reduce
-/// Motion by holding a static mid-height wave.
-struct EqualizerWave: View {
-    var color: Color = HomeFig.gold
-    var barHeight: CGFloat = 14
+/// The prominent "we're live" card: pulsing red LIVE dot, title, "started Xm
+/// ago · N watching", a gold "Watch live" CTA and a quieter "Replays" link.
+/// Audio-kind streams show a waveform glyph instead of a camera — there is no
+/// video to preview.
+struct HomeLiveBannerCard: View {
+    let stream: LiveStreamSummary
+    let onWatch: () -> Void
+    let onReplays: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var dancing = false
-    // Each bar's full height as a share of barHeight — an uneven skyline.
-    private let peaks: [CGFloat] = [0.55, 1.0, 0.7, 0.9, 0.5]
+    @State private var pulse = false
+
+    private var metaLine: String {
+        let started = LiveFormat.startedAgo(stream.startedAt) ?? "live now"
+        return "\(started) · \(stream.viewerCount) watching"
+    }
 
     var body: some View {
-        HStack(alignment: .center, spacing: 2.5) {
-            ForEach(peaks.indices, id: \.self) { i in
-                Capsule().fill(color)
-                    .frame(width: 3, height: max(3, peaks[i] * barHeight * (dancing ? 1 : 0.3)))
-                    .animation(reduceMotion ? nil
-                               : .easeInOut(duration: 0.42 + Double(i) * 0.07).repeatForever(autoreverses: true),
-                               value: dancing)
+        VStack(alignment: .leading, spacing: 0) {
+            Button { Haptics.tap(); onWatch() } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        ZStack {
+                            Circle().fill(HomeFig.gold.opacity(0.16)).frame(width: 44, height: 44)
+                            Icon(stream.isAudio ? .audioLines : .camera, size: 19, color: HomeFig.gold)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 5) {
+                                Circle().fill(Color.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
+                                Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+                            }
+                            .padding(.horizontal, 8).padding(.vertical, 3)
+                            .background(HomeFig.liveRed, in: Capsule())
+                            Text(stream.title).font(.inter(15, .bold)).foregroundStyle(.white).lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
+                        Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+                    }
+                    Text(metaLine)
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
+                        .padding(.top, 8)
+                }
             }
+            .buttonStyle(.pressableSubtle)
+
+            HStack(spacing: 10) {
+                Button { Haptics.tap(); onWatch() } label: {
+                    HStack(spacing: 6) {
+                        Icon(.play, size: 12, color: HomeFig.navy)
+                        Text("Watch live").font(.inter(12, .bold)).foregroundStyle(HomeFig.navy)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(HomeFig.gold, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                Button { Haptics.tap(); onReplays() } label: {
+                    Text("Replays").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .background(Color.white.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(Color.white.opacity(0.18), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                Spacer(minLength: 0)
+            }
+            .padding(.top, 12)
         }
-        .frame(height: barHeight)
-        .onAppear { dancing = true }
+        .padding(14)
+        .background(
+            LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark], startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(HomeFig.liveRed.opacity(0.4), lineWidth: 1))
+        .shadow(color: HomeFig.liveRed.opacity(0.2), radius: 10, y: 5)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
+        }
     }
 }
 

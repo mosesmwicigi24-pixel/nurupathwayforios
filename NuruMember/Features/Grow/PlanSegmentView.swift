@@ -11,6 +11,12 @@ import UIKit
 extension Notification.Name {
     /// Posted (object = segmentId) when a part is finished in its reader.
     static let nuruPlanPartDone = Notification.Name("nuruPlanPartDone")
+    /// Posted (object = PlanDayUnlockAck) when a segment's ack confirms its
+    /// day sealed. Authoritative and same-transaction on the server side —
+    /// the day hub trusts it directly instead of waiting for an explicit
+    /// "Seal the day" tap, and the plan overview uses it to tell a genuine
+    /// lock apart from a completion still catching up to its next fetch.
+    static let nuruPlanDayUnlocked = Notification.Name("nuruPlanDayUnlocked")
 }
 
 // Scroll metrics (content offset + height → the reading instruments).
@@ -215,8 +221,7 @@ struct PlanSegmentView: View {
                 switch seg.kind.lowercased() {
                 case "scripture":
                     DayPullQuote(text: (seg.content?.isEmpty == false ? seg.content! : (seg.reference ?? seg.title)),
-                                 caption: seg.reference ?? "Scripture",
-                                 quoted: seg.content?.isEmpty == false)
+                                 caption: seg.reference ?? "Scripture")
                 case "reading":
                     if let c = seg.content, !c.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -282,9 +287,22 @@ struct PlanSegmentView: View {
             }
             saving = true
             Task {
+                var lastAck: SegmentCompleteResult?
                 for seg in group where !seg.completed {
-                    _ = try? await MemberAPI.completePlanSegment(seg.segmentId)
+                    if let res = try? await MemberAPI.completePlanSegment(seg.segmentId) { lastAck = res }
                     NotificationCenter.default.post(name: .nuruPlanPartDone, object: seg.segmentId)
+                }
+                // The LAST segment's ack is the server's authoritative word on
+                // whether this day just sealed and the next one opened —
+                // computed in the same transaction as the write. Broadcasting
+                // it lets the day hub skip the explicit "Seal the day" tap and
+                // the plan overview tell a genuine lock apart from a
+                // completion still landing through the sync path.
+                if let ack = lastAck, ack.dayComplete {
+                    NotificationCenter.default.post(
+                        name: .nuruPlanDayUnlocked,
+                        object: PlanDayUnlockAck(planId: ref.planId, dayNumber: ack.dayNumber,
+                                                  nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
                 }
                 done = true; saving = false
                 Haptics.success()
@@ -463,46 +481,57 @@ struct TalkItOverView: View {
     @State private var loading = true
     @State private var draft = ""
     @State private var posting = false
+    @State private var postFailed = false
     @State private var markedRead = false
     @State private var aiBusy = false
     @FocusState private var composing: Bool
 
     var body: some View {
-        ZStack {
-            PL.cream.ignoresSafeArea()
-            VStack(spacing: 0) {
-                header
-                ScrollViewReader { proxy in
-                    ScrollView(showsIndicators: false) {
-                        VStack(alignment: .leading, spacing: 14) {
-                            promptCard
-                            if loading && posts.isEmpty {
-                                HStack { Spacer(); ProgressView().tint(PL.gold); Spacer() }
-                                    .padding(.vertical, 40)
-                            } else if posts.isEmpty {
-                                emptyState
-                            } else {
-                                ForEach(posts) { post in
-                                    TalkPostRow(post: post) { toggleLike(post) }
-                                        .id(post.postId)
-                                }
+        VStack(spacing: 0) {
+            header
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        promptCard
+                        if loading && posts.isEmpty {
+                            HStack { Spacer(); ProgressView().tint(PL.gold); Spacer() }
+                                .padding(.vertical, 40)
+                        } else if posts.isEmpty {
+                            emptyState
+                        } else {
+                            ForEach(posts) { post in
+                                TalkPostRow(post: post) { toggleLike(post) }
+                                    .id(post.postId)
                             }
                         }
-                        .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 16)
                     }
-                    .scrollDismissesKeyboard(.interactively)
-                    .onChange(of: posts.count) { _, _ in
-                        if let last = posts.last {
-                            withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(last.postId, anchor: .bottom) }
-                        }
+                    .padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 16)
+                }
+                .scrollDismissesKeyboard(.interactively)
+                // The composer rides in the scroll's bottom safe-area inset, the
+                // same way ChatThreadView pins its own: keyboard avoidance is then
+                // automatic and the bar floats directly on top of the keyboard.
+                // It must NOT be a plain sibling in a ZStack that also holds a
+                // .ignoresSafeArea() background — a ZStack sizes to its LARGEST
+                // child, so the keyboard-ignoring Color inflates the stack to the
+                // full screen and the composer lays out UNDER the keyboard.
+                // (Same ornament lesson as the Home card fusion, ios#72.)
+                .safeAreaInset(edge: .bottom, spacing: 0) {
+                    VStack(spacing: 0) {
+                        composer
+                        // The same gold "seal it" button every other part ends
+                        // with — hidden while typing so the composer gets the room.
+                        if !composing { doneBar }
                     }
                 }
-                composer
-                // The same gold "seal it" button every other part ends with —
-                // hidden while the keyboard is up so the composer gets the room.
-                if !composing { doneBar }
+                .onChange(of: posts.count) { _, _ in
+                    if let last = posts.last {
+                        withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(last.postId, anchor: .bottom) }
+                    }
+                }
             }
         }
+        .background(PL.cream.ignoresSafeArea())
         .animation(.easeInOut(duration: 0.2), value: composing)
         // NOT .ignoresSafeArea(.top) — that buried the back-arrow row under the
         // status bar (the header's own background still bleeds navy to the top).
@@ -543,9 +572,11 @@ struct TalkItOverView: View {
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { posts.append(row) }
                 draft = ""
                 composing = false
+                postFailed = false
                 Haptics.success()
             } else {
                 Haptics.error()
+                postFailed = true // the draft is kept; say why it's still here
             }
             posting = false
         }
@@ -621,7 +652,7 @@ struct TalkItOverView: View {
             ForEach(Array(promptLines.enumerated()), id: \.offset) { _, q in
                 Text(q)
                     .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
-                    .lineSpacing(5).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineSpacing(5).fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
@@ -645,6 +676,12 @@ struct TalkItOverView: View {
     // MARK: composer (pinned)
 
     private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+        if postFailed {
+            Text("Couldn't send — check your connection and try again.")
+                .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                .padding(.horizontal, 4)
+        }
         HStack(spacing: 10) {
             ZStack(alignment: .leading) {
                 if draft.isEmpty {
@@ -706,6 +743,7 @@ struct TalkItOverView: View {
             .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || posting)
             .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
         }
+        }
         .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
     }
@@ -721,8 +759,16 @@ struct TalkItOverView: View {
             if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
                 markedRead = true
                 Task {
-                    _ = try? await MemberAPI.completePlanSegment(sid)
+                    let ack = try? await MemberAPI.completePlanSegment(sid)
                     NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
+                    // Talk it Over can be the LAST part of a day too — same
+                    // authoritative-ack broadcast as the segment reader's CTA.
+                    if let ack, ack.dayComplete {
+                        NotificationCenter.default.post(
+                            name: .nuruPlanDayUnlocked,
+                            object: PlanDayUnlockAck(planId: route.planId, dayNumber: ack.dayNumber,
+                                                      nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
+                    }
                 }
             }
             Haptics.success()

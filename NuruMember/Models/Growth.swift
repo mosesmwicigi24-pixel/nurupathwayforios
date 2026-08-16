@@ -131,6 +131,11 @@ struct ReadingPlanDay: Codable, Sendable, Identifiable, Hashable {
     let content: String?
     let segments: [PlanSegment]?
     let completed: Bool?
+    /// Server-decided: true while an earlier day is still unfinished. A locked
+    /// day arrives with its shape (title, reference, the kinds of its parts) but
+    /// its `content` and `video_url` withheld — there is nothing to render past
+    /// the gate even if a client tried.
+    let locked: Bool
 
     var id: Int { dayNumber }
     init(from d: Decoder) throws {
@@ -141,6 +146,8 @@ struct ReadingPlanDay: Codable, Sendable, Identifiable, Hashable {
         content = try? c.decodeIfPresent(String.self, forKey: .content)
         segments = try? c.decodeIfPresent([PlanSegment].self, forKey: .segments)
         completed = try? c.decodeIfPresent(Bool.self, forKey: .completed)
+        // Absent on an older server: nothing is locked, as before.
+        locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? false
     }
 }
 
@@ -157,6 +164,9 @@ struct ReadingPlanDetail: Codable, Sendable {
     let completedDays: [Int]?
     let enrolled: Bool
     let days: [ReadingPlanDay]
+    /// The first day not yet finished — the one day to point someone back to.
+    /// Null once the whole plan is done.
+    let nextDay: Int?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         planId = try c.decode(String.self, forKey: .planId)
@@ -170,6 +180,7 @@ struct ReadingPlanDetail: Codable, Sendable {
         completedDays = try? c.decodeIfPresent([Int].self, forKey: .completedDays)
         enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
         days = (try? c.decodeIfPresent([ReadingPlanDay].self, forKey: .days)) ?? []
+        nextDay = try? c.decodeIfPresent(Int.self, forKey: .nextDay)
     }
 }
 
@@ -190,14 +201,39 @@ struct SegmentCompleteResult: Codable, Sendable {
     let segmentId: String
     let dayNumber: Int
     let dayCompleted: Bool
+    /// Additive (backend fix/plan-day-unlock-race): the SAME value as
+    /// dayCompleted, plus the authoritative unlock verdict for the day right
+    /// after this one — computed server-side in the SAME transaction as the
+    /// completion write. This is what lets the client act on the LAST
+    /// segment's ack directly instead of racing a plan re-fetch against a
+    /// completion that might still be catching up (the offline-sync race).
+    let dayComplete: Bool
+    let nextDayNumber: Int?
+    let nextDayUnlocked: Bool
     let progress: Progress?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         segmentId = (try? c.decodeIfPresent(String.self, forKey: .segmentId)) ?? ""
         dayNumber = (try? c.decodeIfPresent(Int.self, forKey: .dayNumber)) ?? 0
         dayCompleted = (try? c.decodeIfPresent(Bool.self, forKey: .dayCompleted)) ?? false
+        // Older servers (pre-fix) only ever send day_completed — fall back to it.
+        dayComplete = (try? c.decodeIfPresent(Bool.self, forKey: .dayComplete)) ?? dayCompleted
+        nextDayNumber = try? c.decodeIfPresent(Int.self, forKey: .nextDayNumber)
+        nextDayUnlocked = (try? c.decodeIfPresent(Bool.self, forKey: .nextDayUnlocked)) ?? false
         progress = try? c.decodeIfPresent(Progress.self, forKey: .progress)
     }
+}
+
+/// Carried by `.nuruPlanDayUnlocked` — the authoritative ack from the LAST
+/// segment of a day (§1.1: the server decides gating, never the client). Lets
+/// the day hub and plan overview act on it directly instead of waiting on a
+/// re-fetch that could still be racing the same completion through the sync
+/// path.
+struct PlanDayUnlockAck {
+    let planId: String?
+    let dayNumber: Int
+    let nextDayNumber: Int?
+    let nextDayUnlocked: Bool
 }
 
 /// Navigation reference for a single plan day (the day + its owning plan id).

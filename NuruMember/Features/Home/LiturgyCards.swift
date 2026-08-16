@@ -1,14 +1,27 @@
 // The liturgy Home + celebrations rail (intelligence Phase 4).
 //   • HomeLiturgyCard — Home breathes with the hours: the current part's prayer
 //     line (morning/midday/evening/night), coloured by the church season.
-//     Self-loading; collapses to nothing until the line arrives.
+//     Self-loading; collapses to nothing until the line arrives. Gives the
+//     hour a VOICE (feat/liturgy-audio) — a tap-only listen control reads the
+//     line + Scripture aloud on-device (LiturgyVoice.swift); never auto-plays.
 //   • CelebrationsRail — the congregation's recent milestones (server-detected,
 //     Phase 4 moments) with one-tap blessings (🙌 ❤️ 🔥), optimistic updates.
 import SwiftUI
 
 struct HomeLiturgyCard: View {
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var tabs: TabRouter
+    @EnvironmentObject private var auth: AuthStore
     @State private var lit: HomeLiturgy?
+    @StateObject private var voice = LiturgyVoiceEngine()
+    @State private var showRecordingsManager = false
+
+    /// Admin/SuperAdmin only — narrower than the Instructor+ ladder used for
+    /// module voice notes elsewhere (ModuleView.swift's `canLeaveVoiceNote`);
+    /// the backend gates admin/liturgy/recordings with requireRole("Admin").
+    private var canManageRecordings: Bool {
+        ["Admin", "SuperAdmin"].contains(auth.profile?.role ?? "")
+    }
 
     private func partLabel(_ p: String) -> String {
         switch p {
@@ -17,6 +30,16 @@ struct HomeLiturgyCard: View {
         case "evening": return "EVENING"
         default: return "NIGHT"
         }
+    }
+
+    /// Seven-bands: the tableau's height. 232 exactly as shipped when the new
+    /// optional lines are absent; grows to give the charge / companion verse
+    /// breathing room so the bottom stack never crowds the kicker.
+    private func tableauHeight(_ lit: HomeLiturgy) -> CGFloat {
+        var h: CGFloat = 232
+        if let charge = lit.charge, !charge.isEmpty { h += 30 }
+        if let vl = lit.verseLine, !vl.text.isEmpty { h += 50 }
+        return h
     }
 
     private func partEmoji(_ p: String) -> String {
@@ -37,45 +60,299 @@ struct HomeLiturgyCard: View {
                 Color.clear.frame(height: 0)
             }
             if let lit {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 8) {
-                        Text(partEmoji(lit.part)).font(.system(size: 15))
-                        Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
-                            .font(.inter(10.5, .bold)).kerning(1.6)
-                            .foregroundStyle(Color(hex: 0xE8CA6C))
-                        Spacer()
-                        if let ref = lit.scriptureRef {
-                            Text(ref)
-                                .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
-                                .padding(.horizontal, 10).padding(.vertical, 4)
-                                .background(Color.white.opacity(0.12), in: Capsule())
+                if let art = lit.art, let url = URL(string: art.url), !art.url.isEmpty {
+                    // The hour, beheld: a taller photograph of the hour it names,
+                    // hidden a little under the deep-navy block, with the hour +
+                    // brand at the top and the prayer line resting at the BOTTOM
+                    // where the veil is deepest — so the type reads clearly (owner
+                    // ask). Everything is owned+clipped, never inflates layout.
+                    // Seven-bands: the photograph stands taller when the server
+                    // sends the extra charge / companion-verse lines, so the
+                    // bottom stack never crowds the kicker. Absent → classic 232.
+                    Color.clear
+                        .frame(height: tableauHeight(lit))
+                        .overlay {
+                            CachedAsyncImage(url: url) { phase in
+                                if let img = phase.image {
+                                    img.resizable().scaledToFill()
+                                } else {
+                                    LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                }
+                            }
                         }
+                        .clipped()
+                        .overlay { DeepNavyBlock() }
+                        .overlay(alignment: .topLeading) { litKicker(lit).padding(18) }
+                        .overlay(alignment: .bottomLeading) {
+                            // One hierarchy: the hour's word LARGE, a gold rule
+                            // (the selah), then small golden lines closing on a
+                            // SINGLE scripture.
+                            VStack(alignment: .leading, spacing: 7) {
+                                Text(lit.line)
+                                    .font(.fraunces(20)).foregroundStyle(.white)
+                                    .lineSpacing(4)
+                                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                                    .frame(width: 34, height: 1.5)
+                                    .padding(.vertical, 2)
+                                if let charge = lit.charge, !charge.isEmpty {
+                                    Text(charge)
+                                        .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
+                                        .lineSpacing(3)
+                                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                if let vl = lit.verseLine, !vl.text.isEmpty {
+                                    Text("“\(vl.text)”")
+                                        .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                        .lineSpacing(3)
+                                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                    Text(vl.reference.uppercased())
+                                        .font(.inter(10, .bold)).kerning(1.4)
+                                        .foregroundStyle(Color(hex: 0xE0B85E))
+                                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                                        .padding(.top, 1)
+                                } else if let ref = lit.scriptureRef {
+                                    Text(ref.uppercased())
+                                        .font(.inter(10, .bold)).kerning(1.4)
+                                        .foregroundStyle(Color(hex: 0xE0B85E))
+                                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                                }
+                                pastorVoiceButton(lit)
+                            }
+                            .padding(18)
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                } else {
+                    // Offline / older backend: the classic navy card, content-sized.
+                    VStack(alignment: .leading, spacing: 10) {
+                        litKicker(lit)
+                        Text(lit.line)
+                            .font(.fraunces(19)).foregroundStyle(.white)
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                            .frame(width: 34, height: 1.5)
+                        if let charge = lit.charge, !charge.isEmpty {
+                            Text(charge)
+                                .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if let vl = lit.verseLine, !vl.text.isEmpty {
+                            Text("“\(vl.text)”")
+                                .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(vl.reference.uppercased())
+                                .font(.inter(10, .bold)).kerning(1.4)
+                                .foregroundStyle(Color(hex: 0xE0B85E))
+                        } else if let ref = lit.scriptureRef {
+                            Text(ref.uppercased())
+                                .font(.inter(10, .bold)).kerning(1.4)
+                                .foregroundStyle(Color(hex: 0xE0B85E))
+                        }
+                        pastorVoiceButton(lit)
                     }
-                    Text(lit.line)
-                        .font(.fraunces(18)).foregroundStyle(.white)
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    ZStack(alignment: .topTrailing) {
+                    .padding(18)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
                         LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
                                        startPoint: .topLeading, endPoint: .bottomTrailing)
-                        Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
-                            .frame(width: 150, height: 150).blur(radius: 38)
-                            .offset(x: 45, y: -55)
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                )
+                            .overlay(alignment: .topTrailing) {
+                                Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
+                                    .frame(width: 150, height: 150).blur(radius: 38)
+                                    .offset(x: 45, y: -55)
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    )
+                }
             }
         }
-        .task { lit = try? await MemberAPI.homeLiturgy() }
+        // A decline toast (VoiceOver running / currently broadcasting / a
+        // session hiccup) — floats over the card without touching its
+        // carefully-budgeted height (tableauHeight), auto-dismisses itself.
+        .overlay(alignment: .top) {
+            if let reason = voice.declineReason {
+                Text(reason)
+                    .font(.inter(11, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Color.black.opacity(0.8), in: Capsule())
+                    .padding(.horizontal, 24)
+                    .padding(.top, 8)
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .task(id: reason) {
+                        try? await Task.sleep(nanoseconds: 3_500_000_000)
+                        guard !Task.isCancelled else { return }
+                        withAnimation { voice.declineReason = nil }
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: voice.declineReason)
+        .onChange(of: voice.declineReason) { _, reason in if reason != nil { Haptics.error() } }
+        .task {
+            voice.stop()   // a fresh fetch replaces the text — never keep reading the old one
+            lit = try? await MemberAPI.homeLiturgy()
+        }
         .onChange(of: scenePhase) { _, phase in
             // The tab shell keeps Home alive for the whole session — without
             // this an overnight-resident app shows yesterday's card forever.
-            if phase == .active { Task { lit = try? await MemberAPI.homeLiturgy() } }
+            if phase == .active {
+                Task { voice.stop(); lit = try? await MemberAPI.homeLiturgy() }
+            } else {
+                voice.stop()   // backgrounding/locking — never keep talking off-screen
+            }
         }
+        // Switching tabs never removes this view (RootView keeps every
+        // loaded tab mounted at opacity 0 — see RootView.body) so
+        // `.onDisappear` alone would NOT catch "the member left Home for
+        // Pathway/Plans/You/Live". This is the signal that does.
+        .onChange(of: tabs.selected) { _, selected in
+            if selected != .home { voice.stop() }
+        }
+        // Belt-and-suspenders for any OTHER way this view genuinely leaves
+        // the hierarchy (it normally won't, per the note above).
+        .onDisappear { voice.stop() }
+        .sheet(isPresented: $showRecordingsManager) {
+            LiturgyRecordingsSheet()
+        }
+    }
+
+    /// The hour + brand row — shared by the tableau (top overlay) and the
+    /// classic offline card. Gold hour label, then the Nuru Pathway lockup.
+    @ViewBuilder
+    private func litKicker(_ lit: HomeLiturgy) -> some View {
+        HStack(spacing: 7) {
+            Text(partEmoji(lit.part)).font(.system(size: 15))
+            Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
+                .font(.inter(10.5, .bold)).kerning(1.6)
+                .foregroundStyle(Color(hex: 0xF2DDA0))
+                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                .lineLimit(1)
+            BrandMark(size: 14)
+            Text("Nuru Pathway")
+                .font(.inter(10.5, .semibold)).foregroundStyle(.white)
+                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                .lineLimit(1)
+            Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
+            Spacer(minLength: 0)
+            if canManageRecordings { recordManageButton }
+            listenButton(lit)
+        }
+    }
+
+    // MARK: - Record-your-voice affordance (Admin/SuperAdmin only)
+
+    /// A small, unobtrusive control next to the listen button — opens the
+    /// full 7-band recorder list (LiturgyRecorder.swift). Never shown to a
+    /// member; never a badge/counter (see that file's header for why).
+    private var recordManageButton: some View {
+        Button {
+            Haptics.tap()
+            showRecordingsManager = true
+        } label: {
+            Icon(.mic, size: 12, color: Color(hex: 0xF2DDA0))
+                .frame(width: 24, height: 24)
+                .background(Color.black.opacity(0.3), in: Circle())
+                .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Manage your recorded liturgy readings")
+    }
+
+    // MARK: - Listen control (feat/liturgy-audio)
+
+    /// What the voice engine should say for this liturgy — mirrors exactly
+    /// what the card SHOWS (line → charge → verse-line-or-scriptureRef).
+    /// `recordedUrlString: lit.recordedAudioUrl` — the pastor's own voice for
+    /// this band when he's recorded one; null (most bands, most of the time —
+    /// mixed coverage is permanent, not a gap) falls back to synthesis via
+    /// `LiturgyAudioSource.preferred` (see LiturgyVoiceLogic.swift).
+    private func spokenSource(for lit: HomeLiturgy) -> LiturgyAudioSource {
+        // Deliberately NOT `.preferred(recordedUrlString:…)`. Listen always
+        // synthesises TODAY'S TEXT, because the liturgy is recomposed daily
+        // (new spine, new memory) while a recording is a STANDING per-band
+        // asset the pastor replaces occasionally. Letting the recording
+        // silently take over this button meant a member read one thing on the
+        // card and heard the pastor say something else — which reads as a bug,
+        // not a blessing. His voice now has its own control below.
+        .synthesized(LiturgySpeechText.segments(
+            line: lit.line, charge: lit.charge,
+            verseLineText: lit.verseLine?.text, verseLineReference: lit.verseLine?.reference,
+            scriptureRef: lit.scriptureRef))
+    }
+
+    /// The pastor's own standing word for THIS hour — a separate thing from
+    /// the day's liturgy, and labelled as such. Absent for most bands most of
+    /// the time; mixed coverage is permanent and normal, so there is no empty
+    /// state, no "not yet recorded", nothing to complete.
+    @ViewBuilder
+    private func pastorVoiceButton(_ lit: HomeLiturgy) -> some View {
+        if let raw = lit.recordedAudioUrl?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !raw.isEmpty, let url = URL(string: raw) {
+            Button {
+                Haptics.tap()
+                voice.toggle(.recorded(url))
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(.volume2, size: 11, color: Color(hex: 0xF2DDA0))
+                    Text("A word for this hour — Pastor Moses")
+                        .font(.inter(11, .semibold))
+                        .foregroundStyle(Color(hex: 0xF2DDA0))
+                    if let secs = lit.recordedAudioDurationSec, secs > 0 {
+                        Text("\(secs)s")
+                            .font(.inter(10))
+                            .foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.7))
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(Color.black.opacity(0.3), in: Capsule())
+                .overlay(Capsule().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Play Pastor Moses's own word for this hour")
+            .accessibilityHint("His recorded blessing for this time of day. Separate from the written liturgy above.")
+        }
+    }
+
+    private var listenAccessibilityLabel: String {
+        switch voice.state {
+        case .idle: return "Listen to today's liturgy read aloud"
+        case .playing: return "Pause the liturgy reading"
+        case .paused: return "Resume the liturgy reading"
+        }
+    }
+
+    /// Speaker = "tap to listen" (idle); pause/play mirror VoiceMessageBubble's
+    /// own convention elsewhere in the app once playback is actually underway,
+    /// so a mid-reading pause reads as resumable rather than as a reset.
+    private var listenIcon: Lucide {
+        switch voice.state {
+        case .idle: return .volume2
+        case .playing: return .pause
+        case .paused: return .play
+        }
+    }
+
+    /// A small gold-on-navy circular toggle — never auto-plays, tap only.
+    private func listenButton(_ lit: HomeLiturgy) -> some View {
+        Button {
+            Haptics.tap()
+            voice.toggle(spokenSource(for: lit))
+        } label: {
+            Icon(listenIcon, size: 12, color: Color(hex: 0xF2DDA0))
+                .frame(width: 24, height: 24)
+                .background(Color.black.opacity(0.3), in: Circle())
+                .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(listenAccessibilityLabel)
+        .accessibilityHint("Reads the words shown above aloud, on this device.")
     }
 }
 

@@ -23,7 +23,7 @@ final class PrayerWallDetailViewModel: ObservableObject {
         loading = false
     }
 
-    func react(_ emoji: String) async { try? await MemberAPI.prayerWallReact(postId, emoji: emoji); await load() }
+    func react(_ emoji: String) async { _ = try? await MemberAPI.prayerWallReact(postId, emoji: emoji); await load() }
 
     func comment() async {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)

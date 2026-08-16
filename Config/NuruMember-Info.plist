@@ -8,9 +8,10 @@
 	<array>
 		<string>audio</string>
 	</array>
-	<!-- QR event check-in (CheckInScannerView) — shown on the first camera ask. -->
+	<!-- QR event check-in (CheckInScannerView) AND Nuru Live broadcasting
+	     (GoLiveBroadcastView) — shown on the first camera ask for either. -->
 	<key>NSCameraUsageDescription</key>
-	<string>Nuru uses the camera to scan the event check-in code.</string>
+	<string>Nuru uses the camera to scan the event check-in code and, if you're a broadcaster (or an invited guest), to go live.</string>
 	<!-- nuru:// deep links — the home-screen widgets open straight into their
 	     surface (nuru://pathway, nuru://plans, nuru://chat, nuru://radio). -->
 	<key>CFBundleURLTypes</key>

@@ -522,8 +522,6 @@ struct ModuleView: View {
         steps.append(GateStep(kind: .reflect, fraction: vm.reflectDone ? 1 : 0))
         return steps
     }
-    private var stepsDone: Int { gateSteps.filter(\.done).count }
-    private var stepsTotal: Int { gateSteps.count }
     /// The quiz / mark-complete only unlocks when EVERY applicable step is done.
     private var contentComplete: Bool { reachedEnd && watchDone && listenDone && vm.reflectDone }
     /// The honest reason the gate is still locked — names the FIRST unmet step.
@@ -2121,24 +2119,6 @@ private struct MLBottomGate: View {
         .animation(.easeInOut(duration: 0.25), value: complete)
     }
 
-    /// One filling segment per applicable step. A done segment is solid gold; the
-    /// in-progress segment fills gold to its real fraction; not-yet steps stay track.
-    private var segmentedBar: some View {
-        HStack(spacing: 5) {
-            ForEach(steps) { step in
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(ML.track)
-                        Capsule().fill(step.done ? AnyShapeStyle(ML.goldGradient) : AnyShapeStyle(ML.gold.opacity(0.85)))
-                            .frame(width: max(0, geo.size.width * step.clamped))
-                    }
-                }
-                .frame(height: 6)
-                .animation(.easeOut(duration: 0.35), value: step.clamped)
-            }
-        }
-    }
-
     /// A compact row of labelled step chips.
     private var chipRow: some View {
         HStack(spacing: 6) {
@@ -2278,7 +2258,7 @@ private func mlMinutes(_ seconds: Int?) -> Int? {
 /// isn't rendered twice. Otherwise `title == nil` and the body is the page
 /// verbatim (internal spacing preserved). Display-only; the server's page split
 /// is untouched.
-private let mlHeadingRegex = try! NSRegularExpression(pattern: "^#{1,6}[ \\t]+(.+?)[ \\t]*$")
+private let mlHeadingRegex = try? NSRegularExpression(pattern: "^#{1,6}[ \\t]+(.+?)[ \\t]*$")
 
 private func pageTitleAndBody(_ page: String) -> (title: String?, body: String) {
     let trimmed = page.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2289,7 +2269,7 @@ private func pageTitleAndBody(_ page: String) -> (title: String?, body: String) 
     }
     let firstLine = lines[firstIdx].trimmingCharacters(in: .whitespaces)
     let range = NSRange(firstLine.startIndex..<firstLine.endIndex, in: firstLine)
-    guard let match = mlHeadingRegex.firstMatch(in: firstLine, range: range),
+    guard let match = mlHeadingRegex?.firstMatch(in: firstLine, range: range),
           let capture = Range(match.range(at: 1), in: firstLine) else {
         return (nil, page)
     }

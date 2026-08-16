@@ -8,11 +8,35 @@
 
 /* Begin PBXBuildFile section */
 		1F49253E25E96E56CF6E97A8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		5CC7B488EBD80946899A64C0 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */; };
+		A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6DA0216FE218D406A8E8CFD9 /* HaishinKit */; };
+		ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */; };
+		99900E55D19AED44A6097A04 /* SundayLetterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F88539430BED8B14C0153AF /* SundayLetterTests.swift */; };
+		2DB55733AFA86B039404A7B0 /* LiturgyVoiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */; };
+		68898C13C713F999F0BF9C5B /* LiturgyRecorderLogicTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A84FD50DB9FFE34C1B7CB9B /* LiturgyRecorderLogicTests.swift */; };
+		1AE1C1F0A5A94B3097D6C201 /* LiveInteractionsDecodingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */; };
+		2155FB891D4D49C395110CB5 /* GuestAudioPlayoutDeviceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */; };
+		D44F50FF1A7741D69BBA9768 /* WhipBasicAuthTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B78F37184A54D1E87236580 /* WhipBasicAuthTests.swift */; };
+		BA244F042CAF4D95B69CE9D6 /* WhepRetryPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0550504149BF4DC8B1585EAE /* WhepRetryPolicyTests.swift */; };
+		4298D72347954E72B66689F6 /* LiveReactionKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02447D9726EC44E083127526 /* LiveReactionKindTests.swift */; };
+		E8E95F72C72B3A623C715BAC /* LiveStageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */; };
+		EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */; };
 		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0A2919201E148762801CB /* RTMPHaishinKit */; };
 		FB375336D28DEE783DCFBE1C /* NuruWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */; };
+		00DF0D31CD0B4129A03FF01E /* WebRTC in Frameworks */ = {isa = PBXBuildFile; productRef = 5F55E2A2E353454EBF8BDAB0 /* WebRTC */; };
+		1DBD78C7949A4ED39537CCD9 /* FirebaseCore in Frameworks */ = {isa = PBXBuildFile; productRef = FF4AAF541A444C1799F1187B /* FirebaseCore */; };
+		E498EEF2CB2E48ADB2E10242 /* FirebaseCrashlytics in Frameworks */ = {isa = PBXBuildFile; productRef = B31CA011440D4412828AFCC8 /* FirebaseCrashlytics */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		98EF880A985213BC01A9EF46 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 2000000000000000000000A1 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 2000000000000000000000E1;
+			remoteInfo = NuruMember;
+		};
 		A98B80ED6D10CCF5253A638E /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 2000000000000000000000A1 /* Project object */;
@@ -41,11 +65,33 @@
 		5F3B162C6DAB94E5C9CB5D2D /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS18.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		664342554B6FC512AC94FFFA /* NuruWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = NuruWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		6FE4E68C4B8BE48BB775D761 /* NuruWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NuruWidgets.swift; sourceTree = "<group>"; };
+		7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = NuruMemberTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ModelDecodingTests.swift; sourceTree = "<group>"; };
+		5F88539430BED8B14C0153AF /* SundayLetterTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SundayLetterTests.swift; sourceTree = "<group>"; };
+		1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiturgyVoiceTests.swift; sourceTree = "<group>"; };
+		1A84FD50DB9FFE34C1B7CB9B /* LiturgyRecorderLogicTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiturgyRecorderLogicTests.swift; sourceTree = "<group>"; };
+		1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveInteractionsDecodingTests.swift; sourceTree = "<group>"; };
+		DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GuestAudioPlayoutDeviceTests.swift; sourceTree = "<group>"; };
+		2B78F37184A54D1E87236580 /* WhipBasicAuthTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WhipBasicAuthTests.swift; sourceTree = "<group>"; };
+		0550504149BF4DC8B1585EAE /* WhepRetryPolicyTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = WhepRetryPolicyTests.swift; sourceTree = "<group>"; };
+		02447D9726EC44E083127526 /* LiveReactionKindTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveReactionKindTests.swift; sourceTree = "<group>"; };
+		F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveStageTests.swift; sourceTree = "<group>"; };
+		C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveDockChromeTests.swift; sourceTree = "<group>"; };
 		E694577B48D734E91F73C524 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
-		2000000000000000000000D1 /* NuruMember */ = {isa = PBXFileSystemSynchronizedRootGroup; explicitFileTypes = {}; explicitFolders = (); path = NuruMember; sourceTree = "<group>"; };
+		2000000000000000000000D1 /* NuruMember */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+			);
+			explicitFileTypes = {
+			};
+			explicitFolders = (
+			);
+			path = NuruMember;
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -53,6 +99,11 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A9E9AAA132E713B0799323FF /* HaishinKit in Frameworks */,
+				DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */,
+				00DF0D31CD0B4129A03FF01E /* WebRTC in Frameworks */,
+				1DBD78C7949A4ED39537CCD9 /* FirebaseCore in Frameworks */,
+				E498EEF2CB2E48ADB2E10242 /* FirebaseCrashlytics in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -64,9 +115,36 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F7A4BC66EE0335F2D981C683 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5CC7B488EBD80946899A64C0 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		0D402ADEE34F48F4135D7F64 /* NuruMemberTests */ = {
+			isa = PBXGroup;
+			children = (
+				D163954A600F779226FDCDA2 /* ModelDecodingTests.swift */,
+				5F88539430BED8B14C0153AF /* SundayLetterTests.swift */,
+				1AE1C1F0A5A94B3097D6C202 /* LiveInteractionsDecodingTests.swift */,
+				DA09934BFFA64A5ABC4A8195 /* GuestAudioPlayoutDeviceTests.swift */,
+				2B78F37184A54D1E87236580 /* WhipBasicAuthTests.swift */,
+				0550504149BF4DC8B1585EAE /* WhepRetryPolicyTests.swift */,
+				02447D9726EC44E083127526 /* LiveReactionKindTests.swift */,
+				F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */,
+				C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */,
+				1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */,
+				1A84FD50DB9FFE34C1B7CB9B /* LiturgyRecorderLogicTests.swift */,
+			);
+			name = NuruMemberTests;
+			path = NuruMemberTests;
+			sourceTree = "<group>";
+		};
 		1D20C23DF827334EE86638B2 /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
@@ -82,6 +160,7 @@
 				2000000000000000000000C1 /* Products */,
 				1D20C23DF827334EE86638B2 /* Frameworks */,
 				D0BFF2874D3354E1D4BF2A3E /* NuruWidgets */,
+				0D402ADEE34F48F4135D7F64 /* NuruMemberTests */,
 			);
 			sourceTree = "<group>";
 		};
@@ -90,6 +169,7 @@
 			children = (
 				2000000000000000000000F1 /* NuruMember.app */,
 				664342554B6FC512AC94FFFA /* NuruWidgets.appex */,
+				7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -139,6 +219,7 @@
 				200000000000000000000111 /* Frameworks */,
 				200000000000000000000121 /* Resources */,
 				C9149281DCBC8B6B8ED84B35 /* Embed Foundation Extensions */,
+				82F2DBF0F7E8467BA06EA5F4 /* Upload Crashlytics dSYMs */,
 			);
 			buildRules = (
 			);
@@ -149,9 +230,34 @@
 				2000000000000000000000D1 /* NuruMember */,
 			);
 			name = NuruMember;
+			packageProductDependencies = (
+				6DA0216FE218D406A8E8CFD9 /* HaishinKit */,
+				A1C0A2919201E148762801CB /* RTMPHaishinKit */,
+				5F55E2A2E353454EBF8BDAB0 /* WebRTC */,
+				FF4AAF541A444C1799F1187B /* FirebaseCore */,
+				B31CA011440D4412828AFCC8 /* FirebaseCrashlytics */,
+			);
 			productName = NuruMember;
 			productReference = 2000000000000000000000F1 /* NuruMember.app */;
 			productType = "com.apple.product-type.application";
+		};
+		7AA8DC0ABD81C8871098560D /* NuruMemberTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0BEAE36C1BD88DE8ACACD277 /* Build configuration list for PBXNativeTarget "NuruMemberTests" */;
+			buildPhases = (
+				5094DE1EA62CC906A565EF84 /* Sources */,
+				F7A4BC66EE0335F2D981C683 /* Frameworks */,
+				AAE109D93E6A15053D514D22 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				19A6B076B0DF8F94860DBFFB /* PBXTargetDependency */,
+			);
+			name = NuruMemberTests;
+			productName = NuruMemberTests;
+			productReference = 7069069C51A6A8AF4C8DBC09 /* NuruMemberTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 /* End PBXNativeTarget section */
 
@@ -177,12 +283,18 @@
 				Base,
 			);
 			mainGroup = 2000000000000000000000B1;
+			packageReferences = (
+				6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */,
+				BEFB74ADCF2F405A8251E699 /* XCRemoteSwiftPackageReference "WebRTC" */,
+				5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
+			);
 			productRefGroup = 2000000000000000000000C1 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
 			targets = (
 				2000000000000000000000E1 /* NuruMember */,
 				1DC1230CB6104AC59DC4A281 /* NuruWidgets */,
+				7AA8DC0ABD81C8871098560D /* NuruMemberTests */,
 			);
 		};
 /* End PBXProject section */
@@ -202,13 +314,65 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AAE109D93E6A15053D514D22 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		82F2DBF0F7E8467BA06EA5F4 /* Upload Crashlytics dSYMs */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Info.plist",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/GoogleService-Info.plist",
+				"$(TARGET_BUILD_DIR)/$(EXECUTABLE_PATH)",
+				"${DWARF_DSYM_FOLDER_PATH}/${DWARF_DSYM_FILE_NAME}/Contents/Resources/DWARF/${PRODUCT_NAME}.debug.dylib",
+			);
+			name = "Upload Crashlytics dSYMs";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "# Uploads dSYMs so Crashlytics can symbolicate native + Swift stack traces.\n# Dependencies are SwiftPM-only (no CocoaPods in this repo); the path below\n# is where Xcode checks out firebase-ios-sdk for SPM.\n#\n# GUARD: verified directly against this SDK (12.17.0) that Crashlytics/run's\n# own validation step (`upload-symbols --build-phase --validate`) exits 13\n# (\"Could not get GOOGLE_APP_ID in Google Services file\") when no\n# GoogleService-Info.plist is present, and `run` treats a nonzero validate\n# as a hard failure — i.e. calling it unguarded WOULD BREAK EVERY BUILD\n# until the real plist exists. So, same no-op-until-configured guarantee as\n# CrashReporting.swift's launch guard: check the plist is actually in the\n# built app bundle before ever invoking Crashlytics/run.\nPLIST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/GoogleService-Info.plist\"\nCRASHLYTICS_RUN=\"${BUILD_DIR%/Build/*}/SourcePackages/checkouts/firebase-ios-sdk/Crashlytics/run\"\nif [ ! -f \"$PLIST\" ]; then\n  echo \"note: GoogleService-Info.plist not found — skipping Crashlytics dSYM upload (expected until Firebase config is added)\"\nelif [ -f \"$CRASHLYTICS_RUN\" ]; then\n  \"$CRASHLYTICS_RUN\"\nelse\n  echo \"warning: Crashlytics run script not found at $CRASHLYTICS_RUN (package not resolved yet?) — skipping dSYM upload\"\nfi\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		200000000000000000000101 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		5094DE1EA62CC906A565EF84 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				ADBDEB9F2B3F1EACEC763442 /* ModelDecodingTests.swift in Sources */,
+				99900E55D19AED44A6097A04 /* SundayLetterTests.swift in Sources */,
+				1AE1C1F0A5A94B3097D6C201 /* LiveInteractionsDecodingTests.swift in Sources */,
+				2155FB891D4D49C395110CB5 /* GuestAudioPlayoutDeviceTests.swift in Sources */,
+				D44F50FF1A7741D69BBA9768 /* WhipBasicAuthTests.swift in Sources */,
+				BA244F042CAF4D95B69CE9D6 /* WhepRetryPolicyTests.swift in Sources */,
+				4298D72347954E72B66689F6 /* LiveReactionKindTests.swift in Sources */,
+				E8E95F72C72B3A623C715BAC /* LiveStageTests.swift in Sources */,
+				EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */,
+				2DB55733AFA86B039404A7B0 /* LiturgyVoiceTests.swift in Sources */,
+				68898C13C713F999F0BF9C5B /* LiturgyRecorderLogicTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -223,6 +387,12 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		19A6B076B0DF8F94860DBFFB /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = NuruMember;
+			target = 2000000000000000000000E1 /* NuruMember */;
+			targetProxy = 98EF880A985213BC01A9EF46 /* PBXContainerItemProxy */;
+		};
 		C201E3A67BA36FA4121F5FC8 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			name = NuruWidgets;
@@ -232,6 +402,25 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		0D55C659E3F4303867B85675 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruMemberTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NuruMember.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NuruMember";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		200000000000000000000151 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -343,13 +532,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 105;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID protects the Broadcast — the private conversations between you and every member. Only you can open them.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone only when a discipler records a voice note for their congregation on a lesson.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone when a discipler records a voice note, and when a broadcaster (or an invited guest) goes live.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -377,13 +567,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 105;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
+				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID protects the Broadcast — the private conversations between you and every member. Only you can open them.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone only when a discipler records a voice note for their congregation on a lesson.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone when a discipler records a voice note, and when a broadcaster (or an invited guest) goes live.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -410,7 +601,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 105;
 				DEVELOPMENT_TEAM = SGC7566QY6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NuruWidgets/Info.plist;
@@ -437,7 +628,7 @@
 			buildSettings = {
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 60;
+				CURRENT_PROJECT_VERSION = 105;
 				DEVELOPMENT_TEAM = SGC7566QY6;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = NuruWidgets/Info.plist;
@@ -458,9 +649,36 @@
 			};
 			name = Debug;
 		};
+		FF95115EF4C8D3848210F395 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = org.nuruplace.member.NuruMemberTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/NuruMember.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/NuruMember";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		0BEAE36C1BD88DE8ACACD277 /* Build configuration list for PBXNativeTarget "NuruMemberTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0D55C659E3F4303867B85675 /* Release */,
+				FF95115EF4C8D3848210F395 /* Debug */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		200000000000000000000131 /* Build configuration list for PBXProject "NuruMember" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -489,6 +707,61 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/HaishinKit/HaishinKit.swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.2.5;
+			};
+		};
+		BEFB74ADCF2F405A8251E699 /* XCRemoteSwiftPackageReference "WebRTC" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/stasel/WebRTC";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 150.0.0;
+			};
+		};
+		5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/firebase/firebase-ios-sdk";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 12.17.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		6DA0216FE218D406A8E8CFD9 /* HaishinKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */;
+			productName = HaishinKit;
+		};
+		A1C0A2919201E148762801CB /* RTMPHaishinKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 6EB2EA2AC300B1EA17C814D3 /* XCRemoteSwiftPackageReference "HaishinKit.swift" */;
+			productName = RTMPHaishinKit;
+		};
+		5F55E2A2E353454EBF8BDAB0 /* WebRTC */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = BEFB74ADCF2F405A8251E699 /* XCRemoteSwiftPackageReference "WebRTC" */;
+			productName = WebRTC;
+		};
+		FF4AAF541A444C1799F1187B /* FirebaseCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCore;
+		};
+		B31CA011440D4412828AFCC8 /* FirebaseCrashlytics */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 5D0B83D3053747278D7E6EC1 /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */;
+			productName = FirebaseCrashlytics;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 2000000000000000000000A1 /* Project object */;
 }

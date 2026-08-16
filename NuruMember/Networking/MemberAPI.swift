@@ -346,6 +346,12 @@ extension MemberAPI {
         try await APIClient.shared.get("calendar", query: ["from": from, "to": to], as: Envelope<CalendarOccurrence>.self).data
     }
 
+    /// GET /home/events — up to 5 soonest curated occurrences for Home,
+    /// soonest-first (server-capped at 5; never re-cap, sort, or filter here).
+    static func homeEvents() async throws -> [HomeEventRow] {
+        try await APIClient.shared.get("home/events", as: Envelope<HomeEventRow>.self).data
+    }
+
     /// GET /home/featured-event — the admin-featured event (may be null).
     static func featuredEvent() async throws -> FeaturedEvent? {
         struct Env: Decodable { let data: FeaturedEvent? }
@@ -484,15 +490,18 @@ extension MemberAPI {
     }
 
     /// POST /giving/intents — create a real gift intent (server-authoritative).
+    /// `accountName` is "named giving" (custom sheet, optional): rides the
+    /// M-Pesa STK push AccountReference (sanitized server-side) and persists on
+    /// the transaction for receipts/statements/portal Finance.
     static func giving(fund: String, amountMinor: Int, currency: String,
-                       method: String, phoneNumber: String? = nil) async throws -> GivingIntentResult {
+                       method: String, phoneNumber: String? = nil, accountName: String? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
-            let method: String; let phoneNumber: String?; let idempotencyKey: String
+            let method: String; let phoneNumber: String?; let accountName: String?; let idempotencyKey: String
         }
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
-                       method: method, phoneNumber: phoneNumber, idempotencyKey: UUID().uuidString),
+                       method: method, phoneNumber: phoneNumber, accountName: accountName, idempotencyKey: UUID().uuidString),
             as: GivingIntentResult.self)
     }
 
@@ -622,6 +631,22 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("chat/conversations/\(conversationId)/read", as: EmptyResponse.self)
     }
 
+    /// PUT /chat/conversations/{id}/mute — mute this conversation for the
+    /// caller only (Chat Redesign C4). `until` nil mutes forever; a caller
+    /// wanting a timed mute passes an ISO-8601 instant. Wired from the
+    /// pastoral ⋮ menu's "Mute" (see ChatThreadView) — the server contract is
+    /// per-member, so `muted` then rides back on GET /chat/conversations(/:id).
+    static func muteChatConversation(_ conversationId: String, until: String? = nil) async throws {
+        struct Body: Encodable { let until: String? }
+        _ = try await APIClient.shared.put("chat/conversations/\(conversationId)/mute",
+            body: Body(until: until), as: EmptyResponse.self)
+    }
+
+    /// DELETE /chat/conversations/{id}/mute — undo the above.
+    static func unmuteChatConversation(_ conversationId: String) async throws {
+        _ = try await APIClient.shared.delete("chat/conversations/\(conversationId)/mute", as: EmptyResponse.self)
+    }
+
     /// GET /chat/people — the member directory (everyone the caller may DM,
     /// minor-safe and congregation-scoped server-side). Optional name search.
     static func chatPeople(query: String? = nil) async throws -> [ChatPerson] {
@@ -639,22 +664,51 @@ extension MemberAPI {
         return try await APIClient.shared.post("chat/dms", body: Body(userId: peerUserId), as: Res.self).conversationId
     }
 
-    /// POST /chat/broadcast — staff only (Instructor+; the server 403s Students):
-    /// ONE message delivered to every active member of the congregation as an
-    /// individual DM from the sender — replies come back as normal 1:1 threads.
-    /// May carry an image (`msgType: "image"` + `attachmentUrl` from the
-    /// sign-and-upload flow below); `body` is then the caption. Returns how many
-    /// members it reached. Replays of the same clientMutationId are server-side
-    /// no-ops (§3.6).
+    /// POST /chat/broadcast — SuperAdmin only, and password-gated (§5.3): a 403
+    /// carrying `details.password_required` means confirm and retry, not "no".
+    ///
+    /// ONE message delivered to every active member as an individual DM from the
+    /// sender — replies come back as private 1:1 threads only the sender can
+    /// open. May carry an image (`msgType: "image"` + `attachmentUrl` from the
+    /// sign-and-upload flow below); `body` is then the caption.
+    ///
+    /// `audience` OMITTED means the whole church — do not pass "congregation"
+    /// unless the person deliberately narrowed it. Sending it by default is what
+    /// made a broadcast reach 40 of 60 members: the other 19 have no
+    /// congregation to be scoped to.
+    ///
+    /// Returns the message AS SENT, whole — so the page can show it immediately
+    /// rather than refetching to find out what was just said. Replays of the same
+    /// clientMutationId are server-side no-ops and return the same thing (§3.6).
     static func broadcast(body: String, attachmentUrl: String? = nil, msgType: String = "text",
-                          clientMutationId: String = UUID().uuidString) async throws -> Int {
+                          audience: String? = nil,
+                          clientMutationId: String = UUID().uuidString) async throws -> BroadcastSent {
         struct Body: Encodable {
-            let body: String; let msgType: String; let attachmentUrl: String?; let clientMutationId: String
+            let body: String; let msgType: String; let attachmentUrl: String?
+            let audience: String?; let clientMutationId: String
         }
-        struct Res: Decodable { let sent: Int }
         return try await APIClient.shared.post("chat/broadcast",
             body: Body(body: body, msgType: msgType, attachmentUrl: attachmentUrl,
-                       clientMutationId: clientMutationId), as: Res.self).sent
+                       audience: audience, clientMutationId: clientMutationId), as: BroadcastSent.self)
+    }
+
+    /// GET /chat/broadcasts — what I have sent, newest first. Opens on the last 4
+    /// (the ones still live enough to watch); ask for more when they tap through.
+    static func broadcasts(limit: Int = 4) async throws -> BroadcastList {
+        try await APIClient.shared.get("chat/broadcasts", query: ["limit": String(limit)], as: BroadcastList.self)
+    }
+
+    /// GET /chat/broadcasts/{id} — the message, every answer to it, and the ticks
+    /// (who it reached, who has opened it).
+    static func broadcastDetail(_ broadcastId: String) async throws -> BroadcastDetail {
+        try await APIClient.shared.get("chat/broadcasts/\(broadcastId)", as: BroadcastDetail.self)
+    }
+
+    /// POST /auth/confirm-password — prove I am the account owner, right now, and
+    /// re-mint my access token so the password-gated screens open (§5.3). Throws
+    /// on a wrong password (401) without spending a second lockout attempt.
+    static func confirmPassword(_ password: String) async throws {
+        try await APIClient.shared.confirmPassword(password)
     }
 
     // MARK: Chat attachments (bytes go straight to Cloudinary, never our server — §4.5)
@@ -715,6 +769,22 @@ extension MemberAPI {
         struct Body: Encodable { let emoji: String }
         struct Res: Decodable { let on: Bool }
         return try await APIClient.shared.post("chat/messages/\(messageId)/reactions", body: Body(emoji: emoji), as: Res.self).on
+    }
+
+    /// PATCH /chat/messages/{id} — author-only edit; the server enforces
+    /// authorship (404 otherwise) and sets `is_edited = true`.
+    @discardableResult
+    static func editChatMessage(_ messageId: String, body: String) async throws -> ChatMessageMutationResult {
+        struct Body: Encodable { let body: String }
+        return try await APIClient.shared.patch("chat/messages/\(messageId)", body: Body(body: body), as: ChatMessageMutationResult.self)
+    }
+
+    /// DELETE /chat/messages/{id} — author-only soft delete; the server
+    /// enforces authorship (404 otherwise). Deleted messages stop coming back
+    /// on the next GET /chat/conversations/{id}.
+    @discardableResult
+    static func deleteChatMessage(_ messageId: String) async throws -> ChatMessageMutationResult {
+        try await APIClient.shared.delete("chat/messages/\(messageId)", as: ChatMessageMutationResult.self)
     }
 
     // MARK: Community — Prayer Wall (public, opt-in)

@@ -180,7 +180,7 @@ actor SyncEngine {
         "module_reflections": "reflection_id", "achievements": "user_badge_id",
         "prayer_entries": "entry_id", "saved_verses": "saved_verse_id",
         "gift_assessments": "assessment_id", "discussion_threads": "thread_id",
-        "discussion_comments": "comment_id",
+        "discussion_comments": "comment_id", "member_thoughts": "thought_id",
     ]
 
     /// Cursor-driven delta pull: applies changed rows (upserts) and tombstones

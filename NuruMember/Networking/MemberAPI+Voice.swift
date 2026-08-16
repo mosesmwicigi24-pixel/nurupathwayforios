@@ -88,7 +88,11 @@ extension MemberAPI {
     }
 }
 
-private enum VoiceEnv {
+/// Shared (not fileprivate) so other hand-rolled multipart uploads in this
+/// networking layer — e.g. MemberAPI+LiturgyRecordings.swift's admin upload —
+/// resolve the base URL and bearer token the exact same way as this one,
+/// rather than each hand-rolling its own copy.
+enum VoiceEnv {
     static var accessToken: String? { Keychain.get("nuru.member.at") }
 
     static var baseURL: URL {

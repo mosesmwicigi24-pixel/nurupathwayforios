@@ -10,6 +10,22 @@ import Combine
 import SwiftUI
 import UIKit
 
+/// What KIND of 1:1 this thread is to the member — drives the privacy label,
+/// the header's ⋮ menu, and (pastoral) the local lock gate. The inbox list
+/// endpoint doesn't send the conversation `type`, so this arrives either from
+/// the tab that opened the thread (discipler/pastoral tabs know what they
+/// resolved) or from the ids remembered in PastoralPrefs.
+enum ChatThreadContext: Hashable {
+    case normal, discipler, pastoral
+}
+
+/// Navigation value for a thread opened WITH a known context (the plain
+/// `ChatConversation` destination stays for ordinary threads).
+struct ThreadRoute: Hashable {
+    let conversation: ChatConversation
+    let context: ChatThreadContext
+}
+
 @MainActor
 final class ChatThreadViewModel: ObservableObject {
     @Published var thread: ChatThreadDetail?
@@ -19,7 +35,30 @@ final class ChatThreadViewModel: ObservableObject {
     @Published var sending = false
 
     let conversation: ChatConversation
-    init(conversation: ChatConversation) { self.conversation = conversation }
+    let context: ChatThreadContext
+    init(conversation: ChatConversation, context: ChatThreadContext = .normal) {
+        self.conversation = conversation
+        // A pastoral/discipler thread reached through an ordinary route (the
+        // Chat tab's DM list on a stale cache, a deep link) still gets its
+        // privacy dressing. Server-authoritative first: `type` (Chat Redesign
+        // C4). Only when the row carries no `type` (an older server) does this
+        // fall back to the client-taught cached-id heuristic — tolerant decode.
+        if context == .normal {
+            switch conversation.type {
+            case "PASTORAL": self.context = .pastoral
+            case "DISCIPLER": self.context = .discipler
+            case .some: self.context = .normal
+            case .none:
+                switch conversation.conversationId {
+                case PastoralPrefs.pastoralConversationId: self.context = .pastoral
+                case PastoralPrefs.disciplerConversationId: self.context = .discipler
+                default: self.context = .normal
+                }
+            }
+        } else {
+            self.context = context
+        }
+    }
 
     var isSpace: Bool {
         let k = thread?.kind ?? conversation.kind
@@ -32,9 +71,31 @@ final class ChatThreadViewModel: ObservableObject {
     }
     var memberCount: Int { thread?.memberCount ?? conversation.memberCount }
     var avatarUrl: String? { conversation.avatarUrl }
+    /// Pastor mail: a DM that began as a broadcast FROM the other person. The
+    /// sender's own copy never dresses (their broadcast messages are `mine`) —
+    /// this is the member's side only, which is the whole point: it reads as
+    /// "Talk with Pastor", not as one DM among many.
+    var isPastorMail: Bool {
+        !isSpace && allMessages.contains { $0.broadcastId != nil && !$0.mine }
+    }
     // DMs carry an inspiring covenant line instead of a flat "Direct message".
     var subtitle: String {
-        isSpace ? "Public space · \(memberCount) members" : "Walking together in faith"
+        if isSpace { return "Public space · \(memberCount) members" }
+        switch context {
+        case .discipler: return "My Discipler"
+        case .pastoral: return "Talk with My Pastor"
+        case .normal: return isPastorMail ? "Talk with Pastor" : "Walking together in faith"
+        }
+    }
+
+    /// The honest one-line promise printed where the member types (§15 privacy
+    /// labels — responsible wording, no absolute-confidentiality claims).
+    var privacyLabel: String? {
+        switch context {
+        case .discipler: return "Private between you and your assigned discipler."
+        case .pastoral: return nil // pastoral uses the broadcast-style personal ribbon below
+        case .normal: return nil
+        }
     }
 
     func load() async {
@@ -49,7 +110,14 @@ final class ChatThreadViewModel: ObservableObject {
     /// Optimistic messages queued locally until the server echoes them back.
     @Published var pending: [ChatMessage] = []
 
-    /// Server thread + any still-in-flight optimistic sends (deduped by id).
+    /// Optimistic edit/delete state — applied on top of whatever the server
+    /// last returned so Edit/Delete read instantly, and can be rolled back if
+    /// the PATCH/DELETE fails (see editMessage/deleteMessage below).
+    @Published var editOverrides: [String: String] = [:]
+    @Published var locallyDeletedIds: Set<String> = []
+
+    /// Server thread + any still-in-flight optimistic sends (deduped by id),
+    /// with optimistic edits/deletes layered on top.
     /// Ids compare case-insensitively: Postgres normalizes uuid columns to
     /// lowercase, so a client-minted uppercase id comes back lowercased — a
     /// case-sensitive match would keep the optimistic bubble alongside the
@@ -57,7 +125,16 @@ final class ChatThreadViewModel: ObservableObject {
     var allMessages: [ChatMessage] {
         let base = thread?.messages ?? []
         let ids = Set(base.map { $0.messageId.lowercased() })
-        return base + pending.filter { !ids.contains($0.messageId.lowercased()) }
+        let merged = base + pending.filter { !ids.contains($0.messageId.lowercased()) }
+        return merged
+            .filter { !locallyDeletedIds.contains($0.messageId) }
+            .map { m in
+                guard let body = editOverrides[m.messageId] else { return m }
+                var edited = m
+                edited.body = body
+                edited.isEdited = true
+                return edited
+            }
     }
 
     /// Offline-capable send: the bubble appears instantly and the write goes through
@@ -92,6 +169,91 @@ final class ChatThreadViewModel: ObservableObject {
 
     func react(_ m: ChatMessage, _ emoji: String) async {
         do { _ = try await MemberAPI.toggleChatReaction(m.messageId, emoji: emoji); await load() } catch {}
+    }
+
+    /// Author-only edit: reads instantly (optimistic), then reconciles with
+    /// the server. A failed PATCH rolls the bubble straight back to what it
+    /// said before — never leaves a body on screen the server didn't accept.
+    @discardableResult
+    func editMessage(_ messageId: String, newBody: String) async -> Bool {
+        let body = newBody.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return false }
+        let previous = editOverrides[messageId]
+        editOverrides[messageId] = body
+        do {
+            _ = try await MemberAPI.editChatMessage(messageId, body: body)
+            await load()
+            editOverrides[messageId] = nil
+            return true
+        } catch {
+            editOverrides[messageId] = previous
+            return false
+        }
+    }
+
+    /// Author-only soft delete: the bubble disappears immediately; a failed
+    /// DELETE brings it straight back rather than leaving a false "gone" state.
+    @discardableResult
+    func deleteMessage(_ messageId: String) async -> Bool {
+        locallyDeletedIds.insert(messageId)
+        do {
+            _ = try await MemberAPI.deleteChatMessage(messageId)
+            await load()
+            return true
+        } catch {
+            locallyDeletedIds.remove(messageId)
+            return false
+        }
+    }
+
+    // MARK: Connection controls (Chat Redesign C3a — thread ⋮ menu)
+
+    /// The other participant — only meaningful for a `dm` thread (server sends
+    /// `peer_user_id` on that kind only; group/space rows never carry it).
+    var peerUserId: String? { !isSpace ? conversation.peerUserId : nil }
+
+    @Published var connectionActionBusy = false
+    /// Brief confirmation banner reusing the composer's error-strip chrome
+    /// (see `bottomBar` in ChatThreadView) for a non-error notice.
+    @Published var connectionNotice: String?
+
+    func removeConnection() async {
+        guard let peerUserId, !connectionActionBusy else { return }
+        connectionActionBusy = true; defer { connectionActionBusy = false }
+        do {
+            _ = try await MemberAPI.removeConnection(peerUserId)
+            connectionNotice = "Connection removed. This chat's history is kept."
+        } catch {
+            connectionNotice = "Couldn't remove this connection — try again."
+        }
+    }
+
+    func blockPeer() async {
+        guard let peerUserId, !connectionActionBusy else { return }
+        connectionActionBusy = true; defer { connectionActionBusy = false }
+        do {
+            _ = try await MemberAPI.blockConnection(peerUserId)
+            connectionNotice = "Blocked. They can no longer message you."
+        } catch {
+            connectionNotice = "Couldn't block — try again."
+        }
+    }
+
+    func unblockPeer() async {
+        guard let peerUserId, !connectionActionBusy else { return }
+        connectionActionBusy = true; defer { connectionActionBusy = false }
+        do {
+            _ = try await MemberAPI.unblockConnection(peerUserId)
+            connectionNotice = "Unblocked."
+        } catch let err as APIError {
+            // Not currently blocked (NOT_FOUND) — the menu offers Unblock
+            // unconditionally since the client has no per-pair status read;
+            // this is the expected, harmless outcome when it wasn't needed.
+            if case .http(404, _, _, _) = err { connectionNotice = "This person wasn't blocked." }
+            else { connectionNotice = "Couldn't unblock — try again." }
+        } catch {
+            connectionNotice = "Couldn't unblock — try again."
+        }
     }
 }
 
@@ -220,14 +382,114 @@ struct ChatThreadView: View {
     @Environment(\.dismiss) private var dismiss
     /// Tracked via keyboardWillShow/Hide so the list can pin to the newest turn.
     @State private var keyboardVisible = false
+    /// Edit/Delete — own messages only, offered from the bubble's long-press menu.
+    @State private var editingMessage: ChatMessage?
+    @State private var pendingDeleteMessage: ChatMessage?
+    /// A brief inline banner for a failed edit/delete (the optimistic change
+    /// already reverted itself — this just tells the member why).
+    @State private var actionError: String?
+    @State private var actionErrorDismiss: Task<Void, Never>?
 
-    init(conversation: ChatConversation) { _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation)) }
+    init(conversation: ChatConversation, context: ChatThreadContext = .normal) {
+        _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation, context: context))
+    }
+
+    // MARK: Pastoral privacy chrome (Chat Redesign C3b)
+
+    /// The local privacy gate — live so the thread re-seals when it re-locks.
+    @ObservedObject private var pastoralLock = PastoralLock.shared
+    @State private var unlockFailed = false
+    /// Privacy-info sheet from the pastoral ⋮ menu.
+    @State private var showingPrivacyInfo = false
+    /// Re-render tick for the UserDefaults-backed mute/archive flags.
+    @State private var pastoralPrefsTick = 0
+
+    private func flashActionError(_ message: String) {
+        Haptics.error()
+        actionErrorDismiss?.cancel()
+        withAnimation { actionError = message }
+        actionErrorDismiss = Task {
+            try? await Task.sleep(nanoseconds: 3_500_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation { actionError = nil }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             ThreadHeader(isSpace: vm.isSpace, title: vm.title, subtitle: vm.subtitle,
-                         topic: vm.topic, avatarUrl: vm.avatarUrl) { dismiss() }
-            content
+                         topic: vm.topic, avatarUrl: vm.avatarUrl,
+                         peerUserId: vm.peerUserId, connectionBusy: vm.connectionActionBusy,
+                         context: vm.context,
+                         lockEnabled: pastoralLock.isEnabled,
+                         muted: PastoralPrefs.muted,
+                         prefsTick: pastoralPrefsTick,
+                         onRemoveConnection: { Task { await vm.removeConnection() } },
+                         onBlock: { Task { await vm.blockPeer() } },
+                         onUnblock: { Task { await vm.unblockPeer() } },
+                         onPastoralLockNow: {
+                             Haptics.tap()
+                             pastoralLock.relock()   // the gate takes over in place
+                         },
+                         onPastoralToggleLock: {
+                             Haptics.tap()
+                             if pastoralLock.isEnabled {
+                                 pastoralLock.isEnabled = false
+                                 pastoralLock.relock()
+                             } else {
+                                 pastoralLock.isEnabled = true
+                                 // Just enabled while already inside — stay in.
+                                 pastoralLock.markOpen()
+                             }
+                         },
+                         onPastoralToggleMute: {
+                             Haptics.tap()
+                             // Optimistic — the menu label and the tab badge
+                             // (ChatInboxViewModel.pastoralUnread) flip instantly.
+                             let target = !PastoralPrefs.muted
+                             PastoralPrefs.muted = target
+                             pastoralPrefsTick += 1
+                             let conversationId = vm.conversation.conversationId
+                             Task {
+                                 do {
+                                     if target {
+                                         try await MemberAPI.muteChatConversation(conversationId)
+                                     } else {
+                                         try await MemberAPI.unmuteChatConversation(conversationId)
+                                     }
+                                 } catch {
+                                     // Revert + inline error — same house idiom as
+                                     // editMessage/deleteMessage's rollback below.
+                                     PastoralPrefs.muted = !target
+                                     pastoralPrefsTick += 1
+                                     flashActionError(target ? "Couldn't mute — try again." : "Couldn't unmute — try again.")
+                                 }
+                             }
+                         },
+                         onPastoralArchive: {
+                             Haptics.tap()
+                             PastoralPrefs.archived = true
+                             pastoralPrefsTick += 1
+                             dismiss()
+                         },
+                         onPastoralPrivacyInfo: { showingPrivacyInfo = true },
+                         onBack: { dismiss() })
+            if vm.context == .pastoral && pastoralLock.requiresUnlock {
+                PastoralLockedGate(failed: unlockFailed) {
+                    Task {
+                        unlockFailed = !(await pastoralLock.unlock())
+                    }
+                }
+            } else {
+                content
+            }
+        }
+        .alert("Private pastoral conversation", isPresented: $showingPrivacyInfo) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("""
+            This thread is 1:1 between you and your pastor — cell members, leaders and ordinary admins cannot open it. Messages are protected in transit and at rest on the server, but are not end-to-end encrypted. The lock in this menu is a privacy screen on THIS device only.
+            """)
         }
         .background(Aurora.sectionBg.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
@@ -249,6 +511,39 @@ struct ChatThreadView: View {
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
             keyboardVisible = false
         }
+        // Remove/Block/Unblock confirmations reuse the composer's error-strip
+        // banner — it is not always an error, but the chrome (brief, inline,
+        // auto-dismissing) is exactly what a "done" toast needs too.
+        .onChange(of: vm.connectionNotice) { _, notice in
+            guard let notice else { return }
+            flashActionError(notice)
+            vm.connectionNotice = nil
+        }
+        .sheet(item: $editingMessage) { message in
+            EditMessageSheet(message: message) { newBody in
+                await vm.editMessage(message.messageId, newBody: newBody)
+            }
+        }
+        // Deleting is irreversible for everyone in the thread — always confirm.
+        .confirmationDialog(
+            "Delete this message?",
+            isPresented: Binding(get: { pendingDeleteMessage != nil },
+                                  set: { if !$0 { pendingDeleteMessage = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                guard let message = pendingDeleteMessage else { return }
+                pendingDeleteMessage = nil
+                Haptics.action()
+                Task {
+                    let ok = await vm.deleteMessage(message.messageId)
+                    if !ok { flashActionError("Couldn't delete this message — try again.") }
+                }
+            }
+            Button("Cancel", role: .cancel) { pendingDeleteMessage = nil }
+        } message: {
+            Text("This can't be undone.")
+        }
     }
 
     @ViewBuilder private var content: some View {
@@ -262,9 +557,10 @@ struct ChatThreadView: View {
             // top of the keyboard while typing), and when the keyboard is closed
             // we pad past RootView's overlaid navy tab bar so both stay visible.
             MessagesList(rows: buildRows(vm.allMessages, multi: vm.isSpace),
-                         keyboardVisible: keyboardVisible) { m, emoji in
-                Task { await vm.react(m, emoji) }
-            }
+                         keyboardVisible: keyboardVisible,
+                         onReact: { m, emoji in Task { await vm.react(m, emoji) } },
+                         onEdit: { m in editingMessage = m },
+                         onDelete: { m in pendingDeleteMessage = m })
             .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
         }
     }
@@ -273,6 +569,38 @@ struct ChatThreadView: View {
     // composer on the home indicator and floats it on the keyboard while typing.
     private var bottomBar: some View {
         VStack(spacing: 0) {
+            if let actionError {
+                Text(actionError)
+                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 16).padding(.vertical, 7)
+                    .background(Nuru.danger.opacity(0.08))
+                    .transition(.opacity)
+            }
+            // The line that makes a member actually answer. Their fear is not
+            // the label — it is "is the whole church about to read this?" So the
+            // screen says the true thing, plainly, right where they type. It can
+            // be said without lying because the thread genuinely is 1:1: no
+            // admin, no leader, nobody else can open it.
+            if let label = vm.privacyLabel {
+                HStack(spacing: 6) {
+                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Text(label)
+                        .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 7)
+                .background(Nuru.goldChipBg)
+            } else if vm.isPastorMail || vm.context == .pastoral {
+                HStack(spacing: 6) {
+                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Text("Only \(vm.title) sees your reply")
+                        .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 7)
+                .background(Nuru.goldChipBg)
+            }
             QuickReplyRow { reply in
                 Haptics.action()
                 Task { await vm.send(reply) }
@@ -318,6 +646,25 @@ private struct ThreadHeader: View {
     let subtitle: String
     let topic: String?
     let avatarUrl: String?
+    /// Chat Redesign C3a — non-nil only for a `dm` thread whose peer the
+    /// server identified (`peer_user_id`); drives the ⋮ connection menu.
+    let peerUserId: String?
+    let connectionBusy: Bool
+    /// C3b — .pastoral swaps the trailing control for the pastoral ⋮ menu.
+    let context: ChatThreadContext
+    let lockEnabled: Bool
+    let muted: Bool
+    /// Bumped by the parent when the UserDefaults-backed prefs change, so the
+    /// menu labels (Mute/Unmute…) re-render.
+    let prefsTick: Int
+    var onRemoveConnection: () -> Void
+    var onBlock: () -> Void
+    var onUnblock: () -> Void
+    var onPastoralLockNow: () -> Void
+    var onPastoralToggleLock: () -> Void
+    var onPastoralToggleMute: () -> Void
+    var onPastoralArchive: () -> Void
+    var onPastoralPrivacyInfo: () -> Void
     var onBack: () -> Void
 
     var body: some View {
@@ -327,7 +674,13 @@ private struct ThreadHeader: View {
                 avatar
                 titles
                 Spacer(minLength: Nuru.S.sm)
-                aiButton
+                if context == .pastoral {
+                    pastoralMenu
+                } else if let peerUserId {
+                    connectionMenu(for: peerUserId)
+                } else {
+                    aiButton
+                }
             }
             .padding(.horizontal, Nuru.S.base)
             .padding(.top, 54)
@@ -397,6 +750,74 @@ private struct ThreadHeader: View {
         }
     }
 
+    /// Per-connection controls (Chat Redesign C3a): Remove connection, Block,
+    /// Unblock. No "Report" — this app has no member-facing report/moderation
+    /// affordance to reuse (flag/unflag/remove/restore in the backend are
+    /// Admin-role console actions only), so it's intentionally omitted rather
+    /// than half-built.
+    private func connectionMenu(for peerUserId: String) -> some View {
+        Menu {
+            Button(role: .destructive, action: onRemoveConnection) {
+                Label("Remove connection", systemImage: "person.badge.minus")
+            }
+            Button(role: .destructive, action: onBlock) {
+                Label("Block", systemImage: "hand.raised.fill")
+            }
+            Button(action: onUnblock) {
+                Label("Unblock", systemImage: "hand.raised.slash")
+            }
+        } label: {
+            Group {
+                if connectionBusy {
+                    ProgressView().tint(Nuru.navy).scaleEffect(0.7)
+                } else {
+                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                }
+            }
+            .frame(width: 38, height: 38)
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        .disabled(connectionBusy)
+    }
+
+    /// The pastoral ⋮ menu (spec §7): Lock now · Enable/Disable biometric lock ·
+    /// Mute · Archive · Privacy info. Lock/mute/archive are all DEVICE-LOCAL —
+    /// nothing here talks to the server (the honest scope of what they protect
+    /// is spelled out in the Privacy info sheet).
+    private var pastoralMenu: some View {
+        Menu {
+            if lockEnabled {
+                Button(action: onPastoralLockNow) {
+                    Label("Lock now", systemImage: "lock.fill")
+                }
+                Button(action: onPastoralToggleLock) {
+                    Label("Disable biometric lock", systemImage: "lock.open")
+                }
+            } else {
+                Button(action: onPastoralToggleLock) {
+                    Label("Enable biometric lock", systemImage: "faceid")
+                }
+            }
+            Button(action: onPastoralToggleMute) {
+                Label(muted ? "Unmute" : "Mute", systemImage: muted ? "bell" : "bell.slash")
+            }
+            Button(action: onPastoralArchive) {
+                Label("Archive", systemImage: "archivebox")
+            }
+            Divider()
+            Button(action: onPastoralPrivacyInfo) {
+                Label("Privacy info", systemImage: "info.circle")
+            }
+        } label: {
+            Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                .frame(width: 38, height: 38)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        .id(prefsTick)   // re-render labels when the local prefs flip
+    }
+
     private func topicStrip(_ topic: String) -> some View {
         HStack(spacing: 6) {
             Icon(.flag, size: 13, color: Color(hex: 0x59667C))
@@ -410,12 +831,64 @@ private struct ThreadHeader: View {
     }
 }
 
+// MARK: - Pastoral locked gate (C3b — local privacy screen, NOT a server gate)
+
+/// Shown INSTEAD of the messages while the pastoral thread is sealed: the
+/// content is genuinely not rendered underneath (the gate replaces `content` in
+/// the view tree — it is not an opaque cover over live messages). The OS prompt
+/// (Face ID / Touch ID → device passcode) is raised the moment it appears.
+private struct PastoralLockedGate: View {
+    let failed: Bool
+    let onUnlock: () -> Void
+
+    var body: some View {
+        VStack(spacing: 14) {
+            Spacer(minLength: 0)
+            ZStack {
+                Circle().fill(Nuru.gold.opacity(0.14)).frame(width: 74, height: 74)
+                Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1).frame(width: 74, height: 74)
+                Icon(.lockKeyhole, size: 30, color: Nuru.goldChipText)
+            }
+            Text("This conversation is locked")
+                .font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
+            Text("Unlock with \(PastoralLock.biometryName) to open your pastoral conversation on this device.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(4)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 40)
+            if failed {
+                Text("Couldn't verify — try again.")
+                    .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+            }
+            Button {
+                Haptics.action()
+                onUnlock()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: PastoralLock.biometryName == "Touch ID" ? "touchid" : "faceid")
+                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                    Text("Unlock").font(.nCardCTA).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 26).frame(height: 46)
+                .background(Aurora.storyRing, in: Capsule())
+                .shadow(color: Nuru.gold.opacity(0.45), radius: 8, y: 4)
+            }
+            .buttonStyle(.pressable)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Aurora.canvas)
+        .task { onUnlock() }   // glance-and-in: the prompt rises without a tap
+    }
+}
+
 // MARK: - Messages canvas
 
 private struct MessagesList: View {
     let rows: [ThreadRow]
     let keyboardVisible: Bool
     var onReact: (ChatMessage, String) -> Void
+    var onEdit: (ChatMessage) -> Void
+    var onDelete: (ChatMessage) -> Void
 
     /// Insert-animations arm only after the first layout, so opening a thread
     /// never plays a whole screen of entrance transitions at once.
@@ -432,9 +905,10 @@ private struct MessagesList: View {
                     ConfidencePill()
                     if rows.isEmpty { EmptyThread() }
                     ForEach(rows) { row in
-                        MessageRow(row: row, hideSeparator: row.id == rows.first?.id) { emoji in
-                            onReact(row.m, emoji)
-                        }
+                        MessageRow(row: row, hideSeparator: row.id == rows.first?.id,
+                                   onReact: { emoji in onReact(row.m, emoji) },
+                                   onEdit: { onEdit(row.m) },
+                                   onDelete: { onDelete(row.m) })
                         .id(row.id)
                         // New bubbles rise in; the rest of the list never replays.
                         .transition(.asymmetric(
@@ -601,6 +1075,8 @@ private struct MessageRow: View {
     let row: ThreadRow
     let hideSeparator: Bool
     var onReact: (String) -> Void
+    var onEdit: () -> Void
+    var onDelete: () -> Void
 
     private var m: ChatMessage { row.m }
     private var accent: Color {
@@ -636,7 +1112,8 @@ private struct MessageRow: View {
     private var column: some View {
         VStack(alignment: m.mine ? .trailing : .leading, spacing: 6) {
             AuroraBubble(m: m, accent: accent, showAuthor: row.showAuthor,
-                         showTail: row.showTail, onReact: onReact)
+                         showTail: row.showTail, onReact: onReact,
+                         onEdit: onEdit, onDelete: onDelete)
             if m.aiTag == "prayer" && !m.mine { PrayerChip(m: m, onReact: onReact) }
         }
     }
@@ -672,6 +1149,8 @@ private struct AuroraBubble: View {
     let showAuthor: Bool
     let showTail: Bool
     var onReact: (String) -> Void
+    var onEdit: () -> Void = {}
+    var onDelete: () -> Void = {}
 
     /// A message the room has rallied around gets a soft golden glow.
     private var celebrated: Bool { m.reactions.reduce(0) { $0 + $1.count } >= 8 }
@@ -741,6 +1220,25 @@ private struct AuroraBubble: View {
             Divider()
             Button { UIPasteboard.general.string = m.body } label: {
                 Label("Copy", systemImage: "doc.on.doc")
+            }
+        }
+        // Author-only — never offered on someone else's message, a system row,
+        // or a broadcast copy the member didn't write themselves.
+        if m.mine {
+            Divider()
+            if m.msgType != "voice" && m.msgType != "image" {
+                Button {
+                    Haptics.tap()
+                    onEdit()
+                } label: {
+                    Label("Edit", systemImage: "pencil")
+                }
+            }
+            Button(role: .destructive) {
+                Haptics.tap()
+                onDelete()
+            } label: {
+                Label("Delete", systemImage: "trash")
             }
         }
     }
@@ -887,11 +1385,16 @@ private struct ReadTicksView: View {
     let read: Bool
     var dark = false
 
+    /// The broadcast rule, everywhere: ONE blue tick = delivered (the copy is
+    /// in their thread — not a hope), TWO blue ticks = seen (their
+    /// last_read_at covers it). WhatsApp-blue on every surface, per the owner
+    /// spec — no gold, no gray states.
     var body: some View {
-        Text("✓✓")
+        Text(read ? "✓✓" : "✓")
             .font(.inter(9.5, .semibold))
             .kerning(-1)
-            .foregroundStyle(read ? Aurora.gold : (dark ? Color.white.opacity(0.55) : Aurora.meta))
+            .foregroundStyle(Color(hex: 0x2F80ED))
+            .opacity(dark ? 1 : 0.95)
     }
 }
 
@@ -1155,6 +1658,67 @@ private struct ComposerBar: View {
     }
 }
 
+
+// MARK: - Edit message (own text messages only)
+
+/// Small sheet, prefilled with the current body — PATCH /chat/messages/{id}.
+/// `onSave` returns whether the server accepted it; a `false` keeps the sheet
+/// open with an inline error instead of dismissing on a change that didn't land.
+private struct EditMessageSheet: View {
+    let message: ChatMessage
+    var onSave: (String) async -> Bool
+
+    @Environment(\.dismiss) private var dismiss
+    @State private var text: String
+    @State private var saving = false
+    @State private var error: String?
+
+    init(message: ChatMessage, onSave: @escaping (String) async -> Bool) {
+        self.message = message
+        self.onSave = onSave
+        _text = State(initialValue: message.body)
+    }
+
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    var body: some View {
+        PSheetShell(title: "Edit message") {
+            VStack(alignment: .leading, spacing: Nuru.S.md) {
+                TextField("Message", text: $text, axis: .vertical)
+                    .font(.inter(14)).foregroundStyle(Nuru.navy)
+                    .lineLimit(3...8)
+                    .padding(.horizontal, Nuru.S.base).padding(.vertical, 12)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+
+                if let error {
+                    Text(error).font(.inter(12)).foregroundStyle(Nuru.danger)
+                }
+
+                GoldSheetButton(title: "Save", busy: saving, disabled: trimmed.isEmpty) {
+                    Task { await save() }
+                }
+            }
+        }
+        .presentationDetents([.medium])
+    }
+
+    private func save() async {
+        guard !trimmed.isEmpty else { return }
+        // Nothing actually changed — no need to round-trip the server.
+        if trimmed == message.body { dismiss(); return }
+        saving = true; error = nil
+        defer { saving = false }
+        let ok = await onSave(trimmed)
+        if ok {
+            Haptics.success()
+            dismiss()
+        } else {
+            Haptics.error()
+            error = "Couldn't save — please try again."
+        }
+    }
+}
 
 /// The classic recording pulse — a red dot breathing at ~1 Hz.
 private struct RecordingDot: View {

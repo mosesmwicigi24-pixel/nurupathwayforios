@@ -156,6 +156,41 @@ extension Nuru {
         let v = UserDefaults.standard.object(forKey: textScaleKey) as? Double ?? 1.0
         return CGFloat(min(max(v, 0.85), 1.30))
     }
+
+    /// The member's chosen line spacing (Profile → Display → Line spacing) —
+    /// the exact same idiom as `textScale` above, mirrored for leading instead
+    /// of size. SwiftUI line spacing is a view modifier rather than a `Font`
+    /// property, so it can't ride the font helpers; `.nuruLineSpacing(_:)`
+    /// below is the equivalent hook every reading surface calls. Persisted in
+    /// UserDefaults; clamped to the Compact/Default/Relaxed range the Settings
+    /// chips offer.
+    static let lineSpacingKey = "nuru.lineSpacing"
+    static var lineSpacing: CGFloat {
+        let v = UserDefaults.standard.object(forKey: lineSpacingKey) as? Double ?? 1.0
+        return CGFloat(min(max(v, 0.85), 1.35))
+    }
+}
+
+// MARK: - Reading line spacing (global hook — mirrors the Font size helpers)
+
+/// Applies `.lineSpacing(base * Nuru.lineSpacing)` — the ONE way reading
+/// surfaces set line spacing, so the member's global preference reaches every
+/// one of them uniformly. Every long-form reading surface (Pathway lessons,
+/// Plans, devotionals, memory verses, Selah, letters, the verse quote card)
+/// routes through this instead of calling `.lineSpacing(_:)` directly.
+struct NuruReadingSpacing: ViewModifier {
+    var base: CGFloat = 4
+    func body(content: Content) -> some View {
+        content.lineSpacing(base * Nuru.lineSpacing)
+    }
+}
+extension View {
+    /// `.lineSpacing(base * Nuru.lineSpacing)` — the global reading hook.
+    func nuruLineSpacing(_ base: CGFloat = 4) -> some View {
+        modifier(NuruReadingSpacing(base: base))
+    }
+    /// Convenience alias — same thing, reads better at a reading-surface call site.
+    func nuruReading(_ base: CGFloat = 4) -> some View { nuruLineSpacing(base) }
 }
 
 extension Font {
@@ -189,6 +224,8 @@ extension Font {
     static var nRowTitle: Font   { fraunces(15, .semibold) } // row/list-item headline
     static var nCardBody: Font   { inter(13, .regular) }     // card body / preview text
     static var nCardMeta: Font   { inter(11, .regular) }     // timestamps, counts, footnotes
+    static var nChipLabel: Font  { inter(12, .semibold) }    // segment/filter chip text
+    static var nActionLabel: Font { inter(13, .bold) }       // pill CTA / menu action text
     static var nCardCTA: Font    { inter(14, .semibold) }    // in-card button labels
 }
 

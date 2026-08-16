@@ -23,6 +23,15 @@ struct ChatConversation: Codable, Sendable, Identifiable, Hashable {
     /// `peer_user_id` to GET /chat/conversations). Optional + defaulted so rows
     /// from older servers — and existing memberwise-init call sites — still work.
     var peerUserId: String? = nil
+    /// `chat_conversations.type` — DIRECT/SPACE/DISCIPLER/PASTORAL/BROADCAST/
+    /// BROADCAST_RESPONSE (Chat Redesign C4). The server-authoritative way to
+    /// tell a discipler/pastoral 1:1 apart from an ordinary DM; nil on an older
+    /// server, in which case callers fall back to the client-taught cached-id
+    /// heuristic (see ChatInboxViewModel.dms, PastoralPrefs).
+    var type: String? = nil
+    /// This caller has muted the conversation (server-side, per-member; Chat
+    /// Redesign C4 mute). Additive — nil/false on a server that predates it.
+    var muted: Bool = false
 
     var id: String { conversationId }
     static func == (a: ChatConversation, b: ChatConversation) -> Bool { a.conversationId == b.conversationId }
@@ -49,6 +58,8 @@ extension ChatConversation {
         unread = (try? c.decodeIfPresent(Int.self, forKey: .unread)) ?? 0
         avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
         peerUserId = try? c.decodeIfPresent(String.self, forKey: .peerUserId)
+        type = try? c.decodeIfPresent(String.self, forKey: .type)
+        muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) ?? false
     }
 }
 
@@ -151,6 +162,9 @@ struct ChatMessage: Codable, Sendable, Identifiable {
     var readCount: Int? = nil
     var recipientCount: Int? = nil
     var aiTag: String? = nil
+    /// Set when this message was delivered by a broadcast — the mark that lets a
+    /// member's thread dress itself as "Talk with Pastor" instead of a plain DM.
+    var broadcastId: String? = nil
 
     var id: String { messageId }
     init(messageId: String, authorUserId: String, authorName: String, authorAvatar: String?,
@@ -183,6 +197,24 @@ struct ChatMessage: Codable, Sendable, Identifiable {
         readCount = try? c.decodeIfPresent(Int.self, forKey: .readCount)
         recipientCount = try? c.decodeIfPresent(Int.self, forKey: .recipientCount)
         aiTag = try? c.decodeIfPresent(String.self, forKey: .aiTag)
+        broadcastId = try? c.decodeIfPresent(String.self, forKey: .broadcastId)
+    }
+}
+
+/// Shared response shape for the author-only mutation endpoints:
+/// PATCH /chat/messages/{id} → { message_id, body, is_edited }
+/// DELETE /chat/messages/{id} → { message_id, deleted }
+struct ChatMessageMutationResult: Codable, Sendable {
+    let messageId: String
+    let body: String?
+    let isEdited: Bool?
+    let deleted: Bool?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        messageId = (try? c.decodeIfPresent(String.self, forKey: .messageId)) ?? ""
+        body = try? c.decodeIfPresent(String.self, forKey: .body)
+        isEdited = try? c.decodeIfPresent(Bool.self, forKey: .isEdited)
+        deleted = try? c.decodeIfPresent(Bool.self, forKey: .deleted)
     }
 }
 
@@ -195,6 +227,10 @@ struct ChatThreadDetail: Codable, Sendable {
     let memberCount: Int
     let joined: Bool
     let messages: [ChatMessage]
+    /// Same server `type` as ChatConversation (Chat Redesign C4) — additive.
+    var type: String? = nil
+    /// Same server per-member mute as ChatConversation — additive.
+    var muted: Bool = false
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         conversationId = try c.decode(String.self, forKey: .conversationId)
@@ -205,5 +241,7 @@ struct ChatThreadDetail: Codable, Sendable {
         memberCount = (try? c.decodeIfPresent(Int.self, forKey: .memberCount)) ?? 0
         joined = (try? c.decodeIfPresent(Bool.self, forKey: .joined)) ?? false
         messages = (try? c.decodeIfPresent([ChatMessage].self, forKey: .messages)) ?? []
+        type = try? c.decodeIfPresent(String.self, forKey: .type)
+        muted = (try? c.decodeIfPresent(Bool.self, forKey: .muted)) ?? false
     }
 }

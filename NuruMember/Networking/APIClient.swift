@@ -11,15 +11,24 @@
 import Foundation
 
 enum APIError: LocalizedError {
-    case http(status: Int, code: String?, message: String)
+    case http(status: Int, code: String?, message: String, details: ErrorDetails? = nil)
     case decoding(String)
     case transport(String)
     case offline
     case unauthorized
 
+    /// The server is ASKING for the password, not refusing (§5.3 step-up). A
+    /// FORBIDDEN_SCOPE alone cannot say this — only details.password_required —
+    /// so the answerable case gets a name of its own rather than a string test
+    /// scattered across call sites.
+    var needsPasswordConfirm: Bool {
+        if case let .http(_, _, _, details) = self { return details?.passwordRequired == true }
+        return false
+    }
+
     var errorDescription: String? {
         switch self {
-        case .http(_, _, let m): return m
+        case .http(_, _, let m, _): return m
         case .decoding(let m): return "Couldn't read the server response. \(m)"
         case .transport(let m): return m
         case .offline: return "You appear to be offline."
@@ -38,13 +47,36 @@ enum APIError: LocalizedError {
     }
 }
 
-/// Backend error envelope: { "error": { "code", "message" } } or { "message" }.
+/// Backend error envelope: { "error": { "code", "message", "details" } } or
+/// { "message" }.
+///
+/// `details` matters because the code alone is not always enough to know what to
+/// do: a step-up demand and an ordinary "you may not" are BOTH FORBIDDEN_SCOPE.
+/// Only `details.password_required` tells them apart — one is answerable, the
+/// other is a wall.
 private struct ErrorEnvelope: Decodable {
-    struct Inner: Decodable { let code: String?; let message: String? }
+    struct Inner: Decodable {
+        let code: String?
+        let message: String?
+        let details: ErrorDetails?
+    }
     let error: Inner?
     let message: String?
     var code: String? { error?.code }
     var text: String? { error?.message ?? message }
+    var details: ErrorDetails? { error?.details }
+}
+
+/// The bits of an error's `details` the app acts on. Everything is optional —
+/// an unknown detail must never fail the decode of the error itself.
+struct ErrorDetails: Decodable, Sendable {
+    /// The server is asking the person to confirm their password (§5.3 step-up),
+    /// not refusing them. Answerable — prompt, then retry.
+    let passwordRequired: Bool?
+    /// The server is asking for a second factor.
+    let mfaRequired: Bool?
+    /// How fresh a confirmation must be, in seconds.
+    let maxAgeSeconds: Int?
 }
 
 actor APIClient {
@@ -124,6 +156,14 @@ actor APIClient {
 
     var hasSession: Bool { accessToken != nil }
 
+    /// The API's ORIGIN with the versioned `/v1` surface stripped — for
+    /// resolving server-relative paths that live BESIDE the API, not under it
+    /// (Nuru Live's `hls_url` / `recording_url`, e.g. "/live/church/index.m3u8",
+    /// which nginx serves directly, never through `/v1`).
+    var originURL: URL {
+        baseURL.lastPathComponent == "v1" ? baseURL.deletingLastPathComponent() : baseURL
+    }
+
     func setOnSessionExpired(_ fn: @escaping @Sendable () -> Void) { onSessionExpired = fn }
 
     func setSession(access: String?, refresh: String?) {
@@ -131,6 +171,18 @@ actor APIClient {
         refreshToken = refresh
         Keychain.set(access, for: atKey)
         Keychain.set(refresh, for: rtKey)
+    }
+
+    /// Swap ONLY the access token, keeping the refresh token exactly where it is.
+    ///
+    /// For /auth/confirm-password, which re-mints the access token with a fresh
+    /// pwd_at and returns no refresh token of its own (§5.3 step-up). Going
+    /// through setSession(access:refresh:nil) would wipe the refresh token and
+    /// silently end the session at the next expiry — the same rotation that trips
+    /// reuse-detection. Hence a method rather than a call site remembering.
+    func setAccessToken(_ access: String) {
+        accessToken = access
+        Keychain.set(access, for: atKey)
     }
 
     func clearSession() { setSession(access: nil, refresh: nil) }
@@ -168,11 +220,14 @@ actor APIClient {
         body: B?, as type: T.Type, isRetry: Bool = false
     ) async throws -> T {
         let trimmed = path.hasPrefix("/") ? String(path.dropFirst()) : path
-        var comps = URLComponents(url: baseURL.appendingPathComponent(trimmed), resolvingAgainstBaseURL: false)!
+        guard var comps = URLComponents(url: baseURL.appendingPathComponent(trimmed), resolvingAgainstBaseURL: false) else {
+            throw APIError.transport("Couldn't form the request URL.")
+        }
         if !query.isEmpty {
             comps.queryItems = query.map { URLQueryItem(name: $0.key, value: $0.value) }
         }
-        var req = URLRequest(url: comps.url!)
+        guard let url = comps.url else { throw APIError.transport("Couldn't form the request URL.") }
+        var req = URLRequest(url: url)
         req.httpMethod = method
         // 30s, not 15s: password endpoints run Argon2id, which can take several
         // seconds on a small/cold server (mirrors client.ts).
@@ -211,7 +266,7 @@ actor APIClient {
         guard (200..<300).contains(http.statusCode) else {
             let env = try? decoder.decode(ErrorEnvelope.self, from: data)
             let msg = env?.text ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode)
-            throw APIError.http(status: http.statusCode, code: env?.code, message: msg)
+            throw APIError.http(status: http.statusCode, code: env?.code, message: msg, details: env?.details)
         }
 
         if T.self == EmptyResponse.self { return EmptyResponse() as! T }
@@ -266,6 +321,49 @@ actor APIClient {
         let session = try decoder.decode(Session.self, from: data)
         setSession(access: session.accessToken, refresh: session.refreshToken)
         return .session(session)
+    }
+
+    /// POST /auth/confirm-password → re-mint MY access token with a fresh pwd_at
+    /// (§5.3 step-up), so the routes that guard the church's private words will
+    /// open for the next 15 minutes.
+    ///
+    /// Deliberately bespoke rather than going through send(), for one reason: a
+    /// wrong password answers 401, and send() treats a 401 as an expired session
+    /// — it would refresh and REPLAY the wrong password, spending two attempts of
+    /// the login lockout for one typo. This must reach the caller untouched.
+    ///
+    /// Only the access token is replaced; the refresh token stays exactly as it
+    /// is (this endpoint returns none).
+    func confirmPassword(_ password: String) async throws {
+        struct Body: Encodable { let password: String }
+        struct Res: Decodable { let accessToken: String }
+        var req = URLRequest(url: baseURL.appendingPathComponent("auth/confirm-password"))
+        req.httpMethod = "POST"
+        req.timeoutInterval = 30
+        req.setValue("application/json", forHTTPHeaderField: "Accept")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = accessToken { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        req.httpBody = try encoder.encode(Body(password: password))
+
+        let data: Data, response: URLResponse
+        do {
+            (data, response) = try await Self.session.data(for: req)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+                throw APIError.offline
+            }
+            throw APIError.transport(urlErr.localizedDescription)
+        } catch {
+            throw APIError.transport(error.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response.") }
+        guard (200..<300).contains(http.statusCode) else {
+            let env = try? decoder.decode(ErrorEnvelope.self, from: data)
+            throw APIError.http(status: http.statusCode, code: env?.code,
+                                message: env?.text ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+                                details: env?.details)
+        }
+        setAccessToken(try decoder.decode(Res.self, from: data).accessToken)
     }
 
     /// POST /auth/register → a new account + session.

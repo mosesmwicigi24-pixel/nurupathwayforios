@@ -6,7 +6,7 @@
 // then a success ceremony ("You're checked in ✓") or a polite failure state
 // with rescan. Camera-permission denial gets a friendly Settings pointer.
 import SwiftUI
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 
 struct CheckInScannerView: View {
@@ -293,7 +293,7 @@ struct CheckInScannerView: View {
         if api.isNetwork {
             return "You're offline — check-in needs a connection. Reconnect and scan again."
         }
-        if case .http(_, let code, let message) = api {
+        if case .http(_, let code, let message, _) = api {
             switch code ?? "" {
             case "VALIDATION_FAILED":
                 return "That code isn't valid for this event — it may have expired. Grab the latest one on the screen and try again."

@@ -13,6 +13,12 @@ import UIKit
 import PhotosUI
 
 struct ProfileView: View {
+    /// True when hosted as the "Profile" segment inside the You tab (L4)
+    /// rather than as its own top-level tab — the You tab's own segmented
+    /// control already clears the status bar, so this header needs only a
+    /// little breathing room, not a second 60pt reservation for it.
+    var embeddedInYou: Bool = false
+
     @EnvironmentObject private var auth: AuthStore
 
     /// Pushes SettingsView. @SceneStorage (not @State): RootView re-`.id`s the
@@ -26,6 +32,8 @@ struct ProfileView: View {
 
     // Sheets
     @State private var editingField: PField?
+    /// Drives the MEMBER ID row's brief "COPIED" confirmation.
+    @State private var justCopied = false
     @State private var viewingBadge: PBadgeItem?
     @State private var showAllBadges = false
     @AppStorage("streakQuiet") private var streakQuiet = false
@@ -36,6 +44,9 @@ struct ProfileView: View {
     @State private var certs: [PCert] = []
     @State private var scores: ScoresSummary?
     @State private var aiOptOut = false
+    /// The consent WRITE failed — the toggle was reverted and the member told.
+    /// A consent control must never show a state the server hasn't recorded.
+    @State private var aiConsentSaveFailed = false
     @State private var aiConsentLoaded = false
     @State private var scoreDetailPillar: ScorePillar?
 
@@ -200,20 +211,29 @@ struct ProfileView: View {
                         Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
                             .lineLimit(1).truncationMode(.middle)
                     }
-                    HStack(spacing: 4) {
-                        Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
-                        Text("Level \(auth.me?.enrollment?.currentLevel ?? 1)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    // Only when there IS a level. This read
+                    // `currentLevel ?? 1` and so told every member without an
+                    // enrollment that they were on Level 1 — which for 28 people
+                    // was false for up to 42 days while they waited to be placed
+                    // (backend #420 / migration 193). A missing standing must
+                    // look missing; inventing a reassuring one is how nobody
+                    // noticed they were stuck.
+                    if let level = auth.me?.enrollment?.currentLevel {
+                        HStack(spacing: 4) {
+                            Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
+                            Text("Level \(level)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        }
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(Color.white, in: Capsule())
+                        .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
+                        .padding(.top, 2)
                     }
-                    .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
-                    .padding(.top, 2)
                 }
                 Spacer(minLength: 0)
             }
             .gentleEntrance()
         }
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, 24)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, embeddedInYou ? Nuru.S.base : 60).padding(.bottom, 24)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -267,9 +287,16 @@ struct ProfileView: View {
 
     // MARK: Personal information
 
-    /// Editable field definitions — PATCH /me accepts these (email is the login
-    /// identity and intentionally NOT writable, §5.8 mass-assignment guard).
+    /// Editable field definitions — PATCH /me accepts these.
+    ///
+    /// Email joined the list on 2026-08-15 (owner ruling: user_id is the
+    /// assigned identifier, everything else may change). It had been withheld as
+    /// "the login identity", but a credential a member cannot correct is a trap
+    /// rather than a safeguard — an address mistyped at signup used to need an
+    /// admin. The server trims and lowercases it, refuses one another live
+    /// account holds (409), and records the change.
     private static let fields: [PField] = [
+        PField(id: "email", label: "Email", icon: .mail, kind: .email),
         PField(id: "name", label: "Full name", icon: .user, kind: .text),
         PField(id: "phone", label: "Phone", icon: .phone, kind: .phone),
         PField(id: "dob", label: "Date of birth", icon: .calendar, kind: .date),
@@ -289,6 +316,7 @@ struct ProfileView: View {
     private func currentValue(for f: PField) -> String {
         switch f.id {
         case "name": return p?.fullName ?? ""
+        case "email": return p?.email ?? ""
         case "phone": return p?.phoneNumber ?? ""
         case "dob": return String((p?.dateOfBirth ?? "").prefix(10))
         case "gender": return p?.gender ?? ""
@@ -301,6 +329,7 @@ struct ProfileView: View {
     private func displayValue(for f: PField) -> String {
         switch f.id {
         case "name": return p?.fullName ?? "—"
+        case "email": return p?.email ?? "Not set"
         case "phone": return p?.phoneNumber ?? "Not set"
         case "dob": return formattedDOB
         case "gender":
@@ -315,8 +344,6 @@ struct ProfileView: View {
     private var personalInfo: some View {
         sectionCard("PERSONAL INFORMATION", icon: .user) {
             memberIdRow
-            infoRow(.mail, "EMAIL", p?.email ?? "—")   // login identity — not editable (§5.8)
-            Divider()
             ForEach(Self.fields) { f in
                 Button { Haptics.tap(); editingField = f } label: {
                     infoRow(f.icon, f.label.uppercased(), displayValue(for: f), editable: true)
@@ -344,11 +371,36 @@ struct ProfileView: View {
                     Text("MEMBER ID").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                     Icon(.lock, size: 9, color: Color(hex: 0x74808F))
                 }
-                Text(memberIdLabel).font(.fraunces(13, .semibold)).foregroundStyle(Nuru.navy)
+                Text(memberIdLabel)
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Nuru.navy)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.8)
+                    .textSelection(.enabled)
             }
             Spacer(minLength: 0)
-            Text("PERMANENT").font(.inter(9, .semibold)).kerning(0.9).foregroundStyle(Color(hex: 0x74808F))
+            // 36 characters is not something anyone retypes, so the whole row
+            // copies. "PERMANENT" becomes "COPIED" for a beat — the label is
+            // the confirmation, so the layout never shifts.
+            Text(justCopied ? "COPIED" : "PERMANENT")
+                .font(.inter(9, .semibold)).kerning(0.9)
+                .foregroundStyle(justCopied ? Color(hex: 0xA8861C) : Color(hex: 0x74808F))
+                .animation(.easeOut(duration: 0.18), value: justCopied)
         }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard let uid = p?.userId else { return }
+            UIPasteboard.general.string = uid
+            Haptics.tap()
+            withAnimation { justCopied = true }
+            Task {
+                try? await Task.sleep(nanoseconds: 1_600_000_000)
+                withAnimation { justCopied = false }
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Member ID, permanent. Double tap to copy.")
+        .accessibilityValue(memberIdLabel)
         .padding(10)
         .background(
             LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.surface], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -358,12 +410,20 @@ struct ProfileView: View {
         .padding(.bottom, Nuru.S.sm)
     }
 
-    /// NRU-<uuid prefix>-<join year> — derived from the real user id + enrollment.
-    private var memberIdLabel: String {
-        guard let uid = p?.userId, let first = uid.split(separator: "-").first else { return "—" }
-        let year = auth.me?.enrollment.map { String($0.startedAt.prefix(4)) }
-        return "NRU-\(first.uppercased())" + (year.map { "-\($0)" } ?? "")
-    }
+    /// The member's `user_id` — the actual server-issued identifier, in full.
+    ///
+    /// This used to render "NRU-" + the first eight characters + the join year.
+    /// That read like an official reference and was not one: it could not be
+    /// pasted into a query, looked up in the portal, or quoted to anyone,
+    /// because no such value exists anywhere in the system. Android derived its
+    /// own variant from the LAST eight characters with the year hardcoded to
+    /// 2026, so the same member saw two different "member IDs" depending on
+    /// which phone they opened.
+    ///
+    /// A UUID is not pretty. It is, however, the one identifier the owner
+    /// assigns and nothing else can change — every other field on this screen
+    /// is editable — so it is what belongs under "MEMBER ID".
+    private var memberIdLabel: String { p?.userId ?? "—" }
 
     /// Languages spoken — display-only: PATCH /me has no spoken-languages field
     /// (only `locale`), so the default is derived from the member's real locale.
@@ -443,9 +503,20 @@ struct ProfileView: View {
             Toggle(isOn: Binding(
                 get: { !aiOptOut },
                 set: { on in
+                    let previous = aiOptOut
                     aiOptOut = !on
+                    aiConsentSaveFailed = false
                     Haptics.tap()
-                    Task { try? await MemberAPI.setAiConsent(optOut: !on) }
+                    Task {
+                        do { try await MemberAPI.setAiConsent(optOut: !on) }
+                        catch {
+                            // Consent is the one toggle that must never lie:
+                            // if the server didn't record it, don't display it.
+                            aiOptOut = previous
+                            aiConsentSaveFailed = true
+                            Haptics.error()
+                        }
+                    }
                 }
             )) {
                 VStack(alignment: .leading, spacing: 3) {
@@ -455,6 +526,11 @@ struct ProfileView: View {
                 }
             }
             .tint(Nuru.gold)
+            if aiConsentSaveFailed {
+                Text("Couldn't save that — check your connection and try again.")
+                    .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
+            }
+            EmptyView()
             .task {
                 guard !aiConsentLoaded else { return }
                 aiConsentLoaded = true
@@ -537,11 +613,20 @@ struct ProfileView: View {
         rows.append(PMilestone(id: "baptism", label: "Baptism",
                                meta: baptized ? "Recorded — welcome to the family" : "Not yet recorded",
                                status: baptized ? .done : .future))
-        let level = max(auth.me?.enrollment?.currentLevel ?? 1, 1)
-        for l in 1..<level {
-            rows.append(PMilestone(id: "lvl\(l)", label: "Level \(l) completed", meta: "Completed", status: .done))
+        // Without an enrollment there is no level in progress to report. The
+        // old `?? 1` printed "Level 1 · in progress · Keep going" to members who
+        // had not been placed on the pathway at all — an encouragement to keep
+        // doing something they had never been able to start.
+        if let level = auth.me?.enrollment?.currentLevel, level >= 1 {
+            for l in 1..<level {
+                rows.append(PMilestone(id: "lvl\(l)", label: "Level \(l) completed", meta: "Completed", status: .done))
+            }
+            rows.append(PMilestone(id: "lvl\(level)", label: "Level \(level) · in progress", meta: "Keep going", status: .active))
+        } else {
+            rows.append(PMilestone(id: "lvl-pending", label: "Your pathway",
+                                   meta: "Starting soon — your leader is setting you up",
+                                   status: .future))
         }
-        rows.append(PMilestone(id: "lvl\(level)", label: "Level \(level) · in progress", meta: "Keep going", status: .active))
         rows.append(PMilestone(id: "completion", label: "Pathway completion", meta: "Your journey continues", status: .future))
         return rows
     }
@@ -702,7 +787,7 @@ func formatISODay(_ iso: String) -> String? {
 private struct POption: Hashable { let value: String; let label: String }
 
 private struct PField: Identifiable {
-    enum Kind { case text, phone, date, select }
+    enum Kind { case text, phone, email, date, select }
     let id: String
     let label: String
     let icon: Lucide
@@ -714,6 +799,7 @@ private struct PField: Identifiable {
 /// `rowVersion` drives the server's optimistic-concurrency check.
 private struct UpdateMeBody: Encodable {
     var fullName: String?
+    var email: String?
     var phoneNumber: String?
     var gender: String?
     var city: String?
@@ -987,7 +1073,11 @@ private struct CertificateCardView: View {
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(cert.title).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                    Text("Level \(cert.levelNumber ?? 1) · Issued \(formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10)))")
+                    // A certificate with no level_number is not a Level 1
+                    // certificate — it is a certificate whose level we do not
+                    // have. Say the issue date and stop.
+                    Text(cert.levelNumber.map { "Level \($0) · Issued " } .map { $0 + (formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10))) }
+                         ?? "Issued \(formatISODay(cert.issuedAt) ?? String(cert.issuedAt.prefix(10)))")
                         .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 }
                 Spacer(minLength: 0)
@@ -1095,7 +1185,7 @@ private struct CertificateCardView: View {
                 presentShare(url)
             } catch {
                 Haptics.error()
-                if case APIError.http(let status, _, _) = error, status == 404 {
+                if case APIError.http(let status, _, _, _) = error, status == 404 {
                     downloadError = "The PDF isn't ready yet — check back soon."
                 } else {
                     downloadError = (error as? APIError)?.errorDescription ?? "Couldn't download the certificate."
@@ -1247,9 +1337,14 @@ private struct EditFieldSheet: View {
                         .datePickerStyle(.wheel)
                         .labelsHidden()
                         .frame(maxWidth: .infinity)
-                case .text, .phone:
+                case .text, .phone, .email:
                     TextField(field.label, text: $text)
-                        .keyboardType(field.kind == .phone ? .phonePad : .default)
+                        .keyboardType(field.kind == .phone ? .phonePad : field.kind == .email ? .emailAddress : .default)
+                        // An address typed with autocapitalisation is a login
+                        // that silently fails; the server lowercases it anyway,
+                        // but the member should see what will be saved.
+                        .textInputAutocapitalization(field.kind == .email ? .never : .sentences)
+                        .autocorrectionDisabled(field.kind == .email)
                         .font(.inter(14)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, Nuru.S.base).frame(height: 48)
                         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1281,7 +1376,7 @@ private struct EditFieldSheet: View {
         case .date:
             let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
             return f.string(from: date)
-        case .text, .phone: return text.trimmingCharacters(in: .whitespacesAndNewlines)
+        case .text, .phone, .email: return text.trimmingCharacters(in: .whitespacesAndNewlines)
         }
     }
 
@@ -1293,6 +1388,7 @@ private struct EditFieldSheet: View {
         var body = UpdateMeBody(rowVersion: rowVersion)
         switch field.id {
         case "name": body.fullName = value
+        case "email": body.email = value
         case "phone": body.phoneNumber = value
         case "dob": body.dateOfBirth = value
         case "gender": body.gender = value

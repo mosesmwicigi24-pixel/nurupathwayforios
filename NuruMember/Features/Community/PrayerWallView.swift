@@ -24,12 +24,17 @@ final class PrayerWallViewModel: ObservableObject {
     }
 
     func pray(_ p: PrayerWallPost) async {
-        try? await MemberAPI.prayerWallReact(p.postId, emoji: "🙏")
+        _ = try? await MemberAPI.prayerWallReact(p.postId, emoji: "🙏")
         await load()
     }
 }
 
 struct PrayerWallView: View {
+    /// True when hosted as the "Corporate Prayer" tab of PrayerRoomView, which
+    /// supplies its own back button + title + segmented control — so this
+    /// view drops its own hero (and the "+" compose button living inside it)
+    /// in favor of a floating one.
+    var embedded: Bool = false
     @StateObject private var vm = PrayerWallViewModel()
     @Environment(\.dismiss) private var dismiss
     @State private var composing = false
@@ -37,7 +42,7 @@ struct PrayerWallView: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                hero
+                if !embedded { hero }
                 VStack(alignment: .leading, spacing: Nuru.S.sm) {
                     sortRow
                     if vm.loading && vm.posts.isEmpty {
@@ -59,7 +64,7 @@ struct PrayerWallView: View {
                     }
                 }
                 .padding(.horizontal, Nuru.S.screen)
-                .padding(.top, Nuru.S.base)
+                .padding(.top, embedded ? Nuru.S.lg : Nuru.S.base)
                 .padding(.bottom, Nuru.tabBarSpace)
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.posts.map(\.postId))
             }
@@ -71,6 +76,21 @@ struct PrayerWallView: View {
         .task { if vm.posts.isEmpty { await vm.load() } }
         .sheet(isPresented: $composing) {
             PrayerComposeSheet { await vm.load() }
+        }
+        // Embedded (My Prayer Room) has no hero to carry the "+" compose
+        // action, so it floats one instead — same compose sheet.
+        .overlay(alignment: .bottomTrailing) {
+            if embedded {
+                Button { Haptics.tap(); composing = true } label: {
+                    Icon(.plus, size: 20, color: Nuru.navyDeep)
+                        .frame(width: 52, height: 52)
+                        .background(Nuru.gold, in: Circle())
+                        .shadow(color: Nuru.gold.opacity(0.4), radius: 10, x: 0, y: 6)
+                }
+                .buttonStyle(.pressable)
+                .padding(Nuru.S.lg)
+                .accessibilityLabel("Share a prayer")
+            }
         }
     }
 

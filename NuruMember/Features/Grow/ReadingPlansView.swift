@@ -3,7 +3,7 @@
 // (white search field + bell), added a streak/reward strip (flame, week dots,
 // badge progress), a shimmering "Plan of the day" badge, a pulsing play ring on
 // continue rows, a "Finish & earn" trophy card and highlighted next-day rows in
-// the detail slide-over, and a navy day header + confetti on day completion.
+// the detail slide-over, and a navy day header + a fireworks burst on day completion.
 // Everything binds to REAL data: the ReadingPlanRow catalogue (MemberAPI.plans),
 // plan detail (MemberAPI.plan), enrollment (startPlan), day/segment completion
 // (completePlanDay / PlanDayRef navigation), streak (me/achievements) and the
@@ -12,6 +12,7 @@
 // Shared card structs + the PL palette live in ReadingPlanCards.swift.
 import SwiftUI
 import UserNotifications
+import AVFoundation
 
 // MARK: - Daily plan reminder (local notification)
 
@@ -454,27 +455,27 @@ struct ReadingPlansView: View {
         }
     }
 
-    // MARK: invitation
+    // MARK: invitation — the Read with a Friend hub (spec §3)
 
     private var invitationCard: some View {
-        ShareLink(item: "Walk with me through a reading plan on Nuru Pathway — a little of the Word every day. Get the app and let's keep each other going.") {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
-                Icon(.users, size: 19, color: PL.gold)
-            }.frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
-                Text("Invite your cell to a plan and keep each other going.").font(.nCardMeta).foregroundStyle(PL.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+        NavigationLink(value: GrowDestination.readWithFriendHub) {
+            HStack(spacing: 12) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
+                    Icon(.users, size: 19, color: PL.gold)
+                }.frame(width: 40, height: 40)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
+                    Text("Invite your cell to a plan and keep each other going.").font(.nCardMeta).foregroundStyle(PL.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 16, color: PL.ink3)
             }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: PL.ink3)
-        }
-        .padding(16)
-        .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
+            .padding(16)
+            .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
+                        in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.gold.opacity(0.2), lineWidth: 1))
         }
         .buttonStyle(.pressable)
     }
@@ -492,13 +493,29 @@ final class PlanDetailViewModel: ObservableObject {
     @Published var loading = true
     @Published var error: String?
     @Published var busy = false
+    /// A segment ack told us this day number should already be open. Kept
+    /// until a fetch actually shows it unlocked, so a day that still comes
+    /// back locked (a completion still catching up through the sync path)
+    /// reads as "finishing sync" rather than "you're not there yet".
+    @Published var awaitingUnlock: Int?
 
     private let planId: String
     init(planId: String) { self.planId = planId }
 
+    /// Always re-fetches — this screen decides which days are tappable, so it
+    /// never trusts a cached "locked" answer from before the member walked
+    /// off to finish the previous day. (The offline-sync race: the day
+    /// unlocks the moment its last segment lands, which can be after this
+    /// screen was last drawn.)
     func load() async {
         loading = true; error = nil
-        do { detail = try await MemberAPI.plan(planId) }
+        do {
+            detail = try await MemberAPI.plan(planId)
+            if let waiting = awaitingUnlock,
+               detail?.days.first(where: { $0.dayNumber == waiting })?.locked == false {
+                awaitingUnlock = nil
+            }
+        }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this plan." }
         loading = false
     }
@@ -507,6 +524,13 @@ final class PlanDetailViewModel: ObservableObject {
         busy = true; defer { busy = false }
         try? await MemberAPI.startPlan(planId)
         await load()
+    }
+
+    /// A segment's ack (relayed from the day hub) said this plan's next day
+    /// is already open server-side.
+    func noteUnlockAck(_ ack: PlanDayUnlockAck) {
+        guard ack.planId == nil || ack.planId == planId else { return }
+        if ack.nextDayUnlocked, let next = ack.nextDayNumber { awaitingUnlock = next }
     }
 }
 
@@ -523,6 +547,13 @@ struct PlanDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var saved = false
     @State private var showAllDays = false
+    /// Which locked day the member just reached for — drives the nudge back to
+    /// the day they're actually on.
+    @State private var lockedNudgeFor: Int?
+    /// Read with a Friend (spec §6): create-or-get my group for this plan,
+    /// mint an open invite, hand the /join/{token} link to the share sheet.
+    @State private var invitingBusy = false
+    @State private var inviteError: String?
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -534,6 +565,13 @@ struct PlanDetailView: View {
             PL.cream.ignoresSafeArea()
             if let d = vm.detail {
                 content(d)
+                    .alert("Day \(lockedNudgeFor ?? 0) is still ahead",
+                           isPresented: Binding(get: { lockedNudgeFor != nil },
+                                                set: { if !$0 { lockedNudgeFor = nil } })) {
+                        Button("Stay on Day \(d.nextDay ?? 1)") { lockedNudgeFor = nil }
+                    } message: {
+                        Text(lockedNudgeMessage(d))
+                    }
             } else if vm.loading {
                 VStack(spacing: 12) {
                     ProgressView().tint(PL.gold)
@@ -553,12 +591,18 @@ struct PlanDetailView: View {
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
-        .task { if vm.detail == nil { await vm.load() } }
+        // Always re-fetches on appear (including popping back from the day
+        // hub) — see PlanDetailViewModel.load(). vm.detail stays populated
+        // meanwhile so this never flashes back to a loading spinner.
+        .task { await vm.load() }
         // Hide the bar inside a plan. No onDisappear-restore here: on a PUSH the
         // child's onAppear fires BEFORE this view's onDisappear, so restoring from
         // here re-showed the bar on top of the day hub's footer button. The roots
         // (Plans list, Home) restore the bar on their own onAppear when we pop out.
         .onAppear { tabs.chromeHidden = true }
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanDayUnlocked)) { note in
+            if let ack = note.object as? PlanDayUnlockAck { vm.noteUnlockAck(ack) }
+        }
     }
 
     // Real completion state, derived from the day rows the server returns.
@@ -714,10 +758,36 @@ struct PlanDetailView: View {
             }
             VStack(spacing: 6) {
                 ForEach(visible) { day in
-                    NavigationLink(value: PlanDayRef(planId: d.planId, day: day)) {
-                        PLDetailDayRow(day: day, isNext: !allDone && day.dayNumber == next)
+                    if day.locked, vm.awaitingUnlock == day.dayNumber {
+                        // A segment ack already told us this day should be
+                        // open — this fetch just hasn't caught up yet (the
+                        // completion is still landing through the sync path).
+                        // An honest brief state, not a dead "you're not there
+                        // yet" tap: say so, and let a tap retry the fetch.
+                        Button {
+                            Haptics.tap()
+                            Task { await vm.load() }
+                        } label: {
+                            PLDetailDayRow(day: day, isNext: false, syncing: true)
+                        }
+                        .buttonStyle(.pressable)
+                    } else if day.locked {
+                        // The plan is walked, not skimmed. A locked day doesn't
+                        // open — tapping it turns you back to the day you're on,
+                        // kindly. (The server withholds its words either way.)
+                        Button {
+                            Haptics.tap()
+                            withAnimation(.easeOut(duration: 0.2)) { lockedNudgeFor = day.dayNumber }
+                        } label: {
+                            PLDetailDayRow(day: day, isNext: false)
+                        }
+                        .buttonStyle(.pressable)
+                    } else {
+                        NavigationLink(value: PlanDayRef(planId: d.planId, day: day, planTitle: d.title)) {
+                            PLDetailDayRow(day: day, isNext: !allDone && day.dayNumber == next)
+                        }
+                        .buttonStyle(.pressable)
                     }
-                    .buttonStyle(.pressable)
                 }
                 if !showAllDays, d.days.count > 4 {
                     Button {
@@ -739,6 +809,16 @@ struct PlanDetailView: View {
         .padding(16)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
+    }
+
+    /// Turning someone back from a locked day. Not an error — an invitation:
+    /// name the day they're on, name what it holds, and tell them the truth
+    /// about why this one is closed. The plan is a walk, and a walk has an order.
+    private func lockedNudgeMessage(_ d: ReadingPlanDetail) -> String {
+        let n = d.nextDay ?? 1
+        let title = d.days.first(where: { $0.dayNumber == n })?.title
+        let named = title.map { "Day \(n) — \($0)" } ?? "Day \(n)"
+        return "Finish \(named) first, and this one opens.\n\nThese days build on each other, so the plan waits for you rather than running ahead. One day at a time is the whole point."
     }
 
     private var nudge: some View {
@@ -776,17 +856,51 @@ struct PlanDetailView: View {
                 }
             }
             .buttonStyle(.pressable)
-            ShareLink(item: "Join me on \"\(d.title)\" — a \(d.dayCount)-day journey in the Word on Nuru Pathway.") {
-                HStack(spacing: 6) { Icon(.share2, size: 15, color: PL.navy); Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy) }
-                    .frame(minHeight: 48).padding(.horizontal, 16)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
+            Button {
+                Haptics.tap()
+                Task { await startReadWithFriendInvite(d) }
+            } label: {
+                HStack(spacing: 6) {
+                    if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 15, color: PL.navy) }
+                    Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+                }
+                .frame(minHeight: 48).padding(.horizontal, 16)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressable)
+            .disabled(invitingBusy)
         }
         .padding(.horizontal, 20).padding(.top, 12)
         .padding(.bottom, 8)
         .background(Color.white.overlay(alignment: .top) { Rectangle().fill(PL.border).frame(height: 1) })
+        .alert("Couldn't send that invite", isPresented: Binding(get: { inviteError != nil }, set: { if !$0 { inviteError = nil } })) {
+            Button("OK") { inviteError = nil }
+        } message: {
+            Text(inviteError ?? "")
+        }
+    }
+
+    /// Real Read-with-a-Friend invite (spec §6, replacing the old text-only
+    /// ShareLink): create-or-get MY shared group for this plan, mint a fresh
+    /// open-link invite, and hand the public /join/{token} URL + a rich
+    /// message to the system share sheet (WhatsApp/social/copy — one URL,
+    /// every channel).
+    private func startReadWithFriendInvite(_ d: ReadingPlanDetail) async {
+        guard !invitingBusy else { return }
+        invitingBusy = true
+        defer { invitingBusy = false }
+        do {
+            let group = try await MemberAPI.createOrGetReadingGroup(planId: d.planId)
+            let invite = try await MemberAPI.createReadingInvite(groupId: group.groupId)
+            let url = MemberAPI.readingJoinURL(token: invite.token)
+            let message = readingInviteMessage(planTitle: d.title, dayCount: d.dayCount, joinUrl: url)
+            Haptics.success()
+            presentSystemShareSheet([message])
+        } catch {
+            Haptics.error()
+            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+        }
     }
 
     private func ctaLabel(_ text: String) -> some View {
@@ -894,9 +1008,9 @@ final class PlanDayViewModel: ObservableObject {
 // PlanSegmentView), the Figma reflection textarea (now REAL — backed by
 // GET/POST /growth/plans/{id}/days/{n}/reflection with upsert semantics, so
 // it pre-fills on return visits and the button flips to "Update"), and a
-// sticky gold "Mark day complete" bar that celebrates with a native confetti
-// burst. The mock's prev/next-day arrows are still omitted (the day ref
-// carries no sibling days).
+// sticky gold "Mark day complete" bar that celebrates with a native rocket-
+// and-burst fireworks show. The mock's prev/next-day arrows are still omitted
+// (the day ref carries no sibling days).
 struct PlanDayView: View {
     let ref: PlanDayRef
     @StateObject private var vm: PlanDayViewModel
@@ -951,28 +1065,7 @@ struct PlanDayView: View {
                             Text("TODAY'S JOURNEY · \(hubParts.count) PART\(hubParts.count == 1 ? "" : "S")")
                                 .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
                             ForEach(hubParts) { part in
-                                if part.tag == "talk" {
-                                    NavigationLink(value: TalkRoute(planId: ref.planId,
-                                                                    dayNumber: ref.day.dayNumber,
-                                                                    planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
-                                                                    prompt: talkPromptFull,
-                                                                    talkSegmentId: part.segs.first?.segmentId,
-                                                                    talkDone: isDone(part))) {
-                                        partRow(part)
-                                    }
-                                    .buttonStyle(.pressable)
-                                } else {
-                                    NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
-                                                                         dayNumber: ref.day.dayNumber,
-                                                                         segments: segments,
-                                                                         index: part.firstIndex,
-                                                                         planId: ref.planId,
-                                                                         part: part.tag,
-                                                                         doneIds: Array(vm.completedSegments))) {
-                                        partRow(part)
-                                    }
-                                    .buttonStyle(.pressable)
-                                }
+                                partLink(part) { partRow(part) }
                             }
                             walkStrip
                             reminderRow
@@ -983,7 +1076,7 @@ struct PlanDayView: View {
                 }
                 footerBar
             }
-            if justDone { IntenseCelebration().ignoresSafeArea().allowsHitTesting(false) }
+            if justDone { FireworksCelebration().ignoresSafeArea().allowsHitTesting(false) }
         }
         .ignoresSafeArea(edges: .top)
         .environment(\.readerPalette, pal)
@@ -1002,6 +1095,19 @@ struct PlanDayView: View {
                     _ = vm.completedSegments.insert(id)
                 }
             }
+        }
+        // The offline-sync race: the day unlocks server-side the moment the
+        // LAST segment's completion lands, but if the member taps straight
+        // through, the day hub would otherwise still be waiting on an
+        // explicit "Seal the day" tap. Trust the segment's own authoritative
+        // ack (computed in the same transaction as the write) directly —
+        // "Continue the plan" works immediately, with no extra tap and no
+        // race against a re-fetch.
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanDayUnlocked)) { note in
+            guard let ack = note.object as? PlanDayUnlockAck,
+                  ack.dayNumber == ref.day.dayNumber,
+                  ack.planId == nil || ack.planId == ref.planId else { return }
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { vm.dayCompleted = true }
         }
     }
 
@@ -1056,7 +1162,36 @@ struct PlanDayView: View {
     private func isDone(_ part: HubPart) -> Bool {
         part.segs.allSatisfy { vm.completedSegments.contains($0.segmentId) || $0.completed }
     }
-    private var nextPartId: String? { hubParts.first(where: { !isDone($0) })?.id }
+    private var nextPart: HubPart? { hubParts.first(where: { !isDone($0) }) }
+    private var nextPartId: String? { nextPart?.id }
+
+    /// The one way into a part — used by both the row and the footer CTA, so the
+    /// gold button can only ever carry you INTO the work, never around it.
+    @ViewBuilder
+    private func partLink<Content: View>(_ part: HubPart, @ViewBuilder label: () -> Content) -> some View {
+        if part.tag == "talk" {
+            NavigationLink(value: TalkRoute(planId: ref.planId,
+                                            dayNumber: ref.day.dayNumber,
+                                            planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                            prompt: talkPromptFull,
+                                            talkSegmentId: part.segs.first?.segmentId,
+                                            talkDone: isDone(part))) {
+                label()
+            }
+            .buttonStyle(.pressable)
+        } else {
+            NavigationLink(value: PlanSegmentRef(planTitle: ref.planTitle ?? ref.day.title ?? "Reading plan",
+                                                 dayNumber: ref.day.dayNumber,
+                                                 segments: segments,
+                                                 index: part.firstIndex,
+                                                 planId: ref.planId,
+                                                 part: part.tag,
+                                                 doneIds: Array(vm.completedSegments))) {
+                label()
+            }
+            .buttonStyle(.pressable)
+        }
+    }
 
     private func partRow(_ part: HubPart) -> some View {
         let done = isDone(part)
@@ -1220,18 +1355,7 @@ struct PlanDayView: View {
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
     }
 
-    private func sectionIcon(_ seg: PlanSegment) -> Lucide {
-        if seg.title.lowercased().hasPrefix("pray") { return .handHeart }
-        switch seg.kind.lowercased() {
-        case "video", "audio": return .play
-        case "scripture": return .quote
-        case "talk": return .messageCircle
-        case "reading": return .bookOpen
-        default: return .sun
-        }
-    }
-
-    // MARK: sticky footer — mark complete → confetti → tap to go back
+    // MARK: sticky footer — mark complete → fireworks → tap to go back
 
     private var footerBar: some View {
         VStack(spacing: 8) {
@@ -1271,6 +1395,22 @@ struct PlanDayView: View {
                     .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
                 }
                 .buttonStyle(.pressable)
+            } else if let next = nextPart {
+                // A day is finished by DOING it, not by declaring it. While a part
+                // is still unread the gold button is the way into that part — it
+                // no longer offers to seal a day nobody has walked. (The server
+                // refuses that too: 409 CONTENT_INCOMPLETE.)
+                partLink(next) {
+                    HStack(spacing: 8) {
+                        Icon(next.icon, size: 16, color: PL.navy)
+                        Text("Continue · \(next.label)").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                        Icon(.arrowRight, size: 15, color: PL.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .shadow(color: PL.gold.opacity(0.45), radius: 10, y: 8)
+                }
             } else {
                 Button {
                     Task {
@@ -1294,7 +1434,7 @@ struct PlanDayView: View {
                     HStack(spacing: 8) {
                         if vm.busy { ProgressView().tint(PL.navy) }
                         else { Icon(.check, size: 16, color: PL.navy) }
-                        Text("Mark day complete").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                        Text("Seal the day").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1308,132 +1448,277 @@ struct PlanDayView: View {
     }
 }
 
-// MARK: - Intense celebration (fireworks + saturating confetti, ~5s)
+// MARK: - Fireworks celebration ("real fireworks, not paper cuts", ~5s)
 
-/// A big, joyful "boom": staggered firework bursts across the upper screen plus a
-/// dense tumbling-confetti rain, drawn in a single Canvas for performance. Runs
-/// for ~5s then empties itself. Purely decorative — never blocks touches.
-private struct IntenseCelebration: View {
+/// The day-seal ceremony: 3–4 staggered rockets rise from the bottom third of
+/// the screen on a fading streak, then burst into two dozen-plus radial
+/// sparks that arc under a light gravity pull and leave their own fading
+/// trail behind — one soft "pop" timed to each burst. A single Canvas +
+/// TimelineView(.animation) draws every rocket and spark (no per-particle
+/// views) so this stays 60fps-friendly. Reduce Motion swaps the whole thing
+/// for a static golden glow and skips sound entirely. Purely decorative —
+/// never blocks touches.
+private struct FireworksCelebration: View {
     var duration: Double = 5.0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var start: Date?
 
-    private let confetti: [Piece]
-    private let sparks: [Spark]
+    private let rockets: [Rocket]
 
-    struct Piece { let x, delay, fall, sway, phase, spin, size: Double; let color: Color }
-    struct Spark { let cx, cy, t0, angle, speed, size: Double; let color: Color }
+    /// A spark's fixed flight plan, resolved against its parent rocket's
+    /// burst time + center each frame.
+    private struct SparkSeed {
+        let angle: Double        // radians, 0...2π around the burst center
+        let reach: Double        // radial travel, as a fraction of min(width, height)
+        let size: Double         // point diameter at the glowing head
+        let color: Color
+        let lifeScale: Double    // slight per-spark variance so the burst doesn't die all at once
+    }
 
-    static let palette: [Color] = [
-        PL.gold, PL.goldLight, Color(hex: 0xFBBF24), Color(hex: 0xFB7185),
-        Color(hex: 0x34D399), Color(hex: 0x60A5FA), Color(hex: 0xFFF3D6),
-    ]
+    private struct Rocket: Identifiable {
+        let id: Int
+        let x: Double            // 0...1, launch/burst x (kept fixed — real rockets fly straight up)
+        let burstY: Double       // 0...1 from the top — where the streak ends and the burst begins
+        let t0: Double           // launch time, seconds from celebration start
+        let riseDuration: Double
+        let color: Color
+        let sparks: [SparkSeed]
+    }
+
+    // Golds the brand leans on + white + one warm accent — legible on the
+    // navy day header and the cream body alike.
+    private static let gold = Color(hex: 0xC89B3C)
+    private static let goldLight = Color(hex: 0xE0B85E)
+    private static let cream = Color(hex: 0xFFF4C7)
+    private static let accent = Color(hex: 0xFB7185)   // one accent spark color, used sparingly
+    private static let palette: [Color] = [gold, gold, goldLight, goldLight, cream, .white, accent]
+
+    private static let sparkLife = 1.25   // seconds a spark stays visible once it bursts
 
     init(duration: Double = 5.0) {
         self.duration = duration
-        var conf: [Piece] = []
-        for _ in 0..<170 {
-            conf.append(Piece(x: .random(in: 0...1), delay: .random(in: 0...2.6),
-                              fall: .random(in: 0.9...1.7), sway: .random(in: 12...48),
-                              phase: .random(in: 0...6.28), spin: .random(in: -7...7),
-                              size: .random(in: 6...13), color: Self.palette.randomElement()!))
-        }
-        var sp: [Spark] = []
-        let bursts = 7
-        for b in 0..<bursts {
-            let cx = Double.random(in: 0.15...0.85)
-            let cy = Double.random(in: 0.14...0.52)
-            let t0 = Double(b) * (duration * 0.55 / Double(bursts)) + Double.random(in: 0...0.35)
+        let count = Int.random(in: 3...4)
+        var built: [Rocket] = []
+        var t0 = 0.0
+        for i in 0..<count {
+            let riseDuration = Double.random(in: 0.45...0.62)
             let color = Self.palette.randomElement()!
-            let count = 46
-            for i in 0..<count {
-                let ang = Double(i) / Double(count) * 6.2831 + Double.random(in: -0.05...0.05)
-                sp.append(Spark(cx: cx, cy: cy, t0: t0, angle: ang,
-                                speed: .random(in: 0.15...0.26), size: .random(in: 3...6), color: color))
+            let sparkCount = Int.random(in: 24...40)
+            var seeds: [SparkSeed] = []
+            for s in 0..<sparkCount {
+                let angle = (Double(s) / Double(sparkCount)) * (2 * .pi) + .random(in: -0.06...0.06)
+                seeds.append(SparkSeed(angle: angle,
+                                        reach: .random(in: 0.16...0.30),
+                                        size: .random(in: 3...6.5),
+                                        color: Self.palette.randomElement()!,
+                                        lifeScale: .random(in: 0.85...1.15)))
             }
+            built.append(Rocket(id: i, x: .random(in: 0.2...0.8), burstY: .random(in: 0.16...0.42),
+                                 t0: t0, riseDuration: riseDuration, color: color, sparks: seeds))
+            // Stagger the next launch so its burst still has room to fade
+            // out before the ~5s ceremony retires (host view tears this down
+            // at 5.3s — see PlanDayView.footerButton).
+            t0 += Double.random(in: 0.8...1.05)
         }
-        confetti = conf; sparks = sp
+        rockets = built
     }
 
     var body: some View {
+        Group {
+            if reduceMotion {
+                staticGlow
+            } else {
+                fireworks
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    // Reduce Motion: no rise, no burst, no sound — just a gentle golden
+    // presence that confirms "something good just happened".
+    private var staticGlow: some View {
+        RadialGradient(colors: [Self.cream.opacity(0.5), Self.gold.opacity(0.18), .clear],
+                       center: .center, startRadius: 8, endRadius: 280)
+            .transition(.opacity)
+    }
+
+    private var fireworks: some View {
         TimelineView(.animation) { tl in
             Canvas { ctx, size in
                 let t = start.map { tl.date.timeIntervalSince($0) } ?? 0
-                for p in confetti {
-                    let lt = t - p.delay
-                    if lt < 0 { continue }
-                    let prog = lt * p.fall / duration
-                    if prog > 1.05 { continue }
-                    let x = (p.x + sin(lt * 2.2 + p.phase) * (p.sway / size.width)) * size.width
-                    let y = (-0.08 + prog * 1.25) * size.height
-                    let alpha = min(1, max(0, 1 - (prog - 0.82) / 0.18))
-                    var l = ctx
-                    l.opacity = alpha
-                    l.translateBy(x: x, y: y)
-                    l.rotate(by: .radians(lt * p.spin))
-                    l.fill(Path(CGRect(x: -p.size / 2, y: -p.size / 2, width: p.size, height: p.size * 0.62)),
-                           with: .color(p.color))
-                }
-                for s in sparks {
-                    let lt = t - s.t0
-                    if lt < 0 || lt > 1.5 { continue }
-                    let ease = 1 - pow(1 - min(lt / 1.0, 1), 3)
-                    let dist = s.speed * ease
-                    let x = (s.cx + cos(s.angle) * dist) * size.width
-                    let y = (s.cy + sin(s.angle) * dist + 0.11 * lt * lt) * size.height
-                    var l = ctx
-                    l.opacity = max(0, 1 - lt / 1.5)
-                    l.fill(Path(ellipseIn: CGRect(x: x - s.size / 2, y: y - s.size / 2, width: s.size, height: s.size)),
-                           with: .color(s.color))
+                ctx.blendMode = .plusLighter   // additive glow — sparks brighten where they overlap
+                for rocket in rockets {
+                    draw(rocket, into: ctx, size: size, t: t)
                 }
             }
         }
-        .onAppear { start = Date() }
-        .allowsHitTesting(false)
+        .onAppear {
+            start = Date()
+            FireworksSound.shared.prepareIfNeeded()
+            playPopsTimedToBursts()
+        }
+    }
+
+    /// One background task walks the rocket list, sleeping only the delta to
+    /// each burst moment, and fires a pop right as the sparks appear.
+    private func playPopsTimedToBursts() {
+        let plan = rockets.map { ($0.id, $0.t0 + $0.riseDuration) }
+        Task {
+            var elapsed = 0.0
+            for (id, burstTime) in plan {
+                let delta = burstTime - elapsed
+                if delta > 0 {
+                    try? await Task.sleep(nanoseconds: UInt64((delta * 1_000_000_000).rounded()))
+                }
+                elapsed = max(elapsed, burstTime)
+                FireworksSound.shared.pop(id)
+            }
+        }
+    }
+
+    private func draw(_ rocket: Rocket, into ctx: GraphicsContext, size: CGSize, t: Double) {
+        guard t >= rocket.t0 else { return }
+        let burstTime = rocket.t0 + rocket.riseDuration
+        let minDim = min(size.width, size.height)
+
+        if t < burstTime {
+            drawRisingStreak(rocket, into: ctx, size: size, t: t, burstTime: burstTime)
+            return
+        }
+
+        let bt = t - burstTime
+        guard bt <= Self.sparkLife * 1.3 else { return }   // slowest sparks retire a touch later
+
+        // A quick bright flash at the moment of ignition — the "boom".
+        if bt < 0.12 {
+            let center = CGPoint(x: rocket.x * size.width, y: rocket.burstY * size.height)
+            let flashAlpha = 1 - bt / 0.12
+            ctx.fill(Path(ellipseIn: CGRect(x: center.x - 46, y: center.y - 46, width: 92, height: 92)),
+                     with: .radialGradient(Gradient(colors: [.white.opacity(0.85 * flashAlpha), rocket.color.opacity(0)]),
+                                            center: center, startRadius: 0, endRadius: 46))
+        }
+
+        let center = CGPoint(x: rocket.x * size.width, y: rocket.burstY * size.height)
+        for seed in rocket.sparks {
+            drawSpark(seed, center: center, minDim: minDim, bt: bt, into: ctx)
+        }
+    }
+
+    /// The rising rocket: a short gradient-stroked streak fading to nothing
+    /// at its tail, climbing from just under the screen to the burst point.
+    private func drawRisingStreak(_ rocket: Rocket, into ctx: GraphicsContext, size: CGSize, t: Double, burstTime: Double) {
+        let p = max(0, min(1, (t - rocket.t0) / rocket.riseDuration))
+        let launchY = 1.06
+        let headY = launchY + (rocket.burstY - launchY) * p
+        let tailP = max(0, p - 0.11)
+        let tailY = launchY + (rocket.burstY - launchY) * tailP
+        let x = rocket.x * size.width
+
+        let head = CGPoint(x: x, y: headY * size.height)
+        let tail = CGPoint(x: x, y: tailY * size.height)
+        var path = Path()
+        path.move(to: tail)
+        path.addLine(to: head)
+        ctx.stroke(path, with: .linearGradient(Gradient(colors: [rocket.color.opacity(0), rocket.color.opacity(0.95)]),
+                                                startPoint: tail, endPoint: head),
+                    style: StrokeStyle(lineWidth: 3, lineCap: .round))
+        // A small bright ember at the very tip.
+        ctx.fill(Path(ellipseIn: CGRect(x: head.x - 2.5, y: head.y - 2.5, width: 5, height: 5)),
+                  with: .color(.white.opacity(0.9)))
+    }
+
+    /// One radial spark: outward travel that decelerates, a slight downward
+    /// gravity pull that grows with time (so late in life it visibly arcs),
+    /// and a short fading trail (gradient stroke) behind the glowing head.
+    private func drawSpark(_ seed: SparkSeed, center: CGPoint, minDim: CGFloat, bt: Double, into ctx: GraphicsContext) {
+        let life = Self.sparkLife * seed.lifeScale
+        guard bt >= 0, bt <= life else { return }
+        let lifeT = bt / life
+
+        func position(atLifeT lt: Double) -> CGPoint {
+            let clamped = max(0, min(1, lt))
+            let outEase = 1 - pow(1 - clamped, 2)          // fast start, decelerating outward push
+            let radial = seed.reach * outEase
+            let gravity = 0.16 * clamped * clamped          // slight pull, compounding late in life
+            let dx = cos(seed.angle) * radial
+            let dy = sin(seed.angle) * radial + gravity
+            return CGPoint(x: center.x + dx * minDim, y: center.y + dy * minDim)
+        }
+
+        let fadeOut = lifeT > 0.7 ? max(0, 1 - (lifeT - 0.7) / 0.3) : 1
+        guard fadeOut > 0.02 else { return }
+
+        let head = position(atLifeT: lifeT)
+        let tail = position(atLifeT: bt / life - 0.09 / life)
+
+        var trail = Path()
+        trail.move(to: tail)
+        trail.addLine(to: head)
+        ctx.stroke(trail, with: .linearGradient(Gradient(colors: [seed.color.opacity(0), seed.color.opacity(0.8 * fadeOut)]),
+                                                 startPoint: tail, endPoint: head),
+                   style: StrokeStyle(lineWidth: seed.size * 0.5, lineCap: .round))
+
+        // Glowing head — a soft radial fade reads as an additive spark rather
+        // than a flat dot.
+        let glowSize = seed.size * 2.2
+        ctx.fill(Path(ellipseIn: CGRect(x: head.x - glowSize / 2, y: head.y - glowSize / 2, width: glowSize, height: glowSize)),
+                  with: .radialGradient(Gradient(colors: [.white.opacity(0.9 * fadeOut), seed.color.opacity(0.55 * fadeOut), seed.color.opacity(0)]),
+                                        center: head, startRadius: 0, endRadius: glowSize / 2))
     }
 }
 
-// MARK: - Reader scroll/dwell preference keys
+// MARK: - Firework "pop" sound (ambient, silent-switch aware)
 
-private struct ReaderScrollKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
-}
-private struct ViewportHKey: PreferenceKey {
-    static var defaultValue: CGFloat = 720
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { let n = nextValue(); if n > 0 { value = n } }
-}
-private struct SectionFramesKey: PreferenceKey {
-    static var defaultValue: [String: CGRect] = [:]
-    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
-        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+/// Three short pop WAVs, played one per burst. AVAudioSession category
+/// `.ambient` is the whole point here — it's the one category that RESPECTS
+/// the silent switch, so a decorative sound effect never talks over a
+/// member who has their phone silenced. Players are loaded off the main
+/// thread the first time a celebration appears; nothing here ever blocks UI.
+@MainActor
+private final class FireworksSound {
+    static let shared = FireworksSound()
+    private var players: [AVAudioPlayer] = []
+    private var preparing = false
+
+    func prepareIfNeeded() {
+        guard !preparing, players.isEmpty else { return }
+        preparing = true
+        Task.detached(priority: .utility) {
+            try? AVAudioSession.sharedInstance().setCategory(.ambient, options: [.mixWithOthers])
+            var loaded: [AVAudioPlayer] = []
+            for name in ["pop1", "pop2", "pop3"] {
+                guard let url = Bundle.main.url(forResource: name, withExtension: "wav"),
+                      let player = try? AVAudioPlayer(contentsOf: url) else { continue }
+                player.volume = 0.5
+                player.prepareToPlay()
+                loaded.append(player)
+            }
+            await MainActor.run { FireworksSound.shared.players = loaded }
+        }
+    }
+
+    /// Fire the pop for burst `index` (rotates through the three players so
+    /// back-to-back bursts don't cut each other's tail off).
+    func pop(_ index: Int) {
+        guard !players.isEmpty else { return }
+        let player = players[index % players.count]
+        if player.isPlaying { player.stop(); player.currentTime = 0 }
+        player.play()
     }
 }
 
 // MARK: - Day reader section components (single-scroll reading)
 
-/// Gold pull-quote. Never double-quotes: verse text already carries curly quotes.
+/// The day's passage/verse — same shared VerseQuoteCard every scripture quote
+/// in the app uses, tinted for the reader's day/night palette.
 struct DayPullQuote: View {
-    let text: String; let caption: String; var quoted = true
+    let text: String; let caption: String
     @Environment(\.readerPalette) private var pal
-    private var display: String {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        let already = t.hasPrefix("\u{201C}") || t.hasPrefix("\"")
-        return (quoted && !already) ? "\u{201C}\(t)\u{201D}" : t
-    }
     var body: some View {
-        HStack(spacing: 0) {
-            Rectangle().fill(pal.gold).frame(width: 3)
-            VStack(alignment: .leading, spacing: 8) {
-                Icon(.quote, size: 16, color: pal.gold)
-                Text(display).font(.fraunces(17, .regular)).italic().foregroundStyle(pal.ink).lineSpacing(6)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(caption.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(pal.inkDim)
-            }
-            .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(pal.verseBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(pal.gold.opacity(0.3), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        VerseQuoteCard(
+            verse: text, reference: caption,
+            background: pal.verseBg, ink: pal.ink, gold: pal.gold, referenceColor: pal.inkDim
+        )
     }
 }
 
@@ -1448,7 +1733,7 @@ struct DayPassage: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
-                Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).lineSpacing(7)
+                Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).nuruLineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
@@ -1469,7 +1754,7 @@ struct DayTalk: View {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
                     Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
-                    Text(q).font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink).lineSpacing(5)
+                    Text(q).font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink).nuruLineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1493,7 +1778,7 @@ struct DayPrayer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !prayer.isEmpty {
-                Text(prayer).font(.fraunces(16, .regular)).foregroundStyle(pal.ink).lineSpacing(6)
+                Text(prayer).font(.fraunces(16, .regular)).foregroundStyle(pal.ink).nuruLineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let b = blessing {
@@ -1582,7 +1867,7 @@ struct PlanKeepsakeView: View {
     var body: some View {
         ZStack {
             PL.cream.ignoresSafeArea()
-            IntenseCelebration().ignoresSafeArea().allowsHitTesting(false)
+            FireworksCelebration().ignoresSafeArea().allowsHitTesting(false)
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
                 ZStack {

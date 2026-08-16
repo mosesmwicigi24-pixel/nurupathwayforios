@@ -29,7 +29,7 @@
 - ✅ QuizScreen → `Features/Pathway/QuizView.swift` (all 5 question kinds, server-scored result)
 - ☐ ReflectionScreen (module reflection review state — M3)
 - ◑ LevelCompleteScreen (quiz result screen done; standalone level-complete ceremony pending)
-- Gating: ✅ `Features/Pathway/LevelGating.swift` (§1.9, server-authoritative)
+- Gating: ✅ enforced from the server's own `locked` status fields, checked inline in `Features/Pathway/PathwayView.swift` / `LevelDetailView.swift` (§1.9 — the server computes locking; the client only renders it. The old `LevelGating.swift` helper was an unwired duplicate, removed.)
 
 ### Phase 2 — Daily rhythm & Word (hosted in the new "Grow" tab)
 - ✅ DevotionalScreen → `Features/Grow/DevotionalView.swift` (+ save reflection → rhythm)

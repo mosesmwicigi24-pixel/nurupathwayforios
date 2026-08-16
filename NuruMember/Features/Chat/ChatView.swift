@@ -21,18 +21,75 @@ final class ChatInboxViewModel: ObservableObject {
     @Published var busyPersonId: String?    // person whose DM is being created
     @Published var joiningSpaceId: String?  // discover space being followed
 
+    // MARK: Connections (Chat Redesign C3a — "no unsolicited DMs")
+    @Published var connections: [ConnectionRow] = []
+    @Published var incomingRequests: [ConnectionRequestRow] = []
+    @Published var outgoingRequests: [ConnectionRequestRow] = []
+    @Published var connectingPersonId: String?     // person a request is being sent/cancelled/decided for
+    /// Set when POST /chat/dms comes back 403 CONSENT_REQUIRED for someone the
+    /// directory hadn't flagged yet (stale cache) — the view auto-offers to
+    /// send the request instead of just failing.
+    @Published var consentPrompt: ChatPerson?
+
+    // MARK: Four-tab restructure (Chat Redesign C3b)
+
+    /// GET /me/discipleship — the `discipler` field decides whether the
+    /// My Discipler tab has a live assignment or shows its empty state.
+    @Published var discipleship: Discipleship?
+    /// Spaces whose reviewed join request is pending a leader's decision
+    /// (session-local; the server notifies on accept/decline).
+    @Published var pendingSpaceIds: Set<String> = []
+    @Published var openingDiscipler = false
+    @Published var openingPastoral = false
+    /// Friendly inline notice for the discipler/pastor tabs (open failures).
+    @Published var privateThreadNotice: String?
+    /// GET /chat/pastoral/eligibility, cached per session (PastorEligibility) —
+    /// "have I ever been assigned as a pastor". Shows the "Talk with Your
+    /// Pastor" inbox to an assigned pastor, not just a SuperAdmin (Chat
+    /// Redesign C4, closing the C3b gap).
+    @Published var isPastor = false
+
     var conversations: [ChatConversation] { inbox?.conversations ?? [] }
     var spaces: [ChatConversation] { conversations.filter { $0.kind == "space" } }
-    var dms: [ChatConversation] { conversations.filter { $0.kind == "dm" } }
+    /// The Chat tab's DM list — with the discipler/pastoral threads kept OUT
+    /// (they live in their own tabs). Server-authoritative: a row's `type`
+    /// (Chat Redesign C4) says DIRECT/BROADCAST_RESPONSE vs DISCIPLER/PASTORAL.
+    /// Only when `type` is absent (an older server) does this fall back to the
+    /// client-taught cached-id heuristic — tolerant decode, not the default path.
+    var dms: [ChatConversation] {
+        conversations.filter {
+            guard $0.kind == "dm" else { return false }
+            if let type = $0.type { return type != "DISCIPLER" && type != "PASTORAL" }
+            return $0.conversationId != PastoralPrefs.pastoralConversationId
+                && $0.conversationId != PastoralPrefs.disciplerConversationId
+        }
+    }
     var groups: [ChatConversation] { conversations.filter { $0.kind == "group" } }
     var discover: [DiscoverSpace] { inbox?.discoverSpaces ?? [] }
     var totalUnread: Int { conversations.reduce(0) { $0 + $1.unread } }
+    /// Pending asks from someone else — the number the Chat segment badge and
+    /// the bell dot both surface prominently.
+    var pendingIncomingCount: Int { incomingRequests.count }
+
+    /// Unread on the (known) discipler / pastoral threads — the tab badges.
+    var disciplerUnread: Int {
+        guard let id = PastoralPrefs.disciplerConversationId else { return 0 }
+        return conversations.first { $0.conversationId == id }?.unread ?? 0
+    }
+    var pastoralUnread: Int {
+        guard !PastoralPrefs.muted, let id = PastoralPrefs.pastoralConversationId else { return 0 }
+        return conversations.first { $0.conversationId == id }?.unread ?? 0
+    }
 
     func load() async {
         loading = true; error = nil
         async let inboxReq = try? MemberAPI.chatInbox()
         async let peopleReq = try? MemberAPI.chatPeople()
         async let verseReq = try? MemberAPI.homeVerse()
+        async let connectionsReq = try? MemberAPI.listConnections()
+        async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
+        async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
+        async let discipleshipReq = try? MemberAPI.discipleship()
 
         if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
         if let p = await peopleReq { people = p }
@@ -40,37 +97,207 @@ final class ChatInboxViewModel: ObservableObject {
             if let t = v.text, !t.isEmpty { verse = (t, v.reference, v.version) }
             else { verse = (defaultVerseText, v.reference, v.version) }
         }
+        if let c = await connectionsReq { connections = c }
+        if let inc = await incomingReq { incomingRequests = inc }
+        if let out = await outgoingReq { outgoingRequests = out }
+        if let d = await discipleshipReq { discipleship = d }
+        isPastor = await PastorEligibility.isPastor()
+        // The server is the source of truth for mute now (Chat Redesign C4) —
+        // sync the local optimistic flag from whichever row the inbox resolves
+        // as the pastoral thread, so a mute set elsewhere (or by this device in
+        // an earlier session) is honestly reflected rather than staying stale.
+        if let id = PastoralPrefs.pastoralConversationId ?? conversations.first(where: { $0.type == "PASTORAL" })?.conversationId,
+           let row = conversations.first(where: { $0.conversationId == id }) {
+            PastoralPrefs.muted = row.muted
+        }
         loading = false
+        publishBadge()
+    }
+
+    /// Keeps the You tab's icon badge + segment chip in sync with the SAME
+    /// number the Chat segment button already computes inline (L4 restructure
+    /// — Chat now lives inside the You tab, so its unread needs to reach
+    /// outside this view model; see ChatBadge).
+    private func publishBadge() {
+        ChatBadge.shared.set(dms.reduce(0) { $0 + $1.unread } + pendingIncomingCount)
+    }
+
+    /// My Discipler tab tap → GET /chat/discipler/conversation (lazily creates
+    /// the DISCIPLER thread) → the ChatConversation to navigate into. Records
+    /// the id so the thread keeps its dressing wherever it's opened from.
+    func openDisciplerConversation() async -> ChatConversation? {
+        guard !openingDiscipler else { return nil }
+        openingDiscipler = true
+        defer { openingDiscipler = false }
+        do {
+            let id = try await MemberAPI.disciplerConversation()
+            PastoralPrefs.disciplerConversationId = id
+            let d = discipleship?.discipler
+            return conversations.first { $0.conversationId == id } ?? ChatConversation(
+                conversationId: id, kind: "dm", isPublic: false, title: d?.fullName ?? "My Discipler",
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: d?.avatarUrl)
+        } catch let err as APIError {
+            if case .http(404, _, _, _) = err {
+                // No current assignment (or the discipler's account is gone) —
+                // the tab's empty state covers this; refresh so it shows.
+                discipleship = try? await MemberAPI.discipleship()
+                privateThreadNotice = "A discipler has not yet been assigned to you."
+            } else if case .http(403, _, _, _) = err {
+                privateThreadNotice = "Direct messages aren't available on this account."
+            } else {
+                privateThreadNotice = "Couldn't open the conversation — try again."
+            }
+            return nil
+        } catch {
+            privateThreadNotice = "Couldn't open the conversation — try again."
+            return nil
+        }
+    }
+
+    /// Talk with My Pastor tap → POST /chat/pastoral (create-or-open). The
+    /// pastor's name arrives with the thread itself (GET conversation titles a
+    /// DM as the other participant) — the stub title covers the first frame.
+    func openPastoralThread() async -> ChatConversation? {
+        guard !openingPastoral else { return nil }
+        openingPastoral = true
+        defer { openingPastoral = false }
+        do {
+            let t = try await MemberAPI.openPastoralThread()
+            PastoralPrefs.pastoralConversationId = t.conversationId
+            PastoralPrefs.archived = false   // opening it un-archives by intent
+            return conversations.first { $0.conversationId == t.conversationId } ?? ChatConversation(
+                conversationId: t.conversationId, kind: "dm", isPublic: false, title: "My Pastor",
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: nil)
+        } catch let err as APIError {
+            if case .http(404, _, _, _) = err {
+                privateThreadNotice = "No pastor is available for your congregation yet — please check back soon."
+            } else if case .http(403, _, _, _) = err {
+                privateThreadNotice = "Direct messages aren't available on this account."
+            } else {
+                privateThreadNotice = "Couldn't open the conversation — try again."
+            }
+            return nil
+        } catch {
+            privateThreadNotice = "Couldn't open the conversation — try again."
+            return nil
+        }
+    }
+
+    /// Where the caller stands with one directory person right now — derived
+    /// client-side from the three lists above, never sent by the server as a
+    /// single field.
+    func connectionState(for userId: String) -> ConnectionState {
+        if connections.contains(where: { $0.userId == userId && $0.status == "accepted" }) { return .connected }
+        if connections.contains(where: { $0.userId == userId && $0.status == "blocked" }) { return .blocked }
+        if let req = outgoingRequests.first(where: { $0.userId == userId }) { return .requestSent(requestId: req.requestId) }
+        if let req = incomingRequests.first(where: { $0.userId == userId }) { return .requestReceived(requestId: req.requestId) }
+        return .notConnected
     }
 
     /// POST /chat/dms then refresh the inbox; returns the conversation to open.
+    /// Only ever called for someone already `connected` (or staff) — a
+    /// CONSENT_REQUIRED 403 here means the directory's cached state was stale,
+    /// so it auto-offers the connection request rather than a dead-end error.
     func startDm(with person: ChatPerson) async -> ChatConversation? {
         guard busyPersonId == nil else { return nil }
         busyPersonId = person.userId
         defer { busyPersonId = nil }
-        guard let id = try? await MemberAPI.createDm(peerUserId: person.userId) else { return nil }
-        if let i = try? await MemberAPI.chatInbox() { inbox = i }
-        // Prefer the real inbox row (preview, unread); fall back to a stub the
-        // thread screen can hydrate from GET /chat/conversations/{id}.
-        return conversations.first { $0.conversationId == id } ?? ChatConversation(
-            conversationId: id, kind: "dm", isPublic: false, title: person.fullName,
-            topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
-            lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: person.avatarUrl)
+        do {
+            let id = try await MemberAPI.createDm(peerUserId: person.userId)
+            if let i = try? await MemberAPI.chatInbox() { inbox = i }
+            // Prefer the real inbox row (preview, unread); fall back to a stub the
+            // thread screen can hydrate from GET /chat/conversations/{id}.
+            return conversations.first { $0.conversationId == id } ?? ChatConversation(
+                conversationId: id, kind: "dm", isPublic: false, title: person.fullName,
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: person.avatarUrl)
+        } catch let err as APIError {
+            if case .http(_, "CONSENT_REQUIRED", _, _) = err { consentPrompt = person }
+            return nil
+        } catch {
+            return nil
+        }
     }
 
-    /// POST /chat/spaces/{id}/join then refresh — the space moves to "your spaces".
+    /// POST /chat/connections/requests — the new "New DM" for anyone not yet
+    /// connected. Refreshes the outgoing list so the row flips to "Request sent".
+    func sendConnectionRequest(to person: ChatPerson) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = person.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.requestConnection(userId: person.userId)
+        if let out = try? await MemberAPI.listConnectionRequests(direction: "outgoing") { outgoingRequests = out }
+    }
+
+    /// DELETE /chat/connections/requests/{id} — withdraw a still-pending ask.
+    func cancelConnectionRequest(_ req: ConnectionRequestRow) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = req.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.cancelConnectionRequest(req.requestId)
+        if let out = try? await MemberAPI.listConnectionRequests(direction: "outgoing") { outgoingRequests = out }
+    }
+
+    /// POST .../accept — creates the connection; does NOT open a DM (matches
+    /// the server: `/chat/dms` still does that, now gated on the connection).
+    func acceptConnectionRequest(_ req: ConnectionRequestRow) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = req.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.acceptConnectionRequest(req.requestId)
+        async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
+        async let connectionsReq = try? MemberAPI.listConnections()
+        if let inc = await incomingReq { incomingRequests = inc }
+        if let c = await connectionsReq { connections = c }
+        publishBadge()
+    }
+
+    /// POST .../decline.
+    func declineConnectionRequest(_ req: ConnectionRequestRow) async {
+        guard connectingPersonId == nil else { return }
+        connectingPersonId = req.userId
+        defer { connectingPersonId = nil }
+        _ = try? await MemberAPI.declineConnectionRequest(req.requestId)
+        if let inc = try? await MemberAPI.listConnectionRequests(direction: "incoming") { incomingRequests = inc }
+        publishBadge()
+    }
+
+    /// POST /chat/spaces/{id}/join then refresh — the space moves to "your
+    /// spaces". C3a/C3b tolerance: where the server refuses the immediate join
+    /// (a space that requires leader review), fall back to filing a reviewed
+    /// join request (POST /chat/spaces/{id}/join-requests) and show "pending"
+    /// instead of a dead-end error.
     func follow(_ space: DiscoverSpace) async {
         guard joiningSpaceId == nil else { return }
         joiningSpaceId = space.conversationId
         defer { joiningSpaceId = nil }
-        guard (try? await MemberAPI.joinChatSpace(space.conversationId)) != nil else { return }
-        if let i = try? await MemberAPI.chatInbox() { inbox = i }
+        do {
+            try await MemberAPI.joinChatSpace(space.conversationId)
+            if let i = try? await MemberAPI.chatInbox() { inbox = i }
+        } catch let err as APIError {
+            // 403 (review required) / 404 (not visible for immediate join) /
+            // 422 — try the reviewed path before giving up.
+            guard case .http(let status, _, _, _) = err, [403, 404, 409, 422].contains(status) else { return }
+            if let res = try? await MemberAPI.requestSpaceJoin(space.conversationId) {
+                if res.status == "already_member" {
+                    if let i = try? await MemberAPI.chatInbox() { inbox = i }
+                } else {
+                    pendingSpaceIds.insert(space.conversationId)
+                }
+            }
+        } catch { /* offline etc. — the button simply stays */ }
     }
 
     private let defaultVerseText = "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”"
 }
 
-private enum ChatSegment: Int, CaseIterable { case space, dm, group, broadcast }
+// C3b four-tab restructure: My Space (spaces + the cell/group rooms, merged —
+// the backend already unifies both under type=SPACE) · Chat (the consent-gated
+// DM segment, renamed) · My Discipler · Talk with My Pastor. SuperAdmin keeps
+// Broadcast appended, unchanged.
+private enum ChatSegment: Int, CaseIterable { case space, dm, discipler, pastor, broadcast }
 private enum ChatDest: Hashable { case notifications }
 
 // Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
@@ -97,6 +324,12 @@ private func chatTime(_ iso: String?) -> String {
 }
 
 struct ChatView: View {
+    /// True when hosted as the "Chat" segment inside the You tab (L4) rather
+    /// than as its own top-level tab — the You tab's own segmented-control bar
+    /// already clears the status bar, so this header's hero block only needs
+    /// a little breathing room, not a second 60pt reservation for it.
+    var embeddedInYou: Bool = false
+
     @EnvironmentObject private var auth: AuthStore
     @StateObject private var vm = ChatInboxViewModel()
     @State private var path = NavigationPath()
@@ -139,7 +372,37 @@ struct ChatView: View {
             .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
+            // Threads opened WITH a known privacy context (My Discipler /
+            // Talk with My Pastor tabs) carry it into the thread screen.
+            .navigationDestination(for: ThreadRoute.self) { ChatThreadView(conversation: $0.conversation, context: $0.context) }
             .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
+            .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
+        }
+        // Coming back from a thread refreshes the inbox, so a conversation just
+        // opened stops counting: the thread marked itself read on the server the
+        // moment it appeared, and this pulls that truth back into the chips and
+        // rows. Without it the numbers only reset on a full tab re-entry.
+        .onChange(of: path.count) { old, new in
+            if new < old { Task { await vm.load() } }
+        }
+        // Stale-cache recovery: /chat/dms answered 403 CONSENT_REQUIRED for
+        // someone the directory still showed as messageable — offer the
+        // connection request instead of a dead-end error.
+        // Discipler/pastor tab open failures land here as a friendly alert.
+        .alert("Chat", isPresented: Binding(
+            get: { vm.privateThreadNotice != nil },
+            set: { if !$0 { vm.privateThreadNotice = nil } })
+        ) {
+            Button("OK", role: .cancel) { vm.privateThreadNotice = nil }
+        } message: {
+            Text(vm.privateThreadNotice ?? "")
+        }
+        .alert(item: $vm.consentPrompt) { person in
+            Alert(
+                title: Text("Not connected yet"),
+                message: Text("Send \(person.fullName) a connection request first — you can chat once they accept."),
+                primaryButton: .default(Text("Send request")) { Task { await vm.sendConnectionRequest(to: person) } },
+                secondaryButton: .cancel())
         }
         .task {
             if vm.inbox == nil { await vm.load() }
@@ -179,7 +442,7 @@ struct ChatView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, embeddedInYou ? Nuru.S.base : 60)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -202,7 +465,9 @@ struct ChatView: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 .overlay(alignment: .topTrailing) {
-                    if vm.totalUnread > 0 {
+                    // Also lights up for a pending "wants to connect" ask — a
+                    // connection request is as much "needs you" as an unread.
+                    if vm.totalUnread > 0 || vm.pendingIncomingCount > 0 {
                         Circle().fill(Nuru.gold)
                             .frame(width: 8, height: 8)
                             .shadow(color: Nuru.gold.opacity(0.9), radius: 4)
@@ -325,27 +590,44 @@ struct ChatView: View {
 
     // MARK: Segmented control (capsule pills, navy gradient active)
 
+    // Four (five for SuperAdmin) chips no longer fit a fixed-width capsule row,
+    // so the control scrolls horizontally; each chip is icon + label + unread.
     private var segmentControl: some View {
-        HStack(spacing: 4) {
-            segmentButton(.space, "#My Space", vm.spaces.count)
-            segmentButton(.dm, "DM", vm.dms.count)
-            segmentButton(.group, "My Groups", vm.groups.count)
-            if isStaff { broadcastSegmentButton }
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 4) {
+                // The chips carry what needs the member's attention — messages
+                // not yet read — not how many rooms exist. A chip with nothing
+                // unread shows no number; opening the conversation clears it.
+                segmentButton(.space, "#My Space", icon: nil,
+                              (vm.spaces + vm.groups).reduce(0) { $0 + $1.unread })
+                // Unread DM messages + pending incoming connection requests —
+                // both are "things waiting on you in this tab".
+                segmentButton(.dm, "Chat", icon: .messageCircle,
+                              vm.dms.reduce(0) { $0 + $1.unread } + vm.pendingIncomingCount)
+                segmentButton(.discipler, "My Discipler", icon: .users, vm.disciplerUnread)
+                segmentButton(.pastor, "My Pastor", icon: .heartHandshake, vm.pastoralUnread)
+                if isStaff { broadcastSegmentButton }
+            }
+            .padding(4)
         }
-        .padding(4)
         .background(Color.white.opacity(0.7), in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
     }
 
-    /// Staff gate for the Broadcast composer — mirrors the server's
-    /// requireRole("Instructor"): any role above Student (Instructor, Admin,
-    /// SuperAdmin). The server 403s Students regardless; this only hides the UI.
+    /// SuperAdmin gate for the Broadcast segment — mirrors the server's
+    /// requireRole("SuperAdmin").
+    ///
+    /// NOT "any role above Student", which is what this used to be: a cell leader
+    /// is a member who is not an admin, and the Broadcast does not exist for them.
+    /// The server refuses everyone below SuperAdmin regardless; this keeps the tab
+    /// from being offered to people it would only refuse. Compared case-insensitively
+    /// because the app has both spellings in the wild, and failing open here would
+    /// mean showing a door that never opens.
     private var isStaff: Bool {
-        guard let role = auth.profile?.role, !role.isEmpty else { return false }
-        return role != "Student"
+        (auth.profile?.role ?? "").lowercased() == "superadmin"
     }
 
-    // Megaphone pill — 4th segment, staff only (no count chip; it's a composer).
+    // Megaphone pill — 4th segment, SuperAdmin only (no count chip; it's a composer).
     private var broadcastSegmentButton: some View {
         let selected = segment == .broadcast
         return Button {
@@ -356,7 +638,7 @@ struct ChatView: View {
                 Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C))
                 Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
                 selected
@@ -369,21 +651,27 @@ struct ChatView: View {
         .buttonStyle(.plain)
     }
 
-    private func segmentButton(_ seg: ChatSegment, _ label: String, _ count: Int) -> some View {
+    private func segmentButton(_ seg: ChatSegment, _ label: String, icon: Lucide?, _ count: Int) -> some View {
         let selected = segment == seg
         return Button {
             if !selected { Haptics.selection() }
             withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
         } label: {
             HStack(spacing: 5) {
+                if let icon { Icon(icon, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C)) }
                 Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
-                Text("\(count)").font(.inter(10, .bold))
-                    .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
-                    .padding(.horizontal, 6).padding(.vertical, 1)
-                    .frame(minWidth: 18)
-                    .background(selected ? Nuru.gold : Nuru.surface, in: Capsule())
+                // Unread only. All read → no number at all; the quiet chip IS the
+                // "nothing waiting" signal.
+                if count > 0 {
+                    Text("\(count)").font(.inter(10, .bold))
+                        .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .frame(minWidth: 18)
+                        .background(selected ? Nuru.gold : Nuru.surface, in: Capsule())
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                }
             }
-            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 14)
             .padding(.vertical, 10)
             .background(
                 selected
@@ -408,9 +696,12 @@ struct ChatView: View {
             switch segment {
             case .space: spaceList
             case .dm: dmList
-            case .group: groupList
+            case .discipler: disciplerTab
+            case .pastor: pastorTab
             case .broadcast:
-                if isStaff { BroadcastComposer() }
+                // The whole segment sits behind the lock: Face ID (or the
+                // password) first, then the composer and the sent broadcasts.
+                if isStaff { BroadcastSection() }
             }
         }
     }
@@ -471,8 +762,11 @@ struct ChatView: View {
             || (c.lastAuthor ?? "").lowercased().contains(q)
     }
 
+    // My Space — spaces AND the cell/group rooms under one roof (C3b: the
+    // backend files both under type=SPACE; two segments were one tab too many).
     private var spaceList: some View {
         let items = vm.spaces.filter(matches)
+        let groupItems = vm.groups.filter(matches)
         let discoverable = filteredDiscover
         return VStack(alignment: .leading, spacing: 10) {
             sectionLabel(hash: true, "YOUR SPACES")
@@ -488,17 +782,117 @@ struct ChatView: View {
                     }
                 }
             }
+            if !groupItems.isEmpty {
+                sectionLabel(icon: .users, "CELL & GROUPS").padding(.top, 6)
+                groupedCard {
+                    ForEach(Array(groupItems.enumerated()), id: \.element.id) { idx, c in
+                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
+                    }
+                }
+            }
             if !discoverable.isEmpty {
                 sectionLabel(hash: true, "DISCOVER SPACES").padding(.top, 6)
                 groupedCard {
                     ForEach(Array(discoverable.enumerated()), id: \.element.id) { idx, s in
                         DiscoverSpaceRow(space: s, index: idx, divider: idx > 0,
-                                         joining: vm.joiningSpaceId == s.conversationId) {
+                                         joining: vm.joiningSpaceId == s.conversationId,
+                                         pending: vm.pendingSpaceIds.contains(s.conversationId)) {
                             Haptics.tap()
                             Task { await vm.follow(s) }
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // MARK: My Discipler tab (C3b)
+
+    @ViewBuilder private var disciplerTab: some View {
+        if let discipler = vm.discipleship?.discipler {
+            PrivateThreadCard(
+                kicker: "MY DISCIPLER",
+                title: discipler.fullName,
+                subtitle: discipler.roleLabel.isEmpty ? "Walking with you on the pathway" : discipler.roleLabel,
+                detail: discipler.cellName,
+                avatarUrl: discipler.avatarUrl,
+                privacyLine: "Private between you and your assigned discipler.",
+                unread: vm.disciplerUnread,
+                busy: vm.openingDiscipler,
+                cta: "Open conversation",
+                locked: false
+            ) {
+                Haptics.tap()
+                Task {
+                    if let c = await vm.openDisciplerConversation() {
+                        path.append(ThreadRoute(conversation: c, context: .discipler))
+                    }
+                }
+            }
+        } else {
+            emptyCard(icon: .users, "A discipler has not yet been assigned to you.")
+        }
+    }
+
+    // MARK: Talk with My Pastor tab (C3b)
+
+    @ViewBuilder private var pastorTab: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if PastoralPrefs.archived {
+                emptyCard(icon: .messageCircle, "You archived this conversation on this device.")
+                Button {
+                    Haptics.tap()
+                    PastoralPrefs.archived = false
+                    vm.objectWillChange.send()
+                } label: {
+                    Text("Reopen").font(.inter(12, .bold)).foregroundStyle(Nuru.goldChipText)
+                        .frame(maxWidth: .infinity, minHeight: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.pressable)
+            } else {
+                PrivateThreadCard(
+                    kicker: "TALK WITH MY PASTOR",
+                    title: "Your pastor is here for you",
+                    subtitle: "A private 1:1 conversation — bring anything.",
+                    detail: nil,
+                    avatarUrl: nil,
+                    privacyLine: "Private pastoral conversation.",
+                    unread: vm.pastoralUnread,
+                    busy: vm.openingPastoral,
+                    cta: "Open conversation",
+                    locked: PastoralLock.shared.requiresUnlock,
+                    muted: PastoralPrefs.muted
+                ) {
+                    Haptics.tap()
+                    Task {
+                        // The local privacy gate first (when enabled), then the
+                        // server create-or-open. Cancelled auth = stay put.
+                        if PastoralLock.shared.requiresUnlock,
+                           !(await PastoralLock.shared.unlock()) { return }
+                        if let c = await vm.openPastoralThread() {
+                            path.append(ThreadRoute(conversation: c, context: .pastoral))
+                        }
+                    }
+                }
+            }
+            // Pastor/SuperAdmin side: the "Talk with Your Pastor" inbox, behind
+            // the SAME server password step-up (and Face ID fast path) as the
+            // Broadcast — reusing that exact machinery. Shown to a SuperAdmin
+            // (oversight/fallback reach) OR anyone GET /chat/pastoral/eligibility
+            // says has ever been assigned as a pastor — not SuperAdmin-only,
+            // which used to hide the inbox from an assigned non-SuperAdmin pastor.
+            if isStaff || vm.isPastor {
+                PastoralInboxSection { row in
+                    path.append(ThreadRoute(
+                        conversation: ChatConversation(
+                            conversationId: row.conversationId, kind: "dm", isPublic: false,
+                            title: row.memberName, topic: nil, category: nil, memberCount: 2,
+                            lastBody: row.lastBody, lastType: nil, lastAt: row.lastAt,
+                            lastAuthor: nil, unread: 0, avatarUrl: row.memberAvatarUrl),
+                        context: .normal))
+                }
+                .padding(.top, 6)
             }
         }
     }
@@ -517,12 +911,13 @@ struct ChatView: View {
         let items = vm.dms.filter(matches)
         let directory = filteredPeople
         return VStack(alignment: .leading, spacing: 10) {
+            if query.isEmpty { requestsSection }
             if query.isEmpty && !vm.dms.isEmpty { storiesRow.padding(.bottom, 10) }
             sectionLabel(icon: .users, "DIRECT MESSAGES")
             if items.isEmpty {
                 emptyCard(icon: query.isEmpty ? .messageCircle : .search,
                           query.isEmpty
-                    ? "No direct messages yet — start a conversation with someone below."
+                    ? "Connect with someone before starting a chat."
                     : "No conversations match your search.")
             } else {
                 groupedCard {
@@ -539,11 +934,47 @@ struct ChatView: View {
                     groupedCard {
                         ForEach(Array(directory.enumerated()), id: \.element.id) { idx, p in
                             PersonRow(person: p, index: idx, divider: idx > 0,
-                                      busy: vm.busyPersonId == p.userId) { startDm(p) }
+                                      state: vm.connectionState(for: p.userId),
+                                      busy: vm.busyPersonId == p.userId || vm.connectingPersonId == p.userId,
+                                      onMessage: { startDm(p) },
+                                      onConnect: { Haptics.tap(); Task { await vm.sendConnectionRequest(to: p) } },
+                                      onCancelRequest: {
+                                          Haptics.tap()
+                                          if case let .requestSent(reqId) = vm.connectionState(for: p.userId) {
+                                              Task { await vm.cancelConnectionRequest(
+                                                  ConnectionRequestRow(requestId: reqId, status: "pending", message: nil,
+                                                                        createdAt: nil, userId: p.userId, fullName: p.fullName,
+                                                                        avatarUrl: p.avatarUrl)) }
+                                          }
+                                      })
                         }
                     }
                 }
             }
+        }
+    }
+
+    // "X wants to connect" (incoming, accept/decline) above "Request sent"
+    // (outgoing, cancel) — the incoming list is the one that needs the member's
+    // action, so it leads.
+    @ViewBuilder private var requestsSection: some View {
+        if !vm.incomingRequests.isEmpty || !vm.outgoingRequests.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                sectionLabel(icon: .users, "CONNECTION REQUESTS")
+                groupedCard {
+                    ForEach(Array(vm.incomingRequests.enumerated()), id: \.element.id) { idx, req in
+                        IncomingRequestRow(req: req, divider: idx > 0, busy: vm.connectingPersonId == req.userId,
+                                           onAccept: { Haptics.tap(); Task { await vm.acceptConnectionRequest(req) } },
+                                           onDecline: { Haptics.tap(); Task { await vm.declineConnectionRequest(req) } })
+                    }
+                    ForEach(Array(vm.outgoingRequests.enumerated()), id: \.element.id) { idx, req in
+                        OutgoingRequestRow(req: req, divider: idx > 0 || !vm.incomingRequests.isEmpty,
+                                           busy: vm.connectingPersonId == req.userId,
+                                           onCancel: { Haptics.tap(); Task { await vm.cancelConnectionRequest(req) } })
+                    }
+                }
+            }
+            .padding(.bottom, 6)
         }
     }
 
@@ -561,25 +992,6 @@ struct ChatView: View {
         Haptics.tap()
         Task {
             if let c = await vm.startDm(with: person) { path.append(c) }
-        }
-    }
-
-    private var groupList: some View {
-        let items = vm.groups.filter(matches)
-        return VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(icon: .users, "YOUR GROUPS")
-            if items.isEmpty {
-                emptyCard(icon: query.isEmpty ? .users : .search,
-                          query.isEmpty
-                    ? "You’re not in any group rooms yet — they appear when your cell is set up."
-                    : "No groups match your search.")
-            } else {
-                groupedCard {
-                    ForEach(Array(items.enumerated()), id: \.element.id) { idx, c in
-                        NavigationLink(value: c) { ConversationRow(c: c, index: idx, divider: idx > 0) }.buttonStyle(.pressableSubtle)
-                    }
-                }
-            }
         }
     }
 
@@ -666,9 +1078,9 @@ struct ChatView: View {
                     composeAction("New direct message", "Message a person 1:1", divider: false) {
                         Icon(.pencil, size: 19, color: Nuru.gold)
                     } action: { segment = .dm }
-                    composeAction("New group", "Start a private group chat", divider: true) {
+                    composeAction("New group", "Your cell & group rooms live in My Space", divider: true) {
                         Icon(.users, size: 19, color: Nuru.gold)
-                    } action: { segment = .group }
+                    } action: { segment = .space }
                     composeAction("Browse spaces", "Find & join a community space", divider: true) {
                         Image(systemName: "safari").font(.system(size: 18)).foregroundStyle(Nuru.gold)
                     } action: { segment = .space }
@@ -910,6 +1322,7 @@ private struct SpaceRow: View {
                     Text(c.title ?? "Space")
                         .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
                         .foregroundStyle(Nuru.navy).lineLimit(1)
+                    if c.muted { MutedGlyph() }
                     Spacer(minLength: 4)
                     Text(chatTime(c.lastAt))
                         .font(unread ? .inter(11, .semibold) : .nCardMeta)
@@ -967,6 +1380,7 @@ private struct ConversationRow: View {
                     Text(c.title ?? "Conversation")
                         .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
                         .foregroundStyle(Nuru.navy).lineLimit(1)
+                    if c.muted { MutedGlyph() }
                     Spacer(minLength: 4)
                     Text(chatTime(c.lastAt))
                         .font(unread ? .inter(11, .semibold) : .nCardMeta)
@@ -983,18 +1397,41 @@ private struct ConversationRow: View {
     }
 }
 
+/// Small bell-slash glyph for a muted conversation row (Chat Redesign C4) —
+/// beside the title, same signal the pastoral ⋮ menu's Mute/Unmute reflects.
+private struct MutedGlyph: View {
+    var body: some View {
+        Image(systemName: "bell.slash.fill")
+            .font(.system(size: 10))
+            .foregroundStyle(Color(hex: 0x9AA3AF))
+    }
+}
+
 // MARK: - Directory person row (PEOPLE section — tap to start/open the DM)
 
 private struct PersonRow: View {
     let person: ChatPerson
     let index: Int
     let divider: Bool
+    /// Chat Redesign C3a — "no unsolicited DMs": what tapping this row does
+    /// depends entirely on where the pair currently stand.
+    let state: ConnectionState
     let busy: Bool
-    let action: () -> Void
+    let onMessage: () -> Void
+    let onConnect: () -> Void
+    let onCancelRequest: () -> Void
     private var tint: Color { rowTint(index + 1) }
 
     var body: some View {
-        Button(action: action) {
+        let tappable = { () -> (() -> Void)? in
+            switch state {
+            case .connected: return onMessage
+            case .notConnected: return onConnect
+            case .requestSent: return onCancelRequest
+            case .requestReceived, .blocked: return nil
+            }
+        }()
+        Group {
             HStack(spacing: 14) {
                 SquircleAvatar(url: person.avatarUrl, name: person.fullName, tint: tint)
                     .overlay(alignment: .bottomTrailing) { levelChip }
@@ -1014,16 +1451,51 @@ private struct PersonRow: View {
                 if busy {
                     ProgressView().tint(Nuru.gold).scaleEffect(0.8)
                 } else {
-                    Icon(.messageCircle, size: 15, color: Nuru.gold)
-                        .frame(width: 32, height: 32)
-                        .background(Nuru.gold.opacity(0.10), in: Circle())
+                    stateAffordance
                 }
             }
             .modifier(RowChrome(unread: false, divider: divider))
         }
-        .buttonStyle(.pressableSubtle)
-        .disabled(busy)
+        .contentShape(Rectangle())
+        .onTapGesture { if !busy { tappable?() } }
+        .opacity(busy ? 0.6 : 1)
         .animation(.easeInOut(duration: 0.18), value: busy)
+    }
+
+    // Right-edge affordance per connection state — the same real-estate the
+    // old always-message-icon used to occupy.
+    @ViewBuilder private var stateAffordance: some View {
+        switch state {
+        case .connected:
+            Icon(.messageCircle, size: 15, color: Nuru.gold)
+                .frame(width: 32, height: 32)
+                .background(Nuru.gold.opacity(0.10), in: Circle())
+        case .notConnected:
+            HStack(spacing: 4) {
+                Image(systemName: "person.badge.plus").font(.system(size: 10, weight: .bold))
+                Text("Connect").font(.inter(11, .bold))
+            }
+            .foregroundStyle(.white)
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(storyRing, in: Capsule())
+        case .requestSent:
+            HStack(spacing: 4) {
+                Text("Request sent").font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
+                Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Color(hex: 0xCBD5E1))
+            }
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(Nuru.surface, in: Capsule())
+        case .requestReceived:
+            HStack(spacing: 4) {
+                Image(systemName: "hand.wave.fill").font(.system(size: 10)).foregroundStyle(Nuru.gold)
+                Text("Wants to connect").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+            }
+            .padding(.horizontal, 10).frame(height: 28)
+            .background(Nuru.gold.opacity(0.14), in: Capsule())
+        case .blocked:
+            Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Color(hex: 0x9AA3AF))
+                .frame(width: 32, height: 32)
+        }
     }
 
     private var subtitle: String {
@@ -1086,6 +1558,72 @@ private struct PersonRow: View {
     }
 }
 
+// MARK: - Connection request rows (incoming = accept/decline, outgoing = cancel)
+
+private struct IncomingRequestRow: View {
+    let req: ConnectionRequestRow
+    let divider: Bool
+    let busy: Bool
+    let onAccept: () -> Void
+    let onDecline: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            SquircleAvatar(url: req.avatarUrl, name: req.fullName, tint: Nuru.gold)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(req.fullName).font(.inter(12, .medium)).kerning(-0.12).foregroundStyle(Nuru.navy).lineLimit(1)
+                Text("Wants to connect").font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686))
+            }
+            Spacer(minLength: 4)
+            if busy {
+                ProgressView().tint(Nuru.gold).scaleEffect(0.8)
+            } else {
+                HStack(spacing: 8) {
+                    Button(action: onDecline) {
+                        Icon(.x, size: 13, color: Color(hex: 0x59667C))
+                            .frame(width: 30, height: 30)
+                            .background(Nuru.surface, in: Circle())
+                    }.buttonStyle(.pressable)
+                    Button(action: onAccept) {
+                        Icon(.check, size: 13, color: .white)
+                            .frame(width: 30, height: 30)
+                            .background(storyRing, in: Circle())
+                    }.buttonStyle(.pressable)
+                }
+            }
+        }
+        .modifier(RowChrome(unread: true, divider: divider))
+    }
+}
+
+private struct OutgoingRequestRow: View {
+    let req: ConnectionRequestRow
+    let divider: Bool
+    let busy: Bool
+    let onCancel: () -> Void
+
+    var body: some View {
+        HStack(spacing: 14) {
+            SquircleAvatar(url: req.avatarUrl, name: req.fullName, tint: Color(hex: 0x9AA3AF))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(req.fullName).font(.inter(12, .medium)).kerning(-0.12).foregroundStyle(Nuru.navy).lineLimit(1)
+                Text("Request sent — waiting to be accepted").font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686))
+            }
+            Spacer(minLength: 4)
+            if busy {
+                ProgressView().tint(Nuru.gold).scaleEffect(0.8)
+            } else {
+                Button(action: onCancel) {
+                    Text("Cancel").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
+                        .padding(.horizontal, 12).frame(height: 28)
+                        .background(Nuru.surface, in: Capsule())
+                }.buttonStyle(.pressable)
+            }
+        }
+        .modifier(RowChrome(unread: false, divider: divider))
+    }
+}
+
 // MARK: - Discover space row (public spaces to follow — gold Follow button)
 
 private struct DiscoverSpaceRow: View {
@@ -1093,6 +1631,9 @@ private struct DiscoverSpaceRow: View {
     let index: Int
     let divider: Bool
     let joining: Bool
+    /// A reviewed join request is filed and awaiting the leader (C3b) — the
+    /// Follow button gives way to a quiet "Requested" pill.
+    let pending: Bool
     let follow: () -> Void
     private var tint: Color { rowTint(index + 2) }
 
@@ -1115,26 +1656,36 @@ private struct DiscoverSpaceRow: View {
                     .padding(.top, 5)
             }
             Spacer(minLength: 4)
-            Button(action: follow) {
-                Group {
-                    if joining {
-                        ProgressView().tint(.white).scaleEffect(0.7)
-                    } else {
-                        HStack(spacing: 4) {
-                            Icon(.plus, size: 11, color: .white)
-                            Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
-                        }
-                    }
+            if pending {
+                HStack(spacing: 4) {
+                    Image(systemName: "hourglass").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("Requested").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 .padding(.horizontal, 12)
                 .frame(height: 30)
-                .frame(minWidth: 44)   // spinner state stays a comfortable target
-                .background(storyRing, in: Capsule())
-                .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+                .background(Nuru.gold.opacity(0.12), in: Capsule())
+            } else {
+                Button(action: follow) {
+                    Group {
+                        if joining {
+                            ProgressView().tint(.white).scaleEffect(0.7)
+                        } else {
+                            HStack(spacing: 4) {
+                                Icon(.plus, size: 11, color: .white)
+                                Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
+                            }
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: 30)
+                    .frame(minWidth: 44)   // spinner state stays a comfortable target
+                    .background(storyRing, in: Capsule())
+                    .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+                }
+                .buttonStyle(.pressable)
+                .disabled(joining)
+                .animation(.easeInOut(duration: 0.18), value: joining)
             }
-            .buttonStyle(.pressable)
-            .disabled(joining)
-            .animation(.easeInOut(duration: 0.18), value: joining)
         }
         .modifier(RowChrome(unread: false, divider: divider))
     }
@@ -1151,12 +1702,51 @@ private struct DiscoverSpaceRow: View {
 // The Broadcast segment body: an inspiring composer card. What the admin writes
 // here is fanned out server-side (POST /chat/broadcast) as an individual DM to
 // every member of the congregation — replies arrive back as normal 1:1 threads.
-private struct BroadcastComposer: View {
+/// The message you just sent, shown as the sent thing — its own words in the
+/// serif the app reserves for what is being said, and the count it actually
+/// reached. Built from the send's own reply; nothing is refetched to draw it.
+struct BroadcastSentCard: View {
+    let sent: Broadcast
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Icon(.megaphone, size: 11, color: Nuru.goldChipText)
+                Text("SENT TO EVERYONE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                Spacer(minLength: 0)
+                Text(reach).font(.nCardMeta).foregroundStyle(Nuru.ink600)
+            }
+            Text(sent.body)
+                .font(.fraunces(15)).foregroundStyle(Nuru.navy).lineSpacing(4)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.md)
+        .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+    }
+
+    private var reach: String {
+        let n = sent.recipientCount
+        return "\(n) member" + (n == 1 ? "" : "s")
+    }
+}
+
+struct BroadcastComposer: View {
     @State private var text = ""
     @State private var confirming = false
     @State private var sending = false
     @State private var sentTo: Int?
     @State private var errorText: String?
+    /// The server asked us to confirm the password (§5.3). The draft survives it.
+    @State private var askingPassword = false
+    /// The message as it went out — shown at once from the send's own reply,
+    /// with no refetch to find out what we just said.
+    @State private var justSent: Broadcast?
+    /// Held across a password prompt so confirm-then-retry resumes THIS send
+    /// rather than starting a second one. A new id is minted only after a send
+    /// actually lands.
+    @State private var mutationId = UUID().uuidString
     // ✨ AI drafting + 🖼️ image attachment (sign → Cloudinary → secure_url)
     @State private var aiDrafting = false
     @State private var photoItem: PhotosPickerItem?
@@ -1227,6 +1817,12 @@ private struct BroadcastComposer: View {
                 guard item != nil else { return }
                 Task { await uploadPicked() }
             }
+            // The message, as sent — drawn from the send's own reply, so it
+            // appears the instant it lands rather than after a refetch.
+            if let sent = justSent {
+                BroadcastSentCard(sent: sent)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             if let n = sentTo {
                 HStack(spacing: 6) {
                     Icon(.checkCircle2, size: 14, color: Color(hex: 0x15803D))
@@ -1280,6 +1876,13 @@ private struct BroadcastComposer: View {
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: sentTo)
         .animation(.easeInOut(duration: 0.2), value: errorText)
         .animation(.easeInOut(duration: 0.2), value: attachmentImage == nil)
+        // The server asked who is holding the phone. Confirm, then finish the
+        // send that was already in flight — the draft never left the field.
+        .sheet(isPresented: $askingPassword) {
+            PasswordConfirmSheet(reason: "This message goes to every member in your name. Confirm your password to send it.") {
+                Task { await send() }
+            }
+        }
     }
 
     private var canSend: Bool {
@@ -1290,14 +1893,27 @@ private struct BroadcastComposer: View {
         sending = true; errorText = nil; sentTo = nil
         defer { sending = false }
         do {
-            let n = try await MemberAPI.broadcast(
+            // audience is deliberately NOT passed: unasked means the whole
+            // church. Sending "congregation" by default is what made a broadcast
+            // reach 40 of 60 — the other 19 have no congregation to be scoped to.
+            let sent = try await MemberAPI.broadcast(
                 body: text.trimmingCharacters(in: .whitespacesAndNewlines),
                 attachmentUrl: attachmentUrl,
-                msgType: attachmentUrl == nil ? "text" : "image")
-            sentTo = n
+                msgType: attachmentUrl == nil ? "text" : "image",
+                clientMutationId: mutationId)
+            sentTo = sent.sent
+            justSent = sent.asBroadcast   // show it as THE MESSAGE SENT, at once
             text = ""
             photoItem = nil; attachmentUrl = nil; attachmentImage = nil
+            mutationId = UUID().uuidString  // the next send is a new thing to say
             Haptics.success()
+        } catch let e as APIError where e.needsPasswordConfirm {
+            // Not a refusal — the server is asking who is holding the phone.
+            // Keep the draft and the mutation id: confirming and retrying must
+            // resume THIS send, not make them write it again, and the same id
+            // means a half-delivered attempt cannot double-send.
+            Haptics.tap()
+            askingPassword = true
         } catch {
             errorText = "Couldn’t send the broadcast — please try again."
             Haptics.error()

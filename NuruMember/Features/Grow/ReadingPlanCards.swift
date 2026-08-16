@@ -407,7 +407,15 @@ struct PLFinishEarnCard: View {
 struct PLDetailDayRow: View {
     let day: ReadingPlanDay
     let isNext: Bool
+    /// True when a segment ack already told us this day should be open, but
+    /// the plan fetch hasn't caught up yet (still landing through the sync
+    /// path) — an honest, actionable "still syncing" state rather than the
+    /// ordinary "not your turn yet" lock.
+    var syncing: Bool = false
     private var done: Bool { day.completed == true }
+    /// Not yet opened: an earlier day is still unfinished. Shown quietly — the
+    /// road ahead is visible, it just isn't walkable yet.
+    private var locked: Bool { day.locked }
 
     var body: some View {
         HStack(spacing: 12) {
@@ -435,118 +443,30 @@ struct PLDetailDayRow: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text(done ? "Completed · \(day.reference)" : "\(day.reference) · about 6 min")
-                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : PL.ink3).lineLimit(1)
+                Text(done ? "Completed · \(day.reference)"
+                     : syncing ? "Finishing your sync… tap to check"
+                     : locked ? "\(day.reference) · opens when today is done"
+                     : "\(day.reference) · about 6 min")
+                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3)).lineLimit(1)
             }
             Spacer(minLength: 0)
             if isNext {
                 Text("Start").font(.inter(9, .bold)).foregroundStyle(PL.navy)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(PL.gold, in: Capsule())
+            } else if syncing {
+                Icon(.clock, size: 13, color: PL.goldDeep)
+            } else if locked {
+                Icon(.lock, size: 13, color: PL.chev)
             } else {
                 Icon(.chevronRight, size: 14, color: PL.chev)
             }
         }
         .padding(10)
+        .opacity(locked && !syncing ? 0.55 : 1)   // present, but plainly not yours yet
         .background(isNext ? PL.highlight : PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .stroke(isNext ? PL.gold.opacity(0.27) : .clear, lineWidth: 1))
     }
 }
 
-// MARK: - plan-day segment row (Watch / Read / Devotional / Talk)
-
-struct PLSegmentRow: View {
-    let segment: PlanSegment
-    let icon: Lucide
-    let done: Bool
-    let isNext: Bool
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(done ? PL.gold : Color.white)
-                if done {
-                    Icon(.check, size: 15, color: .white)
-                } else {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(PL.border, lineWidth: 1)
-                    Icon(icon, size: 15, color: PL.gold)
-                }
-            }
-            .frame(width: 36, height: 36)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(segment.title).font(.inter(12, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
-                Text(segment.kind.capitalized).font(.nCardMeta).foregroundStyle(PL.ink3).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            if isNext {
-                Text("Start").font(.inter(9, .bold)).foregroundStyle(PL.navy)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(PL.gold, in: Capsule())
-            } else {
-                Icon(.chevronRight, size: 14, color: PL.chev)
-            }
-        }
-        .padding(10)
-        .background(isNext ? PL.highlight : PL.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(isNext ? PL.gold.opacity(0.27) : .clear, lineWidth: 1))
-    }
-}
-
-// MARK: - lightweight confetti burst (day completion)
-
-struct PLConfettiBurst: View {
-    private struct Piece: Identifiable {
-        let id: Int
-        let dx: CGFloat, dy: CGFloat, w: CGFloat, h: CGFloat
-        let spin: Double
-        let color: Color
-    }
-
-    @State private var fly = false
-    @State private var fade = false
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    private let pieces: [Piece] = {
-        let palette: [Color] = [PL.gold, PL.goldLight, PL.navy, .white]
-        return (0..<28).map { i in
-            Piece(id: i,
-                  dx: CGFloat.random(in: -170...170),
-                  dy: CGFloat.random(in: 180...560),
-                  w: CGFloat.random(in: 5...7),
-                  h: CGFloat.random(in: 9...13),
-                  spin: Double.random(in: -540...540),
-                  color: palette[i % palette.count])
-        }
-    }()
-
-    var body: some View {
-        GeometryReader { geo in
-            ForEach(pieces) { p in
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(p.color)
-                    .frame(width: p.w, height: p.h)
-                    .rotationEffect(.degrees(fly ? p.spin : 0))
-                    .position(x: geo.size.width / 2 + (fly ? p.dx : 0),
-                              y: fly ? p.dy : geo.size.height * 0.18)
-                    .opacity(fade ? 0 : 1)
-            }
-        }
-        .allowsHitTesting(false)
-        .onAppear {
-            guard !fly else { return }
-            // Celebration is decoration — under Reduce Motion, settle silently.
-            if reduceMotion { fly = true; fade = true; return }
-            // The burst is inserted by the completion state change; starting the
-            // animation in that same transaction gets coalesced and the pieces
-            // render at their end state (no visible confetti). Kick it on the
-            // next frame so the flight actually plays.
-            Task { @MainActor in
-                try? await Task.sleep(nanoseconds: 50_000_000)
-                withAnimation(.easeOut(duration: 1.6)) { fly = true }
-                // Stay visible for most of the flight; only fade at the end.
-                withAnimation(.easeIn(duration: 0.45).delay(1.15)) { fade = true }
-            }
-        }
-    }
-}

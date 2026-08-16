@@ -12,3 +12,11 @@ xcuserdata/
 # Swift Package Manager
 .swiftpm/
 .build/
+
+# overnight hardening tooling (do not commit)
+OVERNIGHT_PROMPT.md
+run-overnight.sh
+.overnight/
+
+# Local git worktrees — working copies, never content.
+.worktrees/

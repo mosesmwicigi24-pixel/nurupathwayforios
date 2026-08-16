@@ -55,6 +55,7 @@ enum Lucide: String {
     case squareCheckBig = "\u{E16A}"
     case audioLines = "\u{E55A}"
     case hand = "\u{E1D7}"
+    case thumbsUp = "\u{E18A}"
     case calendar = "\u{E063}"
     case gift = "\u{E0E1}"
     case graduationCap = "\u{E234}"
@@ -100,6 +101,10 @@ enum Lucide: String {
     case phone = "\u{E133}"
     case mapPinned = "\u{E53D}"
     case flag = "\u{E0D1}"
+    // Liturgy voice (feat/liturgy-audio) — codepoints verified against the
+    // bundled Resources/Fonts/lucide.ttf's own cmap (fontTools), not guessed.
+    case pause = "\u{E12E}"
+    case volume2 = "\u{E1AB}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).

@@ -18,6 +18,7 @@ struct SettingsView: View {
     // preferences) with @AppStorage as the offline cache/fallback so the UI
     // never blocks. Toggles are optimistic and roll back on a failed PUT; push
     // additionally requests the real system permission.
+    @State private var prefSaveFailed = false
     @AppStorage("nuru.notif.push") private var pushOn = true
     @AppStorage("nuru.notif.email") private var emailOn = true
     @AppStorage("nuru.notif.sms") private var smsOn = false
@@ -25,6 +26,8 @@ struct SettingsView: View {
     @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
     /// Global text scale (persisted); the font helpers read Nuru.textScale from here.
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
+    /// Global line spacing (persisted); `.nuruLineSpacing(_:)` reads Nuru.lineSpacing from here.
+    @AppStorage(Nuru.lineSpacingKey) private var lineSpacing: Double = 1.0
 
     @StateObject private var location = LocationManager()
     @State private var showMfaEnroll = false
@@ -171,6 +174,7 @@ struct SettingsView: View {
                 } catch {
                     Haptics.error()
                     value.wrappedValue = old
+                    prefSaveFailed = true // say it, don't just snap the toggle back
                 }
             }
         })
@@ -234,6 +238,11 @@ struct SettingsView: View {
             toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", prefBinding($pushOn, isPush: true)); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
+            if prefSaveFailed {
+                Text("Couldn't save your preferences — check your connection and try again.")
+                    .font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .padding(.top, 6)
+            }
             Button { Haptics.tap(); openSystemSettings() } label: {
                 HStack(spacing: Nuru.S.md) {
                     iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
@@ -257,6 +266,11 @@ struct SettingsView: View {
         ("Small", 0.90, 13), ("Default", 1.0, 15), ("Large", 1.15, 18),
     ]
 
+    /// Line-spacing options → the global multiplier `.nuruLineSpacing(_:)` applies (Nuru.lineSpacing).
+    private static let lineSpacings: [(label: String, scale: Double)] = [
+        ("Compact", 0.85), ("Default", 1.0), ("Relaxed", 1.35),
+    ]
+
     private var display: some View {
         sectionCard("DISPLAY", icon: .sun) {
             Text("Text size").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
@@ -278,6 +292,30 @@ struct SettingsView: View {
             }
             .padding(.top, Nuru.S.xs)
             Text("Adjusts text size across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
+
+            Text("Line spacing").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy).padding(.top, Nuru.S.base)
+            HStack(spacing: Nuru.S.sm) {
+                ForEach(Self.lineSpacings, id: \.label) { opt in
+                    let on = abs(lineSpacing - opt.scale) < 0.001
+                    Button {
+                        if !on { Haptics.selection() }
+                        withAnimation(.easeInOut(duration: 0.15)) { lineSpacing = opt.scale }
+                    } label: {
+                        VStack(spacing: CGFloat(2 * opt.scale)) {
+                            Text(opt.label)
+                                .font(.inter(12, on ? .bold : .semibold))
+                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                            Rectangle().fill(on ? Nuru.gold : Nuru.border).frame(width: 26, height: 1.5)
+                            Rectangle().fill(on ? Nuru.gold : Nuru.border).frame(width: 26, height: 1.5)
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 48)
+                        .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.top, Nuru.S.xs)
+            Text("Adjusts line spacing across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
         }
     }
 

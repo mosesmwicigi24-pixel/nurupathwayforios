@@ -140,6 +140,12 @@ final class GivingViewModel: ObservableObject {
 // MARK: - Give
 
 struct GivingView: View {
+    /// True when hosted as the "Give" segment inside the You tab (L4) rather
+    /// than as its own top-level tab — the You tab's own segmented control
+    /// already clears the status bar, so this header needs only a little
+    /// breathing room, not a second 60pt reservation for it.
+    var embeddedInYou: Bool = false
+
     @StateObject private var vm = GivingViewModel()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -150,6 +156,11 @@ struct GivingView: View {
     @State private var freq = "once"          // once | weekly | monthly
     @State private var coverFee = false
     @State private var mpesaPhone = registeredPhone
+    /// "Named giving" (custom sheet, optional): set from the custom-amount
+    /// keypad sheet. Rides the M-Pesa AccountReference + persists for
+    /// receipts/statements/portal Finance.
+    @State private var accountName = ""
+    @AppStorage("giving.lastAccountName") private var lastAccountName = ""
 
     @State private var submitting = false
     @State private var showKeypad = false
@@ -217,7 +228,12 @@ struct GivingView: View {
             if p == .active { attemptPayPalCapture() }
         }
         .sheet(isPresented: $showKeypad) {
-            GiveKeypadSheet(initial: amount, fundLabel: fund.label) { amount = $0 }
+            GiveKeypadSheet(initial: amount, fundLabel: fund.label,
+                            initialName: accountName.isEmpty ? lastAccountName : accountName) { amt, name in
+                amount = amt
+                accountName = name ?? ""
+                if let name, !name.isEmpty { lastAccountName = name }
+            }
         }
         .sheet(isPresented: $showMpesaSheet) {
             MobileMoneySheet(methodKey: method, phone: $mpesaPhone) {
@@ -235,6 +251,7 @@ struct GivingView: View {
                              note: ceremonyNote,
                              amountLabel: ksh(total),
                              fundLabel: fund.label,
+                             giftName: accountName.isEmpty ? nil : accountName,
                              phone: (method == "mpesa" || method == "airtel") ? mpesaPhone : nil,
                              refCode: successRef,
                              txId: pendingTxId,
@@ -270,7 +287,7 @@ struct GivingView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.top, 60)
+        .padding(.top, embeddedInYou ? Nuru.S.base : 60)
         .padding(.bottom, 20)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -823,7 +840,8 @@ struct GivingView: View {
         paypalOrderId = nil
         do {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
-                                                 currency: currency, method: provider, phoneNumber: phone)
+                                                 currency: currency, method: provider, phoneNumber: phone,
+                                                 accountName: accountName.isEmpty ? nil : accountName)
             pendingTxId = res.transactionId
             successRef = res.providerRef
             if provider == "paypal", let url = res.approveUrl.flatMap(URL.init) {
@@ -926,6 +944,7 @@ struct GivingView: View {
         amount = g.amountMinor / 100
         if funds.contains(where: { $0.code == g.fund }) { fundCode = g.fund }
         if let m = g.method, baseMethods.contains(where: { $0.key == m }) { method = m }
+        accountName = g.accountName ?? ""
     }
 
     /// Reorder with a light tap and a spring, so rows glide instead of jumping.
@@ -958,66 +977,120 @@ struct GivingView: View {
 
 // MARK: - Custom keypad sheet (staged value; confirm applies)
 
+private let giftNamePresets = ["Tithe", "Offering", "Building", "Missions", "Thanksgiving", "First Fruits"]
+
 private struct GiveKeypadSheet: View {
     let initial: Int
     let fundLabel: String
-    var onConfirm: (Int) -> Void
+    /// Last-used gift name (remembered across sessions) — preselects subtly
+    /// without forcing a choice.
+    var initialName: String = ""
+    var onConfirm: (Int, String?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var value = ""
+    @State private var name = ""
+    @FocusState private var nameFocused: Bool
 
     private var num: Int { Int(value) ?? 0 }
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
-        VStack(spacing: Nuru.S.base) {
-            HStack {
-                Text("CUSTOM AMOUNT · \(fundLabel.uppercased())")
-                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
-                Spacer()
-                Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
-            }
-            .padding(.top, Nuru.S.lg)
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: Nuru.S.base) {
+                HStack {
+                    Text("CUSTOM AMOUNT · \(fundLabel.uppercased())")
+                        .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                    Spacer()
+                    Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
+                }
+                .padding(.top, Nuru.S.lg)
 
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
-                Text(num.formatted(.number.grouping(.automatic)))
-                    .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
-            }
-            .frame(maxWidth: .infinity)
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
+                    Text(num.formatted(.number.grouping(.automatic)))
+                        .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
+                }
+                .frame(maxWidth: .infinity)
 
-            HStack(spacing: 6) {
-                ForEach(presets, id: \.self) { v in
-                    Button { value = String(v) } label: {
-                        Text(v.formatted(.number.grouping(.automatic)))
-                            .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                HStack(spacing: 6) {
+                    ForEach(presets, id: \.self) { v in
+                        Button { value = String(v) } label: {
+                            Text(v.formatted(.number.grouping(.automatic)))
+                                .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                                .padding(.horizontal, 11).frame(height: 32)
+                                .background(Nuru.surface, in: Capsule())
+                                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+                        }.buttonStyle(.plain)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+
+                keys
+
+                nameSection
+
+                Button {
+                    Haptics.action()
+                    nameFocused = false
+                    onConfirm(num, trimmedName.isEmpty ? nil : trimmedName); dismiss()
+                } label: {
+                    Text("Give \(ksh(num))")
+                        .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
+                        .frame(maxWidth: .infinity).frame(height: 48)
+                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .disabled(num <= 0)
+                .opacity(num <= 0 ? 0.4 : 1)
+            }
+            .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
+        }
+        .onAppear {
+            value = initial > 0 ? String(initial) : ""
+            name = initialName
+        }
+        .presentationDetents([.height(720)])
+        .presentationDragIndicator(.visible)
+    }
+
+    // MARK: Name your gift (optional) — like an M-Pesa Paybill account name
+
+    private var nameSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NAME YOUR GIFT (OPTIONAL)")
+                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+
+            FlowWrap(spacing: 6) {
+                ForEach(giftNamePresets, id: \.self) { p in
+                    let on = name == p
+                    Button {
+                        Haptics.selection()
+                        name = on ? "" : p
+                    } label: {
+                        Text(p)
+                            .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                             .padding(.horizontal, 11).frame(height: 32)
-                            .background(Nuru.surface, in: Capsule())
-                            .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+                            .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                            .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
             }
-            .frame(maxWidth: .infinity)
 
-            keys
-
-            Spacer(minLength: 0)
-
-            Button {
-                Haptics.action()
-                onConfirm(num); dismiss()
-            } label: {
-                Text("Give \(ksh(num))")
-                    .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
-                    .frame(maxWidth: .infinity).frame(height: 48)
-                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.pencil, size: 15, color: Color(hex: 0x74808F))
+                TextField("e.g. \u{201C}For Mom\u{2019}s healing\u{201D}", text: $name)
+                    .focused($nameFocused)
+                    .font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
+                    .submitLabel(.done)
             }
-            .buttonStyle(.pressable)
-            .disabled(num <= 0)
-            .opacity(num <= 0 ? 0.4 : 1)
+            .padding(.horizontal, 14).frame(height: 46)
+            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+
+            Text("Shows on the church's M-Pesa statement — like a Paybill account name.")
+                .font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
         }
-        .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
-        .onAppear { value = initial > 0 ? String(initial) : "" }
-        .presentationDetents([.height(560)])
-        .presentationDragIndicator(.visible)
+        .padding(.top, 2)
     }
 
     private var keys: some View {
@@ -1286,6 +1359,9 @@ private struct GiveCeremonyView: View {
     let note: String
     let amountLabel: String
     let fundLabel: String
+    /// "Named giving" (custom sheet, optional): the member's own label for
+    /// this gift — shown alongside the fund wherever it currently shows.
+    var giftName: String? = nil
     let phone: String?
     let refCode: String?
     let txId: String?
@@ -1300,9 +1376,9 @@ private struct GiveCeremonyView: View {
             (stage == "stk" ? Nuru.navy : Nuru.paper).ignoresSafeArea()
             switch stage {
             case "stk":
-                StkStage(amountLabel: amountLabel, fundLabel: fundLabel, phone: phone, note: note)
+                StkStage(amountLabel: amountLabel, fundLabel: fundLabel, giftName: giftName, phone: phone, note: note)
             case "success":
-                SuccessStage(amountLabel: amountLabel, fundLabel: fundLabel, refCode: refCode,
+                SuccessStage(amountLabel: amountLabel, fundLabel: fundLabel, giftName: giftName, refCode: refCode,
                              hasReceipt: txId != nil,
                              onViewReceipt: { showReceipt = true }, onDone: onDone)
             case "scheduled":
@@ -1320,6 +1396,7 @@ private struct GiveCeremonyView: View {
 
 private struct StkStage: View {
     let amountLabel, fundLabel: String
+    var giftName: String? = nil
     let phone: String?
     let note: String
 
@@ -1335,7 +1412,7 @@ private struct StkStage: View {
                 .padding(.top, Nuru.S.lg)
             (Text("Enter your PIN to complete ")
                 + Text(amountLabel).foregroundColor(Nuru.gold).fontWeight(.semibold)
-                + Text(" to \(fundLabel)."))
+                + Text(" to \(fundLabel)\(giftName.map { " \u{2014} \u{201C}\($0)\u{201D}" } ?? "")."))
                 .font(.inter(13)).foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
@@ -1365,10 +1442,15 @@ private struct StkStage: View {
 
 private struct SuccessStage: View {
     let amountLabel, fundLabel: String
+    var giftName: String? = nil
     let refCode: String?
     let hasReceipt: Bool
     var onViewReceipt: () -> Void
     var onDone: () -> Void
+
+    private var fundAndName: String {
+        giftName.map { "\(fundLabel) \u{2014} \u{201C}\($0)\u{201D}" } ?? fundLabel
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -1386,9 +1468,10 @@ private struct SuccessStage: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.lg).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.08)
-            Text(refCode.map { "\(amountLabel) · \(fundLabel) · Ref \($0)" } ?? "\(amountLabel) · \(fundLabel)")
+            Text(refCode.map { "\(amountLabel) · \(fundAndName) · Ref \($0)" } ?? "\(amountLabel) · \(fundAndName)")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))
-                .padding(.top, Nuru.S.sm)
+                .multilineTextAlignment(.center)
+                .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.16)
             Spacer()
             VStack(spacing: Nuru.S.sm) {
