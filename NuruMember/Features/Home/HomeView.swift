@@ -668,20 +668,12 @@ struct HomeView: View {
                 }
                 .buttonStyle(.pressable)
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-                // Radio — opens the Nuru Radio player (live HLS via the new
-                // backend radio module, or the next scheduled program).
-                Button {
-                    Haptics.tap()
-                    NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
-                } label: {
-                    Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 17))
-                        .foregroundStyle(Color(hex: 0xDC2626)).frame(width: 40, height: 40)
-                        .background(Color(hex: 0xFEE2E2), in: Circle())
-                        .overlay(Circle().stroke(Color(hex: 0xDC2626).opacity(0.3), lineWidth: 1))
-                }
-                .buttonStyle(.pressable).padding(.leading, 8)
+                // Radio used to sit here. It moved out so the resting header is
+                // three buttons (scan · bell · ring) rather than five — it is
+                // still reachable from the On Air card below, the Community hub
+                // and the radio deep link.
                 // Nuru Live header entry (2026-07-31 viewer redesign) — same
-                // visual family as the radio icon just before it (pulsing red
+                // visual family as the buttons beside it (pulsing red
                 // ring, small glyph), shown ONLY while a church-scope stream
                 // is actually live (`churchLiveStream`, the same /live/now
                 // state that already drives the feed's top banner — no
