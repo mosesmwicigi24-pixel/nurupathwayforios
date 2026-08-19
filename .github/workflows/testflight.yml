@@ -1,0 +1,227 @@
+# Archive the app and upload it to TestFlight.
+#
+# Deliberately manual. Uploading a build notifies testers and permanently
+# consumes a build number for the current marketing version, so this never
+# fires on a push — you run it when you mean to ship something.
+#
+# WHAT YOU MUST ADD BEFORE THE FIRST RUN
+# --------------------------------------
+# Three repository secrets, from an App Store Connect API key with the
+# "App Manager" role (Users and Access → Integrations → App Store Connect API).
+# Add them under Settings → Secrets and variables → Actions:
+#
+#   APPSTORE_API_KEY_ID       the key's ID, e.g. ABCD1234EF
+#   APPSTORE_API_ISSUER_ID    the issuer UUID shown above the key list
+#   APPSTORE_API_PRIVATE_KEY  the FULL contents of the downloaded AuthKey_*.p8,
+#                             including the BEGIN/END lines
+#
+# Apple lets you download the .p8 exactly once. Store it somewhere you control
+# as well — it cannot be re-downloaded, only revoked and replaced.
+#
+# The team ID is NOT a secret here: DEVELOPMENT_TEAM is already committed in
+# project.pbxproj, so there is one source of truth for it rather than two that
+# can disagree.
+#
+# WHY NO CERTIFICATE OR PROVISIONING PROFILE SECRETS
+# --------------------------------------------------
+# The project uses automatic signing, so `-allowProvisioningUpdates` with the
+# same API key lets Xcode fetch or create the distribution certificate and both
+# profiles (the app and the NuruWidgets extension) on the fly. That keeps a
+# distribution .p12 — the most damaging thing this repo could leak — out of CI
+# entirely. The tradeoff is that the App ID's capabilities must already be
+# configured in the developer portal, which they are: this app has shipped.
+name: TestFlight
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_number:
+        description: >-
+          Build number (CFBundleVersion). Leave blank for a UTC timestamp,
+          which is always unique and always increasing. Must be higher than
+          every build already uploaded for this marketing version.
+        required: false
+        type: string
+      skip_upload:
+        description: >-
+          Archive, export and validate, but do not upload. Use this to prove
+          signing works without spending a build number.
+        required: false
+        type: boolean
+        default: false
+
+# Never run two uploads at once, and never cancel one in flight — a half-done
+# upload is worse than a queued one.
+concurrency:
+  group: testflight
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  testflight:
+    name: Archive & upload
+    runs-on: macos-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      - name: Cache SwiftPM checkouts
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('NuruMember.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      # altool looks for the key by name in a fixed set of directories, and
+      # xcodebuild wants an explicit path — so write it once, in the location
+      # altool expects, and hand xcodebuild that same path.
+      - name: Install App Store Connect API key
+        id: apikey
+        env:
+          KEY_ID: ${{ secrets.APPSTORE_API_KEY_ID }}
+          PRIVATE_KEY: ${{ secrets.APPSTORE_API_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEY_ID}" ] || [ -z "${PRIVATE_KEY}" ]; then
+            echo "::error::APPSTORE_API_KEY_ID / APPSTORE_API_PRIVATE_KEY are not set. See the header of this workflow for how to create them."
+            exit 1
+          fi
+          DIR="$HOME/.appstoreconnect/private_keys"
+          mkdir -p "$DIR"
+          PATH_P8="$DIR/AuthKey_${KEY_ID}.p8"
+          printf '%s\n' "${PRIVATE_KEY}" > "$PATH_P8"
+          chmod 600 "$PATH_P8"
+          # Confirm it is a usable key WITHOUT printing any of it. A .p8 pasted
+          # with its newlines mangled is the single most common failure here,
+          # and it would otherwise surface as an opaque authentication error
+          # much later, after a 40-minute archive.
+          if ! openssl pkey -in "$PATH_P8" -noout 2>/dev/null; then
+            echo "::error::The private key is not readable as a PEM key. Re-paste the .p8 whole, including the BEGIN and END lines and its line breaks."
+            exit 1
+          fi
+          echo "path=$PATH_P8" >> "$GITHUB_OUTPUT"
+
+      # A build number must be unique per marketing version and greater than
+      # every one already uploaded. A UTC timestamp satisfies both without
+      # needing to ask App Store Connect what it has seen, and unlike a run
+      # counter it cannot collide with a build someone uploaded from Xcode.
+      - name: Decide build number
+        id: build
+        env:
+          REQUESTED: ${{ inputs.build_number }}
+        run: |
+          set -euo pipefail
+          if [ -n "${REQUESTED}" ]; then
+            BUILD="${REQUESTED}"
+          else
+            # Two components, each small enough to be a safe integer, and
+            # ordered correctly by CFBundleVersion's componentwise comparison.
+            BUILD="$(date -u +%y%m%d).$(date -u +%H%M)"
+          fi
+          echo "Build number: $BUILD"
+          echo "number=$BUILD" >> "$GITHUB_OUTPUT"
+
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild archive \
+            -project NuruMember.xcodeproj \
+            -scheme NuruMember \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/NuruMember.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.apikey.outputs.path }}" \
+            -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_API_ISSUER_ID }}" \
+            CURRENT_PROJECT_VERSION="${{ steps.build.outputs.number }}"
+        env:
+          NSUnbufferedIO: YES
+
+      # Generated rather than committed so the team ID has exactly one home —
+      # project.pbxproj — instead of two files that can drift apart.
+      - name: Write export options
+        run: |
+          set -euo pipefail
+          TEAM_ID=$(xcodebuild -project NuruMember.xcodeproj -scheme NuruMember \
+            -showBuildSettings 2>/dev/null \
+            | awk -F' = ' '/[[:space:]]DEVELOPMENT_TEAM = /{print $2; exit}')
+          if [ -z "$TEAM_ID" ]; then
+            echo "::error::Could not read DEVELOPMENT_TEAM from the project."
+            exit 1
+          fi
+          echo "Team: $TEAM_ID"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>destination</key><string>export</string>
+          </dict>
+          </plist>
+          PLIST
+
+      - name: Export .ipa
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/NuruMember.xcarchive" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "${{ steps.apikey.outputs.path }}" \
+            -authenticationKeyID "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            -authenticationKeyIssuerID "${{ secrets.APPSTORE_API_ISSUER_ID }}"
+          ls -lh "$RUNNER_TEMP/export"
+
+      # Validation catches a malformed bundle, a missing icon or an entitlement
+      # the App ID does not carry — without consuming the build number. Cheap
+      # relative to an archive, so it always runs.
+      - name: Validate
+        run: |
+          set -euo pipefail
+          IPA=$(ls "$RUNNER_TEMP/export"/*.ipa | head -1)
+          xcrun altool --validate-app \
+            -f "$IPA" -t ios \
+            --apiKey "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            --apiIssuer "${{ secrets.APPSTORE_API_ISSUER_ID }}"
+
+      - name: Upload to TestFlight
+        if: ${{ !inputs.skip_upload }}
+        run: |
+          set -euo pipefail
+          IPA=$(ls "$RUNNER_TEMP/export"/*.ipa | head -1)
+          xcrun altool --upload-app \
+            -f "$IPA" -t ios \
+            --apiKey "${{ secrets.APPSTORE_API_KEY_ID }}" \
+            --apiIssuer "${{ secrets.APPSTORE_API_ISSUER_ID }}"
+          echo "Uploaded build ${{ steps.build.outputs.number }}."
+          echo "App Store Connect still has to process it — it appears in TestFlight in a few minutes, and testers are notified only once you have answered the export-compliance question."
+
+      # Keep the exact binary that was validated, so a build that misbehaves in
+      # TestFlight can be inspected rather than guessed at or rebuilt.
+      - name: Keep the .ipa
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: NuruMember-${{ steps.build.outputs.number }}
+          path: ${{ runner.temp }}/export/*.ipa
+          retention-days: 30
+          if-no-files-found: ignore
+
+      # Runners are ephemeral, but a key on disk after the job is a key present
+      # for anything else scheduled on it. Remove it regardless of outcome.
+      - name: Remove the API key
+        if: always()
+        run: rm -rf "$HOME/.appstoreconnect/private_keys"
