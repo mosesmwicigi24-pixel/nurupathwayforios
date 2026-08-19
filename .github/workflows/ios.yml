@@ -1,0 +1,122 @@
+# iOS build + tests on a real Mac.
+#
+# This repo had no CI at all, which is why code could be merged having never
+# been compiled — a Linux agent cannot run xcodebuild, and nothing else was
+# checking. This closes that hole: every push and PR now builds the app and
+# runs NuruMemberTests on an iPhone 17 simulator.
+name: iOS
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A newer push supersedes an in-flight run on the same ref — Mac runners are
+# scarce and slow, so don't queue work nobody is waiting for.
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build & test
+    runs-on: macos-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show toolchain
+        run: |
+          sw_vers
+          xcodebuild -version
+
+      # Firebase, WebRTC and HaishinKit are heavy checkouts. Package.resolved is
+      # committed, so the cache key pins exactly the revisions being built.
+      - name: Cache SwiftPM checkouts
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('NuruMember.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-${{ runner.os }}-
+
+      - name: Resolve dependencies
+        shell: bash
+        run: |
+          xcodebuild -resolvePackageDependencies \
+            -project NuruMember.xcodeproj \
+            -scheme NuruMember
+
+      # Prefer an iPhone 17, but never hard-pin a device name: Apple renames and
+      # retires simulators between Xcode releases, and a missing name would fail
+      # the build for a reason that has nothing to do with the code. Fall back to
+      # the newest available iPhone and say so in the log.
+      - name: Pick a simulator
+        id: sim
+        shell: bash
+        run: |
+          set -euo pipefail
+          DEVICES=$(xcrun simctl list devices available --json)
+          UDID=$(echo "$DEVICES" | jq -r '
+            [ .devices | to_entries[]
+              | select(.key | test("iOS"))
+              | .value[] | select(.isAvailable) ] as $all
+            | ( [ $all[] | select(.name == "iPhone 17") ]
+              + [ $all[] | select(.name | startswith("iPhone 17")) ]
+              + [ $all[] | select(.name | startswith("iPhone")) ] )
+            | .[0].udid // empty')
+          if [ -z "$UDID" ]; then
+            echo "::error::No iOS simulator available on this runner."
+            xcrun simctl list devices available
+            exit 1
+          fi
+          NAME=$(echo "$DEVICES" | jq -r --arg u "$UDID" '
+            [ .devices | to_entries[] | .value[] | select(.udid == $u) ] | .[0].name')
+          echo "Building on: $NAME ($UDID)"
+          if [ "$NAME" != "iPhone 17" ]; then
+            echo "::notice::iPhone 17 not present on this runner — using $NAME instead."
+          fi
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
+      # Pretty output is a nicety; never let its absence fail a build, and never
+      # let the pipe swallow xcodebuild's exit code (see `pipefail` below —
+      # without it a failing build reports success, which is worse than no CI).
+      - name: Set up log formatter
+        id: fmt
+        shell: bash
+        run: |
+          if command -v xcbeautify >/dev/null 2>&1; then
+            echo 'cmd=xcbeautify --renderer github-actions' >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::xcbeautify not on this runner — using raw xcodebuild output."
+            echo 'cmd=cat' >> "$GITHUB_OUTPUT"
+          fi
+
+      # Simulator builds need no signing identity, and CI has none.
+      - name: Build
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild build-for-testing \
+            -project NuruMember.xcodeproj \
+            -scheme NuruMember \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            | ${{ steps.fmt.outputs.cmd }}
+        env:
+          NSUnbufferedIO: YES
+
+      - name: Test
+        shell: bash
+        run: |
+          set -o pipefail
+          xcodebuild test-without-building \
+            -project NuruMember.xcodeproj \
+            -scheme NuruMember \
+            -destination "id=${{ steps.sim.outputs.udid }}" \
+            CODE_SIGNING_ALLOWED=NO \
+            | ${{ steps.fmt.outputs.cmd }}
+        env:
+          NSUnbufferedIO: YES
