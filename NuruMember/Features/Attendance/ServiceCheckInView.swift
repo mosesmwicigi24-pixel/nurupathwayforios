@@ -395,7 +395,7 @@ struct ServiceCheckInView: View {
         if api.isNetwork {
             return "You're offline — check-in needs a connection. Reconnect and try again."
         }
-        if case .http(_, let code, let message) = api {
+        if case .http(_, let code, let message, _) = api {
             switch code ?? "" {
             case "VALIDATION_FAILED":
                 return "That code isn't valid — it may have expired. Grab the latest one on the screen and scan again."
