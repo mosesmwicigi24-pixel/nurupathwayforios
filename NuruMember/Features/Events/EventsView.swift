@@ -59,7 +59,7 @@ enum Ev {
 enum EventSegment: String, CaseIterable { case today = "Today", upcoming = "Upcoming", rsvps = "My RSVPs" }
 
 /// Pushable routes within the Events stack.
-enum EventsNav: Hashable { case calendar, seriesAll, announcementsAll }
+enum EventsNav: Hashable { case calendar, seriesAll, announcementsAll, attendance }
 
 /// One cell in the scrollable date strip.
 struct WeekDay: Identifiable {
@@ -286,6 +286,7 @@ struct EventsView: View {
                         }
                         weekStrip
                         calendarLink
+                        attendanceLink
                         segmentBar
                         searchBar
                         categoryChips
@@ -307,6 +308,7 @@ struct EventsView: View {
                 case .calendar: CalendarView()
                 case .seriesAll: SeriesListPage(vm: vm)
                 case .announcementsAll: AnnouncementsListPage(vm: vm)
+                case .attendance: AttendanceView()
                 }
             }
             .nuruDestinations()
@@ -446,6 +448,41 @@ struct EventsView: View {
                     Text("CALENDAR").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
                     Text("All events & calendar").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
                     Text("See the whole month at a glance · \(vm.upcomingCount) upcoming")
+                        .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: .white)
+                    .frame(width: 36, height: 36)
+                    .background(Color.white.opacity(0.12), in: Circle())
+            }
+            .padding(Nuru.S.base)
+            .background {
+                ZStack(alignment: .topTrailing) {
+                    LinearGradient(colors: [Nuru.navy, Color(hex: 0x060F1C)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                    Circle().fill(Nuru.gold.opacity(0.33)).frame(width: 144, height: 144).blur(radius: 36).offset(x: 40, y: -48)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .buttonStyle(.pressableSubtle)
+    }
+
+    // MARK: 3b — church attendance card
+
+    /// Scan into today's service, and the streak that comes out of showing up.
+    /// Same visual weight as CALENDAR: on a Sunday morning this is the reason to
+    /// open the app.
+    private var attendanceLink: some View {
+        NavigationLink(value: EventsNav.attendance) {
+            HStack(spacing: Nuru.S.md) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.goldGradient).frame(width: 48, height: 48)
+                    Icon(.qrCode, size: 22, color: Nuru.navy)
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("CHURCH ATTENDANCE").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                    Text("Check in to a service").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
+                    Text("Scan the QR at church · see your streak")
                         .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
                 }
                 Spacer(minLength: 0)
