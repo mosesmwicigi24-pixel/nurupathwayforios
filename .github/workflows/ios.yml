@@ -6,9 +6,13 @@
 # runs NuruMemberTests on an iPhone 17 simulator.
 name: iOS
 
+# Mac runners bill at 10x, so each push must cost ONE run, not two. Pushing to
+# a branch that has a PR open would otherwise match both `push` and
+# `pull_request`; restricting push to the default branch means feature work is
+# covered by its PR and main is covered directly, with no overlap.
 on:
   push:
-    branches: ["**"]
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
