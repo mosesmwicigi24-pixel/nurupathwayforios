@@ -11,16 +11,38 @@ import XCTest
 
 final class ServiceQRParseTests: XCTestCase {
 
-    // MARK: Payload grammar — `nuru-service:<service_id>:<token>`
+    // MARK: Payload grammar — legacy `nuru-service:` plus the two URL forms
+    // (/j/<id>/<token> per-service, /jc/<code> standing poster)
+
+    private func service(_ raw: String) -> ServiceScan? {
+        if case .service(let s) = parseServiceQR(raw) { return s }
+        return nil
+    }
+    private func standing(_ raw: String) -> String? {
+        if case .standingCode(let c) = parseServiceQR(raw) { return c }
+        return nil
+    }
 
     func testParsesAServicePayload() {
-        let scan = parseServiceQR("nuru-service:11111111-1111-4111-8111-111111111111:abc123")
+        let scan = service("nuru-service:11111111-1111-4111-8111-111111111111:abc123")
         XCTAssertEqual(scan?.serviceId, "11111111-1111-4111-8111-111111111111")
         XCTAssertEqual(scan?.scanToken, "abc123")
     }
 
     func testToleratesSurroundingWhitespace() {
-        XCTAssertEqual(parseServiceQR("  nuru-service:s1:tok \n")?.serviceId, "s1")
+        XCTAssertEqual(service("  nuru-service:s1:tok \n")?.serviceId, "s1")
+    }
+
+    func testParsesThePerServiceURLForm() {
+        let scan = service("https://pathway.nuruplace.org/j/svc-1/tok-1")
+        XCTAssertEqual(scan?.serviceId, "svc-1")
+        XCTAssertEqual(scan?.scanToken, "tok-1")
+    }
+
+    func testParsesTheStandingPosterURL() {
+        // The printed door code: one URL forever, resolved server-side per day.
+        let code = String(repeating: "ab", count: 32)
+        XCTAssertEqual(standing("https://pathway.nuruplace.org/jc/\(code)"), code)
     }
 
     func testRejectsCodesThatAreNotOurs() {
@@ -29,6 +51,10 @@ final class ServiceQRParseTests: XCTestCase {
         XCTAssertNil(parseServiceQR("nuru-service:s1"))         // no token
         XCTAssertNil(parseServiceQR("nuru-service:s1:tok:extra"))
         XCTAssertNil(parseServiceQR(""))
+        // URL-shaped but not ours: wrong path, short code, wrong scheme.
+        XCTAssertNil(parseServiceQR("https://pathway.nuruplace.org/join/abcdef"))
+        XCTAssertNil(parseServiceQR("https://pathway.nuruplace.org/jc/short"))
+        XCTAssertNil(parseServiceQR("ftp://pathway.nuruplace.org/jc/\(String(repeating: "a", count: 20))"))
     }
 
     func testRejectsAPayloadWithAnEmptyIdOrToken() {

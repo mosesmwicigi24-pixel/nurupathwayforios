@@ -213,12 +213,70 @@ struct ServiceScan: Equatable, Sendable {
     let scanToken: String
 }
 
-/// Parse `nuru-service:<service_id>:<token>`. Returns nil for any other QR so
-/// the scanner ignores unrelated codes instead of posting junk to the server.
-/// Mirrors `parseServiceQrPayload` in the backend attendance module.
-func parseServiceQR(_ raw: String) -> ServiceScan? {
-    let parts = raw.trimmingCharacters(in: .whitespacesAndNewlines).components(separatedBy: ":")
-    guard parts.count == 3, parts[0] == "nuru-service",
-          !parts[1].isEmpty, !parts[2].isEmpty else { return nil }
-    return ServiceScan(serviceId: parts[1], scanToken: parts[2])
+/// What the scanner recognized. The projected sanctuary code and a printed
+/// per-service link identify a service directly; the standing door poster
+/// (`/jc/<code>`, one code forever per congregation) names only the
+/// congregation — the SERVER decides which service it means at scan time,
+/// via `resolveStandingCode` below.
+enum ScannedServiceCode: Equatable, Sendable {
+    case service(ServiceScan)
+    case standingCode(String)
+}
+
+/// Parse every form a Nuru service QR ships in. Returns nil for any other QR
+/// so the scanner ignores unrelated codes instead of posting junk to the
+/// server. Mirrors `parseServiceQrPayload` in the backend attendance module —
+/// the legacy `nuru-service:` form MUST keep working: it is what the portal
+/// still projects on the sanctuary screen.
+func parseServiceQR(_ raw: String) -> ScannedServiceCode? {
+    let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+
+    // Legacy projected form: nuru-service:<service_id>:<token>
+    let parts = text.components(separatedBy: ":")
+    if parts.count == 3, parts[0] == "nuru-service", !parts[1].isEmpty, !parts[2].isEmpty {
+        return .service(ServiceScan(serviceId: parts[1], scanToken: parts[2]))
+    }
+
+    // URL forms — accepted from any host so a staging poster scans in a dev
+    // build; the payload alone carries everything the flow needs.
+    guard let url = URL(string: text),
+          let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https"
+    else { return nil }
+    let seg = url.path.split(separator: "/").map(String.init)
+
+    // Per-service link: /j/<service_id>/<token>
+    if seg.count == 3, seg[0] == "j", !seg[1].isEmpty, !seg[2].isEmpty {
+        return .service(ServiceScan(serviceId: seg[1], scanToken: seg[2]))
+    }
+    // Standing poster: /jc/<code> (codes are 64 hex; 16 is the server's floor)
+    if seg.count == 2, seg[0] == "jc", seg[1].count >= 16 {
+        return .standingCode(seg[1])
+    }
+    return nil
+}
+
+/// What the standing poster means right now (GET /join/congregation/{code},
+/// public). Open → the day's service with its scan token, ready for the
+/// normal check-in flow. Closed → when to come back.
+struct StandingResolution: Decodable, Sendable {
+    struct OpenService: Decodable, Sendable {
+        let serviceId: String
+        let title: String
+        let startsAt: String
+        let scanToken: String
+    }
+    struct NextService: Decodable, Sendable {
+        let title: String
+        let startsAt: String
+    }
+    let congregation: String
+    let open: Bool
+    let service: OpenService?
+    let next: NextService?
+}
+
+extension MemberAPI {
+    static func resolveStandingCode(_ code: String) async throws -> StandingResolution {
+        try await APIClient.shared.get("join/congregation/\(code)", as: StandingResolution.self)
+    }
 }
