@@ -41,6 +41,10 @@ struct ServiceCheckInView: View {
 
     enum Phase: Equatable { case scanning, registering, submitting, done }
 
+    /// The standing poster's "not yet" answer (or a resolve failure), shown in
+    /// place of the scan caption for a few seconds. The scanner stays live.
+    @State private var standingNote: String?
+
     var body: some View {
         ZStack {
             Nuru.navy.ignoresSafeArea()
@@ -82,10 +86,13 @@ struct ServiceCheckInView: View {
                         .stroke(Nuru.gold, lineWidth: 3)
                 }
                 .overlay(alignment: .bottom) {
-                    Text("Point at the check-in code on the screen")
-                        .font(.inter(13)).foregroundStyle(.white.opacity(0.85))
-                        .fixedSize()
-                        .offset(y: 44)
+                    Text(standingNote ?? "Point at the check-in code on the screen")
+                        .font(.inter(13))
+                        .foregroundStyle(standingNote == nil ? .white.opacity(0.85) : Nuru.gold)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 300)
+                        .offset(y: standingNote == nil ? 44 : 56)
+                        .animation(.easeInOut(duration: 0.2), value: standingNote)
                 }
 
             VStack(spacing: 0) {
@@ -349,14 +356,51 @@ struct ServiceCheckInView: View {
     // MARK: Capture + submit
 
     private func handleCode(_ raw: String) {
-        guard phase == .scanning else { return }
+        guard phase == .scanning, standingNote == nil else { return }
         // Not one of ours — keep scanning rather than posting junk to the server.
         guard let parsed = parseServiceQR(raw) else { return }
         Haptics.tap()                    // the scanner "tick" — code captured
         camera.pauseScanning()
-        scan = parsed
-        scanId = UUID().uuidString.lowercased()
-        phase = .registering
+        switch parsed {
+        case .service(let s):
+            scan = s
+            scanId = UUID().uuidString.lowercased()
+            phase = .registering
+        case .standingCode(let code):
+            // The printed door poster: one code forever, resolved to whatever
+            // service is open RIGHT NOW. Outside a check-in window the honest
+            // answer is "not yet", said kindly, with when to come back.
+            Task { await resolveStanding(code) }
+        }
+    }
+
+    private func resolveStanding(_ code: String) async {
+        do {
+            let r = try await MemberAPI.resolveStandingCode(code)
+            if r.open, let svc = r.service {
+                scan = ServiceScan(serviceId: svc.serviceId, scanToken: svc.scanToken)
+                scanId = UUID().uuidString.lowercased()
+                phase = .registering
+            } else if let next = r.next, let when = friendlyServiceTime(next.startsAt) {
+                showStandingNote("Check-in isn't open right now. Join us for \(next.title), \(when).")
+            } else {
+                showStandingNote("Check-in isn't open right now — scan again when you arrive for a service.")
+            }
+        } catch {
+            showStandingNote(friendlyFailure(error))
+        }
+    }
+
+    private func showStandingNote(_ text: String) {
+        standingNote = text
+        Haptics.error()
+        camera.resumeScanning()
+        // The note answers the scan that raised it, then yields the screen —
+        // the scanner is already live again for the next code.
+        Task {
+            try? await Task.sleep(for: .seconds(6))
+            if standingNote == text { standingNote = nil }
+        }
     }
 
     private func submit() {
@@ -386,6 +430,16 @@ struct ServiceCheckInView: View {
     private func blankToNil(_ s: String) -> String? {
         let t = s.trimmingCharacters(in: .whitespaces)
         return t.isEmpty ? nil : t
+    }
+
+    /// "Sunday, 9:00 AM" from the API's ISO stamp — nil if it doesn't parse,
+    /// and the caller falls back to wording with no time in it.
+    private func friendlyServiceTime(_ iso: String) -> String? {
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let date = parser.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+        guard let date else { return nil }
+        return date.formatted(.dateTime.weekday(.wide).hour().minute())
     }
 
     private func friendlyFailure(_ error: Error) -> String {
