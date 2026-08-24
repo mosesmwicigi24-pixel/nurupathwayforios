@@ -911,16 +911,18 @@ struct HomeView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
-                        .foregroundStyle(Color(hex: 0x8A97AA))
-                    Text(lt.title).font(.fraunces(14, .semibold)).foregroundStyle(.white).lineLimit(1)
+                        .foregroundStyle(Color(hex: 0xA8861C))
+                    // Ink, not white (owner, 2026-08-24): this quiet row sits
+                    // on the bright page — white type simply vanished into it.
+                    Text(lt.title).font(.fraunces(14, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 14, color: Color(hex: 0x5C6B80))
+                Icon(.chevronRight, size: 14, color: Color(hex: 0x8A97AA))
             }
             .padding(13)
-            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.09), lineWidth: 1))
+                .stroke(Nuru.border, lineWidth: 1))
         }
         .buttonStyle(.pressableSubtle)
     }

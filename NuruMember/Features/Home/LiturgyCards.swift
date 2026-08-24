@@ -51,21 +51,18 @@ struct HomeLiturgyCard: View {
             }
             if let lit {
                 if let art = lit.art, let url = URL(string: art.url), !art.url.isEmpty {
-                    // A captioned photograph (owner's revision, 2026-08-24): the
-                    // image OWNS the top of the card and the words sit BELOW it,
-                    // like a caption. The previous design floated the prayer line
-                    // over the photo under a navy veil — and on a long day (line
-                    // + charge + companion verse) the words swallowed the whole
-                    // photograph. Text now grows the card DOWNWARD; the photo is
-                    // never hidden, whatever the server sends.
-                    VStack(spacing: 0) {
-                        Color.clear
-                            .frame(height: 176)
-                            .overlay {
-                                CachedAsyncImage(url: url) { phase in
-                                    if let img = phase.image {
-                                        img.resizable().scaledToFill()
-                                    } else {
+                    // The photograph WHOLE, the words on the page (owner's
+                    // revisions, 2026-08-24): the image shows at its own aspect
+                    // — never height-cropped by the caption — and the caption
+                    // sits directly on the app's paper background in ink, not
+                    // on a navy panel. The kicker rides the photo's top under
+                    // a soft scrim.
+                    VStack(alignment: .leading, spacing: 0) {
+                        ZStack {
+                            CachedAsyncImage(url: url) { phase in
+                                if let img = phase.image {
+                                    img.resizable().scaledToFit()
+                                } else {
                                         LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
                                                        startPoint: .topLeading, endPoint: .bottomTrailing)
                                     }
