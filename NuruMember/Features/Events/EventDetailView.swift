@@ -166,7 +166,17 @@ struct EventDetailView: View {
     private var aboutText: String? { vm.detail?.description ?? occ.description }
     private var going: Int { vm.detail?.rsvpCounts.going ?? occ.going }
     private var attendees: [EventAttendee] { vm.detail?.attendees ?? occ.attendees ?? [] }
-    private var imageUrl: String? { vm.detail?.primaryImageUrl ?? occ.primaryImageUrl }
+    /// First NON-EMPTY of: the detail's primary image, its gallery's first
+    /// shot, the occurrence the list handed us. `??` alone lost the hero
+    /// whenever the detail loaded with primaryImageUrl = "" — the empty
+    /// string beat the occurrence's perfectly good URL and the head fell
+    /// back to plain navy (owner's screenshot, 2026-08-24) even though the
+    /// list row was showing the photo.
+    private var imageUrl: String? {
+        [vm.detail?.primaryImageUrl, vm.detail?.images?.first, occ.primaryImageUrl]
+            .compactMap { $0 }
+            .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+    }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
     private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
     private var isToday: Bool { Calendar.current.isDateInToday(Ev.date(occ.startAt)) }

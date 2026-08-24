@@ -32,16 +32,6 @@ struct HomeLiturgyCard: View {
         }
     }
 
-    /// Seven-bands: the tableau's height. 232 exactly as shipped when the new
-    /// optional lines are absent; grows to give the charge / companion verse
-    /// breathing room so the bottom stack never crowds the kicker.
-    private func tableauHeight(_ lit: HomeLiturgy) -> CGFloat {
-        var h: CGFloat = 232
-        if let charge = lit.charge, !charge.isEmpty { h += 30 }
-        if let vl = lit.verseLine, !vl.text.isEmpty { h += 50 }
-        return h
-    }
-
     private func partEmoji(_ p: String) -> String {
         switch p {
         case "morning": return "🌅"
@@ -61,71 +51,75 @@ struct HomeLiturgyCard: View {
             }
             if let lit {
                 if let art = lit.art, let url = URL(string: art.url), !art.url.isEmpty {
-                    // The hour, beheld: a taller photograph of the hour it names,
-                    // hidden a little under the deep-navy block, with the hour +
-                    // brand at the top and the prayer line resting at the BOTTOM
-                    // where the veil is deepest — so the type reads clearly (owner
-                    // ask). Everything is owned+clipped, never inflates layout.
-                    // Seven-bands: the photograph stands taller when the server
-                    // sends the extra charge / companion-verse lines, so the
-                    // bottom stack never crowds the kicker. Absent → classic 232.
-                    Color.clear
-                        .frame(height: tableauHeight(lit))
-                        .overlay {
-                            CachedAsyncImage(url: url) { phase in
-                                if let img = phase.image {
-                                    img.resizable().scaledToFill()
-                                } else {
-                                    LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
-                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                    // A captioned photograph (owner's revision, 2026-08-24): the
+                    // image OWNS the top of the card and the words sit BELOW it,
+                    // like a caption. The previous design floated the prayer line
+                    // over the photo under a navy veil — and on a long day (line
+                    // + charge + companion verse) the words swallowed the whole
+                    // photograph. Text now grows the card DOWNWARD; the photo is
+                    // never hidden, whatever the server sends.
+                    VStack(spacing: 0) {
+                        Color.clear
+                            .frame(height: 176)
+                            .overlay {
+                                CachedAsyncImage(url: url) { phase in
+                                    if let img = phase.image {
+                                        img.resizable().scaledToFill()
+                                    } else {
+                                        LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                                    }
                                 }
                             }
-                        }
-                        .clipped()
-                        .overlay { DeepNavyBlock() }
-                        .overlay(alignment: .topLeading) { litKicker(lit).padding(18) }
-                        .overlay(alignment: .bottomLeading) {
-                            // One hierarchy: the hour's word LARGE, a gold rule
-                            // (the selah), then small golden lines closing on a
-                            // SINGLE scripture.
-                            VStack(alignment: .leading, spacing: 7) {
-                                Text(lit.line)
-                                    .font(.fraunces(20)).foregroundStyle(.white)
-                                    .lineSpacing(4)
-                                    .shadow(color: .black.opacity(0.5), radius: 3, y: 1)
+                            .clipped()
+                            .overlay {
+                                // A soft top scrim so the kicker reads on any photograph.
+                                LinearGradient(stops: [.init(color: .black.opacity(0.45), location: 0),
+                                                       .init(color: .clear, location: 0.55)],
+                                               startPoint: .top, endPoint: .bottom)
+                            }
+                            .overlay(alignment: .topLeading) { litKicker(lit).padding(16) }
+                        // The caption: one hierarchy — the hour's word LARGE, a
+                        // gold rule (the selah), then small golden lines closing
+                        // on a SINGLE scripture.
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(lit.line)
+                                .font(.fraunces(19)).foregroundStyle(.white)
+                                .lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                                .frame(width: 34, height: 1.5)
+                                .padding(.vertical, 2)
+                            if let charge = lit.charge, !charge.isEmpty {
+                                Text(charge)
+                                    .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
+                                    .lineSpacing(3)
                                     .fixedSize(horizontal: false, vertical: true)
-                                Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
-                                    .frame(width: 34, height: 1.5)
-                                    .padding(.vertical, 2)
-                                if let charge = lit.charge, !charge.isEmpty {
-                                    Text(charge)
-                                        .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
-                                        .lineSpacing(3)
-                                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                                if let vl = lit.verseLine, !vl.text.isEmpty {
-                                    Text("“\(vl.text)”")
-                                        .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
-                                        .lineSpacing(3)
-                                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
-                                        .fixedSize(horizontal: false, vertical: true)
-                                    Text(vl.reference.uppercased())
-                                        .font(.inter(10, .bold)).kerning(1.4)
-                                        .foregroundStyle(Color(hex: 0xE0B85E))
-                                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-                                        .padding(.top, 1)
-                                } else if let ref = lit.scriptureRef {
-                                    Text(ref.uppercased())
-                                        .font(.inter(10, .bold)).kerning(1.4)
-                                        .foregroundStyle(Color(hex: 0xE0B85E))
-                                        .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
-                                }
-                                pastorVoiceButton(lit)
                             }
-                            .padding(18)
+                            if let vl = lit.verseLine, !vl.text.isEmpty {
+                                Text("“\(vl.text)”")
+                                    .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                    .lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Text(vl.reference.uppercased())
+                                    .font(.inter(10, .bold)).kerning(1.4)
+                                    .foregroundStyle(Color(hex: 0xE0B85E))
+                                    .padding(.top, 1)
+                            } else if let ref = lit.scriptureRef {
+                                Text(ref.uppercased())
+                                    .font(.inter(10, .bold)).kerning(1.4)
+                                    .foregroundStyle(Color(hex: 0xE0B85E))
+                            }
+                            pastorVoiceButton(lit)
                         }
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .padding(18)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(
+                            LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        )
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 } else {
                     // Offline / older backend: the classic navy card, content-sized.
                     VStack(alignment: .leading, spacing: 10) {
@@ -174,7 +168,7 @@ struct HomeLiturgyCard: View {
         }
         // A decline toast (VoiceOver running / currently broadcasting / a
         // session hiccup) — floats over the card without touching its
-        // carefully-budgeted height (tableauHeight), auto-dismisses itself.
+        // caption-grown height, auto-dismisses itself.
         .overlay(alignment: .top) {
             if let reason = voice.declineReason {
                 Text(reason)
