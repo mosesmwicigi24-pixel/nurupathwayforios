@@ -87,12 +87,6 @@ struct HomeLiturgyCard: View {
                             Rectangle().fill(Nuru.gold.opacity(0.9))
                                 .frame(width: 34, height: 1.5)
                                 .padding(.vertical, 2)
-                            if let charge = lit.charge, !charge.isEmpty {
-                                Text(charge)
-                                    .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
-                                    .lineSpacing(3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
                             if let vl = lit.verseLine, !vl.text.isEmpty {
                                 Text("“\(vl.text)”")
                                     .font(.fraunces(12).italic()).foregroundStyle(Nuru.ink600)
@@ -106,6 +100,12 @@ struct HomeLiturgyCard: View {
                                 Text(ref.uppercased())
                                     .font(.inter(9.5, .bold)).kerning(1.4)
                                     .foregroundStyle(Color(hex: 0xA8861C))
+                            }
+                            if let charge = lit.charge, !charge.isEmpty {
+                                Text(charge)
+                                    .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
+                                    .lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             pastorVoiceButton(lit)
                         }
@@ -129,12 +129,6 @@ struct HomeLiturgyCard: View {
                             .fixedSize(horizontal: false, vertical: true)
                         Rectangle().fill(Nuru.gold.opacity(0.9))
                             .frame(width: 34, height: 1.5)
-                        if let charge = lit.charge, !charge.isEmpty {
-                            Text(charge)
-                                .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
                         if let vl = lit.verseLine, !vl.text.isEmpty {
                             Text("“\(vl.text)”")
                                 .font(.fraunces(12).italic()).foregroundStyle(Nuru.ink600)
@@ -147,6 +141,12 @@ struct HomeLiturgyCard: View {
                             Text(ref.uppercased())
                                 .font(.inter(9.5, .bold)).kerning(1.4)
                                 .foregroundStyle(Color(hex: 0xA8861C))
+                        }
+                        if let charge = lit.charge, !charge.isEmpty {
+                            Text(charge)
+                                .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         pastorVoiceButton(lit)
                     }
