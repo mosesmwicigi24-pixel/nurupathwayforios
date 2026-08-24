@@ -166,7 +166,12 @@ struct MentorInfo: Codable, Sendable {
     }
 }
 
-/// GET /me/cell-summary — the member's cell card.
+/// GET /me/cell-summary — the member's cell card. As of pathway PR #453
+/// ("cell-truth") this payload carries everything the Your-Cell screen needs
+/// about the member's OWN cell — rhythm, roster faces, cell-wide turnout and
+/// the leader-only shepherd's note — so the screen no longer borrows from the
+/// congregation-wide GET /home/featured-cell. Every new field decodes
+/// tolerantly: the app must still work against pre-#453 servers.
 struct CellSummary: Codable, Sendable {
     struct Cell: Codable, Sendable {
         struct Leader: Codable, Sendable {
@@ -183,11 +188,58 @@ struct CellSummary: Codable, Sendable {
         struct Attendance: Codable, Sendable { let attended: Int; let expected: Int }
         struct Next: Codable, Sendable {
             let startAt: String
+            let endAt: String?
+            let occurrenceId: String?
             let location: String?
             init(from d: Decoder) throws {
                 let c = try d.container(keyedBy: CodingKeys.self)
                 startAt = (try? c.decodeIfPresent(String.self, forKey: .startAt)) ?? ""
+                endAt = try? c.decodeIfPresent(String.self, forKey: .endAt)
+                occurrenceId = try? c.decodeIfPresent(String.self, forKey: .occurrenceId)
                 location = try? c.decodeIfPresent(String.self, forKey: .location)
+            }
+        }
+        /// Roster faces — ≤8 members, photos first, for the avatar rail.
+        struct Face: Codable, Sendable {
+            let firstName: String
+            let avatarUrl: String?
+            init(from d: Decoder) throws {
+                let c = try d.container(keyedBy: CodingKeys.self)
+                firstName = (try? c.decodeIfPresent(String.self, forKey: .firstName)) ?? ""
+                avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
+            }
+        }
+        struct Roster: Codable, Sendable {
+            let count: Int
+            let faces: [Face]
+            init(from d: Decoder) throws {
+                let c = try d.container(keyedBy: CodingKeys.self)
+                count = (try? c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+                faces = (try? c.decodeIfPresent([Face].self, forKey: .faces)) ?? []
+            }
+        }
+        /// Cell-wide attendance share over recent meetings (null until the
+        /// cell has met at least once).
+        struct Turnout: Codable, Sendable {
+            let rate: Double        // 0..1
+            let meetings: Int
+            let trend: String?      // "up" | "down" | "steady" | null
+            init(from d: Decoder) throws {
+                let c = try d.container(keyedBy: CodingKeys.self)
+                rate = (try? c.decodeIfPresent(Double.self, forKey: .rate)) ?? 0
+                meetings = (try? c.decodeIfPresent(Int.self, forKey: .meetings)) ?? 0
+                trend = try? c.decodeIfPresent(String.self, forKey: .trend)
+            }
+        }
+        /// Present ONLY when the caller is the cell's leader and ≥2 recent
+        /// meetings exist — first names of members who missed both (≤4).
+        struct LeaderView: Codable, Sendable {
+            let count: Int
+            let names: [String]
+            init(from d: Decoder) throws {
+                let c = try d.container(keyedBy: CodingKeys.self)
+                count = (try? c.decodeIfPresent(Int.self, forKey: .count)) ?? 0
+                names = (try? c.decodeIfPresent([String].self, forKey: .names)) ?? []
             }
         }
         let cellGroupId: String
@@ -196,6 +248,19 @@ struct CellSummary: Codable, Sendable {
         let leader: Leader?
         let attendance: Attendance
         let next: Next?
+        // Own-cell identity + rhythm (pathway #453).
+        let focus: String?
+        let levelLabel: String?
+        let room: String?
+        let tone: String?
+        let imageUrl: String?
+        /// Server-derived "Sundays · 2:00 PM" when a real series exists, else
+        /// the admin-typed fallback.
+        let meets: String?
+        let rhythmSource: String?   // "series" | "static" | null
+        let roster: Roster?
+        let turnout: Turnout?
+        let leaderView: LeaderView?
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
             cellGroupId = (try? c.decodeIfPresent(String.self, forKey: .cellGroupId)) ?? ""
@@ -205,6 +270,16 @@ struct CellSummary: Codable, Sendable {
             attendance = (try? c.decodeIfPresent(Attendance.self, forKey: .attendance))
                 ?? Attendance(attended: 0, expected: 0)
             next = try? c.decodeIfPresent(Next.self, forKey: .next)
+            focus = try? c.decodeIfPresent(String.self, forKey: .focus)
+            levelLabel = try? c.decodeIfPresent(String.self, forKey: .levelLabel)
+            room = try? c.decodeIfPresent(String.self, forKey: .room)
+            tone = try? c.decodeIfPresent(String.self, forKey: .tone)
+            imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
+            meets = try? c.decodeIfPresent(String.self, forKey: .meets)
+            rhythmSource = try? c.decodeIfPresent(String.self, forKey: .rhythmSource)
+            roster = try? c.decodeIfPresent(Roster.self, forKey: .roster)
+            turnout = try? c.decodeIfPresent(Turnout.self, forKey: .turnout)
+            leaderView = try? c.decodeIfPresent(LeaderView.self, forKey: .leaderView)
         }
     }
     let cell: Cell?

@@ -1,14 +1,15 @@
-// Cell info — the destination behind every cell aspect surfaced on Home (the
-// "This week at Nuru" featured-cell card and the "Your cohort" card). It merges
-// the two cell payloads the member already sees — GET /home/featured-cell and
-// GET /me/cell-summary — into one screen: the cell's leader/discipler, its
-// meeting rhythm, the next gathering, and the members/attendance/level/focus
-// stats. Navy rounded-bottom header (no hero image), matching MentorView.
+// Cell info — the destination behind every cell aspect surfaced on Home. It
+// renders entirely from GET /me/cell-summary (pathway #453 "cell-truth"),
+// which now carries everything about the member's OWN cell — leader, meeting
+// rhythm, next gathering, roster faces, honest cell-wide turnout, level/focus,
+// and the leader-only shepherd's note. It deliberately does NOT touch
+// GET /home/featured-cell: that payload describes the congregation-wide
+// featured cell, not necessarily this member's. Navy rounded-bottom header
+// (no hero image), matching MentorView.
 import SwiftUI
 
 @MainActor
 final class CellInfoViewModel: ObservableObject {
-    @Published var featured: FeaturedCell?
     @Published var cell: CellSummary.Cell?
     @Published var loading = true
     @Published var error: String?
@@ -17,15 +18,13 @@ final class CellInfoViewModel: ObservableObject {
     /// up; this is this screen's own single fetch, not a second endpoint.
     @Published var liveStream: LiveStreamSummary?
 
-    var name: String { featured?.name ?? cell?.name ?? "Your cell" }
-    var isEmpty: Bool { featured == nil && cell == nil }
+    var name: String { cell?.name ?? "Your cell" }
+    var isEmpty: Bool { cell == nil }
 
     func load() async {
         loading = true; error = nil
-        async let fc = try? MemberAPI.featuredCell()
         async let cs = try? MemberAPI.cellSummary()
         async let live = try? MemberAPI.fetchLiveNow()
-        featured = await fc ?? nil
         cell = (await cs)?.cell
         // Defensive guard, belt-and-braces on top of LiveDiscoveryCenter's
         // own self-exclusion filter: this screen fetches GET /live/now
@@ -82,6 +81,8 @@ struct CellInfoView: View {
                             leaderCard
                             if hasRhythm { rhythmCard }
                             if let n = vm.cell?.next { nextGatheringCard(n) }
+                            if let lv = vm.cell?.leaderView, lv.count > 0 { shepherdsNoteCard(lv) }
+                            membersCard
                             statsGrid
                             watchReplaysButton
                             openCommunityButton
@@ -194,7 +195,7 @@ struct CellInfoView: View {
                     .font(.fraunces(26, .semibold))
                     .foregroundStyle(Nuru.white)
                     .fixedSize(horizontal: false, vertical: true)
-                if let f = vm.featured?.focus {
+                if let f = vm.cell?.focus {
                     Text(f).font(.nCaption).foregroundStyle(Nuru.onNavyFaint)
                 }
             }
@@ -212,8 +213,8 @@ struct CellInfoView: View {
 
     // MARK: Leader / discipler
 
-    private var leaderName: String? { vm.cell?.leader?.name ?? vm.featured?.disciplerName }
-    private var leaderRole: String? { vm.cell?.leader?.role ?? vm.featured?.disciplerRole }
+    private var leaderName: String? { vm.cell?.leader?.name }
+    private var leaderRole: String? { vm.cell?.leader?.role }
 
     private var leaderCard: some View {
         HStack(spacing: Nuru.S.base) {
@@ -232,18 +233,25 @@ struct CellInfoView: View {
         .nuruShadow()
     }
 
-    // MARK: Meeting rhythm (from featured-cell)
+    // MARK: Meeting rhythm (own cell, from cell-summary)
 
     private var hasRhythm: Bool {
-        (vm.featured?.meets != nil) || (vm.featured?.nextSession != nil) || (vm.featured?.room != nil)
+        guard let c = vm.cell else { return false }
+        return c.meets != nil || c.room != nil || c.next != nil || c.rhythmSource != nil
     }
 
     private var rhythmCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("MEETING RHYTHM").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.muted)
-            if let m = vm.featured?.meets { rhythmRow(.calendarClock, "Meets", m) }
-            if let n = vm.featured?.nextSession { rhythmRow(.calendarDays, "Next session", n) }
-            if let r = vm.featured?.room { rhythmRow(.mapPin, "Where", r) }
+            if let m = vm.cell?.meets { rhythmRow(.calendarClock, "Meets", m) }
+            if let n = vm.cell?.next {
+                rhythmRow(.calendarDays, "Next session", Self.longDate(n.startAt))
+            } else if vm.cell?.rhythmSource != "series" {
+                // No occurrence on the books and no series to imply one —
+                // say so honestly instead of borrowing a date.
+                rhythmRow(.calendarDays, "Next session", "Not scheduled yet", muted: true)
+            }
+            if let r = vm.cell?.room { rhythmRow(.mapPin, "Where", r) }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Nuru.S.base)
@@ -252,14 +260,14 @@ struct CellInfoView: View {
         .nuruShadow()
     }
 
-    private func rhythmRow(_ icon: Lucide, _ label: String, _ value: String) -> some View {
+    private func rhythmRow(_ icon: Lucide, _ label: String, _ value: String, muted: Bool = false) -> some View {
         HStack(spacing: Nuru.S.md) {
             Icon(icon, size: 16, color: Nuru.goldChipText)
                 .frame(width: 34, height: 34)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(label).font(.nMicro).foregroundStyle(Nuru.faint)
-                Text(value).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                Text(value).font(.inter(14, .semibold)).foregroundStyle(muted ? Nuru.muted : Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -287,25 +295,110 @@ struct CellInfoView: View {
         .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
     }
 
-    // MARK: Stats (members · attendance · level · focus)
+    // MARK: Shepherd's note (leader-only nudge from cell-summary.leader_view)
+
+    private func shepherdsNoteCard(_ lv: CellSummary.Cell.LeaderView) -> some View {
+        HStack(spacing: Nuru.S.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.white).frame(width: 44, height: 44)
+                Icon(.handHeart, size: 20, color: Nuru.gold)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("SHEPHERD'S NOTE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                Text(Self.shepherdsNoteText(lv))
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.base)
+        .background(Nuru.goldTint, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+    }
+
+    static func shepherdsNoteText(_ lv: CellSummary.Cell.LeaderView) -> String {
+        let verb = lv.count == 1 ? "hasn't" : "haven't"
+        let base = "\(lv.count) \(verb) made the last two gatherings"
+        guard !lv.names.isEmpty else { return base }
+        return "\(base) — \(lv.names.joined(separator: ", "))"
+    }
+
+    // MARK: Members (roster faces rail) + stats (attendance · level · focus)
+
+    private var membersCard: some View {
+        let roster = vm.cell?.roster
+        let faces = Array((roster?.faces ?? []).prefix(5))
+        let total = max(vm.cell?.members ?? 0, roster?.count ?? 0)
+        let overflow = (roster?.count ?? 0) - faces.count
+        return HStack(spacing: Nuru.S.sm) {
+            if faces.isEmpty {
+                Icon(.users, size: 15, color: Nuru.goldChipText)
+                    .frame(width: 32, height: 32)
+                    .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            } else {
+                HStack(spacing: -8) {
+                    ForEach(Array(faces.enumerated()), id: \.offset) { _, face in
+                        Avatar(url: face.avatarUrl, name: face.firstName, size: 26)
+                            .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
+                    }
+                    if overflow > 0 {
+                        Text("+\(overflow)").font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                            .frame(width: 26, height: 26)
+                            .background(Nuru.surface, in: Circle())
+                            .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
+                    }
+                }
+            }
+            Text(total > 0 ? "\(total) members" : "Members")
+                .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
+            Spacer(minLength: 0)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.sm)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
 
     private var statsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
-            statTile(.handHeart, "Members", membersText)
-            statTile(.percent, "Attendance", attendanceText)
-            if let l = vm.featured?.levelLabel { statTile(.award, "Level", l) }
-            if let f = vm.featured?.focus { statTile(.target, "Focus", f) }
+            attendanceTile
+            if let l = vm.cell?.levelLabel { statTile(.award, "Level", l) }
+            if let f = vm.cell?.focus { statTile(.target, "Focus", f) }
         }
     }
 
-    private func statTile(_ icon: Lucide, _ label: String, _ value: String) -> some View {
+    /// Honest attendance: cell-wide turnout over recent meetings when the
+    /// server has it; else the member's own month; else a dash.
+    @ViewBuilder private var attendanceTile: some View {
+        if let t = vm.cell?.turnout {
+            statTile(.percent, "Attendance", "\(Int((t.rate * 100).rounded()))%",
+                     caption: "last \(t.meetings) meeting\(t.meetings == 1 ? "" : "s")",
+                     trend: t.trend)
+        } else if let a = vm.cell?.attendance, a.expected > 0 {
+            statTile(.percent, "Attendance", "\(a.attended)/\(a.expected)", caption: "you, this month")
+        } else {
+            statTile(.percent, "Attendance", "—")
+        }
+    }
+
+    private func statTile(_ icon: Lucide, _ label: String, _ value: String,
+                          caption: String? = nil, trend: String? = nil) -> some View {
         HStack(spacing: Nuru.S.sm) {
             Icon(icon, size: 15, color: Nuru.goldChipText)
                 .frame(width: 32, height: 32)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
                 Text(label).font(.nMicro).foregroundStyle(Nuru.faint)
-                Text(value).font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                HStack(spacing: 3) {
+                    Text(value).font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                    if let trend, let (glyph, color) = Self.trendGlyph(trend) {
+                        Icon(glyph, size: 12, color: color)
+                    }
+                }
+                if let caption {
+                    Text(caption).font(.nMicro).foregroundStyle(Nuru.faint).lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -315,14 +408,13 @@ struct CellInfoView: View {
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    private var membersText: String {
-        if let m = vm.cell?.members { return "\(m)" }
-        if let m = vm.featured?.members { return "\(m)" }
-        return "—"
-    }
-    private var attendanceText: String {
-        guard let a = vm.cell?.attendance, a.expected > 0 else { return "—" }
-        return "\(a.attended)/\(a.expected)"
+    private static func trendGlyph(_ trend: String) -> (Lucide, Color)? {
+        switch trend {
+        case "up": return (.arrowUpRight, Nuru.success)
+        case "down": return (.arrowDownRight, Nuru.danger)
+        case "steady": return (.minus, Nuru.muted)
+        default: return nil
+        }
     }
 
     // MARK: Open community
