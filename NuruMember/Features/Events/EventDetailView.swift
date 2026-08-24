@@ -205,6 +205,7 @@ struct EventDetailView: View {
                 }
             }
             .scrollDismissesKeyboard(.interactively)
+            .coordinateSpace(name: "evdScroll")
         }
         .background(EvD.paper.ignoresSafeArea())
         .ignoresSafeArea(edges: .top)
@@ -252,9 +253,11 @@ struct EventDetailView: View {
             EvdRsvpCard(vm: vm)
                 .gentleEntrance(delay: 0.15)
             EvdBuzzCard(vm: vm) {
-                // Bring the composer above the keyboard once it has settled.
+                // Float the COMPOSER above the keyboard once it has settled —
+                // anchoring the card's top left the input hidden under the
+                // keyboard whenever the feed was tall (owner, 2026-08-24).
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
-                    withAnimation { proxy.scrollTo("buzzCard", anchor: .top) }
+                    withAnimation { proxy.scrollTo("buzzComposer", anchor: .bottom) }
                 }
             }
             .id("buzzCard")
@@ -346,7 +349,13 @@ private struct EvdHero: View {
 
     var body: some View {
         GeometryReader { geo in
-            let minY = geo.frame(in: .global).minY
+            // Scroll-relative, NOT .global (the root cause of the empty navy
+            // hero, found by simulator instrumentation 2026-08-24): in the
+            // You-tab the detail renders far below the global top, so global
+            // minY read as permanent "overscroll" and offset the photo and
+            // title clean out of the frame. In the scroll's own space the
+            // hero rests at 0 and only a real pull-down stretches it.
+            let minY = geo.frame(in: .named("evdScroll")).minY
             let stretch = max(0, minY)          // parallax overscroll
             let h = geo.size.height + stretch
             ZStack(alignment: .bottomLeading) {
@@ -378,6 +387,11 @@ private struct EvdHero: View {
                 if let img = phase.image {
                     img.resizable().scaledToFit()
                         .onAppear { measure(url) }
+                } else {
+                    // A real (invisible) view, never EmptyView — see
+                    // ImageCache.swift: an empty phase branch used to keep
+                    // the loader from ever starting.
+                    Color.clear
                 }
             }
         }
@@ -794,28 +808,34 @@ private struct EvdBuzzCard: View {
     var body: some View {
         // Chat order (owner's revision, 2026-08-24): the room's voices come
         // FIRST and your line to add sits BELOW them, exactly like a message
-        // thread — content above, input at the bottom.
-        VStack(alignment: .leading, spacing: 12) {
-            header
-            if vm.posts.isEmpty {
-                Text("Be the first to share a moment.")
-                    .font(.nCardBody).foregroundStyle(EvD.tertiary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 8)
-            } else {
-                VStack(spacing: 8) {
-                    ForEach(vm.posts) { p in
-                        EvdBuzzPostRow(post: p) { kind in
-                            Task { await vm.toggleReaction(p, kind: kind) }
+        // thread — content above, input at the bottom. The section header
+        // (and its Buzzing pill) sits on the PAGE, not on the card — the
+        // owner's 2026-08-24 follow-up, matching how every other section
+        // announces itself.
+        VStack(alignment: .leading, spacing: 8) {
+            header.padding(.horizontal, 4)
+            VStack(alignment: .leading, spacing: 12) {
+                if vm.posts.isEmpty {
+                    Text("Be the first to share a moment.")
+                        .font(.nCardBody).foregroundStyle(EvD.tertiary)
+                        .frame(maxWidth: .infinity, alignment: .center)
+                        .padding(.vertical, 8)
+                } else {
+                    VStack(spacing: 8) {
+                        ForEach(vm.posts) { p in
+                            EvdBuzzPostRow(post: p) { kind in
+                                Task { await vm.toggleReaction(p, kind: kind) }
+                            }
                         }
                     }
                 }
+                EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
+                            onPost: { Task { await vm.submitPost() } },
+                            onFocus: onComposerFocus)
+                    .id("buzzComposer")
             }
-            EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
-                        onPost: { Task { await vm.submitPost() } },
-                        onFocus: onComposerFocus)
+            .evdCard()
         }
-        .evdCard()
     }
 
     private var header: some View {
@@ -890,7 +910,7 @@ private struct EvdComposer: View {
                             .foregroundColor(EvD.placeholder),
                           axis: .vertical)
                     .font(.inter(14)).foregroundStyle(EvD.ink)
-                    .lineLimit(1...4)
+                    .lineLimit(1...6)
                     .focused($focused)
                     .padding(.horizontal, 12).padding(.vertical, 9)
                     .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
