@@ -62,7 +62,14 @@ struct CachedAsyncImage<Content: View>: View {
     }
 
     var body: some View {
-        content(phase)
+        // The ZStack wrapper is LOAD-BEARING: when a caller's closure renders
+        // nothing for the empty phase (no else branch), content(phase) is
+        // EmptyView — and modifiers on EmptyView never run, INCLUDING this
+        // .task. The image then never loads and the view stays blank forever
+        // (the event hero's plain-navy head, found by simulator
+        // instrumentation 2026-08-24). A ZStack is never empty, so the task
+        // always fires regardless of what the closure returns.
+        ZStack { content(phase) }
             // Re-runs (and cancels the prior load) whenever the URL changes; a
             // synchronous warm-cache hit avoids a one-frame placeholder flash.
             .task(id: url) { await load() }
