@@ -286,6 +286,8 @@ struct HomeView: View {
     // (RadioCenter is observed inside HomeOnAirCard / the RootView island pill —
     // observing it here re-rendered the whole feed on every playback tick.)
     @State private var path = NavigationPath()
+    /// Featured-carousel position (auto-advances every 6s; swipes respected).
+    @State private var featuredPageIndex = 0
     @State private var playingVideo = false
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
     @State private var disciplerPage = 0   // discipler pager position (same gold dots)
@@ -405,7 +407,7 @@ struct HomeView: View {
             }
         }
         if !vm.disciplers.isEmpty { s.append(("disciplers", AnyView(disciplersCard))) }                 // 8
-        if let a = vm.featuredAnnouncement { s.append(("announcement", AnyView(featuredAnnouncementCard(a)))) } // 9
+        if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // 9 · carousel: portal-marked announcements + events
         s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
         if reflectionDue { s.append(("priority2", AnyView(priorityStrip))) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
@@ -1733,61 +1735,155 @@ struct HomeView: View {
 
     // MARK: 9 — Featured announcement
 
-    private func featuredAnnouncementCard(_ a: FeaturedAnnouncement) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Header lives OUTSIDE the card (Figma).
+    // MARK: 9 — Featured carousel (owner's revision, 2026-08-24)
+    //
+    // One sliding rail for everything the portal has marked or scheduled: the
+    // featured announcement, the featured gathering, and the next few events.
+    // Auto-advances gently; a swipe is always respected. "View all" opens the
+    // full events list (You ▸ Events), per the owner's spec.
+
+    private enum FeaturedPage: Identifiable {
+        case announcement(FeaturedAnnouncement)
+        case event(FeaturedEvent)
+        case occurrence(HomeEventRow)
+        var id: String {
+            switch self {
+            case .announcement(let a): return "ann-" + a.announcementId
+            case .event(let e): return "fev-" + e.seriesId
+            case .occurrence(let o): return "occ-" + o.occurrenceId
+            }
+        }
+    }
+
+    private var featuredPages: [FeaturedPage] {
+        var pages: [FeaturedPage] = []
+        if let a = vm.featuredAnnouncement { pages.append(.announcement(a)) }
+        if let e = vm.featuredEvent { pages.append(.event(e)) }
+        let featuredSeries = vm.featuredEvent?.seriesId
+        for ev in vm.homeEvents.filter({ $0.seriesId != featuredSeries }).prefix(3) {
+            pages.append(.occurrence(ev))
+        }
+        return pages
+    }
+
+    private var featuredCarousel: some View {
+        let pages = featuredPages
+        return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("FEATURED ANNOUNCEMENT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Nuru.goldChipText)
+                Text("FEATURED").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Nuru.goldChipText)
                 Spacer()
-                NavigationLink(value: AppRoute.announcementsList) {
+                Button { Haptics.selection(); tabs.openYou(.events) } label: {
                     sectionLink("View all")
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
+            TabView(selection: $featuredPageIndex) {
+                ForEach(Array(pages.enumerated()), id: \.element.id) { i, page in
+                    featuredPageCard(page).tag(i)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .frame(height: 348)
+            if pages.count > 1 {
+                HStack(spacing: 5) {
+                    ForEach(pages.indices, id: \.self) { i in
+                        Capsule()
+                            .fill(i == featuredPageIndex ? Nuru.gold : Nuru.gold.opacity(0.25))
+                            .frame(width: i == featuredPageIndex ? 16 : 5, height: 5)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+                .animation(.easeInOut(duration: 0.25), value: featuredPageIndex)
+            }
+        }
+        .onReceive(Timer.publish(every: 6, on: .main, in: .common).autoconnect()) { _ in
+            guard pages.count > 1 else { return }
+            withAnimation(.easeInOut(duration: 0.45)) {
+                featuredPageIndex = (featuredPageIndex + 1) % pages.count
+            }
+        }
+    }
+
+    @ViewBuilder private func featuredPageCard(_ page: FeaturedPage) -> some View {
+        switch page {
+        case .announcement(let a):
             Button {
                 Haptics.tap()
                 path.append(AppRoute.announcement(a.announcementId))
                 Task { await vm.openAnnouncement(a.announcementId) }
             } label: {
-                VStack(alignment: .leading, spacing: 0) {
-                    if let s = a.primaryImageUrl, let u = URL(string: s) {
-                        ZStack {
-                            Rectangle().fill(Nuru.mutedBg)
-                            CachedAsyncImage(url: u) { phase in
-                                if let img = phase.image { HomeFadeInImage(image: img) }
-                                else { Rectangle().fill(Nuru.mutedBg) }
-                            }
-                        }
-                        .aspectRatio(16.0/9.0, contentMode: .fill)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
-                    }
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(a.title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text(a.body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(3)
-                            .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
-                        HStack {
-                            if let s = a.sentAt { Text(shortDate(s)).font(.nCardMeta).foregroundStyle(HomeFig.faintGray) }
-                            Spacer()
-                            HStack(spacing: 3) {
-                                Text("Read more").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
-                                Icon(.chevronRight, size: 13, color: Nuru.gold)
-                            }
-                        }
-                        .padding(.top, Nuru.S.sm)
-                    }
-                    .padding(Nuru.S.base)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .nuruShadow()
+                featuredPageBody(kicker: "ANNOUNCEMENT", imageUrl: a.primaryImageUrl,
+                                 title: a.title, body: a.body,
+                                 meta: a.sentAt.map(shortDate), cta: "Read more")
+            }
+            .buttonStyle(.pressableSubtle)
+        case .event(let e):
+            Button { Haptics.tap(); tabs.openYou(.events) } label: {
+                featuredPageBody(kicker: "FEATURED GATHERING", imageUrl: e.primaryImageUrl,
+                                 title: e.title, body: e.description ?? (e.location ?? ""),
+                                 meta: e.dtstartLocal.isEmpty ? nil : eventKicker(e.dtstartLocal), cta: "See details")
+            }
+            .buttonStyle(.pressableSubtle)
+        case .occurrence(let o):
+            Button { Haptics.tap(); path.append(CalendarOccurrence(homeEvent: o)) } label: {
+                featuredPageBody(kicker: "UPCOMING EVENT", imageUrl: o.primaryImageUrl,
+                                 title: o.title, body: o.venue ?? "",
+                                 meta: eventKicker(o.startsAt), cta: "See details")
             }
             .buttonStyle(.pressableSubtle)
         }
     }
+
+    /// One shared page frame so every slide sits at the same height — image on
+    /// top (16:9, gradient fallback), then title, two body lines, and a footer.
+    private func featuredPageBody(kicker: String, imageUrl: String?, title: String,
+                                  body: String, meta: String?, cta: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack {
+                LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing)
+                if let s = imageUrl, !s.isEmpty, let u = URL(string: s) {
+                    Color.clear.overlay {
+                        CachedAsyncImage(url: u) { phase in
+                            if let img = phase.image { HomeFadeInImage(image: img) }
+                            else { Rectangle().fill(Nuru.mutedBg) }
+                        }
+                    }
+                }
+            }
+            .aspectRatio(16.0/9.0, contentMode: .fill)
+            .frame(maxWidth: .infinity)
+            .clipped()
+            .overlay(alignment: .topLeading) {
+                Text(kicker).font(.inter(9, .bold)).kerning(1.3).foregroundStyle(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 4)
+                    .background(Color.black.opacity(0.45), in: Capsule())
+                    .padding(10)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
+                    .lineLimit(1)
+                Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                Spacer(minLength: 0)
+                HStack {
+                    if let meta { Text(meta).font(.nCardMeta).foregroundStyle(HomeFig.faintGray) }
+                    Spacer()
+                    HStack(spacing: 3) {
+                        Text(cta).font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                        Icon(.chevronRight, size: 13, color: Nuru.gold)
+                    }
+                }
+            }
+            .padding(Nuru.S.base)
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+    }
+
 
     // MARK: 10 — Continue · Level n
 
