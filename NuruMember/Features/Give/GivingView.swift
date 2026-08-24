@@ -767,7 +767,12 @@ struct GivingView: View {
         .buttonStyle(.pressable)
         .disabled(submitting || amount <= 0)
         .opacity(amount <= 0 ? 0.5 : 1)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.lg).padding(.bottom, 28)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.lg)
+        // Above the floating tab bar, not behind it. 28pt put this bar UNDER
+        // the shell's ~96pt floating tabs — on every device only a gold sliver
+        // peeked out beneath them (owner's screenshot, 2026-08-23). The give
+        // button is the whole point of the screen; it rides clear of the bar.
+        .padding(.bottom, Nuru.tabBarSpace + 10)
         .background(
             LinearGradient(stops: [.init(color: Nuru.paper.opacity(0), location: 0),
                                    .init(color: Nuru.paper, location: 0.35)],
