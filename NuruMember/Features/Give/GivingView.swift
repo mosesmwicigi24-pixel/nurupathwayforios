@@ -398,6 +398,24 @@ struct GivingView: View {
             .buttonStyle(.plain)
 
             presetsRow.padding(.top, Nuru.S.base)
+            // The custom choice, BELOW the suggested amounts on its own row
+            // (owner's revision, 2026-08-24) — inside the chip flow it wrapped
+            // or scrolled out of sight, and a giver who wants their own number
+            // should never have to hunt for the door.
+            Button {
+                Haptics.tap()
+                showKeypad = true
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(.pencil, size: 13, color: Nuru.gold)
+                    Text("Enter a custom amount").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
+                }
+                .frame(maxWidth: .infinity).frame(height: 38)
+                .background(Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(Nuru.gold.opacity(0.55), lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+            .padding(.top, 8)
         }
         .padding(Nuru.S.screen)
         .frame(maxWidth: .infinity)
@@ -421,16 +439,6 @@ struct GivingView: View {
                         .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                 }.buttonStyle(.pressable)
             }
-            Button {
-                Haptics.tap()
-                showKeypad = true
-            } label: {
-                Text("Custom")
-                    .font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
-                    .padding(.horizontal, 14).frame(height: 34)
-                    .background(Nuru.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-            }.buttonStyle(.pressable)
         }
     }
 

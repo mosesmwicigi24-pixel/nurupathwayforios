@@ -792,11 +792,11 @@ private struct EvdBuzzCard: View {
     var onComposerFocus: () -> Void
 
     var body: some View {
+        // Chat order (owner's revision, 2026-08-24): the room's voices come
+        // FIRST and your line to add sits BELOW them, exactly like a message
+        // thread — content above, input at the bottom.
         VStack(alignment: .leading, spacing: 12) {
             header
-            EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
-                        onPost: { Task { await vm.submitPost() } },
-                        onFocus: onComposerFocus)
             if vm.posts.isEmpty {
                 Text("Be the first to share a moment.")
                     .font(.nCardBody).foregroundStyle(EvD.tertiary)
@@ -811,6 +811,9 @@ private struct EvdBuzzCard: View {
                     }
                 }
             }
+            EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
+                        onPost: { Task { await vm.submitPost() } },
+                        onFocus: onComposerFocus)
         }
         .evdCard()
     }
@@ -851,25 +854,11 @@ private struct EvdComposer: View {
     private var canPost: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || imageData != nil }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // A roomy text area — the "You" tag sits above it, not squeezed beside it.
-            HStack(spacing: 8) {
-                youDisc
-                Text("You").font(.inter(11, .bold)).foregroundStyle(EvD.ink.opacity(0.8))
-                Spacer(minLength: 0)
-            }
-            TextField("", text: $draft,
-                      prompt: Text("Hype the room — say you're coming 🔥")
-                        .foregroundColor(EvD.placeholder),
-                      axis: .vertical)
-                .font(.inter(14)).foregroundStyle(EvD.ink)
-                .lineLimit(3...9)
-                .frame(minHeight: 76, alignment: .topLeading)
-                .focused($focused)
-                .padding(10)
-                .background(Color.white.opacity(0.7), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(EvD.gold.opacity(0.20), lineWidth: 1))
-
+        // A CHAT bar, not a form (owner's revision, 2026-08-24): one compact
+        // line — attach, the field, flame, send — the same grammar as the
+        // message composer in Chat. The field grows a few lines as you type;
+        // an attached photo previews above the bar.
+        VStack(alignment: .leading, spacing: 10) {
             // Attached photo — a preview with a remove button.
             if let img = preview {
                 ZStack(alignment: .topTrailing) {
@@ -887,8 +876,7 @@ private struct EvdComposer: View {
                 }
             }
 
-            // Action row: attach (+) · flame · —— · Post.
-            HStack(spacing: 8) {
+            HStack(alignment: .bottom, spacing: 8) {
                 // A menu (not an action sheet) so each choice carries its icon.
                 Menu {
                     Button { showCamera = true } label: { Label("Take Photo", systemImage: "camera.fill") }
@@ -897,17 +885,27 @@ private struct EvdComposer: View {
                     plusDisc
                 }
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                TextField("", text: $draft,
+                          prompt: Text("Hype the room — say you're coming 🔥")
+                            .foregroundColor(EvD.placeholder),
+                          axis: .vertical)
+                    .font(.inter(14)).foregroundStyle(EvD.ink)
+                    .lineLimit(1...4)
+                    .focused($focused)
+                    .padding(.horizontal, 12).padding(.vertical, 9)
+                    .background(Color.white.opacity(0.85), in: RoundedRectangle(cornerRadius: 19, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 19, style: .continuous)
+                        .stroke(EvD.gold.opacity(0.20), lineWidth: 1))
                 Button {
                     Haptics.tap(); draft += draft.isEmpty ? "🔥" : " 🔥"
                 } label: {
                     iconDisc(.flame, color: EvD.gold)
                 }
                 .buttonStyle(.pressable)
-                Spacer(minLength: 0)
-                postPill
+                sendDisc
             }
         }
-        .padding(12)
+        .padding(10)
         .background(LinearGradient(colors: [EvD.composerTop, EvD.tile],
                                    startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -939,14 +937,6 @@ private struct EvdComposer: View {
         imageData = scaled.jpegData(compressionQuality: 0.82)
     }
 
-    private var youDisc: some View {
-        Circle()
-            .fill(LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x163655)],
-                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-            .frame(width: 30, height: 30)
-            .overlay(Icon(.user, size: 14, color: .white))
-            .shadow(color: EvD.navyBase.opacity(0.3), radius: 4, x: 0, y: 2)
-    }
 
     private var plusDisc: some View {
         Circle().fill(.white)
@@ -962,22 +952,21 @@ private struct EvdComposer: View {
             .overlay(Icon(icon, size: 17, color: color))
     }
 
-    private var postPill: some View {
+    /// The chat bar's send control: a round gold disc, spinner while posting.
+    private var sendDisc: some View {
         Button {
             Haptics.action()
             focused = false
             onPost()
         } label: {
-            HStack(spacing: 6) {
+            Group {
                 if posting { ProgressView().tint(EvD.ink).scaleEffect(0.8) }
-                Text(posting ? "Posting" : "Post").font(.inter(12, .bold)).foregroundStyle(EvD.ink)
-                if !posting { Icon(.send, size: 15, color: EvD.ink) }
+                else { Icon(.send, size: 16, color: EvD.ink) }
             }
-            .padding(.horizontal, 16)
-            .frame(height: 40)
+            .frame(width: 38, height: 38)
             .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
                                        startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: Capsule())
+                        in: Circle())
             .opacity(canPost && !posting ? 1 : 0.5)
             .shadow(color: EvD.gold.opacity(0.35), radius: 6, x: 0, y: 4)
         }
