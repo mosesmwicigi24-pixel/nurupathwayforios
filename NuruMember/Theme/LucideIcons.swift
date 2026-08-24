@@ -105,6 +105,11 @@ enum Lucide: String {
     // bundled Resources/Fonts/lucide.ttf's own cmap (fontTools), not guessed.
     case pause = "\u{E12E}"
     case volume2 = "\u{E1AB}"
+    // Turnout trend arrows (feat/cell-truth) — codepoints verified against the
+    // bundled font's cmap the same way.
+    case arrowUpRight = "\u{E04D}"
+    case arrowDownRight = "\u{E045}"
+    case minus = "\u{E11C}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).
