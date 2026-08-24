@@ -17,9 +17,31 @@ enum Ev {
     static func timeOf(_ iso: String) -> String {
         let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: date(iso))
     }
-    static func timeRange(_ s: String, _ e: String) -> String { "\(timeOf(s)) – \(timeOf(e))" }
+    /// An end time we actually BELIEVE, or nil. Absent, unparsable, not after
+    /// the start, or an implausible span (> 12h — even a kesha ends) are all
+    /// untrusted. Before this, an empty end decoded to .distantPast and the
+    /// page rendered "2:00 PM – 2:27 AM" and stamped future events COMPLETED
+    /// (owner's screenshots, 2026-08-24) — a wrong time on a church invitation
+    /// costs real attendance.
+    static func trustedEnd(_ s: String, _ e: String) -> Date? {
+        guard !e.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+        let start = date(s)
+        let end = date(e)
+        guard end > start, end.timeIntervalSince(start) <= 12 * 3600 else { return nil }
+        return end
+    }
+    /// "2:00 PM – 4:00 PM" when the end is trusted; just "2:00 PM" when not.
+    static func timeRange(_ s: String, _ e: String) -> String {
+        guard let end = trustedEnd(s, e) else { return timeOf(s) }
+        let f = DateFormatter(); f.dateFormat = "h:mm a"
+        return "\(timeOf(s)) – \(f.string(from: end))"
+    }
     static func isLive(_ s: String, _ e: String) -> Bool {
-        let now = Date(); return date(s) <= now && now <= date(e)
+        let now = Date()
+        let start = date(s)
+        // No trusted end → a generous 4-hour live window from the start.
+        let end = trustedEnd(s, e) ?? start.addingTimeInterval(4 * 3600)
+        return start <= now && now <= end
     }
     /// Figma countdown chip: "Today" / "Tomorrow" / "In N days" — nil once past.
     static func dayCountdown(_ iso: String) -> String? {

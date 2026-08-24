@@ -178,7 +178,15 @@ struct EventDetailView: View {
             .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
-    private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
+    /// COMPLETED only when we truly know it ended: a trusted end that has
+    /// passed, or — with no trusted end — a start more than 12 hours gone.
+    /// The old check compared a missing end (decoded .distantPast) against
+    /// now and stamped FUTURE events completed (owner's screenshot).
+    private var isCompleted: Bool {
+        if isLive { return false }
+        if let end = Ev.trustedEnd(occ.startAt, occ.endAt) { return end < Date() }
+        return Ev.date(occ.startAt) < Date().addingTimeInterval(-12 * 3600)
+    }
     private var isToday: Bool { Calendar.current.isDateInToday(Ev.date(occ.startAt)) }
     /// QR check-in shows for live or same-day occurrences; the server still
     /// enforces qr_enabled / checkin_opens_at, so this is presentation only.
@@ -531,8 +539,22 @@ private struct EvdMetaCard: View {
                             value: Ev.timeRange(occ.startAt, occ.endAt), accent: accent)
             }
             HStack(spacing: 8) {
-                EvdMetaTile(icon: .mapPin, label: "Where",
-                            value: location ?? "To be announced", accent: accent)
+                // The venue is a DOOR, not a caption (owner, 2026-08-24):
+                // tapping it opens Maps with the venue name, so a newcomer
+                // holding "Upperroom" gets directions instead of a shrug.
+                if let loc = location, !loc.trimmingCharacters(in: .whitespaces).isEmpty,
+                   let url = URL(string: "https://maps.apple.com/?q=\(loc.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? loc)") {
+                    Button {
+                        Haptics.tap()
+                        UIApplication.shared.open(url)
+                    } label: {
+                        EvdMetaTile(icon: .mapPin, label: "Where", value: loc, accent: accent)
+                    }
+                    .buttonStyle(.pressableSubtle)
+                } else {
+                    EvdMetaTile(icon: .mapPin, label: "Where",
+                                value: "To be announced", accent: accent)
+                }
                 EvdMetaTile(icon: .users, label: "Going",
                             value: going == 1 ? "1 person" : "\(going) people", accent: accent)
             }
