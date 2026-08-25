@@ -81,84 +81,89 @@ struct HomeLiturgyCard: View {
                         // on a SINGLE scripture.
                         VStack(alignment: .leading, spacing: 7) {
                             Text(lit.line)
-                                .font(.fraunces(19)).foregroundStyle(.white)
+                                .font(.fraunces(16.5)).foregroundStyle(Nuru.navyDeep)
                                 .lineSpacing(4)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                            Rectangle().fill(Nuru.gold.opacity(0.9))
                                 .frame(width: 34, height: 1.5)
                                 .padding(.vertical, 2)
-                            if let charge = lit.charge, !charge.isEmpty {
-                                Text(charge)
-                                    .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
-                                    .lineSpacing(3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                            }
                             if let vl = lit.verseLine, !vl.text.isEmpty {
                                 Text("“\(vl.text)”")
-                                    .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                    .font(.fraunces(12).italic()).foregroundStyle(Nuru.ink600)
                                     .lineSpacing(3)
                                     .fixedSize(horizontal: false, vertical: true)
                                 Text(vl.reference.uppercased())
-                                    .font(.inter(10, .bold)).kerning(1.4)
-                                    .foregroundStyle(Color(hex: 0xE0B85E))
+                                    .font(.inter(9.5, .bold)).kerning(1.4)
+                                    .foregroundStyle(Color(hex: 0xA8861C))
                                     .padding(.top, 1)
                             } else if let ref = lit.scriptureRef {
                                 Text(ref.uppercased())
-                                    .font(.inter(10, .bold)).kerning(1.4)
-                                    .foregroundStyle(Color(hex: 0xE0B85E))
+                                    .font(.inter(9.5, .bold)).kerning(1.4)
+                                    .foregroundStyle(Color(hex: 0xA8861C))
+                            }
+                            if let charge = lit.charge, !charge.isEmpty {
+                                Text(charge)
+                                    .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
+                                    .lineSpacing(3)
+                                    .fixedSize(horizontal: false, vertical: true)
                             }
                             pastorVoiceButton(lit)
                         }
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(
-                            LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing)
-                        )
+                        .background(Nuru.surface)
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Nuru.gold.opacity(0.25), lineWidth: 1)
+                    )
                 } else {
-                    // Offline / older backend: the classic navy card, content-sized.
+                    // Offline / older backend: the classic card, content-sized —
+                    // paper like the rest of the app (owner's revision, 2026-08-24).
                     VStack(alignment: .leading, spacing: 10) {
-                        litKicker(lit)
+                        litKicker(lit, onPhoto: false)
                         Text(lit.line)
-                            .font(.fraunces(19)).foregroundStyle(.white)
+                            .font(.fraunces(16.5)).foregroundStyle(Nuru.navyDeep)
                             .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
-                        Rectangle().fill(Color(hex: 0xE0B85E).opacity(0.8))
+                        Rectangle().fill(Nuru.gold.opacity(0.9))
                             .frame(width: 34, height: 1.5)
-                        if let charge = lit.charge, !charge.isEmpty {
-                            Text(charge)
-                                .font(.fraunces(13.5).italic()).foregroundStyle(Color(hex: 0xF2DDA0))
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
                         if let vl = lit.verseLine, !vl.text.isEmpty {
                             Text("“\(vl.text)”")
-                                .font(.fraunces(13).italic()).foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.85))
+                                .font(.fraunces(12).italic()).foregroundStyle(Nuru.ink600)
                                 .lineSpacing(3)
                                 .fixedSize(horizontal: false, vertical: true)
                             Text(vl.reference.uppercased())
-                                .font(.inter(10, .bold)).kerning(1.4)
-                                .foregroundStyle(Color(hex: 0xE0B85E))
+                                .font(.inter(9.5, .bold)).kerning(1.4)
+                                .foregroundStyle(Color(hex: 0xA8861C))
                         } else if let ref = lit.scriptureRef {
                             Text(ref.uppercased())
-                                .font(.inter(10, .bold)).kerning(1.4)
-                                .foregroundStyle(Color(hex: 0xE0B85E))
+                                .font(.inter(9.5, .bold)).kerning(1.4)
+                                .foregroundStyle(Color(hex: 0xA8861C))
+                        }
+                        if let charge = lit.charge, !charge.isEmpty {
+                            Text(charge)
+                                .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
+                                .lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         pastorVoiceButton(lit)
                     }
                     .padding(18)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(
-                        LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x0A1C33)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                        Nuru.surface
                             .overlay(alignment: .topTrailing) {
-                                Circle().fill(Color(hex: 0xE8CA6C).opacity(0.14))
+                                Circle().fill(Color(hex: 0xE8CA6C).opacity(0.10))
                                     .frame(width: 150, height: 150).blur(radius: 38)
                                     .offset(x: 45, y: -55)
                             }
                             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    )
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 20, style: .continuous)
+                            .stroke(Nuru.gold.opacity(0.25), lineWidth: 1)
                     )
                 }
             }
@@ -216,20 +221,20 @@ struct HomeLiturgyCard: View {
     /// The hour + brand row — shared by the tableau (top overlay) and the
     /// classic offline card. Gold hour label, then the Nuru Pathway lockup.
     @ViewBuilder
-    private func litKicker(_ lit: HomeLiturgy) -> some View {
+    private func litKicker(_ lit: HomeLiturgy, onPhoto: Bool = true) -> some View {
         HStack(spacing: 7) {
             Text(partEmoji(lit.part)).font(.system(size: 15))
             Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
                 .font(.inter(10.5, .bold)).kerning(1.6)
-                .foregroundStyle(Color(hex: 0xF2DDA0))
-                .shadow(color: .black.opacity(0.4), radius: 2, y: 1)
+                .foregroundStyle(onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
+                .shadow(color: .black.opacity(onPhoto ? 0.4 : 0), radius: 2, y: 1)
                 .lineLimit(1)
             BrandMark(size: 14)
             Text("Nuru Pathway")
-                .font(.inter(10.5, .semibold)).foregroundStyle(.white)
-                .shadow(color: .black.opacity(0.45), radius: 2, y: 1)
+                .font(.inter(10.5, .semibold)).foregroundStyle(onPhoto ? .white : Nuru.navy)
+                .shadow(color: .black.opacity(onPhoto ? 0.45 : 0), radius: 2, y: 1)
                 .lineLimit(1)
-            Icon(.badgeCheck, size: 11, color: Color(hex: 0xF2DDA0))
+            Icon(.badgeCheck, size: 11, color: onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
             Spacer(minLength: 0)
             if canManageRecordings { recordManageButton }
             listenButton(lit)
