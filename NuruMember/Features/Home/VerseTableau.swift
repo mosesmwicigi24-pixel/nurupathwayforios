@@ -35,9 +35,10 @@ struct VerseTableauHeader: View {
     let version: String
 
     /// Long verses step down gently so the photograph still breathes.
+    /// (Owner, 2026-08-25: smaller — the words keep to the image's lower third.)
     private var verseFont: Font {
         let n = verseText?.count ?? 0
-        return .fraunces(n > 220 ? 15 : n > 140 ? 17 : 19)
+        return .fraunces(n > 220 ? 12 : n > 140 ? 13 : 14)
     }
 
     var body: some View {
@@ -56,7 +57,20 @@ struct VerseTableauHeader: View {
                 }
             }
             .clipped()   // the fill overlay can never spill past the owned frame
-            .overlay { DeepNavyBlock() }   // deep-navy veil — the type stays certain
+            // The photograph SHOWS (owner, 2026-08-25): no full veil — a slim
+            // top scrim for the kicker and a bottom-third scrim for the verse,
+            // so the words occupy only the image's lower third.
+            .overlay {
+                LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
+                                       .init(color: .clear, location: 0.28)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .overlay {
+                LinearGradient(stops: [.init(color: .clear, location: 0.5),
+                                       .init(color: Color(hex: 0x0A1C33).opacity(0.85), location: 0.78),
+                                       .init(color: Color(hex: 0x06111F).opacity(0.95), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 6) {
                     Icon(.bookOpen, size: 13, color: Color(hex: 0xF2DDA0))
@@ -76,14 +90,14 @@ struct VerseTableauHeader: View {
                     if let t = verseText, !t.isEmpty {
                         Text("\u{201C}\(t)\u{201D}")
                             .font(verseFont).foregroundStyle(.white)
-                            .nuruLineSpacing(4)
-                            .lineLimit(5)
+                            .nuruLineSpacing(3)
+                            .lineLimit(4)
                             .minimumScaleFactor(0.8)
                             .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Text(reference)
-                        .font(.inter(12.5, .bold)).kerning(0.3)
+                        .font(.inter(11, .bold)).kerning(0.3)
                         .foregroundStyle(Color(hex: 0xF2DDA0))
                         .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
                 }
