@@ -50,70 +50,44 @@ struct HomeLiturgyCard: View {
                 Color.clear.frame(height: 0)
             }
             if let lit {
-                // Scripture First (owner's pick, 2026-08-25 — option 4 of the
-                // five-way design board): the Word is the headline, set large
-                // under a hanging gold quotation mark. The composed statement
-                // becomes the small golden line that frames it, and the
-                // explanation lands the verse beneath a hairline. The hour's
-                // photograph retired from this card — the verse carries it.
-                // One layout for every state; `scriptureRef == nil` marks a
-                // PERSONAL composition (the server nulls it then), which earns
-                // the "Why this word today" preface.
+                // Scripture First under the hour's photograph (owner's pick,
+                // 2026-08-25, then refined same day): the image sits ABOVE at
+                // its own aspect with the slimmed kicker riding its scrim, and
+                // the whole Scripture-First block reads below it as the
+                // caption — verse large under a hanging gold quotation mark,
+                // the composed statement framing it in gold, the explanation
+                // plain beneath a hairline (no preface).
                 VStack(alignment: .leading, spacing: 0) {
-                    litKicker(lit, onPhoto: false)
-                    Text(lit.line)
-                        .font(.inter(11.5, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 14)
-                    if let vl = lit.verseLine, !vl.text.isEmpty {
-                        HStack(alignment: .top, spacing: 8) {
-                            Text("“")
-                                .font(.fraunces(44, .semibold)).foregroundStyle(Nuru.gold)
-                                .offset(y: 2)
-                                .accessibilityHidden(true)
-                            Text(vl.text)
-                                .font(.fraunces(19.5)).foregroundStyle(Nuru.navyDeep)
-                                .lineSpacing(5)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .padding(.top, 7)
-                        }
-                        .padding(.top, 4)
-                        Text(vl.reference.uppercased())
-                            .font(.inter(9.5, .bold)).kerning(1.4)
-                            .foregroundStyle(Color(hex: 0xA8861C))
-                            .padding(.top, 10)
-                    } else if let ref = lit.scriptureRef {
-                        Text(ref.uppercased())
-                            .font(.inter(9.5, .bold)).kerning(1.4)
-                            .foregroundStyle(Color(hex: 0xA8861C))
-                            .padding(.top, 10)
-                    }
-                    if let charge = lit.charge, !charge.isEmpty {
-                        Rectangle().fill(Nuru.border)
-                            .frame(height: 1)
-                            .padding(.top, 14)
-                        Group {
-                            if lit.scriptureRef == nil {
-                                Text("Why this word today: ")
-                                    .font(.inter(12.5, .semibold)).foregroundColor(Nuru.navyDeep)
-                                + Text(charge)
-                                    .font(.inter(12.5)).foregroundColor(Nuru.ink600)
-                            } else {
-                                Text(charge)
-                                    .font(.inter(12.5)).foregroundColor(Nuru.ink600)
+                    if let art = lit.art, let url = URL(string: art.url), !art.url.isEmpty {
+                        ZStack {
+                            CachedAsyncImage(url: url) { phase in
+                                if let img = phase.image {
+                                    img.resizable().scaledToFit()
+                                } else {
+                                    LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                                   startPoint: .topLeading, endPoint: .bottomTrailing)
+                                        .frame(height: 150)
+                                }
                             }
                         }
-                        .lineSpacing(4)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 12)
+                        .clipped()
+                        .overlay {
+                            // A soft top scrim so the kicker reads on any photograph.
+                            LinearGradient(stops: [.init(color: .black.opacity(0.45), location: 0),
+                                                   .init(color: .clear, location: 0.55)],
+                                           startPoint: .top, endPoint: .bottom)
+                        }
+                        .overlay(alignment: .topLeading) { litKicker(lit).padding(16) }
+                    } else {
+                        litKicker(lit, onPhoto: false)
+                            .padding(.top, 20).padding(.horizontal, 20)
                     }
-                    pastorVoiceButton(lit)
-                        .padding(.top, 12)
+                    scriptureFirstCaption(lit)
+                        .padding(20)
                 }
-                .padding(20)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .background(Nuru.surface)
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .overlay(
                     RoundedRectangle(cornerRadius: 20, style: .continuous)
                         .stroke(Nuru.border, lineWidth: 1)
@@ -171,23 +145,65 @@ struct HomeLiturgyCard: View {
         }
     }
 
-    /// The hour + brand row — shared by the tableau (top overlay) and the
-    /// classic offline card. Gold hour label, then the Nuru Pathway lockup.
+    /// The caption below the photograph — the Scripture-First hierarchy.
+    private func scriptureFirstCaption(_ lit: HomeLiturgy) -> some View {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(lit.line)
+                        .font(.inter(11.5, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 14)
+                    if let vl = lit.verseLine, !vl.text.isEmpty {
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("“")
+                                .font(.fraunces(44, .semibold)).foregroundStyle(Nuru.gold)
+                                .offset(y: 2)
+                                .accessibilityHidden(true)
+                            Text(vl.text)
+                                .font(.fraunces(19.5)).foregroundStyle(Nuru.navyDeep)
+                                .lineSpacing(5)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.top, 7)
+                        }
+                        .padding(.top, 4)
+                        Text(vl.reference.uppercased())
+                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .foregroundStyle(Color(hex: 0xA8861C))
+                            .padding(.top, 10)
+                    } else if let ref = lit.scriptureRef {
+                        Text(ref.uppercased())
+                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .foregroundStyle(Color(hex: 0xA8861C))
+                            .padding(.top, 10)
+                    }
+                    if let charge = lit.charge, !charge.isEmpty {
+                        Rectangle().fill(Nuru.border)
+                            .frame(height: 1)
+                            .padding(.top, 14)
+                        Text(charge)
+                            .font(.inter(12.5)).foregroundStyle(Nuru.ink600)
+                            .lineSpacing(4)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 12)
+                    }
+                    pastorVoiceButton(lit)
+                        .padding(.top, 12)
+                }
+    }
+
+    /// The hour row — shared by the tableau (top overlay) and the
+    /// photo-less card. Gold hour label; voice controls trail it.
     @ViewBuilder
     private func litKicker(_ lit: HomeLiturgy, onPhoto: Bool = true) -> some View {
+        // Just the hour (owner's trim, 2026-08-25): no season word, no brand
+        // wordmark — the card speaks for itself. Voice controls keep their seat.
         HStack(spacing: 7) {
             Text(partEmoji(lit.part)).font(.system(size: 15))
-            Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : "\(partLabel(lit.part)) · \(lit.season.uppercased())")
+            Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : partLabel(lit.part))
                 .font(.inter(10.5, .bold)).kerning(1.6)
                 .foregroundStyle(onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
                 .shadow(color: .black.opacity(onPhoto ? 0.4 : 0), radius: 2, y: 1)
                 .lineLimit(1)
-            BrandMark(size: 14)
-            Text("Nuru Pathway")
-                .font(.inter(10.5, .semibold)).foregroundStyle(onPhoto ? .white : Nuru.navy)
-                .shadow(color: .black.opacity(onPhoto ? 0.45 : 0), radius: 2, y: 1)
-                .lineLimit(1)
-            Icon(.badgeCheck, size: 11, color: onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
             Spacer(minLength: 0)
             if canManageRecordings { recordManageButton }
             listenButton(lit)
