@@ -50,122 +50,75 @@ struct HomeLiturgyCard: View {
                 Color.clear.frame(height: 0)
             }
             if let lit {
-                if let art = lit.art, let url = URL(string: art.url), !art.url.isEmpty {
-                    // The photograph WHOLE, the words on the page (owner's
-                    // revisions, 2026-08-24): the image shows at its own aspect
-                    // — never height-cropped by the caption — and the caption
-                    // sits directly on the app's paper background in ink, not
-                    // on a navy panel. The kicker rides the photo's top under
-                    // a soft scrim.
-                    VStack(alignment: .leading, spacing: 0) {
-                        ZStack {
-                            CachedAsyncImage(url: url) { phase in
-                                if let img = phase.image {
-                                    img.resizable().scaledToFit()
-                                } else {
-                                        LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
-                                                       startPoint: .topLeading, endPoint: .bottomTrailing)
-                                    }
-                                }
-                            }
-                            .clipped()
-                            .overlay {
-                                // A soft top scrim so the kicker reads on any photograph.
-                                LinearGradient(stops: [.init(color: .black.opacity(0.45), location: 0),
-                                                       .init(color: .clear, location: 0.55)],
-                                               startPoint: .top, endPoint: .bottom)
-                            }
-                            .overlay(alignment: .topLeading) { litKicker(lit).padding(16) }
-                        // The caption: one hierarchy — the hour's word LARGE, a
-                        // gold rule (the selah), then small golden lines closing
-                        // on a SINGLE scripture.
-                        VStack(alignment: .leading, spacing: 7) {
-                            Text(lit.line)
-                                .font(.fraunces(16.5)).foregroundStyle(Nuru.navyDeep)
-                                .lineSpacing(4)
+                // Scripture First (owner's pick, 2026-08-25 — option 4 of the
+                // five-way design board): the Word is the headline, set large
+                // under a hanging gold quotation mark. The composed statement
+                // becomes the small golden line that frames it, and the
+                // explanation lands the verse beneath a hairline. The hour's
+                // photograph retired from this card — the verse carries it.
+                // One layout for every state; `scriptureRef == nil` marks a
+                // PERSONAL composition (the server nulls it then), which earns
+                // the "Why this word today" preface.
+                VStack(alignment: .leading, spacing: 0) {
+                    litKicker(lit, onPhoto: false)
+                    Text(lit.line)
+                        .font(.inter(11.5, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 14)
+                    if let vl = lit.verseLine, !vl.text.isEmpty {
+                        HStack(alignment: .top, spacing: 8) {
+                            Text("“")
+                                .font(.fraunces(44, .semibold)).foregroundStyle(Nuru.gold)
+                                .offset(y: 2)
+                                .accessibilityHidden(true)
+                            Text(vl.text)
+                                .font(.fraunces(19.5)).foregroundStyle(Nuru.navyDeep)
+                                .lineSpacing(5)
                                 .fixedSize(horizontal: false, vertical: true)
-                            Rectangle().fill(Nuru.gold.opacity(0.9))
-                                .frame(width: 34, height: 1.5)
-                                .padding(.vertical, 2)
-                            if let vl = lit.verseLine, !vl.text.isEmpty {
-                                Text("“\(vl.text)”")
-                                    .font(.fraunces(12).italic()).foregroundStyle(Nuru.ink600)
-                                    .lineSpacing(3)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                Text(vl.reference.uppercased())
-                                    .font(.inter(9.5, .bold)).kerning(1.4)
-                                    .foregroundStyle(Color(hex: 0xA8861C))
-                                    .padding(.top, 1)
-                            } else if let ref = lit.scriptureRef {
-                                Text(ref.uppercased())
-                                    .font(.inter(9.5, .bold)).kerning(1.4)
-                                    .foregroundStyle(Color(hex: 0xA8861C))
-                            }
-                            if let charge = lit.charge, !charge.isEmpty {
+                                .padding(.top, 7)
+                        }
+                        .padding(.top, 4)
+                        Text(vl.reference.uppercased())
+                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .foregroundStyle(Color(hex: 0xA8861C))
+                            .padding(.top, 10)
+                    } else if let ref = lit.scriptureRef {
+                        Text(ref.uppercased())
+                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .foregroundStyle(Color(hex: 0xA8861C))
+                            .padding(.top, 10)
+                    }
+                    if let charge = lit.charge, !charge.isEmpty {
+                        Rectangle().fill(Nuru.border)
+                            .frame(height: 1)
+                            .padding(.top, 14)
+                        Group {
+                            if lit.scriptureRef == nil {
+                                Text("Why this word today: ")
+                                    .font(.inter(12.5, .semibold)).foregroundColor(Nuru.navyDeep)
+                                + Text(charge)
+                                    .font(.inter(12.5)).foregroundColor(Nuru.ink600)
+                            } else {
                                 Text(charge)
-                                    .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
-                                    .lineSpacing(3)
-                                    .fixedSize(horizontal: false, vertical: true)
+                                    .font(.inter(12.5)).foregroundColor(Nuru.ink600)
                             }
-                            pastorVoiceButton(lit)
                         }
-                        .padding(18)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Nuru.surface)
+                        .lineSpacing(4)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 12)
                     }
-                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Nuru.gold.opacity(0.25), lineWidth: 1)
-                    )
-                } else {
-                    // Offline / older backend: the classic card, content-sized —
-                    // paper like the rest of the app (owner's revision, 2026-08-24).
-                    VStack(alignment: .leading, spacing: 10) {
-                        litKicker(lit, onPhoto: false)
-                        Text(lit.line)
-                            .font(.fraunces(16.5)).foregroundStyle(Nuru.navyDeep)
-                            .lineSpacing(4)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Rectangle().fill(Nuru.gold.opacity(0.9))
-                            .frame(width: 34, height: 1.5)
-                        if let vl = lit.verseLine, !vl.text.isEmpty {
-                            Text("“\(vl.text)”")
-                                .font(.fraunces(12).italic()).foregroundStyle(Nuru.ink600)
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                            Text(vl.reference.uppercased())
-                                .font(.inter(9.5, .bold)).kerning(1.4)
-                                .foregroundStyle(Color(hex: 0xA8861C))
-                        } else if let ref = lit.scriptureRef {
-                            Text(ref.uppercased())
-                                .font(.inter(9.5, .bold)).kerning(1.4)
-                                .foregroundStyle(Color(hex: 0xA8861C))
-                        }
-                        if let charge = lit.charge, !charge.isEmpty {
-                            Text(charge)
-                                .font(.fraunces(12.5).italic()).foregroundStyle(Color(hex: 0xA8861C))
-                                .lineSpacing(3)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        pastorVoiceButton(lit)
-                    }
-                    .padding(18)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(
-                        Nuru.surface
-                            .overlay(alignment: .topTrailing) {
-                                Circle().fill(Color(hex: 0xE8CA6C).opacity(0.10))
-                                    .frame(width: 150, height: 150).blur(radius: 38)
-                                    .offset(x: 45, y: -55)
-                            }
-                            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    )
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 20, style: .continuous)
-                            .stroke(Nuru.gold.opacity(0.25), lineWidth: 1)
-                    )
+                    pastorVoiceButton(lit)
+                        .padding(.top, 12)
                 }
+                .padding(20)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20, style: .continuous)
+                        .stroke(Nuru.border, lineWidth: 1)
+                )
+                .nuruShadow()
             }
         }
         // A decline toast (VoiceOver running / currently broadcasting / a
@@ -363,13 +316,16 @@ struct CelebrationsRail: View {
             }
             if !moments.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
+                    // No internal horizontal padding: the Home feed already
+                    // pads every section 16pt — the rail's extra S.screen inset
+                    // double-padded it 20pt deeper than its neighbours (owner
+                    // screenshot, 2026-08-25: "these cards are not aligned").
                     HStack(spacing: 6) {
                         Text("🎉").font(.system(size: 13))
                         Text("CELEBRATE THE FAMILY")
                             .font(.inter(10.5, .bold)).kerning(1.6)
                             .foregroundStyle(Nuru.muted)
                     }
-                    .padding(.horizontal, Nuru.S.screen)
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(spacing: 10) {
                             ForEach(moments) { m in
@@ -378,7 +334,6 @@ struct CelebrationsRail: View {
                                 }
                             }
                         }
-                        .padding(.horizontal, Nuru.S.screen)
                     }
                 }
             }
