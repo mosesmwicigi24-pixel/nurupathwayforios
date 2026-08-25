@@ -367,10 +367,13 @@ struct HomeView: View {
             s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
         }
         if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first, only while live)
-        // The day's DOORS come first, then the day's WORD (owner order,
-        // 2026-08-25): the Sunday Letter knock, then the reflection-due strip,
-        // then the liturgy — actions a member must not miss above the word
-        // they sit with. Verse and video follow.
+        // Owner's order (2026-08-25, stated exactly): verse for today → featured
+        // video → the Sunday Letter → reflection due → the liturgy. Everything
+        // else stays where it always was — the ONLY move relative to the
+        // original feed is the liturgy stepping BELOW the reflection strip.
+        s.append(("verse", AnyView(verseCard)))                                                    // 0 · Verse of the day (leads the feed)
+        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0a2 · Featured video (start here)
+        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0b · Live now
         if let lt = vm.letter, lt.isUnread {
             s.append(("letter", AnyView(letterKnock(lt))))
         } else if let lt = vm.letter {
@@ -378,12 +381,9 @@ struct HomeView: View {
         } else {
             s.append(("letter", AnyView(letterArrivalCard)))
         }
-        if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority (top)
-        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer (liturgy, Phase 4)
-        s.append(("verse", AnyView(verseCard)))                                                    // Verse of the day
-        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // Featured video (start here)
-        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // Live now
-        s.append(("echo", AnyView(HomeEchoCard())))                                               // Today's echo — the app remembers you (Wave 1)
+        if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority
+        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
+        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0e · Today's echo — the app remembers you (Wave 1)
         if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
         s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
         s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
