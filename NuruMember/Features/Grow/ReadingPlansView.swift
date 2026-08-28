@@ -114,9 +114,14 @@ struct ReadingPlansView: View {
         for p in vm.plans { if let c = p.category, !c.isEmpty, !seen.contains(c) { seen.insert(c); out.append(c) } }
         return out
     }
+    /// Every plan, grouped by length — and every one VISIBLE (owner, 2026-08-26:
+    /// "make sure all plans are not hidden"). The old browse put 17 plans in a
+    /// sideways rail where 14 of them lived off-screen behind a gesture most
+    /// members never make; each plan also appeared twice (once in "Featured",
+    /// once in its length bucket). Now: one vertical grid, each plan once, in
+    /// the section that describes the commitment it asks for.
     private var collections: [(id: String, label: String, plans: [ReadingPlanRow])] {
         var out: [(String, String, [ReadingPlanRow])] = []
-        if !vm.plans.isEmpty { out.append(("featured", "Featured for you", Array(vm.plans.prefix(8)))) }
         let short = vm.plans.filter { $0.dayCount <= 7 }
         if !short.isEmpty { out.append(("short", "Short reads · 7 days or less", short)) }
         // Mid-length (8–13 days) — most study plans are 10-day, so without this
@@ -126,6 +131,16 @@ struct ReadingPlansView: View {
         let long = vm.plans.filter { $0.dayCount >= 14 }
         if !long.isEmpty { out.append(("long", "Longer journeys · 2 weeks and up", long)) }
         return out
+    }
+
+    /// A second plan to promote further down the page — never the one already
+    /// featured at the top, and never one already being read. Rotates with the
+    /// day like the plan of the day, so browsing feels edited, not random.
+    private var midPromoPlan: ReadingPlanRow? {
+        let pool = vm.plans.filter { !$0.enrolled && $0.planId != planOfDay?.planId && ($0.description?.isEmpty == false) }
+        guard !pool.isEmpty else { return nil }
+        let day = Int(Date().timeIntervalSince1970 / 86_400)
+        return pool[(day / 2) % pool.count]
     }
 
     var body: some View {
@@ -154,7 +169,9 @@ struct ReadingPlansView: View {
                         if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, !continueReading.isEmpty { reminderCard }
-                        if !searching, let pod = planOfDay { planOfDayCard(pod) }
+                        // The day's invitation, given room to actually invite:
+                        // cover + subtitle + the plan's own opening line + a CTA.
+                        if !searching, let pod = planOfDay { PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY") }
                         categoriesSection
                         if searching { filteredResults } else { collectionsSections }
                         if !searching { invitationCard }
@@ -402,23 +419,24 @@ struct ReadingPlansView: View {
 
     // MARK: collections (browse) / filtered results (search)
 
+    /// Browse: every plan on the page, two to a row, grouped by commitment —
+    /// nothing behind a sideways swipe. One promo card is woven in after the
+    /// first section so the page reads like a magazine rather than a stock list.
     private var collectionsSections: some View {
         VStack(alignment: .leading, spacing: 24) {
-            ForEach(collections, id: \.id) { col in
+            ForEach(Array(collections.enumerated()), id: \.element.id) { i, col in
                 VStack(alignment: .leading, spacing: 10) {
                     HStack {
                         Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
                         Spacer(minLength: 0)
                         Text("\(col.plans.count)").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
                     }
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(col.plans) { plan in PLPlanCard(plan: plan) }
-                        }
-                        .padding(.horizontal, 20)
-                        .padding(.bottom, 4)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        ForEach(col.plans) { plan in PLPlanTile(plan: plan) }
                     }
-                    .padding(.horizontal, -20)
+                }
+                if i == 0, let promo = midPromoPlan {
+                    PLPlanPromo(plan: promo, kicker: "WORTH YOUR WEEK")
                 }
             }
         }

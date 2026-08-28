@@ -470,3 +470,105 @@ struct PLDetailDayRow: View {
     }
 }
 
+
+// MARK: - The plan promo ("an ad, beautifully done")
+
+/// A full-bleed invitation to one plan (owner, 2026-08-26: "make beautiful ads
+/// that promote plans with nice images and messages"). Nothing here is
+/// invented: the picture is the plan's own cover, and the words are the plan's
+/// own subtitle and the opening line of its description — copy already written
+/// with care ("Fear is a faithful visitor. It comes at night when the bills are
+/// counted…"). The card simply gives them room to be read.
+struct PLPlanPromo: View {
+    let plan: ReadingPlanRow
+    var kicker: String = "WORTH YOUR WEEK"
+
+    /// The opening of the plan's description — the hook, never the essay.
+    /// A sentence ends at `.!?` only when a SPACE and a capital follow it;
+    /// otherwise "the failure at 2 a.m." gets guillotined into "…at 2 a."
+    /// (owner screenshot, 2026-08-26). Two sentences fit this card comfortably.
+    private var hook: String? {
+        guard let d = plan.description?.trimmingCharacters(in: .whitespacesAndNewlines), !d.isEmpty else { return nil }
+        let chars = Array(d)
+        var out = ""
+        var sentences = 0
+        var i = 0
+        while i < chars.count {
+            out.append(chars[i])
+            if ".!?".contains(chars[i]) {
+                let next = i + 1 < chars.count ? chars[i + 1] : " "
+                let after = i + 2 < chars.count ? chars[i + 2] : "A"
+                // A real ending: whitespace then a capital (or the text ends).
+                if i + 1 >= chars.count || (next.isWhitespace && (after.isUppercase || after.isNumber)) {
+                    sentences += 1
+                    if sentences >= 2 || out.count >= 110 { break }
+                }
+            }
+            i += 1
+        }
+        let s = out.trimmingCharacters(in: .whitespaces)
+        if s.count >= 30 { return s.count > 190 ? String(s.prefix(187)).trimmingCharacters(in: .whitespaces) + "…" : s }
+        return d.count > 170 ? String(d.prefix(167)).trimmingCharacters(in: .whitespaces) + "…" : d
+    }
+
+    var body: some View {
+        NavigationLink(value: plan) {
+            VStack(alignment: .leading, spacing: 0) {
+                ZStack {
+                    PLCover(plan: plan)
+                        .aspectRatio(16.0 / 9.0, contentMode: .fit)
+                        .frame(maxWidth: .infinity)
+                        .clipped()
+                    LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.05), Color(hex: 0x081424, alpha: 0.55)],
+                                   startPoint: .top, endPoint: .bottom)
+                }
+                .overlay(alignment: .topLeading) {
+                    HStack(spacing: 4) {
+                        Icon(.sparkles, size: 9, color: PL.navy)
+                        Text(kicker).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(PL.gold, in: Capsule())
+                    .padding(14)
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(plan.title)
+                        .font(.fraunces(19, .medium)).kerning(-0.3).foregroundStyle(PL.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let s = plan.subtitle, !s.isEmpty {
+                        Text(s).font(.inter(11.5, .semibold)).foregroundStyle(PL.gold)
+                    }
+                    if let h = hook {
+                        Text(h)
+                            .font(.fraunces(13)).italic().foregroundStyle(PL.ink2)
+                            .nuruLineSpacing(4)
+                            .lineLimit(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, 2)
+                    }
+                    HStack(spacing: 6) {
+                        Text(plan.enrolled ? "Continue the journey" : "Begin the journey")
+                            .font(.inter(12, .bold)).foregroundStyle(PL.navy)
+                        Icon(.arrowRight, size: 13, color: PL.navy)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(PL.gold, in: Capsule())
+                    .padding(.top, 6)
+                    HStack(spacing: 4) {
+                        Icon(.clock, size: 11, color: PL.ink3)
+                        Text("\(plan.dayCount) days · a few minutes a day")
+                            .font(.inter(10.5)).foregroundStyle(PL.ink3)
+                    }
+                    .padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(16)
+            }
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.gold.opacity(0.3), lineWidth: 1))
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .shadow(color: PL.navyDeep.opacity(0.14), radius: 16, y: 8)
+        }
+        .buttonStyle(.pressableSubtle)
+    }
+}
