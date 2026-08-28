@@ -326,7 +326,17 @@ struct CellInfoView: View {
 
     // MARK: Members (roster faces rail) + stats (attendance · level · focus)
 
+    /// The faces rail is the door to the roster — "when you click at the
+    /// members, they open" (owner, 2026-08-26). The people themselves come
+    /// from GET /me/cell/members on the other side; this card keeps rendering
+    /// the summary's own faces so the door costs no extra fetch.
     private var membersCard: some View {
+        NavigationLink(value: AppRoute.cellRoster) { membersCardFace }
+            .buttonStyle(.pressable)
+            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+    }
+
+    private var membersCardFace: some View {
         let roster = vm.cell?.roster
         let faces = Array((roster?.faces ?? []).prefix(5))
         let total = max(vm.cell?.members ?? 0, roster?.count ?? 0)
@@ -353,6 +363,7 @@ struct CellInfoView: View {
             Text(total > 0 ? "\(total) members" : "Members")
                 .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
             Spacer(minLength: 0)
+            Icon(.chevronRight, size: 15, color: Nuru.faint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Nuru.S.sm)

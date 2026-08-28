@@ -606,6 +606,7 @@ struct HomeView: View {
         case "notifications": path.append(AppRoute.notifications)
         case "mentor": path.append(AppRoute.mentor)
         case "cell": path.append(AppRoute.cell)
+        case "cellRoster": path.append(AppRoute.cellRoster)
         case "planSegment":
             let segs = [
                 PlanSegment(segmentId: "s1", sort: 0, kind: "video", title: "Watch",
