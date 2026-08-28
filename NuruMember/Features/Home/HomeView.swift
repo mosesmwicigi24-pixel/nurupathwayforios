@@ -1109,16 +1109,27 @@ struct HomeView: View {
                 // authored caption IS the fallback copy (or absent), show it once
                 // (Android's dedup rule, ported).
                 let fallback = "Start here — what the journey looks like"
-                // The app's own title face, two points down (owner, 2026-08-26):
-                // this card was the one sans headline among serif card titles,
-                // so it read as a foreign (portal) font.
+                // The app's own title face, FOUR points down from the old sans
+                // headline (owner, 2026-08-26): it was the one foreign-looking
+                // (portal) font on Home. Full width, generous leading, and the
+                // sub-line given real air beneath it.
                 if let cap = v.caption, !cap.isEmpty {
-                    Text(cap).font(.fraunces(16, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text(cap)
+                        .font(.fraunces(14, .semibold)).foregroundStyle(HomeFig.navy)
+                        .nuruLineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     if cap != fallback {
-                        Text(fallback).font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
+                        Text(fallback).font(.nCardBody).foregroundStyle(HomeFig.metaGray)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.top, 7)
                     }
                 } else {
-                    Text(fallback).font(.fraunces(16, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text(fallback)
+                        .font(.fraunces(14, .semibold)).foregroundStyle(HomeFig.navy)
+                        .nuruLineSpacing(4)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
