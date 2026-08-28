@@ -9,16 +9,39 @@ final class NotificationsViewModel: ObservableObject {
     @Published var unread = 0
     @Published var loading = true
     @Published var error: String?
+    /// Optimistic read overrides — the page answers the tap INSTANTLY (the old
+    /// flow waited a full network round-trip before anything moved, which read
+    /// as "mark all read does nothing"). The server reload then confirms.
+    @Published var locallyRead: Set<String> = []
+
+    func isUnread(_ n: NotificationRow) -> Bool {
+        n.isUnread && !locallyRead.contains(n.notificationId)
+    }
 
     func load() async {
         loading = true; error = nil
-        do { let r = try await MemberAPI.notifications(); rows = r.rows; unread = r.unread }
+        do {
+            let r = try await MemberAPI.notifications()
+            rows = r.rows; unread = r.unread; locallyRead = []
+        }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load notifications." }
         loading = false
     }
-    func markAll() async { try? await MemberAPI.markNotificationsRead(); await load() }
+    func markAll() async {
+        withAnimation(.easeInOut(duration: 0.45)) {
+            locallyRead = Set(rows.map(\.notificationId))
+            unread = 0
+        }
+        try? await MemberAPI.markNotificationsRead()
+        await load()
+    }
     func open(_ n: NotificationRow) async {
-        if n.isUnread { try? await MemberAPI.markNotificationsRead([n.notificationId]); await load() }
+        guard isUnread(n) else { return }
+        withAnimation(.easeInOut(duration: 0.35)) {
+            locallyRead.insert(n.notificationId)
+            unread = max(0, unread - 1)
+        }
+        try? await MemberAPI.markNotificationsRead([n.notificationId])
     }
 }
 
@@ -183,9 +206,38 @@ struct NotificationsView: View {
         .overlay(Rectangle().fill(Nuru.border).frame(height: 1), alignment: .bottom)
     }
 
+    /// Amber for what still waits, green for what's been received (owner's
+    /// design, 2026-08-26): unread rows carry a GLOWING AMBER dot on a warm
+    /// wash; read rows a LUMINOUS GREEN dot beside a double tick — the two
+    /// states must contrast at a glance, before and after.
+    private static let amber = Color(hex: 0xF59E0B)
+    private static let lumGreen = Color(hex: 0x22C55E)
+
+    @ViewBuilder private func statusCluster(unread: Bool) -> some View {
+        if unread {
+            ZStack {
+                Circle().fill(Self.amber.opacity(0.22)).frame(width: 20, height: 20)
+                Circle().fill(Self.amber).frame(width: 9, height: 9)
+                    .shadow(color: Self.amber.opacity(0.9), radius: 4)
+                    .shadow(color: Self.amber.opacity(0.45), radius: 9)
+            }
+        } else {
+            HStack(spacing: 4) {
+                Circle().fill(Self.lumGreen).frame(width: 7, height: 7)
+                    .shadow(color: Self.lumGreen.opacity(0.8), radius: 3)
+                ZStack {
+                    Icon(.check, size: 12, color: Self.lumGreen).offset(x: -2.5)
+                    Icon(.check, size: 12, color: Self.lumGreen).offset(x: 2.5)
+                }
+                .frame(width: 17)
+            }
+        }
+    }
+
     private func row(_ n: NotificationRow) -> some View {
         let meta = metaFor(n.template)
         let reward = Self.isReward(n.template)
+        let unread = vm.isUnread(n)
         return HStack(alignment: .top, spacing: Nuru.S.md) {
             // Reward rows get the celebratory gold-gradient tile + sparkle (Figma "gift" cue).
             ZStack(alignment: .topTrailing) {
@@ -207,12 +259,21 @@ struct NotificationsView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: Nuru.S.sm) {
-                    Text(titleFor(n)).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                    Text(titleFor(n))
+                        .font(.inter(14, unread ? .bold : .regular))
+                        .foregroundStyle(unread ? Nuru.ink : Nuru.ink600)
+                        .lineLimit(1)
                     Spacer(minLength: 0)
-                    Text(ago(n.sentAt ?? n.scheduledFor)).font(.nMicro).foregroundStyle(Nuru.faint)
+                    Text(ago(n.sentAt ?? n.scheduledFor))
+                        .font(.nMicro)
+                        .foregroundStyle(unread ? Self.amber : Nuru.faint)
                 }
-                if let b = bodyFor(n) { Text(b).font(.nCaption).foregroundStyle(Nuru.muted).lineLimit(2) }
-                if reward && n.isUnread {
+                if let b = bodyFor(n) {
+                    Text(b).font(.nCaption)
+                        .foregroundStyle(unread ? Nuru.muted : Nuru.faint)
+                        .lineLimit(2)
+                }
+                if reward && unread {
                     HStack(spacing: 4) {
                         Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
                         Text("Tap to open your gift").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
@@ -222,17 +283,18 @@ struct NotificationsView: View {
                     .padding(.top, 4)
                 }
             }
-            if n.isUnread { Circle().fill(Nuru.gold).frame(width: 8, height: 8).padding(.top, 6) }
+            statusCluster(unread: unread).padding(.top, 4)
         }
         .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
-        .background(n.isUnread ? Nuru.white : .clear)
+        .background(unread ? Self.amber.opacity(0.07) : .clear)
         .overlay(alignment: .leading) {
-            // Figma: unread rows carry a gold accent bar on the leading edge.
-            if n.isUnread {
+            // Unread rows carry the amber accent bar on the leading edge.
+            if unread {
                 UnevenRoundedRectangle(bottomTrailingRadius: 3, topTrailingRadius: 3, style: .continuous)
-                    .fill(Nuru.gold).frame(width: 4).padding(.vertical, 8)
+                    .fill(Self.amber).frame(width: 4).padding(.vertical, 8)
             }
         }
+        .opacity(unread ? 1 : 0.92)
     }
 
     /// Shimmering placeholder row matching the notification anatomy (first load).
