@@ -428,6 +428,15 @@ extension MemberAPI {
         try await APIClient.shared.get("me/cell-summary", as: CellSummary.self)
     }
 
+    /// GET /me/cell/members — the member's own cell roster. ONE payload, two
+    /// truths: everyone gets the PEOPLE; only the cell's shepherd also gets
+    /// each member's score / band / attendance / last-seen. The split happens
+    /// on the server (§5.4) — this client never asks for the shepherd view and
+    /// never fills in a score the payload withheld.
+    static func cellRoster() async throws -> CellRoster {
+        try await APIClient.shared.get("me/cell/members", as: CellRoster.self)
+    }
+
     /// GET /moments — curated photo gallery.
     static func moments() async throws -> [Moment] {
         try await APIClient.shared.get("moments", as: Envelope<Moment>.self).data
