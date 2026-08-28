@@ -437,10 +437,11 @@ struct HomePersonalWord: View {
     let text: String
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
-            Text("“").font(.fraunces(24, .semibold)).foregroundStyle(HomeFig.gold)
+            // Owner (2026-08-26): the quoted head-card word steps down a point.
+            Text("“").font(.fraunces(23, .semibold)).foregroundStyle(HomeFig.gold)
                 .offset(y: -2).accessibilityHidden(true)
             Text(text)
-                .font(.fraunces(14)).italic()
+                .font(.fraunces(13)).italic()
                 .foregroundStyle(Color(hex: 0x475569))
                 .nuruLineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)

@@ -289,6 +289,9 @@ struct HomeView: View {
     /// Featured-carousel position (auto-advances every 6s; swipes respected).
     @State private var featuredPageIndex = 0
     @State private var playingVideo = false
+    /// Poster frames cut from videos the server gave no thumbnail for.
+    @StateObject private var posters = VideoPosterCache.shared
+    @State private var posterTick: UInt8 = 0
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
     @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
@@ -1106,14 +1109,16 @@ struct HomeView: View {
                 // authored caption IS the fallback copy (or absent), show it once
                 // (Android's dedup rule, ported).
                 let fallback = "Start here — what the journey looks like"
+                // The app's own title face, two points down (owner, 2026-08-26):
+                // this card was the one sans headline among serif card titles,
+                // so it read as a foreign (portal) font.
                 if let cap = v.caption, !cap.isEmpty {
-                    // Clean sans title block (Figma) — the serif stays on ceremony cards.
-                    Text(cap).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text(cap).font(.fraunces(16, .semibold)).foregroundStyle(HomeFig.navy)
                     if cap != fallback {
                         Text(fallback).font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, 2)
                     }
                 } else {
-                    Text(fallback).font(.inter(18, .semibold)).foregroundStyle(HomeFig.navy)
+                    Text(fallback).font(.fraunces(16, .semibold)).foregroundStyle(HomeFig.navy)
                 }
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
@@ -1165,6 +1170,23 @@ struct HomeView: View {
     private func videoThumb(_ v: WelcomeVideo) -> some View {
         ZStack {
             Rectangle().fill(Color(hex: 0xD6DADE))
+            // No server thumbnail (uploaded videos carry none — no ffmpeg on the
+            // API host): cut a poster frame from the video itself, once, and
+            // keep it for the session. See VideoPoster.swift.
+            if v.thumbnailUrl == nil || v.thumbnailUrl?.isEmpty == true, let play = v.playUrl {
+                Color.clear
+                    .overlay {
+                        if let img = posters.poster(for: play) {
+                            Image(uiImage: img).resizable().scaledToFill().opacity(0.95)
+                                .transition(.opacity)
+                        }
+                    }
+                    .clipped()
+                    .task(id: play) {
+                        await posters.load(play)
+                        withAnimation(.easeOut(duration: 0.25)) { posterTick &+= 1 }
+                    }
+            }
             if let s = v.thumbnailUrl, let u = URL(string: s) {
                 // Color.clear owns the layout size; the fill image lives in an
                 // overlay so its oversized "fill" size can never inflate the
