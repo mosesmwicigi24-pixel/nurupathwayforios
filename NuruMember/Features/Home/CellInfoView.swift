@@ -420,7 +420,9 @@ struct CellInfoView: View {
     // MARK: Open community
 
     private var openCommunityButton: some View {
-        NavigationLink(value: CommunityRoute.prayerWall) {
+        // The CELL's own board — not the congregation-wide prayer wall (owner,
+        // 2026-08-26 audit: every card must land where it says it goes).
+        NavigationLink(value: CommunityRoute.discussions) {
             HStack {
                 Spacer()
                 Text("Open community ›").font(.nCardCTA).foregroundStyle(Nuru.white)

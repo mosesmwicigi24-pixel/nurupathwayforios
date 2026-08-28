@@ -394,16 +394,14 @@ struct HomeView: View {
         if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }                // 5
         s.append(("celebrations", AnyView(CelebrationsRail())))                                           // 5b · Celebrate the family (moments, Phase 4)
         s.append(("minis", AnyView(minisRow)))                                                     // 6
+        // A card that shows a CELL opens that CELL (owner, 2026-08-26: tapping it
+        // opened an unrelated announcement — the card's own "this week" framing
+        // had been wired to the week's first announcement id).
         if let c = vm.featuredCell {                                                    // 7
-            if let aid = weekAnnouncementId {
-                s.append(("cell", AnyView(Button {
-                    Haptics.tap()
-                    path.append(AppRoute.announcement(aid))
-                    Task { await vm.openAnnouncement(aid) }
-                } label: { featuredCellCard(c) }.buttonStyle(.pressableSubtle))))
-            } else {
-                s.append(("cell", AnyView(featuredCellCard(c))))
-            }
+            s.append(("cell", AnyView(
+                NavigationLink(value: AppRoute.cell) { featuredCellCard(c) }
+                    .buttonStyle(.pressableSubtle)
+            )))
         }
         if !vm.disciplers.isEmpty { s.append(("disciplers", AnyView(disciplersCard))) }                 // 8
         if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // 9 · carousel: portal-marked announcements + events
@@ -2381,7 +2379,8 @@ struct HomeView: View {
             }
             .padding(.top, 10)
             NavigationLink(value: AppRoute.cell) {
-                Text("Open community →").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
+                // Says what it opens: this link goes to the CELL, not community.
+                Text("Open your cell →").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
                     .frame(maxWidth: .infinity, minHeight: 42)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -2422,12 +2421,6 @@ struct HomeView: View {
     }
 
     // MARK: derived / helpers
-
-    /// The announcement the "This week at Nuru" card opens — the featured one, or
-    /// the most recent announcement as a fallback.
-    private var weekAnnouncementId: String? {
-        vm.featuredAnnouncement?.announcementId ?? vm.announcements.first?.announcementId
-    }
 
     /// The specific next lesson to resume, when the next-action CTA is a module.
     private var nextModuleId: String? {
