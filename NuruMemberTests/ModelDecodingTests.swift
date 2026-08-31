@@ -100,4 +100,46 @@ final class ModelDecodingTests: XCTestCase {
         XCTAssertEqual(b.seenCount, 41)
         XCTAssertEqual(b.repliedCount, 9)
     }
+
+    // MARK: LiveStreamSummary — the CDN failover path
+    //
+    // `hls_fallback_url` is the direct-origin playlist the server sends
+    // ALONGSIDE a CDN `hls_url` (live/service.ts). The viewer opens on it and
+    // swaps to the CDN copy after a warm-up, so a just-started broadcast is
+    // never served the edge's cached copy of the PREVIOUS one. Dropping the
+    // field on the floor silently reinstates that flicker.
+
+    func testLiveStreamCarriesTheDirectOriginFallback() throws {
+        let s = try decode(LiveStreamSummary.self, """
+        {"stream_id":"s1","scope":"church","title":"Sunday Service","kind":"video",
+         "started_at":"2026-08-30T09:00:00Z",
+         "hls_url":"https://cdn.example.org/live-cdn/church/index.m3u8",
+         "hls_fallback_url":"/live/church/index.m3u8",
+         "started_by_name":"Pastor","viewer_count":12}
+        """)
+        XCTAssertEqual(s.hlsFallbackUrl, "/live/church/index.m3u8")
+        XCTAssertEqual(LivePlayableItem.live(s).mediaFallbackPath, "/live/church/index.m3u8")
+    }
+
+    /// No CDN configured — the server sends no fallback at all, and the player
+    /// must simply open on hls_url.
+    func testLiveStreamWithoutACdnHasNoFallback() throws {
+        let s = try decode(LiveStreamSummary.self, """
+        {"stream_id":"s2","scope":"cell","title":"Cell prayer","kind":"audio",
+         "started_at":"2026-08-30T18:00:00Z","hls_url":"/live/cell-1/index.m3u8",
+         "started_by_name":"Mary","viewer_count":3}
+        """)
+        XCTAssertNil(s.hlsFallbackUrl)
+        XCTAssertNil(LivePlayableItem.live(s).mediaFallbackPath)
+    }
+
+    /// A recording races no mirror, so it never carries a fallback.
+    func testRecordingHasNoFallbackPath() throws {
+        let r = try decode(LiveRecordingRow.self, """
+        {"stream_id":"s3","scope":"church","title":"Last Sunday","kind":"video",
+         "started_at":"2026-08-23T09:00:00Z","ended_at":"2026-08-23T11:00:00Z",
+         "recording_url":"/media/rec-3.m3u8"}
+        """)
+        XCTAssertNil(LivePlayableItem.recording(r).mediaFallbackPath)
+    }
 }
