@@ -20,6 +20,14 @@ final class GivingReceiptViewModel: ObservableObject {
     }
 }
 
+/// This screen's own downloaded-PDF wrapper. Deliberately not shared with the
+/// statement screen's: `ShareFile` is already taken by RadioPlayerView as a
+/// file-private type, so a module-wide one would make that file ambiguous.
+private struct ReceiptFile: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
 struct GivingReceiptView: View {
     @StateObject private var vm: GivingReceiptViewModel
     @Environment(\.dismiss) private var dismiss
@@ -28,7 +36,7 @@ struct GivingReceiptView: View {
     // could read this gift on screen but never keep a copy of it.
     @State private var downloading = false
     @State private var downloadError: String?
-    @State private var shareURL: ShareFile?
+    @State private var shareURL: ReceiptFile?
 
     init(transactionId: String) { _vm = StateObject(wrappedValue: GivingReceiptViewModel(transactionId: transactionId)) }
 
@@ -205,7 +213,7 @@ struct GivingReceiptView: View {
                 let url = FileManager.default.temporaryDirectory
                     .appendingPathComponent("nuru-giving-receipt-\(d.transactionId.prefix(8)).pdf")
                 try data.write(to: url, options: .atomic)
-                shareURL = ShareFile(url: url)
+                shareURL = ReceiptFile(url: url)
                 Haptics.success()
             } catch {
                 Haptics.error()

@@ -430,10 +430,11 @@ struct GivingStatementView: View {
     }
 }
 
-/// A downloaded PDF on its way to the share sheet. Internal, not private —
-/// the receipt screen shares both this and the sheet below (same section
-/// convention as the giving atoms at the foot of this file).
-struct ShareFile: Identifiable {
+/// A downloaded PDF on its way to the share sheet. Stays file-private:
+/// RadioPlayerView declares its own `ShareFile`, and an internal one here
+/// makes the name ambiguous inside that file. The receipt screen has its own
+/// wrapper for the same reason; only ActivityShareSheet below is shared.
+private struct ShareFile: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
 }
