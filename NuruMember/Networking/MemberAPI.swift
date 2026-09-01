@@ -234,6 +234,14 @@ extension MemberAPI {
         try await APIClient.shared.get("growth/plans", as: Envelope<ReadingPlanRow>.self).data
     }
 
+    /// GET /growth/plans/promos — up to five PERSONALIZED promo slots for this
+    /// member (continue / next_step / carrying / cell / fresh), ordered
+    /// most-personal-first. Best-effort on the client: the Plans page stands
+    /// without it (offline, or an older server that has no such route).
+    static func planPromos() async throws -> [PlanPromo] {
+        try await APIClient.shared.get("growth/plans/promos", as: Envelope<PlanPromo>.self).data
+    }
+
     /// GET /growth/resources — the library (books, audio, video, articles).
     static func resources() async throws -> [ResourceRow] {
         try await APIClient.shared.get("growth/resources", as: Envelope<ResourceRow>.self).data

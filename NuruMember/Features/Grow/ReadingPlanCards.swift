@@ -482,6 +482,10 @@ struct PLDetailDayRow: View {
 struct PLPlanPromo: View {
     let plan: ReadingPlanRow
     var kicker: String = "WORTH YOUR WEEK"
+    /// The server's reason for showing THIS plan to THIS member. When present it
+    /// takes the hook's place (same styling) — a sentence about the reader beats
+    /// the plan's own opening line.
+    var reason: String? = nil
 
     /// The opening of the plan's description — the hook, never the essay.
     /// A sentence ends at `.!?` only when a SPACE and a capital follow it;
@@ -511,6 +515,13 @@ struct PLPlanPromo: View {
         return d.count > 170 ? String(d.prefix(167)).trimmingCharacters(in: .whitespaces) + "…" : d
     }
 
+    /// What actually gets printed under the title: the server's reason if it
+    /// gave one, otherwise the plan's own opening line.
+    private var blurb: String? {
+        if let r = reason?.trimmingCharacters(in: .whitespacesAndNewlines), !r.isEmpty { return r }
+        return hook
+    }
+
     var body: some View {
         NavigationLink(value: plan) {
             VStack(alignment: .leading, spacing: 0) {
@@ -538,7 +549,7 @@ struct PLPlanPromo: View {
                     if let s = plan.subtitle, !s.isEmpty {
                         Text(s).font(.inter(11.5, .semibold)).foregroundStyle(PL.gold)
                     }
-                    if let h = hook {
+                    if let h = blurb {
                         Text(h)
                             .font(.fraunces(13)).italic().foregroundStyle(PL.ink2)
                             .nuruLineSpacing(4)

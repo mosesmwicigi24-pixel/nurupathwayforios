@@ -93,6 +93,30 @@ struct ReadingPlanRow: Codable, Sendable, Identifiable, Hashable {
     }
 }
 
+/// One personalized plan promo from `/growth/plans/promos` — the server decides
+/// WHICH plan to put in front of THIS member and WHY (§1.1: personalization is
+/// server-authoritative, never guessed on the client). Up to five, ordered
+/// most-personal-first; any slot may be absent on a given day.
+struct PlanPromo: Codable, Sendable, Identifiable {
+    let planId: String
+    /// continue | next_step | carrying | cell | fresh
+    let slot: String
+    /// The gold capsule line ("PICK UP WHERE YOU LEFT OFF").
+    let kicker: String
+    /// The one sentence saying why this plan, for this member. Replaces the
+    /// card's own opening line when present.
+    let reason: String?
+
+    var id: String { planId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        planId = try c.decode(String.self, forKey: .planId)
+        slot = (try? c.decodeIfPresent(String.self, forKey: .slot)) ?? "fresh"
+        kicker = (try? c.decodeIfPresent(String.self, forKey: .kicker)) ?? ""
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+    }
+}
+
 struct PlanSegment: Codable, Sendable, Identifiable, Hashable {
     let segmentId: String
     let sort: Int
