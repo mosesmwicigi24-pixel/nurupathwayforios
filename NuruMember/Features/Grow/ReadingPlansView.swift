@@ -71,6 +71,9 @@ extension EnvironmentValues {
 @MainActor
 final class ReadingPlansViewModel: ObservableObject {
     @Published var plans: [ReadingPlanRow] = []
+    /// Server-chosen, member-specific promos (§1.1). Best-effort — an empty list
+    /// simply means the page falls back to the locally-edited promos.
+    @Published var promos: [PlanPromo] = []
     @Published var streak = 0
     @Published var todayWordDone = false
     @Published var loading = true
@@ -80,10 +83,14 @@ final class ReadingPlansViewModel: ObservableObject {
         loading = true; error = nil
         async let ach = try? MemberAPI.achievements()
         async let rhythm = try? MemberAPI.rhythmToday()
+        // Best-effort and in parallel: a promo failure (offline, older server)
+        // must leave today's page exactly as it was.
+        async let promoList = try? MemberAPI.planPromos()
         do { plans = try await MemberAPI.plans() }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
         streak = (await ach)?.streak?.current ?? 0
         todayWordDone = (await rhythm)?.word ?? false
+        promos = (await promoList) ?? []
         loading = false
     }
 }
@@ -133,6 +140,29 @@ struct ReadingPlansView: View {
         return out
     }
 
+    /// A server promo paired with the plan row it names. Unresolvable promos (a
+    /// plan the catalogue didn't return) are dropped rather than rendered blank.
+    private struct ResolvedPromo: Identifiable {
+        let promo: PlanPromo
+        let plan: ReadingPlanRow
+        var id: String { promo.slot + "\u{00B7}" + promo.planId }
+        var kicker: String { promo.kicker.isEmpty ? "WORTH YOUR WEEK" : promo.kicker }
+    }
+
+    /// The personalized promos, most-personal-first, that we can actually show.
+    private var resolvedPromos: [ResolvedPromo] {
+        guard !vm.promos.isEmpty else { return [] }
+        let byId = Dictionary(vm.plans.map { ($0.planId, $0) }, uniquingKeysWith: { a, _ in a })
+        return vm.promos.compactMap { p in byId[p.planId].map { ResolvedPromo(promo: p, plan: $0) } }
+    }
+    /// Everything after the hero promo — woven into the browse sections below.
+    private var trailingPromos: [ResolvedPromo] { Array(resolvedPromos.dropFirst()) }
+
+    @ViewBuilder
+    private func promoCard(_ rp: ResolvedPromo) -> some View {
+        PLPlanPromo(plan: rp.plan, kicker: rp.kicker, reason: rp.promo.reason)
+    }
+
     /// A second plan to promote further down the page — never the one already
     /// featured at the top, and never one already being read. Rotates with the
     /// day like the plan of the day, so browsing feels edited, not random.
@@ -171,7 +201,13 @@ struct ReadingPlansView: View {
                         if !searching, !continueReading.isEmpty { reminderCard }
                         // The day's invitation, given room to actually invite:
                         // cover + subtitle + the plan's own opening line + a CTA.
-                        if !searching, let pod = planOfDay { PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY") }
+                        if !searching {
+                            if let hero = resolvedPromos.first {
+                                promoCard(hero)
+                            } else if let pod = planOfDay {
+                                PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY")
+                            }
+                        }
                         categoriesSection
                         if searching { filteredResults } else { collectionsSections }
                         if !searching { invitationCard }
@@ -419,9 +455,17 @@ struct ReadingPlansView: View {
 
     // MARK: collections (browse) / filtered results (search)
 
+    /// Personalized promos with no gap left to sit in — appended after the last
+    /// browse section rather than dropped.
+    private var leftoverPromos: [ResolvedPromo] {
+        Array(trailingPromos.dropFirst(max(0, collections.count - 1)))
+    }
+
     /// Browse: every plan on the page, two to a row, grouped by commitment —
-    /// nothing behind a sideways swipe. One promo card is woven in after the
-    /// first section so the page reads like a magazine rather than a stock list.
+    /// nothing behind a sideways swipe. Promo cards are woven into the gaps
+    /// between sections so the page reads like a magazine rather than a stock
+    /// list — the server's personalized ones when it sent any, otherwise the
+    /// single locally-edited one.
     private var collectionsSections: some View {
         VStack(alignment: .leading, spacing: 24) {
             ForEach(Array(collections.enumerated()), id: \.element.id) { i, col in
@@ -435,8 +479,19 @@ struct ReadingPlansView: View {
                         ForEach(col.plans) { plan in PLPlanTile(plan: plan) }
                     }
                 }
-                if i == 0, let promo = midPromoPlan {
-                    PLPlanPromo(plan: promo, kicker: "WORTH YOUR WEEK")
+                if resolvedPromos.isEmpty {
+                    if i == 0, let promo = midPromoPlan {
+                        PLPlanPromo(plan: promo, kicker: "WORTH YOUR WEEK")
+                    }
+                } else {
+                    // One personalized promo per gap between sections, in the
+                    // server's order; whatever doesn't fit lands after the last.
+                    if i < collections.count - 1, i < trailingPromos.count {
+                        promoCard(trailingPromos[i])
+                    }
+                    if i == collections.count - 1 {
+                        ForEach(leftoverPromos) { rp in promoCard(rp) }
+                    }
                 }
             }
         }
