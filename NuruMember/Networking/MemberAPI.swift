@@ -557,6 +557,19 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("giving/schedules/\(id)/cancel", as: EmptyResponse.self)
     }
 
+    /// POST /giving/schedules/{id}/resume — re-arm a schedule that was paused
+    /// after repeated collection failures. It deliberately does NOT collect the
+    /// cycle that was missed: money must never surprise anyone.
+    static func resumeSchedule(_ id: String) async throws {
+        _ = try await APIClient.shared.postEmpty("giving/schedules/\(id)/resume", as: EmptyResponse.self)
+    }
+
+    /// GET /giving/partnership — the member's standing as a partner.
+    /// Recognition, not receipts; receipts stay in giving/history.
+    static func partnership() async throws -> Partnership {
+        try await APIClient.shared.get("giving/partnership", as: Partnership.self)
+    }
+
     // MARK: Chat
 
     /// GET /chat/conversations?scope=mine — the member's inbox (Spaces/DMs/Groups).
