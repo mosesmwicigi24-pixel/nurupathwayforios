@@ -20,9 +20,23 @@ final class GivingReceiptViewModel: ObservableObject {
     }
 }
 
+/// This screen's own downloaded-PDF wrapper. Deliberately not shared with the
+/// statement screen's: `ShareFile` is already taken by RadioPlayerView as a
+/// file-private type, so a module-wide one would make that file ambiguous.
+private struct ReceiptFile: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
 struct GivingReceiptView: View {
     @StateObject private var vm: GivingReceiptViewModel
     @Environment(\.dismiss) private var dismiss
+    // The church's own receipt for this gift (GET …/receipt.pdf), fetched
+    // through the authed client and handed to the share sheet — the member
+    // could read this gift on screen but never keep a copy of it.
+    @State private var downloading = false
+    @State private var downloadError: String?
+    @State private var shareURL: ReceiptFile?
 
     init(transactionId: String) { _vm = StateObject(wrappedValue: GivingReceiptViewModel(transactionId: transactionId)) }
 
@@ -54,6 +68,7 @@ struct GivingReceiptView: View {
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
+        .sheet(item: $shareURL) { f in ActivityShareSheet(url: f.url) }
         .task { if vm.detail == nil { await vm.load() } }
     }
 
@@ -150,9 +165,61 @@ struct GivingReceiptView: View {
                     .padding(Nuru.S.base).frame(maxWidth: .infinity, alignment: .leading).receiptCard()
                     .gentleEntrance(delay: 0.12)
                 }
+
+                // Android parity: the same gold "Download receipt (PDF)" row.
+                downloadButton(d)
+                    .gentleEntrance(delay: 0.18)
+
+                if let downloadError {
+                    Text(downloadError)
+                        .font(.inter(11)).foregroundStyle(Nuru.danger)
+                        .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                }
             }
             .padding(Nuru.S.screen)
             .padding(.bottom, Nuru.tabBarSpace)
+        }
+    }
+
+    @ViewBuilder
+    private func downloadButton(_ d: GivingDetail) -> some View {
+        Button {
+            Haptics.tap()
+            downloadReceipt(d)
+        } label: {
+            HStack(spacing: 8) {
+                if downloading {
+                    ProgressView().tint(Nuru.navy)
+                } else {
+                    Icon(.download, size: 15, color: Nuru.navy)
+                    Text("Download receipt (PDF)").font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
+                }
+            }
+            .frame(maxWidth: .infinity).padding(.vertical, 12)
+            .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .disabled(downloading)
+    }
+
+    private func downloadReceipt(_ d: GivingDetail) {
+        guard !downloading else { return }
+        downloading = true
+        downloadError = nil
+        Task {
+            defer { downloading = false }
+            do {
+                let data = try await MemberAPI.downloadGivingReceiptPdf(transactionId: d.transactionId)
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("nuru-giving-receipt-\(d.transactionId.prefix(8)).pdf")
+                try data.write(to: url, options: .atomic)
+                shareURL = ReceiptFile(url: url)
+                Haptics.success()
+            } catch {
+                Haptics.error()
+                downloadError = (error as? APIError)?.errorDescription
+                    ?? "Couldn't download this receipt."
+            }
         }
     }
 

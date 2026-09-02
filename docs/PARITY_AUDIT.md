@@ -1,3 +1,74 @@
+## 2026-08-31 — iOS ⇄ Android parity sweep: bring iPhone up to Android (branch claude/ios-android-parity-rn45hv)
+
+**Mandate** (owner): "Ensure ios and android are at the same parity. Do not
+assume. Use iPhone to bring to up to date of android. Do not assume even one
+line." So: Android is the reference, iOS is what changes, and every claim
+below is from code read on both sides — not from commit titles, which are
+misleading here (much of Android's history is itself catch-up TO iOS, so a
+`feat(...)` on Android with no iOS twin usually means iOS had it first).
+
+### Method — four mechanical sweeps over both trees, in both directions
+
+1. **API surface.** Every quoted path string in both apps, normalised
+   (`{id}`/`\(id)`/`$id` → `{}`), sorted, diffed both ways. 206 Android
+   strings vs 189 iOS. Nearly all "Android-only" entries turned out to be
+   Compose NAV ROUTES (`plan/{}/day/{}`, `quiz/{}`, `level/{}`), not
+   endpoints. Real endpoint gaps after that: `giving/statement.pdf` and
+   `giving/transactions/{}/receipt.pdf` (Android only). iOS-only:
+   `chat/attachments/sign`, `community/threads`, `sync/pull`.
+   *Method note:* the first pass scoped iOS to `Networking/` and produced a
+   false "iOS lacks sync/push" — it lives in `Offline/`. Re-run whole-tree.
+2. **Decoded wire fields.** Every `val/var`/`let/var` property name in both
+   trees, diffed. After dropping queue internals (`op`, `seq`,
+   `clientMutationId`) and client-side computed properties (Android's
+   `displayTitle` is `get() = title?.trim()…`, not wire truth — confirmed
+   against the backend, which serves no `display_*`), one real gap survived:
+   `hls_fallback_url`. `started_by_avatar_url` is NOT wire truth either
+   (Android decodes a field the backend never sends).
+3. **Screens.** Android nav routes vs iOS views, by CAPABILITY not filename —
+   SwiftUI nests where Compose splits. Candidates that looked missing on iOS
+   and were NOT (all present, inside larger files): the plans keepsake and
+   Talk-It-Over (`ReadingPlansView`/`PlanSegmentView`), giving schedules
+   (`GivingView`), the member directory, the exam pass ceremony
+   (`LevelExamView.ExamPassScreen`), the celebrations/bless rail
+   (`LiturgyCards`), the offline pending-sync cue (`RootView`'s
+   `SyncStatusBanner` — app-wide, where Android's is Home-only), the growth
+   ring trend badge, `LocationInvite`.
+4. **Commit drift.** Both histories walked by date. iOS has a counterpart to
+   every recent Android feature except #114; Android #113 landed on iOS as
+   #126 under a different title, and #122 was Android porting iOS's own
+   `InlineVideoPlayer`/`VideoPoster`.
+
+### Findings ledger
+
+| # | Area | Trace (Android truth → iOS state) | Resolution |
+|---|------|-----------------------------------|------------|
+| 1 | Event end times | Android `evTrustedEnd` (EventsShared.kt) refuses an end that is absent, unparsable, before the start, or > 12h. iOS `Ev.timeRange` read `endAt` straight. `CalendarOccurrence` decodes an absent `end_at` to `""` and `Ev.date` maps that to `.distantPast` — so the TIME tile invented a small-hours end AND `isCompleted` (`Ev.date(endAt) < now`) was TRUE, marking the occurrence over and HIDING its RSVP selector. Worse on iOS than the gap Android closed. | ✅ 5be1a39 (+ `EventTimeTrustTests`) |
+| 2 | Event venue | Android's WHERE tile opens Maps (geo: intent). iOS rendered `location ?? "To be announced"` as inert text. | ✅ 5be1a39 |
+| 3 | Plan reader video | Android ec5761d dropped the external-host branch so plan videos embed in place. iOS `PlanSegmentView.mediaWindow` showed a hand-rolled sheet whose only control called `openURL(url)` — the app's single remaining non-mailto/tel `openURL` — throwing the member to Safari mid-reading, for EVERY video including self-hosted mp4s. `VideoPlayerPage`'s own header calls itself "the ONE way every video opens across the app" and claims to mirror this screen; it did not. | ✅ 8333fba |
+| 4 | Live CDN staleness | Backend sends `hls_fallback_url` (the direct origin) alongside a CDN `hls_url`. The church path is the same literal URL every broadcast, so a just-started stream can be served the PREVIOUS one's segments until the edge mirror catches up. Android opens on the origin and swaps to the CDN after 8s. iOS decoded no such field and always opened on the edge. | ✅ 9f3d99f (+ 3 decoding tests) |
+| 5 | Giving statement PDF | Android downloads the server's `giving/statement.pdf`. iOS DREW ITS OWN with `UIGraphicsPDFRenderer` from whatever was loaded — a fabricated document where the church issues a real one. | ✅ b5f81e8 |
+| 6 | Giving receipt PDF | Android downloads `giving/transactions/{id}/receipt.pdf`. iOS had no receipt download at all. | ✅ b5f81e8 |
+
+### Open — the other direction (iOS ahead; NOT this pass's mandate)
+
+Logged so the next Android sweep has the trace, not fixed here (the mandate
+was iOS→Android parity, one repo):
+
+- `sync/pull` — iOS `SyncCoordinator` warms 9 read domains from the delta
+  endpoint; Android's offline layer pushes only.
+- `community/threads` + `chat/attachments/sign` — consumed by iOS only.
+- iOS #123/#138 (`the Give button rides above the floating tab bar`, `every
+  card lands where it says it goes`) have no Android counterpart.
+
+### Verification
+
+`xcodebuild` cannot run on the Linux agent this pass ran on — the same
+constraint `.github/workflows/ios.yml` was created to close. Compilation and
+the full `NuruMemberTests` suite (16 new/changed cases across
+`EventTimeTrustTests` and `ModelDecodingTests`) are therefore verified by
+that workflow on the PR, on a macOS runner against an iPhone 17 simulator.
+
 ## 2026-07-31 — Host-stability audit + hardening: guest join must never take down the host's broadcast (iOS, branch fix/live-host-stability, this repo only)
 
 Triggered by a confirmed Android production bug: the moment a guest tapped

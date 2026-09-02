@@ -88,10 +88,11 @@ private func fundMeta(_ code: String) -> FundMeta {
 
 struct GivingStatementView: View {
     @StateObject private var vm = GivingStatementViewModel()
-    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
     @State private var year = Calendar.current.component(.year, from: Date())
     @State private var shareFile: ShareFile?
+    @State private var downloading = false
+    @State private var downloadError: String?
 
     private var thisYear: Int { Calendar.current.component(.year, from: Date()) }
     private var periodLabel: String { year == thisYear ? "this year" : "in \(year)" }
@@ -186,9 +187,14 @@ struct GivingStatementView: View {
                 Text("GIVING STATEMENT")
                     .font(.inter(10, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
                 Spacer()
-                circleButton(.download) {
-                    Haptics.action()
-                    share()
+                if downloading {
+                    ProgressView().tint(.white).frame(width: 40, height: 40)
+                } else {
+                    circleButton(.download) {
+                        Haptics.action()
+                        downloadStatement()
+                    }
+                    .accessibilityLabel("Download giving statement")
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
@@ -197,6 +203,13 @@ struct GivingStatementView: View {
                     .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
                 Text("\(vm.settledCount(in: year)) gifts · \(periodLabel) · most recent first")
                     .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
+                // A failed download says so here rather than doing nothing —
+                // gold reads on the navy where the app's red would not.
+                if let downloadError {
+                    Text(downloadError)
+                        .font(.inter(11)).foregroundStyle(Nuru.gold)
+                        .padding(.top, 6)
+                }
             }
             .padding(.top, Nuru.S.base)
         }
@@ -385,129 +398,53 @@ struct GivingStatementView: View {
         .nuruShadow(0.6)
     }
 
-    // MARK: Share / download (native PDF, real aggregates only)
+    // MARK: Download (the church's OWN statement — GET /giving/statement.pdf)
 
-    private func share() {
-        let totals = vm.fundTotals(in: year)
-        let data = StatementPDF.data(memberName: auth.profile?.fullName,
-                                     year: year,
-                                     rows: totals,
-                                     totalMinor: vm.totalMinor(in: year),
-                                     giftCount: vm.settledCount(in: year))
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nuru-giving-statement-\(year).pdf")
-        do {
-            try data.write(to: url)
-            shareFile = ShareFile(url: url)
-        } catch {
-            Haptics.error()   // the tap did something — say the file didn't make it
+    /// The statement a member keeps has to be the one the church issued from
+    /// its ledger, not one this app drew from what it happens to have loaded.
+    /// This used to render a local PDF with UIGraphicsPDFRenderer; it now
+    /// fetches the server's, exactly as Android's header download does.
+    ///
+    /// The server's statement covers ALL settled giving — the year selector
+    /// above filters the on-screen list, not this document (same split as
+    /// Android's This year / Last year segment beside its download icon).
+    private func downloadStatement() {
+        guard !downloading else { return }
+        downloading = true
+        downloadError = nil
+        Task {
+            defer { downloading = false }
+            do {
+                let data = try await MemberAPI.downloadGivingStatementPdf()
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("nuru-giving-statement.pdf")
+                try data.write(to: url, options: .atomic)
+                shareFile = ShareFile(url: url)
+                Haptics.success()
+            } catch {
+                Haptics.error()
+                downloadError = (error as? APIError)?.errorDescription
+                    ?? "Couldn't download your statement."
+            }
         }
     }
 }
 
+/// A downloaded PDF on its way to the share sheet. Stays file-private:
+/// RadioPlayerView declares its own `ShareFile`, and an internal one here
+/// makes the name ambiguous inside that file. The receipt screen has its own
+/// wrapper for the same reason; only ActivityShareSheet below is shared.
 private struct ShareFile: Identifiable {
     let url: URL
     var id: String { url.absoluteString }
 }
 
-private struct ActivityShareSheet: UIViewControllerRepresentable {
+struct ActivityShareSheet: UIViewControllerRepresentable {
     let url: URL
     func makeUIViewController(context: Context) -> UIActivityViewController {
         UIActivityViewController(activityItems: [url], applicationActivities: nil)
     }
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
-}
-
-// MARK: - One-page branded statement PDF (UIGraphicsPDFRenderer — no dependencies)
-
-private enum StatementPDF {
-    static func data(memberName: String?, year: Int,
-                     rows: [(fund: String, count: Int, totalMinor: Int)],
-                     totalMinor: Int, giftCount: Int) -> Data {
-        let W: CGFloat = 595, H: CGFloat = 842, margin: CGFloat = 48
-        let navy = UIColor(red: 11 / 255, green: 31 / 255, blue: 51 / 255, alpha: 1)
-        let gold = UIColor(red: 200 / 255, green: 155 / 255, blue: 60 / 255, alpha: 1)
-        let ink = UIColor(red: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
-        let muted = UIColor(red: 120 / 255, green: 128 / 255, blue: 140 / 255, alpha: 1)
-        let hairline = UIColor(red: 232 / 255, green: 232 / 255, blue: 235 / 255, alpha: 1)
-
-        func text(_ s: String, _ x: CGFloat, _ y: CGFloat, _ font: UIFont, _ color: UIColor) {
-            (s as NSString).draw(at: CGPoint(x: x, y: y),
-                                 withAttributes: [.font: font, .foregroundColor: color])
-        }
-        func textRight(_ s: String, _ y: CGFloat, _ font: UIFont, _ color: UIColor) {
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-            let size = (s as NSString).size(withAttributes: attrs)
-            (s as NSString).draw(at: CGPoint(x: W - margin - size.width, y: y), withAttributes: attrs)
-        }
-
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: W, height: H))
-        return renderer.pdfData { ctx in
-            ctx.beginPage()
-
-            // Navy header band
-            navy.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: W, height: 150))
-            text("NURU PLACE", margin, 42, .boldSystemFont(ofSize: 11), gold)
-            text("Giving statement", margin, 62, .boldSystemFont(ofSize: 24), .white)
-            text("NURU PLACE CHURCH", margin, 98, .systemFont(ofSize: 11), UIColor(white: 0.85, alpha: 1))
-            textRight("KSh \((totalMinor / 100).formatted(.number.grouping(.automatic)))",
-                      62, .boldSystemFont(ofSize: 24), gold)
-            textRight("\(giftCount) settled gifts · \(year)", 98, .systemFont(ofSize: 11),
-                      UIColor(white: 0.85, alpha: 1))
-
-            // Meta rows
-            var y: CGFloat = 190
-            func row(_ label: String, _ value: String, valueColor: UIColor = ink) {
-                text(label, margin, y, .systemFont(ofSize: 11), muted)
-                textRight(value, y, .boldSystemFont(ofSize: 11), valueColor)
-                hairline.setFill()
-                ctx.fill(CGRect(x: margin, y: y + 18, width: W - margin * 2, height: 0.7))
-                y += 28
-            }
-            if let memberName, !memberName.isEmpty { row("Member", memberName) }
-            row("Period", "1 Jan – 31 Dec \(year)")
-            let gen = DateFormatter(); gen.dateFormat = "d MMM yyyy"
-            row("Generated", gen.string(from: Date()))
-
-            // Fund-by-fund totals
-            y += 16
-            text("BY FUND", margin, y, .boldSystemFont(ofSize: 10), gold)
-            y += 22
-            for r in rows {
-                text(r.fund.capitalized, margin, y, .boldSystemFont(ofSize: 12), ink)
-                text("\(r.count) gift\(r.count == 1 ? "" : "s")", margin + 140, y + 1, .systemFont(ofSize: 10), muted)
-                textRight("KSh \((r.totalMinor / 100).formatted(.number.grouping(.automatic)))",
-                          y, .boldSystemFont(ofSize: 12), ink)
-                hairline.setFill()
-                ctx.fill(CGRect(x: margin, y: y + 20, width: W - margin * 2, height: 0.7))
-                y += 30
-            }
-            if rows.isEmpty {
-                text("No settled gifts this period.", margin, y, .systemFont(ofSize: 11), muted)
-                y += 30
-            }
-
-            // Ruled grand total
-            y += 6
-            navy.setFill()
-            ctx.fill(CGRect(x: margin, y: y, width: W - margin * 2, height: 2))
-            y += 12
-            text("TOTAL GIVEN", margin, y, .boldSystemFont(ofSize: 11), navy)
-            textRight("KSh \((totalMinor / 100).formatted(.number.grouping(.automatic)))",
-                      y - 3, .boldSystemFont(ofSize: 16), gold)
-
-            // Scripture + footer
-            y += 46
-            let verse = "\u{201C}Each of you should give what you have decided in your heart to give… for God loves a cheerful giver.\u{201D}"
-            (verse as NSString).draw(in: CGRect(x: margin, y: y, width: W - margin * 2, height: 44),
-                                     withAttributes: [.font: UIFont.italicSystemFont(ofSize: 12),
-                                                      .foregroundColor: navy])
-            y += 40
-            text("2 Corinthians 9:7", margin, y, .boldSystemFont(ofSize: 10), gold)
-            text("Official statement · Finance · Nuru Place", margin, H - 42, .systemFont(ofSize: 9), muted)
-        }
-    }
 }
 
 // MARK: - Shared giving atoms (used by the receipt screen too)

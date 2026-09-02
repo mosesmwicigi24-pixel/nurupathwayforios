@@ -14,12 +14,49 @@ enum Ev {
     static func date(_ iso: String) -> Date {
         ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) ?? .distantPast
     }
-    static func timeOf(_ iso: String) -> String {
-        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: date(iso))
+    /// The occurrence's start, or nil when the wire sent nothing parsable.
+    /// `date()` collapses both cases to .distantPast, which reads as a real
+    /// instant to every comparison — so trust decisions ask for this instead.
+    static func parsed(_ iso: String) -> Date? {
+        guard !iso.isEmpty else { return nil }
+        let d = date(iso)
+        return d == .distantPast ? nil : d
     }
-    static func timeRange(_ s: String, _ e: String) -> String { "\(timeOf(s)) – \(timeOf(e))" }
+
+    /// An end we actually BELIEVE, or nil: absent, unparsable, not after the
+    /// start, or an implausible span (> 12h — even a kesha ends) are untrusted.
+    /// A wrong time on a church invitation costs real attendance, and an absent
+    /// end used to decode to "" -> .distantPast, which both invented a
+    /// small-hours end time and marked the event COMPLETED. (Android parity —
+    /// EventsShared.evTrustedEnd.)
+    static func trustedEnd(_ start: String, _ end: String) -> Date? {
+        guard let s = parsed(start), let e = parsed(end), e > s else { return nil }
+        // Whole hours, matching Android's Duration.between(...).toHours() > 12.
+        guard Int(e.timeIntervalSince(s) / 3600) <= 12 else { return nil }
+        return e
+    }
+
+    /// "9:00 AM – 1:00 PM", or just the start when the end isn't trustworthy.
+    static func timeRange(_ s: String, _ e: String) -> String {
+        guard let start = parsed(s) else { return "" }
+        let startText = timeOfDate(start)
+        guard let end = trustedEnd(s, e) else { return startText }
+        let endText = timeOfDate(end)
+        return endText == startText ? startText : "\(startText) – \(endText)"
+    }
+
+    /// Live only between a real start and an end we trust — never "live"
+    /// (or, at the other end, "finished") on the strength of a missing end.
     static func isLive(_ s: String, _ e: String) -> Bool {
-        let now = Date(); return date(s) <= now && now <= date(e)
+        guard let start = parsed(s), let end = trustedEnd(s, e) else { return false }
+        let now = Date(); return start <= now && now <= end
+    }
+
+    /// Past only when a trusted end has actually gone by. With no believable
+    /// end the occurrence is simply not finished, so RSVP stays open.
+    static func hasEnded(_ s: String, _ e: String) -> Bool {
+        guard let end = trustedEnd(s, e) else { return false }
+        return end < Date()
     }
     /// Figma countdown chip: "Today" / "Tomorrow" / "In N days" — nil once past.
     static func dayCountdown(_ iso: String) -> String? {
