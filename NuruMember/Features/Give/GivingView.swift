@@ -11,7 +11,7 @@
 import SwiftUI
 import UIKit
 
-enum GiveRoute: Hashable { case statement }
+enum GiveRoute: Hashable { case statement, partners }
 
 // MARK: - Funds (exact Figma palette)
 
@@ -205,6 +205,7 @@ struct GivingView: View {
                         methodSection
                         coverFeeRow
                         if !vm.schedules.isEmpty { schedulesSection }
+                        partnersRow
                         recentSection
                         scriptureStrip
                         secureNote
@@ -220,7 +221,12 @@ struct GivingView: View {
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
-            .navigationDestination(for: GiveRoute.self) { _ in GivingStatementView() }
+            .navigationDestination(for: GiveRoute.self) { route in
+                switch route {
+                case .statement: GivingStatementView()
+                case .partners:  PartnersView()
+                }
+            }
         }
         .task { if vm.history.isEmpty { await vm.load() } }
         // Returning from the PayPal approval in Safari → nudge the capture.
@@ -661,6 +667,31 @@ struct GivingView: View {
     private var recentGifts: [GivingRecord] {
         let settled: Set<String> = ["succeeded", "settled", "completed"]
         return Array(vm.history.filter { settled.contains($0.status) }.prefix(3))
+    }
+
+    /// Partners is its own page — separate from Give, as the design asks —
+    /// but reached from here, because this is where someone thinking about
+    /// giving already is. The money reporting stays on this side.
+    private var partnersRow: some View {
+        NavigationLink(value: GiveRoute.partners) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Partners").font(.nHeading).foregroundStyle(Nuru.ink)
+                    Text("Your standing, and what this season has held")
+                        .font(.nCaption).foregroundStyle(Nuru.ink600)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(Nuru.ink300)
+            }
+            .padding(16)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(Nuru.gold.opacity(0.22), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
     }
 
     private var recentSection: some View {

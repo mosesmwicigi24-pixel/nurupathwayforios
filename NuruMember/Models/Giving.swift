@@ -139,3 +139,66 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
     }
 }
+
+// MARK: - Partnership
+
+/// A member's standing as a PARTNER — someone who decided in advance to keep
+/// giving, rather than someone who gave once. Derived server-side from their
+/// giving schedule, so nothing here is a second copy of the truth.
+///
+/// Decoding is deliberately forgiving in the same way as GivingSchedule above:
+/// a member should never see an error screen because one optional block was
+/// absent. Absent means "nothing to say", not "something went wrong".
+struct Partnership: Codable, Sendable {
+    /// The schedule this standing is derived from — carried so the resume
+    /// control has something real to act on.
+    let scheduleId: String?
+    let isPartner: Bool
+    let everPartnered: Bool
+    let status: String?          // active | paused (nil when not a partner)
+    let since: String?
+    let kept: Int                // cycles actually COLLECTED, never scheduled
+    let givenMinor: Int
+    let currency: String
+    let rhythm: Rhythm?
+    let trouble: Trouble?        // present ONLY when there is something to say
+    let sinceYouBegan: Season?
+
+    struct Rhythm: Codable, Sendable {
+        let frequency: String
+        let method: String
+        let amountMinor: Int
+        let fund: String
+        let nextRunAt: String?   // nil while paused — nothing is coming
+    }
+    struct Trouble: Codable, Sendable {
+        let paused: Bool
+        let consecutiveFailures: Int
+        let lastFailedAt: String?
+        // No error text by design: the provider's wording is for the church's
+        // admin view, not for a member who is already worried.
+    }
+    /// What the WHOLE CHURCH did during this partnership. Never this member's
+    /// money traced to an outcome — we cannot trace a shilling to a disciple.
+    struct Season: Codable, Sendable {
+        let from: String
+        let levelsCompleted: Int
+        let modulesCompleted: Int
+        let plansFinished: Int
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
+        isPartner = (try? c.decode(Bool.self, forKey: .isPartner)) ?? false
+        everPartnered = (try? c.decode(Bool.self, forKey: .everPartnered)) ?? false
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+        since = try? c.decodeIfPresent(String.self, forKey: .since)
+        kept = (try? c.decode(Int.self, forKey: .kept)) ?? 0
+        givenMinor = (try? c.decode(Int.self, forKey: .givenMinor)) ?? 0
+        currency = (try? c.decode(String.self, forKey: .currency)) ?? "KES"
+        rhythm = try? c.decodeIfPresent(Rhythm.self, forKey: .rhythm)
+        trouble = try? c.decodeIfPresent(Trouble.self, forKey: .trouble)
+        sinceYouBegan = try? c.decodeIfPresent(Season.self, forKey: .sinceYouBegan)
+    }
+}
