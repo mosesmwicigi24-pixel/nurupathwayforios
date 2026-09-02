@@ -541,6 +541,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID protects the Broadcast — the private conversations between you and every member. Only you can open them.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone when a discipler records a voice note, and when a broadcaster (or an invited guest) goes live.";
@@ -576,6 +577,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = "Config/NuruMember-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = "Nuru Place";
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSFaceIDUsageDescription = "Face ID protects the Broadcast — the private conversations between you and every member. Only you can open them.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Nuru uses your approximate location only to help connect you with believers and cells near you. It's stored coarsely and you can turn it off anytime in Profile.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Nuru uses the microphone when a discipler records a voice note, and when a broadcaster (or an invited guest) goes live.";
