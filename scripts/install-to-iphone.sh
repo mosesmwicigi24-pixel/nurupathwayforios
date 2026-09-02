@@ -60,12 +60,42 @@ BUILD_NO="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$APP/Info.plist
 echo "     ok — build $BUILD_NO"
 
 say "3/3  Installing over the network…"
-xcrun devicectl device install app --device "$DEVICE_UDID" "$APP" >/dev/null
+# devicectl's own failure output is a wall of nested Apple error frames, and the
+# usual cause is mundane. Catch it and say the actual remedy.
+INSTALL_LOG="$DD-install.log"
+if ! xcrun devicectl device install app --device "$DEVICE_UDID" "$APP" > "$INSTALL_LOG" 2>&1; then
+  if grep -q "DeviceLocked\|device is locked" "$INSTALL_LOG"; then
+    die "The phone is locked. Unlock it (and keep it unlocked for a minute), then re-run this."
+  fi
+  if grep -q "not paired\|must be paired" "$INSTALL_LOG"; then
+    die "The phone is no longer paired. Connect it by cable once and trust the prompt, then re-run."
+  fi
+  if grep -q "Unable to Verify\|trust this developer\|untrusted" "$INSTALL_LOG"; then
+    die "The app installed but the developer certificate is untrusted on the phone.
+  FIX on the phone: Settings > General > VPN & Device Management > trust the developer."
+  fi
+  die "Install failed. What devicectl reported:
+$(grep -iE "error|failed" "$INSTALL_LOG" | grep -viE "^ *-+$" | head -4)
+  (Full log: $INSTALL_LOG)"
+fi
 echo "     ok — installed"
 
 if [ "$LAUNCH" = "1" ]; then
-  xcrun devicectl device process launch --device "$DEVICE_UDID" --terminate-existing "$BUNDLE_ID" >/dev/null
-  echo "     ok — launched"
+  # The app is already installed by this point, so a launch failure is never
+  # fatal — say what it means and let the person tap the icon themselves.
+  LAUNCH_LOG="$DD-launch.log"
+  if xcrun devicectl device process launch --device "$DEVICE_UDID" \
+       --terminate-existing "$BUNDLE_ID" > "$LAUNCH_LOG" 2>&1; then
+    echo "     ok — launched"
+  elif grep -q "not been explicitly trusted\|invalid code signature" "$LAUNCH_LOG"; then
+    printf '     \033[33minstalled, but iOS will not open it until you trust the certificate\033[0m\n'
+    printf '     ON THE PHONE: Settings > General > VPN & Device Management > trust the developer.\n'
+    printf '     This is a once-ever step for a Personal Team certificate.\n'
+  else
+    printf '     \033[33minstalled, but the launch request was refused:\033[0m\n'
+    printf '     %s\n' "$(grep -iE "reason|error" "$LAUNCH_LOG" | head -2)"
+    printf '     Open it from the home screen instead.\n'
+  fi
 fi
 
 printf '\n\033[32mDone. Build %s is on the phone.\033[0m\n' "$BUILD_NO"
