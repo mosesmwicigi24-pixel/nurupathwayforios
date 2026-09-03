@@ -202,3 +202,61 @@ struct Partnership: Codable, Sendable {
         sinceYouBegan = try? c.decodeIfPresent(Season.self, forKey: .sinceYouBegan)
     }
 }
+
+
+// MARK: - The partner invitation
+
+/// The server's answer to "may I invite this member today, and with what".
+///
+/// Every rule of restraint lives on the server (invitation.ts) so the two apps
+/// cannot drift apart — and they would only ever drift towards asking more
+/// often. This client's whole job is: ask, render what comes back, report what
+/// happened. It decides nothing.
+struct PartnerInvite: Codable, Sendable {
+    let show: Bool
+    /// Why not, when show is false. Rendered nowhere — carried for diagnostics.
+    let reason: String?
+    /// Which showing this is about to be. Counted server-side so the two apps
+    /// agree; used for one thing — "Don't ask again" appears from the second.
+    let showing: Int?
+    let campaign: Campaign?
+
+    struct Campaign: Codable, Sendable, Identifiable {
+        let campaignId: String
+        let title: String
+        let blurb: String
+        let imageUrl: String?
+        let goalMinor: Int
+        let raisedMinor: Int
+        let currency: String
+        let endsOn: String
+        let daysLeft: Int
+        /// Present ONLY when a real person pledged it. Never rendered otherwise.
+        let match: Match?
+        let tiers: [Tier]
+
+        /// Progress toward the goal, clamped — a campaign past its goal shows
+        /// full, never a bar overflowing its track.
+        var id: String { campaignId }
+
+        var progress: Double {
+            guard goalMinor > 0 else { return 0 }
+            return min(1.0, Double(raisedMinor) / Double(goalMinor))
+        }
+    }
+
+    struct Match: Codable, Sendable {
+        let amountMinor: Int
+        let pledger: String
+    }
+
+    /// An amount with its meaning. The meaning is the invitation; the amount
+    /// alone is a price list.
+    struct Tier: Codable, Sendable, Identifiable {
+        let amountMinor: Int
+        let currency: String
+        let disciplesPerYear: Int
+        let meaning: String
+        var id: Int { amountMinor }
+    }
+}

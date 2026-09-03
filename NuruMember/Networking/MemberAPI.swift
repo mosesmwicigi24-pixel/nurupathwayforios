@@ -564,6 +564,26 @@ extension MemberAPI {
         _ = try await APIClient.shared.postEmpty("giving/schedules/\(id)/resume", as: EmptyResponse.self)
     }
 
+    /// GET /giving/invitation — may we invite this member today, and with what.
+    /// The client renders the answer; it never decides it.
+    static func partnerInvite() async throws -> PartnerInvite {
+        try await APIClient.shared.get("giving/invitation", as: PartnerInvite.self)
+    }
+
+    /// POST /giving/invitation/{id}/shown — rendered, not merely decided.
+    /// This is what the "three times, ever" cap counts.
+    static func inviteShown(_ campaignId: String) async throws {
+        _ = try await APIClient.shared.postEmpty("giving/invitation/\(campaignId)/shown", as: EmptyResponse.self)
+    }
+
+    /// POST /giving/invitation/{id}/outcome — dismissed | declined | opened | gave.
+    /// `declined` is permanent: the member asking not to be asked again.
+    static func inviteOutcome(_ campaignId: String, outcome: String) async throws {
+        struct Body: Encodable { let outcome: String }
+        _ = try await APIClient.shared.post("giving/invitation/\(campaignId)/outcome",
+                                            body: Body(outcome: outcome), as: EmptyResponse.self)
+    }
+
     /// GET /giving/partnership — the member's standing as a partner.
     /// Recognition, not receipts; receipts stay in giving/history.
     static func partnership() async throws -> Partnership {
