@@ -1492,23 +1492,48 @@ struct HomeView: View {
     private func planResumeBanner(_ p: ReadingPlanRow) -> some View {
         let day = p.currentDay ?? 1
         let done = p.completedDays?.count ?? max(0, day - 1)
-        let pct = p.dayCount > 0 ? CGFloat(done) / CGFloat(p.dayCount) : 0
+        let pct = p.dayCount > 0 ? min(1, max(0, CGFloat(done) / CGFloat(p.dayCount))) : 0
+        // The plan's own cover, when it has one — the same PLCover the Plans tab
+        // draws — so the card shows THE plan, not a generic book. The progress
+        // ring then gives way to a bar under the text; a plan with no cover
+        // keeps the ring exactly as before.
+        let hasCover = p.imageUrl.flatMap(URL.init) != nil
         // Plans live on the Plans tab — switch there and land on this plan.
         return Button { Haptics.tap(); tabs.openPlans(.plan(p)) } label: {
             HStack(spacing: 14) {
-                ZStack {
-                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
-                    Circle().trim(from: 0, to: pct)
-                        .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                        .rotationEffect(.degrees(-90))
-                    Icon(.bookMarked, size: 17, color: .white)
+                if hasCover {
+                    PLCover(plan: p)
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .stroke(Color.white.opacity(0.14), lineWidth: 1))
+                } else {
+                    ZStack {
+                        Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
+                        Circle().trim(from: 0, to: pct)
+                            .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                            .rotationEffect(.degrees(-90))
+                        Icon(.bookMarked, size: 17, color: .white)
+                    }
+                    .frame(width: 48, height: 48)
                 }
-                .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CONTINUE YOUR PLAN").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
                     Text(p.title).font(.fraunces(18, .semibold)).foregroundStyle(.white).lineLimit(1)
                     Text("Day \(day) of \(p.dayCount) · pick up where you left off")
                         .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
+                    if hasCover {
+                        // Fixed 4pt height keeps the GeometryReader from making
+                        // the row's height ambiguous (see minisRow below).
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.white.opacity(0.22))
+                                Capsule().fill(Nuru.gold).frame(width: g.size.width * pct)
+                            }
+                        }
+                        .frame(height: 4)
+                        .padding(.top, 5)
+                    }
                 }
                 Spacer(minLength: 8)
                 Icon(.arrowRight, size: 18, color: Nuru.gold)
