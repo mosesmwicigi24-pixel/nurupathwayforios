@@ -123,7 +123,7 @@ struct YouTabView: View {
 
     @ViewBuilder private func segmentContent(_ seg: YouSegment) -> some View {
         switch seg {
-        case .chat:    ChatView(embeddedInYou: true)
+        case .chat:    CommunityView(embeddedInYou: true)   // Talk (ChatView) + Pray (PrayerRoomView)
         case .events:  EventsView(embeddedInYou: true)
         case .give:    GivingView(embeddedInYou: true)
         case .profile: ProfileView(embeddedInYou: true)
