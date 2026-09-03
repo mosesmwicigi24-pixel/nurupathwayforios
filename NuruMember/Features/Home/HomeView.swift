@@ -295,6 +295,11 @@ struct HomeView: View {
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
     @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
+    /// The partner invitation. Whether it may be shown is decided entirely by
+    /// the server; Home's only job is to ask once per appearance and present
+    /// whatever comes back. Nil until the server says yes.
+    @State private var partnerInvite: PartnerInvite.Campaign?
+    @State private var partnerInviteShowing = 1
     @State private var sharePayload: SharePayload?
     @State private var verseShareDialog = false
     @State private var verseShareImage: VerseImagePayload?
@@ -510,6 +515,25 @@ struct HomeView: View {
             DispatchQueue.main.async { tabs.announcementLink = nil }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
+        // The partner invitation. Presented only when the server said to, and
+        // reported back either way — a dismissal is data too.
+        .sheet(item: $partnerInvite) { c in
+            PartnerInviteSheet(
+                campaign: c,
+                showing: partnerInviteShowing,
+                onBecomePartner: {
+                    Task { try? await MemberAPI.inviteOutcome(c.campaignId, outcome: "opened") }
+                    // Opens the Give tab, where Partners lives. NOT a payment sheet.
+                    tabs.youSegment = .give
+                    tabs.selected = .you
+                },
+                onDismiss: { permanent in
+                    Task {
+                        try? await MemberAPI.inviteOutcome(
+                            c.campaignId, outcome: permanent ? "declined" : "dismissed")
+                    }
+                })
+        }
         // Church check-in — presented, not pushed, so the camera is a modal the
         // member dismisses back to exactly where they were.
         .fullScreenCover(isPresented: $showServiceScanner) {
@@ -554,6 +578,17 @@ struct HomeView: View {
             }
         }
         .animation(.spring(response: 0.4, dampingFraction: 0.85), value: liveDiscovery.popupStreamId)
+        .task {
+            // Ask once per appearance. Every rule about WHEN is the server's;
+            // a failure here is silence, never a retry loop and never a guess.
+            guard partnerInvite == nil,
+                  let d = try? await MemberAPI.partnerInvite(),
+                  d.show, let c = d.campaign else { return }
+            partnerInviteShowing = d.showing ?? 1
+            partnerInvite = c
+            // Rendered, not merely decided — this is what the cap counts.
+            try? await MemberAPI.inviteShown(c.campaignId)
+        }
         .task {
             if vm.pathway == nil { await vm.load() }
             liveDiscovery.ingest(vm.liveStreams)
