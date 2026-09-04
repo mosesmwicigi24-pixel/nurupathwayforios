@@ -446,7 +446,7 @@ struct PLDetailDayRow: View {
                 Text(done ? "Completed · \(day.reference)"
                      : syncing ? "Finishing your sync… tap to check"
                      : locked ? "\(day.reference) · opens when today is done"
-                     : "\(day.reference) · about 6 min")
+                     : "\(day.reference) · about \(ReadTime.minutes(for: day)) min")
                     .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3)).lineLimit(1)
             }
             Spacer(minLength: 0)

@@ -40,6 +40,26 @@ final class ScriptureRefsTests: XCTestCase {
         XCTAssertTrue(ScriptureRefs.isReference("Psalm 23:1-6"))
     }
 
+    func testVerseCountReadsTheSpanOffTheReference() {
+        XCTAssertEqual(ScriptureRefs.verseCount("Proverbs 13:4"), 1)
+        XCTAssertEqual(ScriptureRefs.verseCount("James 1:22–25"), 4)
+        XCTAssertEqual(ScriptureRefs.verseCount("Psalm 23:1-6"), 6)
+        XCTAssertNil(ScriptureRefs.verseCount("John 3:16-4:2"))
+        XCTAssertNil(ScriptureRefs.verseCount("Read the whole chapter"))
+    }
+
+    func testShortPassagesOpenWithoutATap() {
+        XCTAssertTrue(ScriptureRefs.opensByDefault("James 1:22-25"))
+        XCTAssertFalse(ScriptureRefs.opensByDefault("Psalm 23:1-6"))
+        XCTAssertFalse(ScriptureRefs.opensByDefault("John 3:16-4:2"))
+    }
+
+    func testChapterPrefixBuildsASingleVersesReference() {
+        XCTAssertEqual(ScriptureRefs.chapterPrefix("James 1:22-25"), "James 1")
+        XCTAssertEqual(ScriptureRefs.chapterPrefix("1 Peter 2:9"), "1 Peter 2")
+        XCTAssertNil(ScriptureRefs.chapterPrefix("not a reference"))
+    }
+
     func testLinkRoundTripsTheReference() throws {
         let url = try XCTUnwrap(ScriptureRefs.url(for: "1 Peter 2:9-10"))
         XCTAssertEqual(url.scheme, "nuru-scripture")

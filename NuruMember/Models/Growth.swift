@@ -282,6 +282,8 @@ struct PlanSegmentRef: Hashable {
     /// Segment ids already completed this session (the day's segment flags can be
     /// stale) — lets a reopened finished part greet with "Done", not a second ask.
     var doneIds: [String] = []
+    /// The day's own title ("The Bridge You Never Built") — the reader's opening.
+    var dayTitle: String? = nil
 }
 
 /// Navigation to a plan day's shared Talk it Over conversation.

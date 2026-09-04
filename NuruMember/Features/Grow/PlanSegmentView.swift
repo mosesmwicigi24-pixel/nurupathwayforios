@@ -39,6 +39,8 @@ struct PlanSegmentView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @AppStorage("readerNight") private var readerNight = false
+    /// Three text-size steps, cycled from the header, remembered per device.
+    @AppStorage(ReaderTextScale.key) private var readerScale: Double = 1.0
     @State private var done = false
     @State private var saving = false
     @State private var player: MediaItem?
@@ -50,7 +52,7 @@ struct PlanSegmentView: View {
 
     private struct MediaItem: Identifiable { let id = UUID(); let url: URL }
 
-    private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
+    private var pal: ReaderPalette { ReaderPalette(night: readerNight, textScale: CGFloat(readerScale)) }
     private var segment: PlanSegment { ref.segments[min(max(ref.index, 0), ref.segments.count - 1)] }
 
     /// The segments this page renders — a combined group ("word" = Scripture +
@@ -150,6 +152,19 @@ struct PlanSegmentView: View {
                     .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
+                // Text size: Small → Regular → Large → Small, one tap each.
+                Button {
+                    Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.2)) { readerScale = ReaderTextScale.next(after: readerScale) }
+                } label: {
+                    Text("Aa").font(.inter(13, .bold)).foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.10), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Text size: \(ReaderTextScale.label(readerScale))")
+                .padding(.trailing, 8)
                 Button {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
@@ -202,6 +217,9 @@ struct PlanSegmentView: View {
         }
     }
 
+    /// The Word page carries teaching after its passage (rank 2 = devotional).
+    private var hasTeaching: Bool { group.contains { rank($0) == 2 && !($0.content ?? "").isEmpty } }
+
     /// Header caption — the scripture reference for The Word page.
     private var headerRef: String? {
         if ref.part == "word" {
@@ -215,6 +233,9 @@ struct PlanSegmentView: View {
     @ViewBuilder private var content: some View {
         switch ref.part {
         case "word":
+            // The opening: kicker, the day's title, the reference and an honest
+            // read time — a front door before the Word.
+            DayOpening(title: ref.dayTitle, reference: headerRef, minutes: ReadTime.minutes(for: group))
             // Scripture woven straight into the teaching — one encouraging read,
             // Go Deeper folded in at the end.
             ForEach(group) { seg in
@@ -229,6 +250,8 @@ struct PlanSegmentView: View {
                     } else {
                         DayPullQuote(text: seg.reference ?? seg.title, caption: seg.reference ?? "Scripture")
                     }
+                    // Where the Word ends and the teaching begins.
+                    if hasTeaching { ReaderOrnament() }
                 case "reading":
                     if let c = seg.content, !c.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
@@ -277,7 +300,7 @@ struct PlanSegmentView: View {
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
                 HStack(alignment: .top, spacing: 8) {
                     Circle().fill(pal.gold).frame(width: 5, height: 5).padding(.top, 7)
-                    Text(p).font(.inter(14, .medium)).foregroundStyle(pal.ink).lineSpacing(5)
+                    Text(p).font(.inter(pal.fs(14), .medium)).foregroundStyle(pal.ink).lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }

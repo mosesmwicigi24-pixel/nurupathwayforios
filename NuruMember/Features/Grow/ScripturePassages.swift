@@ -86,6 +86,40 @@ enum ScriptureRefs {
         return s
     }
 
+    /// How many verses a reference spans, when that can be read off it: a
+    /// single verse is 1, "James 1:22-25" is 4. A cross-chapter span
+    /// ("John 3:16-4:2") is not counted here and comes back nil.
+    static func verseCount(_ ref: String) -> Int? {
+        let t = normalize(ref)
+        let all = NSRange(location: 0, length: (t as NSString).length)
+        guard let m = pattern.firstMatch(in: t, range: all) else { return nil }
+        func group(_ i: Int) -> Int? {
+            let r = m.range(at: i)
+            guard r.location != NSNotFound, let sr = Range(r, in: t) else { return nil }
+            return Int(t[sr])
+        }
+        if group(5) != nil { return nil }
+        guard let start = group(3) else { return nil }
+        guard let end = group(4) else { return 1 }
+        return end >= start ? end - start + 1 : nil
+    }
+
+    /// Short passages open without a tap — anything under five verses.
+    static func opensByDefault(_ ref: String) -> Bool {
+        guard let n = verseCount(ref) else { return false }
+        return n <= 4
+    }
+
+    /// "James 1:22-25" → "James 1": the prefix a single verse's own reference
+    /// is built from ("James 1:23") when it is saved on its own.
+    static func chapterPrefix(_ ref: String) -> String? {
+        let t = normalize(ref)
+        let all = NSRange(location: 0, length: (t as NSString).length)
+        guard let m = pattern.firstMatch(in: t, range: all),
+              let b = Range(m.range(at: 1), in: t), let c = Range(m.range(at: 2), in: t) else { return nil }
+        return "\(t[b]) \(t[c])"
+    }
+
     // The link a cited reference carries inside attributed prose. A private
     // scheme so the reader's own openURL handler claims it and nothing else.
     static let scheme = "nuru-scripture"
@@ -141,40 +175,128 @@ private func passageCaption(_ p: ScripturePassage) -> String {
     return v.isEmpty ? p.reference : "\(p.reference) · \(v)"
 }
 
-// MARK: - Passage text with gold verse numbers
+// MARK: - Passage text: one row per verse, long-press to keep one
 
 /// YouVersion's stripped text carries its verse numbers inline ("22 Do not
-/// merely listen… 23 Anyone who…"); set them small, gold and raised so the
-/// eye reads the words and merely notices the numbers.
+/// merely listen… 23 Anyone who…"). Each verse gets its own line with the
+/// number small, gold and raised, so the eye reads the words and merely
+/// notices the numbers — and so a long press lands on ONE verse: save it to
+/// the verse library, or copy it with its reference.
 struct ScripturePassageText: View {
     let text: String
+    /// The passage's own reference and translation — a long-pressed verse is
+    /// saved under "Book C:V" built from these. Nil disables saving.
+    var reference: String? = nil
+    var version: String? = nil
     var size: CGFloat = 16
     @Environment(\.readerPalette) private var pal
+    @State private var note: String?
 
-    private static let verseNumber: NSRegularExpression = {
+    struct Verse: Identifiable, Equatable {
+        let id: Int
+        let number: String?
+        let body: String
+    }
+
+    static let verseNumber: NSRegularExpression = {
         // swiftlint:disable:next force_try
         try! NSRegularExpression(pattern: #"(?<=^|\s)(\d{1,3})(?=\s[A-Z“"'(\[])"#)
     }()
 
-    var body: some View {
-        Text(attributed)
-            .nuruLineSpacing(7)
-            .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: .infinity, alignment: .leading)
+    /// The passage split at its verse numbers; a passage without numbers is
+    /// one verse. Words before the first number (a heading) keep their place.
+    static func verses(in text: String) -> [Verse] {
+        let ns = text as NSString
+        let matches = verseNumber.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        guard !matches.isEmpty else {
+            let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            return t.isEmpty ? [] : [Verse(id: 0, number: nil, body: t)]
+        }
+        var out: [Verse] = []
+        let lead = ns.substring(to: matches[0].range.location).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !lead.isEmpty { out.append(Verse(id: 0, number: nil, body: lead)) }
+        for (i, m) in matches.enumerated() {
+            let from = m.range.location + m.range.length
+            let to = i + 1 < matches.count ? matches[i + 1].range.location : ns.length
+            let body = ns.substring(with: NSRange(location: from, length: to - from))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+            out.append(Verse(id: out.count, number: ns.substring(with: m.range), body: body))
+        }
+        return out
     }
 
-    private var attributed: AttributedString {
-        var attr = AttributedString(text)
-        attr.font = .fraunces(size, .regular)
-        attr.foregroundColor = pal.ink
-        let all = NSRange(location: 0, length: (text as NSString).length)
-        for m in Self.verseNumber.matches(in: text, range: all) {
-            guard let ar = Range(m.range, in: attr) else { continue }
-            attr[ar].font = .inter(10, .bold)
-            attr[ar].foregroundColor = pal.gold
-            attr[ar].baselineOffset = 5
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Self.verses(in: text)) { v in
+                Text(attributed(v))
+                    .nuruLineSpacing(7)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contextMenu {
+                        if verseReference(v) != nil {
+                            Button { save(v) } label: { Label("Save to my verses", systemImage: "bookmark") }
+                        }
+                        Button {
+                            UIPasteboard.general.string = copyText(v)
+                            flash("Copied")
+                        } label: { Label("Copy", systemImage: "doc.on.doc") }
+                    }
+            }
+            if let note {
+                Text(note).font(.inter(11, .semibold)).foregroundStyle(pal.goldDeep)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(pal.gold.opacity(0.12), in: Capsule())
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
         }
-        return attr
+    }
+
+    private func attributed(_ v: Verse) -> AttributedString {
+        var attr = AttributedString(v.body)
+        attr.font = .fraunces(pal.fs(size), .regular)
+        attr.foregroundColor = pal.ink
+        guard let n = v.number else { return attr }
+        var num = AttributedString(n + " ")
+        num.font = .inter(pal.fs(10), .bold)
+        num.foregroundColor = pal.gold
+        num.baselineOffset = 5
+        return num + attr
+    }
+
+    /// "James 1:23" for a numbered verse of "James 1:22-25"; the passage's
+    /// own reference when it is a single unnumbered verse.
+    private func verseReference(_ v: Verse) -> String? {
+        guard let reference, ScriptureRefs.isReference(reference) else { return nil }
+        if let n = v.number, let prefix = ScriptureRefs.chapterPrefix(reference) { return "\(prefix):\(n)" }
+        return reference
+    }
+
+    private func copyText(_ v: Verse) -> String {
+        if let r = verseReference(v) { return "\(v.body) — \(r)" }
+        return v.body
+    }
+
+    private func save(_ v: Verse) {
+        guard let ref = verseReference(v) else { return }
+        Haptics.action()
+        Task {
+            do {
+                try await MemberAPI.saveVerseQuick(reference: ref, version: version, text: v.body)
+                Haptics.success()
+                flash("Saved to your verses")
+            } catch {
+                Haptics.error()
+                flash("Couldn't save — try again")
+            }
+        }
+    }
+
+    private func flash(_ text: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { note = text }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            withAnimation(.easeOut(duration: 0.25)) { note = nil }
+        }
     }
 }
 
@@ -184,7 +306,14 @@ struct ScriptureRefCard: View {
     let reference: String
     @Environment(\.readerPalette) private var pal
     @StateObject private var loader = ScripturePassageLoader()
-    @State private var open = false
+    @State private var open: Bool
+
+    /// Anything under five verses opens without a tap — the hungry reader
+    /// should not have to ask for four lines.
+    init(reference: String) {
+        self.reference = reference
+        _open = State(initialValue: ScriptureRefs.opensByDefault(reference))
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -195,7 +324,7 @@ struct ScriptureRefCard: View {
             } label: {
                 HStack(spacing: 10) {
                     Icon(.bookOpen, size: 15, color: pal.goldDeep)
-                    Text(reference).font(.inter(13.5, .semibold)).foregroundStyle(pal.ink)
+                    Text(reference).font(.inter(pal.fs(13.5), .semibold)).foregroundStyle(pal.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     if loader.loading {
@@ -215,7 +344,7 @@ struct ScriptureRefCard: View {
                     HStack(alignment: .top, spacing: 12) {
                         RoundedRectangle(cornerRadius: 2).fill(pal.gold).frame(width: 3)
                         VStack(alignment: .leading, spacing: 8) {
-                            ScripturePassageText(text: p.text, size: 16)
+                            ScripturePassageText(text: p.text, reference: reference, version: p.version, size: 16)
                             Text(passageCaption(p).uppercased())
                                 .font(.inter(10.5, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
@@ -239,6 +368,7 @@ struct ScriptureRefCard: View {
         .background(pal.gold.opacity(0.06), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .stroke(pal.gold.opacity(open ? 0.3 : 0), lineWidth: 1))
+        .task { if open { await loader.load(reference) } }
     }
 }
 
@@ -285,7 +415,7 @@ struct ScripturePassageSheet: View {
                     .background(PL.gold.opacity(0.14), in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SCRIPTURE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
-                    Text(reference).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
+                    Text(reference).font(.fraunces(pal.fs(20), .medium)).kerning(-0.4).foregroundStyle(pal.ink)
                 }
                 Spacer(minLength: 8)
                 Button { dismiss() } label: {
@@ -302,7 +432,7 @@ struct ScripturePassageSheet: View {
                     if let p = loader.passage {
                         HStack(alignment: .top, spacing: 12) {
                             RoundedRectangle(cornerRadius: 2).fill(pal.gold).frame(width: 3)
-                            ScripturePassageText(text: p.text, size: 17)
+                            ScripturePassageText(text: p.text, reference: reference, version: p.version, size: 17)
                         }
                         if !p.version.isEmpty {
                             Text(p.version.uppercased())
@@ -350,12 +480,12 @@ struct ScriptureLinkedText: View {
 
     private var attributed: AttributedString {
         var attr = AttributedString(text)
-        attr.font = .inter(size, .medium)
+        attr.font = .inter(pal.fs(size), .medium)
         attr.foregroundColor = pal.ink
         for m in ScriptureRefs.detect(in: text) {
             guard let ar = Range(m.nsRange, in: attr), let url = ScriptureRefs.url(for: m.reference) else { continue }
             attr[ar].link = url
-            attr[ar].font = .inter(size, .semibold)
+            attr[ar].font = .inter(pal.fs(size), .semibold)
             attr[ar].foregroundColor = pal.goldDeep
             attr[ar].underlineStyle = .single
         }
@@ -373,7 +503,8 @@ struct DayScriptureQuote: View {
 
     var body: some View {
         DayPullQuote(text: loader.passage?.text ?? reference,
-                     caption: loader.passage.map(passageCaption) ?? reference)
+                     caption: loader.passage.map(passageCaption) ?? reference,
+                     version: loader.passage?.version)
             .task { await loader.load(reference) }
     }
 }

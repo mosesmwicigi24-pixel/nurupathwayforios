@@ -11,6 +11,7 @@
 // video/audio players, friends-on-plan avatars) are omitted — no fake data.
 // Shared card structs + the PL palette live in ReadingPlanCards.swift.
 import SwiftUI
+import UIKit
 import UserNotifications
 import AVFoundation
 
@@ -49,6 +50,11 @@ enum PlanReminders {
 /// mode (deep warm paper, cream ink, dimmed gold) for comfortable low-light reading.
 struct ReaderPalette {
     var night: Bool = false
+    /// The reader's own text-size step (ReaderTextScale), on top of the
+    /// app-wide Nuru.textScale the font helpers already apply.
+    var textScale: CGFloat = 1
+    /// A reading size at the current step.
+    func fs(_ base: CGFloat) -> CGFloat { base * textScale }
     var bg: Color { night ? Color(hex: 0x171411) : PL.cream }
     var ink: Color { night ? Color(hex: 0xEBE3D3) : PL.navy }
     var inkDim: Color { night ? Color(hex: 0x9A9280) : PL.ink3 }
@@ -1259,7 +1265,8 @@ struct PlanDayView: View {
                                                  index: part.firstIndex,
                                                  planId: ref.planId,
                                                  part: part.tag,
-                                                 doneIds: Array(vm.completedSegments))) {
+                                                 doneIds: Array(vm.completedSegments),
+                                                 dayTitle: ref.day.title)) {
                 label()
             }
             .buttonStyle(.pressable)
@@ -1786,12 +1793,61 @@ private final class FireworksSound {
 /// in the app uses, tinted for the reader's day/night palette.
 struct DayPullQuote: View {
     let text: String; let caption: String
+    /// The translation the text came in, when known — saved with the verse.
+    var version: String? = nil
     @Environment(\.readerPalette) private var pal
+    @State private var note: String?
+
+    /// The reference inside the caption ("Proverbs 13:4 · NIV" → "Proverbs 13:4").
+    private var reference: String? { ScriptureRefs.detect(in: caption).first?.reference }
+
     var body: some View {
-        VerseQuoteCard(
-            verse: text, reference: caption,
-            background: pal.verseBg, ink: pal.ink, gold: pal.gold, referenceColor: pal.inkDim
-        )
+        VStack(alignment: .leading, spacing: 8) {
+            VerseQuoteCard(
+                verse: text, reference: caption,
+                background: pal.verseBg, ink: pal.ink, gold: pal.gold, referenceColor: pal.inkDim,
+                verseSize: pal.fs(18)
+            )
+            // Long-press: keep the day's verse, or copy it with its reference.
+            .contextMenu {
+                if reference != nil {
+                    Button { save() } label: { Label("Save to my verses", systemImage: "bookmark") }
+                }
+                Button {
+                    UIPasteboard.general.string = reference.map { "\(text) — \($0)" } ?? text
+                    flash("Copied")
+                } label: { Label("Copy", systemImage: "doc.on.doc") }
+            }
+            if let note {
+                Text(note).font(.inter(11, .semibold)).foregroundStyle(pal.goldDeep)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(pal.gold.opacity(0.12), in: Capsule())
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+            }
+        }
+    }
+
+    private func save() {
+        guard let reference else { return }
+        Haptics.action()
+        Task {
+            do {
+                try await MemberAPI.saveVerseQuick(reference: reference, version: version, text: text)
+                Haptics.success()
+                flash("Saved to your verses")
+            } catch {
+                Haptics.error()
+                flash("Couldn't save — try again")
+            }
+        }
+    }
+
+    private func flash(_ t: String) {
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { note = t }
+        Task {
+            try? await Task.sleep(nanoseconds: 2_200_000_000)
+            withAnimation(.easeOut(duration: 0.25)) { note = nil }
+        }
     }
 }
 
@@ -1836,7 +1892,7 @@ struct DayTalk: View {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
                     Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
-                    Text(q).font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink).nuruLineSpacing(5)
+                    Text(q).font(.fraunces(pal.fs(16), .regular)).italic().foregroundStyle(pal.ink).nuruLineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1860,11 +1916,11 @@ struct DayPrayer: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             if !prayer.isEmpty {
-                Text(prayer).font(.fraunces(16, .regular)).foregroundStyle(pal.ink).nuruLineSpacing(6)
+                Text(prayer).font(.fraunces(pal.fs(16), .regular)).foregroundStyle(pal.ink).nuruLineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let b = blessing {
-                Text(b).font(.fraunces(14)).italic().foregroundStyle(pal.goldDeep)
+                Text(b).font(.fraunces(pal.fs(14))).italic().foregroundStyle(pal.goldDeep)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
