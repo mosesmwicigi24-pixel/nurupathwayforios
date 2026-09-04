@@ -1800,17 +1800,26 @@ struct DayPullQuote: View {
 struct DayPassage: View {
     let content: String
     @Environment(\.readerPalette) private var pal
+    /// The cited reference a tap just opened — read in a sheet, in place.
+    @State private var openRef: ScriptureSheetItem?
     private var paragraphs: [String] {
         content.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
     }
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
-                Text(p).font(.inter(16, .medium)).foregroundStyle(pal.ink).nuruLineSpacing(7)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                // Every reference the teaching cites ("(James 2:17)") is a gold
+                // link; the passage opens below without leaving the page.
+                ScriptureLinkedText(text: p)
             }
         }
+        .environment(\.openURL, OpenURLAction { url in
+            guard let r = ScriptureRefs.reference(from: url) else { return .systemAction }
+            Haptics.tap()
+            openRef = ScriptureSheetItem(reference: r)
+            return .handled
+        })
+        .sheet(item: $openRef) { item in ScripturePassageSheet(reference: item.reference) }
     }
 }
 
