@@ -27,10 +27,23 @@ final class ReaderPolishTests: XCTestCase {
         XCTAssertEqual(ReaderTextScale.label(1.15), "Large")
     }
 
-    func testPassageSplitsAtItsVerseNumbers() {
-        let v = ScripturePassageText.verses(in: "22 Do not merely listen to the word. 23 Anyone who listens to the word 24 and goes away")
+    func testPassageSplitsAtItsVerseNumbersLowercaseOpeningsIncluded() {
+        let v = ScripturePassageText.verses(in: "22 Do not merely listen to the word. 23 Anyone who listens to the word 24 and goes away", startingAt: 22)
         XCTAssertEqual(v.map(\.number), ["22", "23", "24"])
         XCTAssertEqual(v[1].body, "Anyone who listens to the word")
+        XCTAssertEqual(v[2].body, "and goes away")
+    }
+
+    func testANumeralInsideAVerseIsNotAVerseNumber() {
+        let v = ScripturePassageText.verses(in: "40 Now the length of time the people lived in Egypt was 430 years. 41 At the end of the 430 years", startingAt: 40)
+        XCTAssertEqual(v.map(\.number), ["40", "41"])
+    }
+
+    func testWithoutAStartVerseTheFirstCandidateSeedsTheCount() {
+        let v = ScripturePassageText.verses(in: "16 For God so loved the world 17 For God did not send")
+        XCTAssertEqual(v.map(\.number), ["16", "17"])
+        XCTAssertEqual(ScriptureRefs.startVerse("James 1:22-25"), 22)
+        XCTAssertNil(ScriptureRefs.startVerse("not a reference"))
     }
 
     func testAnUnnumberedPassageIsOneVerse() {

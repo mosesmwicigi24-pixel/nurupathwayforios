@@ -104,6 +104,15 @@ enum ScriptureRefs {
         return end >= start ? end - start + 1 : nil
     }
 
+    /// The verse a reference starts at ("James 1:22-25" → 22) — the number
+    /// the first verse of its passage text carries.
+    static func startVerse(_ ref: String) -> Int? {
+        let t = normalize(ref)
+        let all = NSRange(location: 0, length: (t as NSString).length)
+        guard let m = pattern.firstMatch(in: t, range: all), let r = Range(m.range(at: 3), in: t) else { return nil }
+        return Int(t[r])
+    }
+
     /// Short passages open without a tap — anything under five verses.
     static func opensByDefault(_ ref: String) -> Bool {
         guard let n = verseCount(ref) else { return false }
@@ -198,16 +207,31 @@ struct ScripturePassageText: View {
         let body: String
     }
 
+    /// CANDIDATE verse numbers: a 1–3 digit token followed by a space and a
+    /// word or an opening quote. Deliberately loose (a verse can begin
+    /// lowercase); `verses(in:startingAt:)` keeps only the ones that run
+    /// consecutively, which is what rejects "430 years" inside a verse.
     static let verseNumber: NSRegularExpression = {
         // swiftlint:disable:next force_try
-        try! NSRegularExpression(pattern: #"(?<=^|\s)(\d{1,3})(?=\s[A-Z“"'(\[])"#)
+        try! NSRegularExpression(pattern: #"(?<=^|\s)(\d{1,3})(?=\s[A-Za-z“"'(\[])"#)
     }()
 
     /// The passage split at its verse numbers; a passage without numbers is
     /// one verse. Words before the first number (a heading) keep their place.
-    static func verses(in text: String) -> [Verse] {
+    ///
+    /// Verse numbers run consecutively, so a candidate counts only when it is
+    /// the next expected one — seeded from `startVerse` (the reference's first
+    /// verse) or, failing that, the first candidate. That is what lets
+    /// "24 and, after looking…" split while "was 430 years" stays prose.
+    static func verses(in text: String, startingAt startVerse: Int? = nil) -> [Verse] {
         let ns = text as NSString
-        let matches = verseNumber.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        let candidates = verseNumber.matches(in: text, range: NSRange(location: 0, length: ns.length))
+        var expected = startVerse ?? candidates.first.flatMap { Int(ns.substring(with: $0.range)) }
+        let matches = candidates.filter { m in
+            guard let n = Int(ns.substring(with: m.range)), n == expected else { return false }
+            expected = n + 1
+            return true
+        }
         guard !matches.isEmpty else {
             let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
             return t.isEmpty ? [] : [Verse(id: 0, number: nil, body: t)]
@@ -227,7 +251,7 @@ struct ScripturePassageText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Self.verses(in: text)) { v in
+            ForEach(Self.verses(in: text, startingAt: reference.flatMap(ScriptureRefs.startVerse))) { v in
                 Text(attributed(v))
                     .nuruLineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
