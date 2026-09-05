@@ -74,8 +74,18 @@ if ! xcrun devicectl device install app --device "$DEVICE_UDID" "$APP" > "$INSTA
     die "The app installed but the developer certificate is untrusted on the phone.
   FIX on the phone: Settings > General > VPN & Device Management > trust the developer."
   fi
-  die "Install failed. What devicectl reported:
-$(grep -iE "error|failed" "$INSTALL_LOG" | grep -viE "^ *-+$" | head -4)
+  # The over-the-network link to the phone is the flaky part of this whole
+  # flow. CoreDevice error 4000 / "Connection reset by peer" is the link
+  # dropping mid-transfer — nothing is wrong with the build or the phone.
+  if grep -q "CoreDeviceError error 4000\|Connection reset by peer\|ControlChannelConnectionError" "$INSTALL_LOG"; then
+    die "The network link to the phone dropped mid-install. Nothing is wrong with the build.
+  Re-run this; if it keeps dropping, connect the phone by cable and re-run."
+  fi
+  # Unknown failure: show the FIRST line, which is where devicectl puts the
+  # actual ERROR — a keyword filter here once matched nothing and printed an
+  # empty reason, which is worse than the raw log.
+  die "Install failed. devicectl's first line:
+  $(head -1 "$INSTALL_LOG")
   (Full log: $INSTALL_LOG)"
 fi
 echo "     ok — installed"
