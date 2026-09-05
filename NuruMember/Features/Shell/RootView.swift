@@ -59,7 +59,7 @@ enum YouSegment: Hashable, CaseIterable {
 
     var label: String {
         switch self {
-        case .chat: return "Chat"
+        case .chat: return "Community"   // the case stays .chat: the "chat" deep link resolves to it
         case .events: return "Events"
         case .give: return "Give"
         case .profile: return "Profile"
@@ -67,7 +67,7 @@ enum YouSegment: Hashable, CaseIterable {
     }
     var icon: Lucide {
         switch self {
-        case .chat: return .messageCircle
+        case .chat: return .users
         case .events: return .calendarDays
         case .give: return .handHeart
         case .profile: return .user
