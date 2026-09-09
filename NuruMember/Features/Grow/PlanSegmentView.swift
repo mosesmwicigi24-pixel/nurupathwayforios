@@ -37,7 +37,6 @@ struct PlanSegmentView: View {
 
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.openURL) private var openURL
     @AppStorage("readerNight") private var readerNight = false
     @State private var done = false
     @State private var saving = false
@@ -48,7 +47,16 @@ struct PlanSegmentView: View {
     @State private var readFraction: Double = 0
     @State private var readScrollable = false
 
-    private struct MediaItem: Identifiable { let id = UUID(); let url: URL }
+    /// One opened video/audio segment — the URL plus the dressing the player
+    /// page shows over its poster.
+    private struct MediaItem: Identifiable {
+        let id = UUID()
+        let url: URL
+        let title: String
+        let summary: String?
+        let posterUrl: String?
+        let isAudio: Bool
+    }
 
     private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
     private var segment: PlanSegment { ref.segments[min(max(ref.index, 0), ref.segments.count - 1)] }
@@ -126,7 +134,19 @@ struct PlanSegmentView: View {
                     .ignoresSafeArea(edges: .top)
             }
         }
-        .fullScreenCover(item: $player) { it in mediaWindow(it.url) }
+        .fullScreenCover(item: $player) { it in
+            // The app's ONE player (VideoPlayerPage -> InlineVideoPlayer): the
+            // provider's inline embed for YouTube/Vimeo, an HTML5 <video> for
+            // direct/cloudinary. This page used to hand every URL to openURL()
+            // instead, which threw the member out to Safari mid-reading — even
+            // for a self-hosted mp4. (Android parity — the plan reader's cards
+            // dropped their external-host branch in the same pass.)
+            VideoPlayerPage(urlString: it.url.absoluteString,
+                            kicker: it.isAudio ? "LISTEN" : "WATCH",
+                            title: it.title,
+                            summary: it.summary,
+                            posterUrl: it.posterUrl)
+        }
         .onAppear {
             tabs.chromeHidden = true
             if group.allSatisfy({ $0.completed || ref.doneIds.contains($0.segmentId) }) { done = true }
@@ -251,7 +271,13 @@ struct PlanSegmentView: View {
         default:
             // Media page: a portrait, screen-filling player, then the title and
             // a few scanty keynotes just below.
-            DayVideoCard(seg: segment, portrait: true) { url in player = MediaItem(url: url) }
+            DayVideoCard(seg: segment, portrait: true) { url in
+                player = MediaItem(url: url,
+                                   title: segment.title,
+                                   summary: segment.content,
+                                   posterUrl: segment.imageUrl,
+                                   isAudio: segment.kind.lowercased() == "audio")
+            }
             if !segment.title.isEmpty {
                 Text(segment.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
             }
@@ -337,35 +363,6 @@ struct PlanSegmentView: View {
         }
     }
 
-    // MARK: media window (over the content)
-
-    private func mediaWindow(_ url: URL) -> some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            VStack {
-                HStack {
-                    Button { player = nil } label: {
-                        Icon(.x, size: 18, color: .white)
-                            .frame(width: 38, height: 38).background(Color.white.opacity(0.18), in: Circle())
-                    }
-                    .buttonStyle(.pressable)
-                    Spacer(minLength: 0)
-                }
-                .padding(.horizontal, 20).padding(.top, 12)
-                Spacer(minLength: 0)
-                Button { openURL(url) } label: {
-                    HStack(spacing: 8) {
-                        Icon(.play, size: 16, color: PL.navy)
-                        Text("Start playing").font(.inter(16, .bold)).foregroundStyle(PL.navy)
-                    }
-                    .frame(maxWidth: .infinity).frame(height: 52)
-                    .background(Color.white, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .padding(.horizontal, 20).padding(.bottom, 40)
-            }
-        }
-    }
 }
 
 // MARK: - Reflection box (lives at the bottom of the Prayer part)

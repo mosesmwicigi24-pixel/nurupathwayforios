@@ -19,6 +19,12 @@ struct LiveStreamSummary: Decodable, Sendable, Identifiable, Hashable {
     let kind: String              // "video" | "audio"
     let startedAt: String        // ISO 8601
     let hlsUrl: String            // relative — resolve against APIClient.originURL
+    /// The direct-origin playlist (live/service.ts `directUrl`), sent only when
+    /// a CDN base is configured — `hls_url` then points at the CDN edge and
+    /// this bypasses it. A just-started stream can still be served the PREVIOUS
+    /// broadcast's manifest by the edge until its mirror catches up, so the
+    /// player opens here first. Absent (nil) when there's no CDN in front.
+    let hlsFallbackUrl: String?
     let startedByName: String
     let viewerCount: Int
 
@@ -27,7 +33,8 @@ struct LiveStreamSummary: Decodable, Sendable, Identifiable, Hashable {
     var isAudio: Bool { kind == "audio" }
 
     private enum CodingKeys: String, CodingKey {
-        case streamId, scope, cellId, title, kind, startedAt, hlsUrl, startedByName, viewerCount
+        case streamId, scope, cellId, title, kind, startedAt, hlsUrl, hlsFallbackUrl
+        case startedByName, viewerCount
     }
 
     init(from d: Decoder) throws {
@@ -39,6 +46,7 @@ struct LiveStreamSummary: Decodable, Sendable, Identifiable, Hashable {
         kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "video"
         startedAt = (try? c.decodeIfPresent(String.self, forKey: .startedAt)) ?? ""
         hlsUrl = (try? c.decodeIfPresent(String.self, forKey: .hlsUrl)) ?? ""
+        hlsFallbackUrl = try? c.decodeIfPresent(String.self, forKey: .hlsFallbackUrl)
         startedByName = (try? c.decodeIfPresent(String.self, forKey: .startedByName)) ?? ""
         viewerCount = (try? c.decodeIfPresent(Int.self, forKey: .viewerCount)) ?? 0
     }
@@ -154,6 +162,10 @@ struct LivePlayableItem: Identifiable, Hashable {
     let kind: String              // "video" | "audio"
     let isLive: Bool
     let mediaPath: String         // relative hls_url / recording_url
+    /// Live only: the direct-origin playlist to open on first, before swapping
+    /// to `mediaPath`'s CDN copy. nil for a recording (nothing is racing a
+    /// mirror) and whenever the server sent no fallback.
+    var mediaFallbackPath: String? = nil
     let viewerCount: Int?
     /// Non-nil only for a real live stream — its presence is what starts the
     /// 30s heartbeat in the player; a recording never heartbeats.
@@ -172,6 +184,7 @@ struct LivePlayableItem: Identifiable, Hashable {
             id: s.streamId, title: s.title,
             subtitle: "\(started) · \(s.viewerCount) watching",
             kind: s.kind, isLive: true, mediaPath: s.hlsUrl,
+            mediaFallbackPath: s.hlsFallbackUrl,
             viewerCount: s.viewerCount, heartbeatStreamId: s.streamId,
             broadcasterName: s.startedByName.isEmpty ? nil : s.startedByName)
     }

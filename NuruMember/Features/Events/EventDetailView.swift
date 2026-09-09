@@ -178,7 +178,10 @@ struct EventDetailView: View {
             .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
-    private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
+    /// Only a trusted end can finish a gathering. Reading occ.endAt directly
+    /// made an absent end ("" -> .distantPast) mark every such occurrence
+    /// COMPLETED, which also hid its RSVP selector.
+    private var isCompleted: Bool { !isLive && Ev.hasEnded(occ.startAt, occ.endAt) }
     private var isToday: Bool { Calendar.current.isDateInToday(Ev.date(occ.startAt)) }
     /// QR check-in shows for live or same-day occurrences; the server still
     /// enforces qr_enabled / checkin_opens_at, so this is presentation only.
@@ -531,8 +534,21 @@ private struct EvdMetaCard: View {
                             value: Ev.timeRange(occ.startAt, occ.endAt), accent: accent)
             }
             HStack(spacing: 8) {
-                EvdMetaTile(icon: .mapPin, label: "Where",
-                            value: location ?? "To be announced", accent: accent)
+                // The venue is a DOOR, not a caption: tapping it opens Maps so a
+                // newcomer gets directions. (Android parity — the WHERE tile's
+                // geo: intent.) Without a venue it stays inert text.
+                if let venue = location?.trimmingCharacters(in: .whitespacesAndNewlines),
+                   !venue.isEmpty, let maps = Self.mapsURL(venue) {
+                    Link(destination: maps) {
+                        EvdMetaTile(icon: .mapPin, label: "Where", value: venue, accent: accent)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Where: \(venue)")
+                    .accessibilityHint("Opens directions in Maps")
+                } else {
+                    EvdMetaTile(icon: .mapPin, label: "Where",
+                                value: "To be announced", accent: accent)
+                }
                 EvdMetaTile(icon: .users, label: "Going",
                             value: going == 1 ? "1 person" : "\(going) people", accent: accent)
             }
@@ -554,6 +570,14 @@ private struct EvdMetaCard: View {
             ShareLink(item: shareText) { EvdActionLabel(icon: .share2, text: "Share") }
                 .buttonStyle(.plain)
         }
+    }
+
+    /// An Apple Maps search for the venue. Percent-encoding is required —
+    /// a raw venue string with spaces or an "&" yields a nil URL, which is
+    /// why the tile falls back to inert text rather than a dead link.
+    static func mapsURL(_ venue: String) -> URL? {
+        guard let q = venue.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) else { return nil }
+        return URL(string: "http://maps.apple.com/?q=\(q)")
     }
 
     /// Write a minimal VCALENDAR for this occurrence to a temp file. ICS wants

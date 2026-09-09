@@ -57,6 +57,7 @@ final class LiveViewerPlayerController: ObservableObject {
     private var timeObserverToken: Any?
     private var stallTask: Task<Void, Never>?
     private var heartbeatTask: Task<Void, Never>?
+    private var cdnWarmUpTask: Task<Void, Never>?
     private var lastProgressAt = Date()
     private var stopped = false
 
@@ -65,14 +66,45 @@ final class LiveViewerPlayerController: ObservableObject {
         self.heartbeatStreamId = heartbeatStreamId
     }
 
-    func start(mediaPath: String) async {
+    /// `fallbackPath` is the direct-origin playlist (`hls_fallback_url`). When
+    /// one is present on a LIVE stream we open on it and swap to the CDN copy
+    /// after a warm-up window — see `cdnWarmUpNanos` and `scheduleCDNSwap`.
+    func start(mediaPath: String, fallbackPath: String? = nil) async {
         guard let url = await MemberAPI.resolveLiveMediaURL(mediaPath) else {
             markEnded("Couldn't load this \(isLive ? "stream" : "recording").")
             return
         }
+        // Only a LIVE stream races a mirror, and only when the server actually
+        // sent a DIFFERENT direct-origin path (no CDN configured ⇒ same path,
+        // or none at all).
+        var originURL: URL?
+        if isLive, let raw = fallbackPath?.trimmingCharacters(in: .whitespacesAndNewlines), !raw.isEmpty {
+            originURL = await MemberAPI.resolveLiveMediaURL(raw)
+        }
+        let opensOnFallback = originURL != nil && originURL != url
         guard !stopped else { return }   // the view was dismissed while we awaited resolution
         try? AVAudioSession.sharedInstance().setCategory(.playback)
         try? AVAudioSession.sharedInstance().setActive(true)
+        let item = makeItem(opensOnFallback ? originURL! : url)
+        let avPlayer = AVPlayer(playerItem: item)
+        // Don't wait to build a buffer before starting playback — join the
+        // stream as fast as the network allows rather than optimizing for a
+        // stutter-free start. Applies to replays too (a faster non-live join
+        // is still strictly better there, nothing live-edge-specific about
+        // this one).
+        avPlayer.automaticallyWaitsToMinimizeStalling = false
+        player = avPlayer
+        observe(item: item, player: avPlayer)
+        avPlayer.play()
+        phase = .playing
+        lastProgressAt = Date()
+        startHeartbeat()
+        if opensOnFallback { scheduleCDNSwap(to: url) }
+    }
+
+    /// One configured item, so the first play and the CDN swap are identical
+    /// but for the URL.
+    private func makeItem(_ url: URL) -> AVPlayerItem {
         let item = AVPlayerItem(url: url)
         // LATENCY (owner ask, 2026-08-01) — configure the LIVE-edge distance
         // as tight as the client can request; server-side HLS target-latency/
@@ -91,19 +123,52 @@ final class LiveViewerPlayerController: ObservableObject {
             // `markEnded`, 15s grace) is what makes that trade acceptable.
             item.preferredForwardBufferDuration = 2
         }
-        let avPlayer = AVPlayer(playerItem: item)
-        // Don't wait to build a buffer before starting playback — join the
-        // stream as fast as the network allows rather than optimizing for a
-        // stutter-free start. Applies to replays too (a faster non-live join
-        // is still strictly better there, nothing live-edge-specific about
-        // this one).
-        avPlayer.automaticallyWaitsToMinimizeStalling = false
-        player = avPlayer
-        observe(item: item, player: avPlayer)
-        avPlayer.play()
-        phase = .playing
-        lastProgressAt = Date()
-        startHeartbeat()
+        return item
+    }
+
+    /// How long the viewer stays on the direct-origin playlist before moving
+    /// to the CDN one — long enough that the edge's mirror has almost
+    /// certainly caught up to a just-started stream.
+    private static let cdnWarmUpNanos: UInt64 = 8_000_000_000
+
+    /// Flicker fix, part 2 (Android parity — LivePlayerScreen's CDN_WARM_UP_MS):
+    /// swap the origin playlist for the CDN one once the mirror has had time to
+    /// catch up, so the viewer never sees the edge's stale copy of the PREVIOUS
+    /// broadcast. Fires at most once per player; a stream that already ended (or
+    /// a view that was dismissed) skips it.
+    private func scheduleCDNSwap(to url: URL) {
+        cdnWarmUpTask?.cancel()
+        cdnWarmUpTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: Self.cdnWarmUpNanos)
+            guard !Task.isCancelled, let self, !self.stopped,
+                  self.phase == .playing, let player = self.player else { return }
+            let wasPlaying = player.rate > 0
+            let next = self.makeItem(url)
+            // The retired item's own notifications must not outlive it — a
+            // discarded live item posts DidPlayToEndTime, which would retire a
+            // stream that is playing perfectly well.
+            self.detachItemObservers(on: player)
+            player.replaceCurrentItem(with: next)
+            self.observe(item: next, player: player)
+            self.lastProgressAt = Date()
+            if wasPlaying { player.play() }
+        }
+    }
+
+    /// Drops every observer tied to the CURRENT item — including the player's
+    /// periodic time observer, which `observe(item:player:)` re-adds — so a
+    /// replaced item goes quiet and the swap doesn't leak one. The heartbeat is
+    /// deliberately untouched: the stream is the same stream. Shared by the CDN
+    /// swap and `stop()`.
+    private func detachItemObservers(on player: AVPlayer?) {
+        if let timeObserverToken, let player { player.removeTimeObserver(timeObserverToken) }
+        timeObserverToken = nil
+        statusObs?.invalidate(); statusObs = nil
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
+        if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
+        endObserver = nil; failObserver = nil; stallObserver = nil
+        stallTask?.cancel(); stallTask = nil
     }
 
     private func observe(item: AVPlayerItem, player: AVPlayer) {
@@ -151,6 +216,7 @@ final class LiveViewerPlayerController: ObservableObject {
         endedMessage = message ?? (isLive ? "The stream has ended" : "Playback stopped unexpectedly.")
         phase = .ended
         stopHeartbeat()
+        cdnWarmUpTask?.cancel(); cdnWarmUpTask = nil
         stallTask?.cancel(); stallTask = nil
         player?.pause()
     }
@@ -190,14 +256,8 @@ final class LiveViewerPlayerController: ObservableObject {
     func stop() {
         stopped = true
         stopHeartbeat()
-        stallTask?.cancel(); stallTask = nil
-        if let timeObserverToken { player?.removeTimeObserver(timeObserverToken) }
-        timeObserverToken = nil
-        statusObs?.invalidate(); statusObs = nil
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        if let failObserver { NotificationCenter.default.removeObserver(failObserver) }
-        if let stallObserver { NotificationCenter.default.removeObserver(stallObserver) }
-        endObserver = nil; failObserver = nil; stallObserver = nil
+        cdnWarmUpTask?.cancel(); cdnWarmUpTask = nil
+        detachItemObservers(on: player)
         player?.pause()
         player = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -399,7 +459,8 @@ struct LiveViewerPlayerView: View {
             }
         }
         .preferredColorScheme(.dark)
-        .task { await controller.start(mediaPath: item.mediaPath) }
+        .task { await controller.start(mediaPath: item.mediaPath,
+                                       fallbackPath: item.mediaFallbackPath) }
         .task {
             guard item.isLive else { return }
             pulseController.start()

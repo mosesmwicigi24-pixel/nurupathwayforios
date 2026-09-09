@@ -527,6 +527,30 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/transactions/\(id)", as: GivingDetail.self)
     }
 
+    // MARK: Giving PDFs (financial/index.ts:71,88 — the church's OWN documents)
+    //
+    // Both stream `application/pdf` and both accept the bearer header, so they
+    // ride APIClient's RawJSON passthrough exactly as the certificate download
+    // does: auth + the single-flight 401 refresh come for free and the bytes
+    // arrive untouched. NEVER a `?token=` browser URL — that endpoint form
+    // exists for the web portal, and using it here would write the member's
+    // access JWT into Safari's history.
+
+    /// GET /giving/statement.pdf — the member's giving statement as the church
+    /// issues it. Server-rendered from the ledger and covering ALL settled
+    /// giving (financial/service.ts statementPdf groups by day, newest first);
+    /// the year selector on the statement screen filters what is READ on
+    /// screen, not what this document contains.
+    static func downloadGivingStatementPdf() async throws -> Data {
+        try await APIClient.shared.get("giving/statement.pdf", as: RawJSON.self).data
+    }
+
+    /// GET /giving/transactions/{id}/receipt.pdf — one gift's receipt.
+    static func downloadGivingReceiptPdf(transactionId: String) async throws -> Data {
+        try await APIClient.shared.get("giving/transactions/\(transactionId)/receipt.pdf",
+                                       as: RawJSON.self).data
+    }
+
     /// GET /me/gifts — the member's spiritual-gifts profile.
     static func myGifts() async throws -> MyGifts {
         try await APIClient.shared.get("me/gifts", as: MyGifts.self)
