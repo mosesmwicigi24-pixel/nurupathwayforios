@@ -24,17 +24,48 @@ final class QuizViewModel: ObservableObject {
     @Published var text: [String: String] = [:]          // single id / scale number / free text
     @Published var checks: [String: Set<String>] = [:]   // checkbox selections
 
+    /// The questions in the order this member sees them. The server randomises
+    /// every fetch; a resumed draft reorders the fresh set back into the order
+    /// the member was answering, so "question 4" stays the same question.
+    @Published var questions: [QuizQuestion] = []
+    /// Set once, when a draft was restored — the view lands on this question
+    /// and shows a quiet "picking up where you left off" line.
+    @Published var resumedAt: Int?
+
     private let moduleId: String
     private(set) var clientMutationId = UUID().uuidString   // stable for this attempt
     init(moduleId: String) { self.moduleId = moduleId }
 
+    var draftKey: String { "module:\(moduleId)" }
+
     func load() async {
         loading = true; error = nil
-        do { quiz = try await MemberAPI.quiz(moduleId) }
+        do {
+            let fresh = try await MemberAPI.quiz(moduleId)
+            quiz = fresh
+            // Resume: the draft wins if the bank is unchanged; otherwise it is
+            // discarded and the member starts clean.
+            if let d = QuizDraftStore.load(draftKey),
+               let ordered = QuizDraftStore.reorder(fresh.questions, to: d) {
+                questions = ordered
+                text = d.text; checks = d.checks
+                resumedAt = min(d.index, max(ordered.count - 1, 0))
+            } else {
+                QuizDraftStore.clear(draftKey)
+                questions = fresh.questions
+            }
+        }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the quiz." }
         loading = false
         // Header title — best effort, never blocks the quiz itself.
         if moduleTitle == nil { moduleTitle = try? await MemberAPI.module(moduleId).title }
+    }
+
+    /// Every answer and every step, the moment it happens. Cheap: one small file.
+    func saveDraft(index: Int) {
+        guard result == nil, !questions.isEmpty else { return }
+        QuizDraftStore.save(draftKey, questionIds: questions.map(\.questionId),
+                            index: index, text: text, checks: checks)
     }
 
     func toggleCheck(_ qid: String, _ choiceId: String) {
@@ -60,7 +91,7 @@ final class QuizViewModel: ObservableObject {
         guard let quiz else { return }
         submitting = true; error = nil   // clear a stale submit error before retrying
         defer { submitting = false }
-        let answers: [QuizAnswer] = quiz.questions.map { q in
+        let answers: [QuizAnswer] = questions.map { q in
             let given: String
             switch q.kind {
             case .checkbox:
@@ -73,6 +104,12 @@ final class QuizViewModel: ObservableObject {
         }
         do {
             result = try await MemberAPI.submitQuiz(moduleId, clientMutationId: clientMutationId, answers: answers)
+            // Finished — pass or fail. The draft's job is done, and the member
+            // is told they finished BEFORE they are told how they scored.
+            QuizDraftStore.clear(draftKey)
+            CelebrationCenter.shared.fire(key: "finished:\(draftKey):\(clientMutationId)",
+                                          title: "Congratulations",
+                                          subtitle: "You've finished the test.")
         } catch {
             self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
             Haptics.error()
@@ -83,7 +120,9 @@ final class QuizViewModel: ObservableObject {
     func retry() {
         result = nil; error = nil
         text = [:]; checks = [:]
+        resumedAt = nil
         clientMutationId = UUID().uuidString
+        QuizDraftStore.clear(draftKey)
     }
 }
 
@@ -133,7 +172,7 @@ struct QuizView: View {
                                  onRetry: { vm.retry(); idx = 0 })
             } else if vm.loading && vm.quiz == nil {
                 quizSkeleton
-            } else if let quiz = vm.quiz, !quiz.questions.isEmpty {
+            } else if let quiz = vm.quiz, !vm.questions.isEmpty {
                 flow(quiz)
             } else {
                 VStack(spacing: Nuru.S.md) {
@@ -164,16 +203,30 @@ struct QuizView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
-        .task { if vm.quiz == nil { await vm.load() } }
+        .task {
+            if vm.quiz == nil { await vm.load() }
+            if let r = vm.resumedAt { idx = r }
+        }
+        // Save on every answer and every step — the moment it happens.
+        .onChange(of: vm.text) { _, _ in vm.saveDraft(index: idx) }
+        .onChange(of: vm.checks) { _, _ in vm.saveDraft(index: idx) }
+        .onChange(of: idx) { _, new in vm.saveDraft(index: new) }
     }
 
     // MARK: - One-question-at-a-time flow
 
     private func flow(_ quiz: AssembledQuiz) -> some View {
-        let count = quiz.questions.count
+        let count = vm.questions.count
         let safeIdx = min(idx, count - 1)
-        let q = quiz.questions[safeIdx]
+        let q = vm.questions[safeIdx]
         return VStack(spacing: 0) {
+            if let r = vm.resumedAt, r > 0, safeIdx == r {
+                Text("Picking up where you left off — question \(r + 1) of \(count).")
+                    .font(.inter(12, .medium)).foregroundStyle(QZ.copy)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 8)
+                    .background(QZ.gold.opacity(0.12))
+            }
             QuizHeader(title: vm.moduleTitle, index: safeIdx, count: count) {
                 if safeIdx > 0 { withAnimation(.easeInOut(duration: 0.25)) { idx = safeIdx - 1 } }
                 else { dismiss() }
@@ -542,6 +595,9 @@ private struct QuizPassScreen: View {
                 rings
                     .scaleEffect(bloomed ? 1 : 0.82)
                     .opacity(bloomed ? 1 : 0)
+                Text("You've finished the test.")
+                    .font(.inter(13, .semibold)).foregroundStyle(QZ.copy)
+                    .padding(.top, 20)
                 Text("\(score)%")
                     .font(.inter(52, .bold)).foregroundStyle(QZ.gold)
                     .padding(.top, 28)
@@ -639,6 +695,9 @@ private struct QuizFailScreen: View {
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
                     .overlay(Text("📖").font(.system(size: 44)))
+                Text("You've finished the test.")
+                    .font(.inter(13, .semibold)).foregroundStyle(QZ.copy)
+                    .padding(.top, 20)
                 Text("\(score)%")
                     .font(.inter(44, .bold)).foregroundStyle(QZ.ink)
                     .padding(.top, 24)

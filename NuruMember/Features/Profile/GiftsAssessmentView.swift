@@ -31,15 +31,30 @@ final class GiftsAssessmentViewModel: ObservableObject {
 
     func load() async {
         loading = true; error = nil
+        // A draft left mid-assessment wins over a fresh fetch: the set can be
+        // AI-personalised per fetch, so the draft carries the exact set the
+        // member was answering (it is Codable) and never refetches.
+        if let d = QuizDraftStore.loadGifts() {
+            questionSet = d.questionSet
+            chosen = d.chosen
+            step = min(d.step, d.questionSet.data.count)   // == count lands on the submit pane
+            resumed = step > 0
+            loading = false
+            return
+        }
         do { questionSet = try await MemberAPI.giftQuestions() }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the assessment." }
         loading = false
     }
 
-    /// Records one answer and advances to the next question.
+    /// True when this session picked up a saved draft — the view says so, once.
+    @Published var resumed = false
+
+    /// Records one answer and advances to the next question — and saves, every time.
     func choose(_ value: Int, for question: GiftQuestion) {
         chosen[question.questionId] = value
         step += 1
+        if let questionSet { QuizDraftStore.saveGifts(questionSet, chosen: chosen, step: step) }
     }
 
     /// Submits the full answer set; the server computes scores + personas.
@@ -52,6 +67,11 @@ final class GiftsAssessmentViewModel: ObservableObject {
             result = try await MemberAPI.submitGifts(setId: questionSet.setId,
                                                      clientMutationId: UUID().uuidString,
                                                      answers: answers)
+            // Finished. Draft done; congratulations before the profile reveals.
+            QuizDraftStore.clearGifts()
+            CelebrationCenter.shared.fire(key: "finished:gifts:\(questionSet.setId)",
+                                          title: "Congratulations",
+                                          subtitle: "You've finished the assessment.")
             Haptics.success()
         } catch {
             Haptics.error()
@@ -61,7 +81,8 @@ final class GiftsAssessmentViewModel: ObservableObject {
 
     /// Clears local answers and fetches a fresh question set.
     func retake() async {
-        chosen = [:]; step = 0; result = nil; submitError = nil
+        chosen = [:]; step = 0; result = nil; submitError = nil; resumed = false
+        QuizDraftStore.clearGifts()
         await load()
     }
 }
@@ -88,7 +109,9 @@ struct GiftsAssessmentView: View {
     /// Header kicker: question position while answering, then the result state.
     private var kicker: String {
         if vm.result != nil { return "YOUR GIFTS" }
-        if vm.total > 0, vm.step < vm.total { return "QUESTION \(vm.step + 1) OF \(vm.total)" }
+        if vm.total > 0, vm.step < vm.total {
+            return vm.resumed ? "PICKING UP AT QUESTION \(vm.step + 1) OF \(vm.total)" : "QUESTION \(vm.step + 1) OF \(vm.total)"
+        }
         return "SPIRITUAL GIFTS"
     }
 
