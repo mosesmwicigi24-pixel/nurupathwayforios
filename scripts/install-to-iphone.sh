@@ -11,26 +11,90 @@
 #
 # It needs NO cable. `devicectl` talks to a paired device over the network.
 #
+# ANY paired phone, by name (owner ask, 2026-09-15: "build iOS for Jackline").
+# A tester's phone is paired ONCE by cable (trust the prompt on the phone);
+# from then on `scripts/install-to-iphone.sh jackline` finds it by name and
+# puts the current build on it over Wi-Fi. `--list` shows every phone this
+# Mac knows, so "is her phone paired?" is one command too.
+#
 # Usage:
-#   scripts/install-to-iphone.sh                 # default device, build + install
-#   scripts/install-to-iphone.sh --launch        # also open the app afterwards
-#   DEVICE_UDID=<udid> scripts/install-to-iphone.sh
+#   scripts/install-to-iphone.sh                      # default phone, build + install
+#   scripts/install-to-iphone.sh jackline             # a paired phone by (part of) its name
+#   scripts/install-to-iphone.sh --device <udid>      # or by its identifier
+#   scripts/install-to-iphone.sh jackline --launch    # also open the app afterwards
+#   scripts/install-to-iphone.sh --list               # every phone paired with this Mac
+#   DEVICE_UDID=<udid> scripts/install-to-iphone.sh   # still honoured
 set -euo pipefail
 
-DEVICE_UDID="${DEVICE_UDID:-C8C95660-0D63-50A1-880E-6CA6EE0CC72D}"   # PastorsiPhone
+DEFAULT_UDID="C8C95660-0D63-50A1-880E-6CA6EE0CC72D"   # PastorsiPhone
+DEVICE_UDID="${DEVICE_UDID:-}"
 BUNDLE_ID="org.nuruplace.member"
 SCHEME="NuruMember"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DD="${DERIVED_DATA:-$ROOT/build/dd-device}"
 LAUNCH=0
-[ "${1:-}" = "--launch" ] && LAUNCH=1
+TARGET=""
+LIST=0
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --launch) LAUNCH=1 ;;
+    --list) LIST=1 ;;
+    --device) shift; TARGET="${1:-}" ;;
+    --device=*) TARGET="${1#--device=}" ;;
+    -h|--help) sed -n '2,25p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --*) printf 'Unknown option: %s\n' "$1" >&2; exit 2 ;;
+    *) TARGET="$1" ;;
+  esac
+  shift
+done
 
 say() { printf '\n\033[1m%s\033[0m\n' "$*"; }
 die() { printf '\n\033[31mSTOPPED: %s\033[0m\n\n' "$*" >&2; exit 1; }
 
+# `devicectl list devices` prints a table: Name · Hostname · Identifier · State · Model.
+# Only the device rows carry an identifier in UUID form, which is how the
+# header and rules are skipped without depending on their exact wording.
+UUID_RE='[0-9A-Fa-f]\{8\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{4\}-[0-9A-Fa-f]\{12\}'
+DEVICES="$(xcrun devicectl list devices 2>/dev/null | grep "$UUID_RE" || true)"
+
+if [ "$LIST" = "1" ]; then
+  say "Phones paired with this Mac"
+  if [ -z "$DEVICES" ]; then
+    echo "     none — connect a phone by cable once and trust the prompt on it."
+  else
+    sed 's/  */ /g' <<<"$DEVICES" | sed 's/^/     /'
+  fi
+  echo
+  exit 0
+fi
+
+# Which phone: an explicit identifier wins; a name matches (part of) the
+# device's name, case-insensitively; nothing named means the default phone.
+if [ -z "$DEVICE_UDID" ] && [ -n "$TARGET" ]; then
+  if grep -qi "^$UUID_RE\$" <<<"$TARGET"; then
+    DEVICE_UDID="$TARGET"
+  else
+    MATCHES="$(grep -i -- "$TARGET" <<<"$DEVICES" || true)"
+    COUNT="$(grep -c . <<<"$MATCHES" || true)"
+    if [ -z "$MATCHES" ] || [ "$COUNT" = "0" ]; then
+      die "No paired phone matches \"$TARGET\". Phones this Mac knows:
+$(sed 's/  */ /g' <<<"${DEVICES:-     (none)}" | sed 's/^/  /')
+  If the phone is missing, connect it by cable once and trust the prompt on it; then it works over the network."
+    fi
+    if [ "$COUNT" != "1" ]; then
+      die "\"$TARGET\" matches more than one phone — pick one with --device <identifier>:
+$(sed 's/  */ /g' <<<"$MATCHES" | sed 's/^/  /')"
+    fi
+    DEVICE_UDID="$(grep -o "$UUID_RE" <<<"$MATCHES" | head -1)"
+  fi
+fi
+DEVICE_UDID="${DEVICE_UDID:-$DEFAULT_UDID}"
+
 say "1/3  Is the phone reachable?"
-STATE="$(xcrun devicectl list devices 2>/dev/null | grep "$DEVICE_UDID" || true)"
-[ -n "$STATE" ] || die "That device is not paired with this Mac. Connect it by cable once and trust the prompt; after that it works over the network."
+STATE="$(grep "$DEVICE_UDID" <<<"$DEVICES" || true)"
+[ -n "$STATE" ] || die "That device is not paired with this Mac. Connect it by cable once and trust the prompt; after that it works over the network.
+  Phones this Mac knows:
+$(sed 's/  */ /g' <<<"${DEVICES:-     (none)}" | sed 's/^/  /')"
 grep -q "available" <<<"$STATE" || die "The phone is paired but not reachable right now. Put it on the same network, unlock it, and try again.
   Seen as: $(awk '{$1=$1};1' <<<"$STATE")"
 echo "     ok — $(sed 's/  */ /g' <<<"$STATE" | cut -c1-70)"
