@@ -39,6 +39,8 @@ struct PlanSegmentView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
     @AppStorage("readerNight") private var readerNight = false
+    /// Three text-size steps, cycled from the header, remembered per device.
+    @AppStorage(ReaderTextScale.key) private var readerScale: Double = 1.0
     @State private var done = false
     @State private var saving = false
     @State private var player: MediaItem?
@@ -50,7 +52,7 @@ struct PlanSegmentView: View {
 
     private struct MediaItem: Identifiable { let id = UUID(); let url: URL }
 
-    private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
+    private var pal: ReaderPalette { ReaderPalette(night: readerNight, textScale: CGFloat(readerScale)) }
     private var segment: PlanSegment { ref.segments[min(max(ref.index, 0), ref.segments.count - 1)] }
 
     /// The segments this page renders — a combined group ("word" = Scripture +
@@ -150,6 +152,19 @@ struct PlanSegmentView: View {
                     .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
+                // Text size: Small → Regular → Large → Small, one tap each.
+                Button {
+                    Haptics.tap()
+                    withAnimation(.easeInOut(duration: 0.2)) { readerScale = ReaderTextScale.next(after: readerScale) }
+                } label: {
+                    Text("Aa").font(.inter(13, .bold)).foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white.opacity(0.10), in: Circle())
+                        .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Text size: \(ReaderTextScale.label(readerScale))")
+                .padding(.trailing, 8)
                 Button {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
@@ -202,6 +217,9 @@ struct PlanSegmentView: View {
         }
     }
 
+    /// The Word page carries teaching after its passage (rank 2 = devotional).
+    private var hasTeaching: Bool { group.contains { rank($0) == 2 && !($0.content ?? "").isEmpty } }
+
     /// Header caption — the scripture reference for The Word page.
     private var headerRef: String? {
         if ref.part == "word" {
@@ -215,18 +233,30 @@ struct PlanSegmentView: View {
     @ViewBuilder private var content: some View {
         switch ref.part {
         case "word":
+            // The opening: kicker, the day's title, the reference and an honest
+            // read time — a front door before the Word.
+            DayOpening(title: ref.dayTitle, reference: headerRef, minutes: ReadTime.minutes(for: group))
             // Scripture woven straight into the teaching — one encouraging read,
             // Go Deeper folded in at the end.
             ForEach(group) { seg in
                 switch seg.kind.lowercased() {
                 case "scripture":
-                    DayPullQuote(text: (seg.content?.isEmpty == false ? seg.content! : (seg.reference ?? seg.title)),
-                                 caption: seg.reference ?? "Scripture")
+                    // Authored text wins; a bare reference fetches its passage so
+                    // the pull-quote never reads "Proverbs 13:4" and nothing else.
+                    if let c = seg.content, !c.isEmpty {
+                        DayPullQuote(text: c, caption: seg.reference ?? "Scripture")
+                    } else if let r = seg.reference, ScriptureRefs.isReference(r) {
+                        DayScriptureQuote(reference: r)
+                    } else {
+                        DayPullQuote(text: seg.reference ?? seg.title, caption: seg.reference ?? "Scripture")
+                    }
+                    // Where the Word ends and the teaching begins.
+                    if hasTeaching { ReaderOrnament() }
                 case "reading":
                     if let c = seg.content, !c.isEmpty {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("GO DEEPER").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
-                            DayGoDeeper(refs: c)
+                            DayGoDeeperPassages(refs: c)
                         }
                     }
                 default:
@@ -270,7 +300,7 @@ struct PlanSegmentView: View {
             ForEach(Array(points.enumerated()), id: \.offset) { _, p in
                 HStack(alignment: .top, spacing: 8) {
                     Circle().fill(pal.gold).frame(width: 5, height: 5).padding(.top, 7)
-                    Text(p).font(.inter(14, .medium)).foregroundStyle(pal.ink).lineSpacing(5)
+                    Text(p).font(.inter(pal.fs(14), .medium)).foregroundStyle(pal.ink).lineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -381,7 +411,13 @@ private struct PartReflectionBox: View {
     @State private var saved: PlanDayReflection?
     @State private var saving = false
     @State private var justSaved = false
+    /// Why the last save did not land — shown under the button, in words.
+    /// A silent failure read as "Update does nothing" (owner report,
+    /// 2026-09-04); the box now always says what happened.
+    @State private var error: String?
     @FocusState private var focused: Bool
+
+    private var trimmed: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -412,6 +448,14 @@ private struct PartReflectionBox: View {
                     .toolbar {
                         ToolbarItemGroup(placement: .keyboard) {
                             Spacer()
+                            // Save from the keyboard itself: the button below
+                            // can sit under the keyboard while typing.
+                            Button(saved == nil ? "Save" : "Update") {
+                                focused = false
+                                Task { await save() }
+                            }
+                            .font(.inter(14, .bold)).foregroundStyle(pal.goldDeep)
+                            .disabled(trimmed.isEmpty || saving)
                             Button("Done") { focused = false }
                                 .font(.inter(14, .semibold)).foregroundStyle(pal.goldDeep)
                         }
@@ -425,8 +469,9 @@ private struct PartReflectionBox: View {
             } label: {
                 HStack(spacing: 6) {
                     if saving { ProgressView().tint(pal.goldDeep) }
+                    else if justSaved { Icon(.check, size: 13, color: pal.goldDeep) }
                     else { Icon(.pencil, size: 13, color: pal.goldDeep) }
-                    Text(saved == nil ? "Save reflection" : "Update")
+                    Text(justSaved ? "Saved" : (saved == nil ? "Save reflection" : "Update"))
                         .font(.inter(12, .bold)).foregroundStyle(pal.goldDeep)
                 }
                 .frame(maxWidth: .infinity)
@@ -435,8 +480,14 @@ private struct PartReflectionBox: View {
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(pal.gold.opacity(0.3), lineWidth: 1))
             }
             .buttonStyle(.pressable)
-            .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || saving)
-            .opacity(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+            .disabled(trimmed.isEmpty || saving)
+            .opacity(trimmed.isEmpty ? 0.5 : 1)
+            if let error {
+                Text(error)
+                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
         }
         .padding(16)
         .background(pal.card, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -449,19 +500,30 @@ private struct PartReflectionBox: View {
     }
 
     private func save() async {
-        let body = String(text.trimmingCharacters(in: .whitespacesAndNewlines).prefix(4000))
+        let body = String(trimmed.prefix(4000))
         guard !body.isEmpty, !saving else { return }
         saving = true
-        if let row = try? await MemberAPI.savePlanDayReflection(planId: planId, dayNumber: dayNumber, body: body) {
+        withAnimation(.easeOut(duration: 0.2)) { error = nil }
+        do {
+            let row = try await MemberAPI.savePlanDayReflection(planId: planId, dayNumber: dayNumber, body: body)
             saved = row
+            // The server's copy is what the next visit will show — mirror it
+            // now, so what you see after "Update" is exactly what was kept.
+            if !row.body.isEmpty { text = row.body }
             Haptics.success()
             withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { justSaved = true }
             Task {
                 try? await Task.sleep(nanoseconds: 2_200_000_000)
                 withAnimation(.easeOut(duration: 0.25)) { justSaved = false }
             }
-        } else {
+        } catch {
             Haptics.error()
+            let api = error as? APIError
+            withAnimation(.easeOut(duration: 0.2)) {
+                self.error = (api?.isNetwork == true)
+                    ? "You're offline — your reflection needs a connection to save."
+                    : (api?.errorDescription ?? "Couldn't save your reflection. Try again.")
+            }
         }
         saving = false
     }
@@ -485,6 +547,12 @@ struct TalkItOverView: View {
     @State private var markedRead = false
     @State private var aiBusy = false
     @FocusState private var composing: Bool
+    /// How far the composer must rise to clear the keyboard, taken from the
+    /// keyboard's own frame. On iOS 26 the keyboard no longer reaches this
+    /// pushed page's safe area (owner screenshot, 2026-09-04: the composer
+    /// sat under the glass keyboard), so the page ignores the keyboard region
+    /// entirely and pads by exactly the overlap itself.
+    @State private var keyboardInset: CGFloat = 0
 
     var body: some View {
         VStack(spacing: 0) {
@@ -523,6 +591,8 @@ struct TalkItOverView: View {
                         // with — hidden while typing so the composer gets the room.
                         if !composing { doneBar }
                     }
+                    .padding(.bottom, keyboardInset)
+                    .background(Color.white)
                 }
                 .onChange(of: posts.count) { _, _ in
                     if let last = posts.last {
@@ -531,8 +601,15 @@ struct TalkItOverView: View {
                 }
             }
         }
+        .ignoresSafeArea(.keyboard, edges: .bottom)
         .background(PL.cream.ignoresSafeArea())
         .animation(.easeInOut(duration: 0.2), value: composing)
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { n in
+            updateKeyboardInset(n)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            withAnimation(.easeOut(duration: 0.25)) { keyboardInset = 0 }
+        }
         // NOT .ignoresSafeArea(.top) — that buried the back-arrow row under the
         // status bar (the header's own background still bleeds navy to the top).
         .navigationBarBackButtonHidden(true)
@@ -543,6 +620,21 @@ struct TalkItOverView: View {
         .onAppear { tabs.chromeHidden = true }
         .task { await load() }
         .refreshable { await load() }
+    }
+
+    /// The keyboard's end frame → the part of it that overlaps this page,
+    /// less the home-indicator inset the safe-area inset already clears.
+    private func updateKeyboardInset(_ n: Notification) {
+        guard let end = (n.userInfo?[UIResponder.keyboardFrameEndUserInfoKey] as? NSValue)?.cgRectValue else { return }
+        let screen = UIScreen.main.bounds
+        let overlap = max(0, screen.maxY - end.minY)
+        let bottomSafe = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }
+            .first?.safeAreaInsets.bottom ?? 0
+        let duration = (n.userInfo?[UIResponder.keyboardAnimationDurationUserInfoKey] as? Double) ?? 0.25
+        withAnimation(.easeOut(duration: max(0.1, duration))) {
+            keyboardInset = overlap > 0 ? max(0, overlap - bottomSafe) : 0
+        }
     }
 
     private func load() async {
