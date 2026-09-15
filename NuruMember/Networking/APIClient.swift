@@ -109,6 +109,19 @@ actor APIClient {
     /// Dedicated session (not `URLSession.shared`): bounded timeouts, fail-fast
     /// when offline (the app must fall through to its cache immediately, §1.7),
     /// and no cookie/credential persistence — auth is bearer-JWT only (§1.3).
+    /// The last good copy of every GET, on disk — served ONLY when the wire
+    /// fails. The server has been vanishing for two to four hours at a time
+    /// (pathway docs/DEPLOYMENT.md, incident ledger 2026-09-05→11); while it is
+    /// away a member should see a stale Home, not a blank page. Its own cache,
+    /// not URLCache.shared: clearing it on sign-out must not throw away the
+    /// image cache, and image loads must not evict API rows.
+    static let apiCache = URLCache(
+        memoryCapacity: 4 * 1024 * 1024,
+        diskCapacity: 24 * 1024 * 1024,
+        directory: FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?
+            .appendingPathComponent("api-http", isDirectory: true)
+    )
+
     private static let session: URLSession = {
         let c = URLSessionConfiguration.default
         c.timeoutIntervalForRequest = 30    // Argon2id endpoints can take seconds (§5.5)
@@ -118,9 +131,19 @@ actor APIClient {
         c.httpCookieAcceptPolicy = .never   // …and never store any the server sets
         c.httpCookieStorage = nil
         c.urlCredentialStorage = nil        // no URL-auth credentials to persist
-        c.urlCache = URLCache.shared        // the disk cache sized by configureNuruCaches()
+        c.urlCache = apiCache               // the last-good-copy store (stored by hand in send)
+        c.requestCachePolicy = .reloadIgnoringLocalCacheData // online reads always hit the wire
         return URLSession(configuration: c)
     }()
+
+    /// Reads whose last good copy is worth keeping: GETs that are not auth,
+    /// not the sync engine's own pulls (it keeps its own truth), not raw
+    /// media. Everything else goes to the wire or fails honestly.
+    private static func keepsLastGoodCopy(_ method: String, _ path: String) -> Bool {
+        guard method == "GET" else { return false }
+        let p = path.lowercased()
+        return !p.hasPrefix("auth/") && !p.contains("/sync") && !p.hasPrefix("sync")
+    }
 
     init() {
         baseURL = Self.resolveBaseURL()
@@ -167,6 +190,9 @@ actor APIClient {
     func setOnSessionExpired(_ fn: @escaping @Sendable () -> Void) { onSessionExpired = fn }
 
     func setSession(access: String?, refresh: String?) {
+        // A different member signing in on this phone must never be shown the
+        // previous member's last good copies; a token REFRESH keeps them.
+        if access == nil || accessToken == nil { Self.apiCache.removeAllCachedResponses() }
         accessToken = access
         refreshToken = refresh
         Keychain.set(access, for: atKey)
@@ -239,19 +265,29 @@ actor APIClient {
             req.httpBody = try encoder.encode(body)
         }
 
-        let data: Data, response: URLResponse
+        let keepCopy = Self.keepsLastGoodCopy(method, trimmed)
+        var data: Data, response: URLResponse
         do {
             (data, response) = try await Self.session.data(for: req)
         } catch let urlErr as URLError {
-            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+            // The wire failed. For a read we keep copies of, the last good copy
+            // answers instead — a two-hour server outage becomes a stale
+            // screen, not an empty one. Writes and auth never take this path.
+            if keepCopy, let cached = Self.apiCache.cachedResponse(for: req) {
+                data = cached.data; response = cached.response
+            } else if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
                 throw APIError.offline
+            } else {
+                throw APIError.transport(urlErr.localizedDescription)
             }
-            throw APIError.transport(urlErr.localizedDescription)
         } catch {
             throw APIError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else {
             throw APIError.transport("No HTTP response.")
+        }
+        if keepCopy, (200..<300).contains(http.statusCode) {
+            Self.apiCache.storeCachedResponse(CachedURLResponse(response: http, data: data), for: req)
         }
 
         if http.statusCode == 401, !isRetry, refreshToken != nil {
