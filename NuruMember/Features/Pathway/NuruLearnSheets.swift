@@ -35,6 +35,17 @@ struct NuruCoachSheet: View {
                             .padding(20)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(hex: 0xFFFDF6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        // The end of the review is a finish line, not a fade-out
+                        // (owner, 2026-09-15: "…say you have finished the review").
+                        VStack(spacing: 6) {
+                            Text("Congratulations")
+                                .font(.fraunces(22)).foregroundStyle(.white)
+                            Text("You've finished the review. When you're ready, the quiz is waiting.")
+                                .font(.inter(14)).foregroundStyle(.white.opacity(0.85))
+                                .multilineTextAlignment(.center)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
                         Button {
                             Haptics.action(); dismiss(); onRetry()
                         } label: {

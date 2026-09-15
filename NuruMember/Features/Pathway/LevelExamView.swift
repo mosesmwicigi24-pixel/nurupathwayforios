@@ -26,6 +26,16 @@ final class LevelExamViewModel: ObservableObject {
     // Per-question answer state (same wire idiom as the module quiz).
     @Published var text: [String: String] = [:]          // single id / scale number / free text
     @Published var checks: [String: Set<String>] = [:]   // checkbox selections
+    /// Member's order (see QuizViewModel.questions) and the resume point.
+    @Published var questions: [QuizQuestion] = []
+    @Published var resumedAt: Int?
+    var draftKey: String { "level:\(levelNumber)" }
+
+    func saveDraft(index: Int) {
+        guard result == nil, !questions.isEmpty else { return }
+        QuizDraftStore.save(draftKey, questionIds: questions.map(\.questionId),
+                            index: index, text: text, checks: checks)
+    }
 
     let levelNumber: Int
     private(set) var clientMutationId = UUID().uuidString   // stable for this attempt
@@ -33,7 +43,19 @@ final class LevelExamViewModel: ObservableObject {
 
     func load() async {
         loading = true; error = nil; notEligible = nil
-        do { exam = try await MemberAPI.levelExam(levelNumber) }
+        do {
+            let fresh = try await MemberAPI.levelExam(levelNumber)
+            exam = fresh
+            if let d = QuizDraftStore.load(draftKey),
+               let ordered = QuizDraftStore.reorder(fresh.questions, to: d) {
+                questions = ordered
+                text = d.text; checks = d.checks
+                resumedAt = min(d.index, max(ordered.count - 1, 0))
+            } else {
+                QuizDraftStore.clear(draftKey)
+                questions = fresh.questions
+            }
+        }
         catch { classify(error) }
         loading = false
         // Header title — best effort, never blocks the exam itself.
@@ -77,7 +99,7 @@ final class LevelExamViewModel: ObservableObject {
         guard let exam else { return }
         submitting = true; error = nil   // clear a stale submit error before retrying
         defer { submitting = false }
-        let answers: [QuizAnswer] = exam.questions.map { q in
+        let answers: [QuizAnswer] = questions.map { q in
             let given: String
             switch q.kind {
             case .checkbox:
@@ -90,6 +112,11 @@ final class LevelExamViewModel: ObservableObject {
         }
         do {
             result = try await MemberAPI.submitLevelExam(levelNumber, clientMutationId: clientMutationId, answers: answers)
+            // Finished — pass or fail. Draft done; congratulations before the score.
+            QuizDraftStore.clear(draftKey)
+            CelebrationCenter.shared.fire(key: "finished:\(draftKey):\(clientMutationId)",
+                                          title: "Congratulations",
+                                          subtitle: "You've finished the exam.")
         } catch {
             if case let APIError.http(_, code, message, _) = error, code == "GATE_LOCKED" {
                 notEligible = message   // the gate closed between assemble and submit
@@ -104,6 +131,8 @@ final class LevelExamViewModel: ObservableObject {
     func retry() {
         result = nil; error = nil
         text = [:]; checks = [:]
+        resumedAt = nil
+        QuizDraftStore.clear(draftKey)
         clientMutationId = UUID().uuidString
     }
 }
@@ -156,7 +185,7 @@ struct LevelExamView: View {
                 examSkeleton
             } else if let reason = vm.notEligible {
                 ExamNotEligibleScreen(levelNumber: levelNumber, reason: reason) { dismiss() }
-            } else if let exam = vm.exam, !exam.questions.isEmpty {
+            } else if let exam = vm.exam, !vm.questions.isEmpty {
                 flow(exam)
             } else {
                 loadFailed
@@ -165,15 +194,21 @@ struct LevelExamView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .ignoresSafeArea(edges: .top)
-        .task { if vm.exam == nil { await vm.load() } }
+        .task {
+            if vm.exam == nil { await vm.load() }
+            if let r = vm.resumedAt { idx = r }
+        }
+        .onChange(of: vm.text) { _, _ in vm.saveDraft(index: idx) }
+        .onChange(of: vm.checks) { _, _ in vm.saveDraft(index: idx) }
+        .onChange(of: idx) { _, new in vm.saveDraft(index: new) }
     }
 
     // MARK: - One-question-at-a-time flow (QuizView's idiom)
 
     private func flow(_ exam: AssembledExam) -> some View {
-        let count = exam.questions.count
+        let count = vm.questions.count
         let safeIdx = min(idx, count - 1)
-        let q = exam.questions[safeIdx]
+        let q = vm.questions[safeIdx]
         return VStack(spacing: 0) {
             ExamHeader(levelNumber: levelNumber, title: vm.levelTitle, index: safeIdx, count: count) {
                 if safeIdx > 0 { withAnimation(.easeInOut(duration: 0.25)) { idx = safeIdx - 1 } }
