@@ -86,6 +86,13 @@ enum MemberAPI {
         try await APIClient.shared.get("me/home/next-action", as: NextActionEnvelope.self).action
     }
 
+    /// GET /me/home/nudges — "What needs you today", server-ranked (may be
+    /// empty). Home treats a failure like an empty list: the old single
+    /// reflection strip takes the slot back, so the nudge never disappears.
+    static func homeNudges() async throws -> [HomeNudge] {
+        try await APIClient.shared.get("me/home/nudges", as: HomeNudgesEnvelope.self).nudges
+    }
+
     /// POST /me/rhythm/complete — mark a rhythm done for today (idempotent).
     static func completeRhythm(_ kind: String) async throws -> RhythmToday {
         struct Body: Encodable { let kind: String }

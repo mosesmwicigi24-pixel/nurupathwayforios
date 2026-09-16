@@ -113,6 +113,11 @@ final class TabRouter: ObservableObject {
     /// widget URL, a Home "See events" / "Give now" button) should land on.
     /// YouTabView consumes this (pushes its own segment state) and clears it.
     @Published var youSegment: YouSegment?
+    /// A conversation to open on the Chat stack (You → Community → Talk) —
+    /// set by a Home "chat_unread" nudge or a Read-with-a-Friend "Sent to
+    /// <name> in chat · Open chat" toast. ChatView consumes it (pushes the
+    /// thread with the inbox as the back stop) and clears it.
+    @Published var conversationLink: String?
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
@@ -120,6 +125,7 @@ final class TabRouter: ObservableObject {
     func openAnnouncement(_ id: String) { announcementLink = id; selected = .home }
     func openReadingInvite(_ token: String) { readingInviteToken = token; selected = .plans }
     func openYou(_ seg: YouSegment) { youSegment = seg; selected = .you }
+    func openConversation(_ id: String) { conversationLink = id; openYou(.chat) }
 }
 
 struct RootView: View {
@@ -366,6 +372,14 @@ struct RootView: View {
         // the public /join/{token} landing page attempts before falling back
         // to the store — docs/READING_SOCIAL_PLAN.md §5).
         .onOpenURL { url in
+            // Read with a Friend — nuru://join/{token} today, and the public
+            // https://pathway.nuruplace.org/join/{token} link itself the moment
+            // Universal Links exist (harmless until then: no other https URL
+            // reaches onOpenURL without an Associated Domain).
+            if let token = MemberAPI.readingJoinToken(from: url) {
+                tabs.openReadingInvite(token)
+                return
+            }
             let host = url.host ?? url.absoluteString.replacingOccurrences(of: "nuru://", with: "")
             switch host {
             case "pathway": tabs.selected = .pathway
@@ -383,9 +397,8 @@ struct RootView: View {
                 // than selecting a tab that isn't on the bar.
                 if LiveBroadcastEligibility.canGoLive(auth.profile) { tabs.selected = .live }
             case "radio":   NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
-            case "join":
-                let token = url.pathComponents.last(where: { $0 != "/" }) ?? url.lastPathComponent
-                if !token.isEmpty { tabs.openReadingInvite(token) }
+            // "join" is claimed above by readingJoinToken(from:) — same scheme,
+            // now shared with the https shape and the chat bubble's link tap.
             default:        tabs.selected = .home
             }
         }

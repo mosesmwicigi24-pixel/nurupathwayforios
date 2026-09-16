@@ -331,6 +331,7 @@ struct ChatView: View {
     var embeddedInYou: Bool = false
 
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = ChatInboxViewModel()
     @State private var path = NavigationPath()
     @State private var segment: ChatSegment = .space
@@ -384,6 +385,20 @@ struct ChatView: View {
         // rows. Without it the numbers only reset on a full tab re-entry.
         .onChange(of: path.count) { old, new in
             if new < old { Task { await vm.load() } }
+        }
+        // Cross-tab deep link (a Home "chat_unread" nudge, the Read-with-a-
+        // Friend "Open chat" toast): push THAT thread with the inbox as the
+        // back stop. The real inbox row is preferred (title, avatar, unread);
+        // before the inbox has loaded a stub carrying only the id still opens
+        // — ChatThreadView hydrates from GET /chat/conversations/{id}.
+        .onReceive(tabs.$conversationLink) { id in
+            guard let id, !id.isEmpty else { return }
+            path = NavigationPath()
+            path.append(vm.conversations.first { $0.conversationId == id } ?? ChatConversation(
+                conversationId: id, kind: "dm", isPublic: false, title: nil,
+                topic: nil, category: nil, memberCount: 2, lastBody: nil, lastType: nil,
+                lastAt: nil, lastAuthor: nil, unread: 0, avatarUrl: nil))
+            DispatchQueue.main.async { tabs.conversationLink = nil }
         }
         // Stale-cache recovery: /chat/dms answered 403 CONSENT_REQUIRED for
         // someone the directory still showed as messageable — offer the

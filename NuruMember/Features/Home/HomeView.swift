@@ -18,6 +18,13 @@ final class HomeViewModel: ObservableObject {
     @Published var nextAction: NextAction?
     @Published var rhythm = RhythmToday(prayer: false, word: false, reflection: false)
     @Published var scores: ScoresSummary?
+    /// GET /me/home/nudges — "What needs you today". Empty (or a failed
+    /// fetch) hands the slot back to the old single reflection strip, so Home
+    /// never loses its nudge.
+    @Published var nudges: [HomeNudge] = []
+    /// Every plan row from GET /plans — a plan nudge opens its detail with the
+    /// row the Plans stack expects (`plan` below is only the featured one).
+    @Published var plans: [ReadingPlanRow] = []
 
     // Verse
     @Published var verse: (text: String, reference: String, version: String)?
@@ -74,6 +81,7 @@ final class HomeViewModel: ObservableObject {
         async let unread = try? MemberAPI.unreadNotifications()
         async let greet = try? MemberAPI.dailyGreeting()
         async let next = try? MemberAPI.nextAction()
+        async let nudges = try? MemberAPI.homeNudges()
         async let rhythm = try? MemberAPI.rhythmToday()
         async let scores = try? MemberAPI.scores()
         async let hv = try? MemberAPI.homeVerse()
@@ -100,6 +108,7 @@ final class HomeViewModel: ObservableObject {
         self.unread = await unread ?? 0
         if let g = await greet, !g.isEmpty { greetingLine = g }
         self.nextAction = await next ?? nil
+        self.nudges = await nudges ?? []
         if let r = await rhythm { self.rhythm = r }
         // Day sealed — only a WITNESSED completion counts (a count this session
         // below 3 rising to 3). All-done on the very first load stays quiet.
@@ -121,6 +130,7 @@ final class HomeViewModel: ObservableObject {
         self.welcomeVideo = await video ?? nil
         self.prayerPosts = await posts ?? []
         let allPlans = await plans ?? []
+        self.plans = allPlans
         self.plan = allPlans.first { $0.enrolled } ?? allPlans.first
         self.prayerEntries = await prayers ?? []
         self.featuredCell = await fcell ?? nil
@@ -273,6 +283,24 @@ extension HomeView {
     /// (6pt top padding + 44pt icon row + its bottom clearance) plus the
     /// device's real safe-area inset.
     static var tabBarClearance: CGFloat { NuruSafeArea.bottom + 58 }
+
+    /// "Today" / "Tomorrow" / "In N days" until the next Sunday 6 pm in
+    /// Africa/Nairobi — the hour the Sunday Letter is written. A Sunday past
+    /// six counts toward NEXT Sunday (this week's letter has either arrived —
+    /// a different card — or is on its way). Injectable `now` for tests.
+    static func sundayLetterCountdown(now: Date = Date()) -> String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Africa/Nairobi") ?? .current
+        let weekday = cal.component(.weekday, from: now)   // 1 = Sunday
+        let hour = cal.component(.hour, from: now)
+        var days = (8 - weekday) % 7                       // 0 = today is Sunday
+        if days == 0 && hour >= 18 { days = 7 }
+        switch days {
+        case 0:  return "Today"
+        case 1:  return "Tomorrow"
+        default: return "In \(days) days"
+        }
+    }
 }
 
 private let verseReactionEmojis = ["❤️", "🙏", "🔥", "🙌", "👍"]
@@ -304,6 +332,7 @@ struct HomeView: View {
     @State private var verseShareDialog = false
     @State private var verseShareImage: VerseImagePayload?
     @State private var openedLetter: PastoralLetter?   // Sunday Letter sheet
+    @State private var showLetterArchive = false       // "Your Letters" from the arrival card
     // Nuru Live (L2, viewer-only) — the church-scope LIVE banner's player + replays.
     @State private var openLiveItem: LivePlayableItem?
     @State private var openReplays = false
@@ -389,7 +418,12 @@ struct HomeView: View {
         } else {
             s.append(("letter", AnyView(letterArrivalCard)))
         }
-        if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }                           // 1 · Priority
+        // 1 · "What needs you today" — the server-ranked rail takes the priority
+        // slot. An empty (or failed) fetch falls back to the old single
+        // reflection strip so Home never loses its nudge; the repeat strip
+        // before Progress is gone either way (one place, one ask).
+        if !vm.nudges.isEmpty { s.append(("needsyou", AnyView(needsYouRail))) }
+        else if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }
         s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
         s.append(("echo", AnyView(HomeEchoCard())))                                               // 0e · Today's echo — the app remembers you (Wave 1)
         if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
@@ -411,7 +445,6 @@ struct HomeView: View {
         if !vm.disciplers.isEmpty { s.append(("disciplers", AnyView(disciplersCard))) }                 // 8
         if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // 9 · carousel: portal-marked announcements + events
         s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
-        if reflectionDue { s.append(("priority2", AnyView(priorityStrip))) }                           // 12 · Priority (repeat)
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
         s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
         s.append(("grow", AnyView(growSection)))                                                  // 14
@@ -547,6 +580,7 @@ struct HomeView: View {
         .sheet(isPresented: $showGoLiveSheet) {
             GoLiveSetupSheet { BroadcastCenter.shared.start(session: $0) }
         }
+        .sheet(isPresented: $showLetterArchive) { LetterArchiveView() }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
                 // Read on the server — clear the knock locally too. Every v2
@@ -963,32 +997,47 @@ struct HomeView: View {
     /// 0c (anticipation) — no letter has arrived yet (a brand-new member, or
     /// simply mid-week). Says WHEN rather than showing nothing: the ritual —
     /// knowing something is coming — is the point, not just the payoff.
+    /// Tapping opens "Your Letters" (the archive sheet LetterView also
+    /// reaches) — usually empty for the member this card addresses, but it
+    /// says so kindly and it is where the letters will live. The gold pill
+    /// counts down to Sunday 6 pm Nairobi, the hour the letter is written.
     private var letterArrivalCard: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle()
-                    .fill(LinearGradient(colors: [Color(hex: 0x2C3B52), Color(hex: 0x18213A)],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-                    .frame(width: 44, height: 44)
-                Icon(.mail, size: 18, color: Color(hex: 0xB9C4D4))
+        Button {
+            Haptics.tap()
+            showLetterArchive = true
+        } label: {
+            HStack(spacing: 12) {
+                ZStack {
+                    Circle()
+                        .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
+                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .frame(width: 44, height: 44)
+                    Icon(.mail, size: 18, color: .white)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                        .foregroundStyle(Color(hex: 0xE8CA6C))
+                    Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
+                    Text("Written for your week")
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0xC7D0DC))
+                }
+                Spacer(minLength: 8)
+                Text(Self.sundayLetterCountdown())
+                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x0A1628))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color(hex: 0xC9A227), in: Capsule())
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
-                    .foregroundStyle(Color(hex: 0x8A97AA))
-                Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
-                Text("A short pastoral note, written from your own week.")
-                    .font(.inter(11)).foregroundStyle(Color(hex: 0x8A97AA))
-            }
-            Spacer(minLength: 0)
+            .padding(14)
+            .background(
+                LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                               startPoint: .topLeading, endPoint: .bottomTrailing),
+                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+            )
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(Color.white.opacity(0.08), lineWidth: 1))
         }
-        .padding(14)
-        .background(
-            LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-            .stroke(Color.white.opacity(0.08), lineWidth: 1))
+        .buttonStyle(.pressableSubtle)
+        .accessibilityHint("Opens your letters.")
     }
 
     private func liveNowCard(_ info: (occ: CalendarOccurrence, startsInMin: Int?)) -> some View {
@@ -1049,6 +1098,82 @@ struct HomeView: View {
             // forever and the CTA lied about where it went.)
             Haptics.tap()
             path.append(GrowDestination.devotional)
+        }
+    }
+
+    // MARK: 1 — "What needs you today" (server-ranked nudges; replaces the strip)
+
+    private var needsYouRail: some View {
+        HomeNeedsYouRail(nudges: vm.nudges) { openNudge($0) }
+    }
+
+    /// Routes a nudge to the surface that clears it. Content opens INSIDE the
+    /// tab that owns it (the TabRouter contract): Pathway for a quiz or a level
+    /// exam, Plans for a plan or a reading invite, You → Community for a
+    /// thread; the devotional, the cell and the letter are Home's own. `route`
+    /// is authoritative; an unknown one falls back to the kind's default.
+    private func openNudge(_ n: HomeNudge) {
+        let route = Self.nudgeRoutes.contains(n.route) ? n.route : Self.defaultNudgeRoute(forKind: n.kind)
+        switch route {
+        case "devotional":
+            path.append(GrowDestination.devotional)
+        case "quiz":
+            if let m = n.params?.moduleId, !m.isEmpty { tabs.openPathway(.quiz(m)) } else { tabs.selected = .pathway }
+        case "level_exam":
+            if let l = n.params?.levelNumber { tabs.openPathway(.exam(l)) } else { tabs.selected = .pathway }
+        case "letter":
+            openLetter(id: n.params?.letterId)
+        case "cell":
+            path.append(AppRoute.cell)
+        case "plan":
+            if let id = n.params?.planId, let row = vm.plans.first(where: { $0.planId == id }) {
+                tabs.openPlans(.plan(row))
+            } else {
+                tabs.openPlans(.catalogue)
+            }
+        case "reading_invite":
+            if let t = n.params?.token, !t.isEmpty { tabs.openReadingInvite(t) } else { tabs.openPlans(.readWithFriendHub) }
+        case "chat":
+            if let c = n.params?.conversationId, !c.isEmpty { tabs.openConversation(c) } else { tabs.openYou(.chat) }
+        default:
+            break   // an unroutable nudge is a server bug — never a crash, never a wrong screen
+        }
+    }
+
+    private static let nudgeRoutes: Set<String> =
+        ["devotional", "quiz", "level_exam", "letter", "cell", "plan", "reading_invite", "chat"]
+
+    private static func defaultNudgeRoute(forKind kind: String) -> String {
+        switch kind {
+        case "reflection_due":   return "devotional"
+        case "quiz_in_progress": return "quiz"
+        case "level_review":     return "level_exam"
+        case "letter_unread":    return "letter"
+        case "cell_gathering":   return "cell"
+        case "plan_day_due":     return "plan"
+        case "reading_invite":   return "reading_invite"
+        case "chat_unread":      return "chat"
+        default:                 return ""
+        }
+    }
+
+    /// Opens a Sunday Letter the way the knock does (the `openedLetter`
+    /// sheet): the one already on Home when it matches, else the exact
+    /// letter from the archive, else the latest.
+    private func openLetter(id: String?) {
+        if let cur = vm.letter, id == nil || id == cur.letterId {
+            openedLetter = cur
+            return
+        }
+        Task {
+            if let id, let lt = (try? await MemberAPI.letters())?.first(where: { $0.letterId == id }) {
+                openedLetter = lt
+                return
+            }
+            if let lt = (try? await MemberAPI.latestLetter()) ?? nil {
+                vm.letter = lt
+                openedLetter = lt
+            }
         }
     }
 
