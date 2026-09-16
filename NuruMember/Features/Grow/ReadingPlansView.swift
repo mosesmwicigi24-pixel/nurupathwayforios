@@ -629,10 +629,17 @@ struct PlanDetailView: View {
     /// Which locked day the member just reached for — drives the nudge back to
     /// the day they're actually on.
     @State private var lockedNudgeFor: Int?
-    /// Read with a Friend (spec §6): create-or-get my group for this plan,
-    /// mint an open invite, hand the /join/{token} link to the share sheet.
+    /// Read with a Friend (spec §6), friends first: the picker sheet lists
+    /// chat connections (a targeted invite the server also posts into that
+    /// DM); "Share another way" inside it runs the open-link share flow AFTER
+    /// the sheet is gone (onDismiss), so the system share sheet never races
+    /// the SwiftUI sheet's dismissal.
     @State private var invitingBusy = false
     @State private var inviteError: String?
+    @State private var showInvitePicker = false
+    @State private var shareAfterPicker = false
+    @State private var inviteSent: InviteSentToast?
+    @State private var inviteSentDismiss: Task<Void, Never>?
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -666,6 +673,29 @@ struct PlanDetailView: View {
                     .buttonStyle(.pressable)
                 }
             }
+        }
+        // "Sent to <name> in chat" — floats above the sticky CTA bar.
+        .overlay(alignment: .bottom) {
+            if let t = inviteSent {
+                InviteSentToastView(toast: t) {
+                    inviteSentDismiss?.cancel()
+                    withAnimation { inviteSent = nil }
+                    Task { await openInviteChat(peerUserId: t.peerUserId, tabs: tabs) }
+                }
+                .padding(.bottom, 92)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .sheet(isPresented: $showInvitePicker, onDismiss: {
+            guard shareAfterPicker else { return }
+            shareAfterPicker = false
+            if let d = vm.detail { Task { await startReadWithFriendInvite(d) } }
+        }) {
+            FriendPickerSheet(
+                onPick: { friend in
+                    if let d = vm.detail { Task { await inviteFriend(d, friend) } }
+                },
+                onShareAnotherWay: { shareAfterPicker = true })
         }
         .ignoresSafeArea(edges: .top)
         .navigationBarBackButtonHidden(true)
@@ -937,7 +967,7 @@ struct PlanDetailView: View {
             .buttonStyle(.pressable)
             Button {
                 Haptics.tap()
-                Task { await startReadWithFriendInvite(d) }
+                showInvitePicker = true   // friends first; the open link is inside
             } label: {
                 HStack(spacing: 6) {
                     if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 15, color: PL.navy) }
@@ -960,11 +990,39 @@ struct PlanDetailView: View {
         }
     }
 
-    /// Real Read-with-a-Friend invite (spec §6, replacing the old text-only
-    /// ShareLink): create-or-get MY shared group for this plan, mint a fresh
-    /// open-link invite, and hand the public /join/{token} URL + a rich
-    /// message to the system share sheet (WhatsApp/social/copy — one URL,
-    /// every channel).
+    /// Targeted Read-with-a-Friend invite (friends first): create-or-get MY
+    /// shared group for this plan and invite one accepted connection. The
+    /// SERVER also posts the invite card into our DM, so the confirmation
+    /// offers "Open chat" rather than a second share step.
+    private func inviteFriend(_ d: ReadingPlanDetail, _ friend: ConnectionRow) async {
+        guard !invitingBusy else { return }
+        invitingBusy = true
+        defer { invitingBusy = false }
+        do {
+            let group = try await MemberAPI.createOrGetReadingGroup(planId: d.planId)
+            _ = try await MemberAPI.createReadingInvite(groupId: group.groupId, userId: friend.userId)
+            Haptics.success()
+            showInviteSent(InviteSentToast(name: inviteFirstName(friend.fullName), peerUserId: friend.userId))
+        } catch {
+            Haptics.error()
+            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+        }
+    }
+
+    private func showInviteSent(_ t: InviteSentToast) {
+        withAnimation { inviteSent = t }
+        inviteSentDismiss?.cancel()
+        inviteSentDismiss = Task {
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            guard !Task.isCancelled else { return }
+            withAnimation { inviteSent = nil }
+        }
+    }
+
+    /// "Share another way" — the open-link invite (spec §6): create-or-get MY
+    /// shared group for this plan, mint a fresh open-link invite, and hand
+    /// the public /join/{token} URL + a rich message to the system share
+    /// sheet (WhatsApp/social/copy — one URL, every channel).
     private func startReadWithFriendInvite(_ d: ReadingPlanDetail) async {
         guard !invitingBusy else { return }
         invitingBusy = true

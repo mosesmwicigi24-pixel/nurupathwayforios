@@ -90,4 +90,26 @@ extension MemberAPI {
     static func readingJoinURL(token: String) -> URL {
         URL(string: "https://pathway.nuruplace.org/join/\(token)")!
     }
+
+    /// The invite token inside a Read-with-a-Friend link, in either shape the
+    /// app meets: `nuru://join/{token}` (the custom scheme the public landing
+    /// page tries first — RootView.onOpenURL) or the public
+    /// `https://pathway.nuruplace.org/join/{token}` URL itself (pasted into a
+    /// chat bubble today; a Universal Link once the team can add Associated
+    /// Domains). Nil for anything else, so callers fall through untouched.
+    static func readingJoinToken(from url: URL) -> String? {
+        let parts = url.pathComponents.filter { $0 != "/" }
+        switch url.scheme?.lowercased() {
+        case "nuru":
+            guard url.host?.lowercased() == "join", let token = parts.first, !token.isEmpty else { return nil }
+            return token
+        case "https", "http":
+            guard let host = url.host?.lowercased(),
+                  host == "pathway.nuruplace.org" || host == "www.pathway.nuruplace.org",
+                  parts.count >= 2, parts[0] == "join", !parts[1].isEmpty else { return nil }
+            return parts[1]
+        default:
+            return nil
+        }
+    }
 }

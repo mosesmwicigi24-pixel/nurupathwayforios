@@ -43,6 +43,7 @@ enum CommunityDoor: Hashable, CaseIterable {
 
 struct CommunityView: View {
     var embeddedInYou: Bool = false
+    @EnvironmentObject private var tabs: TabRouter
     @ObservedObject private var chatBadge = ChatBadge.shared
     @State private var door: CommunityDoor = .talk
     /// Lazily mounted, like YouTabView's segments: the Prayer Room does not
@@ -63,6 +64,13 @@ struct CommunityView: View {
             }
         }
         .background(Nuru.paper.ignoresSafeArea())
+        // A cross-tab conversation link (TabRouter.openConversation) opens on
+        // Talk — ChatView, mounted behind that door, pushes the thread itself.
+        .onReceive(tabs.$conversationLink) { id in
+            guard id != nil, door != .talk else { return }
+            mounted.insert(.talk)
+            door = .talk
+        }
     }
 
     @ViewBuilder private func content(_ d: CommunityDoor) -> some View {

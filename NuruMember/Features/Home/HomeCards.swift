@@ -237,6 +237,148 @@ struct HomePriorityStrip: View {
     }
 }
 
+// MARK: - "What needs you today" rail (GET /me/home/nudges; replaces the strip)
+
+/// The server-ranked list of things waiting on the member — one card per
+/// nudge. Exactly one nudge fills the width; more than one becomes a
+/// horizontal rail of 280pt cards with a count pill beside the kicker. The
+/// whole card is the tap target; HomeView routes each kind to the surface
+/// that clears it (`HomeView.openNudge`).
+struct HomeNeedsYouRail: View {
+    let nudges: [HomeNudge]
+    let onOpen: (HomeNudge) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Text("WHAT NEEDS YOU TODAY").font(.inter(9, .bold)).kerning(1.6)
+                    .foregroundStyle(Color(hex: 0xA8861C))
+                if nudges.count > 1 {
+                    Text("\(nudges.count)").font(.inter(9, .bold)).foregroundStyle(.white)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(HomeFig.navy, in: Capsule())
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 4)
+            if nudges.count == 1 {
+                HomeNeedsYouCard(nudge: nudges[0], fixedWidth: nil) { onOpen(nudges[0]) }
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(nudges) { n in
+                            HomeNeedsYouCard(nudge: n, fixedWidth: 280) { onOpen(n) }
+                                .frame(maxHeight: .infinity, alignment: .top)
+                        }
+                    }
+                    .padding(.horizontal, 1)
+                }
+            }
+        }
+    }
+}
+
+/// One nudge card: a white icon tile (per kind, tinted by the server's
+/// accent), title + body, a "Today"/"Tomorrow" chip when due, and the navy
+/// CTA capsule. `fixedWidth` nil = fill the feed width (the single-nudge case).
+struct HomeNeedsYouCard: View {
+    let nudge: HomeNudge
+    let fixedWidth: CGFloat?
+    let action: () -> Void
+
+    var body: some View {
+        Button { Haptics.tap(); action() } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .top, spacing: 12) {
+                    iconTile
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(nudge.title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                            .lineLimit(2).multilineTextAlignment(.leading)
+                        if !nudge.body.isEmpty {
+                            Text(nudge.body).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                                .lineLimit(2).multilineTextAlignment(.leading)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                HStack(spacing: 8) {
+                    if let due = dueLabel {
+                        Text(due).font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(Color(hex: 0xFFF4DA), in: Capsule())
+                    }
+                    Spacer(minLength: 0)
+                    Text(nudge.ctaLabel.isEmpty ? "Open" : nudge.ctaLabel)
+                        .font(.inter(11, .semibold)).foregroundStyle(HomeFig.gold)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(HomeFig.navy, in: Capsule())
+                }
+            }
+            .padding(12)
+            .frame(width: fixedWidth)
+            .frame(maxWidth: fixedWidth == nil ? .infinity : nil,
+                   maxHeight: fixedWidth == nil ? nil : .infinity, alignment: .topLeading)
+            .background(HomeFig.priorityBg, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(HomeFig.gold.opacity(0.33), lineWidth: 1))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("\(nudge.title). \(nudge.body)")
+        .accessibilityHint(nudge.ctaLabel)
+    }
+
+    private var dueLabel: String? {
+        switch nudge.due?.lowercased() {
+        case "today": return "Today"
+        case "tomorrow": return "Tomorrow"
+        default: return nil
+        }
+    }
+
+    /// The server's accent → an icon tint (gold is the default voice).
+    private var tint: Color {
+        switch nudge.accent.lowercased() {
+        case "navy": return HomeFig.navy
+        case "success": return Nuru.success
+        case "steady": return Color(hex: 0x1B5FAE)
+        default: return HomeFig.gold
+        }
+    }
+
+    /// Per-kind glyph from the app's Lucide set (closest existing case where
+    /// the spec's icon isn't bundled: quiz → squareCheckBig, invite → heartHandshake).
+    private var glyph: Lucide {
+        switch nudge.kind {
+        case "reflection_due":  return .messageSquareText
+        case "quiz_in_progress": return .squareCheckBig
+        case "level_review":    return .award
+        case "letter_unread":   return .mail
+        case "cell_gathering":  return .users
+        case "plan_day_due":    return .bookOpen
+        case "reading_invite":  return .heartHandshake
+        case "chat_unread":     return .messageCircle
+        default:                return .sparkles
+        }
+    }
+
+    /// 40pt white rounded-12 tile; the letter kind sits its mail glyph on a
+    /// gold wax seal (the same seal Home's letter cards use).
+    private var iconTile: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white)
+                .frame(width: 40, height: 40)
+            if nudge.kind == "letter_unread" {
+                Circle()
+                    .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 28, height: 28)
+                Icon(.mail, size: 14, color: .white)
+            } else {
+                Icon(glyph, size: 18, color: tint)
+            }
+        }
+    }
+}
+
 // MARK: - "For you today" resume hero (navy, gold accent bar, progress + pct)
 
 struct HomeResumeHero: View {

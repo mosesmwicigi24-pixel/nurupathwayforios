@@ -208,6 +208,9 @@ final class ReadingGroupDetailViewModel: ObservableObject {
     @Published var error: String?
     @Published var busy = false
     @Published var toast: String?
+    /// The targeted-invite confirmation with its "Open chat" hop — the server
+    /// has already posted the invite into that DM. Shown instead of `toast`.
+    @Published var sentToast: InviteSentToast?
 
     let groupId: String
     init(groupId: String, preloaded: ReadingGroupRow?) {
@@ -229,11 +232,11 @@ final class ReadingGroupDetailViewModel: ObservableObject {
         loading = false
     }
 
-    func inviteFriend(userId: String) async {
+    func inviteFriend(_ friend: ConnectionRow) async {
         do {
-            _ = try await MemberAPI.createReadingInvite(groupId: groupId, userId: userId)
+            _ = try await MemberAPI.createReadingInvite(groupId: groupId, userId: friend.userId)
             Haptics.success()
-            toast = "Invite sent"
+            sentToast = InviteSentToast(name: inviteFirstName(friend.fullName), peerUserId: friend.userId)
             await load()
         } catch {
             Haptics.error()
@@ -284,6 +287,10 @@ struct ReadingGroupDetailView: View {
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
     @State private var showFriendPicker = false
+    /// "Share another way" inside the picker runs the open-link share flow
+    /// AFTER the sheet is gone (onDismiss) — the system share sheet must never
+    /// race the SwiftUI sheet's dismissal for the top view controller.
+    @State private var shareAfterPicker = false
     @State private var showLeaveConfirm = false
 
     init(groupId: String, preloaded: ReadingGroupRow? = nil) {
@@ -314,17 +321,33 @@ struct ReadingGroupDetailView: View {
                     .buttonStyle(.pressable)
                 }
             }
-            if let toast = vm.toast { toastView(toast) }
+            if let toast = vm.toast {
+                toastView(toast)
+            } else if let sent = vm.sentToast {
+                InviteSentToastView(toast: sent) {
+                    withAnimation { vm.sentToast = nil }
+                    Task { await openInviteChat(peerUserId: sent.peerUserId, tabs: tabs) }
+                }
+                .padding(.bottom, Nuru.tabBarSpace + 12)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         // "refreshing on appear" — the roster's progress is a moving target.
         .task { await vm.load() }
         .onAppear { tabs.chromeHidden = true }
-        .sheet(isPresented: $showFriendPicker) {
-            FriendPickerSheet(alreadyIn: Set((vm.group?.members ?? []).filter(\.isActive).map(\.userId))) { userId in
-                Task { await vm.inviteFriend(userId: userId) }
-            }
+        // Friends first: pick a connection (the server posts the invite into
+        // your DM with them), or "Share another way" for the open link.
+        .sheet(isPresented: $showFriendPicker, onDismiss: {
+            guard shareAfterPicker else { return }
+            shareAfterPicker = false
+            Task { await vm.shareOpenLink() }
+        }) {
+            FriendPickerSheet(
+                alreadyIn: Set((vm.group?.members ?? []).filter(\.isActive).map(\.userId)),
+                onPick: { friend in Task { await vm.inviteFriend(friend) } },
+                onShareAnotherWay: { shareAfterPicker = true })
         }
         .confirmationDialog("Leave this shared plan?", isPresented: $showLeaveConfirm, titleVisibility: .visible) {
             Button("Leave", role: .destructive) {
@@ -339,6 +362,14 @@ struct ReadingGroupDetailView: View {
             Task {
                 try? await Task.sleep(nanoseconds: 2_400_000_000)
                 withAnimation { vm.toast = nil }
+            }
+        }
+        .onChange(of: vm.sentToast) { _, t in
+            guard let t else { return }
+            Task {
+                try? await Task.sleep(nanoseconds: 5_000_000_000)
+                // Only clear the toast this timer was started for.
+                if vm.sentToast == t { withAnimation { vm.sentToast = nil } }
             }
         }
     }
@@ -459,11 +490,10 @@ struct ReadingGroupDetailView: View {
 
     private func actionsCard(_ g: ReadingGroupRow) -> some View {
         VStack(spacing: 10) {
+            // Friends first (owner, 2026-09): one door — pick a connection, or
+            // "Share another way" inside the sheet for the open join link.
             Button { Haptics.tap(); showFriendPicker = true } label: {
                 actionRow(.users, "Invite a friend", tint: PL.navy)
-            }.buttonStyle(.pressable)
-            Button { Haptics.tap(); Task { await vm.shareOpenLink() } } label: {
-                actionRow(.share2, "Share join link", tint: PL.navy)
             }.buttonStyle(.pressable)
             if isCreator {
                 Button { Haptics.tap(); Task { await vm.archive() } } label: {
@@ -503,17 +533,27 @@ struct ReadingGroupIdRef: Hashable, Sendable { let groupId: String }
 
 // MARK: - Friend picker (targeted invite) — reuses the chat connection graph
 
+/// "Invite a friend" — friends first. Lists the member's accepted chat
+/// connections (avatar + name, searchable); picking one hands the whole
+/// `ConnectionRow` back so the caller's toast can say who. `onShareAnotherWay`
+/// keeps the open-link share sheet one tap away: a quiet secondary row under
+/// the list, and the PRIMARY action when there is no one to pick yet. The
+/// caller runs it from the sheet's `onDismiss` (the system share sheet must
+/// not present while this sheet is still dismissing).
 struct FriendPickerSheet: View {
     var alreadyIn: Set<String> = []
-    let onPick: (String) -> Void
+    let onPick: (ConnectionRow) -> Void
+    var onShareAnotherWay: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @State private var connections: [ConnectionRow] = []
     @State private var loading = true
     @State private var query = ""
 
+    private var candidates: [ConnectionRow] {
+        connections.filter { $0.status == "accepted" && !alreadyIn.contains($0.userId) }
+    }
     private var filtered: [ConnectionRow] {
         let q = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let candidates = connections.filter { $0.status == "accepted" && !alreadyIn.contains($0.userId) }
         return q.isEmpty ? candidates : candidates.filter { $0.fullName.lowercased().contains(q) }
     }
 
@@ -525,15 +565,33 @@ struct FriendPickerSheet: View {
                 } else if filtered.isEmpty {
                     emptyState
                 } else {
-                    List(filtered) { c in
-                        Button { Haptics.tap(); onPick(c.userId); dismiss() } label: {
-                            HStack(spacing: 12) {
-                                Avatar(url: c.avatarUrl, name: c.fullName, size: 36)
-                                Text(c.fullName).font(.inter(14, .medium)).foregroundStyle(PL.navy)
-                                Spacer(minLength: 0)
+                    List {
+                        ForEach(filtered) { c in
+                            Button { Haptics.tap(); onPick(c); dismiss() } label: {
+                                HStack(spacing: 12) {
+                                    Avatar(url: c.avatarUrl, name: c.fullName, size: 36)
+                                    Text(c.fullName).font(.inter(14, .medium)).foregroundStyle(PL.navy)
+                                    Spacer(minLength: 0)
+                                    Icon(.chevronRight, size: 14, color: PL.chev)
+                                }
                             }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
+                        if let onShareAnotherWay, query.isEmpty {
+                            Button { Haptics.tap(); onShareAnotherWay(); dismiss() } label: {
+                                HStack(spacing: 12) {
+                                    Icon(.share2, size: 15, color: PL.ink2)
+                                        .frame(width: 36, height: 36)
+                                        .background(PL.surface, in: Circle())
+                                    VStack(alignment: .leading, spacing: 1) {
+                                        Text("Share another way").font(.inter(14, .medium)).foregroundStyle(PL.navy)
+                                        Text("WhatsApp, a message, or copy the link").font(.inter(11)).foregroundStyle(PL.ink3)
+                                    }
+                                    Spacer(minLength: 0)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                     .listStyle(.plain)
                 }
@@ -556,13 +614,74 @@ struct FriendPickerSheet: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Icon(.users, size: 28, color: PL.ink3)
-            Text("No connections yet").font(.inter(14, .semibold)).foregroundStyle(PL.navy)
-            Text("Connect with someone in Chat first, then invite them to read together.")
+            Text(candidates.isEmpty ? "No one to invite yet" : "No one by that name")
+                .font(.inter(14, .semibold)).foregroundStyle(PL.navy)
+            Text(candidates.isEmpty
+                 ? "Reading is better together. Connect with someone in Community first — or send them the link another way."
+                 : "Try a different name, or send the link another way.")
                 .font(.inter(12)).foregroundStyle(PL.ink2).multilineTextAlignment(.center)
+            if let onShareAnotherWay {
+                Button { Haptics.tap(); onShareAnotherWay(); dismiss() } label: {
+                    HStack(spacing: 8) {
+                        Icon(.share2, size: 15, color: PL.navy)
+                        Text("Share another way").font(.inter(13, .bold)).foregroundStyle(PL.navy)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                                in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .padding(.top, 8)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(32)
     }
+}
+
+// MARK: - "Sent to <name> in chat" (shared by the plan page and the group page)
+
+/// The targeted-invite confirmation: the server has already posted the invite
+/// into the DM with this friend; "Open chat" jumps straight there.
+struct InviteSentToast: Equatable {
+    let name: String
+    let peerUserId: String
+}
+
+struct InviteSentToastView: View {
+    let toast: InviteSentToast
+    let onOpenChat: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Icon(.check, size: 13, color: PL.goldLight)
+            Text("Sent to \(toast.name) in chat").font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
+            Button { Haptics.tap(); onOpenChat() } label: {
+                Text("Open chat").font(.inter(11, .bold)).foregroundStyle(PL.navy)
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(PL.gold, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+        }
+        .padding(.leading, 14).padding(.trailing, 6).padding(.vertical, 6)
+        .background(PL.navy, in: Capsule())
+        .shadow(color: PL.navy.opacity(0.25), radius: 10, y: 6)
+    }
+}
+
+/// Opens (creating if needed) the 1:1 DM with `peerUserId` on the Chat stack
+/// — the thread the server posted the invite into. Falls back to the Chat
+/// inbox when the DM can't be resolved (never a dead tap).
+@MainActor
+func openInviteChat(peerUserId: String, tabs: TabRouter) async {
+    if let id = try? await MemberAPI.createDm(peerUserId: peerUserId) { tabs.openConversation(id) }
+    else { tabs.openYou(.chat) }
+}
+
+/// First name for the toast ("Sent to Grace in chat"); the whole name when
+/// there's only one word.
+func inviteFirstName(_ fullName: String) -> String {
+    fullName.split(separator: " ").first.map(String.init) ?? fullName
 }
 
 // MARK: - Invite preview (deep link / pushed) — accept or decline

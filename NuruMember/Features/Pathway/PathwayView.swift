@@ -566,6 +566,16 @@ private struct PathwayJourneyRail: View {
     let onSelect: (Int) -> Void
     let onMap: () -> Void
 
+    /// The level right after the active one — "up next" wears a gold ring and
+    /// its own "▾ Next" marker, but only while it is still locked (an
+    /// awaiting-review hand-off leaves it locked too, which is exactly when
+    /// the member most wants to see where the thread goes).
+    private var upNextIndex: Int? {
+        guard let a = levels.firstIndex(where: { $0.status == .active }) else { return nil }
+        let i = a + 1
+        return i < levels.count && levels[i].status == .locked ? i : nil
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -582,9 +592,12 @@ private struct PathwayJourneyRail: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWJourneyNode(level: lvl, number: i + 1, selected: lvl.levelNumber == selected) { onSelect(lvl.levelNumber) }
+                        PWJourneyNode(level: lvl, number: i + 1, selected: lvl.levelNumber == selected,
+                                      upNext: i == upNextIndex) { onSelect(lvl.levelNumber) }
                         if i < levels.count - 1 {
-                            Capsule().fill(lvl.status == .completed ? PW.gold : PW.navy.opacity(0.12))
+                            // Connectors ahead of the member read at 0.28 — 0.12
+                            // vanished into the cream (locked-rail pass, 2026-09).
+                            Capsule().fill(lvl.status == .completed ? PW.gold : PW.navy.opacity(0.28))
                                 .frame(width: 28, height: 3).padding(.top, 40)
                         }
                     }
@@ -599,6 +612,8 @@ private struct PWJourneyNode: View {
     let level: PathwayLevel
     let number: Int
     let selected: Bool
+    /// The locked level right after the active one — gold ring + "▾ Next".
+    var upNext: Bool = false
     let onTap: () -> Void
     private var done: Bool { level.status == .completed }
     private var active: Bool { level.status == .active }
@@ -606,20 +621,28 @@ private struct PWJourneyNode: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 6) {
-                Text(active ? "▾ You" : " ").font(.inter(7, .bold)).kerning(0.7)
-                    .foregroundStyle(active ? PW.gold : Color.clear).frame(height: 10)
+                Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(7, .bold)).kerning(0.7)
+                    .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(height: 10)
                 // The level NUMBER never leaves the circle — completion becomes a
                 // corner check-seal; locked levels keep their number with a lock-seal.
+                // Locked = cream surface + navy ring (was flat mutedBg with ink3
+                // numerals — invisible on the cream page); up-next rings gold.
                 ZStack(alignment: .topTrailing) {
                     ZStack {
                         Circle()
                             .fill(done || active
                                   ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                  : AnyShapeStyle(PW.mutedBg))
+                                  : AnyShapeStyle(PW.surface))
                             .frame(width: 48, height: 48)
-                            .overlay { if active { Circle().stroke(PW.navy, lineWidth: 2) } }
+                            .overlay {
+                                if active {
+                                    Circle().stroke(PW.navy, lineWidth: 2)
+                                } else if !done {
+                                    Circle().stroke(upNext ? PW.gold : PW.navy.opacity(0.28), lineWidth: upNext ? 2 : 1.5)
+                                }
+                            }
                         Text("\(number)").font(.inter(15, .bold))
-                            .foregroundStyle(done || active ? PW.navy : PW.ink3)
+                            .foregroundStyle(done || active ? PW.navy : PW.navy.opacity(0.75))
                     }
                     if done {
                         ZStack {
@@ -630,8 +653,8 @@ private struct PWJourneyNode: View {
                         .offset(x: 3, y: -2)
                     } else if !active {
                         ZStack {
-                            Circle().fill(PW.mutedBg).frame(width: 16, height: 16)
-                            Icon(.lock, size: 8, color: PW.ink3)
+                            Circle().fill(PW.goldTint).frame(width: 16, height: 16)
+                            Icon(.lock, size: 9, color: PW.goldDeep)
                         }
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
                         .offset(x: 3, y: -2)
@@ -640,7 +663,7 @@ private struct PWJourneyNode: View {
                 .overlay { if selected { Circle().stroke(PW.gold, lineWidth: 2).frame(width: 54, height: 54) } }
                 Text(pwShortName(level.title))
                     .font(.inter(9, active ? .bold : .medium))
-                    .foregroundStyle(active ? PW.navy : (level.status == .locked ? PW.ink3 : PW.ink2))
+                    .foregroundStyle(active ? PW.navy : (upNext ? PW.goldDeep : PW.ink2))
                     .lineLimit(1)
             }
             .frame(width: 68)

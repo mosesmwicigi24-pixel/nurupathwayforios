@@ -131,14 +131,44 @@ struct ChatReaction: Codable, Sendable {
     }
 }
 
-/// Voice attachment meta — { duration (sec), waveform [0..100] }.
+/// A Read-with-a-Friend invite riding on a message's attachment meta — the
+/// server posts one into the DM when a targeted invite is sent:
+/// { token, join_url, plan_title, plan_subtitle, day_count, image_url }.
+/// Tolerant like every chat DTO: a half-formed invite still renders a card
+/// (the thread view derives the token from `join_url` when `token` is blank).
+struct ChatInviteMeta: Codable, Sendable, Hashable {
+    let token: String
+    let joinUrl: String?
+    let planTitle: String
+    let planSubtitle: String?
+    let dayCount: Int
+    let imageUrl: String?
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        token = (try? c.decodeIfPresent(String.self, forKey: .token)) ?? ""
+        joinUrl = try? c.decodeIfPresent(String.self, forKey: .joinUrl)
+        planTitle = (try? c.decodeIfPresent(String.self, forKey: .planTitle)) ?? "A reading plan"
+        planSubtitle = try? c.decodeIfPresent(String.self, forKey: .planSubtitle)
+        dayCount = (try? c.decodeIfPresent(Int.self, forKey: .dayCount)) ?? 0
+        imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
+    }
+    init(token: String, joinUrl: String?, planTitle: String, planSubtitle: String?, dayCount: Int, imageUrl: String?) {
+        self.token = token; self.joinUrl = joinUrl; self.planTitle = planTitle
+        self.planSubtitle = planSubtitle; self.dayCount = dayCount; self.imageUrl = imageUrl
+    }
+}
+
+/// Attachment meta — voice { duration (sec), waveform [0..100] }, and/or a
+/// Read-with-a-Friend `invite` (see ChatInviteMeta).
 struct ChatAttachmentMeta: Codable, Sendable {
     var duration: Int? = nil
     var waveform: [Int]? = nil
+    var invite: ChatInviteMeta? = nil
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         duration = try? c.decodeIfPresent(Int.self, forKey: .duration)
         waveform = try? c.decodeIfPresent([Int].self, forKey: .waveform)
+        invite = try? c.decodeIfPresent(ChatInviteMeta.self, forKey: .invite)
     }
     init(duration: Int?, waveform: [Int]?) { self.duration = duration; self.waveform = waveform }
 }

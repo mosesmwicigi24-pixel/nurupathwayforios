@@ -1195,17 +1195,19 @@ private struct AuroraBubble: View {
     }
 
     @ViewBuilder private var contentView: some View {
-        switch m.msgType {
-        case "image":
-            BubbleImage(m: m, onReact: onReact)
-        case "voice":
-            VoiceMessageBubble(message: m, player: ChatVoicePlayer.threadShared, onDark: m.mine)
-        default:
-            mentionText(m.body)
-                .font(.inter(13))
-                .foregroundStyle(m.mine ? Color.white : Aurora.textDark)
-                .lineSpacing(2.5)
-                .fixedSize(horizontal: false, vertical: true)
+        // A Read-with-a-Friend invite (the server posts one into the DM when a
+        // targeted invite is sent) renders as a card whatever its msgType.
+        if let invite = m.attachmentMeta?.invite {
+            ReadingInviteBubble(invite: invite, m: m)
+        } else {
+            switch m.msgType {
+            case "image":
+                BubbleImage(m: m, onReact: onReact)
+            case "voice":
+                VoiceMessageBubble(message: m, player: ChatVoicePlayer.threadShared, onDark: m.mine)
+            default:
+                LinkedBodyText(text: m.body, mine: m.mine)
+            }
         }
     }
 
@@ -1241,6 +1243,135 @@ private struct AuroraBubble: View {
                 Label("Delete", systemImage: "trash")
             }
         }
+    }
+}
+
+/// Body text with @mentions in gold AND tappable URLs (NSDataDetector). A
+/// public /join/{token} link opens the invite IN-APP (`tabs.openReadingInvite`
+/// — the same surface a nuru://join deep link lands on); any other URL goes
+/// to the system. Links underline gold in own bubbles, navy in others.
+private struct LinkedBodyText: View {
+    let text: String
+    let mine: Bool
+    @EnvironmentObject private var tabs: TabRouter
+
+    private var linkColor: Color { mine ? Aurora.gold : Aurora.navy }
+
+    var body: some View {
+        Text(attributed)
+            .font(.inter(13))
+            .foregroundStyle(mine ? Color.white : Aurora.textDark)
+            .tint(linkColor)
+            .lineSpacing(2.5)
+            .fixedSize(horizontal: false, vertical: true)
+            .environment(\.openURL, OpenURLAction { url in
+                if let token = MemberAPI.readingJoinToken(from: url) {
+                    Haptics.tap()
+                    tabs.openReadingInvite(token)
+                    return .handled
+                }
+                return .systemAction
+            })
+    }
+
+    private var attributed: AttributedString {
+        var out = AttributedString(text)
+        // @mentions — gold, semibold (the make's `renderBody`, as before).
+        for match in text.matches(of: #/@\w+/#) {
+            guard let r = Range(match.range, in: out) else { continue }
+            out[r].swiftUI.foregroundColor = Aurora.gold
+            out[r].swiftUI.font = .inter(13, .semibold)
+        }
+        // URLs — tappable, underlined in the bubble's accent. The detector is
+        // the system's own (scheme-less "pathway.nuruplace.org/join/…" included).
+        guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else { return out }
+        let whole = NSRange(text.startIndex..<text.endIndex, in: text)
+        for m in detector.matches(in: text, options: [], range: whole) {
+            guard let url = m.url, let sr = Range(m.range, in: text), let r = Range(sr, in: out) else { continue }
+            out[r].link = url
+            out[r].swiftUI.underlineStyle = .single
+            out[r].swiftUI.foregroundColor = linkColor
+        }
+        return out
+    }
+}
+
+/// A Read-with-a-Friend invite the server posted into this thread — the
+/// plan's cover, the kicker, title and length, and a gold "Open invite" that
+/// lands on the same in-app preview a nuru://join link opens.
+private struct ReadingInviteBubble: View {
+    let invite: ChatInviteMeta
+    let m: ChatMessage
+    @EnvironmentObject private var tabs: TabRouter
+
+    private static let width: CGFloat = 232
+
+    /// `token` first; a card that only carries `join_url` still opens.
+    private var token: String? {
+        if !invite.token.isEmpty { return invite.token }
+        return invite.joinUrl.flatMap { URL(string: $0) }.flatMap(MemberAPI.readingJoinToken(from:))
+    }
+
+    private var senderFirstName: String {
+        if let first = m.authorName.split(separator: " ").first, !first.isEmpty { return String(first) }
+        return m.mine ? "you" : "a friend"
+    }
+
+    private var metaLine: String {
+        let length = invite.dayCount > 0 ? "\(invite.dayCount)-day plan" : "A reading plan"
+        return "\(length) · from \(senderFirstName)"
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            cover
+            Text("READ WITH A FRIEND").font(.inter(9, .bold)).kerning(1.6)
+                .foregroundStyle(m.mine ? Color(hex: 0xE8CA6C) : Aurora.goldDeep)
+            Text(invite.planTitle).font(.fraunces(15, .semibold))
+                .foregroundStyle(m.mine ? Color.white : Aurora.textDark)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(metaLine).font(.inter(11))
+                .foregroundStyle(m.mine ? Color.white.opacity(0.7) : Aurora.quoteBody)
+            Button {
+                open()
+            } label: {
+                Text("Open invite").font(.inter(12, .bold)).foregroundStyle(Aurora.navy)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Aurora.gold, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .disabled(token == nil)
+            .padding(.top, 2)
+        }
+        .frame(width: Self.width, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture { open() }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Read with a friend invite: \(invite.planTitle). \(metaLine)")
+        .accessibilityAddTraits(.isButton)
+    }
+
+    private func open() {
+        guard let token else { return }
+        Haptics.action()
+        tabs.openReadingInvite(token)
+    }
+
+    /// 16:9 plan cover; a gold-gradient fallback (with the book glyph) when the
+    /// plan has no image, and while one loads.
+    private var cover: some View {
+        ZStack {
+            LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing)
+            Icon(.bookOpen, size: 26, color: Aurora.navy.opacity(0.7))
+            if let s = invite.imageUrl, let u = URL(string: s) {
+                CachedAsyncImage(url: u) { phase in
+                    if let img = phase.image { img.resizable().scaledToFill() } else { Color.clear }
+                }
+            }
+        }
+        .frame(width: Self.width, height: Self.width * 9 / 16)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 

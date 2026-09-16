@@ -167,3 +167,70 @@ struct NextActionParams: Codable, Sendable, Hashable {
 struct NextActionEnvelope: Codable, Sendable {
     let action: NextAction?
 }
+
+/// GET /me/home/nudges — one row of "What needs you today": the server-ranked
+/// things waiting on the member (a reflection due, a quiz mid-way, a level
+/// review, an unread letter, a cell gathering, a plan day, a reading invite,
+/// an unread thread). Decoded exactly like `NextAction`: every field
+/// tolerant, `cta_label` landing on `ctaLabel` through the client's
+/// `.convertFromSnakeCase` decoder. `route` + `params` use the same
+/// deep-link vocabulary HomeView routes on (see `HomeView.openNudge`).
+struct HomeNudge: Codable, Sendable, Identifiable, Hashable {
+    let id: String
+    let kind: String
+    let title: String
+    let body: String
+    let ctaLabel: String
+    let route: String
+    let params: HomeNudgeParams?
+    /// gold | navy | success | steady — tints the card's icon.
+    let accent: String
+    let priority: Int
+    /// "today" | "tomorrow" | nil — drives the small due chip.
+    let due: String?
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        body = (try? c.decodeIfPresent(String.self, forKey: .body)) ?? ""
+        ctaLabel = (try? c.decodeIfPresent(String.self, forKey: .ctaLabel)) ?? ""
+        route = (try? c.decodeIfPresent(String.self, forKey: .route)) ?? ""
+        params = try? c.decodeIfPresent(HomeNudgeParams.self, forKey: .params)
+        accent = (try? c.decodeIfPresent(String.self, forKey: .accent)) ?? "gold"
+        priority = (try? c.decodeIfPresent(Int.self, forKey: .priority)) ?? 0
+        due = try? c.decodeIfPresent(String.self, forKey: .due)
+    }
+}
+
+/// Destination parameters for a HomeNudge (only the keys we navigate on).
+struct HomeNudgeParams: Codable, Sendable, Hashable {
+    let moduleId: String?
+    let levelNumber: Int?
+    let planId: String?
+    let token: String?
+    let conversationId: String?
+    let letterId: String?
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        moduleId = try? c.decodeIfPresent(String.self, forKey: .moduleId)
+        // Int on the contract; a stringly server must still route correctly.
+        levelNumber = (try? c.decodeIfPresent(Int.self, forKey: .levelNumber))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .levelNumber)).flatMap { Int($0) }
+        planId = try? c.decodeIfPresent(String.self, forKey: .planId)
+        token = try? c.decodeIfPresent(String.self, forKey: .token)
+        conversationId = try? c.decodeIfPresent(String.self, forKey: .conversationId)
+        letterId = try? c.decodeIfPresent(String.self, forKey: .letterId)
+    }
+}
+
+/// Envelope for the nudges endpoint: { "nudges": [HomeNudge] }.
+struct HomeNudgesEnvelope: Codable, Sendable {
+    let nudges: [HomeNudge]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        nudges = (try? c.decodeIfPresent([HomeNudge].self, forKey: .nudges)) ?? []
+    }
+}
