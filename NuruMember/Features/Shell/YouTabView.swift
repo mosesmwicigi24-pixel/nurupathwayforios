@@ -1,6 +1,6 @@
 // The "You" tab — Community · Departments · Profile · Settings
 // (PARTNERS_PROGRAMME §0). Community is the default segment (the tab's
-// "heart"); Departments is a placeholder until phase 3 (§4, §6); Profile is
+// "heart"); Departments is the serving-teams list + pages (§4, phase 3); Profile is
 // the account screen; Settings is the existing screen promoted from behind
 // the Profile gear (the gear still pushes it, so both doors open the same
 // room). Events and Give left this tab for seats of their own on the bar.
@@ -59,40 +59,9 @@ struct YouTabView: View {
     @ViewBuilder private func segmentContent(_ seg: YouSegment) -> some View {
         switch seg {
         case .chat:        CommunityView(embeddedInYou: true)   // Talk (ChatView) + Pray (PrayerRoomView)
-        case .departments: DepartmentsPlaceholderView()
+        case .departments: DepartmentsView()
         case .profile:     ProfileView(embeddedInYou: true)
         case .settings:    NavigationStack { SettingsView(embeddedInYou: true) }
         }
-    }
-}
-
-/// Departments (PARTNERS_PROGRAMME §4) ship in phase 3. Until then the
-/// segment says so honestly rather than showing an empty list that looks
-/// like a bug.
-struct DepartmentsPlaceholderView: View {
-    var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: Nuru.S.md) {
-                ZStack {
-                    Circle().fill(Nuru.gold.opacity(0.12)).frame(width: 72, height: 72)
-                    Icon(.heartHandshake, size: 30, color: Nuru.gold)
-                }
-                Text("Departments are coming")
-                    .font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
-                Text("You'll be able to see where to serve — the teams, what they need, and how to join one.")
-                    .font(.nBody).foregroundStyle(Nuru.ink600)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 40)
-            .padding(.horizontal, Nuru.S.lg)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            .padding(.horizontal, Nuru.S.screen)
-            .padding(.top, Nuru.S.lg)
-            .padding(.bottom, Nuru.tabBarSpace)
-        }
-        .background(Nuru.paper.ignoresSafeArea())
     }
 }

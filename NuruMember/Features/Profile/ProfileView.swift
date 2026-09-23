@@ -20,6 +20,7 @@ struct ProfileView: View {
     var embeddedInYou: Bool = false
 
     @EnvironmentObject private var auth: AuthStore
+    @EnvironmentObject private var tabs: TabRouter
 
     /// Pushes SettingsView. @SceneStorage (not @State): RootView re-`.id`s the
     /// whole tab tree when the text scale changes, and Settings owns the text-
@@ -43,6 +44,8 @@ struct ProfileView: View {
     @State private var badges: [PBadgeItem] = []
     @State private var certs: [PCert] = []
     @State private var scores: ScoresSummary?
+    /// Departments the member actively serves in (GET /me/departments, §4).
+    @State private var serving: [DepartmentRow] = []
     @State private var aiOptOut = false
     /// The consent WRITE failed — the toggle was reverted and the member told.
     /// A consent control must never show a state the server hasn't recorded.
@@ -67,6 +70,7 @@ struct ProfileView: View {
                     if isStaff { disciplerEntry }
                     personalInfo
                     achievements
+                    if !serving.isEmpty { servingSection }
                     growthScores
                     aiCompanionSection
                     milestonesSection
@@ -104,6 +108,7 @@ struct ProfileView: View {
         async let mine = try? await APIClient.shared.get("me/achievements", as: PMyAchievements.self)
         async let certificates = try? await APIClient.shared.get("certificates", as: Envelope<PCert>.self).data
         async let scoresSummary = try? await MemberAPI.scores()
+        async let myDepartments = try? await MemberAPI.myDepartments()
 
         let cat = await catalogue ?? []
         let earned = await mine?.badges ?? []
@@ -120,6 +125,7 @@ struct ProfileView: View {
         badges = merged.sorted { ($0.earned ? 0 : 1, $0.name) < ($1.earned ? 0 : 1, $1.name) }
         certs = await certificates ?? []
         scores = await scoresSummary
+        serving = (await myDepartments ?? []).filter(\.isActiveMember)
     }
 
     // MARK: Avatar upload (PhotosPicker → ~512px JPEG → POST /me/avatar)
@@ -481,6 +487,37 @@ struct ProfileView: View {
                 Toggle("", isOn: $streakQuiet).labelsHidden().tint(Nuru.gold)
             }
             .padding(.top, Nuru.S.sm)
+        }
+    }
+
+    // MARK: Serving in (PARTNERS_PROGRAMME §4 — the member's active departments)
+
+    /// One row per department the member serves in; a tap lands on the
+    /// department page (You → Departments). Hidden entirely when there are none.
+    private var servingSection: some View {
+        sectionCard("SERVING IN", icon: .heartHandshake) {
+            VStack(spacing: 0) {
+                ForEach(serving) { d in
+                    Button {
+                        Haptics.tap()
+                        tabs.openDepartment(d.departmentId)
+                    } label: {
+                        HStack(spacing: Nuru.S.md) {
+                            fieldIconTile(.heartHandshake)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(d.name).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
+                                Text(d.isLeaderRole ? "LEADER" : "SERVING")
+                                    .font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                            }
+                            Spacer(minLength: 0)
+                            Icon(.chevronRight, size: 14, color: Nuru.ink300)
+                        }
+                        .padding(.vertical, 10)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.pressableSubtle)
+                }
+            }
         }
     }
 

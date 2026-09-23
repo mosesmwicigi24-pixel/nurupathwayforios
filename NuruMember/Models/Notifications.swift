@@ -18,6 +18,9 @@ struct NotifPayload: Codable, Sendable {
     /// link opens; the other plan_group_* templates carry only `group_id`.
     let inviteToken: String?
     let groupId: String?
+    /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post /
+    /// department_need_* carry `department_id` so a tap opens the page.
+    let departmentId: String?
 }
 
 struct NotificationRow: Codable, Sendable, Identifiable {

@@ -69,6 +69,7 @@ final class LocalNotifier: NSObject, ObservableObject {
                 "moduleId": n.payload?.moduleId ?? "",
                 "levelNumber": n.payload?.levelNumber ?? 0,
                 "inviteToken": n.payload?.inviteToken ?? "",
+                "departmentId": n.payload?.departmentId ?? "",
             ]
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)
@@ -100,6 +101,13 @@ final class LocalNotifier: NSObject, ObservableObject {
         if t == "plan_group_invite_accepted" { return "They joined your plan!" }
         if t == "plan_group_member_joined" { return "New reading partner" }
         if t == "plan_group_day_completed" { return "Reading update" }
+        // Departments (PARTNERS_PROGRAMME §4).
+        if t == "serve_request_approved" { return "You're on the team" }
+        if t == "serve_request_declined" { return "About your request to serve" }
+        if t.hasPrefix("serve_request") { return "Request to serve" }
+        if t == "department_post" { return "News from your department" }
+        if t == "department_need_approved" { return "A need is open for giving" }
+        if t.hasPrefix("department_need") { return "Department need" }
         // Locked-pastoral rule (spec: generic copy, no preview) applied to ANY
         // pastoral-flavoured template, present or future, lock or no lock —
         // a preview leak is worse than a too-quiet notification.
