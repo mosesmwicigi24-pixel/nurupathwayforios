@@ -520,18 +520,20 @@ extension MemberAPI {
     /// `pledgeId` (PARTNERS_PROGRAMME §5: intents gain optional `pledge_id`)
     /// attributes the gift to a pledge — set only when the gift was started
     /// from that pledge's "Pay now" (§1 rule a). Omitted from the body when nil.
+    /// `needId` (§4: the intent body gains optional `need_id`) attributes the
+    /// gift to a department need's campaign — set only from "Give to this need".
     static func giving(fund: String, amountMinor: Int, currency: String,
                        method: String, phoneNumber: String? = nil, accountName: String? = nil,
-                       pledgeId: String? = nil) async throws -> GivingIntentResult {
+                       pledgeId: String? = nil, needId: String? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
             let method: String; let phoneNumber: String?; let accountName: String?
-            let pledgeId: String?; let idempotencyKey: String
+            let pledgeId: String?; let needId: String?; let idempotencyKey: String
         }
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
                        method: method, phoneNumber: phoneNumber, accountName: accountName,
-                       pledgeId: pledgeId, idempotencyKey: UUID().uuidString),
+                       pledgeId: pledgeId, needId: needId, idempotencyKey: UUID().uuidString),
             as: GivingIntentResult.self)
     }
 

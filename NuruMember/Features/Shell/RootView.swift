@@ -105,6 +105,10 @@ struct GivePreset: Equatable {
     var fund: String?
     var amountMinor: Int?
     var pledgeId: String?
+    /// A department need (PARTNERS_PROGRAMME §4) — "Give to this need" sets
+    /// it; it rides the intent body as `need_id` so the server attributes
+    /// the gift to the need's campaign.
+    var needId: String? = nil
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
@@ -158,6 +162,12 @@ final class TabRouter: ObservableObject {
     /// <name> in chat · Open chat" toast. ChatView consumes it (pushes the
     /// thread with the inbox as the back stop) and clears it.
     @Published var conversationLink: String?
+    /// A department to open on the Departments stack (You → Departments) —
+    /// set by a serve_request_* / department_post / department_need_*
+    /// notification tap or Profile's "Serving in" row. DepartmentsView
+    /// consumes it (pushes the page with the list as the back stop) and
+    /// clears it.
+    @Published var departmentLink: String?
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
@@ -166,6 +176,8 @@ final class TabRouter: ObservableObject {
     func openReadingInvite(_ token: String) { readingInviteToken = token; selected = .plans }
     func openYou(_ seg: YouSegment) { youSegment = seg; selected = .you }
     func openConversation(_ id: String) { conversationLink = id; openYou(.chat) }
+    /// You → Departments → the department page (PARTNERS_PROGRAMME §4).
+    func openDepartment(_ id: String) { departmentLink = id; openYou(.departments) }
     /// Events and Give are top-level tabs again (PARTNERS_PROGRAMME §0) — the
     /// old `openYou(.events)` / `openYou(.give)` call sites now land here.
     func openEvents() { selected = .events }
@@ -368,6 +380,7 @@ struct RootView: View {
             let moduleId = info["moduleId"] as? String ?? ""
             let level = info["levelNumber"] as? Int ?? 0
             let inviteToken = info["inviteToken"] as? String ?? ""
+            let departmentId = info["departmentId"] as? String ?? ""
             if !announcementId.isEmpty {
                 tabs.openAnnouncement(announcementId)
             } else if !moduleId.isEmpty {
@@ -380,6 +393,11 @@ struct RootView: View {
                 // pledge_due_soon / pledge_overdue / pledge_fulfilled (§3) —
                 // the pledge lives in the Partners portal.
                 tabs.openPartners()
+            } else if template.hasPrefix("serve_request") || template.hasPrefix("department") {
+                // serve_request_* / department_post / department_need_* (§4) —
+                // the department page itself when the payload names it, else
+                // the Departments list.
+                if departmentId.isEmpty { tabs.openYou(.departments) } else { tabs.openDepartment(departmentId) }
             } else if template.hasPrefix("giving") || template.hasPrefix("payment") {
                 tabs.openGive()
             } else if template.hasPrefix("badge") || template.hasPrefix("certificate") {
@@ -438,6 +456,7 @@ struct RootView: View {
             case "events":   tabs.openEvents()
             case "give":     tabs.openGive()
             case "partners": tabs.openPartners()
+            case "departments": tabs.openYou(.departments)
             case "you":      tabs.selected = .you
             // The Live tab folded into Events (its Broadcast card) — an old
             // nuru://live shortcut lands there for everyone.

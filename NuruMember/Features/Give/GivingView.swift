@@ -158,6 +158,11 @@ struct GivingView: View {
     /// intent body as `pledge_id` (PARTNERS_PROGRAMME §5) and clears once the
     /// server confirms the gift — a retry after a failure keeps it.
     @State private var pledgeId: String?
+    /// The department need this gift is for (Departments → "Give to this
+    /// need"). Rides the intent body as `need_id` (PARTNERS_PROGRAMME §4) so
+    /// the server attributes it to the need's campaign; cleared once the
+    /// server confirms the gift — a retry after a failure keeps it.
+    @State private var needId: String?
     @State private var method = "mpesa"
     @State private var methodOrder = baseMethods.map(\.key)
     @State private var freq = "once"          // once | weekly | monthly
@@ -206,6 +211,7 @@ struct GivingView: View {
                         fundsSection
                         amountCard
                         if pledgeId != nil { pledgeNote.transition(.opacity) }
+                        if needId != nil { needNote.transition(.opacity) }
                         frequencyRow
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
@@ -244,6 +250,7 @@ struct GivingView: View {
             if let f = preset.fund, funds.contains(where: { $0.code == f }) { fundCode = f }
             if let m = preset.amountMinor, m > 0 { amount = m / 100 }
             pledgeId = preset.pledgeId
+            needId = preset.needId
             freq = "once"
             DispatchQueue.main.async { tabs.givePreset = nil }
         }
@@ -735,6 +742,24 @@ struct GivingView: View {
         .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
+    private var needNote: some View {
+        HStack(spacing: 8) {
+            Icon(.target, size: 14, color: Nuru.gold)
+            Text("This gift goes to a department need")
+                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+            Spacer(minLength: 8)
+            Button {
+                Haptics.selection()
+                withAnimation(.easeInOut(duration: 0.2)) { needId = nil }
+            } label: {
+                Text("Remove").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink600)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
@@ -935,7 +960,7 @@ struct GivingView: View {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
                                                  currency: currency, method: provider, phoneNumber: phone,
                                                  accountName: accountName.isEmpty ? nil : accountName,
-                                                 pledgeId: pledgeId)
+                                                 pledgeId: pledgeId, needId: needId)
             pendingTxId = res.transactionId
             successRef = res.providerRef
             if provider == "paypal", let url = res.approveUrl.flatMap(URL.init) {
@@ -1028,6 +1053,7 @@ struct GivingView: View {
             // The pledge got its gift — the next one is an ordinary gift
             // unless Partners sends the member back with another preset.
             pledgeId = nil
+            needId = nil
         }
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil

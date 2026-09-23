@@ -112,6 +112,12 @@ struct NotificationsView: View {
                 markRead(n); Haptics.tap(); dismiss()
                 tabs.openPathway(.level(lvl))
             } label: { row(n) }.buttonStyle(.pressableSubtle)
+        } else if Self.isDepartmentTemplate(t), let did = n.payload?.departmentId, !did.isEmpty {
+            // Departments (§4) — the page itself, on the You tab's Departments segment.
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openDepartment(did)
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
         } else if let dest = tabDest(t) {
             Button {
                 markRead(n)
@@ -144,10 +150,16 @@ struct NotificationsView: View {
     private func tabDest(_ t: String) -> NotifTarget? {
         if t.hasPrefix("event") { return .tab(.events) }
         if t.hasPrefix("pledge") { return .partners }   // pledge_due_soon / overdue / fulfilled (§3)
+        if Self.isDepartmentTemplate(t) { return .you(.departments) }   // serve_request_* / department_* (§4), no id
         if t.hasPrefix("giving") || t.hasPrefix("payment") { return .give }
         if t.hasPrefix("badge") || t.hasPrefix("certificate") { return .you(.profile) }
         if t.hasPrefix("level") || t.hasPrefix("reflection") { return .tab(.pathway) }
         return nil
+    }
+
+    /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post / department_need_*.
+    static func isDepartmentTemplate(_ t: String) -> Bool {
+        t.hasPrefix("serve_request") || t.hasPrefix("department")
     }
 
     /// Unread reward rows (badge / certificate / level) get the Figma "gift" cue.
@@ -339,6 +351,7 @@ struct NotificationsView: View {
         if t.hasPrefix("badge") { return Meta(icon: .badgeCheck, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }               // success
         if t.hasPrefix("event") { return Meta(icon: .calendarDays, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }             // info
         if t.hasPrefix("announcement") { return Meta(icon: .megaphone, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }         // info
+        if Self.isDepartmentTemplate(t) { return Meta(icon: .heartHandshake, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C)) } // departments (§4)
         return Meta(icon: .settings, bg: Color(hex: 0xE2E8F0), fg: Color(hex: 0x475569))                                             // security/system
     }
 
@@ -348,6 +361,8 @@ struct NotificationsView: View {
         "event_reminder_24h": "Event tomorrow", "event_reminder_1h": "Event starting soon",
         "reflection_approved": "Reflection approved", "reflection_returned": "Reflection returned",
         "reflection_deferred": "Reflection received",
+        "serve_request_approved": "You're on the team", "serve_request_declined": "About your request to serve",
+        "department_post": "News from your department", "department_need_approved": "A need is open for giving",
     ]
     private func titleFor(_ n: NotificationRow) -> String {
         if let t = n.payload?.title, !t.isEmpty { return t }
