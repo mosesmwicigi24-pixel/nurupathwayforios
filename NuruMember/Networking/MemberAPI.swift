@@ -517,15 +517,21 @@ extension MemberAPI {
     /// `accountName` is "named giving" (custom sheet, optional): rides the
     /// M-Pesa STK push AccountReference (sanitized server-side) and persists on
     /// the transaction for receipts/statements/portal Finance.
+    /// `pledgeId` (PARTNERS_PROGRAMME §5: intents gain optional `pledge_id`)
+    /// attributes the gift to a pledge — set only when the gift was started
+    /// from that pledge's "Pay now" (§1 rule a). Omitted from the body when nil.
     static func giving(fund: String, amountMinor: Int, currency: String,
-                       method: String, phoneNumber: String? = nil, accountName: String? = nil) async throws -> GivingIntentResult {
+                       method: String, phoneNumber: String? = nil, accountName: String? = nil,
+                       pledgeId: String? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
-            let method: String; let phoneNumber: String?; let accountName: String?; let idempotencyKey: String
+            let method: String; let phoneNumber: String?; let accountName: String?
+            let pledgeId: String?; let idempotencyKey: String
         }
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
-                       method: method, phoneNumber: phoneNumber, accountName: accountName, idempotencyKey: UUID().uuidString),
+                       method: method, phoneNumber: phoneNumber, accountName: accountName,
+                       pledgeId: pledgeId, idempotencyKey: UUID().uuidString),
             as: GivingIntentResult.self)
     }
 
@@ -591,10 +597,66 @@ extension MemberAPI {
                                             body: Body(outcome: outcome), as: EmptyResponse.self)
     }
 
-    /// GET /giving/partnership — the member's standing as a partner.
-    /// Recognition, not receipts; receipts stay in giving/history.
+    /// GET /giving/partnership — the member's standing as a partner, plus (the
+    /// Partners programme, PARTNERS_PROGRAMME §5) membership, tier, pledges
+    /// with progress, and the due list.
     static func partnership() async throws -> Partnership {
         try await APIClient.shared.get("giving/partnership", as: Partnership.self)
+    }
+
+    // MARK: Partners programme (PARTNERS_PROGRAMME §5 — bodies are snake_cased
+    // by the client encoder; nested `auto_schedule` included)
+
+    /// POST /giving/partners/join {} — join the programme. No fund, no
+    /// campaign, no money: a voluntary membership (§1).
+    @discardableResult
+    static func joinPartners() async throws -> PartnerJoinResult {
+        struct Body: Encodable {}
+        return try await APIClient.shared.post("giving/partners/join", body: Body(), as: PartnerJoinResult.self)
+    }
+
+    /// POST /giving/pledges — `{shape, amount_minor|target_minor, currency,
+    /// due_day?|due_on?, fund?, campaign_id?, need_id?, auto_schedule?}`.
+    struct PledgeCreateBody: Encodable {
+        struct AutoSchedule: Encodable { let method: String; let frequency: String }
+        let shape: String
+        var amountMinor: Int? = nil
+        var targetMinor: Int? = nil
+        let currency: String
+        var dueDay: Int? = nil
+        var dueOn: String? = nil
+        var fund: String? = nil
+        var campaignId: String? = nil
+        var needId: String? = nil
+        var autoSchedule: AutoSchedule? = nil
+        let idempotencyKey: String
+    }
+    static func createPledge(_ body: PledgeCreateBody) async throws -> Pledge {
+        try await APIClient.shared.post("giving/pledges", body: body, as: PledgeResult.self).pledge
+    }
+
+    /// PATCH /giving/pledges/{id} — `{status?: paused|active|cancelled,
+    /// amount_minor?, due_day?, reminders_enabled?}`. Only the keys set are sent.
+    struct PledgePatchBody: Encodable {
+        var status: String? = nil
+        var amountMinor: Int? = nil
+        var dueDay: Int? = nil
+        var remindersEnabled: Bool? = nil
+    }
+    static func updatePledge(_ id: String, patch: PledgePatchBody) async throws -> Pledge {
+        try await APIClient.shared.patch("giving/pledges/\(id)", body: patch, as: PledgeResult.self).pledge
+    }
+
+    /// GET /giving/pledges/{id} — the pledge with its payments (+ reminders).
+    static func pledge(_ id: String) async throws -> PledgeDetail {
+        try await APIClient.shared.get("giving/pledges/\(id)", as: PledgeDetail.self)
+    }
+
+    /// GET /giving/statements?year= — the JSON statement by pledge and by
+    /// fund. `nil` year = the server's default (the current year).
+    static func givingStatements(year: Int? = nil) async throws -> GivingStatements {
+        let q: [String: String] = year.map { ["year": String($0)] } ?? [:]
+        return try await APIClient.shared.get("giving/statements", query: q, as: GivingStatements.self)
     }
 
     // MARK: Chat

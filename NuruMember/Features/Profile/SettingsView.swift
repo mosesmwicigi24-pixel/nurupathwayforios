@@ -11,6 +11,13 @@ import UIKit
 import UserNotifications
 
 struct SettingsView: View {
+    /// True when hosted as the "Settings" segment inside the You tab
+    /// (PARTNERS_PROGRAMME §0) rather than pushed from the Profile gear — the
+    /// You tab's own capsule already clears the status bar and there is
+    /// nothing to go back to, so the header drops its back tile and its 60pt
+    /// top reservation. Everything else is identical; the gear route stays.
+    var embeddedInYou: Bool = false
+
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
 
@@ -108,14 +115,16 @@ struct SettingsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
-            Button { Haptics.tap(); dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.navy)
-                    .frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            if !embeddedInYou {
+                Button { Haptics.tap(); dismiss() } label: {
+                    Icon(.arrowLeft, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Back")
 
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("PREFERENCES")
@@ -128,7 +137,7 @@ struct SettingsView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, embeddedInYou ? Nuru.S.base : 60)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)

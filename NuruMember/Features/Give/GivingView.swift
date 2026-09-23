@@ -11,7 +11,9 @@
 import SwiftUI
 import UIKit
 
-enum GiveRoute: Hashable { case statement, partners }
+/// Pushed pages on the Give stack. Partners is no longer one of them — it is
+/// the Give tab's second segment (GiveTabView, PARTNERS_PROGRAMME §0).
+enum GiveRoute: Hashable { case statement }
 
 // MARK: - Funds (exact Figma palette)
 
@@ -147,10 +149,15 @@ struct GivingView: View {
     var embeddedInYou: Bool = false
 
     @StateObject private var vm = GivingViewModel()
+    @EnvironmentObject private var tabs: TabRouter
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var fundCode = "tithe"
     @State private var amount = 1000
+    /// The pledge this gift counts toward (Partners → "Pay now"). Rides the
+    /// intent body as `pledge_id` (PARTNERS_PROGRAMME §5) and clears once the
+    /// server confirms the gift — a retry after a failure keeps it.
+    @State private var pledgeId: String?
     @State private var method = "mpesa"
     @State private var methodOrder = baseMethods.map(\.key)
     @State private var freq = "once"          // once | weekly | monthly
@@ -198,6 +205,7 @@ struct GivingView: View {
                         if let g = vm.lastGift { repeatCard(g) }
                         fundsSection
                         amountCard
+                        if pledgeId != nil { pledgeNote.transition(.opacity) }
                         frequencyRow
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
@@ -224,11 +232,21 @@ struct GivingView: View {
             .navigationDestination(for: GiveRoute.self) { route in
                 switch route {
                 case .statement: GivingStatementView()
-                case .partners:  PartnersView()
                 }
             }
         }
         .task { if vm.history.isEmpty { await vm.load() } }
+        // Partners "Pay now" / a due item: land with the pledge's fund and the
+        // amount still owed already in place, as a one-time gift, and remember
+        // the pledge so the intent carries `pledge_id`. Consumed once.
+        .onReceive(tabs.$givePreset) { preset in
+            guard let preset else { return }
+            if let f = preset.fund, funds.contains(where: { $0.code == f }) { fundCode = f }
+            if let m = preset.amountMinor, m > 0 { amount = m / 100 }
+            pledgeId = preset.pledgeId
+            freq = "once"
+            DispatchQueue.main.async { tabs.givePreset = nil }
+        }
         // Returning from the PayPal approval in Safari → nudge the capture.
         .onChange(of: scenePhase) { _, p in
             if p == .active { attemptPayPalCapture() }
@@ -669,15 +687,18 @@ struct GivingView: View {
         return Array(vm.history.filter { settled.contains($0.status) }.prefix(3))
     }
 
-    /// Partners is its own page — separate from Give, as the design asks —
-    /// but reached from here, because this is where someone thinking about
-    /// giving already is. The money reporting stays on this side.
+    /// Partners is the Give tab's other segment (GiveTabView) — separate from
+    /// Give, as the design asks — but reached from here too, because this is
+    /// where someone thinking about giving already is. The money reporting
+    /// stays on this side.
     private var partnersRow: some View {
-        NavigationLink(value: GiveRoute.partners) {
+        Button {
+            Haptics.tap(); tabs.openPartners()
+        } label: {
             HStack(spacing: 12) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("Partners").font(.nHeading).foregroundStyle(Nuru.ink)
-                    Text("Your standing, and what this season has held")
+                    Text("Your standing, your pledges, and what this season has held")
                         .font(.nCaption).foregroundStyle(Nuru.ink600)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -692,6 +713,26 @@ struct GivingView: View {
                 .stroke(Nuru.gold.opacity(0.22), lineWidth: 1))
         }
         .buttonStyle(.pressable)
+    }
+
+    /// Shown while a gift is bound to a pledge — says so plainly, and lets the
+    /// member unbind it (an ordinary gift instead) with one tap.
+    private var pledgeNote: some View {
+        HStack(spacing: 8) {
+            Icon(.heartHandshake, size: 14, color: Nuru.gold)
+            Text("This gift counts toward your pledge")
+                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+            Spacer(minLength: 8)
+            Button {
+                Haptics.selection()
+                withAnimation(.easeInOut(duration: 0.2)) { pledgeId = nil }
+            } label: {
+                Text("Remove").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink600)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
     private var recentSection: some View {
@@ -893,7 +934,8 @@ struct GivingView: View {
         do {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
                                                  currency: currency, method: provider, phoneNumber: phone,
-                                                 accountName: accountName.isEmpty ? nil : accountName)
+                                                 accountName: accountName.isEmpty ? nil : accountName,
+                                                 pledgeId: pledgeId)
             pendingTxId = res.transactionId
             successRef = res.providerRef
             if provider == "paypal", let url = res.approveUrl.flatMap(URL.init) {
@@ -983,6 +1025,9 @@ struct GivingView: View {
                 key: "gift-\(ref)",
                 title: "Thank you for sowing",
                 subtitle: "Every gift carries the gospel further.")
+            // The pledge got its gift — the next one is an ordinary gift
+            // unless Partners sends the member back with another preset.
+            pledgeId = nil
         }
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil

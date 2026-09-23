@@ -164,6 +164,46 @@ struct Partnership: Codable, Sendable {
     let trouble: Trouble?        // present ONLY when there is something to say
     let sinceYouBegan: Season?
 
+    // Partners programme (PARTNERS_PROGRAMME §5, GET /giving/partnership):
+    // the membership record, the derived tier, every pledge with its
+    // computed progress, and the merged due list. All tolerant — a server
+    // that predates the programme still renders the standing above.
+    let membership: Membership?
+    let tier: Tier?
+    let pledges: [Pledge]
+    let due: [DueItem]
+    /// Campaigns a new pledge may target (chips in the "target" step). Empty
+    /// when the server sends none — the step then offers funds only.
+    let campaigns: [PledgeCampaignOption]
+
+    /// A partner per §1: the membership says so, or (pre-programme servers)
+    /// the derived standing does.
+    var isProgrammeMember: Bool {
+        if let m = membership { return m.status == "active" || m.status == "paused" }
+        return isPartner
+    }
+
+    struct Membership: Codable, Sendable {
+        let status: String       // active | paused | left
+        let joinedAt: String?
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? ""
+            joinedAt = try? c.decodeIfPresent(String.self, forKey: .joinedAt)
+        }
+    }
+    /// Derived server-side from the monthly commitment vs giving-tier
+    /// economics — never computed here.
+    struct Tier: Codable, Sendable {
+        let name: String
+        let monthlyMinor: Int
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            monthlyMinor = (try? c.decodeIfPresent(Int.self, forKey: .monthlyMinor)) ?? 0
+        }
+    }
+
     struct Rhythm: Codable, Sendable {
         let frequency: String
         let method: String
@@ -200,7 +240,281 @@ struct Partnership: Codable, Sendable {
         rhythm = try? c.decodeIfPresent(Rhythm.self, forKey: .rhythm)
         trouble = try? c.decodeIfPresent(Trouble.self, forKey: .trouble)
         sinceYouBegan = try? c.decodeIfPresent(Season.self, forKey: .sinceYouBegan)
+        membership = try? c.decodeIfPresent(Membership.self, forKey: .membership)
+        tier = try? c.decodeIfPresent(Tier.self, forKey: .tier)
+        pledges = (try? c.decodeIfPresent([Pledge].self, forKey: .pledges)) ?? []
+        due = (try? c.decodeIfPresent([DueItem].self, forKey: .due)) ?? []
+        campaigns = (try? c.decodeIfPresent([PledgeCampaignOption].self, forKey: .campaigns)) ?? []
     }
+}
+
+// MARK: - Pledges (PARTNERS_PROGRAMME §1, §5)
+
+/// A promise: `monthly` (amount_minor each month, open-ended) or `total`
+/// (target_minor by due_on, paid in any instalments). Progress is COMPUTED
+/// by the server and never stored — this struct carries it, never derives it.
+struct Pledge: Codable, Sendable, Identifiable, Hashable {
+    let pledgeId: String
+    let shape: String            // monthly | total
+    let amountMinor: Int?        // monthly
+    let targetMinor: Int?        // total
+    let currency: String
+    let dueDay: Int?             // monthly: 1–28
+    let dueOn: String?           // total: yyyy-MM-dd
+    let fund: FundRef?
+    let campaign: CampaignRef?
+    let needId: String?
+    let status: String           // active | paused | fulfilled | cancelled
+    let progress: Progress
+    let scheduleId: String?
+    let remindersEnabled: Bool
+    let createdAt: String?
+    var id: String { pledgeId }
+
+    struct FundRef: Codable, Sendable, Hashable {
+        let code: String
+        let name: String
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+        }
+    }
+    struct CampaignRef: Codable, Sendable, Hashable {
+        let campaignId: String
+        let title: String
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            campaignId = (try? c.decodeIfPresent(String.self, forKey: .campaignId)) ?? ""
+            title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        }
+    }
+    struct Progress: Codable, Sendable, Hashable {
+        let paidMinor: Int           // total: sum paid; monthly: all-time paid
+        let periodPaidMinor: Int?    // monthly: paid in the current period
+        let label: String            // on_track | behind | fulfilled | paused
+        let nextDue: String?         // yyyy-MM-dd or ISO timestamp
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            paidMinor = (try? c.decodeIfPresent(Int.self, forKey: .paidMinor)) ?? 0
+            periodPaidMinor = try? c.decodeIfPresent(Int.self, forKey: .periodPaidMinor)
+            label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? "on_track"
+            nextDue = try? c.decodeIfPresent(String.self, forKey: .nextDue)
+        }
+        init(paidMinor: Int = 0, periodPaidMinor: Int? = nil, label: String = "on_track", nextDue: String? = nil) {
+            self.paidMinor = paidMinor; self.periodPaidMinor = periodPaidMinor
+            self.label = label; self.nextDue = nextDue
+        }
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
+        shape = (try? c.decodeIfPresent(String.self, forKey: .shape)) ?? "monthly"
+        amountMinor = try? c.decodeIfPresent(Int.self, forKey: .amountMinor)
+        targetMinor = try? c.decodeIfPresent(Int.self, forKey: .targetMinor)
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        dueDay = try? c.decodeIfPresent(Int.self, forKey: .dueDay)
+        dueOn = try? c.decodeIfPresent(String.self, forKey: .dueOn)
+        fund = try? c.decodeIfPresent(FundRef.self, forKey: .fund)
+        campaign = try? c.decodeIfPresent(CampaignRef.self, forKey: .campaign)
+        needId = try? c.decodeIfPresent(String.self, forKey: .needId)
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
+        progress = (try? c.decodeIfPresent(Progress.self, forKey: .progress)) ?? Progress()
+        scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
+        remindersEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .remindersEnabled)) ?? true
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+
+    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay }
+    func hash(into h: inout Hasher) { h.combine(pledgeId) }
+
+    var isMonthly: Bool { shape == "monthly" }
+    /// The promise itself in minor units — the monthly amount or the total target.
+    var commitmentMinor: Int { isMonthly ? (amountMinor ?? 0) : (targetMinor ?? 0) }
+    /// Paid against the current promise: this period for monthly, all-time for total.
+    var paidTowardMinor: Int { isMonthly ? (progress.periodPaidMinor ?? 0) : progress.paidMinor }
+    /// Still owed this period / toward the target — what "Pay now" pre-fills.
+    var remainingMinor: Int { max(0, commitmentMinor - paidTowardMinor) }
+    /// 0…1, clamped — a fulfilled pledge shows full, never a bar past its track.
+    var fraction: Double {
+        guard commitmentMinor > 0 else { return 0 }
+        return min(1, Double(paidTowardMinor) / Double(commitmentMinor))
+    }
+    /// What the pledge is for, in the member's words: fund, campaign, need, or general.
+    var targetTitle: String {
+        if let c = campaign, !c.title.isEmpty { return c.title }
+        if let f = fund, !f.name.isEmpty { return f.name }
+        if let f = fund, !f.code.isEmpty { return f.code.capitalized }
+        if needId != nil { return "A department need" }
+        return "General partnership"
+    }
+}
+
+/// One row of the merged due list (§2.3): a pledge instalment or a schedule
+/// run, soonest first, with the one action that clears it.
+struct DueItem: Codable, Sendable, Identifiable, Hashable {
+    let kind: String             // pledge | schedule
+    let id: String
+    let title: String
+    let amountMinor: Int
+    let currency: String
+    let dueOn: String
+    let action: String           // pay | resume
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "pledge"
+        id = (try? c.decodeIfPresent(String.self, forKey: .id)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        amountMinor = (try? c.decodeIfPresent(Int.self, forKey: .amountMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        dueOn = (try? c.decodeIfPresent(String.self, forKey: .dueOn)) ?? ""
+        action = (try? c.decodeIfPresent(String.self, forKey: .action)) ?? "pay"
+    }
+}
+
+/// A campaign a pledge may target — offered as a chip in the new-pledge flow
+/// when the partnership payload carries any.
+struct PledgeCampaignOption: Codable, Sendable, Identifiable, Hashable {
+    let campaignId: String
+    let title: String
+    var id: String { campaignId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        campaignId = (try? c.decodeIfPresent(String.self, forKey: .campaignId)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+    }
+}
+
+/// A `transactions` row attributed to a pledge (§1 "Pledge payment"). Also
+/// the row shape of GET /giving/statements `payments[]`; `at` falls back to
+/// the transaction's settled/created timestamp so either serialisation lands.
+struct PledgePayment: Decodable, Sendable, Identifiable, Hashable {
+    let transactionId: String
+    let amountMinor: Int
+    let currency: String
+    let at: String
+    let receiptCode: String?
+    let pledgeId: String?
+    let fund: String?
+    let status: String?
+    var id: String { transactionId }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        transactionId = (try? c.decodeIfPresent(String.self, forKey: .transactionId)) ?? ""
+        amountMinor = (try? c.decodeIfPresent(Int.self, forKey: .amountMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        at = (try? c.decodeIfPresent(String.self, forKey: .at))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .settledAt))
+            ?? (try? c.decodeIfPresent(String.self, forKey: .createdAt))
+            ?? ""
+        receiptCode = try? c.decodeIfPresent(String.self, forKey: .receiptCode)
+        pledgeId = try? c.decodeIfPresent(String.self, forKey: .pledgeId)
+        fund = try? c.decodeIfPresent(String.self, forKey: .fund)
+        status = try? c.decodeIfPresent(String.self, forKey: .status)
+    }
+    enum CodingKeys: String, CodingKey {
+        case transactionId, amountMinor, currency, at, settledAt, createdAt, receiptCode, pledgeId, fund, status
+    }
+}
+
+/// GET /giving/pledges/{id} → the pledge + its payments (+ reminders, which
+/// this phase reads but does not render). Accepts both `{pledge: {…},
+/// payments}` and a flat pledge with `payments` beside it.
+struct PledgeDetail: Decodable, Sendable {
+    let pledge: Pledge
+    let payments: [PledgePayment]
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        if let nested = try? c.decodeIfPresent(Pledge.self, forKey: .pledge), !nested.pledgeId.isEmpty {
+            pledge = nested
+        } else {
+            pledge = try Pledge(from: d)
+        }
+        payments = (try? c.decodeIfPresent([PledgePayment].self, forKey: .payments)) ?? []
+    }
+    enum CodingKeys: String, CodingKey { case pledge, payments }
+}
+
+/// POST /giving/partners/join → the membership (flat, or wrapped as
+/// `{membership: {…}}`).
+struct PartnerJoinResult: Decodable, Sendable {
+    let membership: Partnership.Membership
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        if let nested = try? c.decodeIfPresent(Partnership.Membership.self, forKey: .membership), !nested.status.isEmpty {
+            membership = nested
+        } else {
+            membership = try Partnership.Membership(from: d)
+        }
+    }
+    enum CodingKeys: String, CodingKey { case membership }
+}
+
+/// POST /giving/pledges (and PATCH) → the pledge, flat or `{pledge: {…}}`.
+struct PledgeResult: Decodable, Sendable {
+    let pledge: Pledge
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        if let nested = try? c.decodeIfPresent(Pledge.self, forKey: .pledge), !nested.pledgeId.isEmpty {
+            pledge = nested
+        } else {
+            pledge = try Pledge(from: d)
+        }
+    }
+    enum CodingKeys: String, CodingKey { case pledge }
+}
+
+/// GET /giving/statements?year= — the JSON statement (§5): totals by pledge
+/// and by fund for one year, the payments behind them, and the years that
+/// have any. The yearly PDF stays on GivingStatementView.
+struct GivingStatements: Decodable, Sendable {
+    let years: [Int]
+    let year: Int
+    let totalMinor: Int
+    let currency: String
+    let byPledge: [ByPledge]
+    let byFund: [ByFund]
+    let payments: [PledgePayment]
+
+    struct ByPledge: Codable, Sendable, Identifiable {
+        let pledgeId: String
+        let title: String
+        let totalMinor: Int
+        var id: String { pledgeId }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
+            title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+            totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
+        }
+    }
+    struct ByFund: Codable, Sendable, Identifiable {
+        let code: String
+        let name: String
+        let totalMinor: Int
+        var id: String { code }
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+            name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
+        }
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        let thisYear = Calendar.current.component(.year, from: Date())
+        year = (try? c.decodeIfPresent(Int.self, forKey: .year)) ?? thisYear
+        let ys = (try? c.decodeIfPresent([Int].self, forKey: .years)) ?? []
+        years = ys.isEmpty ? [year] : ys
+        totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        byPledge = (try? c.decodeIfPresent([ByPledge].self, forKey: .byPledge)) ?? []
+        byFund = (try? c.decodeIfPresent([ByFund].self, forKey: .byFund)) ?? []
+        payments = (try? c.decodeIfPresent([PledgePayment].self, forKey: .payments)) ?? []
+    }
+    enum CodingKeys: String, CodingKey { case years, year, totalMinor, currency, byPledge, byFund, payments }
 }
 
 

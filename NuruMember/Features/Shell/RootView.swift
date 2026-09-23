@@ -1,18 +1,17 @@
 // The signed-in shell — the native port of navigation/RootNavigator.tsx +
-// BottomTabBar.tsx. Nuru Live L4 (docs/LIVE_STREAMING.md) restructured the bar
-// from seven destinations down to Home · Pathway · Plans · You · Live: "You"
-// folds Events + Chat + Profile together (the owner's spec), and — since the
-// owner's bar has no seat for Give either — Give rides along inside "You" too
-// rather than losing its front door. "Live" only appears for members holding
-// the `live:go` permission (LiveBroadcastEligibility); everyone else keeps a
-// four-tab bar and watches through Home / the cell card as before. A custom
-// navy bar draws a gold active icon + label + top indicator dot; the system
-// tab bar is hidden so we can match the design exactly (and so a conditional
-// 5th/4th tab doesn't fight a stock TabView's own layout).
+// BottomTabBar.tsx. The Partners programme (pathway docs/PARTNERS_PROGRAMME.md
+// §0, owner-approved 2026-09-23) set the bar at SIX destinations: Home ·
+// Pathway · Plans · Events · Give · You. Events and Give each own a seat
+// again; "You" keeps Community · Departments · Profile · Settings. The old
+// broadcaster-only "Live" tab is gone — Go Live / return-to-broadcast / My
+// Broadcasts now sit at the top of Events as a "Broadcast" card, still only
+// for members holding `live:go` (LiveBroadcastEligibility). A custom cream bar
+// draws a navy active icon + label on a gold-tinted pill; the system tab bar
+// is hidden so we can match the design exactly.
 import SwiftUI
 
 enum AppTab: Hashable, CaseIterable {
-    case home, pathway, plans, you, live
+    case home, pathway, plans, events, give, you
 
     /// Debug-only: lets a screenshot script open the app on a chosen tab via the
     /// NURU_TAB launch env var (e.g. SIMCTL_CHILD_NURU_TAB=pathway). Defaults home.
@@ -21,8 +20,9 @@ enum AppTab: Hashable, CaseIterable {
         switch ProcessInfo.processInfo.environment["NURU_TAB"] {
         case "pathway": return .pathway
         case "plans": return .plans
+        case "events": return .events
+        case "give": return .give
         case "you": return .you
-        case "live": return .live
         default: return .home
         }
         #else
@@ -35,8 +35,9 @@ enum AppTab: Hashable, CaseIterable {
         case .home: return "Home"
         case .pathway: return "Pathway"
         case .plans: return "Plans"
+        case .events: return "Events"
+        case .give: return "Give"
         case .you: return "You"
-        case .live: return "Live"
         }
     }
     var icon: Lucide {
@@ -44,35 +45,66 @@ enum AppTab: Hashable, CaseIterable {
         case .home: return .house
         case .pathway: return .bookOpen
         case .plans: return .bookMarked
+        case .events: return .calendar
+        case .give: return .handHeart
         case .you: return .user
-        case .live: return .camera
         }
     }
 }
 
-/// The four screens folded into the "You" tab (L4). Chat is the default/
-/// "heart" segment per the owner's spec; Events, Give and Profile are peers
-/// reached through the same capsule segmented control Chat already uses
-/// internally (My Space / Chat / My Discipler / My Pastor) — just one level up.
-enum YouSegment: Hashable, CaseIterable {
-    case chat, events, give, profile
+/// The four screens folded into the "You" tab (PARTNERS_PROGRAMME §0):
+/// Community (the default / "heart" segment — the case stays `.chat` so the
+/// "chat" deep link keeps resolving), Departments (§4 — a placeholder until
+/// phase 3), Profile, and Settings (the existing screen promoted from behind
+/// the Profile gear; the gear route still works). Reached through the same
+/// capsule segmented control Chat uses internally, one level up.
+enum YouSegment: Hashable, CaseIterable, CapsuleSegment {
+    case chat, departments, profile, settings
 
     var label: String {
         switch self {
-        case .chat: return "Community"   // the case stays .chat: the "chat" deep link resolves to it
-        case .events: return "Events"
-        case .give: return "Give"
+        case .chat: return "Community"
+        case .departments: return "Departments"
         case .profile: return "Profile"
+        case .settings: return "Settings"
         }
     }
     var icon: Lucide {
         switch self {
         case .chat: return .users
-        case .events: return .calendarDays
-        case .give: return .handHeart
+        case .departments: return .heartHandshake
         case .profile: return .user
+        case .settings: return .settings
         }
     }
+}
+
+/// The Give tab's two segments (PARTNERS_PROGRAMME §0): the giving screen
+/// itself, and the Partners programme portal (§2).
+enum GiveSegment: Hashable, CaseIterable, CapsuleSegment {
+    case give, partners
+
+    var label: String {
+        switch self {
+        case .give: return "Give"
+        case .partners: return "Partners"
+        }
+    }
+    var icon: Lucide {
+        switch self {
+        case .give: return .handHeart
+        case .partners: return .heartHandshake
+        }
+    }
+}
+
+/// A gift the Give screen should open pre-filled — Partners' "Pay now" carries
+/// the pledge's fund + the amount still due, and the pledge id rides the intent
+/// body so the server attributes the gift (§1 "Pledge payment" rule a).
+struct GivePreset: Equatable {
+    var fund: String?
+    var amountMinor: Int?
+    var pledgeId: String?
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
@@ -110,9 +142,17 @@ final class TabRouter: ObservableObject {
     /// plan_group_invite_received notification tap.
     @Published var readingInviteToken: String?
     /// Which segment of the "You" tab a cross-tab link (notification tap,
-    /// widget URL, a Home "See events" / "Give now" button) should land on.
-    /// YouTabView consumes this (pushes its own segment state) and clears it.
+    /// widget URL, a Home button) should land on. YouTabView consumes this
+    /// (pushes its own segment state) and clears it.
     @Published var youSegment: YouSegment?
+    /// Which segment of the "Give" tab a cross-tab link should land on —
+    /// Give itself, or the Partners portal (a partner invite's "Become a
+    /// partner", a `pledge_*` notification, a "partners" nudge). GiveTabView
+    /// consumes and clears it exactly like `youSegment`.
+    @Published var giveSegment: GiveSegment?
+    /// A pre-filled gift for the Give screen (Partners → "Pay now"). GivingView
+    /// consumes it (fund, amount, pledge id) and clears it.
+    @Published var givePreset: GivePreset?
     /// A conversation to open on the Chat stack (You → Community → Talk) —
     /// set by a Home "chat_unread" nudge or a Read-with-a-Friend "Sent to
     /// <name> in chat · Open chat" toast. ChatView consumes it (pushes the
@@ -121,11 +161,18 @@ final class TabRouter: ObservableObject {
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
-    func openEvent(_ o: CalendarOccurrence) { eventLink = o; openYou(.events) }
+    func openEvent(_ o: CalendarOccurrence) { eventLink = o; openEvents() }
     func openAnnouncement(_ id: String) { announcementLink = id; selected = .home }
     func openReadingInvite(_ token: String) { readingInviteToken = token; selected = .plans }
     func openYou(_ seg: YouSegment) { youSegment = seg; selected = .you }
     func openConversation(_ id: String) { conversationLink = id; openYou(.chat) }
+    /// Events and Give are top-level tabs again (PARTNERS_PROGRAMME §0) — the
+    /// old `openYou(.events)` / `openYou(.give)` call sites now land here.
+    func openEvents() { selected = .events }
+    func openGive() { giveSegment = .give; selected = .give }
+    /// Give, pre-filled (Partners "Pay now" / a due item).
+    func openGive(preset: GivePreset) { givePreset = preset; openGive() }
+    func openPartners() { giveSegment = .partners; selected = .give }
 }
 
 struct RootView: View {
@@ -171,20 +218,16 @@ struct RootView: View {
         return scene?.windows.first(where: { $0.isKeyWindow })?.safeAreaInsets.top ?? 59
     }
 
-    /// The tabs actually shown on the bar: "Live" only for a member whose /me
-    /// permissions include `live:go` (client-side advisory gate — the server
-    /// re-checks on every write regardless, same rule ModuleView/GoLiveSetupSheet
-    /// already use). Everyone else gets the four-tab bar the owner's spec shows
-    /// for non-broadcasters.
-    private var visibleTabs: [AppTab] {
-        AppTab.allCases.filter { $0 != .live || LiveBroadcastEligibility.canGoLive(auth.profile) }
-    }
+    /// The six tabs on the bar — the same for every member. The broadcaster-
+    /// only surface (Go Live / My Broadcasts) is a card at the top of Events,
+    /// gated there by LiveBroadcastEligibility rather than by a tab's existence.
+    private var visibleTabs: [AppTab] { AppTab.allCases }
 
     // A hand-rolled tab container instead of TabView: a stock TabView with this
     // many tabs collapses the tail into a system "More" navigation controller on
-    // iPhone, which wrapped Chat/Give/Profile in a nav bar (the stray ‹ + "More"
+    // iPhone, which wrapped the tail tabs in a nav bar (the stray ‹ + "More"
     // screen) and blocked their full-bleed headers. Rendering the selected tab
-    // directly avoids all of it (and lets the tab COUNT itself vary by profile).
+    // directly avoids all of it.
     var body: some View {
         ZStack {
             ForEach(visibleTabs, id: \.self) { t in
@@ -332,9 +375,13 @@ struct RootView: View {
             } else if template.hasPrefix("level"), level > 0 {
                 tabs.openPathway(.level(level))
             } else if template.hasPrefix("event") {
-                tabs.openYou(.events)
+                tabs.openEvents()
+            } else if template.hasPrefix("pledge") {
+                // pledge_due_soon / pledge_overdue / pledge_fulfilled (§3) —
+                // the pledge lives in the Partners portal.
+                tabs.openPartners()
             } else if template.hasPrefix("giving") || template.hasPrefix("payment") {
-                tabs.openYou(.give)
+                tabs.openGive()
             } else if template.hasPrefix("badge") || template.hasPrefix("certificate") {
                 tabs.openYou(.profile)
             } else if template.hasPrefix("reflection") {
@@ -384,18 +431,17 @@ struct RootView: View {
             switch host {
             case "pathway": tabs.selected = .pathway
             case "plans":   tabs.selected = .plans
-            // Pre-L4 widget/shortcut hosts — still land on the right content,
-            // now inside the You tab's matching segment (Give/Events/Chat no
-            // longer own a bottom-bar slot).
-            case "chat":    tabs.openYou(.chat)
-            case "events":  tabs.openYou(.events)
-            case "give":    tabs.openYou(.give)
-            case "you":     tabs.selected = .you
-            case "live":
-                // Only navigate if this member actually has a Live tab —
-                // otherwise silently fall through to the default (Home) rather
-                // than selecting a tab that isn't on the bar.
-                if LiveBroadcastEligibility.canGoLive(auth.profile) { tabs.selected = .live }
+            // Every existing route name keeps resolving (PARTNERS_PROGRAMME
+            // §0): chat → You's Community segment; events / give → their own
+            // tabs again; partners → Give's Partners segment.
+            case "chat":     tabs.openYou(.chat)
+            case "events":   tabs.openEvents()
+            case "give":     tabs.openGive()
+            case "partners": tabs.openPartners()
+            case "you":      tabs.selected = .you
+            // The Live tab folded into Events (its Broadcast card) — an old
+            // nuru://live shortcut lands there for everyone.
+            case "live":     tabs.openEvents()
             case "radio":   NotificationCenter.default.post(name: .nuruOpenRadio, object: nil)
             // "join" is claimed above by readingJoinToken(from:) — same scheme,
             // now shared with the https shape and the chat bubble's link tap.
@@ -452,8 +498,9 @@ struct RootView: View {
         case .home:    return AnyView(HomeView())
         case .pathway: return AnyView(PathwayView())
         case .plans:   return AnyView(PlansTab())
+        case .events:  return AnyView(EventsView())
+        case .give:    return AnyView(GiveTabView())
         case .you:     return AnyView(YouTabView())
-        case .live:    return AnyView(NuruLiveTabView())
         }
     }
 }
@@ -530,12 +577,13 @@ private struct PlansTab: View {
     }
 }
 
-/// Custom bottom bar: navy, gold active (icon + label + top dot), dim inactive.
+/// Custom bottom bar: cream, navy active (icon + label on a gold-tinted pill),
+/// dim inactive. Six seats: at 375pt (iPhone SE class) each is 62.5pt wide,
+/// so the label is 10pt and may shrink a touch ("Pathway" is the widest) and
+/// the pill's side inset is 4pt rather than 10.
 private struct NuruTabBar: View {
     @Binding var selection: AppTab
-    /// The tabs to render, in order — RootView passes the profile-filtered
-    /// list (Live only for a `live:go` holder) so this bar never offers a tab
-    /// that doesn't exist for the signed-in member.
+    /// The tabs to render, in order.
     let tabs: [AppTab]
     /// The dms-unread + pending-connection-request count — surfaced on the
     /// You tab's icon exactly like the Chat segment's own chip (ChatBadge is
@@ -567,7 +615,8 @@ private struct NuruTabBar: View {
                                 } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
                             if t == .you, chatBadge.count > 0 { badgeDot(chatBadge.count) }
                         }
-                        Text(t.label).font(.inter(10.5, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
+                        Text(t.label).font(.inter(10, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
+                            .lineLimit(1).minimumScaleFactor(0.85)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
@@ -577,7 +626,7 @@ private struct NuruTabBar: View {
                         if focused {
                             RoundedRectangle(cornerRadius: 18, style: .continuous)
                                 .fill(Self.pill)
-                                .padding(.horizontal, 10)
+                                .padding(.horizontal, 4)
                                 .matchedGeometryEffect(id: "nuru-tab-indicator", in: indicator)
                         }
                     }
