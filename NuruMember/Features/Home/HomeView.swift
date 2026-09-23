@@ -556,9 +556,9 @@ struct HomeView: View {
                 showing: partnerInviteShowing,
                 onBecomePartner: {
                     Task { try? await MemberAPI.inviteOutcome(c.campaignId, outcome: "opened") }
-                    // Opens the Give tab, where Partners lives. NOT a payment sheet.
-                    tabs.youSegment = .give
-                    tabs.selected = .you
+                    // Opens the Partners portal (Give tab → Partners segment).
+                    // NOT a payment sheet.
+                    tabs.openPartners()
                 },
                 onDismiss: { permanent in
                     Task {
@@ -1135,13 +1135,17 @@ struct HomeView: View {
             if let t = n.params?.token, !t.isEmpty { tabs.openReadingInvite(t) } else { tabs.openPlans(.readWithFriendHub) }
         case "chat":
             if let c = n.params?.conversationId, !c.isEmpty { tabs.openConversation(c) } else { tabs.openYou(.chat) }
+        case "partners":
+            // A pledge due / behind (PARTNERS_PROGRAMME §3) — the pledge card
+            // with its Pay now lives in the Partners portal.
+            tabs.openPartners()
         default:
             break   // an unroutable nudge is a server bug — never a crash, never a wrong screen
         }
     }
 
     private static let nudgeRoutes: Set<String> =
-        ["devotional", "quiz", "level_exam", "letter", "cell", "plan", "reading_invite", "chat"]
+        ["devotional", "quiz", "level_exam", "letter", "cell", "plan", "reading_invite", "chat", "partners"]
 
     private static func defaultNudgeRoute(forKind kind: String) -> String {
         switch kind {
@@ -1995,7 +1999,7 @@ struct HomeView: View {
             HStack {
                 Text("FEATURED").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Nuru.goldChipText)
                 Spacer()
-                Button { Haptics.selection(); tabs.openYou(.events) } label: {
+                Button { Haptics.selection(); tabs.openEvents() } label: {
                     sectionLink("View all")
                 }.buttonStyle(.plain)
             }
@@ -2041,7 +2045,7 @@ struct HomeView: View {
             }
             .buttonStyle(.pressableSubtle)
         case .event(let e):
-            Button { Haptics.tap(); tabs.openYou(.events) } label: {
+            Button { Haptics.tap(); tabs.openEvents() } label: {
                 featuredPageBody(kicker: "FEATURED GATHERING", imageUrl: e.primaryImageUrl,
                                  title: e.title, body: e.description ?? (e.location ?? ""),
                                  meta: e.dtstartLocal.isEmpty ? nil : eventKicker(e.dtstartLocal), cta: "See details")
@@ -2445,7 +2449,7 @@ struct HomeView: View {
     // GET /home/featured-event was declared but rendered by no client until now.
     private func featuredGatheringCard(_ fe: FeaturedEvent) -> some View {
         Button {
-            Haptics.selection(); tabs.openYou(.events)
+            Haptics.selection(); tabs.openEvents()
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 if let u = fe.primaryImageUrl.flatMap(URL.init) {
@@ -2488,7 +2492,7 @@ struct HomeView: View {
             HStack {
                 Text("GATHERINGS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
-                Button { Haptics.selection(); tabs.openYou(.events) } label: {
+                Button { Haptics.selection(); tabs.openEvents() } label: {
                     Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
                 }.buttonStyle(.pressable)
             }
@@ -2603,7 +2607,7 @@ struct HomeView: View {
     // MARK: 18 — Support God's work (give panel — centered ceremony layout)
 
     private var giveBanner: some View {
-        HomeGiveCard { tabs.openYou(.give) }
+        HomeGiveCard { tabs.openGive() }
     }
 
     // MARK: derived / helpers

@@ -59,7 +59,7 @@ enum Ev {
 enum EventSegment: String, CaseIterable { case today = "Today", upcoming = "Upcoming", rsvps = "My RSVPs" }
 
 /// Pushable routes within the Events stack.
-enum EventsNav: Hashable { case calendar, seriesAll, announcementsAll, attendance }
+enum EventsNav: Hashable { case calendar, seriesAll, announcementsAll, attendance, broadcasts }
 
 /// One cell in the scrollable date strip.
 struct WeekDay: Identifiable {
@@ -273,6 +273,7 @@ struct EventsView: View {
 
     @StateObject private var vm = EventsViewModel()
     @EnvironmentObject private var tabs: TabRouter
+    @EnvironmentObject private var auth: AuthStore
     @State private var path = NavigationPath()
 
     var body: some View {
@@ -281,6 +282,12 @@ struct EventsView: View {
                 VStack(spacing: 0) {
                     header
                     VStack(spacing: Nuru.S.base) {
+                        // Broadcasters only (PARTNERS_PROGRAMME §0): the old
+                        // Live tab's Go Live / return-to-broadcast / My
+                        // Broadcasts card, gated exactly as that tab was.
+                        if LiveBroadcastEligibility.canGoLive(auth.profile) {
+                            BroadcastStudioCard { path.append(EventsNav.broadcasts) }
+                        }
                         if let live = vm.liveOccurrence {
                             NavigationLink(value: live) { LiveHeroCard(occ: live) }.buttonStyle(.pressableSubtle)
                         }
@@ -309,6 +316,7 @@ struct EventsView: View {
                 case .seriesAll: SeriesListPage(vm: vm)
                 case .announcementsAll: AnnouncementsListPage(vm: vm)
                 case .attendance: AttendanceView()
+                case .broadcasts: NuruLiveTabView(pushed: true)
                 }
             }
             .nuruDestinations()

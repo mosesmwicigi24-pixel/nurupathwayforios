@@ -1,11 +1,14 @@
-// Nuru Live L4 — the Live tab (docs/LIVE_STREAMING.md L4 section). RootView
-// only mounts this for a member whose /me permissions include `live:go`
-// (LiveBroadcastEligibility.canGoLive) — everyone else keeps the four-tab bar
-// and watches through Home's LIVE banner / the cell card, unchanged. This is
-// the broadcaster's own "backstage": the exact L3 Go Live entry point Home
-// already uses (GoLiveSetupSheet → GoLiveBroadcastView, offering whichever of
-// church/cell the signed-in profile is eligible for — no forced scope, same
-// as Home's header icon).
+// Nuru Live L4 — the broadcaster's "backstage" (docs/LIVE_STREAMING.md L4
+// section). Once its own tab; since the Partners programme restructure
+// (PARTNERS_PROGRAMME §0) it is the "My Broadcasts" page PUSHED from the
+// Broadcast card at the top of Events (`pushed: true`) — Events shows that
+// card only for a member whose /me permissions include `live:go`
+// (LiveBroadcastEligibility.canGoLive); everyone else watches through Home's
+// LIVE banner / the cell card, unchanged. The studio card itself lives in
+// BroadcastStudioCard.swift so Events and this page render the one design.
+// This is the exact L3 Go Live entry point Home already uses
+// (GoLiveSetupSheet → GoLiveBroadcastView, offering whichever of church/cell
+// the signed-in profile is eligible for — no forced scope).
 //
 // TASTE PASS (2026-07-31, owner: "on Android it's bare; bring iOS's to the
 // same elevated design"): the plain header-card-list layout became a proper
@@ -18,12 +21,14 @@
 import SwiftUI
 
 struct NuruLiveTabView: View {
+    /// True when pushed onto the Events stack (the only way in now): no
+    /// NavigationStack of its own, a back tile in the header, and the
+    /// standard pushed-screen top padding.
+    var pushed: Bool = false
+
     @EnvironmentObject private var auth: AuthStore
-    @ObservedObject private var broadcast = BroadcastCenter.shared
+    @Environment(\.dismiss) private var dismiss
     @ObservedObject private var liveDiscovery = LiveDiscoveryCenter.shared
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var showGoLiveSheet = false
-    @State private var breathe = false
 
     // My Broadcasts
     @State private var rows: [LiveMyRecordingRow] = []
@@ -34,37 +39,17 @@ struct NuruLiveTabView: View {
     @State private var confirmDeleteId: String?
     @State private var deletingId: String?
 
-    /// The church-wide stream someone ELSE is broadcasting right now, if
-    /// any — `LiveDiscoveryCenter.streams` already excludes this device's
-    /// own active broadcast (see its `ingest` header comment), so this can
-    /// never be "my own" stream.
-    private var churchStreamLive: LiveStreamSummary? {
-        liveDiscovery.streams.first { $0.isChurch }
-    }
-
     var body: some View {
-        NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 0) {
-                    header
-                    VStack(alignment: .leading, spacing: Nuru.S.lg) {
-                        heroCard
-                        myBroadcastsSection
-                    }
-                    .padding(.horizontal, Nuru.S.screen)
-                    .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.tabBarSpace)
-                }
+        Group {
+            if pushed {
+                page
+                    .navigationBarBackButtonHidden(true)
+                    .toolbar(.hidden, for: .navigationBar)
+            } else {
+                NavigationStack { page.toolbar(.hidden, for: .navigationBar) }
             }
-            .refreshable { await load() }
-            .ignoresSafeArea(edges: .top)
-            .background(Nuru.paper.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
         }
         .task { await load() }
-        .sheet(isPresented: $showGoLiveSheet) {
-            GoLiveSetupSheet { BroadcastCenter.shared.start(session: $0) }
-        }
         // `.id($0.recordingId)` — flicker guard, same reasoning as every
         // other `LiveViewerPlayerView` call site (see its own header note).
         .fullScreenCover(item: $playingRow) { row in
@@ -86,6 +71,24 @@ struct NuruLiveTabView: View {
         }
     }
 
+    private var page: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                header
+                VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                    BroadcastStudioCard()
+                    myBroadcastsSection
+                }
+                .padding(.horizontal, Nuru.S.screen)
+                .padding(.top, Nuru.S.base)
+                .padding(.bottom, Nuru.tabBarSpace)
+            }
+        }
+        .refreshable { await load() }
+        .ignoresSafeArea(edges: .top)
+        .background(Nuru.paper.ignoresSafeArea())
+    }
+
     private func load() async {
         await liveDiscovery.refresh()
         await loadMyBroadcasts()
@@ -94,11 +97,23 @@ struct NuruLiveTabView: View {
     // MARK: Header — the same cream hero-band idiom every folded tab uses.
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("🔴 NURU LIVE").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
-            Text("Go live").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
-            Text("Broadcast to the church or your cell, and revisit past streams.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            if pushed {
+                Button { Haptics.tap(); dismiss() } label: {
+                    Icon(.arrowLeft, size: 18, color: Nuru.navy)
+                        .frame(width: 40, height: 40)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                Text("🔴 NURU LIVE").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
+                Text("My Broadcasts").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
+                Text("Broadcast to the church or your cell, and revisit past streams.")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
@@ -110,95 +125,6 @@ struct NuruLiveTabView: View {
         )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
-    }
-
-    // MARK: Hero studio card — navy, Fraunces wordmark, breathing Go Live
-    // pill; swaps its CTA to "LIVE now — watch" when the church is already
-    // on air (starting a second church stream would just 409 anyway, so
-    // pointing at watching is strictly more useful).
-
-    private var heroCard: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("NURU LIVE").font(.inter(10, .bold)).kerning(2.4).foregroundStyle(Nuru.gold.opacity(0.85))
-                Text("Nuru Live").font(.fraunces(24, .semibold)).foregroundStyle(.white)
-                Text("Bring the family together, wherever they are.")
-                    .font(.inter(12)).foregroundStyle(.white.opacity(0.65))
-            }
-            if broadcast.controller == nil, let live = churchStreamLive {
-                watchNowRow(live)
-            } else {
-                goLivePill
-            }
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: [Nuru.navy, Nuru.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
-        .shadow(color: .black.opacity(0.18), radius: 20, y: 10)
-    }
-
-    private var goLivePill: some View {
-        let live = broadcast.controller != nil
-        return Button {
-            Haptics.tap()
-            if live { broadcast.restore() } else { showGoLiveSheet = true }
-        } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle().stroke(Nuru.gold.opacity(0.45), lineWidth: 2)
-                        .frame(width: 44, height: 44)
-                        .scaleEffect(breathe ? 1.4 : 1)
-                        .opacity(breathe ? 0 : 0.85)
-                    Circle().fill(live ? Color.white.opacity(0.16) : Nuru.gold).frame(width: 40, height: 40)
-                    Image(systemName: "video.fill").font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(live ? .white : Nuru.navy)
-                }
-                Text(live ? "You're live — tap to return" : "Go Live")
-                    .font(.inter(15, .bold)).foregroundStyle(live ? .white : Nuru.navy)
-                Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: live ? .white.opacity(0.7) : Nuru.navy.opacity(0.55))
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 60)
-            .background(live ? Color.white.opacity(0.10) : Nuru.gold, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(live ? 0.16 : 0), lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.8).repeatForever(autoreverses: false)) { breathe = true }
-        }
-    }
-
-    private func watchNowRow(_ stream: LiveStreamSummary) -> some View {
-        Button {
-            Haptics.tap()
-            liveDiscovery.markSeen(stream.streamId)
-            liveDiscovery.requestedItem = .live(stream)
-        } label: {
-            HStack(spacing: 12) {
-                HStack(spacing: 5) {
-                    Circle().fill(Color(hex: 0xDC2626)).frame(width: 6, height: 6)
-                    Text("LIVE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 8).padding(.vertical, 4)
-                .background(Color(hex: 0xDC2626), in: Capsule())
-                Text(stream.title).font(.inter(13, .semibold)).foregroundStyle(.white).lineLimit(1)
-                Spacer(minLength: 8)
-                Text("Watch").font(.inter(12, .bold)).foregroundStyle(Nuru.navy)
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(Nuru.gold, in: Capsule())
-            }
-            .padding(.horizontal, 14)
-            .frame(height: 60)
-            .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
-        }
-        .buttonStyle(.pressableSubtle)
     }
 
     // MARK: My Broadcasts — GET /live/recordings/mine, owner-managed

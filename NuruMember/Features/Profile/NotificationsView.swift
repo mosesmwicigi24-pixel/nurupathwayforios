@@ -120,6 +120,8 @@ struct NotificationsView: View {
                 switch dest {
                 case .tab(let tab): tabs.selected = tab
                 case .you(let seg): tabs.openYou(seg)
+                case .give: tabs.openGive()
+                case .partners: tabs.openPartners()
                 }
             } label: { row(n) }.buttonStyle(.pressableSubtle)
         } else {
@@ -138,10 +140,11 @@ struct NotificationsView: View {
     /// Template families whose home is a whole tab, not one pushed page — since
     /// L4, Events/Give/Profile no longer own a bottom-bar slot of their own,
     /// so those land on the You tab's matching segment instead of a plain tab.
-    private enum NotifTarget { case tab(AppTab); case you(YouSegment) }
+    private enum NotifTarget { case tab(AppTab); case you(YouSegment); case give; case partners }
     private func tabDest(_ t: String) -> NotifTarget? {
-        if t.hasPrefix("event") { return .you(.events) }
-        if t.hasPrefix("giving") || t.hasPrefix("payment") { return .you(.give) }
+        if t.hasPrefix("event") { return .tab(.events) }
+        if t.hasPrefix("pledge") { return .partners }   // pledge_due_soon / overdue / fulfilled (§3)
+        if t.hasPrefix("giving") || t.hasPrefix("payment") { return .give }
         if t.hasPrefix("badge") || t.hasPrefix("certificate") { return .you(.profile) }
         if t.hasPrefix("level") || t.hasPrefix("reflection") { return .tab(.pathway) }
         return nil
