@@ -142,13 +142,21 @@ final class GivingViewModel: ObservableObject {
 // MARK: - Give
 
 struct GivingView: View {
-    /// True when hosted as the "Give" segment inside the You tab (L4) rather
-    /// than as its own top-level tab — the You tab's own segmented control
-    /// already clears the status bar, so this header needs only a little
-    /// breathing room, not a second 60pt reservation for it.
+    /// True when hosted as the "Give" segment inside the Give tab (GiveTabView)
+    /// rather than as its own top-level screen. The tab paints no band of its
+    /// own (Partners UI v2): this header IS the band, so it clears the status
+    /// bar itself and carries the GIVE · PARTNERS switch as its first row.
     var embeddedInYou: Bool = false
+    /// The Give tab's current segment + the tab's selector — rendered as the
+    /// band's first row when both are supplied (GiveTabView), omitted otherwise.
+    var segment: GiveSegment? = nil
+    var onSelectSegment: ((GiveSegment) -> Void)? = nil
 
     @StateObject private var vm = GivingViewModel()
+    /// "Hide the amount" on the year pill — a member glancing at Give in
+    /// company shouldn't have to show the room what they've given. Per
+    /// device, default visible (UserDefaults `give.hideYearTotal`).
+    @AppStorage("give.hideYearTotal") private var hideYearTotal = false
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.scenePhase) private var scenePhase
 
@@ -219,7 +227,6 @@ struct GivingView: View {
                         methodSection
                         coverFeeRow
                         if !vm.schedules.isEmpty { schedulesSection }
-                        partnersRow
                         recentSection
                         scriptureStrip
                         secureNote
@@ -297,29 +304,56 @@ struct GivingView: View {
 
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("GIVE")
-                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Color(hex: 0x9A7A2A))
+            // ONE band (Partners UI v2): the GIVE · PARTNERS switch is the
+            // band's first row, so the "GIVE" eyebrow it replaced is gone.
+            if let segment, let onSelectSegment {
+                SplitSegmentBar(selection: segment, onSelect: onSelectSegment)
+                    .padding(.bottom, 12)
+            }
             Text("Sow into the Kingdom")
                 .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-                .padding(.top, 4)
             Text("Generosity is worship — a quiet, joyful act.")
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
                 .padding(.top, 4)
 
-            HStack(spacing: 8) {
-                Icon(.badgeCheck, size: 14, color: Nuru.gold)
-                Text("KSh \((vm.yearTotalMinor / 100).formatted(.number.grouping(.automatic))) given this year")
-                    .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+            HStack(spacing: 10) {
+                // The year pill opens the statement — the same page "View
+                // statement" reaches further down.
+                NavigationLink(value: GiveRoute.statement) {
+                    HStack(spacing: 8) {
+                        Icon(.badgeCheck, size: 14, color: Nuru.gold)
+                        Text(yearPillText)
+                            .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                            .lineLimit(1).minimumScaleFactor(0.85)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 9)
+                    .background(Color.white, in: Capsule())
+                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityHint("Opens your giving statement")
+
+                Button {
+                    Haptics.selection()
+                    withAnimation(.easeInOut(duration: 0.15)) { hideYearTotal.toggle() }
+                } label: {
+                    Icon(hideYearTotal ? .eyeOff : .eye, size: 15, color: Nuru.navy)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white, in: Circle())
+                        .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel(hideYearTotal ? "Show the amount given this year" : "Hide the amount given this year")
+                Spacer(minLength: 0)
             }
-            .padding(.horizontal, 16).padding(.vertical, 9)
-            .background(Color.white, in: Capsule())
-            .overlay(Capsule().stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
-            .padding(.top, 14)
+            .padding(.top, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
-        .padding(.top, embeddedInYou ? Nuru.S.base : 60)
-        .padding(.bottom, 20)
+        // Right under the status bar: the tab no longer reserves a band above
+        // this one, so clear the REAL inset (NuruSafeArea) — never a fixed 60.
+        .padding(.top, embeddedInYou ? NuruSafeArea.top + 8 : 60)
+        .padding(.bottom, 16)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {
@@ -329,6 +363,12 @@ struct GivingView: View {
                 .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
                 .ignoresSafeArea(edges: .top)
         )
+    }
+
+    /// "KSh 12,340 given this year" — or bullets while the member has chosen
+    /// to hide it. The word "given" stays, so the pill still says what it is.
+    private var yearPillText: String {
+        hideYearTotal ? "KSh •••• given this year" : "\(ksh(vm.yearTotalMinor / 100)) given this year"
     }
 
     // MARK: Repeat last gift
@@ -692,34 +732,6 @@ struct GivingView: View {
     private var recentGifts: [GivingRecord] {
         let settled: Set<String> = ["succeeded", "settled", "completed"]
         return Array(vm.history.filter { settled.contains($0.status) }.prefix(3))
-    }
-
-    /// Partners is the Give tab's other segment (GiveTabView) — separate from
-    /// Give, as the design asks — but reached from here too, because this is
-    /// where someone thinking about giving already is. The money reporting
-    /// stays on this side.
-    private var partnersRow: some View {
-        Button {
-            Haptics.tap(); tabs.openPartners()
-        } label: {
-            HStack(spacing: 12) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Partners").font(.nHeading).foregroundStyle(Nuru.ink)
-                    Text("Your standing, your pledges, and what this season has held")
-                        .font(.nCaption).foregroundStyle(Nuru.ink600)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Nuru.ink300)
-            }
-            .padding(16)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(Nuru.gold.opacity(0.22), lineWidth: 1))
-        }
-        .buttonStyle(.pressable)
     }
 
     /// Shown while a gift is bound to a pledge — says so plainly, and lets the
