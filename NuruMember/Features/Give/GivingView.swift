@@ -1596,7 +1596,9 @@ private struct GiveCeremonyView: View {
             }
         }
         .sheet(isPresented: $showReceipt) {
-            if let txId { GivingReceiptView(transactionId: txId) }
+            // A stack of its own so the receipt's "View statement" can push
+            // the statement; the receipt draws its own header (no nav bar).
+            if let txId { NavigationStack { GivingReceiptView(transactionId: txId) } }
         }
     }
 }

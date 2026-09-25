@@ -116,6 +116,32 @@ struct GivingDetail: Codable, Sendable {
     let settledAt: String?
     let scheduleId: String?
     let ledger: [GivingLedgerEntry]
+    // Receipt v2 (2026-09-25) — display fields the server adds to the same
+    // payload. All optional: an older server omits them and the receipt falls
+    // back to the fund code / the local method map / the signed-in profile.
+    /// The fund's display name ("Discipleship"), not its code.
+    var fundName: String? = nil
+    /// The pledge this gift counts toward, when it carried a `pledge_id`.
+    var pledge: GivingIntentResult.PledgeRef? = nil
+    /// The department need this gift was given to, when it targeted one.
+    var need: NeedRef? = nil
+    /// "M-Pesa" | "Airtel Money" | "Card" | "PayPal" | "Manual".
+    var methodLabel: String? = nil
+    /// The giver's full name as Finance holds it.
+    var memberName: String? = nil
+    /// The giver's congregation, when known.
+    var congregation: String? = nil
+
+    struct NeedRef: Codable, Sendable {
+        let needId: String
+        let title: String
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            needId = (try? c.decodeIfPresent(String.self, forKey: .needId)) ?? ""
+            title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        }
+    }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         transactionId = try c.decode(String.self, forKey: .transactionId)
@@ -131,6 +157,12 @@ struct GivingDetail: Codable, Sendable {
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
         scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
         ledger = (try? c.decodeIfPresent([GivingLedgerEntry].self, forKey: .ledger)) ?? []
+        fundName = try? c.decodeIfPresent(String.self, forKey: .fundName)
+        pledge = try? c.decodeIfPresent(GivingIntentResult.PledgeRef.self, forKey: .pledge)
+        need = try? c.decodeIfPresent(NeedRef.self, forKey: .need)
+        methodLabel = try? c.decodeIfPresent(String.self, forKey: .methodLabel)
+        memberName = try? c.decodeIfPresent(String.self, forKey: .memberName)
+        congregation = try? c.decodeIfPresent(String.self, forKey: .congregation)
     }
 }
 
