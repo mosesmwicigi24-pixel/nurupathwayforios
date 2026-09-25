@@ -52,6 +52,23 @@ struct GivingIntentResult: Codable, Sendable {
     let providerRef: String?
     let approveUrl: String?
     let reused: Bool
+    /// Where the SERVER routed the gift (pledge names contract): the fund it
+    /// landed in — for a pledge payment that is the pledge's own target, not
+    /// the chip the member had selected — and the pledge it counts toward,
+    /// when it carried a `pledge_id`. Both absent on older servers.
+    let fund: Pledge.FundRef?
+    let pledge: PledgeRef?
+
+    struct PledgeRef: Codable, Sendable {
+        let pledgeId: String
+        let title: String
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
+            title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        }
+    }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         transactionId = (try? c.decodeIfPresent(String.self, forKey: .transactionId)) ?? ""
@@ -61,6 +78,8 @@ struct GivingIntentResult: Codable, Sendable {
         providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
         approveUrl = try? c.decodeIfPresent(String.self, forKey: .approveUrl)
         reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
+        fund = try? c.decodeIfPresent(Pledge.FundRef.self, forKey: .fund)
+        pledge = try? c.decodeIfPresent(PledgeRef.self, forKey: .pledge)
     }
 }
 
@@ -175,6 +194,11 @@ struct Partnership: Codable, Sendable {
     /// Campaigns a new pledge may target (chips in the "target" step). Empty
     /// when the server sends none — the step then offers funds only.
     let campaigns: [PledgeCampaignOption]
+    /// What a new pledge may be for (pledge names contract): General
+    /// partnership first, then funds, campaigns, approved department needs —
+    /// in the server's order. Empty on servers that predate it; the flow
+    /// then builds the same list from the five funds + `campaigns`.
+    let pledgeOptions: [PledgeOption]
 
     /// A partner per §1: the membership says so, or (pre-programme servers)
     /// the derived standing does.
@@ -245,6 +269,7 @@ struct Partnership: Codable, Sendable {
         pledges = (try? c.decodeIfPresent([Pledge].self, forKey: .pledges)) ?? []
         due = (try? c.decodeIfPresent([DueItem].self, forKey: .due)) ?? []
         campaigns = (try? c.decodeIfPresent([PledgeCampaignOption].self, forKey: .campaigns)) ?? []
+        pledgeOptions = (try? c.decodeIfPresent([PledgeOption].self, forKey: .pledgeOptions)) ?? []
     }
 }
 
@@ -264,6 +289,13 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     let fund: FundRef?
     let campaign: CampaignRef?
     let needId: String?
+    /// The pledge's name as the SERVER says it (pledge names contract): the
+    /// member's custom name when set, else the derived one (campaign → fund
+    /// → need → "Partnership"). Empty on servers that predate it.
+    let title: String
+    /// The member's own name for the pledge; nil when they never gave one
+    /// (or cleared it) and `title` is the derived name.
+    let customTitle: String?
     let status: String           // active | paused | fulfilled | cancelled
     let progress: Progress
     let scheduleId: String?
@@ -319,6 +351,8 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         fund = try? c.decodeIfPresent(FundRef.self, forKey: .fund)
         campaign = try? c.decodeIfPresent(CampaignRef.self, forKey: .campaign)
         needId = try? c.decodeIfPresent(String.self, forKey: .needId)
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        customTitle = (try? c.decodeIfPresent(String.self, forKey: .customTitle)).flatMap { $0.isEmpty ? nil : $0 }
         status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
         progress = (try? c.decodeIfPresent(Progress.self, forKey: .progress)) ?? Progress()
         scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
@@ -326,7 +360,7 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
     }
 
-    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay }
+    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
     func hash(into h: inout Hasher) { h.combine(pledgeId) }
 
     var isMonthly: Bool { shape == "monthly" }
@@ -341,13 +375,48 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         guard commitmentMinor > 0 else { return 0 }
         return min(1, Double(paidTowardMinor) / Double(commitmentMinor))
     }
-    /// What the pledge is for, in the member's words: fund, campaign, need, or general.
+    /// What the pledge is for, derived HERE from its target: fund, campaign,
+    /// need, or general. The fallback behind `displayTitle` for servers that
+    /// send no `title`.
     var targetTitle: String {
         if let c = campaign, !c.title.isEmpty { return c.title }
         if let f = fund, !f.name.isEmpty { return f.name }
         if let f = fund, !f.code.isEmpty { return f.code.capitalized }
         if needId != nil { return "A department need" }
         return "General partnership"
+    }
+    /// The name shown everywhere a pledge is named: the server's `title`
+    /// (custom, else derived), falling back to `targetTitle` when absent.
+    var displayTitle: String { title.isEmpty ? targetTitle : title }
+}
+
+/// One thing a new pledge may be for (GET /giving/partnership
+/// `pledge_options[]`): General partnership, a fund, a campaign, or an
+/// approved department need. Picking one sets the create body's
+/// `fund` / `campaign_id` / `need_id`; the server derives the title.
+struct PledgeOption: Codable, Sendable, Identifiable, Hashable {
+    let key: String
+    let title: String
+    let kind: String             // general | fund | campaign | need
+    let fund: String?            // kind == fund: the fund code
+    let campaignId: String?      // kind == campaign
+    let needId: String?          // kind == need
+    /// The server's key, or (a row without one) a stable composite so the
+    /// picker can still tell two options apart.
+    var id: String { key.isEmpty ? "\(kind):\(fund ?? campaignId ?? needId ?? title)" : key }
+
+    init(key: String, title: String, kind: String, fund: String? = nil, campaignId: String? = nil, needId: String? = nil) {
+        self.key = key; self.title = title; self.kind = kind
+        self.fund = fund; self.campaignId = campaignId; self.needId = needId
+    }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        key = (try? c.decodeIfPresent(String.self, forKey: .key)) ?? ""
+        title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+        kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "general"
+        fund = try? c.decodeIfPresent(String.self, forKey: .fund)
+        campaignId = try? c.decodeIfPresent(String.self, forKey: .campaignId)
+        needId = try? c.decodeIfPresent(String.self, forKey: .needId)
     }
 }
 

@@ -618,7 +618,9 @@ extension MemberAPI {
     }
 
     /// POST /giving/pledges — `{shape, amount_minor|target_minor, currency,
-    /// due_day?|due_on?, fund?, campaign_id?, need_id?, auto_schedule?}`.
+    /// due_day?|due_on?, fund?, campaign_id?, need_id?, title?, auto_schedule?}`.
+    /// `title` (2–60) is sent ONLY for a custom name — for a fund / campaign /
+    /// need pick the server derives the name itself.
     struct PledgeCreateBody: Encodable {
         struct AutoSchedule: Encodable { let method: String; let frequency: String }
         let shape: String
@@ -630,6 +632,7 @@ extension MemberAPI {
         var fund: String? = nil
         var campaignId: String? = nil
         var needId: String? = nil
+        var title: String? = nil
         var autoSchedule: AutoSchedule? = nil
         let idempotencyKey: String
     }
@@ -638,12 +641,32 @@ extension MemberAPI {
     }
 
     /// PATCH /giving/pledges/{id} — `{status?: paused|active|cancelled,
-    /// amount_minor?, due_day?, reminders_enabled?}`. Only the keys set are sent.
+    /// amount_minor?, due_day?, reminders_enabled?, title?: string | null}`.
+    /// Only the keys set are sent. `title` is the one key that must be able
+    /// to travel as an explicit JSON `null` (clearing the custom name so the
+    /// server falls back to its derived one), so the body is encoded by hand
+    /// — the same idiom as `reactToEventPost`.
     struct PledgePatchBody: Encodable {
+        enum TitlePatch { case set(String), clear }
         var status: String? = nil
         var amountMinor: Int? = nil
         var dueDay: Int? = nil
         var remindersEnabled: Bool? = nil
+        var title: TitlePatch? = nil
+
+        enum CodingKeys: String, CodingKey { case status, amountMinor, dueDay, remindersEnabled, title }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.container(keyedBy: CodingKeys.self)
+            try c.encodeIfPresent(status, forKey: .status)
+            try c.encodeIfPresent(amountMinor, forKey: .amountMinor)
+            try c.encodeIfPresent(dueDay, forKey: .dueDay)
+            try c.encodeIfPresent(remindersEnabled, forKey: .remindersEnabled)
+            switch title {
+            case .set(let s)?: try c.encode(s, forKey: .title)
+            case .clear?: try c.encodeNil(forKey: .title)
+            case nil: break
+            }
+        }
     }
     static func updatePledge(_ id: String, patch: PledgePatchBody) async throws -> Pledge {
         try await APIClient.shared.patch("giving/pledges/\(id)", body: patch, as: PledgeResult.self).pledge
