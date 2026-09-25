@@ -542,6 +542,14 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/transactions/\(id)", as: GivingDetail.self)
     }
 
+    /// GET /giving/transactions/{id}/receipt.pdf — the branded receipt as PDF
+    /// bytes. Rides APIClient's RawJSON passthrough (same as certificate PDFs),
+    /// so the bearer header + single-flight 401 refresh come for free and the
+    /// bytes are returned untouched.
+    static func givingReceiptPdf(_ id: String) async throws -> Data {
+        try await APIClient.shared.get("giving/transactions/\(id)/receipt.pdf", as: RawJSON.self).data
+    }
+
     /// GET /me/gifts — the member's spiritual-gifts profile.
     static func myGifts() async throws -> MyGifts {
         try await APIClient.shared.get("me/gifts", as: MyGifts.self)

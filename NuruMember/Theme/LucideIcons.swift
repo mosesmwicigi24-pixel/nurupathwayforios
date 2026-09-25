@@ -110,6 +110,11 @@ enum Lucide: String {
     case arrowUpRight = "\u{E04D}"
     case arrowDownRight = "\u{E045}"
     case minus = "\u{E11C}"
+    // Gift receipt v2 (feat/receipt-v2) — codepoints read from the bundled
+    // Resources/Fonts/lucide.ttf cmap with fontTools (circle-x, share, file-text).
+    case circleX = "\u{E084}"
+    case share = "\u{E155}"
+    case fileText = "\u{E0CC}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).

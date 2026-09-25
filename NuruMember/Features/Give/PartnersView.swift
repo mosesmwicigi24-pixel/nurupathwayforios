@@ -268,7 +268,9 @@ struct PartnersView: View {
         case .pledge(let id):
             PledgeDetailView(pledgeId: id, seed: vm.partnership?.pledges.first { $0.pledgeId == id }, vm: vm)
         case .receipt(let tx):
-            GivingReceiptView(transactionId: tx)
+            // This stack has a pledge page, so the receipt's Pledge row can
+            // open it; the Give stack has none and leaves the row plain.
+            GivingReceiptView(transactionId: tx) { id in path.append(PartnersRoute.pledge(id)) }
         case .statement:
             GivingStatementView()
         }
