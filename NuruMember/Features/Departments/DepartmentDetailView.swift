@@ -536,10 +536,12 @@ struct DepartmentDetailView: View {
                 Button {
                     Haptics.action()
                     // Give opens with the need attached — the intent carries
-                    // `need_id`, the server attributes the gift (§4). No fund
-                    // rides along: the department carries none on the wire,
-                    // so Give keeps its default fund chip.
-                    tabs.openGive(preset: GivePreset(fund: nil, amountMinor: nil, pledgeId: nil, needId: n.needId))
+                    // `need_id` and the SERVER routes the gift to the
+                    // department's fund (§4), so Give shows a GIVING TO A NEED
+                    // card instead of its fund chooser.
+                    tabs.openGive(preset: GivePreset(fund: nil, amountMinor: nil, pledgeId: nil, needId: n.needId,
+                                                     needTitle: n.title.isEmpty ? nil : n.title,
+                                                     needLine: "\(n.percent)% of \(money(n.targetMinor, n.currency)) raised"))
                 } label: {
                     HStack(spacing: 6) {
                         Icon(.handHeart, size: 13, color: Nuru.navy)

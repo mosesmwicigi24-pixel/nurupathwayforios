@@ -31,7 +31,41 @@
 // statement and PDF" under the card both open PartnersStatementView — the
 // partners' own statement (pledges + pledge payments + its own PDF), kept
 // separate from the general giving statement (owner, 2026-09-25).
+//
+// FRESHNESS (live bug, 2026-09-26: a KSh 1,000 pledge payment settled but the
+// Partners tab and statement kept the numbers they loaded first — both Give
+// segments stay mounted, and they only ever loaded when empty). Now:
+//   · stale-while-revalidate — this tab and the Partners statement ALWAYS
+//     refetch the partnership + the year on screen when they appear, when the
+//     segment is selected and when the app returns to the foreground, keeping
+//     what they have on screen meanwhile (no spinner when there is a cache);
+//   · one app-wide signal (.nuruGivingChanged) — Give posts it when a gift
+//     intent is created (pending) or resolves, and when a schedule changes;
+//     this model reloads on it (debounced 0.5s), and Give's own model too.
 import SwiftUI
+import Combine
+
+extension Notification.Name {
+    /// Posted whenever money or a schedule changed on this device (a gift
+    /// intent created or resolved, a schedule created / cancelled / resumed).
+    /// `object` is the model that posted, so it can ignore its own signal.
+    static let nuruGivingChanged = Notification.Name("nuru.givingChanged")
+}
+
+/// Give ⇄ Partners freshness — one place to post the signal from.
+enum GivingSignal {
+    static func post(from sender: AnyObject? = nil) {
+        NotificationCenter.default.post(name: .nuruGivingChanged, object: sender)
+    }
+
+    /// Debounced (0.5s) subscription that skips `owner`'s own posts.
+    static func observe(_ owner: AnyObject, _ action: @escaping @MainActor () -> Void) -> AnyCancellable {
+        NotificationCenter.default.publisher(for: .nuruGivingChanged)
+            .filter { [weak owner] n in (n.object as AnyObject?) !== owner }
+            .debounce(for: .milliseconds(500), scheduler: RunLoop.main)
+            .sink { _ in Task { @MainActor in action() } }
+    }
+}
 
 @MainActor final class PartnersModel: ObservableObject {
     @Published var partnership: Partnership?
@@ -53,6 +87,31 @@ import SwiftUI
     /// kept this year" reads the CURRENT year's payments even while the
     /// statement card is showing an earlier year.
     @Published var statementsByYear: [Int: GivingStatements] = [:]
+    /// A quiet refetch failed while cached data stayed on screen — the pages
+    /// say so in one muted line instead of swapping the page for an error.
+    @Published private(set) var partnershipRefreshFailed = false
+    @Published private(set) var statementsRefreshFailed = false
+    var refreshFailed: Bool { partnershipRefreshFailed || statementsRefreshFailed }
+
+    private var refreshing = false
+    /// Visible (non-quiet) statement loads in flight — the spinner stays up
+    /// until the LAST one lands, so two quick year taps never flash a year.
+    private var statementLoadsInFlight = 0
+    /// Every statement request is numbered; a response is filed only when no
+    /// NEWER request for the same year has landed first — a slow reply (a
+    /// poll tick, a refresh) never overwrites fresher data.
+    private var statementsSeq = 0
+    private var appliedSeqByYear: [Int: Int] = [:]
+    /// The same rule for the partnership: an older reply never overwrites a newer one.
+    private var partnershipSeq = 0
+    private var partnershipApplied = 0
+    private var givingChanged: AnyCancellable?
+
+    init() {
+        givingChanged = GivingSignal.observe(self) { [weak self] in
+            Task { await self?.refresh() }
+        }
+    }
 
     var currentYearStatements: GivingStatements? {
         statementsByYear[Calendar.current.component(.year, from: Date())]
@@ -75,9 +134,56 @@ import SwiftUI
     func load() async {
         loading = partnership == nil
         error = nil
-        do { partnership = try await MemberAPI.partnership() }
-        catch { if partnership == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this just now." } }
+        partnershipSeq += 1
+        let seq = partnershipSeq
+        do {
+            let p = try await MemberAPI.partnership()
+            if seq > partnershipApplied {
+                partnershipApplied = seq
+                partnership = p
+            }
+            partnershipRefreshFailed = false
+        } catch {
+            if partnership == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this just now." }
+            else { partnershipRefreshFailed = true }
+        }
         loading = false
+    }
+
+    /// Stale-while-revalidate: refetch the partnership and the year on
+    /// screen (and this year's cache for the pledge cards when an earlier
+    /// year is on screen). What is cached stays up meanwhile. Concurrent
+    /// calls (appear + foreground + the signal) coalesce into one.
+    /// `withStatement`: the Partners statement page itself asks — it must
+    /// load even for a member who has left the programme (reached from the
+    /// giving statement's PARTNER PLEDGES card).
+    func refresh(withStatement: Bool = false) async {
+        guard !refreshing else { return }
+        refreshing = true
+        defer { refreshing = false }
+        await load()
+        // The statement loads for a partner, for an unknown standing (the
+        // partnership failed to load), whenever one is already on screen,
+        // and when the statement page asks.
+        guard withStatement || statements != nil || (partnership?.isProgrammeMember ?? true) else { return }
+        await loadStatements()
+        let now = Calendar.current.component(.year, from: Date())
+        if statementYear != now {
+            statementsSeq += 1
+            let seq = statementsSeq
+            do { fileStatement(try await MemberAPI.givingStatements(year: now), seq: seq) }
+            catch { statementsRefreshFailed = true }
+        }
+    }
+
+    /// Files a fetched statement in the by-year cache unless a newer request
+    /// for that year already landed. True when filed (i.e. not stale).
+    @discardableResult
+    private func fileStatement(_ s: GivingStatements, seq: Int) -> Bool {
+        guard seq > (appliedSeqByYear[s.year] ?? 0) else { return false }
+        appliedSeqByYear[s.year] = seq
+        statementsByYear[s.year] = s
+        return true
     }
 
     /// POST /giving/partners/join {} — then reload so standing/tier are the
@@ -89,6 +195,7 @@ import SwiftUI
             try await MemberAPI.joinPartners()
             Haptics.success()
             await load()
+            await loadStatements()   // the STATEMENT section appears with membership
         } catch {
             Haptics.error()
             actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing has changed."
@@ -132,12 +239,13 @@ import SwiftUI
     }
 
     /// POST /giving/schedules/{id}/resume — the existing schedule path; it
-    /// deliberately does NOT collect the cycle that was missed.
+    /// deliberately does NOT collect the cycle that was missed. Give's
+    /// schedules list hears about it through the signal.
     func resumeSchedule(_ id: String) async {
         guard busyId == nil else { return }
         busyId = id
         defer { busyId = nil }
-        do { try await MemberAPI.resumeSchedule(id); Haptics.success(); await load() }
+        do { try await MemberAPI.resumeSchedule(id); Haptics.success(); GivingSignal.post(from: self); await load() }
         catch {
             Haptics.error()
             actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your giving is unchanged."
@@ -146,20 +254,34 @@ import SwiftUI
 
     /// Always a real fetch (a year chip = GET /giving/statements?year=); the
     /// by-year cache is for the pledge cards, not for skipping the request.
+    /// Stale-while-revalidate: when this year's statement is already on
+    /// screen the refetch is QUIET — no spinner, and a failure keeps it (and
+    /// says so via `statementsRefreshFailed`) rather than replacing it.
     func loadStatements(year: Int? = nil) async {
         let y = year ?? statementYear
         statementYear = y
-        statementsLoading = true
+        let quiet = statements?.year == y
+        if !quiet { statementLoadsInFlight += 1; statementsLoading = true }
         statementsError = nil
+        statementsSeq += 1
+        let seq = statementsSeq
         do {
             let s = try await MemberAPI.givingStatements(year: y)
-            statements = s
-            statementYear = s.year
-            statementsByYear[s.year] = s
+            // Stale (a newer request for this year already landed): ignored.
+            // Another year chosen while this was in flight: filed, not shown.
+            if fileStatement(s, seq: seq), statementYear == y {
+                statements = s
+                statementYear = s.year
+            }
+            statementsRefreshFailed = false
         } catch {
-            statementsError = (error as? APIError)?.errorDescription ?? "We couldn't load your statement."
+            if quiet { statementsRefreshFailed = true }
+            else { statementsError = (error as? APIError)?.errorDescription ?? "We couldn't load your statement." }
         }
-        statementsLoading = false
+        if !quiet {
+            statementLoadsInFlight -= 1
+            statementsLoading = statementLoadsInFlight > 0
+        }
     }
 }
 
@@ -224,6 +346,19 @@ extension GivingStatements {
             .sorted { (giveParseDate($0.at) ?? .distantPast) > (giveParseDate($1.at) ?? .distantPast) }
     }
 
+    /// Pledge payments still processing (`pending[]`), newest first — shown,
+    /// NEVER totalled. A row the settled list already carries is dropped (it
+    /// settled between the two reads), and only rows dated in this
+    /// statement's year (or undated) are kept.
+    var pendingPledgePayments: [PledgePayment] {
+        let settled = Set(payments.map(\.transactionId))
+        let cal = Calendar.current
+        return pending
+            .filter { $0.pledgeId != nil && !settled.contains($0.transactionId) }
+            .filter { pay in giveParseDate(pay.at).map { cal.component(.year, from: $0) == year } ?? true }
+            .sorted { (giveParseDate($0.at) ?? .distantPast) > (giveParseDate($1.at) ?? .distantPast) }
+    }
+
     /// The statement's own title for a pledge (byPledge), when it has one.
     func pledgeTitle(for pledgeId: String) -> String? {
         let t = byPledge.first { $0.pledgeId == pledgeId }?.title ?? ""
@@ -246,8 +381,13 @@ struct PartnersView: View {
 
     @StateObject private var vm = PartnersModel()
     @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.scenePhase) private var scenePhase
     @State private var path = NavigationPath()
     @State private var showNewPledge = false
+
+    /// This page is what the member is looking at: its segment is selected
+    /// (or it is not embedded) and the Give tab is the current tab.
+    private var onScreen: Bool { (segment == nil || segment == .partners) && tabs.selected == .give }
 
     var body: some View {
         Group {
@@ -268,7 +408,21 @@ struct PartnersView: View {
                     .navigationDestination(for: PartnersRoute.self) { destination($0) }
             }
         }
-        .task { if vm.partnership == nil { await vm.load() } }
+        // Stale-while-revalidate: ALWAYS refetch on appear, on selecting the
+        // segment (both segments stay mounted, so appear alone is not enough)
+        // and on returning to the foreground — cached data stays up meanwhile.
+        .task { await vm.refresh() }
+        .onChange(of: segment) { _, s in
+            if s == .partners { Task { await vm.refresh() } }
+        }
+        // Tabs stay mounted too (RootView keep-alive): the Give tab coming
+        // back with this segment showing is an "appear" that .task never sees.
+        .onChange(of: tabs.selected) { _, _ in
+            if onScreen { Task { await vm.refresh() } }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active && onScreen { Task { await vm.refresh() } }
+        }
         .fullScreenCover(isPresented: $showNewPledge) {
             NewPledgeFlow(isMember: vm.partnership?.isProgrammeMember ?? false,
                           pledgeOptions: vm.partnership?.pledgeOptions ?? [],
@@ -298,7 +452,7 @@ struct PartnersView: View {
         case .partnersStatement:
             PartnersStatementView(vm: vm)
         case .statement:
-            GivingStatementView()
+            GivingStatementView(host: .partners)
         }
     }
 
@@ -325,9 +479,15 @@ struct PartnersView: View {
     }
 
     @ViewBuilder private var sections: some View {
+        if vm.partnership != nil && vm.refreshFailed {
+            Text("Couldn't refresh just now — showing what we last had.")
+                .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+        }
         if let p = vm.partnership {
             if p.isProgrammeMember {
                 StandingCard(partnership: p,
+                             faithfulness: vm.currentYearStatements?.faithfulness,
                              onPledge: { Haptics.tap(); showNewPledge = true },
                              onStatement: { Haptics.tap(); path.append(PartnersRoute.partnersStatement) })
                 if !p.due.isEmpty { dueSection(p) }
@@ -429,28 +589,56 @@ struct PartnersView: View {
 
     private func dueRow(_ item: DueItem, _ p: Partnership) -> some View {
         let busy = vm.busyId == item.id
+        // `pending_minor`: money toward this instalment already started. All
+        // of it → Processing, no Pay (a second tap would pay it twice). Part
+        // of it → Pay stays, for what is still uncovered.
+        let partial = item.kind == "pledge" && item.action != "resume" && item.pendingMinor > 0 && !item.fullyPending
+        let when = dueWhen(item)
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
-                Text("\(money(item.amountMinor, item.currency)) · \(relativeDay(item.dueOn))")
-                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
-                Text(dueSubtitle(item, p))
+                Text(partial
+                     ? "\(money(item.uncoveredMinor, item.currency)) left · \(when.text)"
+                     : "\(money(item.amountMinor, item.currency)) · \(when.text)")
+                    .font(.inter(15, .semibold))
+                    .foregroundStyle(when.overdue ? Nuru.goldChipText : Nuru.ink)
+                Text(partial
+                     ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
+                     : dueSubtitle(item, p))
                     .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
             }
             Spacer(minLength: 8)
-            Button {
-                Haptics.action()
-                act(on: item, p)
-            } label: {
-                HStack(spacing: 6) {
-                    if busy { ProgressView().tint(.white).scaleEffect(0.7) }
-                    Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, .bold))
+            if item.fullyPending {
+                Text(pendingChipText(item))
+                    .font(.inter(11, .bold)).foregroundStyle(Nuru.urgentText)
+                    .padding(.horizontal, 10).frame(height: 28)
+                    .background(Nuru.urgentBg, in: Capsule())
+                    .accessibilityLabel("\(pendingChipText(item)) — this payment is already on its way")
+            } else {
+                Button {
+                    Haptics.action()
+                    act(on: item, p)
+                } label: {
+                    HStack(spacing: 6) {
+                        if busy { ProgressView().tint(.white).scaleEffect(0.7) }
+                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, .bold))
+                    }
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 18).frame(height: 36)
+                    .background(Nuru.navy, in: Capsule())
                 }
-                .foregroundStyle(.white)
-                .padding(.horizontal, 18).frame(height: 36)
-                .background(Nuru.navy, in: Capsule())
+                .buttonStyle(.pressable)
+                .disabled(busy)
             }
-            .buttonStyle(.pressable)
-            .disabled(busy)
+        }
+    }
+
+    /// "Waiting for M-Pesa" when the rail of the in-flight payment is known
+    /// (the statement's `pending[]` row for this pledge), else "Processing".
+    private func pendingChipText(_ item: DueItem) -> String {
+        switch vm.currentYearStatements?.pending.first(where: { $0.pledgeId == item.id })?.method {
+        case "mpesa": return "Waiting for M-Pesa"
+        case "airtel": return "Waiting for Airtel Money"
+        default: return "Processing"
         }
     }
 
@@ -471,11 +659,39 @@ struct PartnersView: View {
             if let pl = p.pledges.first(where: { $0.pledgeId == item.id }) { Task { await vm.setStatus(pl, "active") } }
         case ("pledge", _):
             let pl = p.pledges.first { $0.pledgeId == item.id }
-            tabs.openGive(preset: GivePreset(fund: pl?.fund?.code, amountMinor: item.amountMinor, pledgeId: item.id,
-                                             pledgeTitle: pl?.displayTitle ?? (item.title.isEmpty ? nil : item.title)))
+            // Pre-fill only what is still uncovered — money already on its
+            // way toward this instalment is never asked for twice.
+            tabs.openGive(preset: GivePreset(fund: pl?.fund?.code,
+                                             amountMinor: item.pendingMinor > 0 ? item.uncoveredMinor : item.amountMinor,
+                                             pledgeId: item.id,
+                                             pledgeTitle: pl?.displayTitle ?? (item.title.isEmpty ? nil : item.title),
+                                             pledgeAmountLine: pl.map { pledgeAmountLine($0) },
+                                             paysTo: item.paysTo ?? pl?.paysTo))
         default:
             tabs.openGive(preset: GivePreset(fund: nil, amountMinor: item.amountMinor, pledgeId: nil))
         }
+    }
+
+    /// When a DUE row is due. A pledge instalment whose date (or the
+    /// server's `overdue_since`) has passed reads "overdue since 10 Aug" —
+    /// "2 overdue since 10 Aug" when `overdue_count` ≥ 2, the date from
+    /// `overdue_since` when present — in amber (goldChipText, 0x7A5A14).
+    /// Otherwise today · tomorrow · in N days · the date. A schedule row is
+    /// never "overdue" (a paused schedule owes nothing).
+    private func dueWhen(_ item: DueItem) -> (text: String, overdue: Bool) {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        func past(_ iso: String?) -> Bool {
+            guard let iso, let d = giveParseDate(iso) else { return false }
+            return cal.startOfDay(for: d) < today
+        }
+        guard item.kind == "pledge", past(item.dueOn) || past(item.overdueSince) else {
+            return (relativeDay(item.dueOn), false)
+        }
+        let iso = item.overdueSince ?? item.dueOn
+        let sameYear = giveParseDate(iso).map { cal.component(.year, from: $0) == cal.component(.year, from: today) } ?? true
+        let since = sameYear ? giveDateShort(iso) : giveDateFull(iso)
+        return (item.overdueCount >= 2 ? "\(item.overdueCount) overdue since \(since)" : "overdue since \(since)", true)
     }
 
     /// today · tomorrow · in N days · else the date.
@@ -523,15 +739,28 @@ struct PartnersView: View {
         }
     }
 
-    /// "9 of 12 kept this year" — payments this year carrying this pledge id
-    /// (from the CURRENT year's statement) over the due dates elapsed so far.
-    /// Nil until that statement has loaded; the card then shows no left text.
+    /// "9 of 12 kept this year". The SERVER's figures first: the CURRENT
+    /// year's statement `pledges[]` entry for this pledge (matched by
+    /// pledge_id) carries `kept` / `due_count` from its FIFO instalment ledger
+    /// — payments fill due dates oldest first, kept = on time or late, and
+    /// due_count counts only RESOLVED instalments (one due today and unpaid
+    /// is not yet counted). Shown as sent.
+    /// Fallback, only when that entry is absent (an older server): payments
+    /// this year carrying this pledge id, capped at the due dates elapsed so
+    /// far — never "3 of 2". Nil until the statement has loaded, or while
+    /// nothing has fallen due (due_count 0); the card then shows no text.
     private func keptLine(_ pledge: Pledge) -> String? {
         guard pledge.isMonthly, let s = vm.currentYearStatements else { return nil }
+        if !pledge.pledgeId.isEmpty,
+           let entry = s.pledges.first(where: { $0.pledgeId == pledge.pledgeId }) {
+            guard entry.dueCount > 0 else { return nil }
+            return "\(entry.kept) of \(entry.dueCount) kept this year"
+        }
         let year = Calendar.current.component(.year, from: Date())
-        let kept = s.payments.filter { $0.pledgeId == pledge.pledgeId }.count
         let elapsed = PledgeMath.monthlyDueDates(pledge, in: year, through: Date())
-        return "\(kept) of \(max(elapsed, kept)) kept this year"
+        guard elapsed > 0 else { return nil }
+        let paid = s.payments.filter { $0.pledgeId == pledge.pledgeId }.count
+        return "\(min(paid, elapsed)) of \(elapsed) kept this year"
     }
 
     // MARK: Statement — year chips, three numbers, the pledge payments (the preview)
@@ -545,7 +774,8 @@ struct PartnersView: View {
             }
             statementCard(p)
         }
-        .task { if vm.statements == nil { await vm.loadStatements() } }
+        // No load here: vm.refresh() (appear / segment / foreground / signal)
+        // and join() both load the statement.
     }
 
     private var yearChips: some View {
@@ -587,6 +817,7 @@ struct PartnersView: View {
         let paid = PledgeMath.paidMinor(s)
         let remaining = PledgeMath.remainingMinor(pledged: pledged, paid: paid)
         let rows = s.pledgePayments
+        let pending = s.pendingPledgePayments
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top, spacing: 8) {
                 summaryColumn("Pledged", money(pledged, s.currency), Nuru.navy)
@@ -596,7 +827,16 @@ struct PartnersView: View {
 
             Divider().overlay(Nuru.border).padding(.vertical, 14)
 
-            if rows.isEmpty {
+            // Still processing: listed first, never in Paid above.
+            ForEach(pending) { pay in
+                Button { Haptics.tap(); path.append(PartnersRoute.receipt(pay.transactionId)) } label: {
+                    PendingPledgePaymentRow(payment: pay, title: pay.pledgeTitle ?? paymentTitle(pay, s, p))
+                }
+                .buttonStyle(.pressableSubtle)
+                .disabled(pay.transactionId.isEmpty)
+                Divider().overlay(Nuru.border)
+            }
+            if rows.isEmpty && pending.isEmpty {
                 Text("No pledge payments in \(String(s.year)).")
                     .font(.inter(13)).foregroundStyle(Nuru.ink600)
             } else {
@@ -755,6 +995,9 @@ func pledgeAmountLine(isMonthly: Bool, amountMinor: Int?, targetMinor: Int?,
 
 private struct StandingCard: View {
     let partnership: Partnership
+    /// The CURRENT year's statement `faithfulness` — nil until it loads (or
+    /// on an older server).
+    let faithfulness: GivingStatements.Faithfulness?
     let onPledge: () -> Void
     let onStatement: () -> Void
 
@@ -810,12 +1053,41 @@ private struct StandingCard: View {
     /// "Partner since Sep 2026" — the shared formatter (partnerSinceLine).
     private var sinceLine: String { partnerSinceLine(partnership) }
 
-    /// "N gifts kept · on track" — `kept` is what was COLLECTED, never scheduled.
+    /// The standing line. "Kept" has ONE meaning — a due date paid in full,
+    /// on time or late (owner, 2026-09-25):
+    ///   · a partner with pledges: "<kept_on_time + late> commitments kept
+    ///     this year · on track|behind" from the CURRENT year's statement
+    ///     `faithfulness` — the count left out while it is 0 and nothing has
+    ///     fallen due yet (or before that statement has loaded);
+    ///   · a schedule-only partner (no live pledge): "N gifts kept" —
+    ///     `partnership.kept`, the recurring schedule's collected cycles
+    ///     (which is why it read "0 gifts kept" beside "2 of 2 kept").
     private var keptLine: String {
-        let n = partnership.kept
-        let gifts = n == 1 ? "1 gift kept" : "\(n) gifts kept"
         let paused = partnership.membership?.status == "paused" || partnership.status == "paused"
-        return "\(gifts) · \(paused ? "paused" : "on track")"
+        guard partnership.pledges.contains(where: { $0.status != "cancelled" }) else {
+            let n = partnership.kept
+            let gifts = n == 1 ? "1 gift kept" : "\(n) gifts kept"
+            return "\(gifts) · \(paused ? "paused" : "on track")"
+        }
+        let state = paused ? "paused" : (behind ? "behind" : "on track")
+        let kept = max(0, faithfulness?.keptOnTime ?? 0) + max(0, faithfulness?.late ?? 0)
+        let due = max(0, faithfulness?.dueCount ?? 0)
+        guard faithfulness != nil, kept > 0 || due > 0 else {
+            return state.prefix(1).uppercased() + state.dropFirst()
+        }
+        return "\(kept) commitment\(kept == 1 ? "" : "s") kept this year · \(state)"
+    }
+
+    /// Behind when a resolved instalment went unkept this year
+    /// (`faithfulness`: missed, else kept < due), or when the server labels
+    /// any active pledge behind — so this line never says "on track" above a
+    /// pledge card that says "Behind".
+    private var behind: Bool {
+        if let f = faithfulness, let due = f.dueCount {
+            let kept = max(0, f.keptOnTime ?? 0) + max(0, f.late ?? 0)
+            if (f.missed.map { $0 > 0 } ?? (kept < due)) { return true }
+        }
+        return partnership.pledges.contains { $0.status == "active" && $0.progress.label == "behind" }
     }
 }
 
@@ -893,7 +1165,10 @@ private struct PledgeCard: View {
                 Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 Spacer(minLength: 8)
                 if let n = nextLine {
-                    Text(n).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    Text(n.text)
+                        .font(.inter(11, n.overdue ? .semibold : .regular))
+                        .foregroundStyle(n.overdue ? Nuru.goldChipText : Nuru.ink600)
+                        .lineLimit(1)
                 }
             }
         }
@@ -910,10 +1185,17 @@ private struct PledgeCard: View {
         return "\(money(paid, pledge.currency)) paid · \((toGo / 100).formatted(.number.grouping(.automatic))) to go"
     }
 
-    private var nextLine: String? {
+    /// "Next 10 Oct" — or, once the server's next due has passed unpaid (it
+    /// is then the oldest unpaid instalment), "Overdue since 10 Aug" in amber.
+    private var nextLine: (text: String, overdue: Bool)? {
         if fulfilled || paused { return nil }
         guard let n = pledge.progress.nextDue, !n.isEmpty else { return nil }
-        return "Next \(giveDateShort(n))"
+        let cal = Calendar.current
+        if let d = giveParseDate(n), cal.startOfDay(for: d) < cal.startOfDay(for: Date()) {
+            let sameYear = cal.component(.year, from: d) == cal.component(.year, from: Date())
+            return ("Overdue since \(sameYear ? giveDateShort(n) : giveDateFull(n))", true)
+        }
+        return ("Next \(giveDateShort(n))", false)
     }
 
     private var stateChip: some View {
@@ -1051,6 +1333,10 @@ struct PledgeDetailView: View {
             }
             .refreshable { await load() }
         }
+        // The PAGE starts at the screen's top edge and the header pads itself
+        // below the status bar (the header ignoring the safe area on its own
+        // left its old slot reserved: a dead ~59pt band under it).
+        .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -1102,7 +1388,9 @@ struct PledgeDetailView: View {
                             fund: p.fund?.code,
                             amountMinor: p.remainingMinor > 0 ? p.remainingMinor : p.commitmentMinor,
                             pledgeId: p.pledgeId,
-                            pledgeTitle: p.displayTitle))
+                            pledgeTitle: p.displayTitle,
+                            pledgeAmountLine: pledgeAmountLine(p),
+                            paysTo: p.paysTo))
                     } label: {
                         HStack(spacing: 6) {
                             Text("Pay now").font(.inter(13, .bold))
@@ -1211,7 +1499,6 @@ struct PledgeDetailView: View {
         )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
-        .ignoresSafeArea(edges: .top)
     }
 }
 

@@ -8,8 +8,20 @@
 // STK / PayPal approve) or a real server-charged schedule and NEVER fabricate a
 // payment state — the ceremony polls GET /giving/transactions/{id} for the true
 // outcome. The card path needs the Stripe SDK (SAQ-A tokenisation) and stays SOON.
+//
+// PLEDGE-PAY MODE (2026-09-26): while a pledge (or a need) preset is active the
+// SERVER routes the money — a pledge to its own `pays_to` fund, a need to its
+// department's fund — so "Repeat last gift", the fund chooser and the
+// One-time / Weekly / Monthly switch step aside for one PAYING YOUR PLEDGE (or
+// GIVING TO A NEED) card, and the CTA names what is being paid. A pledge
+// instalment is one-time; the recurring rhythm is the pledge's own schedule.
+//
+// FRESHNESS: every created intent (pending), every resolved one and every
+// schedule change posts .nuruGivingChanged, so the Partners tab and statement
+// refetch (a settled pledge payment used to stay invisible there).
 import SwiftUI
 import UIKit
+import Combine
 
 /// Pushed pages on the Give stack. Partners is no longer one of them — it is
 /// the Give tab's second segment (GiveTabView, PARTNERS_PROGRAMME §0).
@@ -119,13 +131,33 @@ final class GivingViewModel: ObservableObject {
     @Published var history: [GivingRecord] = []
     @Published var schedules: [GivingSchedule] = []
     @Published var loading = true
+    private var givingChanged: AnyCancellable?
+
+    /// Reloads the year total / recent giving / schedules when money changes
+    /// elsewhere (the Partners tab resuming a schedule, …) — debounced, and
+    /// deaf to its own posts (Give already reloads after its own changes).
+    init() {
+        givingChanged = GivingSignal.observe(self) { [weak self] in
+            Task { await self?.load() }
+        }
+    }
+
+    /// Loads are numbered; an older reply never overwrites a newer one (the
+    /// segment, the tab, the foreground and the signal can all ask at once).
+    private var loadSeq = 0
+    private var appliedHistorySeq = 0
+    private var appliedSchedulesSeq = 0
 
     func load() async {
         loading = true
+        loadSeq += 1
+        let seq = loadSeq
         async let h = MemberAPI.givingHistory()
         async let s = MemberAPI.schedules()
-        history = (try? await h) ?? []
-        schedules = (try? await s) ?? []
+        // A failed refetch keeps what is on screen (stale-while-revalidate)
+        // rather than blanking the year pill and Recent giving.
+        if let v = try? await h, seq > appliedHistorySeq { appliedHistorySeq = seq; history = v }
+        if let v = try? await s, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
         loading = false
     }
 
@@ -136,7 +168,10 @@ final class GivingViewModel: ObservableObject {
             .filter { settled.contains($0.status) && $0.createdAt.prefix(4) == String(yr) }
             .reduce(0) { $0 + $1.amountMinor }
     }
-    var lastGift: GivingRecord? { history.first }
+    /// The last ORDINARY gift — "Repeat last gift" must never re-pay a pledge
+    /// instalment or a need: records carrying a `pledgeId` (or a `needId`,
+    /// when the server sends one) are skipped. Nil hides the card.
+    var lastGift: GivingRecord? { history.first { $0.pledgeId == nil && $0.needId == nil } }
 }
 
 // MARK: - Give
@@ -160,8 +195,13 @@ struct GivingView: View {
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.scenePhase) private var scenePhase
 
-    @State private var fundCode = "tithe"
-    @State private var amount = 1000
+    /// The Give form's normal state — what the tab opens with, and what a
+    /// pledge / need payment returns it to once it went through.
+    private static let defaultFundCode = "tithe"
+    private static let defaultAmount = 1000
+
+    @State private var fundCode = GivingView.defaultFundCode
+    @State private var amount = GivingView.defaultAmount
     /// The pledge this gift counts toward (Partners → "Pay now"). Rides the
     /// intent body as `pledge_id` (PARTNERS_PROGRAMME §5) and clears once the
     /// server confirms the gift — a retry after a failure keeps it.
@@ -171,9 +211,16 @@ struct GivingView: View {
     /// the server attributes it to the need's campaign; cleared once the
     /// server confirms the gift — a retry after a failure keeps it.
     @State private var needId: String?
-    /// The pledge's name, from the preset — so the "counts toward" chip can
+    /// The pledge's name, from the preset — so the PAYING YOUR PLEDGE card can
     /// say WHICH pledge before the server has answered. Cleared with pledgeId.
     @State private var pledgeTitle: String?
+    /// The promise in one line ("KSh 1,000 monthly · due on the 25th") and
+    /// the pledge's `pays_to` fund — display only; the server routes.
+    @State private var pledgeLine: String?
+    @State private var paysTo: Pledge.FundRef?
+    /// A department need's title + one line, for the GIVING TO A NEED card.
+    @State private var needTitle: String?
+    @State private var needLine: String?
     /// From the intent RESULT (pledge names contract): the fund the SERVER
     /// routed the gift to, and the pledge it counts toward. The ceremony reads
     /// these, never the chip, so a pledge payment is never described as a
@@ -202,6 +249,18 @@ struct GivingView: View {
     @State private var successRef: String?
     @State private var scheduledNextAt = ""
     @State private var pollTask: Task<Void, Never>?
+    /// Set when a pledge / need payment went through (or is pending): the
+    /// form returns to its normal state once the ceremony has finished
+    /// dismissing, so the closing cover never flashes a reset amount.
+    @State private var resetFormAfterCeremony = false
+    /// The idempotency key of the CURRENT submission. Reused on the next Pay
+    /// tap ONLY when the previous attempt got no server answer (offline,
+    /// timeout, transport) — the server returns the existing transaction for
+    /// a replayed key, so a lost reply can never become a second STK. A new
+    /// key after ANY HTTP response (success, 4xx, 5xx — reusing one after a
+    /// genuine failure would lock the member out of retrying), after the
+    /// ceremony resolves, and whenever the form changes (formSignature).
+    @State private var submissionKey = UUID().uuidString
     /// PayPal order id (the intent's provider_ref) for the in-flight gift —
     /// captured after the member approves on PayPal, then cleared.
     @State private var paypalOrderId: String?
@@ -220,7 +279,26 @@ struct GivingView: View {
     }
     private var fee: Int { coverFee ? feeFor(amount) : 0 }
     private var total: Int { amount + fee }
-    private var recurring: Bool { freq != "once" }
+    /// A pledge / need payment is always one-time (the switch is hidden).
+    private var recurring: Bool { freq != "once" && !payMode }
+    /// A pledge or need preset is active — the server routes the money.
+    private var payMode: Bool { pledgeId != nil || needId != nil }
+    /// The Give segment is what the member is looking at.
+    private var giveOnScreen: Bool { (segment ?? .give) == .give && tabs.selected == .give }
+    /// Everything a submission is made of. Any change = a different
+    /// submission = a new idempotency key. (The phone is included too: a
+    /// replayed key would return the old transaction, prompting the old number.)
+    private var formSignature: String {
+        [String(amount), fundCode, method, pledgeId ?? "", needId ?? "", freq,
+         accountName, String(coverFee), mpesaPhone].joined(separator: "|")
+    }
+
+    /// True when an attempt got NO server answer — the only case in which
+    /// the same idempotency key may be sent again.
+    private static func gotNoServerAnswer(_ error: Error) -> Bool {
+        if let api = error as? APIError { return api.isNetwork }
+        return error is URLError
+    }
     private var cadenceWord: String { freq == "weekly" ? "week" : "month" }
     private var orderedMethods: [PayMethod] {
         methodOrder.compactMap { k in baseMethods.first { $0.key == k } }
@@ -235,12 +313,10 @@ struct GivingView: View {
                 Nuru.paper.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Nuru.S.md) {
-                        if let g = vm.lastGift { repeatCard(g) }
-                        fundsSection
+                        if !payMode, let g = vm.lastGift { repeatCard(g) }
+                        if payMode { payModeCard.transition(.opacity) } else { fundsSection }
                         amountCard
-                        if pledgeId != nil { pledgeNote.transition(.opacity) }
-                        if needId != nil { needNote.transition(.opacity) }
-                        frequencyRow
+                        if !payMode { frequencyRow }
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
                         }
@@ -268,26 +344,49 @@ struct GivingView: View {
                 }
             }
         }
-        .task { if vm.history.isEmpty { await vm.load() } }
+        // Stale-while-revalidate (2026-09-26: the year pill sat at KSh 0 after
+        // pledge payments landed without a ceremony — a scheduled charge,
+        // another device). Refetch whenever this segment is SHOWN — first
+        // mount, the segment switched back, the Give tab re-selected (tabs
+        // and segments stay mounted, so .task alone never re-runs) — and on
+        // return to the foreground; what is on screen stays meanwhile.
+        .task { await vm.load() }
+        .onChange(of: segment) { _, s in
+            if s == .give && tabs.selected == .give { Task { await vm.load() } }
+        }
+        .onChange(of: tabs.selected) { _, _ in
+            if giveOnScreen { Task { await vm.load() } }
+        }
         // Partners "Pay now" / a due item: land with the pledge's fund and the
         // amount still owed already in place, as a one-time gift, and remember
         // the pledge so the intent carries `pledge_id`. Consumed once.
         .onReceive(tabs.$givePreset) { preset in
             guard let preset else { return }
             if let f = preset.fund, funds.contains(where: { $0.code == f }) { fundCode = f }
+            // Keep the body's fund consistent with where the pledge pays
+            // (the server routes pledge money regardless).
+            if let f = preset.paysTo?.code, funds.contains(where: { $0.code == f }) { fundCode = f }
             if let m = preset.amountMinor, m > 0 { amount = m / 100 }
             pledgeId = preset.pledgeId
             pledgeTitle = preset.pledgeId == nil ? nil : preset.pledgeTitle
+            pledgeLine = preset.pledgeId == nil ? nil : preset.pledgeAmountLine
+            paysTo = preset.pledgeId == nil ? nil : preset.paysTo
             needId = preset.needId
+            needTitle = preset.needId == nil ? nil : preset.needTitle
+            needLine = preset.needId == nil ? nil : preset.needLine
             freq = "once"
             DispatchQueue.main.async { tabs.givePreset = nil }
         }
-        // Returning from the PayPal approval in Safari → nudge the capture.
+        // A different submission from here on — never replay the old key.
+        .onChange(of: formSignature) { _, _ in submissionKey = UUID().uuidString }
+        // Returning from the PayPal approval in Safari → nudge the capture;
+        // and back from anywhere → refetch the year total / recent giving.
         .onChange(of: scenePhase) { _, p in
             if p == .active { attemptPayPalCapture() }
+            if p == .active && giveOnScreen { Task { await vm.load() } }
         }
         .sheet(isPresented: $showKeypad) {
-            GiveKeypadSheet(initial: amount, fundLabel: fund.label,
+            GiveKeypadSheet(initial: amount, fundLabel: payLabel ?? fund.label,
                             initialName: accountName.isEmpty ? lastAccountName : accountName) { amt, name in
                 amount = amt
                 accountName = name ?? ""
@@ -303,9 +402,19 @@ struct GivingView: View {
         .sheet(item: $scheduleDetail) { s in
             ScheduleDetailSheet(schedule: s,
                                 onClose: { scheduleDetail = nil },
-                                onCancelled: { scheduleDetail = nil; Task { await vm.load() } })
+                                onCancelled: {
+                                    scheduleDetail = nil
+                                    GivingSignal.post(from: vm)   // Partners' standing derives from schedules
+                                    Task { await vm.load() }
+                                })
         }
-        .fullScreenCover(isPresented: Binding(get: { ceremony != nil }, set: { if !$0 { endCeremony() } })) {
+        .fullScreenCover(isPresented: Binding(get: { ceremony != nil }, set: { if !$0 { endCeremony() } }),
+                         onDismiss: {
+                             if resetFormAfterCeremony {
+                                 resetFormAfterCeremony = false
+                                 withAnimation(.easeInOut(duration: 0.2)) { resetFormToDefaults() }
+                             }
+                         }) {
             GiveCeremonyView(stage: ceremony ?? "failed",
                              note: ceremonyNote,
                              amountLabel: ksh(total),
@@ -434,17 +543,8 @@ struct GivingView: View {
                 }
                 .padding(.vertical, 2)
             }
-            // A pledge payment: the SERVER picks the fund (the pledge's own
-            // target, else the programme default) and ignores this chooser.
-            // Say so, rather than hide the chooser or pretend the chip counts.
-            if pledgeId != nil {
-                HStack(spacing: 6) {
-                    Icon(.shieldCheck, size: 12, color: Color(hex: 0x74808F))
-                    Text("Routed to the pledge's fund by the church")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
-                }
-                .transition(.opacity)
-            }
+            // (A pledge / need payment never shows this chooser — the pay-mode
+            // card says where the server routes it.)
         }
     }
 
@@ -494,7 +594,8 @@ struct GivingView: View {
                             .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
                             .contentTransition(.numericText(value: Double(amount)))
                     }
-                    Text("\(fund.label) · \(freqLabel)").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                    Text(amountSubtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                        .lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -767,45 +868,92 @@ struct GivingView: View {
         return Array(vm.history.filter { settled.contains($0.status) }.prefix(3))
     }
 
-    /// Shown while a gift is bound to a pledge — says so plainly, and lets the
-    /// member unbind it (an ordinary gift instead) with one tap.
-    private var pledgeNote: some View {
-        HStack(spacing: 8) {
-            Icon(.heartHandshake, size: 14, color: Nuru.gold)
-            // "Counts toward: Building fund pledge" when the name came with
-            // the preset; the plain line when it didn't (older callers).
-            Text(pledgeTitle.map { "Counts toward: \($0)" } ?? "This gift counts toward your pledge")
-                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
-                .lineLimit(2).minimumScaleFactor(0.9)
-            Spacer(minLength: 8)
+    // MARK: Pay mode — PAYING YOUR PLEDGE / GIVING TO A NEED
+
+    /// Replaces "Repeat last gift", the fund chooser and the frequency switch
+    /// while a pledge or need preset is active: what is being paid, the
+    /// promise, where the server sends the money, and a quiet way back to an
+    /// ordinary gift (the old chip's "Remove").
+    private var payModeCard: some View {
+        let isPledge = pledgeId != nil
+        let title = isPledge ? (pledgeTitle ?? "Your pledge") : (needTitle ?? "A department need")
+        let line = isPledge ? pledgeLine : needLine
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Icon(isPledge ? .heartHandshake : .target, size: 13, color: Nuru.gold)
+                overline(isPledge ? "PAYING YOUR PLEDGE" : "GIVING TO A NEED")
+            }
+            Text(title)
+                .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+            if let line, !line.isEmpty {
+                Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                    .padding(.top, 3)
+            }
+            HStack(spacing: 6) {
+                Icon(.shieldCheck, size: 12, color: Color(hex: 0x74808F))
+                Text(routedLine).font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+            }
+            .padding(.top, 10)
             Button {
                 Haptics.selection()
-                withAnimation(.easeInOut(duration: 0.2)) { pledgeId = nil; pledgeTitle = nil }
+                withAnimation(.easeInOut(duration: 0.2)) { clearPayMode() }
             } label: {
-                Text("Remove").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink600)
+                Text("Give to a fund instead")
+                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.ink600).underline()
             }
             .buttonStyle(.plain)
+            .padding(.top, 12)
         }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
     }
 
-    private var needNote: some View {
-        HStack(spacing: 8) {
-            Icon(.target, size: 14, color: Nuru.gold)
-            Text("This gift goes to a department need")
-                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
-            Spacer(minLength: 8)
-            Button {
-                Haptics.selection()
-                withAnimation(.easeInOut(duration: 0.2)) { needId = nil }
-            } label: {
-                Text("Remove").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink600)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 14).padding(.vertical, 10)
-        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    /// "Goes to the Discipleship fund" — the pledge's `pays_to` (a name that
+    /// already says "fund" is not doubled). "Routed by the church" when the
+    /// server sent none, and for a need (its department's fund is the
+    /// server's call).
+    private var routedLine: String {
+        guard pledgeId != nil, let to = paysTo else { return "Routed by the church" }
+        let name = to.name.isEmpty ? to.code.capitalized : to.name
+        return name.lowercased().hasSuffix("fund") ? "Goes to the \(name)" : "Goes to the \(name) fund"
+    }
+
+    /// "Building pledge" — a title that already ends in the word is not doubled.
+    private var pledgeLabel: String {
+        let t = (pledgeTitle ?? "").trimmingCharacters(in: .whitespaces)
+        if t.isEmpty { return "Your pledge" }
+        return t.lowercased().hasSuffix("pledge") ? t : "\(t) pledge"
+    }
+
+    /// What the gift is, in pay mode (nil otherwise) — the keypad's label.
+    private var payLabel: String? {
+        if pledgeId != nil { return pledgeLabel }
+        if needId != nil { return needTitle ?? "A department need" }
+        return nil
+    }
+
+    /// Under the amount: "<title> pledge · one-time" in pay mode, else the
+    /// fund and the frequency.
+    private var amountSubtitle: String {
+        if let payLabel { return "\(payLabel) · one-time" }
+        return "\(fund.label) · \(freqLabel)"
+    }
+
+    /// Back to an ordinary gift — the pledge / need no longer rides the intent.
+    private func clearPayMode() {
+        pledgeId = nil; pledgeTitle = nil; pledgeLine = nil; paysTo = nil
+        needId = nil; needTitle = nil; needLine = nil
+    }
+
+    /// The form's normal state: the default fund and amount, one-time.
+    private func resetFormToDefaults() {
+        fundCode = Self.defaultFundCode
+        amount = Self.defaultAmount
+        freq = "once"
     }
 
     private var recentSection: some View {
@@ -903,6 +1051,14 @@ struct GivingView: View {
                 if submitting {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.8)
                     Text("Processing…")
+                } else if pledgeId != nil {
+                    Text("Pay \(ksh(total)) toward \(pledgeTitle ?? "your pledge")")
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                    Icon(.arrowRight, size: 14, color: Nuru.navy)
+                } else if needId != nil {
+                    Text("Give \(ksh(total)) to \(needTitle ?? "this need")")
+                        .lineLimit(1).minimumScaleFactor(0.75)
+                    Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if recurring {
                     Icon(.repeat, size: 14, color: Nuru.navy)
                     Text("Schedule \(ksh(total)) / \(cadenceWord)")
@@ -945,7 +1101,7 @@ struct GivingView: View {
     // MARK: Actions
 
     private func give() async {
-        guard amount > 0 else { return }
+        guard amount > 0, !submitting else { return }
         guard let m = baseMethods.first(where: { $0.key == method }), let provider = m.provider else {
             ceremonyNote = "This method is coming soon."; ceremony = "failed"; return
         }
@@ -976,6 +1132,7 @@ struct GivingView: View {
             ceremony = "failed"
             return
         }
+        guard !submitting else { return }   // one request in flight, ever
         submitting = true; defer { submitting = false }
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
@@ -987,13 +1144,17 @@ struct GivingView: View {
         do {
             let res = try await APIClient.shared.post("giving/schedules",
                 body: Body(fund: fund.code, amountMinor: total * 100, currency: "KES",
-                           frequency: freq, method: provider, idempotencyKey: UUID().uuidString),
+                           frequency: freq, method: provider, idempotencyKey: submissionKey),
                 as: Created.self)
+            submissionKey = UUID().uuidString   // answered — a replay (`reused`) is handled the same
             scheduledNextAt = res.nextRunAt
             ceremony = "scheduled"
             Haptics.success()   // the server really created the schedule
+            GivingSignal.post(from: vm)   // Partners' standing derives from schedules
             await vm.load()
         } catch {
+            // Keep the key ONLY when the server never answered.
+            if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
             ceremonyNote = (error as? APIError)?.errorDescription ?? "Couldn't create the schedule."
             ceremony = "failed"
             Haptics.error()
@@ -1001,7 +1162,9 @@ struct GivingView: View {
     }
 
     private func submitIntent(provider: String, currency: String, phone: String?) async {
-        guard amount > 0 else { return }
+        // One intent in flight, ever — a double tap on the M-Pesa sheet's
+        // confirm (it calls back before its dismissal lands) is refused here.
+        guard amount > 0, !submitting else { return }
         submitting = true; defer { submitting = false }
         paypalOrderId = nil
         intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
@@ -1009,7 +1172,11 @@ struct GivingView: View {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
                                                  currency: currency, method: provider, phoneNumber: phone,
                                                  accountName: accountName.isEmpty ? nil : accountName,
-                                                 pledgeId: pledgeId, needId: needId)
+                                                 pledgeId: pledgeId, needId: needId,
+                                                 idempotencyKey: submissionKey)
+            // The server answered: this key is spent. A replay (`reused: true`,
+            // the existing transaction) is handled exactly like a fresh one.
+            submissionKey = UUID().uuidString
             pendingTxId = res.transactionId
             successRef = res.providerRef
             // The server's word on where the gift went (pledge names
@@ -1029,10 +1196,16 @@ struct GivingView: View {
                 ceremonyNote = ""   // mobile-money STK push
             }
             ceremony = "stk"
+            // The intent exists (pending) — Partners shows it as Processing.
+            GivingSignal.post(from: vm)
             let tx = res.transactionId
             pollTask?.cancel()
             pollTask = Task { await watchOutcome(tx) }
         } catch {
+            // Keep the key ONLY when the server never answered — the next
+            // Pay tap then replays it and gets the transaction back if the
+            // request did land. After any HTTP response, a fresh key.
+            if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
             ceremonyNote = (error as? APIError)?.errorDescription ?? "Something went wrong."
             ceremony = "failed"
             Haptics.error()
@@ -1053,12 +1226,14 @@ struct GivingView: View {
                 successRef = d.receiptCode ?? String(d.transactionId.prefix(8)).uppercased()
                 ceremony = "success"
                 Haptics.success()   // only on the server's confirmed outcome
+                GivingSignal.post(from: vm)   // Partners: the pledge payment is in
                 await vm.load()
                 return
             case "failed", "cancelled":
                 ceremonyNote = "The payment didn't complete — no charge was made."
                 ceremony = "failed"
                 Haptics.error()
+                GivingSignal.post(from: vm)   // Partners: drop the Processing row
                 return
             default:
                 // Still processing. For a PayPal gift the money only moves when WE
@@ -1106,12 +1281,23 @@ struct GivingView: View {
                 key: "gift-\(ref)",
                 title: "Thank you for sowing",
                 subtitle: "Every gift carries the gospel further.")
-            // The pledge got its gift — the next one is an ordinary gift
-            // unless Partners sends the member back with another preset.
-            pledgeId = nil
-            pledgeTitle = nil
-            needId = nil
         }
+        // Double-pay guard: a pledge / need payment that SUCCEEDED, or is
+        // still PENDING ("stk" — the intent exists: STK prompt out, PayPal
+        // approval, or the poll lapsed while processing), must not be payable
+        // again with one more tap. However the ceremony is closed, the
+        // binding goes now and the form returns to its normal state (fund
+        // chooser, frequency, default amount) once the cover has gone. A
+        // FAILED payment keeps the binding so the member can retry.
+        if ceremony == "success" || ceremony == "stk" {
+            if payMode { resetFormAfterCeremony = true }
+            clearPayMode()
+        }
+        // The ceremony resolved: the next Pay is a new submission. A FAILED
+        // ceremony leaves the key as the submit path set it — already fresh
+        // if the server answered, kept only if it never did (so the retry
+        // replays it and gets the transaction back if the request landed).
+        if ceremony != "failed" { submissionKey = UUID().uuidString }
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil
         paypalOrderId = nil
@@ -1598,7 +1784,15 @@ private struct GiveCeremonyView: View {
         .sheet(isPresented: $showReceipt) {
             // A stack of its own so the receipt's "View statement" can push
             // the statement; the receipt draws its own header (no nav bar).
-            if let txId { NavigationStack { GivingReceiptView(transactionId: txId) } }
+            // The statement it reaches pushes its gift rows as GivingRecord
+            // values, so this stack must know them (the Partners statement
+            // link registers itself on the statement page).
+            if let txId {
+                NavigationStack {
+                    GivingReceiptView(transactionId: txId)
+                        .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
+                }
+            }
         }
     }
 }

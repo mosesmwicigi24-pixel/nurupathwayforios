@@ -109,10 +109,20 @@ struct GivePreset: Equatable {
     /// it; it rides the intent body as `need_id` so the server attributes
     /// the gift to the need's campaign.
     var needId: String? = nil
-    /// The pledge's name (pledge names contract), carried so Give's "counts
-    /// toward" chip can say WHICH pledge before the server has answered.
+    /// The pledge's name (pledge names contract), carried so Give's "PAYING
+    /// YOUR PLEDGE" card can say WHICH pledge before the server has answered.
     /// Never sent on the wire.
     var pledgeTitle: String? = nil
+    /// The promise in one line ("KSh 1,000 monthly · due on the 25th") for
+    /// that card. Display only.
+    var pledgeAmountLine: String? = nil
+    /// Where the pledge's money goes (`pays_to`) — "Goes to the <name> fund".
+    /// Display only: the SERVER routes pledge money, never the client.
+    var paysTo: Pledge.FundRef? = nil
+    /// A department need's title + one line for Give's "GIVING TO A NEED"
+    /// card. Display only.
+    var needTitle: String? = nil
+    var needLine: String? = nil
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
