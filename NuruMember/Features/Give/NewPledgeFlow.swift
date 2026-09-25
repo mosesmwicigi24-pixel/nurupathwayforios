@@ -4,9 +4,10 @@
 // step repeats every choice in plain words before anything is posted,
 // because a pledge is a promise and nobody should make one by accident.
 //
-// "What is this pledge for?" (pledge names contract) is one picker over the
-// server's `pledge_options` — General partnership, funds, campaigns,
-// approved department needs — plus "Custom name…". A pick sends the TARGET
+// "What is this pledge for?" (pledge names contract) lays the server's
+// `pledge_options` out ON the page as grouped, selectable cards — General
+// partnership, funds, campaigns, approved department needs — plus a
+// "Custom name" card that unfolds a name field. A pick sends the TARGET
 // only (`fund` / `campaign_id` / `need_id`) and the server derives the name;
 // a custom name sends `title` only and no target.
 //
@@ -51,10 +52,16 @@ struct NewPledgeFlow: View {
 
     private static let presets = [500, 1000, 2000, 5000, 10_000, 20_000]
     /// The five funds Give offers, by code — the same codes the server keys
-    /// on. Only the fallback list, for a server that sends no `pledge_options`.
-    private static let funds: [(code: String, label: String)] = [
-        ("tithe", "Tithe"), ("offering", "Offering"), ("gift", "Gift"),
-        ("mission", "Mission"), ("discipleship", "Discipleship"),
+    /// on, with the Give tab's exact tile palette (GivingView `funds`) so a
+    /// fund's card here looks like its tile there. Codes + labels are also the
+    /// fallback list, for a server that sends no `pledge_options`.
+    private struct FundLook { let code, label, tagline: String; let icon: Lucide; let tint, fg: UInt32 }
+    private static let funds: [FundLook] = [
+        FundLook(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: 0xFFF4DA, fg: 0xC89B3C),
+        FundLook(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626),
+        FundLook(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: 0xF3E8FF, fg: 0xA855F7),
+        FundLook(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: 0xE0F2FE, fg: 0x0EA5E9),
+        FundLook(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: 0xDCFCE7, fg: 0x16A34A),
     ]
     /// A custom name is 2–60 characters (the contract's bounds).
     private static let customLimit = 2...60
@@ -246,7 +253,7 @@ struct NewPledgeFlow: View {
         switch step {
         case .shape: return "Monthly and open-ended, or a total you will reach by a date — in any instalments."
         case .amount: return "Choose an amount, or enter your own. You can change it later."
-        case .target: return "The church as a whole, a fund, a campaign, a department need — or a name of your own."
+        case .target: return "Pick what your promise supports, or name it yourself."
         case .due: return monthly ? "We'll remind you a few days before, if you'd like." : "The date you would like the total reached by."
         case .schedule: return "If you'd rather not remember, we can collect it for you each month — on your due day, by mobile money. Nothing is collected today."
         case .review: return "Read it once more. Nothing is charged by creating it."
@@ -316,7 +323,8 @@ struct NewPledgeFlow: View {
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: "What is this pledge for?" — one picker, grouped by kind, + a custom name
+    // MARK: "What is this pledge for?" — every option ON the page, grouped by
+    // kind, as selectable cards (no popup), + a "name it yourself" card
 
     private struct OptionGroup: Identifiable {
         let kind: String
@@ -325,109 +333,143 @@ struct NewPledgeFlow: View {
         var id: String { kind }
     }
 
-    /// The picker's groups in the contract's order. A kind this build doesn't
-    /// know lands under "Other" rather than vanishing.
+    /// The groups in the contract's order. A kind this build doesn't know
+    /// lands under "Other" rather than vanishing.
     private var optionGroups: [OptionGroup] {
         let known: [(kind: String, label: String)] = [
-            ("general", "General"), ("fund", "Funds"), ("campaign", "Campaigns"), ("need", "Department needs"),
+            ("general", "GENERAL"), ("fund", "FUNDS"), ("campaign", "CAMPAIGNS"), ("need", "DEPARTMENT NEEDS"),
         ]
         var groups = known.map { pair in OptionGroup(kind: pair.kind, label: pair.label, rows: options.filter { $0.kind == pair.kind }) }
         let other = options.filter { o in !known.contains { $0.kind == o.kind } }
-        if !other.isEmpty { groups.append(OptionGroup(kind: "other", label: "Other", rows: other)) }
+        if !other.isEmpty { groups.append(OptionGroup(kind: "other", label: "OTHER", rows: other)) }
         return groups.filter { !$0.rows.isEmpty }
     }
 
-    private var pickTitle: String { useCustom ? "Custom name" : (selectedOption?.title ?? "General partnership") }
-    private var pickIcon: Lucide {
-        if useCustom { return .penLine }
-        switch selectedOption?.kind {
-        case "fund": return .landmark
-        case "campaign": return .flag
-        case "need": return .target
-        default: return .heartHandshake
-        }
-    }
-    private var pickKicker: String {
-        if useCustom { return "A NAME OF YOUR OWN" }
-        switch selectedOption?.kind {
-        case "fund": return "A FUND"
-        case "campaign": return "A CAMPAIGN"
-        case "need": return "A DEPARTMENT NEED"
-        default: return "THE CHURCH AS A WHOLE"
-        }
-    }
-    private func optionHint(_ o: PledgeOption) -> String {
+    /// How an option's card reads: its glyph, the tile behind it, and a
+    /// one-line cue about what the choice means. A fund borrows the Give
+    /// tab's tile exactly; an unknown fund code gets a neutral gold tile.
+    private struct OptionLook { let icon: Lucide; let tint: Color; let fg: Color; let subtitle: String }
+    private func look(for o: PledgeOption) -> OptionLook {
         switch o.kind {
-        case "fund": return "Every payment lands in this fund."
-        case "campaign": return "Every payment counts toward this campaign."
-        case "need": return "Every payment goes to this department need."
-        default: return "A general partnership — the office directs it where it is needed."
+        case "general":
+            return OptionLook(icon: .heartHandshake, tint: Color(hex: 0xEEF1F5), fg: Nuru.navy, subtitle: "The church as a whole")
+        case "fund":
+            let code = (o.fund ?? "").lowercased()
+            if let f = Self.funds.first(where: { $0.code == code }) {
+                return OptionLook(icon: f.icon, tint: Color(hex: f.tint), fg: Color(hex: f.fg), subtitle: f.tagline)
+            }
+            return OptionLook(icon: .landmark, tint: Color(hex: 0xFFF4DA), fg: Nuru.gold, subtitle: "A fund of the church")
+        case "campaign":
+            return OptionLook(icon: .megaphone, tint: Color(hex: 0xFFF4DA), fg: Nuru.gold, subtitle: "Church campaign")
+        case "need":
+            return OptionLook(icon: .handHeart, tint: Color(hex: 0xFEE2E2), fg: Color(hex: 0xDC2626), subtitle: "Department need")
+        default:
+            return OptionLook(icon: .target, tint: Color(hex: 0xEEF1F5), fg: Nuru.navy, subtitle: "Another cause of the church")
         }
     }
+
+    /// The selected card's cream wash (the Give tab's selected-tile tint).
+    private static let selectedTint = Color(hex: 0xFFF9EC)
 
     private var targetStep: some View {
         VStack(alignment: .leading, spacing: Nuru.S.base) {
-            Text("THIS PLEDGE IS FOR").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
-
-            Menu {
-                ForEach(optionGroups) { group in
-                    Section(group.label) {
-                        ForEach(group.rows) { o in
-                            Button {
-                                Haptics.selection()
-                                nameFocused = false
-                                useCustom = false
-                                selectedOptionId = o.id
-                            } label: {
-                                if !useCustom && selectedOption?.id == o.id {
-                                    Label(o.title, systemImage: "checkmark")
-                                } else {
-                                    Text(o.title)
-                                }
-                            }
-                        }
-                    }
+            ForEach(optionGroups) { group in
+                VStack(alignment: .leading, spacing: 8) {
+                    eyebrow(group.label)
+                    ForEach(group.rows) { o in optionCard(o) }
                 }
-                Divider()
-                Button {
-                    Haptics.selection()
-                    useCustom = true
-                    nameFocused = true
-                } label: {
-                    Label("Custom name…", systemImage: useCustom ? "checkmark" : "pencil")
-                }
-            } label: {
-                HStack(spacing: 12) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .fill(Nuru.gold.opacity(0.12)).frame(width: 40, height: 40)
-                        Icon(pickIcon, size: 18, color: Nuru.gold)
-                    }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(pickKicker).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
-                        Text(pickTitle).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    Icon(.chevronDown, size: 16, color: Nuru.ink400)
-                }
-                .padding(14)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.6), lineWidth: 1))
-                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
-            .menuOrder(.fixed)
-            .accessibilityLabel("What is this pledge for")
-            .accessibilityValue(pickTitle)
-
-            if useCustom {
-                customNameField.transition(.opacity.combined(with: .move(edge: .top)))
-            } else if let o = selectedOption {
-                Text(optionHint(o)).font(.nCaption).foregroundStyle(Nuru.ink400)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                eyebrow("NAME IT YOURSELF")
+                customCard
             }
         }
         .animation(.easeInOut(duration: 0.2), value: useCustom)
+        .animation(.easeInOut(duration: 0.2), value: selectedOptionId)
+    }
+
+    private func eyebrow(_ text: String) -> some View {
+        Text(text).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+    }
+
+    /// One option as a full-width card. A tap selects it (and folds the
+    /// custom field away, keeping whatever was typed); tapping the selected
+    /// card again does nothing.
+    private func optionCard(_ o: PledgeOption) -> some View {
+        let on = !useCustom && selectedOption?.id == o.id
+        let l = look(for: o)
+        return Button {
+            guard !on else { return }
+            Haptics.selection()
+            nameFocused = false
+            useCustom = false
+            selectedOptionId = o.id
+        } label: {
+            cardRow(on: on, icon: l.icon, tint: l.tint, fg: l.fg, title: o.title, subtitle: l.subtitle)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(on ? Self.selectedTint : Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: on ? 2 : 1))
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(o.title)
+        .accessibilityValue(l.subtitle)
+        .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    /// The "Custom name" card: a tap selects it and unfolds the name field
+    /// inside the same card. The field sits OUTSIDE the button so its own
+    /// taps still reach it; picking another card folds it away again.
+    private var customCard: some View {
+        let on = useCustom
+        return VStack(alignment: .leading, spacing: 12) {
+            Button {
+                guard !on else { return }
+                Haptics.selection()
+                useCustom = true
+                nameFocused = true
+            } label: {
+                cardRow(on: on, icon: .penLine, tint: Nuru.gold.opacity(0.12), fg: Nuru.gold,
+                        title: "Custom name", subtitle: "A promise in your own words")
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Custom name")
+            .accessibilityValue("A promise in your own words")
+            .accessibilityAddTraits(on ? .isSelected : [])
+            if on {
+                customNameField.transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(on ? Self.selectedTint : Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: on ? 2 : 1))
+    }
+
+    /// The card's row: 40pt icon tile · title + one-line cue · check circle.
+    private func cardRow(on: Bool, icon: Lucide, tint: Color, fg: Color, title: String, subtitle: String) -> some View {
+        HStack(spacing: 12) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint).frame(width: 40, height: 40)
+                Icon(icon, size: 18, color: fg)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                Text(subtitle).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+            }
+            Spacer(minLength: 8)
+            ZStack {
+                if on {
+                    Circle().fill(Nuru.gold).frame(width: 22, height: 22)
+                    Icon(.check, size: 12, color: Nuru.navy)
+                } else {
+                    Circle().stroke(Nuru.border, lineWidth: 1.5).frame(width: 22, height: 22)
+                }
+            }
+        }
     }
 
     /// 2–60 characters, with a counter — the name goes on the pledge card
@@ -436,7 +478,7 @@ struct NewPledgeFlow: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Icon(.penLine, size: 13, color: Nuru.gold)
-                TextField("e.g. Building fund", text: $customName)
+                TextField("e.g. School fees for Grace", text: $customName)
                     .font(.inter(14))
                     .focused($nameFocused)
                     .submitLabel(.done)
