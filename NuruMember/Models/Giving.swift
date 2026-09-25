@@ -18,6 +18,12 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     /// "Named giving" (custom sheet, optional): the member's own label for this
     /// gift (e.g. "Tithe", "Building Fund"), as entered. Null when not used.
     var accountName: String? = nil
+    /// The pledge this gift counted toward (Partners statement, 2026-09-25):
+    /// `pledge_id` + the pledge's name as the server says it. Both absent on
+    /// older servers and on gifts given outside a pledge — the statement row
+    /// then carries no pledge tag.
+    var pledgeId: String? = nil
+    var pledgeTitle: String? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -36,6 +42,8 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
         providerRef = try? c.decodeIfPresent(String.self, forKey: .providerRef)
         receiptCode = try? c.decodeIfPresent(String.self, forKey: .receiptCode)
         accountName = try? c.decodeIfPresent(String.self, forKey: .accountName)
+        pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)).flatMap { $0.isEmpty ? nil : $0 }
+        pledgeTitle = (try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)).flatMap { $0.isEmpty ? nil : $0 }
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
     }
@@ -499,6 +507,15 @@ struct PledgePayment: Decodable, Sendable, Identifiable, Hashable {
     let pledgeId: String?
     let fund: String?
     let status: String?
+    // Partners statement (2026-09-25) — the row's own display fields. All
+    // optional: an older server omits them and the row falls back to the
+    // statement's byPledge title / the fund code / no method.
+    /// The pledge's name as the server says it.
+    var pledgeTitle: String? = nil
+    /// The fund's display name ("Discipleship"), not its code.
+    var fundName: String? = nil
+    /// The rail the gift came in on (mpesa | airtel | card | paypal …).
+    var method: String? = nil
     var id: String { transactionId }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -513,9 +530,13 @@ struct PledgePayment: Decodable, Sendable, Identifiable, Hashable {
         pledgeId = try? c.decodeIfPresent(String.self, forKey: .pledgeId)
         fund = try? c.decodeIfPresent(String.self, forKey: .fund)
         status = try? c.decodeIfPresent(String.self, forKey: .status)
+        pledgeTitle = (try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)).flatMap { $0.isEmpty ? nil : $0 }
+        fundName = (try? c.decodeIfPresent(String.self, forKey: .fundName)).flatMap { $0.isEmpty ? nil : $0 }
+        method = (try? c.decodeIfPresent(String.self, forKey: .method)).flatMap { $0.isEmpty ? nil : $0 }
     }
     enum CodingKeys: String, CodingKey {
         case transactionId, amountMinor, currency, at, settledAt, createdAt, receiptCode, pledgeId, fund, status
+        case pledgeTitle, fundName, method
     }
 }
 
@@ -577,6 +598,77 @@ struct GivingStatements: Decodable, Sendable {
     let byPledge: [ByPledge]
     let byFund: [ByFund]
     let payments: [PledgePayment]
+    // Partners statement (2026-09-25, additive): the server's own three
+    // numbers for the year and one entry per pledge that lived in it. All
+    // optional — an older server sends none and PartnersStatementView
+    // computes the same numbers locally from the pledges (PledgeMath).
+    /// Σ over the year's pledges of what was promised in that year.
+    var pledgedMinor: Int? = nil
+    /// Σ payments carrying a pledge id in that year.
+    var paidMinor: Int? = nil
+    /// max(pledged − paid, 0).
+    var remainingMinor: Int? = nil
+    /// One row per pledge in the year (`pledges[]`); empty when absent.
+    var pledges: [StatementPledge] = []
+
+    /// One pledge as the yearly statement reports it — the promise, its
+    /// status, and the year's pledged / paid / kept figures, computed by the
+    /// server. `kept` is cycles COLLECTED; `dueCount` is cycles that have
+    /// fallen due so far in the year.
+    struct StatementPledge: Decodable, Sendable, Identifiable, Hashable {
+        let pledgeId: String
+        let title: String
+        let shape: String            // monthly | total
+        let amountMinor: Int?        // monthly
+        let targetMinor: Int?        // total
+        let currency: String
+        let status: String           // active | paused | fulfilled | cancelled
+        let dueDay: Int?             // monthly: 1–28
+        let dueOn: String?           // total: yyyy-MM-dd
+        let createdAt: String?
+        let pledgedMinor: Int
+        let paidMinor: Int
+        let kept: Int
+        let dueCount: Int
+        var id: String { pledgeId }
+        var isMonthly: Bool { shape == "monthly" }
+
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
+            title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+            shape = (try? c.decodeIfPresent(String.self, forKey: .shape)) ?? "monthly"
+            amountMinor = try? c.decodeIfPresent(Int.self, forKey: .amountMinor)
+            targetMinor = try? c.decodeIfPresent(Int.self, forKey: .targetMinor)
+            currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+            status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
+            dueDay = try? c.decodeIfPresent(Int.self, forKey: .dueDay)
+            dueOn = try? c.decodeIfPresent(String.self, forKey: .dueOn)
+            createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+            pledgedMinor = (try? c.decodeIfPresent(Int.self, forKey: .pledgedMinor)) ?? 0
+            paidMinor = (try? c.decodeIfPresent(Int.self, forKey: .paidMinor)) ?? 0
+            kept = (try? c.decodeIfPresent(Int.self, forKey: .kept)) ?? 0
+            dueCount = (try? c.decodeIfPresent(Int.self, forKey: .dueCount)) ?? 0
+        }
+
+        /// The local-math twin: built from a `Pledge` when the server sends
+        /// no `pledges[]` (PartnersStatementView's fallback).
+        init(pledgeId: String, title: String, shape: String, amountMinor: Int?, targetMinor: Int?,
+             currency: String, status: String, dueDay: Int?, dueOn: String?, createdAt: String?,
+             pledgedMinor: Int, paidMinor: Int, kept: Int, dueCount: Int) {
+            self.pledgeId = pledgeId; self.title = title; self.shape = shape
+            self.amountMinor = amountMinor; self.targetMinor = targetMinor
+            self.currency = currency; self.status = status
+            self.dueDay = dueDay; self.dueOn = dueOn; self.createdAt = createdAt
+            self.pledgedMinor = pledgedMinor; self.paidMinor = paidMinor
+            self.kept = kept; self.dueCount = dueCount
+        }
+
+        enum CodingKeys: String, CodingKey {
+            case pledgeId, title, shape, amountMinor, targetMinor, currency, status, dueDay, dueOn, createdAt
+            case pledgedMinor, paidMinor, kept, dueCount
+        }
+    }
 
     struct ByPledge: Codable, Sendable, Identifiable {
         let pledgeId: String
@@ -614,8 +706,15 @@ struct GivingStatements: Decodable, Sendable {
         byPledge = (try? c.decodeIfPresent([ByPledge].self, forKey: .byPledge)) ?? []
         byFund = (try? c.decodeIfPresent([ByFund].self, forKey: .byFund)) ?? []
         payments = (try? c.decodeIfPresent([PledgePayment].self, forKey: .payments)) ?? []
+        pledgedMinor = try? c.decodeIfPresent(Int.self, forKey: .pledgedMinor)
+        paidMinor = try? c.decodeIfPresent(Int.self, forKey: .paidMinor)
+        remainingMinor = try? c.decodeIfPresent(Int.self, forKey: .remainingMinor)
+        pledges = (try? c.decodeIfPresent([StatementPledge].self, forKey: .pledges)) ?? []
     }
-    enum CodingKeys: String, CodingKey { case years, year, totalMinor, currency, byPledge, byFund, payments }
+    enum CodingKeys: String, CodingKey {
+        case years, year, totalMinor, currency, byPledge, byFund, payments
+        case pledgedMinor, paidMinor, remainingMinor, pledges
+    }
 }
 
 
