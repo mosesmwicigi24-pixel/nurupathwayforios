@@ -26,6 +26,11 @@
 //                           max(createdAt, 1 Jan) through 31 Dec)
 //                 total   → targetMinor if dueOn falls in that year, else 0
 //   Remaining = max(Pledged − Paid, 0)
+//
+// The card is the PREVIEW. "Statement" on the standing card and "Partners
+// statement and PDF" under the card both open PartnersStatementView — the
+// partners' own statement (pledges + pledge payments + its own PDF), kept
+// separate from the general giving statement (owner, 2026-09-25).
 import SwiftUI
 
 @MainActor final class PartnersModel: ObservableObject {
@@ -51,6 +56,20 @@ import SwiftUI
 
     var currentYearStatements: GivingStatements? {
         statementsByYear[Calendar.current.component(.year, from: Date())]
+    }
+
+    /// The year chips, newest first: this year back to the join year, at
+    /// most four. One source for the Partners tab's preview card AND the
+    /// full PartnersStatementView, so the two can never disagree.
+    var statementYears: [Int] {
+        let cal = Calendar.current
+        let now = cal.component(.year, from: Date())
+        let joinISO = partnership?.membership?.joinedAt ?? partnership?.since
+        let joinYear = joinISO
+            .flatMap { PartnerFormat.date($0) ?? giveParseDate($0) }
+            .map { cal.component(.year, from: $0) } ?? now
+        let first = max(min(joinYear, now), now - 3)
+        return Array((first...now).reversed())
     }
 
     func load() async {
@@ -148,7 +167,8 @@ import SwiftUI
 enum PartnersRoute: Hashable {
     case pledge(String)          // a pledge's detail: payments + actions
     case receipt(String)         // a transaction's receipt
-    case statement               // the full statement + PDF (GivingStatementView)
+    case partnersStatement       // the partners statement + its PDF (PartnersStatementView)
+    case statement               // the GENERAL giving statement (GivingStatementView) — the complete record
 }
 
 // MARK: - The statement arithmetic (shared rule — see the header comment)
@@ -236,6 +256,10 @@ struct PartnersView: View {
                     content
                         .toolbar(.hidden, for: .navigationBar)
                         .navigationDestination(for: PartnersRoute.self) { destination($0) }
+                        // The general statement (reached from the partners
+                        // statement's "Giving statement") pushes its gift rows
+                        // as GivingRecord values — this stack must know them.
+                        .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
                 }
             } else {
                 content
@@ -271,6 +295,8 @@ struct PartnersView: View {
             // This stack has a pledge page, so the receipt's Pledge row can
             // open it; the Give stack has none and leaves the row plain.
             GivingReceiptView(transactionId: tx) { id in path.append(PartnersRoute.pledge(id)) }
+        case .partnersStatement:
+            PartnersStatementView(vm: vm)
         case .statement:
             GivingStatementView()
         }
@@ -303,7 +329,7 @@ struct PartnersView: View {
             if p.isProgrammeMember {
                 StandingCard(partnership: p,
                              onPledge: { Haptics.tap(); showNewPledge = true },
-                             onStatement: { Haptics.tap(); path.append(PartnersRoute.statement) })
+                             onStatement: { Haptics.tap(); path.append(PartnersRoute.partnersStatement) })
                 if !p.due.isEmpty { dueSection(p) }
                 if let t = p.trouble {
                     TroubleRow(
@@ -508,18 +534,7 @@ struct PartnersView: View {
         return "\(kept) of \(max(elapsed, kept)) kept this year"
     }
 
-    // MARK: Statement — year chips, three numbers, the pledge payments
-
-    private var statementYears: [Int] {
-        let cal = Calendar.current
-        let now = cal.component(.year, from: Date())
-        let joinISO = vm.partnership?.membership?.joinedAt ?? vm.partnership?.since
-        let joinYear = joinISO
-            .flatMap { PartnerFormat.date($0) ?? giveParseDate($0) }
-            .map { cal.component(.year, from: $0) } ?? now
-        let first = max(min(joinYear, now), now - 3)
-        return Array((first...now).reversed())
-    }
+    // MARK: Statement — year chips, three numbers, the pledge payments (the preview)
 
     private func statementSection(_ p: Partnership) -> some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -535,7 +550,7 @@ struct PartnersView: View {
 
     private var yearChips: some View {
         HStack(spacing: 6) {
-            ForEach(statementYears, id: \.self) { y in
+            ForEach(vm.statementYears, id: \.self) { y in
                 let on = vm.statementYear == y
                 Button {
                     guard !on else { return }
@@ -596,10 +611,10 @@ struct PartnersView: View {
             }
 
             Button {
-                Haptics.tap(); path.append(PartnersRoute.statement)
+                Haptics.tap(); path.append(PartnersRoute.partnersStatement)
             } label: {
                 HStack(spacing: 4) {
-                    Text("Full statement and PDF").font(.inter(13, .semibold))
+                    Text("Partners statement and PDF").font(.inter(13, .semibold))
                     Icon(.arrowRight, size: 12, color: Nuru.gold)
                 }
                 .foregroundStyle(Nuru.gold)
@@ -660,15 +675,15 @@ struct PartnersView: View {
     }
 }
 
-// MARK: - Atoms shared by the cards
+// MARK: - Atoms shared by the cards (and by PartnersStatementView)
 
 /// ONE-word eyebrow: `.inter(9, .semibold)`, kerning 1.6, goldLo.
-private func eyebrow(_ s: String) -> some View {
+func eyebrow(_ s: String) -> some View {
     Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
 }
 
 /// The Partners card: white, border stroke, radius 16, 16pt padding.
-private struct PartnerCardStyle: ViewModifier {
+struct PartnerCardStyle: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(16)
@@ -677,11 +692,21 @@ private struct PartnerCardStyle: ViewModifier {
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }
-private extension View {
+extension View {
     func partnerCard() -> some View { modifier(PartnerCardStyle()) }
 }
 
-private func ordinal(_ n: Int) -> String {
+/// "Partner since Sep 2026" — month + year from the membership's joinedAt,
+/// else the derived `since`; just "Partner" when neither is present. The
+/// standing card and the partners statement share it so they agree.
+func partnerSinceLine(_ partnership: Partnership) -> String {
+    let iso = partnership.membership?.joinedAt ?? partnership.since
+    guard let iso, let d = PartnerFormat.date(iso) ?? giveParseDate(iso) else { return "Partner" }
+    let f = DateFormatter(); f.dateFormat = "MMM yyyy"
+    return "Partner since \(f.string(from: d))"
+}
+
+func ordinal(_ n: Int) -> String {
     let suffix: String
     switch n % 100 {
     case 11, 12, 13: suffix = "th"
@@ -698,15 +723,27 @@ private func ordinal(_ n: Int) -> String {
 
 /// The promise in one line, under the pledge's name: "KSh 2,000 monthly ·
 /// due on the 5th", or "KSh 50,000 · by 15 Dec" (the year only when it
-/// isn't this one). Shared by the card and the detail page so they agree.
-private func pledgeAmountLine(_ p: Pledge) -> String {
-    if p.isMonthly {
-        var parts = ["\(money(p.amountMinor ?? 0, p.currency)) monthly"]
-        if let d = p.dueDay { parts.append("due on the \(ordinal(d))") }
+/// isn't this one). Shared by the card, the detail page and the partners
+/// statement so they agree.
+func pledgeAmountLine(_ p: Pledge) -> String {
+    pledgeAmountLine(isMonthly: p.isMonthly, amountMinor: p.amountMinor, targetMinor: p.targetMinor,
+                     currency: p.currency, dueDay: p.dueDay, dueOn: p.dueOn)
+}
+
+func pledgeAmountLine(_ p: GivingStatements.StatementPledge) -> String {
+    pledgeAmountLine(isMonthly: p.isMonthly, amountMinor: p.amountMinor, targetMinor: p.targetMinor,
+                     currency: p.currency, dueDay: p.dueDay, dueOn: p.dueOn)
+}
+
+func pledgeAmountLine(isMonthly: Bool, amountMinor: Int?, targetMinor: Int?,
+                      currency: String, dueDay: Int?, dueOn: String?) -> String {
+    if isMonthly {
+        var parts = ["\(money(amountMinor ?? 0, currency)) monthly"]
+        if let d = dueDay { parts.append("due on the \(ordinal(d))") }
         return parts.joined(separator: " · ")
     }
-    var parts = [money(p.targetMinor ?? 0, p.currency)]
-    if let iso = p.dueOn, let d = giveParseDate(iso) {
+    var parts = [money(targetMinor ?? 0, currency)]
+    if let iso = dueOn, let d = giveParseDate(iso) {
         let cal = Calendar.current
         let sameYear = cal.component(.year, from: d) == cal.component(.year, from: Date())
         parts.append("by \(sameYear ? giveDateShort(iso) : giveDateFull(iso))")
@@ -770,14 +807,8 @@ private struct StandingCard: View {
         .partnerCard()
     }
 
-    /// "Partner since Sep 2026" — month + year from the membership's joinedAt,
-    /// else the derived `since`; just "Partner" when neither is present.
-    private var sinceLine: String {
-        let iso = partnership.membership?.joinedAt ?? partnership.since
-        guard let iso, let d = PartnerFormat.date(iso) ?? giveParseDate(iso) else { return "Partner" }
-        let f = DateFormatter(); f.dateFormat = "MMM yyyy"
-        return "Partner since \(f.string(from: d))"
-    }
+    /// "Partner since Sep 2026" — the shared formatter (partnerSinceLine).
+    private var sinceLine: String { partnerSinceLine(partnership) }
 
     /// "N gifts kept · on track" — `kept` is what was COLLECTED, never scheduled.
     private var keptLine: String {

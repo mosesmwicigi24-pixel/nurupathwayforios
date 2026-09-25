@@ -355,6 +355,16 @@ struct GivingStatementView: View {
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+                // A pledge payment says so — the complete record still tells
+                // the member which gifts counted toward a pledge (the partners
+                // statement lists only these). Absent on older servers.
+                if let tag = pledgeTag(g) {
+                    Text(tag)
+                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .padding(.horizontal, 7).padding(.vertical, 2)
+                        .background(Nuru.goldChipBg, in: Capsule())
+                        .lineLimit(1)
+                }
                 // "Named giving" (custom sheet, optional): the member's own
                 // label for this gift, when set.
                 if let name = g.accountName, !name.isEmpty {
@@ -383,6 +393,12 @@ struct GivingStatementView: View {
         // the gift cards; no hairline.
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .nuruShadow(0.6)
+    }
+
+    /// "Building pledge" — a title that already ends in the word is not doubled.
+    private func pledgeTag(_ g: GivingRecord) -> String? {
+        guard let t = g.pledgeTitle?.trimmingCharacters(in: .whitespaces), !t.isEmpty else { return nil }
+        return t.lowercased().hasSuffix("pledge") ? t : "\(t) pledge"
     }
 
     // MARK: Share / download (native PDF, real aggregates only)

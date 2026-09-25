@@ -692,6 +692,15 @@ extension MemberAPI {
         return try await APIClient.shared.get("giving/statements", query: q, as: GivingStatements.self)
     }
 
+    /// GET /giving/partners/statement.pdf?year=YYYY — the partners statement
+    /// (pledges + pledge payments only) as PDF bytes. Same RawJSON passthrough
+    /// as `givingReceiptPdf`: bearer + 401 refresh for free, bytes untouched.
+    /// 404 when the member has never been a partner — the caller says so.
+    static func partnersStatementPdf(year: Int) async throws -> Data {
+        try await APIClient.shared.get("giving/partners/statement.pdf",
+                                       query: ["year": String(year)], as: RawJSON.self).data
+    }
+
     // MARK: Chat
 
     /// GET /chat/conversations?scope=mine — the member's inbox (Spaces/DMs/Groups).
