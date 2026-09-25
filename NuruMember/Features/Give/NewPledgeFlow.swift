@@ -1,8 +1,14 @@
 // The new-pledge flow (PARTNERS_PROGRAMME §2.5) — a full-screen stepper:
-// shape → amount → target → due → "charge me automatically" → review →
-// create. One decision per screen, and the review step repeats every choice
-// in plain words before anything is posted, because a pledge is a promise
-// and nobody should make one by accident.
+// shape → amount → "what is this pledge for?" → due → "charge me
+// automatically" → review → create. One decision per screen, and the review
+// step repeats every choice in plain words before anything is posted,
+// because a pledge is a promise and nobody should make one by accident.
+//
+// "What is this pledge for?" (pledge names contract) is one picker over the
+// server's `pledge_options` — General partnership, funds, campaigns,
+// approved department needs — plus "Custom name…". A pick sends the TARGET
+// only (`fund` / `campaign_id` / `need_id`) and the server derives the name;
+// a custom name sends `title` only and no target.
 //
 // Nothing here moves money. "Charge me automatically" asks the SERVER to
 // create a schedule bound to the pledge (`auto_schedule`, §5) — the same
@@ -13,19 +19,27 @@ import SwiftUI
 
 struct NewPledgeFlow: View {
     let isMember: Bool
+    /// What a pledge may be for — GET /giving/partnership `pledge_options`
+    /// (General · funds · campaigns · department needs, in the server's order).
+    var pledgeOptions: [PledgeOption] = []
+    /// Servers that predate `pledge_options` send only campaigns; the picker
+    /// then builds the same list from the five funds + these.
     let campaigns: [PledgeCampaignOption]
     let onCreated: () -> Void
 
     @Environment(\.dismiss) private var dismiss
 
     private enum Step: Int, CaseIterable { case shape, amount, target, due, schedule, review }
-    private enum Target: Hashable { case none, fund(String), campaign(String) }
 
     @State private var step: Step = .shape
     @State private var shape = "monthly"          // monthly | total
     @State private var amount = 2000              // KSh (major units)
     @State private var customAmount = ""
-    @State private var target: Target = .none
+    /// The picked option's id; nil → the default, General partnership.
+    @State private var selectedOptionId: String?
+    /// "Custom name…" — a name of the member's own, and no target.
+    @State private var useCustom = false
+    @State private var customName = ""
     @State private var dueDay = min(28, max(1, Calendar.current.component(.day, from: Date())))
     @State private var dueOn = Calendar.current.date(byAdding: .month, value: 3, to: Date()) ?? Date()
     @State private var autoCharge = false
@@ -33,18 +47,39 @@ struct NewPledgeFlow: View {
     @State private var submitting = false
     @State private var error: String?
     @FocusState private var amountFocused: Bool
+    @FocusState private var nameFocused: Bool
 
     private static let presets = [500, 1000, 2000, 5000, 10_000, 20_000]
-    /// The five funds Give offers, by code — the same codes the server keys on.
+    /// The five funds Give offers, by code — the same codes the server keys
+    /// on. Only the fallback list, for a server that sends no `pledge_options`.
     private static let funds: [(code: String, label: String)] = [
         ("tithe", "Tithe"), ("offering", "Offering"), ("gift", "Gift"),
         ("mission", "Mission"), ("discipleship", "Discipleship"),
     ]
+    /// A custom name is 2–60 characters (the contract's bounds).
+    private static let customLimit = 2...60
 
     private var monthly: Bool { shape == "monthly" }
+
+    /// The picker's rows: the server's, else General + the five funds + campaigns.
+    private var options: [PledgeOption] {
+        if !pledgeOptions.isEmpty { return pledgeOptions }
+        var out = [PledgeOption(key: "general", title: "General partnership", kind: "general")]
+        out += Self.funds.map { PledgeOption(key: "fund:\($0.code)", title: $0.label, kind: "fund", fund: $0.code) }
+        out += campaigns.map { PledgeOption(key: "campaign:\($0.campaignId)", title: $0.title, kind: "campaign", campaignId: $0.campaignId) }
+        return out
+    }
+    private var defaultOption: PledgeOption? { options.first { $0.kind == "general" } ?? options.first }
+    private var selectedOption: PledgeOption? { options.first { $0.id == selectedOptionId } ?? defaultOption }
+    private var trimmedCustom: String { customName.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var customValid: Bool { Self.customLimit.contains(trimmedCustom.count) }
+    /// What the review step shows and the pledge will be called.
+    private var chosenName: String { useCustom ? trimmedCustom : (selectedOption?.title ?? "General partnership") }
+
     private var canContinue: Bool {
         switch step {
         case .amount: return amount > 0
+        case .target: return useCustom ? customValid : selectedOption != nil
         case .due: return monthly ? (1...28).contains(dueDay) : dueOn > Date()
         default: return true
         }
@@ -177,11 +212,13 @@ struct NewPledgeFlow: View {
     private func next() {
         error = nil
         amountFocused = false
+        nameFocused = false
         if let n = Step(rawValue: step.rawValue + 1) { step = n }
     }
     private func back() {
         error = nil
         amountFocused = false
+        nameFocused = false
         if let p = Step(rawValue: step.rawValue - 1) { step = p }
     }
 
@@ -199,7 +236,7 @@ struct NewPledgeFlow: View {
         switch step {
         case .shape: return "What shape is the promise?"
         case .amount: return monthly ? "How much each month?" : "How much in total?"
-        case .target: return "What is it for?"
+        case .target: return "What is this pledge for?"
         case .due: return monthly ? "Which day of the month?" : "By when?"
         case .schedule: return "Collect it automatically?"
         case .review: return "Here is your pledge"
@@ -209,7 +246,7 @@ struct NewPledgeFlow: View {
         switch step {
         case .shape: return "Monthly and open-ended, or a total you will reach by a date — in any instalments."
         case .amount: return "Choose an amount, or enter your own. You can change it later."
-        case .target: return "A fund, a campaign, or the church as a whole. Optional."
+        case .target: return "The church as a whole, a fund, a campaign, a department need — or a name of your own."
         case .due: return monthly ? "We'll remind you a few days before, if you'd like." : "The date you would like the total reached by."
         case .schedule: return "If you'd rather not remember, we can collect it for you each month — on your due day, by mobile money. Nothing is collected today."
         case .review: return "Read it once more. Nothing is charged by creating it."
@@ -279,37 +316,144 @@ struct NewPledgeFlow: View {
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
+    // MARK: "What is this pledge for?" — one picker, grouped by kind, + a custom name
+
+    private struct OptionGroup: Identifiable {
+        let kind: String
+        let label: String
+        let rows: [PledgeOption]
+        var id: String { kind }
+    }
+
+    /// The picker's groups in the contract's order. A kind this build doesn't
+    /// know lands under "Other" rather than vanishing.
+    private var optionGroups: [OptionGroup] {
+        let known: [(kind: String, label: String)] = [
+            ("general", "General"), ("fund", "Funds"), ("campaign", "Campaigns"), ("need", "Department needs"),
+        ]
+        var groups = known.map { pair in OptionGroup(kind: pair.kind, label: pair.label, rows: options.filter { $0.kind == pair.kind }) }
+        let other = options.filter { o in !known.contains { $0.kind == o.kind } }
+        if !other.isEmpty { groups.append(OptionGroup(kind: "other", label: "Other", rows: other)) }
+        return groups.filter { !$0.rows.isEmpty }
+    }
+
+    private var pickTitle: String { useCustom ? "Custom name" : (selectedOption?.title ?? "General partnership") }
+    private var pickIcon: Lucide {
+        if useCustom { return .penLine }
+        switch selectedOption?.kind {
+        case "fund": return .landmark
+        case "campaign": return .flag
+        case "need": return .target
+        default: return .heartHandshake
+        }
+    }
+    private var pickKicker: String {
+        if useCustom { return "A NAME OF YOUR OWN" }
+        switch selectedOption?.kind {
+        case "fund": return "A FUND"
+        case "campaign": return "A CAMPAIGN"
+        case "need": return "A DEPARTMENT NEED"
+        default: return "THE CHURCH AS A WHOLE"
+        }
+    }
+    private func optionHint(_ o: PledgeOption) -> String {
+        switch o.kind {
+        case "fund": return "Every payment lands in this fund."
+        case "campaign": return "Every payment counts toward this campaign."
+        case "need": return "Every payment goes to this department need."
+        default: return "A general partnership — the office directs it where it is needed."
+        }
+    }
+
     private var targetStep: some View {
         VStack(alignment: .leading, spacing: Nuru.S.base) {
-            choiceCard(on: target == .none, icon: .heartHandshake, title: "The church as a whole",
-                       body: "A general partnership — the office directs it where it is needed.") { target = .none }
+            Text("THIS PLEDGE IS FOR").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
 
-            Text("A FUND").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(Self.funds, id: \.code) { f in
-                    let on = target == .fund(f.code)
-                    Button {
-                        Haptics.selection(); target = .fund(f.code)
-                    } label: {
-                        Text(f.label).font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
-                            .frame(maxWidth: .infinity).frame(height: 40)
-                            .background(on ? Nuru.navy : Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                    }
-                    .buttonStyle(.pressable)
-                }
-            }
-
-            if !campaigns.isEmpty {
-                Text("A CAMPAIGN").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
-                VStack(spacing: 8) {
-                    ForEach(campaigns) { c in
-                        choiceCard(on: target == .campaign(c.campaignId), icon: .flag, title: c.title, body: nil) {
-                            target = .campaign(c.campaignId)
+            Menu {
+                ForEach(optionGroups) { group in
+                    Section(group.label) {
+                        ForEach(group.rows) { o in
+                            Button {
+                                Haptics.selection()
+                                nameFocused = false
+                                useCustom = false
+                                selectedOptionId = o.id
+                            } label: {
+                                if !useCustom && selectedOption?.id == o.id {
+                                    Label(o.title, systemImage: "checkmark")
+                                } else {
+                                    Text(o.title)
+                                }
+                            }
                         }
                     }
                 }
+                Divider()
+                Button {
+                    Haptics.selection()
+                    useCustom = true
+                    nameFocused = true
+                } label: {
+                    Label("Custom name…", systemImage: useCustom ? "checkmark" : "pencil")
+                }
+            } label: {
+                HStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .fill(Nuru.gold.opacity(0.12)).frame(width: 40, height: 40)
+                        Icon(pickIcon, size: 18, color: Nuru.gold)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(pickKicker).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                        Text(pickTitle).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                    }
+                    Spacer(minLength: 8)
+                    Icon(.chevronDown, size: 16, color: Nuru.ink400)
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.6), lineWidth: 1))
+                .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
+            .menuOrder(.fixed)
+            .accessibilityLabel("What is this pledge for")
+            .accessibilityValue(pickTitle)
+
+            if useCustom {
+                customNameField.transition(.opacity.combined(with: .move(edge: .top)))
+            } else if let o = selectedOption {
+                Text(optionHint(o)).font(.nCaption).foregroundStyle(Nuru.ink400)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: useCustom)
+    }
+
+    /// 2–60 characters, with a counter — the name goes on the pledge card
+    /// and the statement; no target travels with it.
+    private var customNameField: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 8) {
+                Icon(.penLine, size: 13, color: Nuru.gold)
+                TextField("e.g. Building fund", text: $customName)
+                    .font(.inter(14))
+                    .focused($nameFocused)
+                    .submitLabel(.done)
+                    .onChange(of: customName) { _, v in
+                        let cap = Self.customLimit.upperBound
+                        if v.count > cap { customName = String(v.prefix(cap)) }
+                    }
+                Text("\(trimmedCustom.count)/\(Self.customLimit.upperBound)")
+                    .font(.inter(11)).monospacedDigit()
+                    .foregroundStyle(customValid || trimmedCustom.isEmpty ? Nuru.ink400 : Nuru.danger)
+            }
+            .padding(.horizontal, 14).frame(height: 46)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(nameFocused ? Nuru.gold : Nuru.border, lineWidth: 1))
+            Text("2–60 characters. It goes on your pledge card and statement; the office directs the money where it is needed.")
+                .font(.nCaption).foregroundStyle(Nuru.ink400)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -401,7 +545,7 @@ struct NewPledgeFlow: View {
         VStack(alignment: .leading, spacing: 0) {
             reviewRow("Shape", monthly ? "Monthly" : "A total, by a date")
             reviewRow(monthly ? "Each month" : "Total", ksh(amount))
-            reviewRow("For", targetLabel)
+            reviewRow("For", chosenName)
             reviewRow(monthly ? "Due day" : "By", monthly ? "The \(ordinal(dueDay)) of each month" : longDate(dueOn))
             reviewRow("Collected", autoCharge ? "Automatically · \(autoMethod == "mpesa" ? "M-Pesa" : "Airtel Money")" : "By you, with Pay now")
             if !isMember {
@@ -430,18 +574,14 @@ struct NewPledgeFlow: View {
         .padding(.vertical, 8)
     }
 
-    private var targetLabel: String {
-        switch target {
-        case .none: return "The church as a whole"
-        case .fund(let code): return Self.funds.first { $0.code == code }?.label ?? code.capitalized
-        case .campaign(let id): return campaigns.first { $0.campaignId == id }?.title ?? "A campaign"
-        }
-    }
-
     // MARK: Create
 
     private func create() async {
         guard amount > 0 else { return }
+        if useCustom && !customValid {
+            error = "A custom name is 2–60 characters."
+            return
+        }
         submitting = true
         defer { submitting = false }
         error = nil
@@ -453,10 +593,19 @@ struct NewPledgeFlow: View {
             body.targetMinor = amount * 100
             body.dueOn = ymd(dueOn)
         }
-        switch target {
-        case .none: break
-        case .fund(let code): body.fund = code
-        case .campaign(let id): body.campaignId = id
+        if useCustom {
+            // A name of the member's own: `title` only, no target — the
+            // office directs the money.
+            body.title = trimmedCustom
+        } else if let o = selectedOption {
+            // A pick: the TARGET only — the server derives the name, so no
+            // `title` travels with it.
+            switch o.kind {
+            case "fund": body.fund = o.fund
+            case "campaign": body.campaignId = o.campaignId
+            case "need": body.needId = o.needId
+            default: break    // general: no target
+            }
         }
         if autoCharge {
             body.autoSchedule = .init(method: autoMethod, frequency: "monthly")
@@ -529,31 +678,51 @@ struct NewPledgeFlow: View {
     }
 }
 
-// MARK: - Edit amount / due day (PATCH /giving/pledges/{id})
+// MARK: - Edit name / amount / due day (PATCH /giving/pledges/{id})
 
 struct EditPledgeSheet: View {
     let pledge: Pledge
     /// Returns true when the server accepted the change (the sheet closes).
-    let onSave: (_ amountMinor: Int?, _ dueDay: Int?) async -> Bool
+    /// `title` is nil when the name is untouched, `.set` for a new custom
+    /// name, `.clear` to drop it (the server falls back to its derived name).
+    let onSave: (_ amountMinor: Int?, _ dueDay: Int?, _ title: MemberAPI.PledgePatchBody.TitlePatch?) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
+    @State private var name: String
     @State private var amount: Int
     @State private var customAmount = ""
     @State private var dueDay: Int
     @State private var saving = false
     @FocusState private var amountFocused: Bool
+    @FocusState private var nameFocused: Bool
 
     private static let presets = [500, 1000, 2000, 5000, 10_000, 20_000]
+    private static let nameLimit = 2...60
 
-    init(pledge: Pledge, onSave: @escaping (_ amountMinor: Int?, _ dueDay: Int?) async -> Bool) {
+    init(pledge: Pledge, onSave: @escaping (_ amountMinor: Int?, _ dueDay: Int?, _ title: MemberAPI.PledgePatchBody.TitlePatch?) async -> Bool) {
         self.pledge = pledge
         self.onSave = onSave
+        _name = State(initialValue: pledge.customTitle ?? pledge.displayTitle)
         _amount = State(initialValue: pledge.commitmentMinor / 100)
         _dueDay = State(initialValue: pledge.dueDay ?? 1)
     }
 
+    private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    /// Empty is allowed (it clears a custom name); anything else is 2–60.
+    private var nameValid: Bool { trimmedName.isEmpty || Self.nameLimit.contains(trimmedName.count) }
+    /// nil = untouched · .set = a new custom name · .clear = back to the
+    /// derived name. Clearing a name that was never custom is a no-op, so it
+    /// is "untouched" rather than a pointless PATCH.
+    private var titlePatch: MemberAPI.PledgePatchBody.TitlePatch? {
+        if trimmedName == (pledge.customTitle ?? pledge.displayTitle) { return nil }
+        if trimmedName.isEmpty { return pledge.customTitle == nil ? nil : .clear }
+        return .set(trimmedName)
+    }
+
     private var changed: Bool {
-        amount * 100 != pledge.commitmentMinor || (pledge.isMonthly && dueDay != (pledge.dueDay ?? 1))
+        amount * 100 != pledge.commitmentMinor
+            || (pledge.isMonthly && dueDay != (pledge.dueDay ?? 1))
+            || titlePatch != nil
     }
 
     var body: some View {
@@ -571,6 +740,32 @@ struct EditPledgeSheet: View {
                     }.buttonStyle(.plain)
                 }
                 .padding(.top, Nuru.S.lg)
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("NAME").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                    HStack(spacing: 8) {
+                        Icon(.penLine, size: 13, color: Nuru.gold)
+                        TextField("Name this pledge", text: $name)
+                            .font(.inter(14))
+                            .focused($nameFocused)
+                            .submitLabel(.done)
+                            .onChange(of: name) { _, v in
+                                let cap = Self.nameLimit.upperBound
+                                if v.count > cap { name = String(v.prefix(cap)) }
+                            }
+                        Text("\(trimmedName.count)/\(Self.nameLimit.upperBound)")
+                            .font(.inter(11)).monospacedDigit()
+                            .foregroundStyle(nameValid ? Nuru.ink400 : Nuru.danger)
+                    }
+                    .padding(.horizontal, 14).frame(height: 44)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(nameFocused ? Nuru.gold : Nuru.border, lineWidth: 1))
+                    Text(pledge.customTitle == nil
+                         ? "Named after what it's for. Give it a name of your own if you like — 2–60 characters."
+                         : "2–60 characters. Clear it to go back to the name of what it's for.")
+                        .font(.nCaption).foregroundStyle(Nuru.ink400)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
 
                 VStack(spacing: 4) {
                     Text(pledge.isMonthly ? "EACH MONTH" : "TOTAL").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
@@ -632,12 +827,14 @@ struct EditPledgeSheet: View {
                     }
                 }
 
-                GoldSheetButton(title: saving ? "Saving…" : "Save changes", busy: saving, disabled: !changed || amount <= 0) {
+                GoldSheetButton(title: saving ? "Saving…" : "Save changes", busy: saving, disabled: !changed || amount <= 0 || !nameValid) {
                     Haptics.action()
+                    nameFocused = false
                     Task {
                         saving = true
                         let ok = await onSave(amount * 100 != pledge.commitmentMinor ? amount * 100 : nil,
-                                              pledge.isMonthly && dueDay != (pledge.dueDay ?? 1) ? dueDay : nil)
+                                              pledge.isMonthly && dueDay != (pledge.dueDay ?? 1) ? dueDay : nil,
+                                              titlePatch)
                         saving = false
                         if ok { dismiss() }
                     }

@@ -86,10 +86,13 @@ import SwiftUI
         await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(remindersEnabled: on))
     }
 
-    /// Edit amount / due day. Returns true on success so the sheet can close.
+    /// Edit name / amount / due day. `title` nil = untouched, `.set` = a new
+    /// custom name, `.clear` = an explicit null so the server falls back to
+    /// its derived name. Returns true on success so the sheet can close.
     @discardableResult
-    func edit(_ pledge: Pledge, amountMinor: Int?, dueDay: Int?) async -> Bool {
-        await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(amountMinor: amountMinor, dueDay: dueDay))
+    func edit(_ pledge: Pledge, amountMinor: Int?, dueDay: Int?,
+              title: MemberAPI.PledgePatchBody.TitlePatch? = nil) async -> Bool {
+        await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(amountMinor: amountMinor, dueDay: dueDay, title: title))
     }
 
     @discardableResult
@@ -244,6 +247,7 @@ struct PartnersView: View {
         .task { if vm.partnership == nil { await vm.load() } }
         .fullScreenCover(isPresented: $showNewPledge) {
             NewPledgeFlow(isMember: vm.partnership?.isProgrammeMember ?? false,
+                          pledgeOptions: vm.partnership?.pledgeOptions ?? [],
                           campaigns: vm.partnership?.campaigns ?? []) {
                 // Pledged is derived from the pledges, so a reload of the
                 // partnership + the year on screen is enough — never jump the
@@ -439,7 +443,8 @@ struct PartnersView: View {
             if let pl = p.pledges.first(where: { $0.pledgeId == item.id }) { Task { await vm.setStatus(pl, "active") } }
         case ("pledge", _):
             let pl = p.pledges.first { $0.pledgeId == item.id }
-            tabs.openGive(preset: GivePreset(fund: pl?.fund?.code, amountMinor: item.amountMinor, pledgeId: item.id))
+            tabs.openGive(preset: GivePreset(fund: pl?.fund?.code, amountMinor: item.amountMinor, pledgeId: item.id,
+                                             pledgeTitle: pl?.displayTitle ?? (item.title.isEmpty ? nil : item.title)))
         default:
             tabs.openGive(preset: GivePreset(fund: nil, amountMinor: item.amountMinor, pledgeId: nil))
         }
@@ -612,13 +617,11 @@ struct PartnersView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// The statement's own title for the pledge, else the pledge's shape.
+    /// The statement's own title for the pledge, else the pledge's name.
     private func paymentTitle(_ pay: PledgePayment, _ s: GivingStatements, _ p: Partnership) -> String {
         guard let id = pay.pledgeId else { return "Pledge" }
         if let t = s.pledgeTitle(for: id) { return t }
-        if let pl = p.pledges.first(where: { $0.pledgeId == id }) {
-            return pl.isMonthly ? "Monthly pledge" : "Total pledge"
-        }
+        if let pl = p.pledges.first(where: { $0.pledgeId == id }) { return pl.displayTitle }
         return "Pledge"
     }
 
@@ -689,6 +692,24 @@ private func ordinal(_ n: Int) -> String {
         }
     }
     return "\(n)\(suffix)"
+}
+
+/// The promise in one line, under the pledge's name: "KSh 2,000 monthly ·
+/// due on the 5th", or "KSh 50,000 · by 15 Dec" (the year only when it
+/// isn't this one). Shared by the card and the detail page so they agree.
+private func pledgeAmountLine(_ p: Pledge) -> String {
+    if p.isMonthly {
+        var parts = ["\(money(p.amountMinor ?? 0, p.currency)) monthly"]
+        if let d = p.dueDay { parts.append("due on the \(ordinal(d))") }
+        return parts.joined(separator: " · ")
+    }
+    var parts = [money(p.targetMinor ?? 0, p.currency)]
+    if let iso = p.dueOn, let d = giveParseDate(iso) {
+        let cal = Calendar.current
+        let sameYear = cal.component(.year, from: d) == cal.component(.year, from: Date())
+        parts.append("by \(sameYear ? giveDateShort(iso) : giveDateFull(iso))")
+    }
+    return parts.joined(separator: " · ")
 }
 
 // MARK: - Standing
@@ -815,8 +836,10 @@ private struct PledgeCard: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(title).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Text(subtitle).font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    // The pledge's NAME leads (pledge names contract); the
+                    // promise itself sits under it.
+                    Text(pledge.displayTitle).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 }
                 Spacer(minLength: 8)
                 stateChip
@@ -844,27 +867,6 @@ private struct PledgeCard: View {
         .partnerCard()
         .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .opacity(paused ? 0.92 : 1)
-    }
-
-    /// "KSh 2,000 monthly" or "KSh 50,000 by Dec" (the year only when it isn't this one).
-    private var title: String {
-        if pledge.isMonthly { return "\(money(pledge.amountMinor ?? 0, pledge.currency)) monthly" }
-        var by = ""
-        if let iso = pledge.dueOn, let d = giveParseDate(iso) {
-            let cal = Calendar.current
-            let f = DateFormatter()
-            f.dateFormat = cal.component(.year, from: d) == cal.component(.year, from: Date()) ? "MMM" : "MMM yyyy"
-            by = " by \(f.string(from: d))"
-        }
-        return "\(money(pledge.targetMinor ?? 0, pledge.currency))\(by)"
-    }
-
-    /// Target name + "due on the 5th" / "due 15 Dec".
-    private var subtitle: String {
-        var parts = [pledge.targetTitle]
-        if pledge.isMonthly, let d = pledge.dueDay { parts.append("due on the \(ordinal(d))") }
-        else if let iso = pledge.dueOn, !iso.isEmpty { parts.append("due \(giveDateShort(iso))") }
-        return parts.joined(separator: " · ")
     }
 
     /// Monthly: "9 of 12 kept this year"; total: "KSh 20,000 paid · 30,000 to go".
@@ -964,7 +966,8 @@ struct PledgeDetailView: View {
                 VStack(alignment: .leading, spacing: Nuru.S.base) {
                     if let p = pledge {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text(p.targetTitle).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
+                            // The name is the page's header; this card carries the promise.
+                            Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
                             Text("\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "") · \(money(p.progress.paidMinor, p.currency)) given in all")
                                 .font(.nCaption).foregroundStyle(Nuru.ink600)
                         }
@@ -1020,14 +1023,14 @@ struct PledgeDetailView: View {
         .toolbar(.hidden, for: .navigationBar)
         .task { await load() }
         .sheet(item: $editing) { p in
-            EditPledgeSheet(pledge: p) { amountMinor, dueDay in
-                let ok = await vm.edit(p, amountMinor: amountMinor, dueDay: dueDay)
+            EditPledgeSheet(pledge: p) { amountMinor, dueDay, title in
+                let ok = await vm.edit(p, amountMinor: amountMinor, dueDay: dueDay, title: title)
                 if ok { await load() }
                 return ok
             }
         }
         .confirmationDialog(
-            "Cancel this pledge?",
+            "Cancel \u{201C}\(cancelling?.displayTitle ?? "this pledge")\u{201D}?",
             isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }),
             titleVisibility: .visible
         ) {
@@ -1065,7 +1068,8 @@ struct PledgeDetailView: View {
                         tabs.openGive(preset: GivePreset(
                             fund: p.fund?.code,
                             amountMinor: p.remainingMinor > 0 ? p.remainingMinor : p.commitmentMinor,
-                            pledgeId: p.pledgeId))
+                            pledgeId: p.pledgeId,
+                            pledgeTitle: p.displayTitle))
                     } label: {
                         HStack(spacing: 6) {
                             Text("Pay now").font(.inter(13, .bold))
@@ -1154,8 +1158,12 @@ struct PledgeDetailView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Back")
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("PARTNERS").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
-                Text("Your pledge").font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy)
+                Text("YOUR PLEDGE").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
+                // The pledge's name IS the page title (pledge names contract).
+                Text(pledge?.displayTitle ?? "Your pledge")
+                    .font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy)
+                    .lineLimit(2).minimumScaleFactor(0.8)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

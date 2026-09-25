@@ -109,6 +109,10 @@ struct GivePreset: Equatable {
     /// it; it rides the intent body as `need_id` so the server attributes
     /// the gift to the need's campaign.
     var needId: String? = nil
+    /// The pledge's name (pledge names contract), carried so Give's "counts
+    /// toward" chip can say WHICH pledge before the server has answered.
+    /// Never sent on the wire.
+    var pledgeTitle: String? = nil
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,

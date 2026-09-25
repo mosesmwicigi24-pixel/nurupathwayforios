@@ -171,6 +171,16 @@ struct GivingView: View {
     /// the server attributes it to the need's campaign; cleared once the
     /// server confirms the gift — a retry after a failure keeps it.
     @State private var needId: String?
+    /// The pledge's name, from the preset — so the "counts toward" chip can
+    /// say WHICH pledge before the server has answered. Cleared with pledgeId.
+    @State private var pledgeTitle: String?
+    /// From the intent RESULT (pledge names contract): the fund the SERVER
+    /// routed the gift to, and the pledge it counts toward. The ceremony reads
+    /// these, never the chip, so a pledge payment is never described as a
+    /// gift to whatever fund happened to be selected.
+    @State private var intentFundName: String?
+    @State private var intentPledgeTitle: String?
+    @State private var intentIsPledge = false
     @State private var method = "mpesa"
     @State private var methodOrder = baseMethods.map(\.key)
     @State private var freq = "once"          // once | weekly | monthly
@@ -198,6 +208,16 @@ struct GivingView: View {
     @State private var paypalCaptureTask: Task<Void, Never>?
 
     private var fund: Fund { funds.first { $0.code == fundCode } ?? funds[0] }
+    /// What the ceremony says the gift is for — the server's answer first.
+    /// A pledge payment is ALWAYS "toward your pledge" (the server decides
+    /// its fund and ignores the chip); the chip's label is the last resort,
+    /// only for an ordinary gift on a server that sent no `fund`.
+    private var ceremonyDestination: GiveDestination {
+        if intentIsPledge { return .pledge(intentPledgeTitle) }
+        if pledgeId != nil { return .pledge(pledgeTitle) }
+        if let f = intentFundName { return .fund(f) }
+        return .fund(fund.label)
+    }
     private var fee: Int { coverFee ? feeFor(amount) : 0 }
     private var total: Int { amount + fee }
     private var recurring: Bool { freq != "once" }
@@ -257,6 +277,7 @@ struct GivingView: View {
             if let f = preset.fund, funds.contains(where: { $0.code == f }) { fundCode = f }
             if let m = preset.amountMinor, m > 0 { amount = m / 100 }
             pledgeId = preset.pledgeId
+            pledgeTitle = preset.pledgeId == nil ? nil : preset.pledgeTitle
             needId = preset.needId
             freq = "once"
             DispatchQueue.main.async { tabs.givePreset = nil }
@@ -289,6 +310,7 @@ struct GivingView: View {
                              note: ceremonyNote,
                              amountLabel: ksh(total),
                              fundLabel: fund.label,
+                             destination: ceremonyDestination,
                              giftName: accountName.isEmpty ? nil : accountName,
                              phone: (method == "mpesa" || method == "airtel") ? mpesaPhone : nil,
                              refCode: successRef,
@@ -411,6 +433,17 @@ struct GivingView: View {
                     ForEach(funds) { f in fundCard(f) }
                 }
                 .padding(.vertical, 2)
+            }
+            // A pledge payment: the SERVER picks the fund (the pledge's own
+            // target, else the programme default) and ignores this chooser.
+            // Say so, rather than hide the chooser or pretend the chip counts.
+            if pledgeId != nil {
+                HStack(spacing: 6) {
+                    Icon(.shieldCheck, size: 12, color: Color(hex: 0x74808F))
+                    Text("Routed to the pledge's fund by the church")
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                }
+                .transition(.opacity)
             }
         }
     }
@@ -739,12 +772,15 @@ struct GivingView: View {
     private var pledgeNote: some View {
         HStack(spacing: 8) {
             Icon(.heartHandshake, size: 14, color: Nuru.gold)
-            Text("This gift counts toward your pledge")
+            // "Counts toward: Building fund pledge" when the name came with
+            // the preset; the plain line when it didn't (older callers).
+            Text(pledgeTitle.map { "Counts toward: \($0)" } ?? "This gift counts toward your pledge")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                .lineLimit(2).minimumScaleFactor(0.9)
             Spacer(minLength: 8)
             Button {
                 Haptics.selection()
-                withAnimation(.easeInOut(duration: 0.2)) { pledgeId = nil }
+                withAnimation(.easeInOut(duration: 0.2)) { pledgeId = nil; pledgeTitle = nil }
             } label: {
                 Text("Remove").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink600)
             }
@@ -968,6 +1004,7 @@ struct GivingView: View {
         guard amount > 0 else { return }
         submitting = true; defer { submitting = false }
         paypalOrderId = nil
+        intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
         do {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
                                                  currency: currency, method: provider, phoneNumber: phone,
@@ -975,6 +1012,13 @@ struct GivingView: View {
                                                  pledgeId: pledgeId, needId: needId)
             pendingTxId = res.transactionId
             successRef = res.providerRef
+            // The server's word on where the gift went (pledge names
+            // contract) — the ceremony reads this, not the chip.
+            intentFundName = res.fund.flatMap { $0.name.isEmpty ? nil : $0.name }
+            if let p = res.pledge {
+                intentIsPledge = true
+                intentPledgeTitle = p.title.isEmpty ? pledgeTitle : p.title
+            }
             if provider == "paypal", let url = res.approveUrl.flatMap(URL.init) {
                 // The intent's provider_ref IS the PayPal order id — we capture it
                 // once the member approves and comes back (see attemptPayPalCapture).
@@ -1065,6 +1109,7 @@ struct GivingView: View {
             // The pledge got its gift — the next one is an ordinary gift
             // unless Partners sends the member back with another preset.
             pledgeId = nil
+            pledgeTitle = nil
             needId = nil
         }
         pollTask?.cancel(); pollTask = nil
@@ -1072,6 +1117,10 @@ struct GivingView: View {
         paypalOrderId = nil
         ceremony = nil; ceremonyNote = ""
         scheduledNextAt = ""
+        // intentFundName / intentPledgeTitle / intentIsPledge are NOT reset
+        // here: the cover re-renders during its dismiss, and clearing them in
+        // the same pass as pledgeId would flash the chip's fund over a pledge
+        // payment's success line. Every submitIntent resets them first.
         Task { await vm.load() }
     }
 
@@ -1489,11 +1538,34 @@ private struct ScheduleDetailSheet: View {
 
 // MARK: - Ceremony (full-screen; only ever shows the server's real status)
 
+/// Where a gift goes, as the ceremony says it. `.fund` is the server's fund
+/// name (the chip's label only as a last resort); `.pledge` carries the
+/// pledge's title, nil when the server named none.
+private enum GiveDestination {
+    case fund(String)
+    case pledge(String?)
+
+    /// "to Tithe" · "toward your Building fund pledge" · "toward your pledge".
+    /// A title that already ends in "pledge" is not doubled.
+    var phrase: String {
+        switch self {
+        case .fund(let name): return "to \(name)"
+        case .pledge(let title):
+            guard let title, !title.isEmpty else { return "toward your pledge" }
+            return title.lowercased().hasSuffix("pledge") ? "toward your \(title)" : "toward your \(title) pledge"
+        }
+    }
+}
+
 private struct GiveCeremonyView: View {
     let stage: String                // stk | success | failed | scheduled
     let note: String
     let amountLabel: String
+    /// The chip's label — the scheduled stage's only source (schedules do
+    /// not go through an intent, so there is no server answer to read).
     let fundLabel: String
+    /// The intent RESULT's answer for the STK + success stages.
+    let destination: GiveDestination
     /// "Named giving" (custom sheet, optional): the member's own label for
     /// this gift — shown alongside the fund wherever it currently shows.
     var giftName: String? = nil
@@ -1511,9 +1583,9 @@ private struct GiveCeremonyView: View {
             (stage == "stk" ? Nuru.navy : Nuru.paper).ignoresSafeArea()
             switch stage {
             case "stk":
-                StkStage(amountLabel: amountLabel, fundLabel: fundLabel, giftName: giftName, phone: phone, note: note)
+                StkStage(amountLabel: amountLabel, destination: destination, giftName: giftName, phone: phone, note: note)
             case "success":
-                SuccessStage(amountLabel: amountLabel, fundLabel: fundLabel, giftName: giftName, refCode: refCode,
+                SuccessStage(amountLabel: amountLabel, destination: destination, giftName: giftName, refCode: refCode,
                              hasReceipt: txId != nil,
                              onViewReceipt: { showReceipt = true }, onDone: onDone)
             case "scheduled":
@@ -1530,7 +1602,8 @@ private struct GiveCeremonyView: View {
 }
 
 private struct StkStage: View {
-    let amountLabel, fundLabel: String
+    let amountLabel: String
+    let destination: GiveDestination
     var giftName: String? = nil
     let phone: String?
     let note: String
@@ -1545,9 +1618,11 @@ private struct StkStage: View {
             Text("Check your phone")
                 .font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(.white)
                 .padding(.top, Nuru.S.lg)
+            // "Enter your PIN to complete KSh 1,000 toward your Building fund
+            // pledge." / "… to Tithe." — the server's answer, never the chip's.
             (Text("Enter your PIN to complete ")
                 + Text(amountLabel).foregroundColor(Nuru.gold).fontWeight(.semibold)
-                + Text(" to \(fundLabel)\(giftName.map { " \u{2014} \u{201C}\($0)\u{201D}" } ?? "")."))
+                + Text(" \(destination.phrase)\(giftName.map { " \u{2014} \u{201C}\($0)\u{201D}" } ?? "")."))
                 .font(.inter(13)).foregroundColor(.white.opacity(0.7))
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
@@ -1576,15 +1651,23 @@ private struct StkStage: View {
 }
 
 private struct SuccessStage: View {
-    let amountLabel, fundLabel: String
+    let amountLabel: String
+    let destination: GiveDestination
     var giftName: String? = nil
     let refCode: String?
     let hasReceipt: Bool
     var onViewReceipt: () -> Void
     var onDone: () -> Void
 
+    /// "Tithe" · "toward your Building fund pledge" — plus the gift's own
+    /// name when it has one. The same line the STK stage promised.
     private var fundAndName: String {
-        giftName.map { "\(fundLabel) \u{2014} \u{201C}\($0)\u{201D}" } ?? fundLabel
+        let base: String
+        switch destination {
+        case .fund(let name): base = name
+        case .pledge: base = destination.phrase
+        }
+        return giftName.map { "\(base) \u{2014} \u{201C}\($0)\u{201D}" } ?? base
     }
 
     var body: some View {
