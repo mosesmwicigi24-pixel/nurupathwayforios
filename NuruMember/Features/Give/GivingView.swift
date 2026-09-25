@@ -142,14 +142,22 @@ final class GivingViewModel: ObservableObject {
         }
     }
 
+    /// Loads are numbered; an older reply never overwrites a newer one (the
+    /// segment, the tab, the foreground and the signal can all ask at once).
+    private var loadSeq = 0
+    private var appliedHistorySeq = 0
+    private var appliedSchedulesSeq = 0
+
     func load() async {
         loading = true
+        loadSeq += 1
+        let seq = loadSeq
         async let h = MemberAPI.givingHistory()
         async let s = MemberAPI.schedules()
         // A failed refetch keeps what is on screen (stale-while-revalidate)
         // rather than blanking the year pill and Recent giving.
-        if let v = try? await h { history = v }
-        if let v = try? await s { schedules = v }
+        if let v = try? await h, seq > appliedHistorySeq { appliedHistorySeq = seq; history = v }
+        if let v = try? await s, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
         loading = false
     }
 
@@ -160,7 +168,10 @@ final class GivingViewModel: ObservableObject {
             .filter { settled.contains($0.status) && $0.createdAt.prefix(4) == String(yr) }
             .reduce(0) { $0 + $1.amountMinor }
     }
-    var lastGift: GivingRecord? { history.first }
+    /// The last ORDINARY gift — "Repeat last gift" must never re-pay a pledge
+    /// instalment or a need: records carrying a `pledgeId` (or a `needId`,
+    /// when the server sends one) are skipped. Nil hides the card.
+    var lastGift: GivingRecord? { history.first { $0.pledgeId == nil && $0.needId == nil } }
 }
 
 // MARK: - Give
@@ -272,6 +283,8 @@ struct GivingView: View {
     private var recurring: Bool { freq != "once" && !payMode }
     /// A pledge or need preset is active — the server routes the money.
     private var payMode: Bool { pledgeId != nil || needId != nil }
+    /// The Give segment is what the member is looking at.
+    private var giveOnScreen: Bool { (segment ?? .give) == .give && tabs.selected == .give }
     /// Everything a submission is made of. Any change = a different
     /// submission = a new idempotency key. (The phone is included too: a
     /// replayed key would return the old transaction, prompting the old number.)
@@ -331,7 +344,19 @@ struct GivingView: View {
                 }
             }
         }
-        .task { if vm.history.isEmpty { await vm.load() } }
+        // Stale-while-revalidate (2026-09-26: the year pill sat at KSh 0 after
+        // pledge payments landed without a ceremony — a scheduled charge,
+        // another device). Refetch whenever this segment is SHOWN — first
+        // mount, the segment switched back, the Give tab re-selected (tabs
+        // and segments stay mounted, so .task alone never re-runs) — and on
+        // return to the foreground; what is on screen stays meanwhile.
+        .task { await vm.load() }
+        .onChange(of: segment) { _, s in
+            if s == .give && tabs.selected == .give { Task { await vm.load() } }
+        }
+        .onChange(of: tabs.selected) { _, _ in
+            if giveOnScreen { Task { await vm.load() } }
+        }
         // Partners "Pay now" / a due item: land with the pledge's fund and the
         // amount still owed already in place, as a one-time gift, and remember
         // the pledge so the intent carries `pledge_id`. Consumed once.
@@ -354,9 +379,11 @@ struct GivingView: View {
         }
         // A different submission from here on — never replay the old key.
         .onChange(of: formSignature) { _, _ in submissionKey = UUID().uuidString }
-        // Returning from the PayPal approval in Safari → nudge the capture.
+        // Returning from the PayPal approval in Safari → nudge the capture;
+        // and back from anywhere → refetch the year total / recent giving.
         .onChange(of: scenePhase) { _, p in
             if p == .active { attemptPayPalCapture() }
+            if p == .active && giveOnScreen { Task { await vm.load() } }
         }
         .sheet(isPresented: $showKeypad) {
             GiveKeypadSheet(initial: amount, fundLabel: payLabel ?? fund.label,

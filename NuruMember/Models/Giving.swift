@@ -24,6 +24,10 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     /// then carries no pledge tag.
     var pledgeId: String? = nil
     var pledgeTitle: String? = nil
+    /// The department need this gift went to, when the server says so
+    /// (`need_id`; absent on servers that don't send it). "Repeat last gift"
+    /// skips these, as it skips pledge payments.
+    var needId: String? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -44,6 +48,7 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
         accountName = try? c.decodeIfPresent(String.self, forKey: .accountName)
         pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)).flatMap { $0.isEmpty ? nil : $0 }
         pledgeTitle = (try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)).flatMap { $0.isEmpty ? nil : $0 }
+        needId = (try? c.decodeIfPresent(String.self, forKey: .needId)).flatMap { $0.isEmpty ? nil : $0 }
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
     }
@@ -486,6 +491,11 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
     var uncoveredMinor: Int { max(0, amountMinor - pendingMinor) }
     /// Every shilling of this pledge instalment is already on its way.
     var fullyPending: Bool { kind == "pledge" && action != "resume" && pendingMinor > 0 && pendingMinor >= amountMinor }
+    /// How many of this pledge's instalments are past due and unpaid (0 when
+    /// absent), and the oldest one's date (`overdue_since`, optional) —
+    /// "2 overdue since 10 Aug".
+    let overdueCount: Int
+    let overdueSince: String?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "pledge"
@@ -497,6 +507,8 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
         action = (try? c.decodeIfPresent(String.self, forKey: .action)) ?? "pay"
         paysTo = (try? c.decodeIfPresent(Pledge.FundRef.self, forKey: .paysTo)).flatMap { $0.code.isEmpty && $0.name.isEmpty ? nil : $0 }
         pendingMinor = max(0, c.flexInt(.pendingMinor) ?? 0)
+        overdueCount = max(0, c.flexInt(.overdueCount) ?? 0)
+        overdueSince = (try? c.decodeIfPresent(String.self, forKey: .overdueSince)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

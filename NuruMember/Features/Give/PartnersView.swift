@@ -415,6 +415,11 @@ struct PartnersView: View {
         .onChange(of: segment) { _, s in
             if s == .partners { Task { await vm.refresh() } }
         }
+        // Tabs stay mounted too (RootView keep-alive): the Give tab coming
+        // back with this segment showing is an "appear" that .task never sees.
+        .onChange(of: tabs.selected) { _, _ in
+            if onScreen { Task { await vm.refresh() } }
+        }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && onScreen { Task { await vm.refresh() } }
         }
@@ -482,6 +487,7 @@ struct PartnersView: View {
         if let p = vm.partnership {
             if p.isProgrammeMember {
                 StandingCard(partnership: p,
+                             faithfulness: vm.currentYearStatements?.faithfulness,
                              onPledge: { Haptics.tap(); showNewPledge = true },
                              onStatement: { Haptics.tap(); path.append(PartnersRoute.partnersStatement) })
                 if !p.due.isEmpty { dueSection(p) }
@@ -587,12 +593,14 @@ struct PartnersView: View {
         // of it → Processing, no Pay (a second tap would pay it twice). Part
         // of it → Pay stays, for what is still uncovered.
         let partial = item.kind == "pledge" && item.action != "resume" && item.pendingMinor > 0 && !item.fullyPending
+        let when = dueWhen(item)
         return HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(partial
-                     ? "\(money(item.uncoveredMinor, item.currency)) left · \(relativeDay(item.dueOn))"
-                     : "\(money(item.amountMinor, item.currency)) · \(relativeDay(item.dueOn))")
-                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
+                     ? "\(money(item.uncoveredMinor, item.currency)) left · \(when.text)"
+                     : "\(money(item.amountMinor, item.currency)) · \(when.text)")
+                    .font(.inter(15, .semibold))
+                    .foregroundStyle(when.overdue ? Nuru.goldChipText : Nuru.ink)
                 Text(partial
                      ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
                      : dueSubtitle(item, p))
@@ -662,6 +670,28 @@ struct PartnersView: View {
         default:
             tabs.openGive(preset: GivePreset(fund: nil, amountMinor: item.amountMinor, pledgeId: nil))
         }
+    }
+
+    /// When a DUE row is due. A pledge instalment whose date (or the
+    /// server's `overdue_since`) has passed reads "overdue since 10 Aug" —
+    /// "2 overdue since 10 Aug" when `overdue_count` ≥ 2, the date from
+    /// `overdue_since` when present — in amber (goldChipText, 0x7A5A14).
+    /// Otherwise today · tomorrow · in N days · the date. A schedule row is
+    /// never "overdue" (a paused schedule owes nothing).
+    private func dueWhen(_ item: DueItem) -> (text: String, overdue: Bool) {
+        let cal = Calendar.current
+        let today = cal.startOfDay(for: Date())
+        func past(_ iso: String?) -> Bool {
+            guard let iso, let d = giveParseDate(iso) else { return false }
+            return cal.startOfDay(for: d) < today
+        }
+        guard item.kind == "pledge", past(item.dueOn) || past(item.overdueSince) else {
+            return (relativeDay(item.dueOn), false)
+        }
+        let iso = item.overdueSince ?? item.dueOn
+        let sameYear = giveParseDate(iso).map { cal.component(.year, from: $0) == cal.component(.year, from: today) } ?? true
+        let since = sameYear ? giveDateShort(iso) : giveDateFull(iso)
+        return (item.overdueCount >= 2 ? "\(item.overdueCount) overdue since \(since)" : "overdue since \(since)", true)
     }
 
     /// today · tomorrow · in N days · else the date.
@@ -965,6 +995,9 @@ func pledgeAmountLine(isMonthly: Bool, amountMinor: Int?, targetMinor: Int?,
 
 private struct StandingCard: View {
     let partnership: Partnership
+    /// The CURRENT year's statement `faithfulness` — nil until it loads (or
+    /// on an older server).
+    let faithfulness: GivingStatements.Faithfulness?
     let onPledge: () -> Void
     let onStatement: () -> Void
 
@@ -1020,12 +1053,41 @@ private struct StandingCard: View {
     /// "Partner since Sep 2026" — the shared formatter (partnerSinceLine).
     private var sinceLine: String { partnerSinceLine(partnership) }
 
-    /// "N gifts kept · on track" — `kept` is what was COLLECTED, never scheduled.
+    /// The standing line. "Kept" has ONE meaning — a due date paid in full,
+    /// on time or late (owner, 2026-09-25):
+    ///   · a partner with pledges: "<kept_on_time + late> commitments kept
+    ///     this year · on track|behind" from the CURRENT year's statement
+    ///     `faithfulness` — the count left out while it is 0 and nothing has
+    ///     fallen due yet (or before that statement has loaded);
+    ///   · a schedule-only partner (no live pledge): "N gifts kept" —
+    ///     `partnership.kept`, the recurring schedule's collected cycles
+    ///     (which is why it read "0 gifts kept" beside "2 of 2 kept").
     private var keptLine: String {
-        let n = partnership.kept
-        let gifts = n == 1 ? "1 gift kept" : "\(n) gifts kept"
         let paused = partnership.membership?.status == "paused" || partnership.status == "paused"
-        return "\(gifts) · \(paused ? "paused" : "on track")"
+        guard partnership.pledges.contains(where: { $0.status != "cancelled" }) else {
+            let n = partnership.kept
+            let gifts = n == 1 ? "1 gift kept" : "\(n) gifts kept"
+            return "\(gifts) · \(paused ? "paused" : "on track")"
+        }
+        let state = paused ? "paused" : (behind ? "behind" : "on track")
+        let kept = max(0, faithfulness?.keptOnTime ?? 0) + max(0, faithfulness?.late ?? 0)
+        let due = max(0, faithfulness?.dueCount ?? 0)
+        guard faithfulness != nil, kept > 0 || due > 0 else {
+            return state.prefix(1).uppercased() + state.dropFirst()
+        }
+        return "\(kept) commitment\(kept == 1 ? "" : "s") kept this year · \(state)"
+    }
+
+    /// Behind when a resolved instalment went unkept this year
+    /// (`faithfulness`: missed, else kept < due), or when the server labels
+    /// any active pledge behind — so this line never says "on track" above a
+    /// pledge card that says "Behind".
+    private var behind: Bool {
+        if let f = faithfulness, let due = f.dueCount {
+            let kept = max(0, f.keptOnTime ?? 0) + max(0, f.late ?? 0)
+            if (f.missed.map { $0 > 0 } ?? (kept < due)) { return true }
+        }
+        return partnership.pledges.contains { $0.status == "active" && $0.progress.label == "behind" }
     }
 }
 
@@ -1103,7 +1165,10 @@ private struct PledgeCard: View {
                 Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 Spacer(minLength: 8)
                 if let n = nextLine {
-                    Text(n).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    Text(n.text)
+                        .font(.inter(11, n.overdue ? .semibold : .regular))
+                        .foregroundStyle(n.overdue ? Nuru.goldChipText : Nuru.ink600)
+                        .lineLimit(1)
                 }
             }
         }
@@ -1120,10 +1185,17 @@ private struct PledgeCard: View {
         return "\(money(paid, pledge.currency)) paid · \((toGo / 100).formatted(.number.grouping(.automatic))) to go"
     }
 
-    private var nextLine: String? {
+    /// "Next 10 Oct" — or, once the server's next due has passed unpaid (it
+    /// is then the oldest unpaid instalment), "Overdue since 10 Aug" in amber.
+    private var nextLine: (text: String, overdue: Bool)? {
         if fulfilled || paused { return nil }
         guard let n = pledge.progress.nextDue, !n.isEmpty else { return nil }
-        return "Next \(giveDateShort(n))"
+        let cal = Calendar.current
+        if let d = giveParseDate(n), cal.startOfDay(for: d) < cal.startOfDay(for: Date()) {
+            let sameYear = cal.component(.year, from: d) == cal.component(.year, from: Date())
+            return ("Overdue since \(sameYear ? giveDateShort(n) : giveDateFull(n))", true)
+        }
+        return ("Next \(giveDateShort(n))", false)
     }
 
     private var stateChip: some View {
@@ -1261,6 +1333,10 @@ struct PledgeDetailView: View {
             }
             .refreshable { await load() }
         }
+        // The PAGE starts at the screen's top edge and the header pads itself
+        // below the status bar (the header ignoring the safe area on its own
+        // left its old slot reserved: a dead ~59pt band under it).
+        .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -1423,7 +1499,6 @@ struct PledgeDetailView: View {
         )
         .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
-        .ignoresSafeArea(edges: .top)
     }
 }
 

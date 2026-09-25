@@ -38,10 +38,15 @@ struct PartnersStatementView: View {
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
     @Environment(\.scenePhase) private var scenePhase
+    @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.giveSegmentVisible) private var segmentVisible
 
-    /// On screen (not covered by a page pushed over it) — the foreground
-    /// refetch only runs for a page the member can see.
+    /// Not covered by a page pushed over it (onAppear / onDisappear).
     @State private var onScreen = false
+    /// What the member can actually see: this page, on the Give tab, in the
+    /// visible segment. Tabs and segments stay mounted (keep-alive), so
+    /// onScreen alone stays true behind another tab.
+    private var visible: Bool { onScreen && segmentVisible && tabs.selected == .give }
     @State private var downloading = false
     @State private var downloadError: String?
     @State private var shareFile: PartnersStatementFile?
@@ -72,6 +77,12 @@ struct PartnersStatementView: View {
                 await vm.loadStatements()
             }
         }
+        // The PAGE starts at the screen's top edge and the pinned bar pads
+        // itself below the status bar — so the hero begins directly under
+        // the bar and scrolled content passes straight under it. (Ignoring
+        // the safe area on the bar alone drew it up into the status bar but
+        // left its old slot reserved: a dead ~59pt paper band beneath it.)
+        .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -81,7 +92,11 @@ struct PartnersStatementView: View {
         .onAppear { onScreen = true }
         .onDisappear { onScreen = false }
         .onChange(of: scenePhase) { _, phase in
-            if phase == .active && onScreen { Task { await vm.refresh(withStatement: true) } }
+            if phase == .active && visible { Task { await vm.refresh(withStatement: true) } }
+        }
+        // Shown again (tab or segment switched back): stale-while-revalidate.
+        .onChange(of: visible) { _, v in
+            if v { Task { await vm.refresh(withStatement: true) } }
         }
         // Processing rows resolve by themselves: while this page is on
         // screen, in the foreground and showing any, refetch every 10 s for
@@ -93,7 +108,7 @@ struct PartnersStatementView: View {
 
     /// Poll only while the member can see Processing rows.
     private var shouldPollPending: Bool {
-        onScreen && scenePhase == .active && hasPendingRows
+        visible && scenePhase == .active && hasPendingRows
     }
 
     private var hasPendingRows: Bool {
@@ -140,7 +155,6 @@ struct PartnersStatementView: View {
         .padding(.bottom, 10)
         .frame(maxWidth: .infinity)
         .background(Nuru.navy)
-        .ignoresSafeArea(edges: .top)
     }
 
     private func squareButton(_ icon: Lucide, label: String, busy: Bool = false, action: @escaping () -> Void) -> some View {
@@ -399,7 +413,7 @@ struct PartnersStatementView: View {
             // numbers stay on their card.
             if HeroTiles(s) == nil { summaryCard(figures, s.currency) }
             if let months = s.months, let strip = MonthStrip(months) {
-                faithfulnessSection(strip, year: s.year)
+                faithfulnessSection(strip, s.faithfulness, year: s.year)
             }
             commitmentsSection(figures.pledges, year: s.year, currency: s.currency)
             if let sentence = seasonSentence(s.season) { seasonCard(sentence) }
@@ -468,7 +482,8 @@ struct PartnersStatementView: View {
         return c
     }()
 
-    private func faithfulnessSection(_ strip: MonthStrip, year: Int) -> some View {
+    private func faithfulnessSection(_ strip: MonthStrip, _ faithfulness: GivingStatements.Faithfulness?,
+                                     year: Int) -> some View {
         let short = Self.monthCalendar.shortMonthSymbols
         return VStack(alignment: .leading, spacing: 8) {
             eyebrow("FAITHFULNESS")
@@ -488,7 +503,7 @@ struct PartnersStatementView: View {
                 }
                 .font(.inter(9, .medium)).foregroundStyle(Nuru.ink400)
                 .accessibilityHidden(true)
-                if let line = faithfulnessLine(strip, year: year) {
+                if let line = faithfulnessLine(strip, faithfulness, year: year) {
                     Text(line)
                         .font(.inter(11)).foregroundStyle(Nuru.ink600)
                         .fixedSize(horizontal: false, vertical: true)
@@ -499,18 +514,27 @@ struct PartnersStatementView: View {
         }
     }
 
-    /// "Kept on time 6 months · late 1 (Jul) · next due 5 Oct". Each part
-    /// appears only when it has something to say (never "Kept on time 0
-    /// months"); next due only for the year being lived. Nil when nothing is
-    /// left to say — the line is then hidden. Missed months are the navy
-    /// squares; the line does not repeat them (Android parity).
-    private func faithfulnessLine(_ strip: MonthStrip, year: Int) -> String? {
-        let short = Self.monthCalendar.shortMonthSymbols
-        let kept = strip.indices("kept").count
-        let late = strip.indices("late")
+    /// "8 kept on time · 1 late · 2 missed · next due 5 Oct" — counted per
+    /// COMMITMENT from the statement's `faithfulness` (the squares are the
+    /// picture by month; two instalments can fall in one month). Zero parts
+    /// are left out; the month counts stand in only when `faithfulness` is
+    /// absent. "next due" only for the year being lived. Nil when nothing is
+    /// left to say — the line is then hidden.
+    private func faithfulnessLine(_ strip: MonthStrip, _ f: GivingStatements.Faithfulness?, year: Int) -> String? {
+        let onTime: Int, late: Int, missed: Int
+        if let f {
+            onTime = max(0, f.keptOnTime ?? 0)
+            late = max(0, f.late ?? 0)
+            missed = max(0, f.missed ?? f.dueCount.map { $0 - onTime - late } ?? 0)
+        } else {
+            onTime = strip.indices("kept").count
+            late = strip.indices("late").count
+            missed = strip.indices("missed").count
+        }
         var parts: [String] = []
-        if kept > 0 { parts.append("kept on time \(kept) month\(kept == 1 ? "" : "s")") }
-        if !late.isEmpty { parts.append("late \(late.count) (\(late.map { short[$0] }.joined(separator: ", ")))") }
+        if onTime > 0 { parts.append("\(onTime) kept on time") }
+        if late > 0 { parts.append("\(late) late") }
+        if missed > 0 { parts.append("\(missed) missed") }
         if year == Calendar.current.component(.year, from: Date()), let next = nextPledgeDue() {
             parts.append("next due \(Self.dayMonth(next))")
         }
@@ -519,30 +543,39 @@ struct PartnersStatementView: View {
         return line.prefix(1).uppercased() + line.dropFirst()
     }
 
-    /// The soonest monthly-pledge due date on or after today. `months`
-    /// carries no day, so the day is each active monthly pledge's own
-    /// `due_day` (1–28): this month's if it hasn't passed, else next
-    /// month's. The partnership's pledges first; the statement's rows when
-    /// the partnership isn't loaded. Nil when there is no such pledge.
+    /// The soonest upcoming due date across ACTIVE monthly pledges. For each
+    /// pledge: the SERVER's `progress.nextDue` when it is today or later — it
+    /// is ledger-correct (payments fill due dates oldest first, so once
+    /// September is paid it says November); otherwise — overdue, or absent —
+    /// the next occurrence of its `due_day` (1–28) on or after today, so an
+    /// overdue pledge still contributes its next upcoming date. With no
+    /// partnership loaded, the statement rows' `due_day`. Nil when none.
     private func nextPledgeDue() -> Date? {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
-        var days: [Int] = (vm.partnership?.pledges ?? [])
-            .filter { $0.isMonthly && $0.status == "active" }
-            .compactMap(\.dueDay)
-        if vm.partnership == nil {
-            days = (vm.statements?.pledges ?? [])
-                .filter { $0.isMonthly && $0.status == "active" }
-                .compactMap(\.dueDay)
-        }
-        let y = cal.component(.year, from: today), m = cal.component(.month, from: today)
-        return days.compactMap { raw -> Date? in
+        func fromDueDay(_ raw: Int) -> Date? {
             let day = min(28, max(1, raw))
+            let y = cal.component(.year, from: today), m = cal.component(.month, from: today)
             guard let thisMonth = cal.date(from: DateComponents(year: y, month: m, day: day)) else { return nil }
-            if thisMonth >= today { return thisMonth }
-            return cal.date(byAdding: .month, value: 1, to: thisMonth)
+            return thisMonth >= today ? thisMonth : cal.date(byAdding: .month, value: 1, to: thisMonth)
         }
-        .min()
+        let candidates: [Date]
+        if let p = vm.partnership {
+            candidates = p.pledges
+                .filter { $0.isMonthly && $0.status == "active" }
+                .compactMap { pl -> Date? in
+                    if let iso = pl.progress.nextDue, !iso.isEmpty, let d = giveParseDate(iso),
+                       cal.startOfDay(for: d) >= today {
+                        return cal.startOfDay(for: d)
+                    }
+                    return pl.dueDay.flatMap(fromDueDay)
+                }
+        } else {
+            candidates = (vm.statements?.pledges ?? [])
+                .filter { $0.isMonthly && $0.status == "active" }
+                .compactMap { $0.dueDay.flatMap(fromDueDay) }
+        }
+        return candidates.min()
     }
 
     /// "5 Oct" this year, "5 Jan 2027" when it falls in the next.

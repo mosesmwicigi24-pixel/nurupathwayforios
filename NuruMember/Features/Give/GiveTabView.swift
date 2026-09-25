@@ -10,6 +10,19 @@
 // switching segments swaps the band's title, never stacks a second band.
 import SwiftUI
 
+private struct GiveSegmentVisibleKey: EnvironmentKey { static let defaultValue = true }
+
+extension EnvironmentValues {
+    /// False while a Give segment is mounted but hidden behind the other.
+    /// Both segments stay mounted (keep-alive), so onAppear / onDisappear
+    /// never fire on a segment switch — pages that poll or refetch "while
+    /// visible" read this instead.
+    var giveSegmentVisible: Bool {
+        get { self[GiveSegmentVisibleKey.self] }
+        set { self[GiveSegmentVisibleKey.self] = newValue }
+    }
+}
+
 struct GiveTabView: View {
     @EnvironmentObject private var tabs: TabRouter
     @State private var segment: GiveSegment = .give
@@ -20,6 +33,7 @@ struct GiveTabView: View {
             ForEach(GiveSegment.allCases, id: \.self) { seg in
                 if mounted.contains(seg) {
                     segmentContent(seg)
+                        .environment(\.giveSegmentVisible, seg == segment)
                         .opacity(seg == segment ? 1 : 0)
                         .allowsHitTesting(seg == segment)
                         .accessibilityHidden(seg != segment)

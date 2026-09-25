@@ -226,6 +226,34 @@ final class StatementV2DecodingTests: XCTestCase {
         XCTAssertFalse(resume.fullyPending, "a resume row is never a payment")
     }
 
+    func testDueOverdueFieldsDecodeTolerantly() throws {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        let late = try d.decode(DueItem.self, from: Data(#"{"kind":"pledge","id":"p1","amount_minor":400000,"due_on":"2026-08-10","overdue_count":2,"overdue_since":"2026-08-10"}"#.utf8))
+        XCTAssertEqual(late.overdueCount, 2)
+        XCTAssertEqual(late.overdueSince, "2026-08-10")
+        let plain = try d.decode(DueItem.self, from: Data(#"{"kind":"pledge","id":"p1","amount_minor":200000,"due_on":"2026-10-26"}"#.utf8))
+        XCTAssertEqual(plain.overdueCount, 0, "absent = 0")
+        XCTAssertNil(plain.overdueSince)
+    }
+
+    @MainActor
+    func testRepeatLastGiftSkipsPledgeAndNeedGifts() throws {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        let rows = try d.decode([GivingRecord].self, from: Data("""
+        [{"transaction_id":"t3","amount_minor":100000,"status":"succeeded","fund":"discipleship","pledge_id":"p1","created_at":"2026-09-26T08:00:00Z"},
+         {"transaction_id":"t2","amount_minor":50000,"status":"succeeded","fund":"mission","need_id":"n1","created_at":"2026-09-25T08:00:00Z"},
+         {"transaction_id":"t1","amount_minor":20000,"status":"succeeded","fund":"tithe","created_at":"2026-09-20T08:00:00Z"}]
+        """.utf8))
+        XCTAssertEqual(rows[1].needId, "n1")
+        let vm = GivingViewModel()
+        vm.history = rows
+        XCTAssertEqual(vm.lastGift?.transactionId, "t1", "the last ORDINARY gift, never a pledge or need payment")
+        vm.history = Array(rows.prefix(2))
+        XCTAssertNil(vm.lastGift, "no ordinary gift → no Repeat card")
+    }
+
     func testCompactAmountRoundsDownAndNeverOverstates() {
         XCTAssertEqual(PartnersStatementView.compactAmount(85_000), "850")
         XCTAssertEqual(PartnersStatementView.compactAmount(250_000), "2.5k")
