@@ -331,7 +331,7 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     let needId: String?
     /// The pledge's name as the SERVER says it (pledge names contract): the
     /// member's custom name when set, else the derived one (campaign → fund
-    /// → need → "Partnership"). Empty on servers that predate it.
+    /// → need → "General partnership"). Empty on servers that predate it.
     let title: String
     /// The member's own name for the pledge; nil when they never gave one
     /// (or cleared it) and `title` is the derived name.
@@ -341,6 +341,11 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     let scheduleId: String?
     let remindersEnabled: Bool
     let createdAt: String?
+    /// The fund this pledge's money goes to (`pays_to {code, name}`) — the
+    /// server's one rule (pledge → campaign → need's department → programme
+    /// default), so what a pledge says it pays to is where its money goes.
+    /// Nil on older servers: Give then says "Routed by the church".
+    let paysTo: FundRef?
     var id: String { pledgeId }
 
     struct FundRef: Codable, Sendable, Hashable {
@@ -398,6 +403,7 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
         remindersEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .remindersEnabled)) ?? true
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+        paysTo = (try? c.decodeIfPresent(FundRef.self, forKey: .paysTo)).flatMap { $0.code.isEmpty && $0.name.isEmpty ? nil : $0 }
     }
 
     static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
@@ -470,6 +476,16 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
     let currency: String
     let dueOn: String
     let action: String           // pay | resume
+    /// A pledge instalment's fund (`pays_to`), as on the pledge. Nil when absent.
+    let paysTo: Pledge.FundRef?
+    /// Money toward this instalment the server has STARTED but not settled
+    /// (a 15-minute window). 0 when absent. At or above `amountMinor` the row
+    /// shows Processing instead of Pay; below it, Pay covers the remainder.
+    let pendingMinor: Int
+    /// What is still uncovered once the in-flight money lands.
+    var uncoveredMinor: Int { max(0, amountMinor - pendingMinor) }
+    /// Every shilling of this pledge instalment is already on its way.
+    var fullyPending: Bool { kind == "pledge" && action != "resume" && pendingMinor > 0 && pendingMinor >= amountMinor }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "pledge"
@@ -479,6 +495,8 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
         currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
         dueOn = (try? c.decodeIfPresent(String.self, forKey: .dueOn)) ?? ""
         action = (try? c.decodeIfPresent(String.self, forKey: .action)) ?? "pay"
+        paysTo = (try? c.decodeIfPresent(Pledge.FundRef.self, forKey: .paysTo)).flatMap { $0.code.isEmpty && $0.name.isEmpty ? nil : $0 }
+        pendingMinor = max(0, c.flexInt(.pendingMinor) ?? 0)
     }
 }
 
@@ -611,6 +629,107 @@ struct GivingStatements: Decodable, Sendable {
     /// One row per pledge in the year (`pledges[]`); empty when absent.
     var pledges: [StatementPledge] = []
 
+    // Statement v2 (2026-09-25, additive — PARTNERS_PROGRAMME §3d): the
+    // impact-led Partners statement. Every block is optional and every field
+    // inside it is tolerant — an older server sends none of them and the
+    // page hides the block rather than showing a number it was never sent.
+    /// What the year's pledge money amounts to in the tier costing.
+    var impact: Impact? = nil
+    /// Jan→Dec, one status each. Nil when absent or empty.
+    var months: [MonthStatus]? = nil
+    /// The year's monthly-commitment counts.
+    var faithfulness: Faithfulness? = nil
+    /// The church-wide "since you began" line; nil when absent or null.
+    var season: Season? = nil
+    /// Pledge payments the server has not settled yet (`pending[]`) — shown
+    /// as "Processing" rows, NEVER counted in any total. Empty when absent.
+    var pending: [PledgePayment] = []
+
+    /// `impact` — paid toward pledges, and what that carries at KSh 20,000
+    /// per disciple per level (`disciples_carried` = floor(paid ÷ per
+    /// disciple); `toward_next_minor` = what is paid toward the next one).
+    struct Impact: Decodable, Sendable {
+        let paidMinor: Int?
+        let perDiscipleMinor: Int?
+        let disciplesCarried: Int?
+        let towardNextMinor: Int?
+
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            paidMinor = c.flexInt(.paidMinor)
+            perDiscipleMinor = c.flexInt(.perDiscipleMinor)
+            disciplesCarried = c.flexInt(.disciplesCarried)
+            // The brief names it `toward_next_minor`, the programme doc
+            // `toward_next` — read either.
+            towardNextMinor = c.flexInt(.towardNextMinor) ?? c.flexInt(.towardNext)
+        }
+        enum CodingKeys: String, CodingKey {
+            case paidMinor, perDiscipleMinor, disciplesCarried, towardNextMinor, towardNext
+        }
+    }
+
+    /// One month of the faithfulness strip.
+    struct MonthStatus: Decodable, Sendable, Hashable {
+        /// 1…12 when the server's `month` is readable (3, "3", "2026-03" or
+        /// "2026-03-01"); nil otherwise — the strip then uses the position.
+        let month: Int?
+        /// kept | late | missed | upcoming | none (lower-cased; "none" when absent).
+        let status: String
+        let dueMinor: Int?
+        let paidMinor: Int?
+
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            if let n = c.flexInt(.month), (1...12).contains(n) {
+                month = n
+            } else if let s = try? c.decodeIfPresent(String.self, forKey: .month) {
+                let parts = s.split(separator: "-")
+                month = parts.count >= 2 ? Int(parts[1]).flatMap { (1...12).contains($0) ? $0 : nil } : nil
+            } else {
+                month = nil
+            }
+            status = (try? c.decodeIfPresent(String.self, forKey: .status))?.lowercased() ?? "none"
+            dueMinor = c.flexInt(.dueMinor)
+            paidMinor = c.flexInt(.paidMinor)
+        }
+        enum CodingKeys: String, CodingKey { case month, status, dueMinor, paidMinor }
+    }
+
+    /// `faithfulness` — kept on time, late, missed, and how many fell due.
+    struct Faithfulness: Decodable, Sendable {
+        let keptOnTime: Int?
+        let late: Int?
+        let missed: Int?
+        let dueCount: Int?
+
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            keptOnTime = c.flexInt(.keptOnTime)
+            late = c.flexInt(.late)
+            missed = c.flexInt(.missed)
+            dueCount = c.flexInt(.dueCount)
+        }
+        enum CodingKeys: String, CodingKey { case keptOnTime, late, missed, dueCount }
+    }
+
+    /// `season` — what the WHOLE CHURCH did while this member partnered.
+    /// Never this member's money traced to an outcome.
+    struct Season: Decodable, Sendable {
+        let from: String?
+        let levelsCompleted: Int?
+        let modulesCompleted: Int?
+        let plansFinished: Int?
+
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            from = try? c.decodeIfPresent(String.self, forKey: .from)
+            levelsCompleted = c.flexInt(.levelsCompleted)
+            modulesCompleted = c.flexInt(.modulesCompleted)
+            plansFinished = c.flexInt(.plansFinished)
+        }
+        enum CodingKeys: String, CodingKey { case from, levelsCompleted, modulesCompleted, plansFinished }
+    }
+
     /// One pledge as the yearly statement reports it — the promise, its
     /// status, and the year's pledged / paid / kept figures, computed by the
     /// server. `kept` is cycles COLLECTED; `dueCount` is cycles that have
@@ -630,6 +749,13 @@ struct GivingStatements: Decodable, Sendable {
         let paidMinor: Int
         let kept: Int
         let dueCount: Int
+        /// Statement v2: what is still owed on this pledge in the year. Nil
+        /// on older servers (and on the local-math rows).
+        var remainingYearMinor: Int? = nil
+        /// Statement v2, department-need pledges only: how far the WHOLE
+        /// church has got toward the need, as sent (may be fractional). Nil
+        /// when absent or null; the row shows it floored and held to 0…100.
+        var churchProgressPercent: Double? = nil
         var id: String { pledgeId }
         var isMonthly: Bool { shape == "monthly" }
 
@@ -649,6 +775,8 @@ struct GivingStatements: Decodable, Sendable {
             paidMinor = (try? c.decodeIfPresent(Int.self, forKey: .paidMinor)) ?? 0
             kept = (try? c.decodeIfPresent(Int.self, forKey: .kept)) ?? 0
             dueCount = (try? c.decodeIfPresent(Int.self, forKey: .dueCount)) ?? 0
+            remainingYearMinor = c.flexInt(.remainingYearMinor).map { max(0, $0) }
+            churchProgressPercent = c.flexDouble(.churchProgressPercent)
         }
 
         /// The local-math twin: built from a `Pledge` when the server sends
@@ -667,6 +795,7 @@ struct GivingStatements: Decodable, Sendable {
         enum CodingKeys: String, CodingKey {
             case pledgeId, title, shape, amountMinor, targetMinor, currency, status, dueDay, dueOn, createdAt
             case pledgedMinor, paidMinor, kept, dueCount
+            case remainingYearMinor, churchProgressPercent
         }
     }
 
@@ -710,10 +839,42 @@ struct GivingStatements: Decodable, Sendable {
         paidMinor = try? c.decodeIfPresent(Int.self, forKey: .paidMinor)
         remainingMinor = try? c.decodeIfPresent(Int.self, forKey: .remainingMinor)
         pledges = (try? c.decodeIfPresent([StatementPledge].self, forKey: .pledges)) ?? []
+        impact = try? c.decodeIfPresent(Impact.self, forKey: .impact)
+        months = (try? c.decodeIfPresent([MonthStatus].self, forKey: .months)).flatMap { $0.isEmpty ? nil : $0 }
+        faithfulness = try? c.decodeIfPresent(Faithfulness.self, forKey: .faithfulness)
+        season = try? c.decodeIfPresent(Season.self, forKey: .season)
+        pending = (try? c.decodeIfPresent([PledgePayment].self, forKey: .pending)) ?? []
     }
     enum CodingKeys: String, CodingKey {
         case years, year, totalMinor, currency, byPledge, byFund, payments
         case pledgedMinor, paidMinor, remainingMinor, pledges
+        case impact, months, faithfulness, season, pending
+    }
+}
+
+private extension KeyedDecodingContainer {
+    /// An integer the server may send as 12, 12.0 or "12" — nil when absent,
+    /// null or unreadable. Never throws: one odd field must not blank a page.
+    func flexInt(_ key: Key) -> Int? {
+        if let v = try? decodeIfPresent(Int.self, forKey: key) { return v }
+        if let v = try? decodeIfPresent(Double.self, forKey: key), v.isFinite, abs(v) < 9e15 {
+            return Int(v.rounded())
+        }
+        if let s = try? decodeIfPresent(String.self, forKey: key) {
+            let t = s.trimmingCharacters(in: .whitespaces)
+            if let n = Int(t) { return n }
+            if let v = Double(t), v.isFinite, abs(v) < 9e15 { return Int(v.rounded()) }
+        }
+        return nil
+    }
+
+    /// A number the server may send as 42, 42.5 or "42.5" — nil when
+    /// absent, null, unreadable or not finite. Never throws.
+    func flexDouble(_ key: Key) -> Double? {
+        if let v = try? decodeIfPresent(Double.self, forKey: key), v.isFinite { return v }
+        if let s = try? decodeIfPresent(String.self, forKey: key),
+           let v = Double(s.trimmingCharacters(in: .whitespaces)), v.isFinite { return v }
+        return nil
     }
 }
 

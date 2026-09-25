@@ -522,9 +522,14 @@ extension MemberAPI {
     /// from that pledge's "Pay now" (§1 rule a). Omitted from the body when nil.
     /// `needId` (§4: the intent body gains optional `need_id`) attributes the
     /// gift to a department need's campaign — set only from "Give to this need".
+    /// `idempotencyKey`: the caller's key for THIS submission (Give reuses it
+    /// only to retry an attempt that got no server answer — the server then
+    /// returns the existing transaction instead of a second STK). A fresh one
+    /// when nil.
     static func giving(fund: String, amountMinor: Int, currency: String,
                        method: String, phoneNumber: String? = nil, accountName: String? = nil,
-                       pledgeId: String? = nil, needId: String? = nil) async throws -> GivingIntentResult {
+                       pledgeId: String? = nil, needId: String? = nil,
+                       idempotencyKey: String? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
             let method: String; let phoneNumber: String?; let accountName: String?
@@ -533,7 +538,7 @@ extension MemberAPI {
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
                        method: method, phoneNumber: phoneNumber, accountName: accountName,
-                       pledgeId: pledgeId, needId: needId, idempotencyKey: UUID().uuidString),
+                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? UUID().uuidString),
             as: GivingIntentResult.self)
     }
 
