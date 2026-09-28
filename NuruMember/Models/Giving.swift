@@ -546,6 +546,12 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     /// default), so what a pledge says it pays to is where its money goes.
     /// Nil on older servers: Give then says "Routed by the church".
     let paysTo: FundRef?
+    /// The first day an instalment can fall due (YYYY-MM-DD) when later than
+    /// the creation day — a pledge collected automatically starts on its first
+    /// collection (Giving Cycle 5). Nil = the creation day (and on older servers).
+    let startsOn: String?
+    /// The last day an instalment can fall due (YYYY-MM-DD); nil = open-ended.
+    let untilOn: String?
     var id: String { pledgeId }
 
     struct FundRef: Codable, Sendable, Hashable {
@@ -604,6 +610,8 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         remindersEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .remindersEnabled)) ?? true
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
         paysTo = (try? c.decodeIfPresent(FundRef.self, forKey: .paysTo)).flatMap { $0.code.isEmpty && $0.name.isEmpty ? nil : $0 }
+        startsOn = (try? c.decodeIfPresent(String.self, forKey: .startsOn)).flatMap { $0.isEmpty ? nil : $0 }
+        untilOn = (try? c.decodeIfPresent(String.self, forKey: .untilOn)).flatMap { $0.isEmpty ? nil : $0 }
     }
 
     static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
@@ -801,6 +809,14 @@ struct PartnerJoinResult: Decodable, Sendable {
 /// POST /giving/pledges (and PATCH) → the pledge, flat or `{pledge: {…}}`.
 struct PledgeResult: Decodable, Sendable {
     let pledge: Pledge
+    /// The same pledge made a moment ago (a double tap, a request sent
+    /// twice): the server answered with THAT one — a success, never a second
+    /// pledge (Giving Cycle 5). False when absent.
+    var reused = false
+    /// "Charge me automatically" could not be set up: the pledge WAS made,
+    /// and these are the server's words for why. Nil when absent.
+    var autoScheduleError: String? = nil
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         if let nested = try? c.decodeIfPresent(Pledge.self, forKey: .pledge), !nested.pledgeId.isEmpty {
@@ -808,8 +824,11 @@ struct PledgeResult: Decodable, Sendable {
         } else {
             pledge = try Pledge(from: d)
         }
+        reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
+        autoScheduleError = (try? c.decodeIfPresent(String.self, forKey: .autoScheduleError))
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
     }
-    enum CodingKeys: String, CodingKey { case pledge }
+    enum CodingKeys: String, CodingKey { case pledge, reused, autoScheduleError }
 }
 
 /// GET /giving/statements?year= — the JSON statement (§5): totals by pledge

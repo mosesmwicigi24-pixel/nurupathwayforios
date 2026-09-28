@@ -715,8 +715,11 @@ extension MemberAPI {
         var autoSchedule: AutoSchedule? = nil
         let idempotencyKey: String
     }
-    static func createPledge(_ body: PledgeCreateBody) async throws -> Pledge {
-        try await APIClient.shared.post("giving/pledges", body: body, as: PledgeResult.self).pledge
+    /// The answer carries the pledge, whether it is one made a moment ago
+    /// (`reused`), and why its automatic collection could not be set up
+    /// (`auto_schedule_error` — the pledge itself WAS made). Giving Cycle 5.
+    static func createPledge(_ body: PledgeCreateBody) async throws -> PledgeResult {
+        try await APIClient.shared.post("giving/pledges", body: body, as: PledgeResult.self)
     }
 
     /// PATCH /giving/pledges/{id} — `{status?: paused|active|cancelled,

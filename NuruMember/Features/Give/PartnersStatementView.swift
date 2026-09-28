@@ -28,6 +28,9 @@
 // none, and the same figures are computed here with PledgeMath from the
 // partnership's pledges + the statement's payments — the rule written in
 // PartnersView's header, so the preview card and this page always agree.
+// Money in more than one currency is shown per currency, shillings first —
+// the server's three sums do not separate currencies, so a year that has
+// more than one is counted here, per pledge (Giving Cycle 5).
 import SwiftUI
 import UIKit
 
@@ -228,6 +231,12 @@ struct PartnersStatementView: View {
         /// (owner, 2026-09-25): kept = on time + late, over those that fell due.
         let kept: (kept: Int, due: Int, late: Int)?
         let givenMinor: Int?
+        /// The Given tile's currency: the pledge payments' own — not the
+        /// year's first currency when that is another.
+        let givenCurrency: String
+        /// "+ US$ 20.00" — pledge money in a second currency, said beside
+        /// the first and never added to it. Nil with one currency.
+        let givenRest: String?
 
         /// What one disciple through a level costs (giving-tier economics:
         /// KSh 20,000). Used ONLY when the server's `per_disciple_minor` is
@@ -256,7 +265,19 @@ struct PartnersStatementView: View {
             } else {
                 kept = nil
             }
-            givenMinor = i.paidMinor.flatMap { $0 >= 0 ? $0 : nil }
+            // The server's `paid_minor` is one sum over every currency: with
+            // pledge money in more than one, the tile reads the payments per
+            // currency instead (shillings first, the rest beside it).
+            let paidBy = PledgeMath.paidByCurrency(s.pledgePayments).filter { $0.totalMinor != 0 }
+            if paidBy.count > 1 {
+                givenMinor = paidBy[0].totalMinor
+                givenCurrency = paidBy[0].currency
+                givenRest = "+ " + paidBy.dropFirst().map { money($0.totalMinor, $0.currency) }.joined(separator: " + ")
+            } else {
+                givenMinor = i.paidMinor.flatMap { $0 >= 0 ? $0 : nil }
+                givenCurrency = paidBy.first?.currency ?? s.currency
+                givenRest = nil
+            }
             if disciples == nil && kept == nil && givenMinor == nil { return nil }
         }
     }
@@ -295,13 +316,14 @@ struct PartnersStatementView: View {
             }
         }
         if let g = t.givenMinor {
-            heroTile("GIVEN", a11y: "Given \(money(g, currency)) toward pledges") {
+            let rest = t.givenRest.map { " \($0)" } ?? ""
+            heroTile("GIVEN", a11y: "Given \(money(g, t.givenCurrency))\(rest) toward pledges") {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Self.currencyPrefix(currency)).font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.75))
+                    Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.75))
                     Text(Self.compactAmount(g)).font(.fraunces(26, .semibold)).foregroundStyle(.white)
                 }
                 .lineLimit(1).minimumScaleFactor(0.6)
-                tileCaption("toward pledges")
+                tileCaption(t.givenRest.map { "toward pledges · \($0)" } ?? "toward pledges")
             }
         }
     }
@@ -411,11 +433,11 @@ struct PartnersStatementView: View {
             let figures = Figures(s, vm.partnership)
             // No hero tiles (an older server sends no `impact`): the three
             // numbers stay on their card.
-            if HeroTiles(s) == nil { summaryCard(figures, s.currency) }
+            if HeroTiles(s) == nil { summaryCard(figures) }
             if let months = s.months, let strip = MonthStrip(months) {
                 faithfulnessSection(strip, s.faithfulness, year: s.year)
             }
-            commitmentsSection(figures.pledges, year: s.year, currency: s.currency)
+            commitmentsSection(figures.pledges, year: s.year)
             if let sentence = seasonSentence(s.season) { seasonCard(sentence) }
             paymentsSection(s)
         } else if vm.statementsLoading || (vm.statements == nil && vm.statementsError == nil) {
@@ -434,22 +456,15 @@ struct PartnersStatementView: View {
         }
     }
 
-    private func summaryCard(_ f: Figures, _ currency: String) -> some View {
+    /// One line per currency in each column (shillings first) — never one
+    /// sum across currencies.
+    private func summaryCard(_ f: Figures) -> some View {
         HStack(alignment: .top, spacing: 8) {
-            summaryColumn("Pledged", money(f.pledged, currency), Nuru.navy)
-            summaryColumn("Paid", money(f.paid, currency), Nuru.successText)
-            summaryColumn("Remaining", money(f.remaining, currency), Nuru.goldLo)
+            partnerSummaryColumn("Pledged", f.byCurrency.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
+            partnerSummaryColumn("Paid", f.byCurrency.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
+            partnerSummaryColumn("Remaining", f.byCurrency.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
         }
         .partnerCard()
-    }
-
-    private func summaryColumn(_ label: String, _ value: String, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased()).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
-            Text(value).font(.inter(16, .semibold)).foregroundStyle(tint)
-                .lineLimit(1).minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Faithfulness — twelve squares, Jan→Dec, and one line
@@ -547,9 +562,10 @@ struct PartnersStatementView: View {
     /// pledge: the SERVER's `progress.nextDue` when it is today or later — it
     /// is ledger-correct (payments fill due dates oldest first, so once
     /// September is paid it says November); otherwise — overdue, or absent —
-    /// the next occurrence of its `due_day` (1–28) on or after today, so an
-    /// overdue pledge still contributes its next upcoming date. With no
-    /// partnership loaded, the statement rows' `due_day`. Nil when none.
+    /// its next instalment on or after today (its `due_day`, never before its
+    /// start, none after its `until_on`), so an overdue pledge still
+    /// contributes its next upcoming date. With no partnership loaded, the
+    /// statement rows' `due_day`. Nil when none.
     private func nextPledgeDue() -> Date? {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
@@ -568,7 +584,7 @@ struct PartnersStatementView: View {
                        cal.startOfDay(for: d) >= today {
                         return cal.startOfDay(for: d)
                     }
-                    return pl.dueDay.flatMap(fromDueDay)
+                    return PledgeMath.nextInstalment(pl, onOrAfter: PledgeMath.today()).flatMap(giveParseDate)
                 }
         } else {
             candidates = (vm.statements?.pledges ?? [])
@@ -604,20 +620,24 @@ struct PartnersStatementView: View {
 
     // MARK: Commitments — one row each; tap opens the pledge
 
-    private func commitmentsSection(_ pledges: [GivingStatements.StatementPledge], year: Int, currency: String) -> some View {
-        // Σ remaining_year_minor; a row without it counts max(pledged −
-        // paid, 0). Hidden when NO row carries it (older server / local-math
-        // rows) — the same rule as Android's remainingThisYear.
+    private func commitmentsSection(_ pledges: [GivingStatements.StatementPledge], year: Int) -> some View {
+        // Σ remaining_year_minor per currency (each pledge in its own); a row
+        // without it counts max(pledged − paid, 0). Hidden when NO row carries
+        // it (older server / local-math rows) — the same rule as Android's
+        // remainingThisYear.
         let carries = pledges.contains { $0.remainingYearMinor != nil }
-        let remaining = pledges.reduce(0) { $0 + ($1.remainingYearMinor ?? max($1.pledgedMinor - $1.paidMinor, 0)) }
+        let remaining = PledgeMath.line(pledges.map {
+            CurrencyTotal(currency: $0.currency, totalMinor: $0.remainingYearMinor ?? max($0.pledgedMinor - $0.paidMinor, 0))
+        })
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 eyebrow("COMMITMENTS")
                 Spacer()
                 if carries {
                     Text("Remaining this year").font(.inter(11)).foregroundStyle(Nuru.ink400)
-                    Text(money(remaining, currency))
+                    Text(remaining)
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                 }
             }
             if pledges.isEmpty {
@@ -674,8 +694,9 @@ struct PartnersStatementView: View {
         let rows = s.pledgePayments
         let pending = s.pendingPledgePayments
         let groups = monthGroups(rows)
-        // Settled rows only — a payment still processing is never totalled.
-        let listTotal = rows.reduce(0) { $0 + $1.amountMinor }
+        // Settled rows only — a payment still processing is never totalled —
+        // and per currency, never one sum across them.
+        let listTotal = PledgeMath.line(PledgeMath.paidByCurrency(rows))
         return VStack(alignment: .leading, spacing: 8) {
             eyebrow("PAYMENTS")
             if rows.isEmpty && pending.isEmpty {
@@ -706,7 +727,7 @@ struct PartnersStatementView: View {
                             Text(g.label.uppercased())
                                 .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
                             Spacer()
-                            Text(money(g.subtotal, s.currency))
+                            Text(g.subtotal)
                                 .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
                         }
                         .padding(.top, gi == 0 && pending.isEmpty ? 0 : 16)
@@ -730,8 +751,9 @@ struct PartnersStatementView: View {
                         Text("TOTAL PAID \(String(s.year))")
                             .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
                         Spacer()
-                        Text(money(listTotal, s.currency))
+                        Text(listTotal)
                             .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .padding(.top, 10)
                 }
@@ -743,7 +765,7 @@ struct PartnersStatementView: View {
     /// Newest month first (the payments are already newest first), grouped
     /// by the member's LOCAL month — a gift at 22:30 UTC on the 30th is a
     /// gift on the 1st in Nairobi, and the row's day says so.
-    private func monthGroups(_ rows: [PledgePayment]) -> [(key: String, label: String, subtotal: Int, rows: [PledgePayment])] {
+    private func monthGroups(_ rows: [PledgePayment]) -> [(key: String, label: String, subtotal: String, rows: [PledgePayment])] {
         let cal = Calendar.current
         var order: [String] = []
         var map: [String: [PledgePayment]] = [:]
@@ -760,7 +782,7 @@ struct PartnersStatementView: View {
         }
         return order.map { k in
             let rs = map[k] ?? []
-            return (key: k, label: monthLabel(k), subtotal: rs.reduce(0) { $0 + $1.amountMinor }, rows: rs)
+            return (key: k, label: monthLabel(k), subtotal: PledgeMath.line(PledgeMath.paidByCurrency(rs)), rows: rs)
         }
     }
 
@@ -868,48 +890,41 @@ struct PartnersStatementView: View {
     // MARK: The page's numbers — server first, PledgeMath when absent
 
     private struct Figures {
-        let pledged: Int
-        let paid: Int
-        let remaining: Int
+        /// Pledged / Paid / Remaining, one entry per currency, shillings
+        /// first (PledgeMath.figures — the preview card's numbers too).
+        let byCurrency: [PartnerFigures]
         let pledges: [GivingStatements.StatementPledge]
 
         init(_ s: GivingStatements, _ p: Partnership?) {
-            let localPledged = PledgeMath.pledgedMinor(p?.pledges ?? [], year: s.year)
-            let localPaid = PledgeMath.paidMinor(s)
-            pledged = s.pledgedMinor ?? localPledged
-            paid = s.paidMinor ?? localPaid
-            remaining = s.remainingMinor ?? PledgeMath.remainingMinor(pledged: pledged, paid: paid)
+            byCurrency = PledgeMath.figures(s, pledges: p?.pledges ?? [])
             pledges = s.pledges.isEmpty ? Self.localPledges(s, p) : s.pledges
         }
 
         /// The fallback rows: every partnership pledge that lived in the
-        /// year (a due date in it, or a payment in it), with the year's
-        /// pledged / paid / kept computed by the same rule as the summary.
-        /// A cancelled pledge appears only when money was paid toward it
-        /// that year (so the payments are explained) and pledges nothing.
+        /// year (an instalment or due date in it, or a payment in it), with
+        /// the year's pledged / paid / kept computed by the same rule as the
+        /// summary. A cancelled pledge appears only when money was paid
+        /// toward it that year (so the payments are explained) and pledges
+        /// nothing.
         static func localPledges(_ s: GivingStatements, _ p: Partnership?) -> [GivingStatements.StatementPledge] {
             guard let p else { return [] }
-            let cal = Calendar.current
             let year = s.year
-            let thisYear = cal.component(.year, from: Date())
-            let dueThrough: Date? = year == thisYear ? Date() : nil
+            let today = PledgeMath.today()
+            // Fallen due so far: this year through today; any other, whole.
+            let dueThrough: String? = Int(today.prefix(4)) == year ? today : nil
             return p.pledges.compactMap { pl in
                 let pays = s.payments.filter { $0.pledgeId == pl.pledgeId }
                 let paid = pays.reduce(0) { $0 + $1.amountMinor }
                 let cancelled = pl.status == "cancelled"
                 if cancelled && pays.isEmpty { return nil }
-                let pledged: Int
+                let pledged = PledgeMath.pledgedInYear(pl, year: year)
                 let dueCount: Int
                 if pl.isMonthly {
-                    let dues = PledgeMath.monthlyDueDates(pl, in: year)
-                    guard dues > 0 || !pays.isEmpty else { return nil }
-                    pledged = cancelled ? 0 : (pl.amountMinor ?? 0) * dues
-                    dueCount = PledgeMath.monthlyDueDates(pl, in: year, through: dueThrough)
+                    guard !PledgeMath.instalments(pl, in: year).isEmpty || !pays.isEmpty else { return nil }
+                    dueCount = PledgeMath.instalments(pl, in: year, through: dueThrough).count
                 } else {
-                    let dueInYear = pl.dueOn.flatMap(giveParseDate)
-                        .map { cal.component(.year, from: $0) == year } ?? false
+                    let dueInYear = PledgeMath.churchDay(pl.dueOn).map { Int($0.prefix(4)) == year } ?? false
                     guard dueInYear || !pays.isEmpty else { return nil }
-                    pledged = (cancelled || !dueInYear) ? 0 : (pl.targetMinor ?? 0)
                     dueCount = dueInYear ? 1 : 0
                 }
                 // `kept` counts DUE DATES kept; counting payments, it is
