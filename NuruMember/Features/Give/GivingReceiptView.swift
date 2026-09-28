@@ -52,6 +52,13 @@ private enum ReceiptState {
         }
     }
 
+    /// The money reached (or is on its way to) the fund.
+    var reachesFund: Bool {
+        switch self {
+        case .failed, .refunded: return false
+        default: return true
+        }
+    }
 }
 
 struct GivingReceiptView: View {
@@ -185,7 +192,9 @@ struct GivingReceiptView: View {
             VStack(spacing: Nuru.S.base) {
                 hero(d, state).gentleEntrance()
                 details(d).gentleEntrance(delay: 0.06)
-                whereItWent(d).gentleEntrance(delay: 0.10)
+                // "100% reaches the fund" is a promise about money that moves —
+                // never said under a gift that failed or was refunded.
+                if state.reachesFund { whereItWent(d).gentleEntrance(delay: 0.10) }
                 actions(d).gentleEntrance(delay: 0.14)
                 verseFooter.gentleEntrance(delay: 0.18)
             }
@@ -242,6 +251,22 @@ struct GivingReceiptView: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(chip.bg, in: Capsule())
                     .padding(.top, 4)
+            }
+
+            // Why it did not go through, in the server's words (Giving Cycle
+            // 1): what happened, then what to do next and whether money moved.
+            if case .failed = state, let f = d.failure, !f.reason.isEmpty {
+                VStack(spacing: 4) {
+                    Text(f.reason)
+                        .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626))
+                    if !f.hint.isEmpty {
+                        Text(f.hint)
+                            .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)

@@ -502,6 +502,19 @@ struct GivingStatementView: View {
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         .lineLimit(1)
                 }
+                // A failed gift says why, in the server's words (Giving
+                // Cycle 1): what happened, then what to do next.
+                if g.status == "failed", let f = g.failure, !f.reason.isEmpty {
+                    Text(f.reason)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                    if !f.hint.isEmpty {
+                        Text(f.hint)
+                            .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
             Spacer(minLength: Nuru.S.sm)
             VStack(alignment: .trailing, spacing: 5) {

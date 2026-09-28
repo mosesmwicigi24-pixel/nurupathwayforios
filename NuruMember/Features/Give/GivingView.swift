@@ -1,13 +1,24 @@
 // Give — the native port of the Figma GiveTab (Final Pathway Portal make). A cream
 // hero, "repeat last gift", five funds, a centred big-number amount with presets +
 // a custom keypad, a frequency switch with an honest recurring summary, a
-// reorderable pay-method list (M-Pesa / Airtel / Equity / Card / Apple-Google /
-// PayPal) with brand badges, cover-the-fee, active schedules (tap to manage or
-// cancel), recent giving, a scripture strip and a quiet sticky CTA. Money is
-// server-authoritative + online-only (§5.6): we create a real intent (mobile-money
-// STK / PayPal approve) or a real server-charged schedule and NEVER fabricate a
-// payment state — the ceremony polls GET /giving/transactions/{id} for the true
-// outcome. The card path needs the Stripe SDK (SAQ-A tokenisation) and stays SOON.
+// reorderable pay-method list with brand badges, cover-the-fee, active schedules
+// (tap to manage or cancel), recent giving, a scripture strip and a quiet sticky
+// CTA. Money is server-authoritative + online-only (§5.6): we create a real intent
+// (mobile-money STK / PayPal approve) or a real server-charged schedule and NEVER
+// fabricate a payment state — the ceremony polls GET /giving/transactions/{id}
+// for the true outcome. The card path needs the Stripe SDK (SAQ-A tokenisation)
+// and stays SOON.
+//
+// GIVING CYCLE 1 (2026-09-28): the M-Pesa prompt used to go to ONE hardcoded
+// number for every member. It now goes to the number this member last gave from
+// on this phone, else their profile number (`phone_on_file`), else one they type
+// — validated as a Kenyan mobile number and sent as `phone_number`. The method
+// list is the server's (GET /giving/methods): only rails that can take money are
+// selectable, the rest wear SOON; weekly / monthly only on a recurring rail. A
+// failed gift says why in the server's words (`failure.reason` + `hint`); a
+// prompt still waiting on the phone (409 GIFT_IN_PROGRESS) is watched rather than
+// failed; paused schedules are labelled and cancelled ones are not listed. The
+// rules themselves live in GivingRules.swift.
 //
 // PLEDGE-PAY MODE (2026-09-26): while a pledge (or a need) preset is active the
 // SERVER routes the money — a pledge to its own `pays_to` fund, a need to its
@@ -46,30 +57,45 @@ private let presets = [200, 500, 1000, 2500, 5000]
 
 // MARK: - Pay methods (Figma brand badges — square, rounded-xl)
 
+/// How a rail LOOKS. Which rails appear, and whether one can take money, is
+/// the server's answer (GET /giving/methods) — this is only the paint.
 private struct PayMethod: Identifiable {
     let key, label, sub: String
-    let provider: String?           // nil → "SOON" (no provider wired)
     let badgeText: String           // short logo text inside the badge
     let badgeBg, badgeFg: UInt32    // brand colours for the badge
     let icon: Lucide?               // shown instead of badge text when set
     var id: String { key }
 }
-private let baseMethods: [PayMethod] = [
-    PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "STK push to your phone",  provider: "mpesa",
+private let methodLooks: [PayMethod] = [
+    PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "STK push to your phone",
               badgeText: "M-PESA", badgeBg: 0x16A34A, badgeFg: 0xFFFFFF, icon: nil),
-    PayMethod(key: "airtel",   label: "Pay with Airtel Money",       sub: "Mobile money",            provider: "airtel",
+    PayMethod(key: "airtel",   label: "Pay with Airtel Money",       sub: "Mobile money",
               badgeText: "AIRTEL", badgeBg: 0xDC2626, badgeFg: 0xFFFFFF, icon: nil),
-    PayMethod(key: "equity",   label: "Pay with Equity Bank",        sub: "Bank account",            provider: nil,
+    PayMethod(key: "equity",   label: "Pay with Equity Bank",        sub: "Bank account",
               badgeText: "", badgeBg: 0xA6093D, badgeFg: 0xFFFFFF, icon: .landmark),
-    PayMethod(key: "card",     label: "Pay with Card",               sub: "Visa · Mastercard",       provider: "card",
+    PayMethod(key: "card",     label: "Pay with Card",               sub: "Visa · Mastercard",
               badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .creditCard),
-    PayMethod(key: "applepay", label: "Pay with Apple / Google Pay", sub: "Device wallet",           provider: nil,
+    PayMethod(key: "applepay", label: "Pay with Apple / Google Pay", sub: "Device wallet",
               badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet),
-    PayMethod(key: "paypal",   label: "Pay with PayPal",             sub: "PayPal balance / linked", provider: "paypal",
+    PayMethod(key: "paypal",   label: "Pay with PayPal",             sub: "PayPal balance / linked",
               badgeText: "PP", badgeBg: 0xE8F1FB, badgeFg: 0x0070BA, icon: nil),
 ]
 
-private let registeredPhone = "+254700706875"
+/// A rail's paint; one the server lists that this build has no badge for
+/// gets a plain wallet badge and the server's own label.
+private func methodLook(_ rail: GivingMethod) -> PayMethod {
+    methodLooks.first { $0.key == rail.key }
+        ?? PayMethod(key: rail.key, label: "Pay with \(rail.label.isEmpty ? givingMethodName(rail.key) : rail.label)",
+                     sub: "", badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet)
+}
+
+/// One row of the method list: the server's rail and how it looks.
+private struct MethodRow: Identifiable {
+    let look: PayMethod
+    let rail: GivingMethod
+    var key: String { rail.key }
+    var id: String { rail.key }
+}
 
 private func feeFor(_ a: Int) -> Int {
     switch a {
@@ -130,6 +156,12 @@ func giveTime(_ iso: String) -> String {
 final class GivingViewModel: ObservableObject {
     @Published var history: [GivingRecord] = []
     @Published var schedules: [GivingSchedule] = []
+    /// The rails this member can give with here (GET /giving/methods). M-Pesa
+    /// alone until the server answers — and for good if it cannot (Cycle 1).
+    @Published var methods: GivingMethods = .fallback()
+    /// True once the methods call has answered or failed at least once — the
+    /// prompt number is chosen then, when `phone_on_file` is known.
+    @Published var methodsSettled = false
     @Published var loading = true
     private var givingChanged: AnyCancellable?
 
@@ -147,6 +179,7 @@ final class GivingViewModel: ObservableObject {
     private var loadSeq = 0
     private var appliedHistorySeq = 0
     private var appliedSchedulesSeq = 0
+    private var appliedMethodsSeq = 0
 
     func load() async {
         loading = true
@@ -154,12 +187,24 @@ final class GivingViewModel: ObservableObject {
         let seq = loadSeq
         async let h = MemberAPI.givingHistory()
         async let s = MemberAPI.schedules()
+        async let m = MemberAPI.givingMethods()
         // A failed refetch keeps what is on screen (stale-while-revalidate)
         // rather than blanking the year pill and Recent giving.
         if let v = try? await h, seq > appliedHistorySeq { appliedHistorySeq = seq; history = v }
         if let v = try? await s, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
+        // Methods too: a failed call keeps the last answer (M-Pesa alone if
+        // there never was one); an answer with no rails in it is no answer.
+        if let v = try? await m, seq > appliedMethodsSeq {
+            appliedMethodsSeq = seq
+            let next = v.methods.isEmpty ? GivingMethods.fallback(phoneOnFile: v.phoneOnFile) : v
+            if next != methods { methods = next }
+        }
+        if !methodsSettled { methodsSettled = true }
         loading = false
     }
+
+    /// The schedules Give lists under ACTIVE SCHEDULES (never a cancelled one).
+    var listedSchedules: [GivingSchedule] { GiveSchedules.listed(schedules) }
 
     var yearTotalMinor: Int {
         let yr = Calendar.current.component(.year, from: Date())
@@ -193,6 +238,8 @@ struct GivingView: View {
     /// device, default visible (UserDefaults `give.hideYearTotal`).
     @AppStorage("give.hideYearTotal") private var hideYearTotal = false
     @EnvironmentObject private var tabs: TabRouter
+    /// Whose number to remember — the prompt number is kept per member.
+    @EnvironmentObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
 
     /// The Give form's normal state — what the tab opens with, and what a
@@ -229,10 +276,28 @@ struct GivingView: View {
     @State private var intentPledgeTitle: String?
     @State private var intentIsPledge = false
     @State private var method = "mpesa"
-    @State private var methodOrder = baseMethods.map(\.key)
+    /// The member's order for the server's rails (up / down chevrons).
+    @State private var methodOrder = GivingMethods.fallback().methods.map(\.key)
     @State private var freq = "once"          // once | weekly | monthly
     @State private var coverFee = false
-    @State private var mpesaPhone = registeredPhone
+    /// The number the mobile-money prompt goes to — as typed. Starts empty and
+    /// is filled once (seedPhone): the member's last number on this phone,
+    /// else their profile number, else it stays empty and the sheet asks.
+    /// NEVER a built-in number (it once was one, for every member — Cycle 1).
+    @State private var mpesaPhone = ""
+    /// The value seedPhone last put there — replaced by a better default (the
+    /// remembered number once the profile loads) only while still untouched.
+    @State private var seededPhone: String?
+    private let phoneMemory = GivingPhoneMemory()
+    /// The E.164 number the accepted prompt was actually sent to — what the
+    /// "Prompt sent to" chip says. Nil for PayPal and for a waiting prompt.
+    @State private var promptPhone: String?
+    /// The server's reason + hint for a gift the poll found failed.
+    @State private var ceremonyFailure: GiftFailure?
+    /// Set while the ceremony watches a prompt the server said was ALREADY
+    /// waiting (409 GIFT_IN_PROGRESS) — described from that gift's own record,
+    /// since it may not be the gift on the form.
+    @State private var waitingGift: WaitingGift?
     /// "Named giving" (custom sheet, optional): set from the custom-amount
     /// keypad sheet. Rides the M-Pesa AccountReference + persists for
     /// receipts/statements/portal Finance.
@@ -279,8 +344,11 @@ struct GivingView: View {
     }
     private var fee: Int { coverFee ? feeFor(amount) : 0 }
     private var total: Int { amount + fee }
-    /// A pledge / need payment is always one-time (the switch is hidden).
-    private var recurring: Bool { freq != "once" && !payMode }
+    /// A pledge / need payment is always one-time (the switch is hidden), and
+    /// so is a gift on a rail the server does not run schedules on.
+    private var recurring: Bool { freq != "once" && !payMode && recurringAllowed }
+    /// The selected rail can carry a weekly / monthly gift (server's word).
+    private var recurringAllowed: Bool { vm.methods.allowsRecurring(method) }
     /// A pledge or need preset is active — the server routes the money.
     private var payMode: Bool { pledgeId != nil || needId != nil }
     /// The Give segment is what the member is looking at.
@@ -300,8 +368,11 @@ struct GivingView: View {
         return error is URLError
     }
     private var cadenceWord: String { freq == "weekly" ? "week" : "month" }
-    private var orderedMethods: [PayMethod] {
-        methodOrder.compactMap { k in baseMethods.first { $0.key == k } }
+    /// The server's rails in the member's order, each with its paint.
+    private var orderedMethods: [MethodRow] {
+        methodOrder.compactMap { k in
+            vm.methods.method(k).map { MethodRow(look: methodLook($0), rail: $0) }
+        }
     }
     private var freqLabel: String {
         switch freq { case "weekly": return "weekly"; case "monthly": return "monthly"; default: return "one-time" }
@@ -316,13 +387,13 @@ struct GivingView: View {
                         if !payMode, let g = vm.lastGift { repeatCard(g) }
                         if payMode { payModeCard.transition(.opacity) } else { fundsSection }
                         amountCard
-                        if !payMode { frequencyRow }
+                        if !payMode && recurringAllowed { frequencyRow }
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         methodSection
                         coverFeeRow
-                        if !vm.schedules.isEmpty { schedulesSection }
+                        if !vm.listedSchedules.isEmpty { schedulesSection }
                         recentSection
                         scriptureStrip
                         secureNote
@@ -350,7 +421,15 @@ struct GivingView: View {
         // mount, the segment switched back, the Give tab re-selected (tabs
         // and segments stay mounted, so .task alone never re-runs) — and on
         // return to the foreground; what is on screen stays meanwhile.
-        .task { await vm.load() }
+        .task { seedPhone(); await vm.load() }
+        // The server's rails (Cycle 1): keep the member's order, move off a
+        // rail that can no longer be picked, and fill the prompt number once
+        // `phone_on_file` is known (or known to be unavailable).
+        .onChange(of: vm.methods) { _, m in syncMethods(m) }
+        .onChange(of: vm.methodsSettled) { _, _ in seedPhone() }
+        .onChange(of: auth.profile?.userId) { _, _ in seedPhone() }
+        // (A seed skipped while the number sheet was open lands once it shuts.)
+        .onChange(of: showMpesaSheet) { _, open in if !open { seedPhone() } }
         .onChange(of: segment) { _, s in
             if s == .give && tabs.selected == .give { Task { await vm.load() } }
         }
@@ -394,15 +473,23 @@ struct GivingView: View {
             }
         }
         .sheet(isPresented: $showMpesaSheet) {
-            MobileMoneySheet(methodKey: method, phone: $mpesaPhone) {
-                let provider = method == "airtel" ? "airtel" : "mpesa"
-                Task { await submitIntent(provider: provider, currency: "KES", phone: mpesaPhone) }
+            // Confirms the number the prompt goes to — for a one-time gift and
+            // for a schedule, which prompts it every cycle. Hands back E.164.
+            MobileMoneySheet(methodKey: method, phone: $mpesaPhone,
+                             phoneOnFile: vm.methods.phoneOnFile,
+                             cadenceWord: recurring ? cadenceWord : nil) { number in
+                let provider = method
+                if recurring {
+                    Task { await createSchedule(provider: provider, phone: number) }
+                } else {
+                    Task { await submitIntent(provider: provider, currency: "KES", phone: number) }
+                }
             }
         }
         .sheet(item: $scheduleDetail) { s in
             ScheduleDetailSheet(schedule: s,
                                 onClose: { scheduleDetail = nil },
-                                onCancelled: {
+                                onChanged: {   // cancelled or resumed
                                     scheduleDetail = nil
                                     GivingSignal.post(from: vm)   // Partners' standing derives from schedules
                                     Task { await vm.load() }
@@ -415,19 +502,25 @@ struct GivingView: View {
                                  withAnimation(.easeInOut(duration: 0.2)) { resetFormToDefaults() }
                              }
                          }) {
+            // A waiting prompt (409 GIFT_IN_PROGRESS) is described from its
+            // own record — it may not be the gift on the form.
             GiveCeremonyView(stage: ceremony ?? "failed",
                              note: ceremonyNote,
-                             amountLabel: ksh(total),
+                             failure: ceremonyFailure,
+                             amountLabel: waitingGift?.amountLabel ?? ksh(total),
                              fundLabel: fund.label,
-                             destination: ceremonyDestination,
-                             giftName: accountName.isEmpty ? nil : accountName,
-                             phone: (method == "mpesa" || method == "airtel") ? mpesaPhone : nil,
+                             destination: waitingGift?.destination ?? ceremonyDestination,
+                             giftName: waitingGift != nil ? waitingGift?.giftName : (accountName.isEmpty ? nil : accountName),
+                             phone: waitingGift == nil ? promptPhone : nil,
                              refCode: successRef,
                              txId: pendingTxId,
                              cadenceWord: cadenceWord,
                              nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateFull(scheduledNextAt),
                              onDone: { endCeremony() },
-                             onRetry: { endCeremony(); Task { await give() } })
+                             // Back to the form with the same amount and fund
+                             // (a failure keeps them) — nothing is re-sent
+                             // until the member taps Give again.
+                             onRetry: { endCeremony() })
         }
     }
 
@@ -725,27 +818,30 @@ struct GivingView: View {
     }
 
     @ViewBuilder
-    private func methodRow(_ m: PayMethod, index: Int) -> some View {
-        let on = method == m.key
-        let soon = m.provider == nil
+    private func methodRow(_ m: MethodRow, index: Int) -> some View {
+        // A rail the server says cannot take money here (or this build cannot
+        // complete) wears SOON / UNAVAILABLE and cannot be picked.
+        let badge = vm.methods.unavailableBadge(m.key)
+        let on = method == m.key && badge == nil
+        let soon = badge != nil
         HStack(spacing: 8) {
             Button {
                 guard !soon, method != m.key else { return }
                 Haptics.selection()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { method = m.key }
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selectMethod(m.key) }
             } label: {
                 HStack(spacing: Nuru.S.md) {
-                    methodBadge(m)
+                    methodBadge(m.look)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(m.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+                        Text(m.look.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                             .lineLimit(1).minimumScaleFactor(0.85)
                         if on {
                             Text(activeDetail(m)).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
                         }
                     }
                     Spacer(minLength: Nuru.S.sm)
-                    if soon {
-                        Text("SOON")
+                    if let badge {
+                        Text(badge)
                             .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.goldChipText)
                             .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(Nuru.goldChipBg, in: Capsule())
@@ -781,8 +877,11 @@ struct GivingView: View {
         .opacity(soon ? 0.7 : 1)
     }
 
-    private func activeDetail(_ m: PayMethod) -> String {
-        (m.key == "mpesa" || m.key == "airtel") ? mpesaPhone : m.sub
+    /// Under the selected rail: the number its prompt will go to, once there
+    /// is a valid one (the sheet asks for it otherwise).
+    private func activeDetail(_ m: MethodRow) -> String {
+        guard m.rail.needsPhone, let number = KenyanPhone.normalize(mpesaPhone) else { return m.look.sub }
+        return number
     }
 
     private func methodBadge(_ m: PayMethod) -> some View {
@@ -819,12 +918,14 @@ struct GivingView: View {
 
     // MARK: Active schedules (horizontal scroll, tap to manage)
 
+    /// Active schedules, then paused ones (labelled) — never a cancelled one
+    /// (GiveSchedules.listed; the server returns every schedule ever made).
     private var schedulesSection: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             overline("ACTIVE SCHEDULES")
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 10) {
-                    ForEach(vm.schedules) { s in
+                HStack(alignment: .top, spacing: 10) {
+                    ForEach(vm.listedSchedules) { s in
                         Button {
                             Haptics.tap()
                             scheduleDetail = s
@@ -838,11 +939,18 @@ struct GivingView: View {
     }
 
     private func scheduleCard(_ s: GivingSchedule) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let paused = s.status.lowercased() == "paused"
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
                 Icon(.repeat, size: 12, color: Nuru.gold)
                 Text(s.frequency == "weekly" ? "WEEKLY" : "MONTHLY")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
+                if paused {
+                    Spacer(minLength: 4)
+                    Text("Paused").font(.nMicro).foregroundStyle(Nuru.ink600)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Nuru.mutedBg, in: Capsule())
+                }
             }
             Text(ksh(s.amountMinor / 100))
                 .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
@@ -851,9 +959,19 @@ struct GivingView: View {
             Text(s.fund.capitalized).font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                 .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
-            Text("Next \(giveDateShort(s.nextRunAt))").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+            // A paused schedule charges nothing — its old next date is not a promise.
+            Text(paused ? "Nothing is owed" : "Next \(giveDateShort(s.nextRunAt))")
+                .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 .lineLimit(1)
                 .padding(.top, 5)
+            // Why the last charge failed, while it is still failing — the
+            // server's own words.
+            if let f = s.lastFailure, !f.reason.isEmpty {
+                Text(f.reason)
+                    .font(.inter(10, .semibold)).foregroundStyle(Nuru.urgentText)
+                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 5)
+            }
         }
         .frame(width: 150, alignment: .leading)
         .padding(12)
@@ -1102,41 +1220,46 @@ struct GivingView: View {
 
     private func give() async {
         guard amount > 0, !submitting else { return }
-        guard let m = baseMethods.first(where: { $0.key == method }), let provider = m.provider else {
-            ceremonyNote = "This method is coming soon."; ceremony = "failed"; return
+        ceremonyFailure = nil; waitingGift = nil
+        // Only a rail the server says can take money here (Cycle 1). The form
+        // moves off any other as the methods load, so landing here means none
+        // can — say so rather than send a request that cannot succeed.
+        guard vm.methods.isSelectable(method), let rail = vm.methods.method(method) else {
+            ceremonyNote = vm.methods.unavailableNote(method); ceremony = "failed"; return
         }
-        if recurring { await createSchedule(provider: provider); return }
-        switch provider {
-        case "mpesa", "airtel":
-            // Mobile money: confirm the number, then push the STK prompt.
+        if rail.needsPhone {
+            // Mobile money — a one-time gift or a schedule alike: confirm the
+            // number the prompt goes to; the sheet sends it (as E.164).
             showMpesaSheet = true
-        case "card":
-            // Card requires the Stripe SDK (client-side tokenisation, SAQ-A) — not
-            // yet integrated. Surfaced rather than faked.
-            ceremonyNote = "Card giving needs the Stripe step — coming soon. Try M-Pesa for now."
-            ceremony = "failed"
+            return
+        }
+        if recurring { await createSchedule(provider: method, phone: nil); return }
+        switch method {
         case "paypal":
             await submitIntent(provider: "paypal", currency: "USD", phone: nil)
         default:
-            ceremonyNote = "This method is coming soon."; ceremony = "failed"
+            // A rail with no in-app flow (a card needs the Stripe step, SAQ-A)
+            // is never selectable; surfaced rather than faked if it ever is.
+            ceremonyNote = vm.methods.unavailableNote(method); ceremony = "failed"
         }
     }
 
     /// POST /giving/schedules — a real server-charged recurring gift. The server
     /// makes the first charge on the next cycle boundary (never faked here).
-    private func createSchedule(provider: String) async {
-        guard provider == "mpesa" || provider == "airtel" else {
-            ceremonyNote = provider == "card"
-                ? "Recurring card gifts need the Stripe step — coming soon. Use M-Pesa or Airtel Money."
-                : "Recurring gifts work with M-Pesa or Airtel Money for now."
+    /// `phone` is the number every cycle's prompt goes to (Cycle 1).
+    private func createSchedule(provider: String, phone: String?) async {
+        guard vm.methods.allowsRecurring(provider) else {
+            ceremonyNote = "Recurring gifts work with M-Pesa for now."
             ceremony = "failed"
             return
         }
         guard !submitting else { return }   // one request in flight, ever
         submitting = true; defer { submitting = false }
+        ceremonyFailure = nil; waitingGift = nil
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
             let frequency: String; let method: String; let idempotencyKey: String
+            let phoneNumber: String?
         }
         struct Created: Decodable {
             let scheduleId: String; let status: String; let nextRunAt: String; let reused: Bool
@@ -1144,9 +1267,11 @@ struct GivingView: View {
         do {
             let res = try await APIClient.shared.post("giving/schedules",
                 body: Body(fund: fund.code, amountMinor: total * 100, currency: "KES",
-                           frequency: freq, method: provider, idempotencyKey: submissionKey),
+                           frequency: freq, method: provider, idempotencyKey: submissionKey,
+                           phoneNumber: phone),
                 as: Created.self)
             submissionKey = UUID().uuidString   // answered — a replay (`reused`) is handled the same
+            if let phone { phoneMemory.remember(phone, for: auth.profile?.userId) }
             scheduledNextAt = res.nextRunAt
             ceremony = "scheduled"
             Haptics.success()   // the server really created the schedule
@@ -1155,7 +1280,8 @@ struct GivingView: View {
         } catch {
             // Keep the key ONLY when the server never answered.
             if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
-            ceremonyNote = (error as? APIError)?.errorDescription ?? "Couldn't create the schedule."
+            // The server's own words — 409 SCHEDULE_EXISTS and the 422s too.
+            ceremonyNote = GiveRefusal.from(error, fallback: "Couldn't create the schedule.").message
             ceremony = "failed"
             Haptics.error()
         }
@@ -1168,6 +1294,7 @@ struct GivingView: View {
         submitting = true; defer { submitting = false }
         paypalOrderId = nil
         intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
+        waitingGift = nil; ceremonyFailure = nil; promptPhone = nil
         do {
             let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
                                                  currency: currency, method: provider, phoneNumber: phone,
@@ -1177,6 +1304,13 @@ struct GivingView: View {
             // The server answered: this key is spent. A replay (`reused: true`,
             // the existing transaction) is handled exactly like a fresh one.
             submissionKey = UUID().uuidString
+            // The server took a prompt to this number: it is where the next
+            // gift from this phone starts (kept per member), and what the
+            // ceremony says the prompt went to.
+            if let phone {
+                phoneMemory.remember(phone, for: auth.profile?.userId)
+                promptPhone = phone
+            }
             pendingTxId = res.transactionId
             successRef = res.providerRef
             // The server's word on where the gift went (pledge names
@@ -1206,10 +1340,37 @@ struct GivingView: View {
             // Pay tap then replays it and gets the transaction back if the
             // request did land. After any HTTP response, a fresh key.
             if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
-            ceremonyNote = (error as? APIError)?.errorDescription ?? "Something went wrong."
-            ceremony = "failed"
-            Haptics.error()
+            switch GiveRefusal.from(error, fallback: "Something went wrong.") {
+            case let .promptWaiting(tx, message):
+                // Not a failure: this member's prompt from a moment ago is
+                // still on their phone (409 GIFT_IN_PROGRESS). Watch that one.
+                await watchWaitingPrompt(tx, message: message)
+            case let .message(text):
+                // The server's own words (the 422s included), shown as-is.
+                ceremonyNote = text
+                ceremony = "failed"
+                Haptics.error()
+            }
         }
+    }
+
+    /// 409 GIFT_IN_PROGRESS: a prompt this member was sent a moment ago is
+    /// still waiting on their phone, and a second would only fail as "busy".
+    /// Rather than fail, the ceremony watches THAT transaction — the same
+    /// polling as a fresh gift — and describes it from the server's record of
+    /// it (amount, fund, pledge), since it may not be the gift on the form.
+    private func watchWaitingPrompt(_ txId: String, message: String) async {
+        pendingTxId = txId
+        successRef = nil
+        ceremonyNote = message
+        waitingGift = .unknown
+        let detail = try? await MemberAPI.givingDetail(txId)
+        if let detail { waitingGift = WaitingGift(detail) }
+        ceremony = "stk"
+        // Already over by the time we asked? Show how it ended.
+        if let detail, await settle(detail) { return }
+        pollTask?.cancel()
+        pollTask = Task { await watchOutcome(txId) }
     }
 
     /// Polls the REAL transaction for up to ~60s — the ceremony only ever shows
@@ -1219,31 +1380,44 @@ struct GivingView: View {
             try? await Task.sleep(nanoseconds: 3_000_000_000)
             if Task.isCancelled || ceremony != "stk" { return }
             guard let d = try? await MemberAPI.givingDetail(txId) else { continue }
-            switch d.status {
-            case "succeeded", "settled", "completed":
-                // Show the M-Pesa SMS receipt code when it's landed with the
-                // settlement; fall back to a short transaction id, never ws_CO_.
-                successRef = d.receiptCode ?? String(d.transactionId.prefix(8)).uppercased()
-                ceremony = "success"
-                Haptics.success()   // only on the server's confirmed outcome
-                GivingSignal.post(from: vm)   // Partners: the pledge payment is in
-                await vm.load()
-                return
-            case "failed", "cancelled":
-                ceremonyNote = "The payment didn't complete — no charge was made."
-                ceremony = "failed"
-                Haptics.error()
-                GivingSignal.post(from: vm)   // Partners: drop the Processing row
-                return
-            default:
-                // Still processing. For a PayPal gift the money only moves when WE
-                // capture the approved order (§5.6) — nudge that along each tick;
-                // the ceremony still keys off the polled status above.
-                attemptPayPalCapture()
-            }
+            // The member may have closed the ceremony while that was in flight.
+            if Task.isCancelled || ceremony != "stk" { return }
+            if await settle(d) { return }
         }
         if ceremony == "stk" {
             ceremonyNote = "Still processing — your gift will appear in Recent giving once it clears."
+        }
+    }
+
+    /// Applies the server's record of the watched gift to the ceremony: true
+    /// once it is final (succeeded or failed), false while still processing.
+    private func settle(_ d: GivingDetail) async -> Bool {
+        if waitingGift != nil { waitingGift = WaitingGift(d) }
+        switch d.status {
+        case "succeeded", "settled", "completed":
+            // Show the M-Pesa SMS receipt code when it's landed with the
+            // settlement; fall back to a short transaction id, never ws_CO_.
+            successRef = d.receiptCode ?? String(d.transactionId.prefix(8)).uppercased()
+            ceremony = "success"
+            Haptics.success()   // only on the server's confirmed outcome
+            GivingSignal.post(from: vm)   // Partners: the pledge payment is in
+            await vm.load()
+            return true
+        case "failed", "cancelled":
+            // Why, in the server's words, when it says (Cycle 1) — the old
+            // generic line only for a server that sends no reason.
+            ceremonyFailure = d.failure.flatMap { $0.reason.isEmpty ? nil : $0 }
+            ceremonyNote = ceremonyFailure == nil ? "The payment didn't complete — no charge was made." : ""
+            ceremony = "failed"
+            Haptics.error()
+            GivingSignal.post(from: vm)   // Partners: drop the Processing row
+            return true
+        default:
+            // Still processing. For a PayPal gift the money only moves when WE
+            // capture the approved order (§5.6) — nudge that along each tick;
+            // the ceremony still keys off the polled status above.
+            attemptPayPalCapture()
+            return false
         }
     }
 
@@ -1313,8 +1487,42 @@ struct GivingView: View {
     private func applyRepeat(_ g: GivingRecord) {
         amount = g.amountMinor / 100
         if funds.contains(where: { $0.code == g.fund }) { fundCode = g.fund }
-        if let m = g.method, baseMethods.contains(where: { $0.key == m }) { method = m }
+        // Only onto a rail that can take money here NOW (Cycle 1).
+        if let m = g.method, vm.methods.isSelectable(m) { selectMethod(m) }
         accountName = g.accountName ?? ""
+    }
+
+    /// Selects a rail. One that cannot carry a schedule turns the gift back to
+    /// one-time, so the hidden switch never comes back set to a rhythm.
+    private func selectMethod(_ key: String) {
+        method = key
+        if !vm.methods.allowsRecurring(key) && freq != "once" { freq = "once" }
+    }
+
+    /// The server's rails arrived or changed: keep the member's order, move off
+    /// a rail that can no longer be picked, and fill the prompt number.
+    private func syncMethods(_ m: GivingMethods) {
+        let order = GivingRails.mergedOrder(current: methodOrder, server: m.methods.map(\.key))
+        if order != methodOrder { methodOrder = order }
+        if let pick = m.selection(keeping: method), pick != method {
+            selectMethod(pick)
+        } else if !m.allowsRecurring(method) && freq != "once" {
+            freq = "once"
+        }
+        seedPhone()
+    }
+
+    /// Fills the prompt number while the member has not chosen one: the number
+    /// they last gave from on this phone, else their profile number (Cycle 1).
+    /// Never while the number sheet is open, never over a number they typed,
+    /// and never a number that is not theirs.
+    private func seedPhone() {
+        guard !showMpesaSheet, mpesaPhone.isEmpty || mpesaPhone == seededPhone else { return }
+        let remembered = phoneMemory.phone(for: auth.profile?.userId)
+        guard let next = GivingPhoneMemory.initial(remembered: remembered, onFile: vm.methods.phoneOnFile),
+              next != mpesaPhone else { return }
+        mpesaPhone = next
+        seededPhone = next
     }
 
     /// Reorder with a light tap and a spring, so rows glide instead of jumping.
@@ -1503,15 +1711,32 @@ private struct GiveKeypadSheet: View {
 
 // MARK: - Mobile-money number sheet (M-Pesa / Airtel)
 
+/// Confirms the number the prompt goes to (Giving Cycle 1). It opens on the
+/// member's own number when Give has one — the one they last gave from, else
+/// their profile's — or empty, and sends nothing until the field holds a
+/// Kenyan mobile number. Hands the number back as E.164.
 private struct MobileMoneySheet: View {
     let methodKey: String            // mpesa | airtel
     @Binding var phone: String
-    var onSubmit: () -> Void
+    /// The profile's number (the server's `phone_on_file`) — offered as a
+    /// one-tap choice only when the field holds a different one.
+    let phoneOnFile: String?
+    /// "week" | "month" when this confirms a schedule (every cycle prompts
+    /// this number); nil for a one-time gift.
+    var cadenceWord: String? = nil
+    var onSubmit: (String) -> Void
     @Environment(\.dismiss) private var dismiss
 
     private var isMpesa: Bool { methodKey != "airtel" }
+    private var railName: String { isMpesa ? "M-Pesa" : "Airtel Money" }
     private var tint: Color { Color(hex: isMpesa ? 0x16A34A : 0xDC2626) }
-    private var valid: Bool { phone.filter(\.isNumber).count >= 9 }
+    private var check: KenyanPhone.Check { KenyanPhone.check(phone) }
+    /// The number as E.164 — nil until the field holds a valid one.
+    private var number: String? { KenyanPhone.normalize(phone) }
+    private var numberOnFile: String? {
+        guard let f = phoneOnFile.flatMap(KenyanPhone.normalize), f != number else { return nil }
+        return f
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
@@ -1523,55 +1748,70 @@ private struct MobileMoneySheet: View {
             }
             .padding(.top, Nuru.S.lg)
 
-            Text("We'll send the payment prompt to this number. Your registered number loads by default — edit it for this gift if you like.")
+            Text(cadenceWord.map { "Every \($0), we'll send the \(railName) prompt to this number — enter your PIN there to give." }
+                 ?? "We'll send the \(railName) prompt to this number — enter your PIN there to give.")
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .fixedSize(horizontal: false, vertical: true)
 
-            HStack(spacing: Nuru.S.sm) {
-                Icon(.smartphone, size: 17, color: tint)
-                TextField("07XX XXX XXX", text: $phone)
-                    .keyboardType(.phonePad)
-                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
-            }
-            .padding(.horizontal, 14).frame(height: 52)
-            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(valid ? Nuru.border : Color(hex: 0xF0B4B4), lineWidth: 1))
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: Nuru.S.sm) {
+                    Icon(.smartphone, size: 17, color: tint)
+                    TextField("07XX XXX XXX", text: $phone)
+                        .keyboardType(.phonePad)
+                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+                }
+                .padding(.horizontal, 14).frame(height: 52)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .stroke(check == .invalid ? Color(hex: 0xF0B4B4) : Nuru.border, lineWidth: 1))
 
-            if phone != registeredPhone {
-                Button { phone = registeredPhone } label: {
+                // Why it cannot be sent yet — the server's own words for a
+                // number it would refuse (422 PHONE_REQUIRED).
+                if check == .invalid {
+                    Text(KenyanPhone.invalidMessage)
+                        .font(.inter(11)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if check == .empty {
+                    Text("Add the \(railName) number to prompt for this gift.")
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                }
+            }
+
+            if let onFile = numberOnFile {
+                Button { phone = onFile } label: {
                     HStack(spacing: 5) {
                         Icon(.repeat, size: 12, color: Nuru.goldLo)
-                        Text("Use my registered number (\(registeredPhone))")
+                        Text("Use my number (\(onFile))")
                             .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
                     }
                 }.buttonStyle(.plain)
             }
 
             Button {
-                guard valid else { return }
+                guard let number else { return }
                 Haptics.action()
-                dismiss(); onSubmit()
+                dismiss(); onSubmit(number)
             } label: {
-                Text("Give Now")
+                Text(cadenceWord == nil ? "Give Now" : "Start \(cadenceWord == "week" ? "Weekly" : "Monthly") Gift")
                     .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.pressable)
-            .disabled(!valid)
-            .opacity(valid ? 1 : 0.4)
+            .disabled(number == nil)
+            .opacity(number == nil ? 0.4 : 1)
 
             HStack(spacing: 5) {
                 Icon(.lock, size: 12, color: Color(hex: 0x74808F))
-                Text("Number used only for this transaction prompt")
+                Text(cadenceWord == nil ? "Number used only for this transaction prompt"
+                                        : "Number used only for this gift's prompts")
                     .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             .frame(maxWidth: .infinity, alignment: .center)
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
-        .presentationDetents([.height(400)])
+        .presentationDetents([.height(430)])
         .presentationDragIndicator(.visible)
     }
 }
@@ -1581,18 +1821,30 @@ private struct MobileMoneySheet: View {
 private struct ScheduleDetailSheet: View {
     let schedule: GivingSchedule
     var onClose: () -> Void
-    var onCancelled: () -> Void
+    /// The schedule was cancelled or resumed — Give reloads its list.
+    var onChanged: () -> Void
     @State private var confirming = false
     @State private var busy = false
+    @State private var resuming = false
     @State private var errorText: String?
 
     private var freqLabel: String { schedule.frequency == "weekly" ? "Every week" : "Every month" }
+    private var paused: Bool { schedule.status.lowercased() == "paused" }
+    /// Room for what a paused or failing schedule has to say.
+    private var sheetHeight: CGFloat {
+        500 + (schedule.lastFailure == nil ? 0 : 84) + (paused ? 76 : 0) + (schedule.phoneNumber == nil ? 0 : 40)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text("Recurring gift")
                     .font(.fraunces(18, .semibold)).kerning(-0.36).foregroundStyle(Nuru.navy)
+                if paused {
+                    Text("Paused").font(.nMicro).foregroundStyle(Nuru.ink600)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Nuru.mutedBg, in: Capsule())
+                }
                 Spacer()
                 Button { onClose() } label: {
                     ZStack {
@@ -1619,21 +1871,30 @@ private struct ScheduleDetailSheet: View {
 
             detailRows.padding(.top, Nuru.S.md)
 
+            // Why the last charge failed, while it is still failing — the
+            // server's own words, reason then what to do.
+            if let f = schedule.lastFailure, !f.reason.isEmpty {
+                failureBox(f).padding(.top, Nuru.S.md)
+            }
+
             if let e = errorText {
                 Text(e).font(.inter(12)).foregroundStyle(Nuru.danger).padding(.top, Nuru.S.sm)
             }
 
+            if paused && !confirming {
+                resumeButton.padding(.top, Nuru.S.base)
+            }
             if confirming {
                 confirmBox.padding(.top, Nuru.S.base)
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             } else {
-                cancelButton.padding(.top, Nuru.S.base)
+                cancelButton.padding(.top, paused ? Nuru.S.sm : Nuru.S.base)
             }
             Spacer(minLength: 0)
         }
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: confirming)
         .padding(.horizontal, Nuru.S.screen)
-        .presentationDetents([.height(500)])
+        .presentationDetents([.height(sheetHeight)])
         .presentationDragIndicator(.visible)
     }
 
@@ -1645,9 +1906,57 @@ private struct ScheduleDetailSheet: View {
             Divider().overlay(Nuru.border)
             row("Frequency", freqLabel)
             Divider().overlay(Nuru.border)
-            row("Next charge", giveDateFull(schedule.nextRunAt))
+            // A paused schedule charges nothing — its old date is not a promise.
+            if paused {
+                row("Status", "Paused · nothing is owed")
+            } else {
+                row("Next charge", giveDateFull(schedule.nextRunAt))
+            }
             Divider().overlay(Nuru.border)
             row("Method", givingMethodName(schedule.method))
+            // The number every cycle's prompt goes to, when the schedule has
+            // its own (none = the profile's number).
+            if let phone = schedule.phoneNumber {
+                Divider().overlay(Nuru.border)
+                row("Prompts", phone)
+            }
+        }
+    }
+
+    private func failureBox(_ f: GiftFailure) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Nuru.urgentText)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(f.reason).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
+                if !f.hint.isEmpty {
+                    Text(f.hint).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.urgentBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
+    /// POST /giving/schedules/{id}/resume — the same action as the Partners
+    /// tab's Resume. It never collects the cycle that was missed.
+    private var resumeButton: some View {
+        VStack(spacing: 6) {
+            Button { resumeNow() } label: {
+                ZStack {
+                    if resuming { ProgressView().tint(.white) }
+                    else { Text("Resume schedule").font(.inter(13, .bold)).foregroundStyle(.white) }
+                }
+                .frame(maxWidth: .infinity).frame(height: 44)
+                .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.plain).disabled(busy)
+            Text("Resuming never collects a missed gift.")
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
         }
     }
 
@@ -1712,10 +2021,26 @@ private struct ScheduleDetailSheet: View {
             do {
                 try await MemberAPI.cancelSchedule(schedule.scheduleId)
                 Haptics.success()   // server confirmed the cancellation
-                onCancelled()
+                onChanged()
             } catch {
                 errorText = (error as? APIError)?.errorDescription ?? "Couldn't cancel — try again."
                 busy = false
+                Haptics.error()
+            }
+        }
+    }
+
+    private func resumeNow() {
+        guard !busy else { return }
+        busy = true; resuming = true; errorText = nil
+        Task { @MainActor in
+            do {
+                try await MemberAPI.resumeSchedule(schedule.scheduleId)
+                Haptics.success()   // server confirmed the resume
+                onChanged()
+            } catch {
+                errorText = (error as? APIError)?.errorDescription ?? "Couldn't resume — try again."
+                busy = false; resuming = false
                 Haptics.error()
             }
         }
@@ -1743,9 +2068,41 @@ private enum GiveDestination {
     }
 }
 
+/// A prompt the server said was ALREADY waiting on the member's phone (409
+/// GIFT_IN_PROGRESS), described from the server's record of that gift — it
+/// may not be the one on the form. Until the record is read the amount is
+/// unknown (""), and the STK stage says only that a prompt is waiting.
+private struct WaitingGift {
+    var amountLabel: String
+    var destination: GiveDestination?
+    var giftName: String?
+
+    static let unknown = WaitingGift(amountLabel: "", destination: nil, giftName: nil)
+
+    init(amountLabel: String, destination: GiveDestination?, giftName: String?) {
+        self.amountLabel = amountLabel; self.destination = destination; self.giftName = giftName
+    }
+
+    init(_ d: GivingDetail) {
+        amountLabel = money(d.amountMinor, d.currency)
+        if let p = d.pledge {
+            destination = .pledge(p.title.isEmpty ? nil : p.title)
+        } else if let n = d.need, !n.title.isEmpty {
+            destination = .fund(n.title)
+        } else {
+            let name = (d.fundName ?? "").trimmingCharacters(in: .whitespaces)
+            destination = .fund(name.isEmpty ? (d.fund.isEmpty ? "General" : d.fund.capitalized) : name)
+        }
+        giftName = d.accountName.flatMap { $0.isEmpty ? nil : $0 }
+    }
+}
+
 private struct GiveCeremonyView: View {
     let stage: String                // stk | success | failed | scheduled
     let note: String
+    /// Why a polled gift failed, in the server's words (Cycle 1) — the
+    /// failed stage shows it in place of the generic note.
+    var failure: GiftFailure? = nil
     let amountLabel: String
     /// The chip's label — the scheduled stage's only source (schedules do
     /// not go through an intent, so there is no server answer to read).
@@ -1778,7 +2135,7 @@ private struct GiveCeremonyView: View {
                 ScheduledStage(amountLabel: amountLabel, fundLabel: fundLabel,
                                cadenceWord: cadenceWord, nextChargeLabel: nextChargeLabel, onDone: onDone)
             default:
-                FailedStage(note: note, onRetry: onRetry, onDone: onDone)
+                FailedStage(note: note, failure: failure, onRetry: onRetry, onDone: onDone)
             }
         }
         .sheet(isPresented: $showReceipt) {
@@ -1816,12 +2173,20 @@ private struct StkStage: View {
                 .padding(.top, Nuru.S.lg)
             // "Enter your PIN to complete KSh 1,000 toward your Building fund
             // pledge." / "… to Tithe." — the server's answer, never the chip's.
-            (Text("Enter your PIN to complete ")
-                + Text(amountLabel).foregroundColor(Nuru.gold).fontWeight(.semibold)
-                + Text(" \(destination.phrase)\(giftName.map { " \u{2014} \u{201C}\($0)\u{201D}" } ?? "")."))
-                .font(.inter(13)).foregroundColor(.white.opacity(0.7))
-                .multilineTextAlignment(.center)
-                .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
+            // No amount = a waiting prompt whose record is not read yet: say
+            // only what is known.
+            Group {
+                if amountLabel.isEmpty {
+                    Text("Enter your PIN on the prompt that's waiting on your phone.")
+                } else {
+                    Text("Enter your PIN to complete ")
+                        + Text(amountLabel).foregroundColor(Nuru.gold).fontWeight(.semibold)
+                        + Text(" \(destination.phrase)\(giftName.map { " \u{2014} \u{201C}\($0)\u{201D}" } ?? "").")
+                }
+            }
+            .font(.inter(13)).foregroundColor(.white.opacity(0.7))
+            .multilineTextAlignment(.center)
+            .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
             if !note.isEmpty {
                 Text(note).font(.inter(12)).foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center)
@@ -1959,6 +2324,8 @@ private struct ScheduledStage: View {
 
 private struct FailedStage: View {
     let note: String
+    /// The server's reason + hint (Cycle 1), shown verbatim when it sent them.
+    var failure: GiftFailure? = nil
     var onRetry: () -> Void
     var onDone: () -> Void
 
@@ -1972,10 +2339,24 @@ private struct FailedStage: View {
             Text("That didn't go through")
                 .font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
-            Text(note.isEmpty ? "Your amount and fund are saved. Try again whenever you're ready." : note)
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
-                .multilineTextAlignment(.center)
-                .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
+            if let failure, !failure.reason.isEmpty {
+                // What happened, then what to do next (and whether money moved).
+                Text(failure.reason)
+                    .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                    .multilineTextAlignment(.center)
+                    .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
+                if !failure.hint.isEmpty {
+                    Text(failure.hint)
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                        .multilineTextAlignment(.center)
+                        .padding(.top, Nuru.S.xs).padding(.horizontal, Nuru.S.xl)
+                }
+            } else {
+                Text(note.isEmpty ? "Your amount and fund are saved. Try again whenever you're ready." : note)
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
+            }
             Spacer()
             HStack(spacing: Nuru.S.sm) {
                 Button(action: onDone) {
@@ -1990,7 +2371,9 @@ private struct FailedStage: View {
                         .font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 48)
                         .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                }.buttonStyle(.plain)
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Back to your gift, with the same amount and fund")
             }
             .padding(.horizontal, Nuru.S.xl).padding(.bottom, Nuru.S.xl)
         }
