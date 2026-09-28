@@ -402,9 +402,12 @@ struct RootView: View {
             let inviteToken = info["inviteToken"] as? String ?? ""
             let departmentId = info["departmentId"] as? String ?? ""
             let transactionId = info["transactionId"] as? String ?? ""
-            if let link = GiveLink.from(template: template, transactionId: transactionId) {
-                // giving_gift_failed (Giving Cycle 3) — that gift's result:
-                // why it failed, what to do, and Try again.
+            let scheduleId = info["scheduleId"] as? String ?? ""
+            if let link = GiveLink.from(template: template, transactionId: transactionId, scheduleId: scheduleId) {
+                // giving_gift_failed (Giving Cycle 3) — that gift's result: why
+                // it failed, what to do, and Try again. giving_schedule_failed /
+                // _paused (Cycle 4) — that recurring gift's sheet. (The
+                // heads-up opens Give itself, below.)
                 tabs.openGive(link: link)
             } else if !announcementId.isEmpty {
                 tabs.openAnnouncement(announcementId)

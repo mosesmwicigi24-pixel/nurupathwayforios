@@ -612,6 +612,40 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/schedules", as: Envelope<GivingSchedule>.self).data
     }
 
+    /// POST /giving/schedules — a real server-charged recurring gift.
+    /// `phoneNumber`: the number every cycle prompts (omitted = the profile's).
+    /// `firstCharge` (Giving Cycle 4): "now" sends the first prompt at once as
+    /// the schedule's first cycle; "next" waits for the next one.
+    static func createSchedule(fund: String, amountMinor: Int, currency: String, frequency: String,
+                               method: String, idempotencyKey: String, phoneNumber: String?,
+                               firstCharge: String) async throws -> ScheduleCreated {
+        struct Body: Encodable {
+            let fund: String; let amountMinor: Int; let currency: String
+            let frequency: String; let method: String; let idempotencyKey: String
+            let phoneNumber: String?; let firstCharge: String
+        }
+        return try await APIClient.shared.post("giving/schedules",
+            body: Body(fund: fund, amountMinor: amountMinor, currency: currency, frequency: frequency,
+                       method: method, idempotencyKey: idempotencyKey, phoneNumber: phoneNumber,
+                       firstCharge: firstCharge),
+            as: ScheduleCreated.self)
+    }
+
+    /// PATCH /giving/schedules/{id} (Giving Cycle 4) — change a recurring gift
+    /// instead of cancelling it: amount, day, number, heads-up. Only what the
+    /// patch carries changes; answers the schedule as GET lists it.
+    static func updateSchedule(_ id: String, _ patch: SchedulePatch) async throws -> GivingSchedule {
+        try await APIClient.shared.patch("giving/schedules/\(id)", body: patch, as: GivingSchedule.self)
+    }
+
+    /// POST /giving/schedules/{id}/pause (Giving Cycle 4) — the member pauses
+    /// it, until `resumeOn` ("YYYY-MM-DD", Nairobi; tomorrow to a year ahead)
+    /// or, when nil, until they resume it.
+    static func pauseSchedule(_ id: String, resumeOn: String?) async throws {
+        struct Body: Encodable { let resumeOn: String? }
+        _ = try await APIClient.shared.post("giving/schedules/\(id)/pause", body: Body(resumeOn: resumeOn), as: EmptyResponse.self)
+    }
+
     /// POST /giving/schedules/{id}/cancel.
     static func cancelSchedule(_ id: String) async throws {
         _ = try await APIClient.shared.postEmpty("giving/schedules/\(id)/cancel", as: EmptyResponse.self)

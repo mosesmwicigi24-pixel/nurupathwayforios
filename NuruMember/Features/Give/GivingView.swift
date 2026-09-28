@@ -337,6 +337,9 @@ struct GivingView: View {
     @State private var pendingTxId: String?
     @State private var successRef: String?
     @State private var scheduledNextAt = ""
+    /// Said on the "scheduled" stage when today's first prompt could not go
+    /// out (Giving Cycle 4): the server's reason + when the first prompt comes.
+    @State private var scheduledNote: String?
     @State private var pollTask: Task<Void, Never>?
     /// Set when a pledge / need payment went through (or is pending): the
     /// form returns to its normal state once the ceremony has finished
@@ -430,6 +433,7 @@ struct GivingView: View {
                         if !payMode, let g = vm.lastGift { repeatCard(g) }
                         if payMode { payModeCard.transition(.opacity) } else { fundsSection }
                         amountCard
+                        if !payMode { rhythmRow }
                         if !payMode && recurringAllowed { frequencyRow }
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
@@ -537,10 +541,11 @@ struct GivingView: View {
             // for a schedule, which prompts it every cycle. Hands back E.164.
             MobileMoneySheet(methodKey: method, phone: $mpesaPhone,
                              phoneOnFile: vm.methods.phoneOnFile,
-                             cadenceWord: recurring ? cadenceWord : nil) { number in
+                             frequency: recurring ? freq : nil,
+                             amountLabel: totalLabel) { number, giveNow in
                 let provider = method
                 if recurring {
-                    Task { await createSchedule(provider: provider, phone: number) }
+                    Task { await createSchedule(provider: provider, phone: number, giveNow: giveNow) }
                 } else {
                     Task { await submitIntent(provider: provider, currency: currency, phone: number) }
                 }
@@ -548,8 +553,14 @@ struct GivingView: View {
         }
         .sheet(item: $scheduleDetail) { s in
             ScheduleDetailSheet(schedule: s,
+                                rail: vm.methods.method(s.method),
+                                phoneOnFile: vm.methods.phoneOnFile,
                                 onClose: { scheduleDetail = nil },
-                                onChanged: {   // cancelled or resumed
+                                onUpdated: {   // changed in place — the sheet stays
+                                    GivingSignal.post(from: vm)
+                                    Task { await vm.load() }
+                                },
+                                onChanged: {   // cancelled, paused or resumed
                                     scheduleDetail = nil
                                     GivingSignal.post(from: vm)   // Partners' standing derives from schedules
                                     Task { await vm.load() }
@@ -576,6 +587,8 @@ struct GivingView: View {
                              txId: pendingTxId,
                              cadenceWord: cadenceWord,
                              nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateFull(scheduledNextAt),
+                             scheduledNote: scheduledNote,
+                             nothingTodayLine: scheduledNextAt.isEmpty ? nil : ScheduleRhythm.nothingTodayLine(firstPromptISO: scheduledNextAt),
                              retrying: submitting,
                              onDone: { endCeremony() },
                              // Giving Cycle 3: a failed gift is retried on the
@@ -848,8 +861,9 @@ struct GivingView: View {
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
-    /// Honest recurring summary — the server charges on the NEXT cycle boundary
-    /// (backend createSchedule), so we say exactly that.
+    /// Honest recurring summary. The day is the server's (today's Nairobi
+    /// weekday, or today's day of the month); whether the first gift is today
+    /// or next cycle is the member's choice at the next step (Giving Cycle 4).
     private var recurringSummary: some View {
         HStack(alignment: .top, spacing: Nuru.S.md) {
             ZStack {
@@ -860,7 +874,7 @@ struct GivingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(totalLabel) every \(cadenceWord)")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text("First charge \(giveDateFull(nextCycleISO())) · then every \(cadenceWord). Cancel anytime.")
+                Text("\(recurringDayLine.prefix(1).uppercased() + recurringDayLine.dropFirst()) — start with a gift today, or from the next one. Cancel anytime.")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -872,12 +886,46 @@ struct GivingView: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
     }
 
-    private func nextCycleISO() -> String {
-        let cal = Calendar.current
-        let next = freq == "weekly"
-            ? cal.date(byAdding: .day, value: 7, to: Date())
-            : cal.date(byAdding: .month, value: 1, to: Date())
-        return ISO8601DateFormatter().string(from: next ?? Date())
+    /// "every Sunday" · "every month on the 28th" — the day a gift set up
+    /// today falls on.
+    private var recurringDayLine: String {
+        ScheduleRhythm.cadence(frequency: freq, day: ScheduleRhythm.setupDay(frequency: freq, now: Date()))
+    }
+
+    // MARK: Your rhythm (PARTNERS_PROGRAMME §3a, Giving Cycle 4)
+
+    /// One row under the amount when a recurring gift is running: "Your
+    /// rhythm · KSh 500 every Sunday · next Sun 5 Oct" (the soonest one) —
+    /// a tap opens its sheet.
+    @ViewBuilder
+    private var rhythmRow: some View {
+        if let s = ScheduleRhythm.soonestActive(vm.listedSchedules), let text = ScheduleRhythm.rowText(for: s) {
+            Button {
+                Haptics.tap()
+                scheduleDetail = s
+            } label: {
+                HStack(spacing: Nuru.S.md) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold.opacity(0.14))
+                            .frame(width: 36, height: 36)
+                        Icon(.repeat, size: 15, color: Nuru.gold)
+                    }
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Your rhythm").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        Text(text).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: Nuru.S.sm)
+                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            }
+            .buttonStyle(.pressable)
+            .accessibilityHint("Opens your recurring gift")
+        }
     }
 
     // MARK: Pay methods
@@ -1042,8 +1090,9 @@ struct GivingView: View {
             Text(s.fund.capitalized).font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                 .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
-            // A paused schedule charges nothing — its old next date is not a promise.
-            Text(paused ? "Nothing is owed" : "Next \(giveDateShort(s.nextRunAt))")
+            // A paused schedule charges nothing — its old next date is not a
+            // promise; one paused until a date says when it comes back.
+            Text(paused ? PauseCopy.cardLine(for: s) : "Next \(giveDateShort(s.nextRunAt))")
                 .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 .lineLimit(1)
                 .padding(.top, 5)
@@ -1318,7 +1367,7 @@ struct GivingView: View {
             showMpesaSheet = true
             return
         }
-        if recurring { await createSchedule(provider: method, phone: nil); return }
+        if recurring { await createSchedule(provider: method, phone: nil, giveNow: false); return }
         switch method {
         case "paypal":
             // In dollars (Giving Cycle 2) — never a shilling number.
@@ -1333,7 +1382,7 @@ struct GivingView: View {
     /// POST /giving/schedules — a real server-charged recurring gift. The server
     /// makes the first charge on the next cycle boundary (never faked here).
     /// `phone` is the number every cycle's prompt goes to (Cycle 1).
-    private func createSchedule(provider: String, phone: String?) async {
+    private func createSchedule(provider: String, phone: String?, giveNow: Bool) async {
         guard vm.methods.allowsRecurring(provider) else {
             ceremonyNote = "Recurring gifts work with M-Pesa for now."
             ceremony = "failed"
@@ -1342,34 +1391,51 @@ struct GivingView: View {
         guard !submitting else { return }   // one request in flight, ever
         submitting = true; defer { submitting = false }
         ceremonyFailure = nil; waitingGift = nil; setRetryTarget(nil, method: nil)
-        struct Body: Encodable {
-            let fund: String; let amountMinor: Int; let currency: String
-            let frequency: String; let method: String; let idempotencyKey: String
-            let phoneNumber: String?
-        }
-        struct Created: Decodable {
-            let scheduleId: String; let status: String; let nextRunAt: String; let reused: Bool
-        }
+        scheduledNote = nil
+        intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
+        let frequency = freq
         do {
-            let res = try await APIClient.shared.post("giving/schedules",
-                body: Body(fund: fund.code, amountMinor: totalMinor, currency: currency,
-                           frequency: freq, method: provider, idempotencyKey: submissionKey,
-                           phoneNumber: phone),
-                as: Created.self)
+            // "Start with a gift now" (Giving Cycle 4): the first prompt goes
+            // out at once as the schedule's first cycle; otherwise nothing is
+            // taken today.
+            let res = try await MemberAPI.createSchedule(fund: fund.code, amountMinor: totalMinor, currency: currency,
+                                                         frequency: frequency, method: provider,
+                                                         idempotencyKey: submissionKey, phoneNumber: phone,
+                                                         firstCharge: giveNow ? "now" : "next")
             submissionKey = UUID().uuidString   // answered — a replay (`reused`) is handled the same
             if let phone { phoneMemory.remember(phone, for: auth.profile?.userId) }
-            scheduledNextAt = res.nextRunAt
-            ceremony = "scheduled"
             Haptics.success()   // the server really created the schedule
             GivingSignal.post(from: vm)   // Partners' standing derives from schedules
+            scheduledNextAt = res.nextRunAt
+            if giveNow, let first = res.firstCharge {
+                // Today's gift is on its way to the phone — watch it like any
+                // other gift; the schedule is already standing behind it.
+                let kind = ScheduleRhythm.isWeekly(frequency) ? "weekly" : "monthly"
+                await beginWatching(first, provider: provider, phone: phone,
+                                    note: "Your \(kind) gift is set up — this is its first prompt.")
+            } else if giveNow {
+                // The schedule stands; only today's prompt could not go out.
+                scheduledNote = [res.firstChargeError, ScheduleRhythm.setUpLine(frequency: frequency, firstPromptISO: res.nextRunAt)]
+                    .compactMap { $0 }.joined(separator: " ")
+                ceremony = "scheduled"
+            } else {
+                ceremony = "scheduled"
+            }
             await vm.load()
         } catch {
             // Keep the key ONLY when the server never answered.
             if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
-            // The server's own words — 409 SCHEDULE_EXISTS and the 422s too.
-            ceremonyNote = GiveRefusal.from(error, fallback: "Couldn't create the schedule.").message
-            ceremony = "failed"
-            Haptics.error()
+            switch GiveRefusal.from(error, fallback: "Couldn't create the schedule.") {
+            case let .promptWaiting(tx, message):
+                // A prompt is already on the phone: nothing was created — watch
+                // that one; the member can set the schedule up after it.
+                await watchWaitingPrompt(tx, message: message)
+            case let .message(text):
+                // The server's own words — 409 SCHEDULE_EXISTS and the 422s too.
+                ceremonyNote = text
+                ceremony = "failed"
+                Haptics.error()
+            }
         }
     }
 
@@ -1531,6 +1597,16 @@ struct GivingView: View {
                 setRetryTarget(tx, method: d.method)
                 ceremony = "failed"
             }
+        case .schedule(let id):
+            // A failed or paused recurring gift (Giving Cycle 4): its sheet —
+            // why, and Resume / Change / Pause. Fresh from the server first.
+            guard ceremony == nil else { return }
+            Task {
+                if !vm.schedules.contains(where: { $0.scheduleId == id }) { await vm.load() }
+                guard ceremony == nil, let s = vm.schedules.first(where: { $0.scheduleId == id }),
+                      s.status.lowercased() != "cancelled" else { return }
+                scheduleDetail = s
+            }
         }
     }
 
@@ -1661,6 +1737,7 @@ struct GivingView: View {
         // Closed: nothing is left to retry from here.
         retryTxId = nil; retryMethod = nil
         scheduledNextAt = ""
+        scheduledNote = nil
         // intentFundName / intentPledgeTitle / intentIsPledge are NOT reset
         // here: the cover re-renders during its dismiss, and clearing them in
         // the same pass as pledgeId would flash the chip's fund over a pledge
@@ -1929,11 +2006,18 @@ private struct MobileMoneySheet: View {
     /// The profile's number (the server's `phone_on_file`) — offered as a
     /// one-tap choice only when the field holds a different one.
     let phoneOnFile: String?
-    /// "week" | "month" when this confirms a schedule (every cycle prompts
-    /// this number); nil for a one-time gift.
-    var cadenceWord: String? = nil
-    var onSubmit: (String) -> Void
+    /// "weekly" | "monthly" when this confirms a schedule (every cycle
+    /// prompts this number); nil for a one-time gift.
+    var frequency: String? = nil
+    /// The gift, as the form says it ("KSh 1,000") — the start-now line's.
+    var amountLabel: String = ""
+    /// The number (E.164), and — for a schedule — whether to start with a
+    /// gift now (Giving Cycle 4).
+    var onSubmit: (String, Bool) -> Void
     @Environment(\.dismiss) private var dismiss
+    /// "Start with a gift now" (Giving Cycle 4) — on by default: the first
+    /// prompt goes out now, while the member is holding the phone.
+    @State private var giveNow = true
 
     private var isMpesa: Bool { methodKey != "airtel" }
     private var railName: String { isMpesa ? "M-Pesa" : "Airtel Money" }
@@ -1945,6 +2029,7 @@ private struct MobileMoneySheet: View {
         guard let f = phoneOnFile.flatMap(KenyanPhone.normalize), f != number else { return nil }
         return f
     }
+    private var cadenceWord: String? { frequency.map { ScheduleRhythm.isWeekly($0) ? "week" : "month" } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
@@ -1995,10 +2080,12 @@ private struct MobileMoneySheet: View {
                 }.buttonStyle(.plain)
             }
 
+            if let frequency { startNowRow(frequency) }
+
             Button {
                 guard let number else { return }
                 Haptics.action()
-                dismiss(); onSubmit(number)
+                dismiss(); onSubmit(number, frequency != nil && giveNow)
             } label: {
                 Text(cadenceWord == nil ? "Give Now" : "Start \(cadenceWord == "week" ? "Weekly" : "Monthly") Gift")
                     .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
@@ -2019,116 +2106,200 @@ private struct MobileMoneySheet: View {
             Spacer(minLength: 0)
         }
         .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
-        .presentationDetents([.height(430)])
+        .presentationDetents([.height(frequency == nil ? 430 : 530)])
         .presentationDragIndicator(.visible)
+    }
+
+    /// "Start with a gift now" (Giving Cycle 4): on — "KSh 1,000 now, then
+    /// every Sunday"; off — "Nothing is taken today — the first prompt comes
+    /// on 5 Oct 2026." Both are exactly what the server will do.
+    private func startNowRow(_ frequency: String) -> some View {
+        Toggle(isOn: $giveNow) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Start with a gift now").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Text(giveNow ? ScheduleRhythm.startNowLine(amountLabel: amountLabel, frequency: frequency, now: Date())
+                             : ScheduleRhythm.nothingTodayLine(frequency: frequency, now: Date()))
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(Nuru.gold)
+        .padding(12)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .onChange(of: giveNow) { _, _ in Haptics.tap() }
     }
 }
 
-// MARK: - Schedule detail sheet (real cancel via POST /giving/schedules/{id}/cancel)
+// MARK: - Schedule sheet (Giving Cycle 4: change, pause, resume, heads-up, cancel)
 
+/// One recurring gift, and what the member can do with it (Giving Cycle 4):
+/// change its amount, day or number (PATCH), pause it until they resume or
+/// until a date, resume it, switch the heads-up off, or cancel it. Why a
+/// paused gift is paused is said first. Every action is the server's to
+/// accept, and its words are shown when it refuses.
 private struct ScheduleDetailSheet: View {
-    let schedule: GivingSchedule
+    /// The rail's limits (M-Pesa) for a changed amount; nil = not checked here.
+    let rail: GivingMethod?
+    /// The profile's number — offered as "Use my profile number".
+    let phoneOnFile: String?
     var onClose: () -> Void
-    /// The schedule was cancelled or resumed — Give reloads its list.
+    /// Changed in place (amount, day, number, heads-up): the list reloads,
+    /// the sheet stays with the server's answer.
+    var onUpdated: () -> Void
+    /// Cancelled, paused or resumed: the sheet closes and the list reloads.
     var onChanged: () -> Void
-    @State private var confirming = false
+
+    private enum Mode { case view, change, pause, confirmCancel }
+
+    @State private var current: GivingSchedule
+    @State private var mode: Mode = .view
+    @State private var draft: ScheduleDraft
+    @State private var pauseUntilDate = false
+    @State private var resumeDate: Date
+    @State private var headsUp: Bool
     @State private var busy = false
-    @State private var resuming = false
     @State private var errorText: String?
 
-    private var freqLabel: String { schedule.frequency == "weekly" ? "Every week" : "Every month" }
-    private var paused: Bool { schedule.status.lowercased() == "paused" }
-    /// Room for what a paused or failing schedule has to say.
-    private var sheetHeight: CGFloat {
-        500 + (schedule.lastFailure == nil ? 0 : 84) + (paused ? 76 : 0) + (schedule.phoneNumber == nil ? 0 : 40)
+    init(schedule: GivingSchedule, rail: GivingMethod?, phoneOnFile: String?,
+         onClose: @escaping () -> Void, onUpdated: @escaping () -> Void, onChanged: @escaping () -> Void) {
+        self.rail = rail
+        self.phoneOnFile = phoneOnFile
+        self.onClose = onClose
+        self.onUpdated = onUpdated
+        self.onChanged = onChanged
+        _current = State(initialValue: schedule)
+        _draft = State(initialValue: ScheduleEdit.draft(of: schedule))
+        _resumeDate = State(initialValue: PauseDates.range(now: Date()).lowerBound)
+        _headsUp = State(initialValue: schedule.headsUp)
     }
 
+    private var weekly: Bool { ScheduleRhythm.isWeekly(current.frequency) }
+    private var paused: Bool { current.status.lowercased() == "paused" }
+    private var freqLabel: String { weekly ? "Every week" : "Every month" }
+    private var plan: ScheduleEdit.Plan { ScheduleEdit.plan(draft, for: current, rail: rail) }
+    private var profileNumber: String? { phoneOnFile.flatMap(KenyanPhone.normalize) }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Recurring gift")
-                    .font(.fraunces(18, .semibold)).kerning(-0.36).foregroundStyle(Nuru.navy)
-                if paused {
-                    Text("Paused").font(.nMicro).foregroundStyle(Nuru.ink600)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Nuru.mutedBg, in: Capsule())
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                header
+                summary.padding(.top, Nuru.S.base)
+
+                // Why it is paused, first (and Resume, when it is ours to resume).
+                if let why = PauseCopy.line(for: current) {
+                    pausedBox(why).padding(.top, Nuru.S.md)
                 }
-                Spacer()
-                Button { onClose() } label: {
-                    ZStack {
-                        Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                        Icon(.x, size: 15, color: Nuru.navy)
-                    }
-                }.buttonStyle(.plain)
-            }
-            .padding(.top, Nuru.S.lg)
-
-            HStack(spacing: Nuru.S.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(Nuru.gold.opacity(0.1)).frame(width: 44, height: 44)
-                    Icon(.repeat, size: 19, color: Nuru.gold)
+                // Why the last charge failed, while it is still failing — the
+                // server's own words, reason then what to do.
+                if let f = current.lastFailure, !f.reason.isEmpty {
+                    failureBox(f).padding(.top, Nuru.S.md)
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(ksh(schedule.amountMinor / 100)).font(.inter(17, .bold)).foregroundStyle(Nuru.navy)
-                    Text("\(freqLabel) · \(schedule.fund.capitalized)")
-                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+
+                switch mode {
+                case .view:
+                    detailRows.padding(.top, Nuru.S.md)
+                    headsUpRow.padding(.top, Nuru.S.sm)
+                    actionButtons.padding(.top, Nuru.S.base)
+                case .change:
+                    changeForm.padding(.top, Nuru.S.base)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                case .pause:
+                    pauseForm.padding(.top, Nuru.S.base)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                case .confirmCancel:
+                    detailRows.padding(.top, Nuru.S.md)
+                    confirmBox.padding(.top, Nuru.S.base)
+                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                }
+
+                if let e = errorText {
+                    Text(e).font(.inter(12)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Nuru.S.sm)
                 }
             }
-            .padding(.top, Nuru.S.base)
-
-            detailRows.padding(.top, Nuru.S.md)
-
-            // Why the last charge failed, while it is still failing — the
-            // server's own words, reason then what to do.
-            if let f = schedule.lastFailure, !f.reason.isEmpty {
-                failureBox(f).padding(.top, Nuru.S.md)
-            }
-
-            if let e = errorText {
-                Text(e).font(.inter(12)).foregroundStyle(Nuru.danger).padding(.top, Nuru.S.sm)
-            }
-
-            if paused && !confirming {
-                resumeButton.padding(.top, Nuru.S.base)
-            }
-            if confirming {
-                confirmBox.padding(.top, Nuru.S.base)
-                    .transition(.opacity.combined(with: .move(edge: .bottom)))
-            } else {
-                cancelButton.padding(.top, paused ? Nuru.S.sm : Nuru.S.base)
-            }
-            Spacer(minLength: 0)
+            .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.xl)
         }
-        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: confirming)
-        .padding(.horizontal, Nuru.S.screen)
-        .presentationDetents([.height(sheetHeight)])
+        .animation(.spring(response: 0.32, dampingFraction: 0.85), value: mode)
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
     }
 
-    private var detailRows: some View {
-        VStack(spacing: 0) {
-            row("Fund", schedule.fund.capitalized)
-            Divider().overlay(Nuru.border)
-            row("Amount", ksh(schedule.amountMinor / 100))
-            Divider().overlay(Nuru.border)
-            row("Frequency", freqLabel)
-            Divider().overlay(Nuru.border)
-            // A paused schedule charges nothing — its old date is not a promise.
+    // MARK: Header + summary
+
+    private var header: some View {
+        HStack {
+            Text("Recurring gift")
+                .font(.fraunces(18, .semibold)).kerning(-0.36).foregroundStyle(Nuru.navy)
             if paused {
-                row("Status", "Paused · nothing is owed")
-            } else {
-                row("Next charge", giveDateFull(schedule.nextRunAt))
+                Text("Paused").font(.nMicro).foregroundStyle(Nuru.ink600)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(Nuru.mutedBg, in: Capsule())
             }
-            Divider().overlay(Nuru.border)
-            row("Method", givingMethodName(schedule.method))
-            // The number every cycle's prompt goes to, when the schedule has
-            // its own (none = the profile's number).
-            if let phone = schedule.phoneNumber {
-                Divider().overlay(Nuru.border)
-                row("Prompts", phone)
+            Spacer()
+            Button { onClose() } label: {
+                ZStack {
+                    Circle().fill(Nuru.surface).frame(width: 32, height: 32)
+                    Icon(.x, size: 15, color: Nuru.navy)
+                }
+            }.buttonStyle(.plain)
+            .accessibilityLabel("Close")
+        }
+        .padding(.top, Nuru.S.lg)
+    }
+
+    private var summary: some View {
+        HStack(spacing: Nuru.S.md) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Nuru.gold.opacity(0.1)).frame(width: 44, height: 44)
+                Icon(.repeat, size: 19, color: Nuru.gold)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(money(current.amountMinor, current.currency)).font(.inter(17, .bold)).foregroundStyle(Nuru.navy)
+                Text("\(dayLine) · \(current.fund.capitalized)")
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
             }
         }
+    }
+
+    /// "Every Sunday" · "Every month on the 31st".
+    private var dayLine: String {
+        guard let day = ScheduleRhythm.day(of: current) else { return freqLabel }
+        let text = ScheduleRhythm.cadence(frequency: current.frequency, day: day)
+        return text.prefix(1).uppercased() + text.dropFirst()
+    }
+
+    // MARK: Paused / failing
+
+    private func pausedBox(_ why: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 10) {
+                Icon(.pause, size: 14, color: Nuru.ink600)
+                Text(why).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            // A gift that follows its pledge comes back with the pledge — no
+            // Resume here (the server would refuse).
+            if PauseCopy.canResume(current) {
+                Button { resume() } label: {
+                    ZStack {
+                        if busy { ProgressView().tint(.white) }
+                        else { Text("Resume").font(.inter(13, .bold)).foregroundStyle(.white) }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 40)
+                    .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                }
+                .buttonStyle(.plain).disabled(busy)
+                Text("Resuming never collects a missed gift.")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.mutedBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 
     private func failureBox(_ f: GiftFailure) -> some View {
@@ -2150,21 +2321,27 @@ private struct ScheduleDetailSheet: View {
         .background(Nuru.urgentBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    /// POST /giving/schedules/{id}/resume — the same action as the Partners
-    /// tab's Resume. It never collects the cycle that was missed.
-    private var resumeButton: some View {
-        VStack(spacing: 6) {
-            Button { resumeNow() } label: {
-                ZStack {
-                    if resuming { ProgressView().tint(.white) }
-                    else { Text("Resume schedule").font(.inter(13, .bold)).foregroundStyle(.white) }
-                }
-                .frame(maxWidth: .infinity).frame(height: 44)
-                .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    // MARK: Details
+
+    private var detailRows: some View {
+        VStack(spacing: 0) {
+            row("Fund", current.fund.capitalized)
+            Divider().overlay(Nuru.border)
+            row("Amount", money(current.amountMinor, current.currency))
+            Divider().overlay(Nuru.border)
+            row("When", dayLine)
+            Divider().overlay(Nuru.border)
+            // A paused gift charges nothing — its old date is not a promise.
+            if paused {
+                row("Next prompt", "None while paused")
+            } else {
+                row("Next prompt", giveParseDate(current.nextRunAt).map { ScheduleRhythm.format($0, "EEE d MMM yyyy") } ?? "—")
             }
-            .buttonStyle(.plain).disabled(busy)
-            Text("Resuming never collects a missed gift.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+            Divider().overlay(Nuru.border)
+            row("Method", givingMethodName(current.method))
+            Divider().overlay(Nuru.border)
+            // Its own number, else the profile's (followed if it changes).
+            row("Prompts", current.phoneNumber ?? "Your profile number")
         }
     }
 
@@ -2173,33 +2350,261 @@ private struct ScheduleDetailSheet: View {
             Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
             Spacer()
             Text(value).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                .multilineTextAlignment(.trailing)
         }
         .padding(.vertical, 10)
     }
 
-    private var cancelButton: some View {
+    /// "Tell me before each prompt" — a push a few minutes before M-Pesa asks
+    /// for the PIN, so the prompt is expected, not mistaken for a scam.
+    private var headsUpRow: some View {
+        Toggle(isOn: Binding(get: { headsUp }, set: { on in headsUp = on; setHeadsUp(on) })) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Tell me before each prompt").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Text("A notification a few minutes before M-Pesa asks for your PIN.")
+                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .tint(Nuru.gold)
+        .disabled(busy)
+        .padding(12)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private var actionButtons: some View {
+        VStack(spacing: Nuru.S.sm) {
+            HStack(spacing: Nuru.S.sm) {
+                outlineButton("Change") {
+                    draft = ScheduleEdit.draft(of: current)
+                    errorText = nil
+                    mode = .change
+                }
+                // Pausing is for a running gift; a paused one resumes above.
+                if !paused {
+                    outlineButton("Pause") {
+                        pauseUntilDate = false
+                        resumeDate = PauseDates.range(now: Date()).lowerBound
+                        errorText = nil
+                        mode = .pause
+                    }
+                }
+            }
+            Button {
+                Haptics.tap()
+                errorText = nil
+                mode = .confirmCancel
+            } label: {
+                Text("Cancel schedule")
+                    .font(.inter(13, .bold)).foregroundStyle(Color(hex: 0xDC2626))
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Color(hex: 0xFEF2F2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
+                        .stroke(Color(hex: 0xFECACA), lineWidth: 1))
+            }.buttonStyle(.plain)
+        }
+    }
+
+    private func outlineButton(_ title: String, action: @escaping () -> Void) -> some View {
         Button {
             Haptics.tap()
-            confirming = true
+            action()
         } label: {
-            Text("Cancel schedule")
-                .font(.inter(13, .bold)).foregroundStyle(Color(hex: 0xDC2626))
+            Text(title)
+                .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 44)
-                .background(Color(hex: 0xFEF2F2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(Color(hex: 0xFECACA), lineWidth: 1))
-        }.buttonStyle(.plain)
+                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.navy.opacity(0.35), lineWidth: 1.2))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
     }
+
+    // MARK: Change (amount · day · number)
+
+    private var changeForm: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            Text("CHANGE THIS GIFT")
+                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+
+            // Amount — whole shillings, inside M-Pesa's limits.
+            fieldLabel("Amount")
+            HStack(spacing: Nuru.S.sm) {
+                Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
+                TextField("1,000", text: $draft.amountText)
+                    .keyboardType(.numberPad)
+                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+            }
+            .padding(.horizontal, 14).frame(height: 48)
+            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+
+            // Day — the next prompt moves there.
+            fieldLabel(weekly ? "Day of the week" : "Day of the month")
+            if weekly {
+                FlowWrap(spacing: 6) {
+                    ForEach(0..<7, id: \.self) { d in
+                        let on = draft.day == d
+                        Button {
+                            Haptics.selection()
+                            draft.day = d
+                        } label: {
+                            Text(String(ScheduleRhythm.weekdays[d].prefix(3)))
+                                .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
+                                .padding(.horizontal, 12).frame(height: 34)
+                                .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                                .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
+                        }.buttonStyle(.plain)
+                    }
+                }
+            } else {
+                Menu {
+                    ForEach(1...31, id: \.self) { d in
+                        Button("On the \(ScheduleRhythm.ordinal(d))") { draft.day = d }
+                    }
+                } label: {
+                    HStack {
+                        Text("On the \(ScheduleRhythm.ordinal(draft.day))")
+                            .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+                        Spacer()
+                        Icon(.chevronDown, size: 14, color: Nuru.ink600)
+                    }
+                    .padding(.horizontal, 14).frame(height: 48)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                }
+                if draft.day >= 29 {
+                    Text("In a shorter month, the prompt comes on its last day.")
+                        .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                }
+            }
+
+            // Number — its own, or back to the profile's.
+            fieldLabel("M-Pesa number")
+            if !draft.useProfileNumber {
+                HStack(spacing: Nuru.S.sm) {
+                    Icon(.smartphone, size: 16, color: Color(hex: 0x16A34A))
+                    TextField("07XX XXX XXX", text: $draft.phoneText)
+                        .keyboardType(.phonePad)
+                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+                }
+                .padding(.horizontal, 14).frame(height: 48)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            }
+            if let profile = profileNumber {
+                Button {
+                    Haptics.selection()
+                    draft.useProfileNumber.toggle()
+                    if !draft.useProfileNumber && draft.phoneText.isEmpty { draft.phoneText = profile }
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: draft.useProfileNumber ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
+                        Text("Use my profile number (\(profile))")
+                            .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                    }
+                }.buttonStyle(.plain)
+            }
+
+            if let problem = plan.problem {
+                Text(problem).font(.inter(11)).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            HStack(spacing: Nuru.S.sm) {
+                outlineButton("Back") { errorText = nil; mode = .view }
+                Button { save() } label: {
+                    ZStack {
+                        if busy { ProgressView().tint(Nuru.navy) }
+                        else { Text("Save changes").font(.inter(13, .bold)).foregroundStyle(Nuru.navy) }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy || plan.patch == nil)
+                .opacity(plan.patch == nil ? 0.5 : 1)
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func fieldLabel(_ s: String) -> some View {
+        Text(s).font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x5B6472))
+    }
+
+    // MARK: Pause (until I resume · until a date)
+
+    private var pauseForm: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            Text("PAUSE THIS GIFT")
+                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+            Text("Nothing is prompted while it's paused, and nothing is owed.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                .fixedSize(horizontal: false, vertical: true)
+            pauseOption("Until I resume", on: !pauseUntilDate) { pauseUntilDate = false }
+            pauseOption("Until a date", on: pauseUntilDate) { pauseUntilDate = true }
+            if pauseUntilDate {
+                // Tomorrow to a year from today, on the church's calendar.
+                DatePicker("Resume on", selection: $resumeDate, in: PauseDates.range(now: Date()),
+                           displayedComponents: .date)
+                    .environment(\.timeZone, GiveCalendar.nairobi)
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                    .tint(Nuru.gold)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Text("It comes back on its own at its next day on or after \(ScheduleRhythm.format(resumeDate, "d MMM yyyy")).")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: Nuru.S.sm) {
+                outlineButton("Back") { errorText = nil; mode = .view }
+                Button { pause() } label: {
+                    ZStack {
+                        if busy { ProgressView().tint(.white) }
+                        else { Text("Pause gift").font(.inter(13, .bold)).foregroundStyle(.white) }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Nuru.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.plain).disabled(busy)
+            }
+            .padding(.top, 2)
+        }
+    }
+
+    private func pauseOption(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.selection()
+            action()
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: on ? "largecircle.fill.circle" : "circle")
+                    .font(.system(size: 17)).foregroundStyle(on ? Nuru.gold : Nuru.ink300)
+                Text(title).font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                Spacer()
+            }
+            .padding(.horizontal, 12).frame(height: 44)
+            .background(on ? Nuru.priorityBg : Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(on ? Nuru.gold : Nuru.border, lineWidth: on ? 1.5 : 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: Cancel (confirmed)
 
     private var confirmBox: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text("Cancel this recurring gift?")
                 .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xB91C1C))
-            Text("Future charges stop. To change the amount, cancel and set up a new schedule.")
+            Text("Future prompts stop. Gifts already given are not affected — to change the amount or day, use Change instead.")
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: Nuru.S.sm) {
-                Button { confirming = false } label: {
+                Button { mode = .view } label: {
                     Text("Keep it")
                         .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 40)
@@ -2223,32 +2628,103 @@ private struct ScheduleDetailSheet: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(hex: 0xFECACA), lineWidth: 1))
     }
 
-    private func cancelNow() {
+    // MARK: Actions — each one the server's to accept
+
+    /// PATCH only what changed; the sheet then shows the server's row.
+    private func save() {
+        guard !busy, let patch = plan.patch else { return }
         busy = true; errorText = nil
         Task { @MainActor in
             do {
-                try await MemberAPI.cancelSchedule(schedule.scheduleId)
-                Haptics.success()   // server confirmed the cancellation
+                let updated = try await MemberAPI.updateSchedule(current.scheduleId, patch)
+                // A bare answer (no amount) keeps what is here; the reload fixes it.
+                if updated.amountMinor > 0 { current = updated }
+                draft = ScheduleEdit.draft(of: current)
+                headsUp = current.headsUp
+                mode = .view
+                Haptics.success()   // the server accepted the change
+                onUpdated()
+            } catch {
+                // The server's words — SCHEDULE_EXISTS, AMOUNT_OUT_OF_RANGE, PHONE_REQUIRED.
+                errorText = GiveRefusal.from(error, fallback: "Couldn't save — try again.").message
+                Haptics.error()
+            }
+            busy = false
+        }
+    }
+
+    /// The heads-up switch, saved as soon as it is flipped (reverted if the
+    /// server says no).
+    private func setHeadsUp(_ on: Bool) {
+        guard on != current.headsUp, !busy else { return }
+        busy = true; errorText = nil
+        Task { @MainActor in
+            do {
+                let updated = try await MemberAPI.updateSchedule(current.scheduleId, SchedulePatch(headsUp: on))
+                // The server's row when it sent one; else what it accepted.
+                if updated.amountMinor > 0 { current = updated } else { current.headsUp = on }
+                headsUp = current.headsUp
+                onUpdated()
+            } catch {
+                headsUp = current.headsUp
+                errorText = GiveRefusal.from(error, fallback: "Couldn't change that — try again.").message
+                Haptics.error()
+            }
+            busy = false
+        }
+    }
+
+    /// POST …/pause — until resumed, or until the chosen (Nairobi) date.
+    private func pause() {
+        guard !busy else { return }
+        if pauseUntilDate && !PauseDates.isAllowed(resumeDate, now: Date()) {
+            errorText = "Choose a date from tomorrow to a year from now."
+            return
+        }
+        busy = true; errorText = nil
+        let resumeOn = pauseUntilDate ? PauseDates.wire(resumeDate) : nil
+        Task { @MainActor in
+            do {
+                try await MemberAPI.pauseSchedule(current.scheduleId, resumeOn: resumeOn)
+                Haptics.success()   // the server paused it
                 onChanged()
             } catch {
-                errorText = (error as? APIError)?.errorDescription ?? "Couldn't cancel — try again."
+                errorText = GiveRefusal.from(error, fallback: "Couldn't pause — try again.").message
                 busy = false
                 Haptics.error()
             }
         }
     }
 
-    private func resumeNow() {
+    /// POST …/resume — the same action as the Partners tab's Resume. It never
+    /// collects the cycle that was missed.
+    private func resume() {
         guard !busy else { return }
-        busy = true; resuming = true; errorText = nil
+        busy = true; errorText = nil
         Task { @MainActor in
             do {
-                try await MemberAPI.resumeSchedule(schedule.scheduleId)
+                try await MemberAPI.resumeSchedule(current.scheduleId)
                 Haptics.success()   // server confirmed the resume
                 onChanged()
             } catch {
-                errorText = (error as? APIError)?.errorDescription ?? "Couldn't resume — try again."
-                busy = false; resuming = false
+                errorText = GiveRefusal.from(error, fallback: "Couldn't resume — try again.").message
+                busy = false
+                Haptics.error()
+            }
+        }
+    }
+
+    private func cancelNow() {
+        guard !busy else { return }
+        busy = true; errorText = nil
+        Task { @MainActor in
+            do {
+                try await MemberAPI.cancelSchedule(current.scheduleId)
+                Haptics.success()   // server confirmed the cancellation
+                onChanged()
+            } catch {
+                errorText = (error as? APIError)?.errorDescription ?? "Couldn't cancel — try again."
+                busy = false
                 Haptics.error()
             }
         }
@@ -2325,6 +2801,10 @@ private struct GiveCeremonyView: View {
     let txId: String?
     let cadenceWord: String
     let nextChargeLabel: String?
+    /// The scheduled stage's word when today's first prompt could not go out.
+    var scheduledNote: String? = nil
+    /// The scheduled stage's line when nothing was asked of today.
+    var nothingTodayLine: String? = nil
     /// A retry of the failed gift is on its way (Try again spins).
     var retrying: Bool = false
     var onDone: () -> Void
@@ -2343,7 +2823,8 @@ private struct GiveCeremonyView: View {
                              onViewReceipt: { showReceipt = true }, onDone: onDone)
             case "scheduled":
                 ScheduledStage(amountLabel: amountLabel, fundLabel: fundLabel,
-                               cadenceWord: cadenceWord, nextChargeLabel: nextChargeLabel, onDone: onDone)
+                               cadenceWord: cadenceWord, nextChargeLabel: nextChargeLabel,
+                               note: scheduledNote, nothingTodayLine: nothingTodayLine, onDone: onDone)
             default:
                 FailedStage(note: note, failure: failure,
                             giftLine: amountLabel.isEmpty ? nil : "\(amountLabel) \(destination.phrase)",
@@ -2490,6 +2971,12 @@ private struct SuccessStage: View {
 private struct ScheduledStage: View {
     let amountLabel, fundLabel, cadenceWord: String
     let nextChargeLabel: String?
+    /// Giving Cycle 4: set when the member asked to start with a gift now but
+    /// today's prompt could not go out — the server's reason and when the
+    /// first prompt comes. Nil when nothing was asked of today.
+    var note: String? = nil
+    /// "Nothing is taken today — the first prompt comes on 5 Oct 2026."
+    var nothingTodayLine: String? = nil
     var onDone: () -> Void
 
     var body: some View {
@@ -2510,10 +2997,28 @@ private struct ScheduledStage: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.16)
-            if let nextChargeLabel {
+            if let note {
+                // Today's prompt could not go out — the schedule still stands.
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Nuru.urgentText)
+                    Text(note).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(Nuru.urgentBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .padding(.top, Nuru.S.md).padding(.horizontal, Nuru.S.xl)
+            } else if let nothingTodayLine {
+                Text(nothingTodayLine)
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, Nuru.S.sm).padding(.horizontal, Nuru.S.xl)
+            }
+            if nextChargeLabel != nil {
                 HStack(spacing: 6) {
                     Icon(.repeat, size: 12, color: Nuru.goldLo)
-                    Text("First charge \(nextChargeLabel) · cancel anytime")
+                    Text("Change, pause or cancel it anytime")
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x8A6D18))
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)

@@ -30,10 +30,18 @@ struct NotifPayload: Codable, Sendable {
     var fund: String? = nil
     var reason: String? = nil
     var hint: String? = nil
+    /// Recurring gifts (Giving Cycle 4): `giving_schedule_failed` / `_paused`
+    /// carry the `schedule_id` (a tap opens its sheet), its frequency and when
+    /// it will be tried again; the heads-up carries the fund's name.
+    var scheduleId: String? = nil
+    var frequency: String? = nil
+    var fundName: String? = nil
+    var retryAt: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case title, body, feedback, levelNumber, name, moduleId, announcementId, inviteToken, groupId, departmentId
         case transactionId, amountMinor, currency, fund, reason, hint
+        case scheduleId, frequency, fundName, retryAt
     }
 
     /// Field by field: one field of an unexpected type (a template this app
@@ -57,6 +65,10 @@ struct NotifPayload: Codable, Sendable {
         fund = try? c.decodeIfPresent(String.self, forKey: .fund)
         reason = try? c.decodeIfPresent(String.self, forKey: .reason)
         hint = try? c.decodeIfPresent(String.self, forKey: .hint)
+        scheduleId = try? c.decodeIfPresent(String.self, forKey: .scheduleId)
+        frequency = try? c.decodeIfPresent(String.self, forKey: .frequency)
+        fundName = try? c.decodeIfPresent(String.self, forKey: .fundName)
+        retryAt = try? c.decodeIfPresent(String.self, forKey: .retryAt)
     }
 }
 

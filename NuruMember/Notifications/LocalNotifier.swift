@@ -70,8 +70,9 @@ final class LocalNotifier: NSObject, ObservableObject {
                 "levelNumber": n.payload?.levelNumber ?? 0,
                 "inviteToken": n.payload?.inviteToken ?? "",
                 "departmentId": n.payload?.departmentId ?? "",
-                // Giving (Cycle 3): the failed gift a tap opens.
+                // Giving: the failed gift (Cycle 3) or recurring gift (Cycle 4) a tap opens.
                 "transactionId": n.payload?.transactionId ?? "",
+                "scheduleId": n.payload?.scheduleId ?? "",
             ]
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)

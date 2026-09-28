@@ -262,13 +262,19 @@ enum GiveRetry {
 
 // MARK: - Giving notifications (Giving Cycle 3)
 
-/// Where a giving notification lands on the Give tab.
+/// Where a giving notification lands on the Give tab. (Any other giving_*
+/// notice — a receipt, the heads-up before a prompt — opens Give itself.)
 enum GiveLink: Equatable {
     /// `giving_gift_failed` — that gift's result: why, what to do, Try again.
     case failedGift(transactionId: String)
+    /// `giving_schedule_failed` / `giving_schedule_paused` (Giving Cycle 4) —
+    /// that recurring gift's sheet: why, and Resume / Change / Pause.
+    case schedule(scheduleId: String)
 
-    static func from(template: String, transactionId: String?) -> GiveLink? {
+    static func from(template: String, transactionId: String?, scheduleId: String? = nil) -> GiveLink? {
         if template == "giving_gift_failed", let tx = transactionId, !tx.isEmpty { return .failedGift(transactionId: tx) }
+        if template == "giving_schedule_failed" || template == "giving_schedule_paused",
+           let id = scheduleId, !id.isEmpty { return .schedule(scheduleId: id) }
         return nil
     }
 }
@@ -278,8 +284,15 @@ enum GiveLink: Equatable {
 /// a template this has no words for (the caller's own fallback applies).
 enum GivingNotificationCopy {
     static func title(template: String, payload: NotifPayload?) -> String? {
+        let frequency = payload?.frequency?.lowercased()
         switch template {
         case "giving_gift_failed": return "Your gift didn't go through"
+        // Giving Cycle 4 — the recurring gift's notices.
+        case "giving_schedule_heads_up": return "Your \(frequency == "weekly" ? "weekly" : "monthly") gift is ready"
+        case "giving_schedule_failed":
+            let kind = frequency == "weekly" ? "weekly" : frequency == "monthly" ? "monthly" : "recurring"
+            return "Your \(kind) gift didn't go through"
+        case "giving_schedule_paused": return "Your recurring gift is paused"
         default: return nil
         }
     }
@@ -288,6 +301,17 @@ enum GivingNotificationCopy {
         switch template {
         case "giving_gift_failed":
             return "\(nonEmpty(payload?.reason) ?? "The payment didn't complete.") \(nonEmpty(payload?.hint) ?? "Open Give to try again.")"
+        case "giving_schedule_heads_up":
+            let amount = GiveMoney.format(payload?.amountMinor ?? 0, payload?.currency)
+            return "An M-Pesa prompt for \(amount) to \(nonEmpty(payload?.fundName) ?? "the church") is coming to your phone in a few minutes. Enter your PIN to give."
+        case "giving_schedule_failed":
+            let next = nonEmpty(payload?.retryAt) != nil
+                ? "We'll send the prompt once more later today."
+                : nonEmpty(payload?.hint) ?? "Open Give to give now or check your number."
+            return "\(nonEmpty(payload?.reason) ?? "We couldn't collect it this time.") \(next)"
+        case "giving_schedule_paused":
+            let why = nonEmpty(payload?.reason).map { "\($0) " } ?? ""
+            return "\(why)We've stopped sending prompts for now. Open Give to resume it whenever you're ready."
         default: return nil
         }
     }

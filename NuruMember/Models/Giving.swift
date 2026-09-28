@@ -243,6 +243,17 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
     /// Why the last charge failed, while the schedule is still failing —
     /// the same server-authored words as a failed gift. Nil otherwise.
     let lastFailure: GiftFailure?
+    /// Why it is paused (Giving Cycle 4): "failures" (three prompts did not
+    /// go through), "member" (paused on purpose) or "pledge" (it follows its
+    /// pledge). Nil while running, and on older servers.
+    var pauseReason: String? = nil
+    /// A member's pause ends on its own on this Nairobi date ("YYYY-MM-DD").
+    var resumeOn: String? = nil
+    /// A push minutes before each prompt (default on).
+    var headsUp: Bool = true
+    /// A monthly gift's own day of the month (1–31, clamped into shorter
+    /// months); nil for weekly gifts and older servers.
+    var anchorDay: Int? = nil
     var id: String { scheduleId }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -258,6 +269,38 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
         phoneNumber = (try? c.decodeIfPresent(String.self, forKey: .phoneNumber)).flatMap { $0.isEmpty ? nil : $0 }
         retryAt = (try? c.decodeIfPresent(String.self, forKey: .retryAt)).flatMap { $0.isEmpty ? nil : $0 }
         lastFailure = try? c.decodeIfPresent(GiftFailure.self, forKey: .lastFailure)
+        pauseReason = (try? c.decodeIfPresent(String.self, forKey: .pauseReason)).flatMap { $0.isEmpty ? nil : $0 }
+        resumeOn = (try? c.decodeIfPresent(String.self, forKey: .resumeOn)).flatMap { $0.isEmpty ? nil : String($0.prefix(10)) }
+        headsUp = (try? c.decodeIfPresent(Bool.self, forKey: .headsUp)) ?? true
+        anchorDay = (try? c.decodeIfPresent(Int.self, forKey: .anchorDay)).flatMap { (1...31).contains($0) ? $0 : nil }
+    }
+}
+
+/// POST /giving/schedules → the schedule, and (Giving Cycle 4) what happened
+/// to "give now": `firstCharge` is the first prompt's intent when it went out;
+/// nil with `firstChargeError` when today's prompt could not be sent (the
+/// schedule still stands); both nil when nothing was asked of today.
+struct ScheduleCreated: Decodable, Sendable {
+    let scheduleId: String
+    let status: String
+    let nextRunAt: String
+    let reused: Bool
+    let firstCharge: GivingIntentResult?
+    let firstChargeError: String?
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        scheduleId = (try? c.decodeIfPresent(String.self, forKey: .scheduleId)) ?? ""
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
+        nextRunAt = (try? c.decodeIfPresent(String.self, forKey: .nextRunAt)) ?? ""
+        reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
+        firstCharge = (try? c.decodeIfPresent(GivingIntentResult.self, forKey: .firstCharge))
+            .flatMap { $0.transactionId.isEmpty ? nil : $0 }
+        firstChargeError = (try? c.decodeIfPresent(String.self, forKey: .firstChargeError)).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case scheduleId, status, nextRunAt, reused, firstCharge, firstChargeError
     }
 }
 

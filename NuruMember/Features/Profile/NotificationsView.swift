@@ -97,9 +97,11 @@ struct NotificationsView: View {
     /// pathway), or — when there is no target — the read-and-dismiss popup.
     @ViewBuilder private func rowLink(_ n: NotificationRow) -> some View {
         let t = n.template
-        if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId) {
+        if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId,
+                                    scheduleId: n.payload?.scheduleId) {
             // A failed gift (Giving Cycle 3) opens its result on Give — why,
-            // what to do, and Try again.
+            // what to do, and Try again; a failed or paused recurring gift
+            // (Cycle 4) opens its sheet.
             Button {
                 markRead(n); Haptics.tap(); dismiss()
                 tabs.openGive(link: link)
