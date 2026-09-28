@@ -1474,26 +1474,40 @@ struct HomeView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
                 .padding(.top, 8)
             }
-            // One row (Figma): reactions left, Save + Share pushed right.
+            // One row (Figma): reactions left, Save + Share pushed right. On a
+            // 402pt phone the row is already full with no counts, so a count,
+            // "Saved" or larger text overflows it — and the squeeze used to land
+            // on the pills, breaking "Share" mid-word ("Shar/e"). The pills now
+            // keep their full width and the reactions scroll sideways instead:
+            // the scroll view takes the slack the Spacer used to (priority),
+            // so when everything fits the row lays out exactly as before.
             HStack(spacing: 5) {
-                ForEach(verseReactionEmojis, id: \.self) { e in
-                    let count = vm.reactions?.counts[e] ?? 0
-                    let mine = vm.reactions?.mine == e
-                    Button { Haptics.love(); Task { await vm.reactVerse(e) } } label: {
-                        HStack(spacing: 3) {
-                            Text(e).font(.system(size: 14))
-                            if count > 0 {
-                                Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
-                                    .contentTransition(.numericText())
-                            }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(verseReactionEmojis, id: \.self) { e in
+                            let count = vm.reactions?.counts[e] ?? 0
+                            let mine = vm.reactions?.mine == e
+                            Button { Haptics.love(); Task { await vm.reactVerse(e) } } label: {
+                                HStack(spacing: 3) {
+                                    Text(e).font(.system(size: 14))
+                                    if count > 0 {
+                                        Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
+                                            .contentTransition(.numericText())
+                                    }
+                                }
+                                .padding(.horizontal, 7).padding(.vertical, 6)
+                                .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
+                                .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
+                                .contentShape(Capsule())   // whole chip is tappable, not just the glyph
+                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
+                            }.buttonStyle(.pressable)
                         }
-                        .padding(.horizontal, 7).padding(.vertical, 6)
-                        .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
-                        .contentShape(Capsule())   // whole chip is tappable, not just the glyph
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
-                    }.buttonStyle(.pressable)
+                    }
+                    .padding(1)   // the chips' borders straddle their edges — keep them inside the clip…
                 }
+                .padding(-1)      // …without moving the chips or growing the row
+                .scrollBounceBehavior(.basedOnSize, axes: .horizontal)   // stays put when it all fits
+                .layoutPriority(1)
                 Spacer(minLength: 4)
                 Button {
                     if !vm.verseSaved { Haptics.success() }
@@ -1544,10 +1558,15 @@ struct HomeView: View {
         HStack(spacing: 4) {
             Icon(icon, size: 12, color: tint)
             Text(label).font(.inter(11, .semibold)).foregroundStyle(tint)
+                .lineLimit(1)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Nuru.white, in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+        // Never narrower than its content. The whole pill, not just the label:
+        // with only the label fixed, the icon became the squeezable part and
+        // vanished instead.
+        .fixedSize(horizontal: true, vertical: false)
     }
 
     /// A card-header trailing link that reads as a BUTTON — a gold-tinted pill
