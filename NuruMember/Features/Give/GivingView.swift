@@ -234,10 +234,15 @@ final class GivingViewModel: ObservableObject {
         if let server = serverYearTotals, serverTotalsYear == year { return server }
         return GiveMoney.totals(of: history.filter { GiveCalendar.year(of: $0.createdAt) == year })
     }
-    /// The last ORDINARY gift — "Repeat last gift" must never re-pay a pledge
-    /// instalment or a need: records carrying a `pledgeId` (or a `needId`,
-    /// when the server sends one) are skipped. Nil hides the card.
-    var lastGift: GivingRecord? { history.first { $0.pledgeId == nil && $0.needId == nil } }
+    /// The last ORDINARY gift that went through — "Repeat last gift" must
+    /// never re-pay a pledge instalment or a need: records carrying a
+    /// `pledgeId` (or a `needId`, when the server sends one) are skipped. A
+    /// failed or waiting gift is skipped too — it was never given, and Recent
+    /// giving beside the card would say "No gifts yet" (Giving Cycle 10).
+    /// Nil hides the card.
+    var lastGift: GivingRecord? {
+        history.first { GiveMoney.isSettled($0.status) && $0.pledgeId == nil && $0.needId == nil }
+    }
 }
 
 // MARK: - Give
@@ -1176,8 +1181,7 @@ struct GivingView: View {
     // MARK: Recent giving
 
     private var recentGifts: [GivingRecord] {
-        let settled: Set<String> = ["succeeded", "settled", "completed"]
-        return Array(vm.history.filter { settled.contains($0.status) }.prefix(3))
+        Array(vm.history.filter { GiveMoney.isSettled($0.status) }.prefix(3))
     }
 
     // MARK: Pay mode — PAYING YOUR PLEDGE / GIVING TO A NEED

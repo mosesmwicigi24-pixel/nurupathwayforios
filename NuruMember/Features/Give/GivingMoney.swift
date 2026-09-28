@@ -26,6 +26,10 @@ struct CurrencyTotal: Codable, Sendable, Hashable {
 enum GiveMoney {
     private static let settled: Set<String> = ["succeeded", "settled", "completed"]
 
+    /// The money went through — what Recent giving lists and "Repeat last
+    /// gift" may offer (a failed or waiting gift was never given).
+    static func isSettled(_ status: String) -> Bool { settled.contains(status) }
+
     /// "KSh 1,234" (cents only when there are any: "KSh 1,234.50") ·
     /// "US$ 20.00" · "EUR 20.00". Integer minor units in, never a float.
     static func format(_ minor: Int, _ currency: String?) -> String {
