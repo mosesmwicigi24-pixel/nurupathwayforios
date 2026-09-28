@@ -31,6 +31,9 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     /// Why a FAILED gift failed (Giving Cycle 1), in the server's words; nil
     /// for every other status, on older servers, and when malformed.
     var failure: GiftFailure? = nil
+    /// How much of `amountMinor` was the fee the member covered (Giving
+    /// Cycle 2); nil when none. `amountMinor` stays the total charged.
+    var feeCoverMinor: Int? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -53,6 +56,7 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
         pledgeTitle = (try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)).flatMap { $0.isEmpty ? nil : $0 }
         needId = (try? c.decodeIfPresent(String.self, forKey: .needId)).flatMap { $0.isEmpty ? nil : $0 }
         failure = try? c.decodeIfPresent(GiftFailure.self, forKey: .failure)
+        feeCoverMinor = (try? c.decodeIfPresent(Int.self, forKey: .feeCoverMinor)).flatMap { $0 > 0 ? $0 : nil }
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
     }
@@ -177,6 +181,9 @@ struct GivingDetail: Codable, Sendable {
     var congregation: String? = nil
     /// Why it failed (status failed), in the server's words; else nil.
     var failure: GiftFailure? = nil
+    /// How much of `amountMinor` was the fee the member covered (Giving
+    /// Cycle 2); nil when none. The receipt then reads gift · fee · total.
+    var feeCoverMinor: Int? = nil
 
     struct NeedRef: Codable, Sendable {
         let needId: String
@@ -210,6 +217,7 @@ struct GivingDetail: Codable, Sendable {
         memberName = try? c.decodeIfPresent(String.self, forKey: .memberName)
         congregation = try? c.decodeIfPresent(String.self, forKey: .congregation)
         failure = try? c.decodeIfPresent(GiftFailure.self, forKey: .failure)
+        feeCoverMinor = (try? c.decodeIfPresent(Int.self, forKey: .feeCoverMinor)).flatMap { $0 > 0 ? $0 : nil }
     }
 }
 
@@ -755,6 +763,10 @@ struct GivingStatements: Decodable, Sendable {
     let year: Int
     let totalMinor: Int
     let currency: String
+    /// The year's succeeded giving per currency, shillings first (Giving
+    /// Cycle 2) — never one sum across currencies. `totalMinor`/`currency`
+    /// are its first entry. An older server sends none: built from those two.
+    let totals: [CurrencyTotal]
     let byPledge: [ByPledge]
     let byFund: [ByFund]
     let payments: [PledgePayment]
@@ -941,29 +953,47 @@ struct GivingStatements: Decodable, Sendable {
         }
     }
 
+    /// One row per pledge PER CURRENCY (Giving Cycle 2); `pledgeId` is ""
+    /// for the "Gifts outside a pledge" row.
     struct ByPledge: Codable, Sendable, Identifiable {
         let pledgeId: String
         let title: String
+        let currency: String
         let totalMinor: Int
-        var id: String { pledgeId }
+        var id: String { "\(pledgeId)|\(currency)" }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
             pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
             title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+            currency = ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES").uppercased()
             totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
         }
     }
+    /// One row per fund PER CURRENCY (Giving Cycle 2).
     struct ByFund: Codable, Sendable, Identifiable {
         let code: String
         let name: String
+        let currency: String
         let totalMinor: Int
-        var id: String { code }
+        var id: String { "\(code)|\(currency)" }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
             code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
             name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            currency = ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES").uppercased()
             totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
         }
+    }
+
+    /// Split of the year's succeeded giving (Giving Cycle 2), per currency:
+    /// gifts outside a pledge, and pledge payments. The two partition every
+    /// payment, so gifts + pledges = `totals` for each currency.
+    var giftTotals: [CurrencyTotal] { Self.sum(byPledge.filter { $0.pledgeId.isEmpty }) }
+    var pledgeTotals: [CurrencyTotal] { Self.sum(byPledge.filter { !$0.pledgeId.isEmpty }) }
+
+    private static func sum(_ rows: [ByPledge]) -> [CurrencyTotal] {
+        GiveMoney.ordered(GiveMoney.merged(rows.map { CurrencyTotal(currency: $0.currency, totalMinor: $0.totalMinor) }))
+            .filter { $0.totalMinor != 0 }
     }
 
     init(from d: Decoder) throws {
@@ -974,6 +1004,10 @@ struct GivingStatements: Decodable, Sendable {
         years = ys.isEmpty ? [year] : ys
         totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
         currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        let sent = ((try? c.decodeIfPresent([CurrencyTotal].self, forKey: .totals)) ?? []).filter { $0.totalMinor != 0 }
+        totals = sent.isEmpty
+            ? (totalMinor != 0 ? [CurrencyTotal(currency: currency, totalMinor: totalMinor)] : [])
+            : GiveMoney.ordered(GiveMoney.merged(sent))
         byPledge = (try? c.decodeIfPresent([ByPledge].self, forKey: .byPledge)) ?? []
         byFund = (try? c.decodeIfPresent([ByFund].self, forKey: .byFund)) ?? []
         payments = (try? c.decodeIfPresent([PledgePayment].self, forKey: .payments)) ?? []
@@ -988,7 +1022,7 @@ struct GivingStatements: Decodable, Sendable {
         pending = (try? c.decodeIfPresent([PledgePayment].self, forKey: .pending)) ?? []
     }
     enum CodingKeys: String, CodingKey {
-        case years, year, totalMinor, currency, byPledge, byFund, payments
+        case years, year, totalMinor, currency, totals, byPledge, byFund, payments
         case pledgedMinor, paidMinor, remainingMinor, pledges
         case impact, months, faithfulness, season, pending
     }

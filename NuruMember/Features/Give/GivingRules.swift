@@ -111,10 +111,23 @@ enum GivingRails {
 extension GivingMethods {
     func method(_ key: String) -> GivingMethod? { methods.first { $0.key == key } }
 
+    /// The rail's own currency — M-Pesa KES, PayPal USD; KES when it names
+    /// none (a card takes any).
+    func currency(_ key: String) -> String { (method(key)?.currency ?? "KES").uppercased() }
+
     /// The member may pick it HERE: the server says it takes money, and this
-    /// build can carry a gift through it.
-    func isSelectable(_ key: String) -> Bool {
-        (method(key)?.enabled ?? false) && GivingRails.appCanComplete.contains(key)
+    /// build can carry a gift through it. `shillingsOnly` (a pledge or need
+    /// payment — pledges are in shillings, and a dollar payment would be
+    /// counted against a shilling promise) leaves out every other currency.
+    func isSelectable(_ key: String, shillingsOnly: Bool = false) -> Bool {
+        guard (method(key)?.enabled ?? false), GivingRails.appCanComplete.contains(key) else { return false }
+        return !shillingsOnly || currency(key) == "KES"
+    }
+
+    /// The rails the form lists: all of them, or — paying a pledge or need —
+    /// the shilling ones.
+    func offered(shillingsOnly: Bool = false) -> [GivingMethod] {
+        shillingsOnly ? methods.filter { currency($0.key) == "KES" } : methods
     }
 
     /// A weekly / monthly gift may run on it — the server's word (M-Pesa only
@@ -126,10 +139,20 @@ extension GivingMethods {
     /// The rail the form should have selected: the current one while it is
     /// still selectable, else the server's default, else the first selectable
     /// one — nil when none is (Give then says why instead of sending).
-    func selection(keeping current: String) -> String? {
-        if isSelectable(current) { return current }
-        if let d = defaultMethod, isSelectable(d) { return d }
-        return methods.first { isSelectable($0.key) }?.key
+    func selection(keeping current: String, shillingsOnly: Bool = false) -> String? {
+        if isSelectable(current, shillingsOnly: shillingsOnly) { return current }
+        if let d = defaultMethod, isSelectable(d, shillingsOnly: shillingsOnly) { return d }
+        return methods.first { isSelectable($0.key, shillingsOnly: shillingsOnly) }?.key
+    }
+
+    /// The footer's promise names only rails that can take money here
+    /// (Giving Cycle 2: it said "M-Pesa & card" while cards could not):
+    /// "Secure · M-Pesa · Receipt sent instantly".
+    func secureNote() -> String {
+        let names = methods.filter { isSelectable($0.key) }
+            .map { $0.label.isEmpty ? givingMethodName($0.key) : $0.label }
+        return names.isEmpty ? "Secure · Receipt sent instantly"
+                             : "Secure · \(names.joined(separator: " & ")) · Receipt sent instantly"
     }
 
     /// The chip on a rail that cannot be picked: SOON for one that is coming

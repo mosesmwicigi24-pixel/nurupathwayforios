@@ -2,9 +2,16 @@
 // masthead with the period total, a This year / Last year selector, fund-by-fund
 // totals with a ruled grand total, and the day-grouped gift history (fund icon,
 // time · method, provider ref, status chip). Read-only over GET /giving/history;
-// tapping a gift opens its full receipt. The download affordance renders a
-// one-page branded PDF with UIGraphicsPDFRenderer (no dependencies) and hands it
-// to the share sheet. Money stays in integer minor units end-to-end.
+// tapping a gift opens its full receipt. Money stays in integer minor units
+// end-to-end.
+//
+// GIVING CYCLE 2 (2026-09-28): money is per currency everywhere on the page —
+// the header reads the server's statement (`totals[]`, split into gifts and
+// pledge money by `by_pledge`) as "KSh 3,500" + "+ US$ 20.00", BY FUND has a
+// row per fund per currency, and nothing adds shillings to dollars. The year
+// is the church's (Nairobi) year, as the server counts it. The download is the
+// SERVER's PDF for the chosen year (GET /giving/statement.pdf?year=) — it used
+// to be drawn here, from local sums, and could disagree with the office.
 //
 // Statement v2 (PARTNERS_PROGRAMME §3d, owner-decided 2026-09-25): a giving
 // statement is a financial record — it must reconcile with the member's bank
@@ -14,10 +21,8 @@
 // collapsed PARTNER PLEDGES card with a link to the Partners statement — so
 // an unsettled pledge payment never drops out of both. When there is settled
 // pledge money (Y > 0) the hero leads with Gifts X and says "Partner pledges
-// Y · Total X+Y", and BY FUND's foot reads TOTAL GIFTS. This PDF is drawn
-// on the phone (iOS never fetched /giving/statement.pdf), so it applies the
-// same split itself: gifts by fund, a PARTNER PLEDGES section by pledge, and
-// a grand total that foots to the unit.
+// Y · Total X+Y", and BY FUND's foot reads TOTAL GIFTS. (The server's PDF
+// applies the same split: gifts by fund, a PARTNER PLEDGES section.)
 import SwiftUI
 import UIKit
 
@@ -38,6 +43,10 @@ final class GivingStatementViewModel: ObservableObject {
     @Published var history: [GivingRecord] = []
     @Published var loading = true
     @Published var error: String?
+    /// The server's statement per year (GET /giving/statements?year=, Giving
+    /// Cycle 2): its per-currency `totals[]` and the gifts / pledges split are
+    /// what the header shows — the same numbers as the PDF and the office.
+    @Published var statements: [Int: GivingStatements] = [:]
 
     func load() async {
         loading = true; error = nil
@@ -46,11 +55,18 @@ final class GivingStatementViewModel: ObservableObject {
         loading = false
     }
 
-    /// Records inside one calendar year, newest first by the actual instant;
-    /// a row whose timestamp cannot be read trails rather than sorting on
-    /// its raw string.
+    /// The server's figures for one year. A failure keeps what is there (the
+    /// header then sums the history itself, per currency).
+    func loadStatement(_ year: Int) async {
+        if let s = try? await MemberAPI.givingStatements(year: year), s.year == year { statements[year] = s }
+    }
+
+    /// Records inside one church (Nairobi) year — the calendar the server's
+    /// totals and the PDF count by — newest first by the actual instant; a
+    /// row whose timestamp cannot be read trails rather than sorting on its
+    /// raw string.
     func records(in year: Int) -> [GivingRecord] {
-        history.filter { $0.createdAt.hasPrefix(String(year)) }
+        history.filter { GiveCalendar.year(of: $0.createdAt) == year }
             .map { ($0, giveParseDate($0.createdAt)) }
             .sorted { a, b in
                 switch (a.1, b.1) {
@@ -63,8 +79,6 @@ final class GivingStatementViewModel: ObservableObject {
             .map(\.0)
     }
 
-    func totalMinor(in year: Int) -> Int { settledMinor(records(in: year)) }
-
     func settledCount(in year: Int) -> Int { settledCount(records(in: year)) }
 
     // Statement v2 — gifts and partner pledges, separated (never excluded).
@@ -75,34 +89,37 @@ final class GivingStatementViewModel: ObservableObject {
     /// Partner pledges: the year's records carrying a `pledge_id`.
     func pledgeRecords(in year: Int) -> [GivingRecord] { records(in: year).filter { $0.pledgeId != nil } }
 
-    func settledMinor(_ rs: [GivingRecord]) -> Int {
-        rs.filter { settledStatuses.contains($0.status) }.reduce(0) { $0 + $1.amountMinor }
-    }
+    /// Settled money PER CURRENCY (Giving Cycle 2) — shillings and dollars
+    /// are never one sum.
+    func settledTotals(_ rs: [GivingRecord]) -> [CurrencyTotal] { GiveMoney.totals(of: rs) }
 
     func settledCount(_ rs: [GivingRecord]) -> Int {
         rs.filter { settledStatuses.contains($0.status) }.count
     }
 
-    /// Settled totals per fund (order of first appearance, newest first).
-    func fundTotals(in year: Int) -> [(fund: String, count: Int, totalMinor: Int)] {
-        fundTotals(of: records(in: year))
-    }
-
-    /// Settled totals per fund over the given records (same order rule).
-    func fundTotals(of records: [GivingRecord]) -> [(fund: String, count: Int, totalMinor: Int)] {
+    /// Settled totals per fund AND currency (a fund given to in shillings and
+    /// in dollars is two rows, as on the server's statement), in order of
+    /// first appearance, newest first.
+    func fundTotals(of records: [GivingRecord]) -> [FundTotal] {
         var order: [String] = []
-        var totals: [String: (count: Int, minor: Int)] = [:]
+        var totals: [String: FundTotal] = [:]
         for r in records where settledStatuses.contains(r.status) {
-            if totals[r.fund] == nil { order.append(r.fund); totals[r.fund] = (0, 0) }
-            totals[r.fund]!.count += 1
-            totals[r.fund]!.minor += r.amountMinor
+            let cur = r.currency.uppercased()
+            let key = "\(r.fund)|\(cur)"
+            if totals[key] == nil { order.append(key); totals[key] = FundTotal(fund: r.fund, currency: cur, count: 0, totalMinor: 0) }
+            totals[key]!.count += 1
+            totals[key]!.totalMinor += r.amountMinor
         }
-        return order.map { (fund: $0, count: totals[$0]!.count, totalMinor: totals[$0]!.minor) }
+        return order.compactMap { totals[$0] }
     }
 
-    /// Records grouped by calendar day, newest first.
-    func groups(in year: Int) -> [(key: String, label: String, records: [GivingRecord])] {
-        groups(of: records(in: year))
+    /// One BY FUND row: a fund's settled gifts in one currency.
+    struct FundTotal: Hashable {
+        let fund: String
+        let currency: String
+        var count: Int
+        var totalMinor: Int
+        var id: String { "\(fund)|\(currency)" }
     }
 
     /// The given records grouped by the member's LOCAL calendar day, in the
@@ -128,25 +145,25 @@ final class GivingStatementViewModel: ObservableObject {
         return order.map { (key: $0, label: $0 == undated ? "—" : dayLabel($0), records: map[$0] ?? []) }
     }
 
-    /// The period's settled pledge money by pledge (order of first
-    /// appearance, newest first), for the PDF's PARTNER PLEDGES section. A
-    /// row without a title reads "Partner pledge".
-    func pledgeTotals(in year: Int) -> [(title: String, count: Int, totalMinor: Int)] {
-        var order: [String] = []
-        var rows: [String: (title: String, count: Int, minor: Int)] = [:]
-        for r in pledgeRecords(in: year) where settledStatuses.contains(r.status) {
-            let key = r.pledgeId ?? ""
-            let t = r.pledgeTitle?.trimmingCharacters(in: .whitespaces) ?? ""
-            if rows[key] == nil { order.append(key); rows[key] = ("", 0, 0) }
-            if rows[key]!.title.isEmpty && !t.isEmpty { rows[key]!.title = t }
-            rows[key]!.count += 1
-            rows[key]!.minor += r.amountMinor
+    /// The header's figures for `year`, per currency: the server's statement
+    /// when it has answered — `totals[]`, split into gifts and pledge money by
+    /// `by_pledge` — else the history summed the same way. Both come from ONE
+    /// source, so gifts + pledges = total for every currency.
+    func figures(in year: Int) -> StatementFigures {
+        if let s = statements[year] {
+            return StatementFigures(total: s.totals, gifts: s.giftTotals, pledges: s.pledgeTotals)
         }
-        return order.map { k in
-            let r = rows[k]!
-            let base = r.title.isEmpty ? "Partner" : r.title
-            return (title: base.lowercased().hasSuffix("pledge") ? base : "\(base) pledge", count: r.count, totalMinor: r.minor)
-        }
+        return StatementFigures(total: settledTotals(records(in: year)),
+                                gifts: settledTotals(gifts(in: year)),
+                                pledges: settledTotals(pledgeRecords(in: year)))
+    }
+
+    struct StatementFigures: Equatable {
+        let total: [CurrencyTotal]
+        let gifts: [CurrencyTotal]
+        let pledges: [CurrencyTotal]
+        /// Settled pledge money: the header splits Gifts / Partner pledges.
+        var hasPledgeMoney: Bool { pledges.contains { $0.totalMinor != 0 } }
     }
 
     private func dayLabel(_ ymd: String) -> String {
@@ -181,20 +198,24 @@ struct GivingStatementView: View {
     var host: GivingStatementHost = .give
 
     @StateObject private var vm = GivingStatementViewModel()
-    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
-    @State private var year = Calendar.current.component(.year, from: Date())
+    /// The church (Nairobi) year on screen — the calendar the server counts by.
+    @State private var year = GiveCalendar.currentYear()
     @State private var shareFile: ShareFile?
+    /// The server's PDF is on its way (the download button spins).
+    @State private var downloading = false
+    /// Why the PDF could not be had — one quiet line, never silent.
+    @State private var downloadError: String?
     /// The PARTNER PLEDGES card starts collapsed.
     @State private var pledgesOpen = false
 
-    private var thisYear: Int { Calendar.current.component(.year, from: Date()) }
+    private var thisYear: Int { GiveCalendar.currentYear() }
     private var periodLabel: String { year == thisYear ? "this year" : "in \(year)" }
 
-    /// Y — settled partner-pledge money in the period.
-    private var pledgeMinor: Int { vm.settledMinor(vm.pledgeRecords(in: year)) }
+    /// The header's per-currency figures — the server's when it has answered.
+    private var figures: GivingStatementViewModel.StatementFigures { vm.figures(in: year) }
     /// Settled pledge money: the hero splits and BY FUND's foot reads TOTAL GIFTS.
-    private var hasPledgeMoney: Bool { pledgeMinor > 0 }
+    private var hasPledgeMoney: Bool { figures.hasPledgeMoney }
     /// ANY pledge-tied row, settled or not: the rows are separated and the
     /// PARTNER PLEDGES card shows. With none the page is the pre-v2 page.
     private var hasPledgeRows: Bool { !vm.pledgeRecords(in: year).isEmpty }
@@ -207,6 +228,13 @@ struct GivingStatementView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Nuru.S.base) {
                     periodSelector
+                    if let downloadError {
+                        Text(downloadError)
+                            .font(.inter(11)).foregroundStyle(Color(hex: 0xDC2626))
+                            .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
+                    }
                     if vm.loading && vm.history.isEmpty {
                         loadingSkeleton
                     } else if let e = vm.error, vm.history.isEmpty {
@@ -238,12 +266,14 @@ struct GivingStatementView: View {
                 .padding(Nuru.S.screen)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
-            .refreshable { await vm.load() }
+            .refreshable { await vm.load(); await vm.loadStatement(year) }
         }
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.history.isEmpty { await vm.load() } }
+        // The server's figures for the year on screen (Giving Cycle 2).
+        .task(id: year) { await vm.loadStatement(year) }
         .sheet(item: $shareFile) { f in ActivityShareSheet(url: f.url) }
         // Registered here, not on each stack, so the link works wherever
         // this page is pushed. A fresh PartnersModel, owned by the host.
@@ -295,26 +325,42 @@ struct GivingStatementView: View {
                 Text("GIVING STATEMENT")
                     .font(.inter(10, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
                 Spacer()
-                circleButton(.download) {
+                circleButton(.download, busy: downloading) {
                     Haptics.action()
-                    share()
+                    download()
                 }
+                .disabled(downloading)
+                .accessibilityLabel("Download the statement PDF")
             }
             VStack(alignment: .leading, spacing: 2) {
+                // Per currency (Giving Cycle 2): the shilling figure is the big
+                // number, any other currency rides under it ("+ US$ 20.00") —
+                // never one sum. The server's statement when it has answered.
+                let f = figures
                 if hasPledgeMoney {
                     // Gifts X is the big number; the pledges and the grand
                     // total sit under it, so X + Y = Total is on screen.
-                    let giftsMinor = vm.settledMinor(listed)
+                    let gifts = GiveMoney.headline(f.gifts)
                     Text("Gifts").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
-                    Text(ksh(giftsMinor / 100))
+                    Text(gifts.main)
                         .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
-                    Text("Partner pledges \(ksh(pledgeMinor / 100)) · Total \(ksh((giftsMinor + pledgeMinor) / 100))")
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    if let rest = gifts.rest {
+                        Text(rest).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
+                    }
+                    Text("Partner pledges \(GiveMoney.line(f.pledges)) · Total \(GiveMoney.line(f.total))")
                         .font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.7))
+                        .fixedSize(horizontal: false, vertical: true)
                         .padding(.bottom, 2)
                 } else {
+                    let total = GiveMoney.headline(f.total)
                     Text("Total given").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
-                    Text(ksh(vm.totalMinor(in: year) / 100))
+                    Text(total.main)
                         .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
+                    if let rest = total.rest {
+                        Text(rest).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
+                    }
                 }
                 let n = vm.settledCount(listed)
                 Text("\(n) gift\(n == 1 ? "" : "s") · \(periodLabel) · most recent first")
@@ -352,12 +398,13 @@ struct GivingStatementView: View {
         )
     }
 
-    private func circleButton(_ icon: Lucide, action: @escaping () -> Void) -> some View {
+    private func circleButton(_ icon: Lucide, busy: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             ZStack {
                 Circle().fill(Color.white.opacity(0.10)).frame(width: 40, height: 40)
                     .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
-                Icon(icon, size: 17, color: .white)
+                if busy { ProgressView().tint(.white).scaleEffect(0.8) }
+                else { Icon(icon, size: 17, color: .white) }
             }
         }.buttonStyle(.pressable)
     }
@@ -403,17 +450,20 @@ struct GivingStatementView: View {
                     .font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                     .padding(.vertical, Nuru.S.sm)
             } else {
-                ForEach(Array(totals.enumerated()), id: \.element.fund) { i, t in
+                ForEach(Array(totals.enumerated()), id: \.element.id) { i, t in
                     fundRow(t)
                     if i != totals.count - 1 { Divider().overlay(Nuru.border.opacity(0.6)) }
                 }
             }
-            // The card's total foots with its rows: gifts only when split.
-            HStack {
+            // The card's total foots with its rows: gifts only when split, and
+            // per currency — "KSh 3,500 + US$ 20.00", never one sum.
+            HStack(alignment: .firstTextBaseline) {
                 Text(hasPledgeMoney ? "TOTAL GIFTS" : "TOTAL GIVEN").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.navy)
                 Spacer()
-                Text(ksh(vm.settledMinor(listed) / 100))
+                Text(GiveMoney.line(vm.settledTotals(listed)))
                     .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
+                    .multilineTextAlignment(.trailing)
+                    .lineLimit(2).minimumScaleFactor(0.7)
             }
             .padding(.top, 14)   // spacing separates the grand total — no ruled line
         }
@@ -424,7 +474,8 @@ struct GivingStatementView: View {
         .nuruShadow()
     }
 
-    private func fundRow(_ t: (fund: String, count: Int, totalMinor: Int)) -> some View {
+    /// One fund in one currency — its amount in that currency.
+    private func fundRow(_ t: GivingStatementViewModel.FundTotal) -> some View {
         let meta = fundMeta(t.fund)
         return HStack(spacing: 10) {
             ZStack {
@@ -437,7 +488,7 @@ struct GivingStatementView: View {
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
             }
             Spacer()
-            Text(ksh(t.totalMinor / 100)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+            Text(money(t.totalMinor, t.currency)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
         }
         .padding(.vertical, 8)
     }
@@ -557,8 +608,10 @@ struct GivingStatementView: View {
                             .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                         // Y and N count the same (settled) rows; a row still
                         // processing or failed is listed inside, and said here.
-                        Text("\(ksh(pledgeMinor / 100)) · \(n) payment\(n == 1 ? "" : "s")\(unsettled > 0 ? " · \(unsettled) not settled" : "")")
+                        // Y is per currency (Giving Cycle 2).
+                        Text("\(GiveMoney.line(vm.settledTotals(rows))) · \(n) payment\(n == 1 ? "" : "s")\(unsettled > 0 ? " · \(unsettled) not settled" : "")")
                             .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
                     Icon(pledgesOpen ? .chevronUp : .chevronDown, size: 16, color: Nuru.navy)
@@ -617,32 +670,43 @@ struct GivingStatementView: View {
         .contentShape(Rectangle())
     }
 
-    // MARK: Share / download (native PDF, real aggregates only)
+    // MARK: Download — the server's PDF (Giving Cycle 2)
 
-    /// The PDF carries SETTLED money only, split as the page is: gifts by
-    /// fund, partner pledges by pledge. Gifts ∪ pledges is every settled row
-    /// of the year and the two are disjoint, so Gifts + Partner pledges =
-    /// totalMinor(in:) by construction. With no pledge money it is the
-    /// pre-v2 PDF (every settled row under BY FUND).
-    private func share() {
-        let gifts = vm.gifts(in: year)
-        let pledgeRows = vm.pledgeRecords(in: year)
-        let data = StatementPDF.data(memberName: auth.profile?.fullName,
-                                     year: year,
-                                     gifts: vm.fundTotals(of: gifts),
-                                     giftsMinor: vm.settledMinor(gifts),
-                                     giftCount: vm.settledCount(gifts),
-                                     pledges: vm.pledgeTotals(in: year),
-                                     pledgesMinor: vm.settledMinor(pledgeRows),
-                                     pledgeCount: vm.settledCount(pledgeRows))
-        let url = FileManager.default.temporaryDirectory
-            .appendingPathComponent("Nuru-giving-statement-\(year).pdf")
-        do {
-            try data.write(to: url)
-            shareFile = ShareFile(url: url)
-        } catch {
-            Haptics.error()   // the tap did something — say the file didn't make it
+    /// The giving statement PDF for the year on screen, as the SERVER renders
+    /// it (GET /giving/statement.pdf?year=): Nairobi dates, per-currency
+    /// totals, the same numbers the office sees — it used to be drawn on the
+    /// phone from local sums. Fetched over the bearer client into a temp file
+    /// and handed to the share sheet; a 200 that is not a PDF is refused, and
+    /// every failure is one quiet line under the year switch.
+    private func download() {
+        guard !downloading else { return }
+        downloading = true
+        withAnimation { downloadError = nil }
+        let year = self.year
+        Task {
+            defer { downloading = false }
+            do {
+                let data = try await MemberAPI.givingStatementPdf(year: year)
+                guard data.starts(with: Array("%PDF".utf8)) else {
+                    throw APIError.decoding("statement.pdf did not return a PDF")
+                }
+                let url = FileManager.default.temporaryDirectory
+                    .appendingPathComponent("nuru-giving-statement-\(year).pdf")
+                try data.write(to: url, options: .atomic)
+                Haptics.success()
+                shareFile = ShareFile(url: url)
+            } catch {
+                Haptics.error()
+                withAnimation { downloadError = Self.downloadMessage(for: error) }
+            }
         }
+    }
+
+    private static func downloadMessage(for error: Error) -> String {
+        if let api = error as? APIError, api.isNetwork {
+            return "You appear to be offline — the PDF needs a connection."
+        }
+        return "The PDF isn't available right now. The statement below is still complete."
     }
 }
 
@@ -659,170 +723,6 @@ private struct ActivityShareSheet: UIViewControllerRepresentable {
     func updateUIViewController(_ vc: UIActivityViewController, context: Context) {}
 }
 
-// MARK: - Branded statement PDF (UIGraphicsPDFRenderer — no dependencies)
-
-private enum StatementPDF {
-    typealias FundRow = (fund: String, count: Int, totalMinor: Int)
-    typealias PledgeRow = (title: String, count: Int, totalMinor: Int)
-
-    /// Statement v2 (§3d): gifts by fund; then, when there is pledge money, a
-    /// separate PARTNER PLEDGES section by pledge with its own subtotal; then
-    /// the grand total. Each subtotal is the sum of the rows above it and
-    /// Gifts + Partner pledges = Total. Amounts print EXACTLY (cents when a
-    /// figure has any), never truncated, so the page always foots. Breaks to
-    /// a new page rather than drawing past the bottom margin.
-    static func data(memberName: String?, year: Int,
-                     gifts: [FundRow], giftsMinor: Int, giftCount: Int,
-                     pledges: [PledgeRow], pledgesMinor: Int, pledgeCount: Int) -> Data {
-        let W: CGFloat = 595, H: CGFloat = 842, margin: CGFloat = 48
-        let navy = UIColor(red: 11 / 255, green: 31 / 255, blue: 51 / 255, alpha: 1)
-        let gold = UIColor(red: 200 / 255, green: 155 / 255, blue: 60 / 255, alpha: 1)
-        let ink = UIColor(red: 40 / 255, green: 40 / 255, blue: 45 / 255, alpha: 1)
-        let muted = UIColor(red: 120 / 255, green: 128 / 255, blue: 140 / 255, alpha: 1)
-        let hairline = UIColor(red: 232 / 255, green: 232 / 255, blue: 235 / 255, alpha: 1)
-        let totalMinor = giftsMinor + pledgesMinor
-        let split = pledgesMinor > 0
-
-        func amount(_ minor: Int) -> String {
-            let sign = minor < 0 ? "-" : ""
-            let a = abs(minor)
-            let whole = (a / 100).formatted(.number.grouping(.automatic))
-            return a % 100 == 0 ? "\(sign)KSh \(whole)" : "\(sign)KSh \(whole).\(String(format: "%02d", a % 100))"
-        }
-        func text(_ s: String, _ x: CGFloat, _ y: CGFloat, _ font: UIFont, _ color: UIColor) {
-            (s as NSString).draw(at: CGPoint(x: x, y: y),
-                                 withAttributes: [.font: font, .foregroundColor: color])
-        }
-        /// One line, cut with an ellipsis at `width` — a long pledge name
-        /// never runs into its amount.
-        func textClipped(_ s: String, _ x: CGFloat, _ y: CGFloat, width: CGFloat, _ font: UIFont, _ color: UIColor) {
-            let para = NSMutableParagraphStyle()
-            para.lineBreakMode = .byTruncatingTail
-            (s as NSString).draw(in: CGRect(x: x, y: y, width: width, height: font.lineHeight + 2),
-                                 withAttributes: [.font: font, .foregroundColor: color, .paragraphStyle: para])
-        }
-        func textRight(_ s: String, _ y: CGFloat, _ font: UIFont, _ color: UIColor) {
-            let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
-            let size = (s as NSString).size(withAttributes: attrs)
-            (s as NSString).draw(at: CGPoint(x: W - margin - size.width, y: y), withAttributes: attrs)
-        }
-
-        let renderer = UIGraphicsPDFRenderer(bounds: CGRect(x: 0, y: 0, width: W, height: H))
-        return renderer.pdfData { ctx in
-            ctx.beginPage()
-
-            // Navy header band — the grand total, and (with pledge money) the
-            // one line that shows it foots.
-            navy.setFill()
-            ctx.fill(CGRect(x: 0, y: 0, width: W, height: split ? 160 : 150))
-            text("NURU PLACE", margin, 42, .boldSystemFont(ofSize: 11), gold)
-            text("Giving statement", margin, 62, .boldSystemFont(ofSize: 24), .white)
-            text("NURU PLACE CHURCH", margin, 98, .systemFont(ofSize: 11), UIColor(white: 0.85, alpha: 1))
-            textRight(amount(totalMinor), 62, .boldSystemFont(ofSize: 24), gold)
-            let countLine = split
-                ? "\(giftCount) gift\(giftCount == 1 ? "" : "s") · \(pledgeCount) pledge payment\(pledgeCount == 1 ? "" : "s") · \(year)"
-                : "\(giftCount) settled gifts · \(year)"
-            textRight(countLine, 98, .systemFont(ofSize: 11), UIColor(white: 0.85, alpha: 1))
-            if split {
-                text("Gifts \(amount(giftsMinor))  ·  Partner pledges \(amount(pledgesMinor))  ·  Total \(amount(totalMinor))",
-                     margin, 126, .boldSystemFont(ofSize: 11), .white)
-            }
-
-            var y: CGFloat = split ? 200 : 190
-            func ensure(_ needed: CGFloat) {
-                if y + needed > H - 70 { ctx.beginPage(); y = margin }
-            }
-            func row(_ label: String, _ value: String, valueColor: UIColor = ink) {
-                text(label, margin, y, .systemFont(ofSize: 11), muted)
-                textRight(value, y, .boldSystemFont(ofSize: 11), valueColor)
-                hairline.setFill()
-                ctx.fill(CGRect(x: margin, y: y + 18, width: W - margin * 2, height: 0.7))
-                y += 28
-            }
-            func subtotal(_ label: String, _ minor: Int) {
-                ensure(30)
-                y += 4
-                navy.setFill()
-                ctx.fill(CGRect(x: margin, y: y, width: W - margin * 2, height: 1))
-                y += 9
-                text(label, margin, y, .boldSystemFont(ofSize: 10), navy)
-                textRight(amount(minor), y - 1, .boldSystemFont(ofSize: 12), navy)
-                y += 26
-            }
-
-            // Meta rows
-            if let memberName, !memberName.isEmpty { row("Member", memberName) }
-            row("Period", "1 Jan – 31 Dec \(year)")
-            let gen = DateFormatter(); gen.dateFormat = "d MMM yyyy"
-            row("Generated", gen.string(from: Date()))
-
-            // Gifts by fund (gifts only when there is pledge money)
-            y += 16
-            ensure(52)
-            text(split ? "GIFTS BY FUND" : "BY FUND", margin, y, .boldSystemFont(ofSize: 10), gold)
-            y += 22
-            for r in gifts {
-                ensure(30)
-                text(r.fund.capitalized, margin, y, .boldSystemFont(ofSize: 12), ink)
-                text("\(r.count) gift\(r.count == 1 ? "" : "s")", margin + 140, y + 1, .systemFont(ofSize: 10), muted)
-                textRight(amount(r.totalMinor), y, .boldSystemFont(ofSize: 12), ink)
-                hairline.setFill()
-                ctx.fill(CGRect(x: margin, y: y + 20, width: W - margin * 2, height: 0.7))
-                y += 30
-            }
-            if gifts.isEmpty {
-                text(split ? "No settled gifts outside a pledge this period." : "No settled gifts this period.",
-                     margin, y, .systemFont(ofSize: 11), muted)
-                y += 30
-            }
-
-            if split {
-                subtotal("TOTAL GIFTS", giftsMinor)
-
-                // Partner pledges by pledge, with their own subtotal
-                y += 10
-                ensure(52)
-                text("PARTNER PLEDGES", margin, y, .boldSystemFont(ofSize: 10), gold)
-                y += 22
-                for p in pledges {
-                    ensure(30)
-                    textClipped(p.title, margin, y, width: 270, .boldSystemFont(ofSize: 12), ink)
-                    text("\(p.count) payment\(p.count == 1 ? "" : "s")", margin + 290, y + 1, .systemFont(ofSize: 10), muted)
-                    textRight(amount(p.totalMinor), y, .boldSystemFont(ofSize: 12), ink)
-                    hairline.setFill()
-                    ctx.fill(CGRect(x: margin, y: y + 20, width: W - margin * 2, height: 0.7))
-                    y += 30
-                }
-                subtotal("TOTAL PARTNER PLEDGES", pledgesMinor)
-            }
-
-            // Ruled grand total
-            ensure(60)
-            y += 6
-            navy.setFill()
-            ctx.fill(CGRect(x: margin, y: y, width: W - margin * 2, height: 2))
-            y += 12
-            text("TOTAL GIVEN", margin, y, .boldSystemFont(ofSize: 11), navy)
-            textRight(amount(totalMinor), y - 3, .boldSystemFont(ofSize: 16), gold)
-            if split {
-                y += 20
-                text("Gifts + Partner pledges", margin, y, .systemFont(ofSize: 9), muted)
-            }
-
-            // Scripture + footer
-            y += 46
-            ensure(90)
-            let verse = "\u{201C}Each of you should give what you have decided in your heart to give… for God loves a cheerful giver.\u{201D}"
-            (verse as NSString).draw(in: CGRect(x: margin, y: y, width: W - margin * 2, height: 44),
-                                     withAttributes: [.font: UIFont.italicSystemFont(ofSize: 12),
-                                                      .foregroundColor: navy])
-            y += 40
-            text("2 Corinthians 9:7", margin, y, .boldSystemFont(ofSize: 10), gold)
-            text("Official statement · Finance · Nuru Place", margin, H - 42, .systemFont(ofSize: 9), muted)
-        }
-    }
-}
-
 // MARK: - Shared giving atoms (used by the receipt screen too)
 
 func ksh(_ n: Int) -> String { "KSh \(n.formatted(.number.grouping(.automatic)))" }
@@ -830,13 +730,9 @@ func ksh(_ n: Int) -> String { "KSh \(n.formatted(.number.grouping(.automatic)))
 /// Currency-AWARE amount from minor units — PayPal gifts settle in USD
 /// server-side; formatting everything as "KSh" printed the wrong symbol on
 /// USD gifts while the Currency detail row said USD. Mirrors Android money().
-func money(_ minor: Int, _ currency: String?) -> String {
-    switch currency?.uppercased() {
-    case nil, "", "KES": return ksh(minor / 100)
-    case "USD": return "$" + String(format: "%.2f", Double(minor) / 100.0)
-    case let c?: return c + " " + String(format: "%.2f", Double(minor) / 100.0)
-    }
-}
+/// One formatter for every Give surface (Giving Cycle 2): "KSh 1,234",
+/// "US$ 20.00" — shilling cents are shown when there are any, never dropped.
+func money(_ minor: Int, _ currency: String?) -> String { GiveMoney.format(minor, currency) }
 
 @ViewBuilder
 func statusChip(_ status: String) -> some View {

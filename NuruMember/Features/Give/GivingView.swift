@@ -97,19 +97,6 @@ private struct MethodRow: Identifiable {
     var id: String { rail.key }
 }
 
-private func feeFor(_ a: Int) -> Int {
-    switch a {
-    case ...100: return 0
-    case ...500: return 7
-    case ...1000: return 13
-    case ...1500: return 23
-    case ...2500: return 33
-    case ...3500: return 53
-    case ...5000: return 57
-    default: return Int((Double(a) * 0.012).rounded())
-    }
-}
-
 // MARK: - Shared giving helpers (used by the statement + receipt screens too)
 
 func givingMethodName(_ raw: String?) -> String {
@@ -180,14 +167,25 @@ final class GivingViewModel: ObservableObject {
     private var appliedHistorySeq = 0
     private var appliedSchedulesSeq = 0
     private var appliedMethodsSeq = 0
+    private var appliedTotalsSeq = 0
+
+    /// This year's giving per currency, as the server's statement counts it
+    /// (GET /giving/statements `totals[]`, Giving Cycle 2) — nil until it
+    /// answers, and the year pill then sums the history itself, per currency.
+    @Published var serverYearTotals: [CurrencyTotal]?
+    private var serverTotalsYear = 0
 
     func load() async {
         loading = true
         loadSeq += 1
         let seq = loadSeq
+        // The church's year, asked for by name: with no year the server
+        // answers the latest year that had a gift, not necessarily this one.
+        let year = GiveCalendar.currentYear()
         async let h = MemberAPI.givingHistory()
         async let s = MemberAPI.schedules()
         async let m = MemberAPI.givingMethods()
+        async let t = MemberAPI.givingStatements(year: year)
         // A failed refetch keeps what is on screen (stale-while-revalidate)
         // rather than blanking the year pill and Recent giving.
         if let v = try? await h, seq > appliedHistorySeq { appliedHistorySeq = seq; history = v }
@@ -199,6 +197,11 @@ final class GivingViewModel: ObservableObject {
             let next = v.methods.isEmpty ? GivingMethods.fallback(phoneOnFile: v.phoneOnFile) : v
             if next != methods { methods = next }
         }
+        if let v = try? await t, v.year == year, seq > appliedTotalsSeq {
+            appliedTotalsSeq = seq
+            serverYearTotals = v.totals
+            serverTotalsYear = year
+        }
         if !methodsSettled { methodsSettled = true }
         loading = false
     }
@@ -206,12 +209,13 @@ final class GivingViewModel: ObservableObject {
     /// The schedules Give lists under ACTIVE SCHEDULES (never a cancelled one).
     var listedSchedules: [GivingSchedule] { GiveSchedules.listed(schedules) }
 
-    var yearTotalMinor: Int {
-        let yr = Calendar.current.component(.year, from: Date())
-        let settled: Set<String> = ["succeeded", "settled", "completed"]
-        return history
-            .filter { settled.contains($0.status) && $0.createdAt.prefix(4) == String(yr) }
-            .reduce(0) { $0 + $1.amountMinor }
+    /// What the year pill says was given this (church) year, per currency —
+    /// never one sum of shillings and dollars. The server's statement when it
+    /// has answered for this year, else the history summed the same way.
+    var yearTotals: [CurrencyTotal] {
+        let year = GiveCalendar.currentYear()
+        if let server = serverYearTotals, serverTotalsYear == year { return server }
+        return GiveMoney.totals(of: history.filter { GiveCalendar.year(of: $0.createdAt) == year })
     }
     /// The last ORDINARY gift — "Repeat last gift" must never re-pay a pledge
     /// instalment or a need: records carrying a `pledgeId` (or a `needId`,
@@ -248,7 +252,12 @@ struct GivingView: View {
     private static let defaultAmount = 1000
 
     @State private var fundCode = GivingView.defaultFundCode
+    /// The gift in whole SHILLINGS — M-Pesa's amount. Kept while PayPal is
+    /// chosen, so switching back restores it (Giving Cycle 2).
     @State private var amount = GivingView.defaultAmount
+    /// The gift in US CENTS while PayPal is chosen — PayPal gifts are in
+    /// dollars (the server refuses anything else); never a shilling number.
+    @State private var usdCents = UsdEntry.defaultCents
     /// The pledge this gift counts toward (Partners → "Pay now"). Rides the
     /// intent body as `pledge_id` (PARTNERS_PROGRAMME §5) and clears once the
     /// server confirms the gift — a retry after a failure keeps it.
@@ -342,8 +351,26 @@ struct GivingView: View {
         if let f = intentFundName { return .fund(f) }
         return .fund(fund.label)
     }
-    private var fee: Int { coverFee ? feeFor(amount) : 0 }
-    private var total: Int { amount + fee }
+    /// The selected rail's currency: M-Pesa KES, PayPal USD (Giving Cycle 2).
+    private var currency: String { vm.methods.currency(method) }
+    /// PayPal is chosen: the amount is entered, shown and sent in dollars.
+    private var inDollars: Bool { currency == "USD" }
+    /// The gift itself, in the rail's minor units.
+    private var giftMinor: Int { inDollars ? usdCents : amount * 100 }
+    /// What is charged, and how much of it is the fee cover (shilling rails
+    /// only; `amount_minor` is the total, `cover_fee_minor` the fee part).
+    private var charge: (amountMinor: Int, coverFeeMinor: Int?) {
+        CoverFee.split(giftMinor: giftMinor, covering: coverFee, currency: currency)
+    }
+    private var totalMinor: Int { charge.amountMinor }
+    /// "KSh 1,013" · "US$ 25.00" — the total, in its own currency.
+    private var totalLabel: String { GiveMoney.format(totalMinor, currency) }
+    /// Why the amount cannot go on the chosen rail (its limits, whole
+    /// shillings for M-Pesa) — said under the amount; nil when it can.
+    private var amountProblem: String? {
+        guard giftMinor > 0, let rail = vm.methods.method(method) else { return nil }
+        return GiveAmountRules.problem(totalMinor: totalMinor, rail: rail)
+    }
     /// A pledge / need payment is always one-time (the switch is hidden), and
     /// so is a gift on a rail the server does not run schedules on.
     private var recurring: Bool { freq != "once" && !payMode && recurringAllowed }
@@ -357,7 +384,7 @@ struct GivingView: View {
     /// submission = a new idempotency key. (The phone is included too: a
     /// replayed key would return the old transaction, prompting the old number.)
     private var formSignature: String {
-        [String(amount), fundCode, method, pledgeId ?? "", needId ?? "", freq,
+        [String(amount), String(usdCents), fundCode, method, pledgeId ?? "", needId ?? "", freq,
          accountName, String(coverFee), mpesaPhone].joined(separator: "|")
     }
 
@@ -368,10 +395,14 @@ struct GivingView: View {
         return error is URLError
     }
     private var cadenceWord: String { freq == "weekly" ? "week" : "month" }
-    /// The server's rails in the member's order, each with its paint.
+    /// The server's rails in the member's order, each with its paint — the
+    /// shilling rails only while paying a pledge or need (pledges are in
+    /// shillings; a dollar payment would count against a shilling promise).
     private var orderedMethods: [MethodRow] {
-        methodOrder.compactMap { k in
-            vm.methods.method(k).map { MethodRow(look: methodLook($0), rail: $0) }
+        let offered = Set(vm.methods.offered(shillingsOnly: payMode).map(\.key))
+        return methodOrder.compactMap { k in
+            guard offered.contains(k) else { return nil }
+            return vm.methods.method(k).map { MethodRow(look: methodLook($0), rail: $0) }
         }
     }
     private var freqLabel: String {
@@ -392,7 +423,9 @@ struct GivingView: View {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
                         }
                         methodSection
-                        coverFeeRow
+                        // The fee table is M-Pesa's, in shillings — nothing to
+                        // cover on a dollar rail.
+                        if !inDollars { coverFeeRow }
                         if !vm.listedSchedules.isEmpty { schedulesSection }
                         recentSection
                         scriptureStrip
@@ -426,6 +459,8 @@ struct GivingView: View {
         // rail that can no longer be picked, and fill the prompt number once
         // `phone_on_file` is known (or known to be unavailable).
         .onChange(of: vm.methods) { _, m in syncMethods(m) }
+        // Paying a pledge or need takes shilling rails only: move off PayPal.
+        .onChange(of: payMode) { _, _ in syncMethods(vm.methods) }
         .onChange(of: vm.methodsSettled) { _, _ in seedPhone() }
         .onChange(of: auth.profile?.userId) { _, _ in seedPhone() }
         // (A seed skipped while the number sheet was open lands once it shuts.)
@@ -465,9 +500,10 @@ struct GivingView: View {
             if p == .active && giveOnScreen { Task { await vm.load() } }
         }
         .sheet(isPresented: $showKeypad) {
-            GiveKeypadSheet(initial: amount, fundLabel: payLabel ?? fund.label,
-                            initialName: accountName.isEmpty ? lastAccountName : accountName) { amt, name in
-                amount = amt
+            // Shillings for M-Pesa; dollars and cents while PayPal is chosen.
+            GiveKeypadSheet(initialMinor: giftMinor, currency: currency, fundLabel: payLabel ?? fund.label,
+                            initialName: accountName.isEmpty ? lastAccountName : accountName) { minor, name in
+                if inDollars { usdCents = minor } else { amount = minor / 100 }
                 accountName = name ?? ""
                 if let name, !name.isEmpty { lastAccountName = name }
             }
@@ -482,7 +518,7 @@ struct GivingView: View {
                 if recurring {
                     Task { await createSchedule(provider: provider, phone: number) }
                 } else {
-                    Task { await submitIntent(provider: provider, currency: "KES", phone: number) }
+                    Task { await submitIntent(provider: provider, currency: currency, phone: number) }
                 }
             }
         }
@@ -507,7 +543,7 @@ struct GivingView: View {
             GiveCeremonyView(stage: ceremony ?? "failed",
                              note: ceremonyNote,
                              failure: ceremonyFailure,
-                             amountLabel: waitingGift?.amountLabel ?? ksh(total),
+                             amountLabel: waitingGift?.amountLabel ?? totalLabel,
                              fundLabel: fund.label,
                              destination: waitingGift?.destination ?? ceremonyDestination,
                              giftName: waitingGift != nil ? waitingGift?.giftName : (accountName.isEmpty ? nil : accountName),
@@ -591,8 +627,10 @@ struct GivingView: View {
 
     /// "KSh 12,340 given this year" — or bullets while the member has chosen
     /// to hide it. The word "given" stays, so the pill still says what it is.
+    /// Per currency (Giving Cycle 2): "KSh 3,500 + US$ 20.00 given this year"
+    /// — shillings and dollars are never added together.
     private var yearPillText: String {
-        hideYearTotal ? "KSh •••• given this year" : "\(ksh(vm.yearTotalMinor / 100)) given this year"
+        hideYearTotal ? "KSh •••• given this year" : "\(GiveMoney.line(vm.yearTotals)) given this year"
     }
 
     // MARK: Repeat last gift
@@ -610,7 +648,7 @@ struct GivingView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                    Text("\(ksh(g.amountMinor / 100)) · \(g.fund.capitalized) · via \(givingMethodName(g.method))")
+                    Text("\(money(g.amountMinor, g.currency)) · \(g.fund.capitalized) · via \(givingMethodName(g.method))")
                         .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
                 }
                 Spacer(minLength: Nuru.S.sm)
@@ -682,13 +720,26 @@ struct GivingView: View {
                 VStack(spacing: 4) {
                     Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
-                        Text(amount.formatted(.number.grouping(.automatic)))
+                        // PayPal takes dollars (Giving Cycle 2): the field says
+                        // so, and shows cents.
+                        Text(inDollars ? "US$" : "KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
+                        Text(inDollars ? GiveMoney.number(usdCents) : amount.formatted(.number.grouping(.automatic)))
                             .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
-                            .contentTransition(.numericText(value: Double(amount)))
+                            .lineLimit(1).minimumScaleFactor(0.6)
+                            .contentTransition(.numericText(value: Double(giftMinor)))
                     }
                     Text(amountSubtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                         .lineLimit(1).minimumScaleFactor(0.85)
+                    if inDollars {
+                        Text("PayPal gifts are in US dollars")
+                            .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x0070BA))
+                    }
+                    if let amountProblem {
+                        Text(amountProblem)
+                            .font(.inter(11)).foregroundStyle(Nuru.danger)
+                            .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
                 .frame(maxWidth: .infinity)
                 .contentShape(Rectangle())
@@ -721,16 +772,22 @@ struct GivingView: View {
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
+    /// The suggested amounts in the rail's own money: KSh 200 … 5,000, or
+    /// US$ 5 … 100 while PayPal is chosen. Minor units either way.
+    private var presetMinors: [Int] { inDollars ? UsdEntry.presetsCents : presets.map { $0 * 100 } }
+
     private var presetsRow: some View {
         FlowWrap(spacing: 6, centered: true) {
-            ForEach(presets, id: \.self) { v in
-                let on = amount == v
+            ForEach(presetMinors, id: \.self) { v in
+                let on = giftMinor == v
                 Button {
                     guard !on else { return }
                     Haptics.selection()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amount = v }
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        if inDollars { usdCents = v } else { amount = v / 100 }
+                    }
                 } label: {
-                    Text(v.formatted(.number.grouping(.automatic)))
+                    Text((v / 100).formatted(.number.grouping(.automatic)))
                         .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                         .padding(.horizontal, 14).frame(height: 34)
                         .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
@@ -775,7 +832,7 @@ struct GivingView: View {
                 Icon(.repeat, size: 16, color: Nuru.navy)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("\(ksh(total)) every \(cadenceWord)")
+                Text("\(totalLabel) every \(cadenceWord)")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text("First charge \(giveDateFull(nextCycleISO())) · then every \(cadenceWord). Cancel anytime.")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
@@ -905,7 +962,7 @@ struct GivingView: View {
         Toggle(isOn: $coverFee) {
             VStack(alignment: .leading, spacing: 2) {
                 Text("Cover the transaction fee").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
-                Text("Adds \(ksh(feeFor(amount))) — 100% reaches the fund")
+                Text("Adds \(ksh(CoverFee.feeKsh(forGiftKsh: amount))) — 100% reaches the fund")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
             }
         }
@@ -952,7 +1009,7 @@ struct GivingView: View {
                         .background(Nuru.mutedBg, in: Capsule())
                 }
             }
-            Text(ksh(s.amountMinor / 100))
+            Text(money(s.amountMinor, s.currency))
                 .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
                 .lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.top, 5)
@@ -1121,7 +1178,7 @@ struct GivingView: View {
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
             }
             Spacer()
-            Text(ksh(g.amountMinor / 100))
+            Text(money(g.amountMinor, g.currency))
                 .font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                 .lineLimit(1).layoutPriority(1)
         }
@@ -1151,7 +1208,8 @@ struct GivingView: View {
     private var secureNote: some View {
         HStack(spacing: 6) {
             Icon(.shieldCheck, size: 13, color: Color(hex: 0x74808F))
-            Text("Secure · M-Pesa & card · Receipt sent instantly")
+            // Only rails that can take money here (it used to promise cards).
+            Text(vm.methods.secureNote())
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
         }
         .frame(maxWidth: .infinity, alignment: .center)
@@ -1170,18 +1228,18 @@ struct GivingView: View {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.8)
                     Text("Processing…")
                 } else if pledgeId != nil {
-                    Text("Pay \(ksh(total)) toward \(pledgeTitle ?? "your pledge")")
+                    Text("Pay \(totalLabel) toward \(pledgeTitle ?? "your pledge")")
                         .lineLimit(1).minimumScaleFactor(0.75)
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if needId != nil {
-                    Text("Give \(ksh(total)) to \(needTitle ?? "this need")")
+                    Text("Give \(totalLabel) to \(needTitle ?? "this need")")
                         .lineLimit(1).minimumScaleFactor(0.75)
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if recurring {
                     Icon(.repeat, size: 14, color: Nuru.navy)
-                    Text("Schedule \(ksh(total)) / \(cadenceWord)")
+                    Text("Schedule \(totalLabel) / \(cadenceWord)")
                 } else {
-                    Text("Give \(ksh(total))")
+                    Text("Give \(totalLabel)")
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 }
             }
@@ -1198,8 +1256,9 @@ struct GivingView: View {
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.pressable)
-        .disabled(submitting || amount <= 0)
-        .opacity(amount <= 0 ? 0.5 : 1)
+        // Nothing to give, or an amount the rail cannot take (said under it).
+        .disabled(submitting || giftMinor <= 0 || amountProblem != nil)
+        .opacity(giftMinor <= 0 || amountProblem != nil ? 0.5 : 1)
         .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.lg)
         // Above the floating tab bar, not behind it. 28pt put this bar UNDER
         // the shell's ~96pt floating tabs — on every device only a gold sliver
@@ -1219,12 +1278,12 @@ struct GivingView: View {
     // MARK: Actions
 
     private func give() async {
-        guard amount > 0, !submitting else { return }
+        guard giftMinor > 0, amountProblem == nil, !submitting else { return }
         ceremonyFailure = nil; waitingGift = nil
         // Only a rail the server says can take money here (Cycle 1). The form
         // moves off any other as the methods load, so landing here means none
         // can — say so rather than send a request that cannot succeed.
-        guard vm.methods.isSelectable(method), let rail = vm.methods.method(method) else {
+        guard vm.methods.isSelectable(method, shillingsOnly: payMode), let rail = vm.methods.method(method) else {
             ceremonyNote = vm.methods.unavailableNote(method); ceremony = "failed"; return
         }
         if rail.needsPhone {
@@ -1236,7 +1295,8 @@ struct GivingView: View {
         if recurring { await createSchedule(provider: method, phone: nil); return }
         switch method {
         case "paypal":
-            await submitIntent(provider: "paypal", currency: "USD", phone: nil)
+            // In dollars (Giving Cycle 2) — never a shilling number.
+            await submitIntent(provider: "paypal", currency: currency, phone: nil)
         default:
             // A rail with no in-app flow (a card needs the Stripe step, SAQ-A)
             // is never selectable; surfaced rather than faked if it ever is.
@@ -1266,7 +1326,7 @@ struct GivingView: View {
         }
         do {
             let res = try await APIClient.shared.post("giving/schedules",
-                body: Body(fund: fund.code, amountMinor: total * 100, currency: "KES",
+                body: Body(fund: fund.code, amountMinor: totalMinor, currency: currency,
                            frequency: freq, method: provider, idempotencyKey: submissionKey,
                            phoneNumber: phone),
                 as: Created.self)
@@ -1290,17 +1350,21 @@ struct GivingView: View {
     private func submitIntent(provider: String, currency: String, phone: String?) async {
         // One intent in flight, ever — a double tap on the M-Pesa sheet's
         // confirm (it calls back before its dismissal lands) is refused here.
-        guard amount > 0, !submitting else { return }
+        guard giftMinor > 0, !submitting else { return }
         submitting = true; defer { submitting = false }
         paypalOrderId = nil
         intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
         waitingGift = nil; ceremonyFailure = nil; promptPhone = nil
+        // `amount_minor` is the TOTAL charged; `cover_fee_minor` the part of
+        // it that covers the fee (Giving Cycle 2), so the receipt can say so.
+        let charge = self.charge
         do {
-            let res = try await MemberAPI.giving(fund: fund.code, amountMinor: total * 100,
+            let res = try await MemberAPI.giving(fund: fund.code, amountMinor: charge.amountMinor,
                                                  currency: currency, method: provider, phoneNumber: phone,
                                                  accountName: accountName.isEmpty ? nil : accountName,
                                                  pledgeId: pledgeId, needId: needId,
-                                                 idempotencyKey: submissionKey)
+                                                 idempotencyKey: submissionKey,
+                                                 coverFeeMinor: charge.coverFeeMinor)
             // The server answered: this key is spent. A replay (`reused: true`,
             // the existing transaction) is handled exactly like a fresh one.
             submissionKey = UUID().uuidString
@@ -1485,10 +1549,20 @@ struct GivingView: View {
     }
 
     private func applyRepeat(_ g: GivingRecord) {
-        amount = g.amountMinor / 100
         if funds.contains(where: { $0.code == g.fund }) { fundCode = g.fund }
         // Only onto a rail that can take money here NOW (Cycle 1).
         if let m = g.method, vm.methods.isSelectable(m) { selectMethod(m) }
+        if g.currency.uppercased() == "USD" {
+            // A PayPal gift repeats in dollars — and only on PayPal; its cents
+            // are never read as shillings (Giving Cycle 2).
+            if vm.methods.currency(method) == "USD" { usdCents = g.amountMinor }
+        } else if vm.methods.currency(method) == "KES" {
+            // The gift itself, not the fee it covered (Cycle 2): the switch
+            // below adds the fee again when it was covered last time.
+            let fee = g.feeCoverMinor ?? 0
+            amount = max(0, g.amountMinor - fee) / 100
+            coverFee = fee > 0
+        }
         accountName = g.accountName ?? ""
     }
 
@@ -1504,7 +1578,7 @@ struct GivingView: View {
     private func syncMethods(_ m: GivingMethods) {
         let order = GivingRails.mergedOrder(current: methodOrder, server: m.methods.map(\.key))
         if order != methodOrder { methodOrder = order }
-        if let pick = m.selection(keeping: method), pick != method {
+        if let pick = m.selection(keeping: method, shillingsOnly: payMode), pick != method {
             selectMethod(pick)
         } else if !m.allowsRecurring(method) && freq != "once" {
             freq = "once"
@@ -1558,19 +1632,27 @@ struct GivingView: View {
 private let giftNamePresets = ["Tithe", "Offering", "Building", "Missions", "Thanksgiving", "First Fruits"]
 
 private struct GiveKeypadSheet: View {
-    let initial: Int
+    /// The amount it opens on, in the rail's minor units.
+    let initialMinor: Int
+    /// "KES" — whole shillings; "USD" — dollars and cents, for PayPal
+    /// (Giving Cycle 2).
+    var currency: String = "KES"
     let fundLabel: String
     /// Last-used gift name (remembered across sessions) — preselects subtly
     /// without forcing a choice.
     var initialName: String = ""
+    /// The chosen amount in minor units (shillings × 100, or US cents).
     var onConfirm: (Int, String?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var value = ""
     @State private var name = ""
     @FocusState private var nameFocused: Bool
 
-    private var num: Int { Int(value) ?? 0 }
+    private var inDollars: Bool { currency.uppercased() == "USD" }
+    /// The entry in minor units.
+    private var minor: Int { inDollars ? UsdEntry.cents(value) : (Int(value) ?? 0) * 100 }
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var presetMinors: [Int] { inDollars ? UsdEntry.presetsCents : presets.map { $0 * 100 } }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -1584,16 +1666,20 @@ private struct GiveKeypadSheet: View {
                 .padding(.top, Nuru.S.lg)
 
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
-                    Text(num.formatted(.number.grouping(.automatic)))
+                    Text(inDollars ? "US$" : "KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
+                    Text(inDollars ? (value.isEmpty ? "0" : value) : (minor / 100).formatted(.number.grouping(.automatic)))
                         .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
                 }
                 .frame(maxWidth: .infinity)
+                if inDollars {
+                    Text("PayPal gifts are in US dollars")
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x0070BA))
+                }
 
                 HStack(spacing: 6) {
-                    ForEach(presets, id: \.self) { v in
-                        Button { value = String(v) } label: {
-                            Text(v.formatted(.number.grouping(.automatic)))
+                    ForEach(presetMinors, id: \.self) { v in
+                        Button { value = inDollars ? UsdEntry.text(v) : String(v / 100) } label: {
+                            Text((v / 100).formatted(.number.grouping(.automatic)))
                                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                                 .padding(.horizontal, 11).frame(height: 32)
                                 .background(Nuru.surface, in: Capsule())
@@ -1610,21 +1696,21 @@ private struct GiveKeypadSheet: View {
                 Button {
                     Haptics.action()
                     nameFocused = false
-                    onConfirm(num, trimmedName.isEmpty ? nil : trimmedName); dismiss()
+                    onConfirm(minor, trimmedName.isEmpty ? nil : trimmedName); dismiss()
                 } label: {
-                    Text("Give \(ksh(num))")
+                    Text("Give \(GiveMoney.format(minor, currency))")
                         .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 48)
                         .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.pressable)
-                .disabled(num <= 0)
-                .opacity(num <= 0 ? 0.4 : 1)
+                .disabled(minor <= 0)
+                .opacity(minor <= 0 ? 0.4 : 1)
             }
             .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
         }
         .onAppear {
-            value = initial > 0 ? String(initial) : ""
+            value = inDollars ? UsdEntry.text(initialMinor) : (initialMinor > 0 ? String(initialMinor / 100) : "")
             name = initialName
         }
         .presentationDetents([.height(720)])
@@ -1672,7 +1758,8 @@ private struct GiveKeypadSheet: View {
     }
 
     private var keys: some View {
-        let all = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "00", "0", "del"]
+        // Dollars take cents: the "00" key becomes the decimal point.
+        let all = ["1", "2", "3", "4", "5", "6", "7", "8", "9", inDollars ? "." : "00", "0", "del"]
         let cols = Array(repeating: GridItem(.flexible(), spacing: 10), count: 3)
         return LazyVGrid(columns: cols, spacing: 10) {
             ForEach(all, id: \.self) { k in
@@ -1698,6 +1785,7 @@ private struct GiveKeypadSheet: View {
 
     private func press(_ k: String) {
         Haptics.tap()
+        if inDollars { value = UsdEntry.press(k, on: value); return }
         switch k {
         case "del":
             value = String(value.dropLast())

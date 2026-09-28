@@ -533,19 +533,23 @@ extension MemberAPI {
     /// only to retry an attempt that got no server answer — the server then
     /// returns the existing transaction instead of a second STK). A fresh one
     /// when nil.
+    /// `coverFeeMinor` (Giving Cycle 2): how much of `amountMinor` — still the
+    /// TOTAL charged — is the fee the member chose to cover. Omitted when nil.
     static func giving(fund: String, amountMinor: Int, currency: String,
                        method: String, phoneNumber: String? = nil, accountName: String? = nil,
                        pledgeId: String? = nil, needId: String? = nil,
-                       idempotencyKey: String? = nil) async throws -> GivingIntentResult {
+                       idempotencyKey: String? = nil, coverFeeMinor: Int? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
             let method: String; let phoneNumber: String?; let accountName: String?
             let pledgeId: String?; let needId: String?; let idempotencyKey: String
+            let coverFeeMinor: Int?
         }
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
                        method: method, phoneNumber: phoneNumber, accountName: accountName,
-                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? UUID().uuidString),
+                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? UUID().uuidString,
+                       coverFeeMinor: coverFeeMinor),
             as: GivingIntentResult.self)
     }
 
@@ -560,6 +564,14 @@ extension MemberAPI {
     /// bytes are returned untouched.
     static func givingReceiptPdf(_ id: String) async throws -> Data {
         try await APIClient.shared.get("giving/transactions/\(id)/receipt.pdf", as: RawJSON.self).data
+    }
+
+    /// GET /giving/statement.pdf?year=YYYY — the giving statement for one
+    /// church (Nairobi) year as PDF bytes, rendered by the server (Giving
+    /// Cycle 2: per-currency totals, Nairobi dates) so the app, the office
+    /// and the paper agree. Same RawJSON passthrough as `givingReceiptPdf`.
+    static func givingStatementPdf(year: Int) async throws -> Data {
+        try await APIClient.shared.get("giving/statement.pdf", query: ["year": String(year)], as: RawJSON.self).data
     }
 
     /// GET /me/gifts — the member's spiritual-gifts profile.
