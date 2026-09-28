@@ -73,6 +73,8 @@ final class LocalNotifier: NSObject, ObservableObject {
                 // Giving: the failed gift (Cycle 3) or recurring gift (Cycle 4) a tap opens.
                 "transactionId": n.payload?.transactionId ?? "",
                 "scheduleId": n.payload?.scheduleId ?? "",
+                // Partners (Cycle 5): the pledge a pledge notice opens.
+                "pledgeId": n.payload?.pledgeId ?? "",
             ]
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)
@@ -82,9 +84,11 @@ final class LocalNotifier: NSObject, ObservableObject {
 
     // Template → human copy (mirrors NotificationsView's mapping, condensed).
     private static func title(for n: NotificationRow) -> String {
-        if let t = n.payload?.title, !t.isEmpty { return t }
-        // Giving notices say what happened (a failed gift is not a receipt).
+        // Giving and Partners notices say what happened (a failed gift is not
+        // a receipt) — ahead of `payload.title`, which on the Partners notices
+        // is the pledge's name.
         if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
+        if let t = n.payload?.title, !t.isEmpty { return t }
         let t = n.template
         if t.hasPrefix("reflection_approved") { return "Reflection approved" }
         if t.hasPrefix("reflection_returned") { return "Reflection returned" }

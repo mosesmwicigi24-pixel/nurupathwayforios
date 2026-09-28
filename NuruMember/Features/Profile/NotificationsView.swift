@@ -97,8 +97,14 @@ struct NotificationsView: View {
     /// pathway), or — when there is no target — the read-and-dismiss popup.
     @ViewBuilder private func rowLink(_ n: NotificationRow) -> some View {
         let t = n.template
-        if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId,
-                                    scheduleId: n.payload?.scheduleId) {
+        if let pledge = PledgeLink.from(template: t, pledgeId: n.payload?.pledgeId) {
+            // A pledge notice, or its collector's (Giving Cycle 5) — the pledge.
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openPledge(pledge)
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        } else if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId,
+                                           scheduleId: n.payload?.scheduleId) {
             // A failed gift (Giving Cycle 3) opens its result on Give — why,
             // what to do, and Try again; a failed or paused recurring gift
             // (Cycle 4) opens its sheet.
@@ -374,8 +380,10 @@ struct NotificationsView: View {
         "department_post": "News from your department", "department_need_approved": "A need is open for giving",
     ]
     private func titleFor(_ n: NotificationRow) -> String {
-        if let t = n.payload?.title, !t.isEmpty { return t }
+        // Giving / Partners words first: on a pledge notice `payload.title`
+        // is the pledge's name, not the notice's title.
         if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
+        if let t = n.payload?.title, !t.isEmpty { return t }
         if let t = titles[n.template] { return t }
         return n.template.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalizingFirst()
     }

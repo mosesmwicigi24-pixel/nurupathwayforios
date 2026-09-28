@@ -20,6 +20,12 @@
 // failed; paused schedules are labelled and cancelled ones are not listed. The
 // rules themselves live in GivingRules.swift.
 //
+// GIVING CYCLE 5 (2026-09-28): a gift that collects a pledge says so ("Collects
+// your pledge “…”") and what its next prompt really asks (the rest of what is
+// due, or nothing); a monthly pledge's collector changes its amount and day on
+// the pledge. Paying a pledge or need, ITS currency decides the rails (a KES
+// promise M-Pesa, a USD one PayPal).
+//
 // PLEDGE-PAY MODE (2026-09-26): while a pledge (or a need) preset is active the
 // SERVER routes the money — a pledge to its own `pays_to` fund, a need to its
 // department's fund — so "Repeat last gift", the fund chooser and the
@@ -177,6 +183,13 @@ final class GivingViewModel: ObservableObject {
     /// answers, and the year pill then sums the history itself, per currency.
     @Published var serverYearTotals: [CurrencyTotal]?
     private var serverTotalsYear = 0
+    /// This year's statement pledges, by id → shape (Giving Cycle 5): a gift
+    /// that collects a MONTHLY pledge takes its amount and day from the
+    /// pledge, so its sheet sends the member there to change them.
+    @Published var pledgeShapes: [String: String] = [:]
+
+    /// A pledge's shape when this year's statement named it; nil = unknown.
+    func pledgeShape(_ id: String) -> String? { pledgeShapes[id] }
 
     func load() async {
         loading = true
@@ -204,6 +217,7 @@ final class GivingViewModel: ObservableObject {
             appliedTotalsSeq = seq
             serverYearTotals = v.totals
             serverTotalsYear = year
+            pledgeShapes = Dictionary(v.pledges.map { ($0.pledgeId, $0.shape) }, uniquingKeysWith: { a, _ in a })
         }
         if !methodsSettled { methodsSettled = true }
         loading = false
@@ -280,6 +294,9 @@ struct GivingView: View {
     /// A department need's title + one line, for the GIVING TO A NEED card.
     @State private var needTitle: String?
     @State private var needLine: String?
+    /// The pledge's or need's currency (Giving Cycle 5) — it decides the rails
+    /// and the amount's money while paying one. Cleared with the pay mode.
+    @State private var payCurrency: String?
     /// From the intent RESULT (pledge names contract): the fund the SERVER
     /// routed the gift to, and the pledge it counts toward. The ceremony reads
     /// these, never the chip, so a pledge payment is never described as a
@@ -369,8 +386,14 @@ struct GivingView: View {
         if let f = intentFundName { return .fund(f) }
         return .fund(fund.label)
     }
-    /// The selected rail's currency: M-Pesa KES, PayPal USD (Giving Cycle 2).
-    private var currency: String { vm.methods.currency(method) }
+    /// The gift's currency: the selected rail's (M-Pesa KES, PayPal USD —
+    /// Giving Cycle 2) — or, paying a pledge or need, ITS currency, which
+    /// decides the rails (Giving Cycle 5).
+    private var currency: String { payMode ? payCurrencyCode : vm.methods.currency(method) }
+    /// The pledge's / need's currency while paying one (shillings when unsaid).
+    private var payCurrencyCode: String { (payCurrency ?? "KES").uppercased() }
+    /// The rails a pledge / need payment may use: its currency's only.
+    private var payRailsCurrency: String? { payMode ? payCurrencyCode : nil }
     /// PayPal is chosen: the amount is entered, shown and sent in dollars.
     private var inDollars: Bool { currency == "USD" }
     /// The gift itself, in the rail's minor units.
@@ -386,7 +409,8 @@ struct GivingView: View {
     /// Why the amount cannot go on the chosen rail (its limits, whole
     /// shillings for M-Pesa) — said under the amount; nil when it can.
     private var amountProblem: String? {
-        guard giftMinor > 0, let rail = vm.methods.method(method) else { return nil }
+        guard giftMinor > 0, let rail = vm.methods.method(method),
+              vm.methods.currency(method) == currency else { return nil }
         return GiveAmountRules.problem(totalMinor: totalMinor, rail: rail)
     }
     /// A pledge / need payment is always one-time (the switch is hidden), and
@@ -414,7 +438,7 @@ struct GivingView: View {
     /// shilling rails only while paying a pledge or need (pledges are in
     /// shillings; a dollar payment would count against a shilling promise).
     private var orderedMethods: [MethodRow] {
-        let offered = Set(vm.methods.offered(shillingsOnly: payMode).map(\.key))
+        let offered = Set(vm.methods.offered(onlyCurrency: payRailsCurrency).map(\.key))
         return methodOrder.compactMap { k in
             guard offered.contains(k) else { return nil }
             return vm.methods.method(k).map { MethodRow(look: methodLook($0), rail: $0) }
@@ -475,8 +499,10 @@ struct GivingView: View {
         // rail that can no longer be picked, and fill the prompt number once
         // `phone_on_file` is known (or known to be unavailable).
         .onChange(of: vm.methods) { _, m in syncMethods(m) }
-        // Paying a pledge or need takes shilling rails only: move off PayPal.
+        // Paying a pledge or need takes its currency's rails only (Giving
+        // Cycle 5): a KES promise M-Pesa, a USD one PayPal.
         .onChange(of: payMode) { _, _ in syncMethods(vm.methods) }
+        .onChange(of: payCurrency) { _, _ in syncMethods(vm.methods) }
         .onChange(of: vm.methodsSettled) { _, _ in seedPhone() }
         .onChange(of: auth.profile?.userId) { _, _ in seedPhone() }
         // (A seed skipped while the number sheet was open lands once it shuts.)
@@ -496,7 +522,12 @@ struct GivingView: View {
             // Keep the body's fund consistent with where the pledge pays
             // (the server routes pledge money regardless).
             if let f = preset.paysTo?.code, funds.contains(where: { $0.code == f }) { fundCode = f }
-            if let m = preset.amountMinor, m > 0 { amount = m / 100 }
+            // In the pledge's / need's own money (Giving Cycle 5): US cents for
+            // a dollar pledge, never read as shillings.
+            payCurrency = (preset.pledgeId != nil || preset.needId != nil) ? preset.currency?.uppercased() : nil
+            if let m = preset.amountMinor, m > 0 {
+                if (preset.currency ?? "KES").uppercased() == "USD" { usdCents = m } else { amount = m / 100 }
+            }
             pledgeId = preset.pledgeId
             pledgeTitle = preset.pledgeId == nil ? nil : preset.pledgeTitle
             pledgeLine = preset.pledgeId == nil ? nil : preset.pledgeAmountLine
@@ -555,6 +586,13 @@ struct GivingView: View {
             ScheduleDetailSheet(schedule: s,
                                 rail: vm.methods.method(s.method),
                                 phoneOnFile: vm.methods.phoneOnFile,
+                                followsMonthlyPledge: ScheduleCopy.followsMonthlyPledge(s) { vm.pledgeShape($0) },
+                                onOpenPledge: { id in
+                                    // The pledge is where its collector's
+                                    // amount and day are changed (Cycle 5).
+                                    scheduleDetail = nil
+                                    tabs.openPledge(id)
+                                },
                                 onClose: { scheduleDetail = nil },
                                 onUpdated: {   // changed in place — the sheet stays
                                     GivingSignal.post(from: vm)
@@ -914,6 +952,12 @@ struct GivingView: View {
                         Text("Your rhythm").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         Text(text).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                             .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        // A gift that collects a pledge says so, and what the
+                        // next prompt really asks (Giving Cycle 5).
+                        ForEach([ScheduleCopy.pledgeLine(s), ScheduleCopy.nextLine(s)].compactMap { $0 }, id: \.self) { line in
+                            Text(line).font(.nCardMeta).foregroundStyle(Color(hex: 0x9A7A2A))
+                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                     Spacer(minLength: Nuru.S.sm)
                     Icon(.chevronRight, size: 14, color: Nuru.ink300)
@@ -1090,6 +1134,11 @@ struct GivingView: View {
             Text(s.fund.capitalized).font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
                 .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
+            if let line = ScheduleCopy.pledgeLine(s) {
+                Text(line).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 2)
+            }
             // A paused schedule charges nothing — its old next date is not a
             // promise; one paused until a date says when it comes back.
             Text(paused ? PauseCopy.cardLine(for: s) : "Next \(giveDateShort(s.nextRunAt))")
@@ -1197,6 +1246,7 @@ struct GivingView: View {
     private func clearPayMode() {
         pledgeId = nil; pledgeTitle = nil; pledgeLine = nil; paysTo = nil
         needId = nil; needTitle = nil; needLine = nil
+        payCurrency = nil
     }
 
     /// The form's normal state: the default fund and amount, one-time.
@@ -1358,8 +1408,11 @@ struct GivingView: View {
         // Only a rail the server says can take money here (Cycle 1). The form
         // moves off any other as the methods load, so landing here means none
         // can — say so rather than send a request that cannot succeed.
-        guard vm.methods.isSelectable(method, shillingsOnly: payMode), let rail = vm.methods.method(method) else {
-            ceremonyNote = vm.methods.unavailableNote(method); ceremony = "failed"; return
+        guard vm.methods.isSelectable(method, onlyCurrency: payRailsCurrency), let rail = vm.methods.method(method) else {
+            // Paying a USD pledge while PayPal is off says why in its terms.
+            ceremonyNote = payMode ? vm.methods.unavailableNote(forCurrency: payCurrencyCode)
+                                   : vm.methods.unavailableNote(method)
+            ceremony = "failed"; return
         }
         if rail.needsPhone {
             // Mobile money — a one-time gift or a schedule alike: confirm the
@@ -1775,7 +1828,7 @@ struct GivingView: View {
     private func syncMethods(_ m: GivingMethods) {
         let order = GivingRails.mergedOrder(current: methodOrder, server: m.methods.map(\.key))
         if order != methodOrder { methodOrder = order }
-        if let pick = m.selection(keeping: method, shillingsOnly: payMode), pick != method {
+        if let pick = m.selection(keeping: method, onlyCurrency: payRailsCurrency), pick != method {
             selectMethod(pick)
         } else if !m.allowsRecurring(method) && freq != "once" {
             freq = "once"
@@ -2143,6 +2196,11 @@ private struct ScheduleDetailSheet: View {
     let rail: GivingMethod?
     /// The profile's number — offered as "Use my profile number".
     let phoneOnFile: String?
+    /// It collects a MONTHLY pledge (Giving Cycle 5): its amount and day are
+    /// the pledge's, changed there — not here.
+    var followsMonthlyPledge: Bool = false
+    /// Opens the pledge (the Partners segment) — "Change it on the pledge".
+    var onOpenPledge: (String) -> Void = { _ in }
     var onClose: () -> Void
     /// Changed in place (amount, day, number, heads-up): the list reloads,
     /// the sheet stays with the server's answer.
@@ -2160,11 +2218,16 @@ private struct ScheduleDetailSheet: View {
     @State private var headsUp: Bool
     @State private var busy = false
     @State private var errorText: String?
+    /// A refused change named the pledge that owns it (details.pledge_id).
+    @State private var errorPledgeId: String?
 
     init(schedule: GivingSchedule, rail: GivingMethod?, phoneOnFile: String?,
+         followsMonthlyPledge: Bool = false, onOpenPledge: @escaping (String) -> Void = { _ in },
          onClose: @escaping () -> Void, onUpdated: @escaping () -> Void, onChanged: @escaping () -> Void) {
         self.rail = rail
         self.phoneOnFile = phoneOnFile
+        self.followsMonthlyPledge = followsMonthlyPledge
+        self.onOpenPledge = onOpenPledge
         self.onClose = onClose
         self.onUpdated = onUpdated
         self.onChanged = onChanged
@@ -2217,6 +2280,10 @@ private struct ScheduleDetailSheet: View {
                     Text(e).font(.inter(12)).foregroundStyle(Nuru.danger)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, Nuru.S.sm)
+                    if let id = errorPledgeId {
+                        outlineButton("Change it on the pledge") { onOpenPledge(id) }
+                            .padding(.top, Nuru.S.sm)
+                    }
                 }
             }
             .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.xl)
@@ -2260,6 +2327,12 @@ private struct ScheduleDetailSheet: View {
                 Text(money(current.amountMinor, current.currency)).font(.inter(17, .bold)).foregroundStyle(Nuru.navy)
                 Text("\(dayLine) · \(current.fund.capitalized)")
                     .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                // Giving Cycle 5: a gift that collects a pledge asks only what
+                // the pledge still owes.
+                ForEach([ScheduleCopy.pledgeLine(current), ScheduleCopy.nextLine(current)].compactMap { $0 }, id: \.self) { line in
+                    Text(line).font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
@@ -2428,85 +2501,17 @@ private struct ScheduleDetailSheet: View {
             Text("CHANGE THIS GIFT")
                 .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
 
-            // Amount — whole shillings, inside M-Pesa's limits.
-            fieldLabel("Amount")
-            HStack(spacing: Nuru.S.sm) {
-                Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
-                TextField("1,000", text: $draft.amountText)
-                    .keyboardType(.numberPad)
-                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
-            }
-            .padding(.horizontal, 14).frame(height: 48)
-            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-
-            // Day — the next prompt moves there.
-            fieldLabel(weekly ? "Day of the week" : "Day of the month")
-            if weekly {
-                FlowWrap(spacing: 6) {
-                    ForEach(0..<7, id: \.self) { d in
-                        let on = draft.day == d
-                        Button {
-                            Haptics.selection()
-                            draft.day = d
-                        } label: {
-                            Text(String(ScheduleRhythm.weekdays[d].prefix(3)))
-                                .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
-                                .padding(.horizontal, 12).frame(height: 34)
-                                .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
-                                .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                        }.buttonStyle(.plain)
-                    }
-                }
+            if followsMonthlyPledge, let pledge = current.pledge {
+                // Its amount and day are the pledge's (Giving Cycle 5).
+                Text("The amount and day come from your pledge \u{201C}\(pledge.title)\u{201D} — change them there and this gift follows.")
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                    .fixedSize(horizontal: false, vertical: true)
+                outlineButton("Change it on the pledge") { onOpenPledge(pledge.pledgeId) }
             } else {
-                Menu {
-                    ForEach(1...31, id: \.self) { d in
-                        Button("On the \(ScheduleRhythm.ordinal(d))") { draft.day = d }
-                    }
-                } label: {
-                    HStack {
-                        Text("On the \(ScheduleRhythm.ordinal(draft.day))")
-                            .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
-                        Spacer()
-                        Icon(.chevronDown, size: 14, color: Nuru.ink600)
-                    }
-                    .padding(.horizontal, 14).frame(height: 48)
-                    .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-                if draft.day >= 29 {
-                    Text("In a shorter month, the prompt comes on its last day.")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
-                }
+                amountAndDayFields
             }
 
-            // Number — its own, or back to the profile's.
-            fieldLabel("M-Pesa number")
-            if !draft.useProfileNumber {
-                HStack(spacing: Nuru.S.sm) {
-                    Icon(.smartphone, size: 16, color: Color(hex: 0x16A34A))
-                    TextField("07XX XXX XXX", text: $draft.phoneText)
-                        .keyboardType(.phonePad)
-                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
-                }
-                .padding(.horizontal, 14).frame(height: 48)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            }
-            if let profile = profileNumber {
-                Button {
-                    Haptics.selection()
-                    draft.useProfileNumber.toggle()
-                    if !draft.useProfileNumber && draft.phoneText.isEmpty { draft.phoneText = profile }
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: draft.useProfileNumber ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
-                        Text("Use my profile number (\(profile))")
-                            .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-                    }
-                }.buttonStyle(.plain)
-            }
+            numberFields
 
             if let problem = plan.problem {
                 Text(problem).font(.inter(11)).foregroundStyle(Nuru.danger)
@@ -2514,7 +2519,7 @@ private struct ScheduleDetailSheet: View {
             }
 
             HStack(spacing: Nuru.S.sm) {
-                outlineButton("Back") { errorText = nil; mode = .view }
+                outlineButton("Back") { errorText = nil; errorPledgeId = nil; mode = .view }
                 Button { save() } label: {
                     ZStack {
                         if busy { ProgressView().tint(Nuru.navy) }
@@ -2528,6 +2533,92 @@ private struct ScheduleDetailSheet: View {
                 .opacity(plan.patch == nil ? 0.5 : 1)
             }
             .padding(.top, 2)
+        }
+    }
+
+    /// Amount — whole shillings, inside M-Pesa's limits — and the day.
+    @ViewBuilder private var amountAndDayFields: some View {
+        // Amount — whole shillings, inside M-Pesa's limits.
+        fieldLabel("Amount")
+        HStack(spacing: Nuru.S.sm) {
+            Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
+            TextField("1,000", text: $draft.amountText)
+                .keyboardType(.numberPad)
+                .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+        }
+        .padding(.horizontal, 14).frame(height: 48)
+        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+
+        // Day — the next prompt moves there.
+        fieldLabel(weekly ? "Day of the week" : "Day of the month")
+        if weekly {
+            FlowWrap(spacing: 6) {
+                ForEach(0..<7, id: \.self) { d in
+                    let on = draft.day == d
+                    Button {
+                        Haptics.selection()
+                        draft.day = d
+                    } label: {
+                        Text(String(ScheduleRhythm.weekdays[d].prefix(3)))
+                            .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
+                            .padding(.horizontal, 12).frame(height: 34)
+                            .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                            .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
+                    }.buttonStyle(.plain)
+                }
+            }
+        } else {
+            Menu {
+                ForEach(1...31, id: \.self) { d in
+                    Button("On the \(ScheduleRhythm.ordinal(d))") { draft.day = d }
+                }
+            } label: {
+                HStack {
+                    Text("On the \(ScheduleRhythm.ordinal(draft.day))")
+                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+                    Spacer()
+                    Icon(.chevronDown, size: 14, color: Nuru.ink600)
+                }
+                .padding(.horizontal, 14).frame(height: 48)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            }
+            if draft.day >= 29 {
+                Text("In a shorter month, the prompt comes on its last day.")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+            }
+        }
+    }
+
+    /// Number — its own, or back to the profile's.
+    @ViewBuilder private var numberFields: some View {
+        // Number — its own, or back to the profile's.
+        fieldLabel("M-Pesa number")
+        if !draft.useProfileNumber {
+            HStack(spacing: Nuru.S.sm) {
+                Icon(.smartphone, size: 16, color: Color(hex: 0x16A34A))
+                TextField("07XX XXX XXX", text: $draft.phoneText)
+                    .keyboardType(.phonePad)
+                    .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+            }
+            .padding(.horizontal, 14).frame(height: 48)
+            .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        }
+        if let profile = profileNumber {
+            Button {
+                Haptics.selection()
+                draft.useProfileNumber.toggle()
+                if !draft.useProfileNumber && draft.phoneText.isEmpty { draft.phoneText = profile }
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: draft.useProfileNumber ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
+                    Text("Use my profile number (\(profile))")
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                }
+            }.buttonStyle(.plain)
         }
     }
 
@@ -2633,7 +2724,7 @@ private struct ScheduleDetailSheet: View {
     /// PATCH only what changed; the sheet then shows the server's row.
     private func save() {
         guard !busy, let patch = plan.patch else { return }
-        busy = true; errorText = nil
+        busy = true; errorText = nil; errorPledgeId = nil
         Task { @MainActor in
             do {
                 let updated = try await MemberAPI.updateSchedule(current.scheduleId, patch)
@@ -2645,8 +2736,11 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // the server accepted the change
                 onUpdated()
             } catch {
-                // The server's words — SCHEDULE_EXISTS, AMOUNT_OUT_OF_RANGE, PHONE_REQUIRED.
+                // The server's words — SCHEDULE_EXISTS, AMOUNT_OUT_OF_RANGE,
+                // PHONE_REQUIRED, and (Giving Cycle 5) a monthly pledge's
+                // collector whose amount / day are the pledge's.
                 errorText = GiveRefusal.from(error, fallback: "Couldn't save — try again.").message
+                if case let .http(_, _, _, details)? = error as? APIError { errorPledgeId = details?.pledgeId }
                 Haptics.error()
             }
             busy = false

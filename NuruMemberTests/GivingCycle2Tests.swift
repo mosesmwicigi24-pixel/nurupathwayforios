@@ -231,13 +231,14 @@ final class GivingCycle2Tests: XCTestCase {
                        "PayPal gifts are from US$ 1.00 to US$ \(grouped(10_000)).00.")
     }
 
-    func testPayingAPledgeTakesShillingRailsOnly() throws {
+    func testPayingAShillingPledgeTakesShillingRailsOnly() throws {
+        // (Giving Cycle 5 generalised this: the pledge's currency decides.)
         let m = try decode(GivingMethods.self, rails)
         XCTAssertTrue(m.isSelectable("paypal"))
-        XCTAssertFalse(m.isSelectable("paypal", shillingsOnly: true), "a dollar payment never counts against a shilling pledge")
-        XCTAssertTrue(m.isSelectable("mpesa", shillingsOnly: true))
-        XCTAssertEqual(m.offered(shillingsOnly: true).map(\.key), ["mpesa", "card"], "PayPal leaves the list in pay mode")
-        XCTAssertEqual(m.selection(keeping: "paypal", shillingsOnly: true), "mpesa")
+        XCTAssertFalse(m.isSelectable("paypal", onlyCurrency: "KES"), "a dollar payment never counts against a shilling pledge")
+        XCTAssertTrue(m.isSelectable("mpesa", onlyCurrency: "KES"))
+        XCTAssertEqual(m.offered(onlyCurrency: "KES").map(\.key), ["mpesa", "card"], "PayPal leaves the list in pay mode")
+        XCTAssertEqual(m.selection(keeping: "paypal", onlyCurrency: "KES"), "mpesa")
         XCTAssertEqual(m.currency("paypal"), "USD")
         XCTAssertEqual(m.currency("card"), "KES", "no currency named = shillings here")
     }

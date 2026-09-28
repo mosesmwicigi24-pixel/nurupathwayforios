@@ -423,6 +423,13 @@ struct PartnersView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && onScreen { Task { await vm.refresh() } }
         }
+        // A pledge notice, or a gift that collects a pledge (Giving Cycle 5):
+        // that pledge's page, with this list as the back stop. Consumed once.
+        .onReceive(tabs.$pledgeLink) { id in
+            guard let id else { return }
+            DispatchQueue.main.async { tabs.pledgeLink = nil }
+            path = NavigationPath([PartnersRoute.pledge(id)])
+        }
         .fullScreenCover(isPresented: $showNewPledge) {
             NewPledgeFlow(isMember: vm.partnership?.isProgrammeMember ?? false,
                           pledgeOptions: vm.partnership?.pledgeOptions ?? [],
@@ -666,7 +673,8 @@ struct PartnersView: View {
                                              pledgeId: item.id,
                                              pledgeTitle: pl?.displayTitle ?? (item.title.isEmpty ? nil : item.title),
                                              pledgeAmountLine: pl.map { pledgeAmountLine($0) },
-                                             paysTo: item.paysTo ?? pl?.paysTo))
+                                             paysTo: item.paysTo ?? pl?.paysTo,
+                                             currency: pl?.currency ?? item.currency))
         default:
             tabs.openGive(preset: GivePreset(fund: nil, amountMinor: item.amountMinor, pledgeId: nil))
         }
@@ -1390,7 +1398,9 @@ struct PledgeDetailView: View {
                             pledgeId: p.pledgeId,
                             pledgeTitle: p.displayTitle,
                             pledgeAmountLine: pledgeAmountLine(p),
-                            paysTo: p.paysTo))
+                            paysTo: p.paysTo,
+                            // Its currency decides the rails (Giving Cycle 5).
+                            currency: p.currency))
                     } label: {
                         HStack(spacing: 6) {
                             Text("Pay now").font(.inter(13, .bold))

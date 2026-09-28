@@ -51,6 +51,15 @@ enum GiveMoney {
         return "\(sign)\((a / 100).formatted(.number.grouping(.automatic))).\(twoDigits(a % 100))"
     }
 
+    /// "Kenyan shillings" · "US dollars" · "EUR" — a currency in words.
+    static func currencyWords(_ currency: String) -> String {
+        switch currency.uppercased() {
+        case "KES": return "Kenyan shillings"
+        case "USD": return "US dollars"
+        case let c: return c
+        }
+    }
+
     /// Shillings first, then the rest alphabetically — the server's order.
     static func ordered(_ totals: [CurrencyTotal]) -> [CurrencyTotal] {
         totals.sorted { a, b in

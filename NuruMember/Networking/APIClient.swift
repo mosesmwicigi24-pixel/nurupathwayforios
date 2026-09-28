@@ -82,9 +82,12 @@ struct ErrorDetails: Decodable, Sendable {
     /// moment ago that is still waiting on their phone — Give watches it
     /// instead of sending a second one.
     let transactionId: String?
+    /// 422 UNPROCESSABLE on a schedule that collects a monthly pledge (Giving
+    /// Cycle 5): its amount and day are the pledge's — change them there.
+    let pledgeId: String?
 
     private enum CodingKeys: String, CodingKey {
-        case passwordRequired, mfaRequired, maxAgeSeconds, transactionId
+        case passwordRequired, mfaRequired, maxAgeSeconds, transactionId, pledgeId
     }
 
     init(from d: Decoder) throws {
@@ -93,6 +96,7 @@ struct ErrorDetails: Decodable, Sendable {
         mfaRequired = try? c.decodeIfPresent(Bool.self, forKey: .mfaRequired)
         maxAgeSeconds = try? c.decodeIfPresent(Int.self, forKey: .maxAgeSeconds)
         transactionId = (try? c.decodeIfPresent(String.self, forKey: .transactionId)).flatMap { $0.isEmpty ? nil : $0 }
+        pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

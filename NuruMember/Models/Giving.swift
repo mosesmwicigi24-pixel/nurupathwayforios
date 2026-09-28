@@ -254,6 +254,14 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
     /// A monthly gift's own day of the month (1–31, clamped into shorter
     /// months); nil for weekly gifts and older servers.
     var anchorDay: Int? = nil
+    /// The pledge this gift collects (Giving Cycle 5) — its id and title as
+    /// the pledge's card says it; nil for an ordinary gift.
+    var pledge: GivingIntentResult.PledgeRef? = nil
+    /// What the next prompt will ask (Giving Cycle 5): below `amountMinor`
+    /// when the pledge only owes the rest, 0 when it is already paid for that
+    /// cycle (no prompt comes), nil when no prompt is coming at all (paused,
+    /// cancelled, stopping with its pledge) — and on older servers.
+    var nextAmountMinor: Int? = nil
     var id: String { scheduleId }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -273,6 +281,8 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
         resumeOn = (try? c.decodeIfPresent(String.self, forKey: .resumeOn)).flatMap { $0.isEmpty ? nil : String($0.prefix(10)) }
         headsUp = (try? c.decodeIfPresent(Bool.self, forKey: .headsUp)) ?? true
         anchorDay = (try? c.decodeIfPresent(Int.self, forKey: .anchorDay)).flatMap { (1...31).contains($0) ? $0 : nil }
+        pledge = (try? c.decodeIfPresent(GivingIntentResult.PledgeRef.self, forKey: .pledge)).flatMap { $0.pledgeId.isEmpty ? nil : $0 }
+        nextAmountMinor = (try? c.decodeIfPresent(Int.self, forKey: .nextAmountMinor)).flatMap { $0 >= 0 ? $0 : nil }
     }
 }
 

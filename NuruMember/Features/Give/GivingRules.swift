@@ -116,18 +116,30 @@ extension GivingMethods {
     func currency(_ key: String) -> String { (method(key)?.currency ?? "KES").uppercased() }
 
     /// The member may pick it HERE: the server says it takes money, and this
-    /// build can carry a gift through it. `shillingsOnly` (a pledge or need
-    /// payment — pledges are in shillings, and a dollar payment would be
-    /// counted against a shilling promise) leaves out every other currency.
-    func isSelectable(_ key: String, shillingsOnly: Bool = false) -> Bool {
+    /// build can carry a gift through it. `onlyCurrency` — paying a pledge or
+    /// need, whose currency decides the rails (Giving Cycle 5: the server
+    /// refuses any other, 422 CURRENCY_MISMATCH) — leaves out the rest.
+    func isSelectable(_ key: String, onlyCurrency: String? = nil) -> Bool {
         guard (method(key)?.enabled ?? false), GivingRails.appCanComplete.contains(key) else { return false }
-        return !shillingsOnly || currency(key) == "KES"
+        return onlyCurrency.map { currency(key) == $0.uppercased() } ?? true
     }
 
     /// The rails the form lists: all of them, or — paying a pledge or need —
-    /// the shilling ones.
-    func offered(shillingsOnly: Bool = false) -> [GivingMethod] {
-        shillingsOnly ? methods.filter { currency($0.key) == "KES" } : methods
+    /// those in its currency (a KES pledge: M-Pesa; a USD one: PayPal).
+    func offered(onlyCurrency: String? = nil) -> [GivingMethod] {
+        guard let cur = onlyCurrency?.uppercased() else { return methods }
+        return methods.filter { currency($0.key) == cur }
+    }
+
+    /// Why nothing can be picked for something in `currency` (a USD pledge
+    /// while PayPal is off): "Gifts toward this are in US dollars — PayPal
+    /// giving is coming soon."
+    func unavailableNote(forCurrency currency: String) -> String {
+        let words = GiveMoney.currencyWords(currency)
+        guard let rail = offered(onlyCurrency: currency).first else {
+            return "Gifts toward this are in \(words), and there's no way to give in \(words) here yet."
+        }
+        return "Gifts toward this are in \(words) — \(unavailableNote(rail.key))"
     }
 
     /// A weekly / monthly gift may run on it — the server's word (M-Pesa only
@@ -139,10 +151,10 @@ extension GivingMethods {
     /// The rail the form should have selected: the current one while it is
     /// still selectable, else the server's default, else the first selectable
     /// one — nil when none is (Give then says why instead of sending).
-    func selection(keeping current: String, shillingsOnly: Bool = false) -> String? {
-        if isSelectable(current, shillingsOnly: shillingsOnly) { return current }
-        if let d = defaultMethod, isSelectable(d, shillingsOnly: shillingsOnly) { return d }
-        return methods.first { isSelectable($0.key, shillingsOnly: shillingsOnly) }?.key
+    func selection(keeping current: String, onlyCurrency: String? = nil) -> String? {
+        if isSelectable(current, onlyCurrency: onlyCurrency) { return current }
+        if let d = defaultMethod, isSelectable(d, onlyCurrency: onlyCurrency) { return d }
+        return methods.first { isSelectable($0.key, onlyCurrency: onlyCurrency) }?.key
     }
 
     /// The footer's promise names only rails that can take money here
@@ -279,9 +291,23 @@ enum GiveLink: Equatable {
     }
 }
 
+/// Where a Partners notice lands (Giving Cycle 5): the pledge it is about —
+/// the pledge_* notices and the pledge collector's (`giving_schedule_covered`,
+/// `giving_schedule_stopped`), routed by their `pledge_id`. Nil without one.
+enum PledgeLink {
+    static let collectorTemplates: Set<String> = ["giving_schedule_covered", "giving_schedule_stopped"]
+
+    static func from(template: String, pledgeId: String?) -> String? {
+        guard let id = pledgeId, !id.isEmpty else { return nil }
+        return template.hasPrefix("pledge_") || collectorTemplates.contains(template) ? id : nil
+    }
+}
+
 /// The words on a giving notification — the server's push copy
 /// (workers/dispatch.ts), so the banner, the inbox and Android agree. Nil for
 /// a template this has no words for (the caller's own fallback applies).
+/// Checked BEFORE a payload's `title`: on the Partners notices that key is
+/// the pledge's name, not a push title.
 enum GivingNotificationCopy {
     static func title(template: String, payload: NotifPayload?) -> String? {
         let frequency = payload?.frequency?.lowercased()
@@ -293,17 +319,66 @@ enum GivingNotificationCopy {
             let kind = frequency == "weekly" ? "weekly" : frequency == "monthly" ? "monthly" : "recurring"
             return "Your \(kind) gift didn't go through"
         case "giving_schedule_paused": return "Your recurring gift is paused"
+        // Giving Cycle 5 — the pledge collector, and the pledge's own notices.
+        case "giving_schedule_covered": return "Nothing to pay this \(frequency == "weekly" ? "week" : "month")"
+        case "giving_schedule_stopped":
+            switch payload?.reason {
+            case "pledge_fulfilled": return "Your pledge is complete"
+            case "pledge_ended": return "Your pledge has ended"
+            default: return "Automatic prompts stopped"
+            }
+        case "pledge_due_soon":
+            let days = payload?.daysAway
+            let when = days == 0 ? "due today" : days == 1 ? "due tomorrow" : "due in \(days.map(String.init) ?? "a few") days"
+            return "\(nonEmpty(payload?.title) ?? "Your pledge") — \(when)"
+        case "pledge_overdue": return "A gentle nudge on \(nonEmpty(payload?.title) ?? "your pledge")"
+        case "pledge_reminder_manual": return "From the church office: \(nonEmpty(payload?.title) ?? "your pledge")"
+        case "pledge_fulfilled": return "Pledge fulfilled — thank you"
+        case "pledge_claim_confirmed": return "Your payment is recorded"
+        case "pledge_claim_rejected": return "We couldn't match that payment"
         default: return nil
         }
     }
 
     static func body(template: String, payload: NotifPayload?) -> String? {
+        let amount = GiveMoney.format(payload?.amountMinor ?? 0, payload?.currency)
+        let pledgeName = nonEmpty(payload?.title).map { "\u{201C}\($0)\u{201D}" }
         switch template {
         case "giving_gift_failed":
             return "\(nonEmpty(payload?.reason) ?? "The payment didn't complete.") \(nonEmpty(payload?.hint) ?? "Open Give to try again.")"
         case "giving_schedule_heads_up":
-            let amount = GiveMoney.format(payload?.amountMinor ?? 0, payload?.currency)
+            // A pledge's collector asking only the rest (Giving Cycle 5).
+            if payload?.partial == true, let pledge = nonEmpty(payload?.pledgeTitle) {
+                return "An M-Pesa prompt for \(amount) — the rest of what's due on \u{201C}\(pledge)\u{201D} — is coming to your phone in a few minutes. Enter your PIN to give."
+            }
             return "An M-Pesa prompt for \(amount) to \(nonEmpty(payload?.fundName) ?? "the church") is coming to your phone in a few minutes. Enter your PIN to give."
+        case "giving_schedule_covered":
+            let through = nonEmpty(payload?.coveredThrough).map { " through \(dayWords($0))" } ?? ""
+            return "\(pledgeName ?? "Your pledge") is already paid\(through), so no M-Pesa prompt is coming this time. Thank you."
+        case "giving_schedule_stopped":
+            let pledge = pledgeName ?? "Your pledge"
+            switch payload?.reason {
+            case "pledge_fulfilled":
+                return "\(pledge) is fulfilled, so its automatic M-Pesa prompts have stopped. Thank you for carrying it through."
+            case "pledge_ended":
+                let on = nonEmpty(payload?.untilOn).map { " on \(dayWords($0))" } ?? ""
+                return "\(pledge) ended\(on), so its automatic prompts have stopped. Open Partners to make a new pledge."
+            default:
+                return "\(pledge) was cancelled, so its recurring gift has stopped too."
+            }
+        case "pledge_due_soon":
+            return "\(amount) toward your pledge. Open Partners to give, or to pause it if this month is tight."
+        case "pledge_overdue":
+            return "\(amount) was due on \(nonEmpty(payload?.dueOn).map(dayWords) ?? "the due date"). No pressure — give when you can, or tell us if you paid another way."
+        case "pledge_reminder_manual":
+            return nonEmpty(payload?.message) ?? "A reminder that \(amount) toward your pledge is waiting. Thank you for standing with us."
+        case "pledge_fulfilled":
+            let stopped = payload?.scheduleStopped == true ? " Its automatic prompts have stopped." : ""
+            return "You completed your \(nonEmpty(payload?.title) ?? "pledge"). Every shilling carried someone further.\(stopped) Open Partners to see it."
+        case "pledge_claim_confirmed":
+            return "\(amount) toward \(nonEmpty(payload?.title) ?? "your pledge") has been confirmed by the office. Thank you."
+        case "pledge_claim_rejected":
+            return "The office could not find \(amount) toward \(nonEmpty(payload?.title) ?? "your pledge"). Reply in Community or give again from Partners."
         case "giving_schedule_failed":
             let next = nonEmpty(payload?.retryAt) != nil
                 ? "We'll send the prompt once more later today."
@@ -319,5 +394,15 @@ enum GivingNotificationCopy {
     static func nonEmpty(_ s: String?) -> String? {
         guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
         return t
+    }
+
+    /// "5 October" for a YYYY-MM-DD date, as given — no time-zone math (the
+    /// server's dayWords); the text itself when it is not one.
+    static func dayWords(_ ymd: String) -> String {
+        let parts = ymd.prefix(10).split(separator: "-")
+        guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]), (1...12).contains(m) else { return ymd }
+        let months = ["January", "February", "March", "April", "May", "June", "July",
+                      "August", "September", "October", "November", "December"]
+        return "\(d) \(months[m - 1])"
     }
 }

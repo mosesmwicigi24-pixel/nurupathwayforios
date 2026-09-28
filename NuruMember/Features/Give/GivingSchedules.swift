@@ -124,6 +124,38 @@ enum ScheduleRhythm {
     }
 }
 
+// MARK: - A gift that collects a pledge (Giving Cycle 5)
+
+enum ScheduleCopy {
+    /// "Collects your pledge “Kenya trip”" — nil for an ordinary gift.
+    static func pledgeLine(_ s: GivingSchedule) -> String? {
+        guard let p = s.pledge else { return nil }
+        let title = p.title.trimmingCharacters(in: .whitespaces)
+        return "Collects your pledge \u{201C}\(title.isEmpty ? "Your pledge" : title)\u{201D}"
+    }
+
+    /// What the next prompt will ask, when it is not simply the gift's
+    /// amount: "Next: KSh 3,000 — the rest of what's due" · "Nothing to pay
+    /// next time — your pledge is already paid". Nil when no prompt is coming
+    /// (paused, cancelled, stopping), on older servers, and when it asks the
+    /// whole amount.
+    static func nextLine(_ s: GivingSchedule) -> String? {
+        guard let next = s.nextAmountMinor else { return nil }
+        if next == 0 { return "Nothing to pay next time — your pledge is already paid" }
+        if next < s.amountMinor { return "Next: \(GiveMoney.format(next, s.currency)) — the rest of what's due" }
+        return nil
+    }
+
+    /// The pledge collector's amount and day are its MONTHLY pledge's (the
+    /// server refuses to change them here, 422 with `details.pledge_id`):
+    /// true when this gift collects a pledge whose shape is known to be
+    /// monthly. Unknown shape = let the server answer.
+    static func followsMonthlyPledge(_ s: GivingSchedule, pledgeShape: (String) -> String?) -> Bool {
+        guard let id = s.pledge?.pledgeId else { return false }
+        return pledgeShape(id) == "monthly"
+    }
+}
+
 // MARK: - Why a gift is paused
 
 enum PauseCopy {

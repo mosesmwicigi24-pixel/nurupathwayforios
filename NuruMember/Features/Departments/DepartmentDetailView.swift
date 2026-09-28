@@ -541,7 +541,9 @@ struct DepartmentDetailView: View {
                     // card instead of its fund chooser.
                     tabs.openGive(preset: GivePreset(fund: nil, amountMinor: nil, pledgeId: nil, needId: n.needId,
                                                      needTitle: n.title.isEmpty ? nil : n.title,
-                                                     needLine: "\(n.percent)% of \(money(n.targetMinor, n.currency)) raised"))
+                                                     needLine: "\(n.percent)% of \(money(n.targetMinor, n.currency)) raised",
+                                                     // A need is given to in its own currency (Giving Cycle 5).
+                                                     currency: n.currency))
                 } label: {
                     HStack(spacing: 6) {
                         Icon(.handHeart, size: 13, color: Nuru.navy)

@@ -123,6 +123,10 @@ struct GivePreset: Equatable {
     /// card. Display only.
     var needTitle: String? = nil
     var needLine: String? = nil
+    /// The pledge's or need's currency (Giving Cycle 5): it decides the rails
+    /// Give offers — a KES promise M-Pesa, a USD one PayPal — and the amount's
+    /// money. Nil = shillings.
+    var currency: String? = nil
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
@@ -175,6 +179,10 @@ final class TabRouter: ObservableObject {
     /// Cycle 3: a failed gift's result, with Try again). GivingView consumes
     /// it and clears it.
     @Published var giveLink: GiveLink?
+    /// A pledge to open on the Partners segment (Giving Cycle 5: a pledge
+    /// notice, a gift that collects a pledge). PartnersView pushes it and
+    /// clears it.
+    @Published var pledgeLink: String?
     /// A conversation to open on the Chat stack (You → Community → Talk) —
     /// set by a Home "chat_unread" nudge or a Read-with-a-Friend "Sent to
     /// <name> in chat · Open chat" toast. ChatView consumes it (pushes the
@@ -204,6 +212,8 @@ final class TabRouter: ObservableObject {
     func openGive(preset: GivePreset) { givePreset = preset; openGive() }
     /// Give, opening one gift (a giving notification's target).
     func openGive(link: GiveLink) { giveLink = link; openGive() }
+    /// Partners, opening one pledge.
+    func openPledge(_ id: String) { pledgeLink = id; openPartners() }
     func openPartners() { giveSegment = .partners; selected = .give }
 }
 
@@ -403,7 +413,12 @@ struct RootView: View {
             let departmentId = info["departmentId"] as? String ?? ""
             let transactionId = info["transactionId"] as? String ?? ""
             let scheduleId = info["scheduleId"] as? String ?? ""
-            if let link = GiveLink.from(template: template, transactionId: transactionId, scheduleId: scheduleId) {
+            let pledgeId = info["pledgeId"] as? String ?? ""
+            if let id = PledgeLink.from(template: template, pledgeId: pledgeId) {
+                // pledge_* and the pledge collector's notices (Giving Cycle
+                // 5: covered, stopped) — the pledge itself.
+                tabs.openPledge(id)
+            } else if let link = GiveLink.from(template: template, transactionId: transactionId, scheduleId: scheduleId) {
                 // giving_gift_failed (Giving Cycle 3) — that gift's result: why
                 // it failed, what to do, and Try again. giving_schedule_failed /
                 // _paused (Cycle 4) — that recurring gift's sheet. (The

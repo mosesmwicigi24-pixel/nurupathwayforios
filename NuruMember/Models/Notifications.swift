@@ -37,11 +37,27 @@ struct NotifPayload: Codable, Sendable {
     var frequency: String? = nil
     var fundName: String? = nil
     var retryAt: String? = nil
+    /// Partners (Giving Cycle 5): pledge_* notices and the pledge collector's
+    /// (giving_schedule_covered / _stopped) carry the `pledge_id` a tap opens
+    /// — their `title` is the PLEDGE's name, not a push title — plus what
+    /// their words need: covered through / ended on (YYYY-MM-DD), whether a
+    /// fulfilled pledge's prompts stopped, the heads-up's pledge and whether
+    /// it asks only the rest, the due-soon day count, the office's message.
+    var pledgeId: String? = nil
+    var coveredThrough: String? = nil
+    var untilOn: String? = nil
+    var scheduleStopped: Bool? = nil
+    var pledgeTitle: String? = nil
+    var partial: Bool? = nil
+    var daysAway: Int? = nil
+    var dueOn: String? = nil
+    var message: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case title, body, feedback, levelNumber, name, moduleId, announcementId, inviteToken, groupId, departmentId
         case transactionId, amountMinor, currency, fund, reason, hint
         case scheduleId, frequency, fundName, retryAt
+        case pledgeId, coveredThrough, untilOn, scheduleStopped, pledgeTitle, partial, daysAway, dueOn, message
     }
 
     /// Field by field: one field of an unexpected type (a template this app
@@ -69,6 +85,15 @@ struct NotifPayload: Codable, Sendable {
         frequency = try? c.decodeIfPresent(String.self, forKey: .frequency)
         fundName = try? c.decodeIfPresent(String.self, forKey: .fundName)
         retryAt = try? c.decodeIfPresent(String.self, forKey: .retryAt)
+        pledgeId = try? c.decodeIfPresent(String.self, forKey: .pledgeId)
+        coveredThrough = try? c.decodeIfPresent(String.self, forKey: .coveredThrough)
+        untilOn = try? c.decodeIfPresent(String.self, forKey: .untilOn)
+        scheduleStopped = try? c.decodeIfPresent(Bool.self, forKey: .scheduleStopped)
+        pledgeTitle = try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)
+        partial = try? c.decodeIfPresent(Bool.self, forKey: .partial)
+        daysAway = try? c.decodeIfPresent(Int.self, forKey: .daysAway)
+        dueOn = try? c.decodeIfPresent(String.self, forKey: .dueOn)
+        message = try? c.decodeIfPresent(String.self, forKey: .message)
     }
 }
 
