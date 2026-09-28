@@ -97,7 +97,22 @@ struct NotificationsView: View {
     /// pathway), or — when there is no target — the read-and-dismiss popup.
     @ViewBuilder private func rowLink(_ n: NotificationRow) -> some View {
         let t = n.template
-        if let aid = n.payload?.announcementId, !aid.isEmpty {
+        if let pledge = PledgeLink.from(template: t, pledgeId: n.payload?.pledgeId) {
+            // A pledge notice, or its collector's (Giving Cycle 5) — the pledge.
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openPledge(pledge)
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        } else if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId,
+                                           scheduleId: n.payload?.scheduleId) {
+            // A failed gift (Giving Cycle 3) opens its result on Give — why,
+            // what to do, and Try again; a failed or paused recurring gift
+            // (Cycle 4) opens its sheet.
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openGive(link: link)
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        } else if let aid = n.payload?.announcementId, !aid.isEmpty {
             NavigationLink(value: AppRoute.announcement(aid)) { row(n) }
                 .buttonStyle(.pressableSubtle)
                 .simultaneousGesture(TapGesture().onEnded { markRead(n) })
@@ -352,6 +367,12 @@ struct NotificationsView: View {
         if t.hasPrefix("event") { return Meta(icon: .calendarDays, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }             // info
         if t.hasPrefix("announcement") { return Meta(icon: .megaphone, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }         // info
         if Self.isDepartmentTemplate(t) { return Meta(icon: .heartHandshake, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C)) } // departments (§4)
+        // Giving and Partners notices wear the Give tab's hand-and-heart — they
+        // fell through to the security gear (Giving Cycle 10, found comparing
+        // the inbox on both apps).
+        if t.hasPrefix("giving") || t.hasPrefix("pledge") || t.hasPrefix("payment") {
+            return Meta(icon: .handHeart, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C))
+        }
         return Meta(icon: .settings, bg: Color(hex: 0xE2E8F0), fg: Color(hex: 0x475569))                                             // security/system
     }
 
@@ -362,9 +383,13 @@ struct NotificationsView: View {
         "reflection_approved": "Reflection approved", "reflection_returned": "Reflection returned",
         "reflection_deferred": "Reflection received",
         "serve_request_approved": "You're on the team", "serve_request_declined": "About your request to serve",
-        "department_post": "News from your department", "department_need_approved": "A need is open for giving",
+        "department_post": "News from your department",
+        // department_need_* take the server's words from GivingNotificationCopy.
     ]
     private func titleFor(_ n: NotificationRow) -> String {
+        // Giving / Partners words first: on a pledge notice `payload.title`
+        // is the pledge's name, not the notice's title.
+        if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
         if let t = n.payload?.title, !t.isEmpty { return t }
         if let t = titles[n.template] { return t }
         return n.template.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalizingFirst()
@@ -372,6 +397,8 @@ struct NotificationsView: View {
     private func bodyFor(_ n: NotificationRow) -> String? {
         if let b = n.payload?.body, !b.isEmpty { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
+        // A failed gift is not "your receipt is ready" (Giving Cycle 3).
+        if let b = GivingNotificationCopy.body(template: n.template, payload: n.payload) { return b }
         let t = n.template
         if t.hasPrefix("reflection_approved") { return "Your discipler approved your reflection — well done." }
         if t.hasPrefix("reflection_returned") { return "Your discipler returned your reflection for another look." }

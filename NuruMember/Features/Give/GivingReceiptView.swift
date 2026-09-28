@@ -52,6 +52,13 @@ private enum ReceiptState {
         }
     }
 
+    /// The money reached (or is on its way to) the fund.
+    var reachesFund: Bool {
+        switch self {
+        case .failed, .refunded: return false
+        default: return true
+        }
+    }
 }
 
 struct GivingReceiptView: View {
@@ -185,7 +192,9 @@ struct GivingReceiptView: View {
             VStack(spacing: Nuru.S.base) {
                 hero(d, state).gentleEntrance()
                 details(d).gentleEntrance(delay: 0.06)
-                whereItWent(d).gentleEntrance(delay: 0.10)
+                // "100% reaches the fund" is a promise about money that moves —
+                // never said under a gift that failed or was refunded.
+                if state.reachesFund { whereItWent(d).gentleEntrance(delay: 0.10) }
                 actions(d).gentleEntrance(delay: 0.14)
                 verseFooter.gentleEntrance(delay: 0.18)
             }
@@ -243,6 +252,22 @@ struct GivingReceiptView: View {
                     .background(chip.bg, in: Capsule())
                     .padding(.top, 4)
             }
+
+            // Why it did not go through, in the server's words (Giving Cycle
+            // 1): what happened, then what to do next and whether money moved.
+            if case .failed = state, let f = d.failure, !f.reason.isEmpty {
+                VStack(spacing: 4) {
+                    Text(f.reason)
+                        .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626))
+                    if !f.hint.isEmpty {
+                        Text(f.hint)
+                            .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Nuru.S.lg + 4).padding(.horizontal, Nuru.S.lg)
@@ -293,6 +318,17 @@ struct GivingReceiptView: View {
         // owns that word, the internal id is "Transaction".
         let idLabel = (ref != nil && refLabel == "Reference") ? "Transaction" : "Reference"
         return VStack(spacing: 0) {
+            // The member covered the fee (Giving Cycle 2): what was the gift,
+            // what was the fee, and the total charged — it used to be one
+            // number, with the fee silently folded in.
+            if let fee = d.feeCoverMinor, fee > 0, fee < d.amountMinor {
+                row("Gift", money(d.amountMinor - fee, d.currency))
+                hairline
+                row("Fee cover", "\(money(fee, d.currency)) · covered by you")
+                hairline
+                row("Total", money(d.amountMinor, d.currency))
+                hairline
+            }
             row("Fund", fundDisplayName(d))
             if let p = d.pledge, !p.title.isEmpty {
                 hairline
@@ -561,13 +597,16 @@ struct GivingReceiptView: View {
         return "Reference"
     }
 
-    /// ("KSh", "500") · ("$", "5.00") · ("USD", "5.00") — integer minor units in,
-    /// the same rounding as money().
+    /// ("KSh", "500") · ("US$", "5.00") · ("EUR", "5.00") — integer minor units
+    /// in, the same symbols as money() (Giving Cycle 2: "US$", and shilling
+    /// cents when there are any).
     private func amountParts(_ minor: Int, _ currency: String) -> (symbol: String, number: String) {
         switch currency.uppercased() {
-        case "", "KES": return ("KSh", (minor / 100).formatted(.number.grouping(.automatic)))
-        case "USD": return ("$", String(format: "%.2f", Double(minor) / 100.0))
-        case let c: return (c, String(format: "%.2f", Double(minor) / 100.0))
+        case "", "KES":
+            let whole = (minor / 100).formatted(.number.grouping(.automatic))
+            return ("KSh", minor % 100 == 0 ? whole : "\(whole).\(String(format: "%02d", abs(minor % 100)))")
+        case "USD": return ("US$", GiveMoney.number(minor))
+        case let c: return (c, GiveMoney.number(minor))
         }
     }
 
