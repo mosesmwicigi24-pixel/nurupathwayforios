@@ -21,6 +21,7 @@
 		4298D72347954E72B66689F6 /* LiveReactionKindTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 02447D9726EC44E083127526 /* LiveReactionKindTests.swift */; };
 		E8E95F72C72B3A623C715BAC /* LiveStageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */; };
 		A1B2C3D4E5F60718293A4B5D /* ServiceQRParseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A1B2C3D4E5F60718293A4B5C /* ServiceQRParseTests.swift */; };
+		1901D7A94557447A8E587D0D /* GivingCycle9Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 005AC807B99E4FBB8CDBF6FD /* GivingCycle9Tests.swift */; };
 		2C2C480573D54EF791B5124F /* GivingCycle6Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9AFF9ABEDBA045FC84D76C08 /* GivingCycle6Tests.swift */; };
 		B5706B7617764A3B901F51AD /* GivingCycle5ClaimTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6665474867F84AF3A04FFD7F /* GivingCycle5ClaimTests.swift */; };
 		0286E01982844FEC8BCF3520 /* GivingCycle5PledgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C09DF8BB97364C04A6B314DF /* GivingCycle5PledgeTests.swift */; };
@@ -86,6 +87,7 @@
 		02447D9726EC44E083127526 /* LiveReactionKindTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveReactionKindTests.swift; sourceTree = "<group>"; };
 		F32719BEB7F14796CB82C6D9 /* LiveStageTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveStageTests.swift; sourceTree = "<group>"; };
 		A1B2C3D4E5F60718293A4B5C /* ServiceQRParseTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ServiceQRParseTests.swift; sourceTree = "<group>"; };
+		005AC807B99E4FBB8CDBF6FD /* GivingCycle9Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GivingCycle9Tests.swift; sourceTree = "<group>"; };
 		9AFF9ABEDBA045FC84D76C08 /* GivingCycle6Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GivingCycle6Tests.swift; sourceTree = "<group>"; };
 		6665474867F84AF3A04FFD7F /* GivingCycle5ClaimTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GivingCycle5ClaimTests.swift; sourceTree = "<group>"; };
 		C09DF8BB97364C04A6B314DF /* GivingCycle5PledgeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GivingCycle5PledgeTests.swift; sourceTree = "<group>"; };
@@ -159,6 +161,7 @@
 				1C176E1DEBFD153BEF2A0E56 /* LiturgyVoiceTests.swift */,
 				1A84FD50DB9FFE34C1B7CB9B /* LiturgyRecorderLogicTests.swift */,
 				A1B2C3D4E5F60718293A4B5C /* ServiceQRParseTests.swift */,
+				005AC807B99E4FBB8CDBF6FD /* GivingCycle9Tests.swift */,
 				9AFF9ABEDBA045FC84D76C08 /* GivingCycle6Tests.swift */,
 				6665474867F84AF3A04FFD7F /* GivingCycle5ClaimTests.swift */,
 				C09DF8BB97364C04A6B314DF /* GivingCycle5PledgeTests.swift */,
@@ -401,6 +404,7 @@
 				EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */,
 				2DB55733AFA86B039404A7B0 /* LiturgyVoiceTests.swift in Sources */,
 				68898C13C713F999F0BF9C5B /* LiturgyRecorderLogicTests.swift in Sources */,
+				1901D7A94557447A8E587D0D /* GivingCycle9Tests.swift in Sources */,
 				2C2C480573D54EF791B5124F /* GivingCycle6Tests.swift in Sources */,
 				B5706B7617764A3B901F51AD /* GivingCycle5ClaimTests.swift in Sources */,
 				0286E01982844FEC8BCF3520 /* GivingCycle5PledgeTests.swift in Sources */,

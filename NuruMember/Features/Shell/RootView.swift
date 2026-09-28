@@ -129,6 +129,28 @@ struct GivePreset: Equatable {
     var currency: String? = nil
 }
 
+/// A gift made away from the Give form that Give's result screen should show
+/// (Giving Cycle 9: "Collect it automatically at this pace" on a pledge's
+/// page) — the same screen as Give's own "give now", watching the same way.
+struct GiveWatch: Equatable {
+    enum Outcome: Equatable {
+        /// The recurring gift's first prompt went out: watch it.
+        case firstPrompt(transactionId: String)
+        /// 409 GIFT_IN_PROGRESS: nothing was made, a prompt from a moment ago
+        /// is still on the phone — watch that one, as Give does.
+        case waiting(transactionId: String, message: String)
+        /// The gift stands, but today's prompt could not go out: the server's
+        /// reason (nil when it gave none) and when the first prompt comes.
+        case scheduled(note: String?, nextRunAt: String)
+    }
+    let outcome: Outcome
+    /// What each prompt asks: "KSh 5,000".
+    let amountLabel: String
+    /// The pledge it collects.
+    let pledgeTitle: String
+    var frequency: String = "monthly"
+}
+
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
 /// or the "Read with a Friend" hub (a plan_group_* notification without a
 /// redeemable invite token — the group itself is one tap away from the hub).
@@ -179,6 +201,9 @@ final class TabRouter: ObservableObject {
     /// Cycle 3: a failed gift's result, with Try again). GivingView consumes
     /// it and clears it.
     @Published var giveLink: GiveLink?
+    /// A gift made on a pledge's page to show on Give's result screen (Giving
+    /// Cycle 9). GivingView consumes it and clears it.
+    @Published var giveWatch: GiveWatch?
     /// A pledge to open on the Partners segment (Giving Cycle 5: a pledge
     /// notice, a gift that collects a pledge). PartnersView pushes it and
     /// clears it.
@@ -212,6 +237,8 @@ final class TabRouter: ObservableObject {
     func openGive(preset: GivePreset) { givePreset = preset; openGive() }
     /// Give, opening one gift (a giving notification's target).
     func openGive(link: GiveLink) { giveLink = link; openGive() }
+    /// Give's result screen for a gift made elsewhere (a pledge's page).
+    func openGive(watch: GiveWatch) { giveWatch = watch; openGive() }
     /// Partners, opening one pledge.
     func openPledge(_ id: String) { pledgeLink = id; openPartners() }
     func openPartners() { giveSegment = .partners; selected = .give }

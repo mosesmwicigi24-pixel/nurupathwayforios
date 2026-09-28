@@ -619,16 +619,28 @@ extension MemberAPI {
     static func createSchedule(fund: String, amountMinor: Int, currency: String, frequency: String,
                                method: String, idempotencyKey: String, phoneNumber: String?,
                                firstCharge: String) async throws -> ScheduleCreated {
-        struct Body: Encodable {
-            let fund: String; let amountMinor: Int; let currency: String
-            let frequency: String; let method: String; let idempotencyKey: String
-            let phoneNumber: String?; let firstCharge: String
-        }
-        return try await APIClient.shared.post("giving/schedules",
-            body: Body(fund: fund, amountMinor: amountMinor, currency: currency, frequency: frequency,
-                       method: method, idempotencyKey: idempotencyKey, phoneNumber: phoneNumber,
-                       firstCharge: firstCharge),
-            as: ScheduleCreated.self)
+        try await createSchedule(ScheduleCreateBody(fund: fund, amountMinor: amountMinor, currency: currency,
+                                                    frequency: frequency, method: method, idempotencyKey: idempotencyKey,
+                                                    phoneNumber: phoneNumber, firstCharge: firstCharge))
+    }
+
+    /// The POST /giving/schedules body. `pledgeId` binds the gift to a pledge
+    /// (Giving Cycle 9: "Collect it automatically at this pace") — every
+    /// prompt then asks only what the pledge still owes, and the server
+    /// books it on the pledge's own fund. Nil keys are left out.
+    struct ScheduleCreateBody: Encodable, Equatable {
+        let fund: String
+        let amountMinor: Int
+        let currency: String
+        let frequency: String
+        let method: String
+        let idempotencyKey: String
+        var phoneNumber: String? = nil
+        let firstCharge: String
+        var pledgeId: String? = nil
+    }
+    static func createSchedule(_ body: ScheduleCreateBody) async throws -> ScheduleCreated {
+        try await APIClient.shared.post("giving/schedules", body: body, as: ScheduleCreated.self)
     }
 
     /// PATCH /giving/schedules/{id} (Giving Cycle 4) — change a recurring gift

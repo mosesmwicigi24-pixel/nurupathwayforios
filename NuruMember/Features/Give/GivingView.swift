@@ -327,6 +327,10 @@ struct GivingView: View {
     /// waiting (409 GIFT_IN_PROGRESS) — described from that gift's own record,
     /// since it may not be the gift on the form.
     @State private var waitingGift: WaitingGift?
+    /// Set while the ceremony shows a gift made on a pledge's page (Giving
+    /// Cycle 9) — not the form's: its words are the pledge's, and closing it
+    /// leaves the form (and any pledge it is paying) as it was.
+    @State private var elsewhere: GiveWatch?
     /// The failed gift the ceremony is showing — "Try again" retries THIS gift
     /// on the server (Giving Cycle 3). Nil when the refusal made no gift: the
     /// member goes back to the form instead.
@@ -544,6 +548,15 @@ struct GivingView: View {
             DispatchQueue.main.async { tabs.giveLink = nil }
             open(link)
         }
+        // A gift made on a pledge's page (Giving Cycle 9: collected at its
+        // pace) — the same result screen as "give now". Consumed once, and
+        // never over a gift already on screen.
+        .onReceive(tabs.$giveWatch) { watch in
+            guard let watch else { return }
+            DispatchQueue.main.async { tabs.giveWatch = nil }
+            guard ceremony == nil, !submitting else { return }
+            show(watch)
+        }
         .sheet(item: $receiptLink) { link in
             NavigationStack {
                 GivingReceiptView(transactionId: link.id)
@@ -617,13 +630,13 @@ struct GivingView: View {
                              note: ceremonyNote,
                              failure: ceremonyFailure,
                              amountLabel: waitingGift?.amountLabel ?? totalLabel,
-                             fundLabel: fund.label,
+                             fundLabel: elsewhere.map { "your pledge \u{201C}\($0.pledgeTitle)\u{201D}" } ?? fund.label,
                              destination: waitingGift?.destination ?? ceremonyDestination,
                              giftName: waitingGift != nil ? waitingGift?.giftName : (accountName.isEmpty ? nil : accountName),
                              phone: waitingGift == nil ? promptPhone : nil,
                              refCode: successRef,
                              txId: pendingTxId,
-                             cadenceWord: cadenceWord,
+                             cadenceWord: elsewhere.map { ScheduleRhythm.isWeekly($0.frequency) ? "week" : "month" } ?? cadenceWord,
                              nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateFull(scheduledNextAt),
                              scheduledNote: scheduledNote,
                              nothingTodayLine: scheduledNextAt.isEmpty ? nil : ScheduleRhythm.nothingTodayLine(firstPromptISO: scheduledNextAt),
@@ -1591,9 +1604,12 @@ struct GivingView: View {
         paypalOrderId = nil
         intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
         // Mobile money prompts the number that gift went to — else the
-        // member's own; PayPal and cards prompt no phone.
+        // member's own; PayPal and cards prompt no phone. A gift made on a
+        // pledge's page (Giving Cycle 9) went to the profile's number, and
+        // its retry sends none so the server prompts that number again —
+        // never the one on this form.
         let prompts = retryMethod == "mpesa" || retryMethod == "airtel"
-        let phone = prompts ? (promptPhone ?? KenyanPhone.normalize(mpesaPhone)) : nil
+        let phone = prompts && elsewhere == nil ? (promptPhone ?? KenyanPhone.normalize(mpesaPhone)) : nil
         do {
             let res = try await MemberAPI.retryGift(failedTx, idempotencyKey: retryKey, phoneNumber: phone)
             retryKey = GiveRetry.key(after: nil, current: retryKey)
@@ -1671,6 +1687,39 @@ struct GivingView: View {
                       s.status.lowercased() != "cancelled" else { return }
                 scheduleDetail = s
             }
+        }
+    }
+
+    /// A gift made on a pledge's page (Giving Cycle 9: "Collect it
+    /// automatically at this pace") on this screen's own ceremony — the same
+    /// one "give now" shows: its first prompt watched and settled from the
+    /// server's record (Try again included), a prompt already on the phone
+    /// watched instead, or — when today's prompt could not go out — the gift
+    /// standing behind it, with the server's reason.
+    private func show(_ watch: GiveWatch) {
+        elsewhere = watch
+        ceremonyFailure = nil
+        setRetryTarget(nil, method: nil)
+        promptPhone = nil
+        // Described as the pledge's collection until the server's record of
+        // the prompt arrives (settle reads it).
+        waitingGift = WaitingGift(amountLabel: watch.amountLabel, destination: .pledge(watch.pledgeTitle), giftName: nil)
+        let kind = ScheduleRhythm.isWeekly(watch.frequency) ? "weekly" : "monthly"
+        switch watch.outcome {
+        case .firstPrompt(let tx):
+            pendingTxId = tx
+            successRef = nil
+            ceremonyNote = "Your \(kind) gift is set up — this is its first prompt."
+            ceremony = "stk"
+            pollTask?.cancel()
+            pollTask = Task { await watchOutcome(tx) }
+        case let .waiting(tx, message):
+            Task { await watchWaitingPrompt(tx, message: message) }
+        case let .scheduled(note, nextRunAt):
+            scheduledNextAt = nextRunAt
+            scheduledNote = [note, ScheduleRhythm.setUpLine(frequency: watch.frequency, firstPromptISO: nextRunAt)]
+                .compactMap { $0 }.joined(separator: " ")
+            ceremony = "scheduled"
         }
     }
 
@@ -1784,11 +1833,14 @@ struct GivingView: View {
         // again with one more tap. However the ceremony is closed, the
         // binding goes now and the form returns to its normal state (fund
         // chooser, frequency, default amount) once the cover has gone. A
-        // FAILED payment keeps the binding so the member can retry.
-        if ceremony == "success" || ceremony == "stk" {
+        // FAILED payment keeps the binding so the member can retry. A gift
+        // made on a pledge's page (Giving Cycle 9) was not the form's: the
+        // form is left as it was.
+        if elsewhere == nil && (ceremony == "success" || ceremony == "stk") {
             if payMode { resetFormAfterCeremony = true }
             clearPayMode()
         }
+        elsewhere = nil
         // The ceremony resolved: the next Pay is a new submission. A FAILED
         // ceremony leaves the key as the submit path set it — already fresh
         // if the server answered, kept only if it never did (so the retry

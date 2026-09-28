@@ -20,9 +20,9 @@
 // the list itself is read-only.
 //
 // The STATEMENT card's three numbers follow the rule shared with the server
-// (partnerStatementMath.ts), Android and the docs — the server's own numbers
-// when the year is in one currency, else the same rule per currency here
-// (PledgeMath, Giving Cycle 5):
+// (partnerStatementMath.ts), Android and the docs — per currency, as the
+// server sends them (`summary_by_currency`, Giving Cycle 9); an older server
+// sends none, and the same rule is counted here (PledgeMath, Giving Cycle 5):
 //   Paid      = Σ payments[].amountMinor where pledgeId != nil
 //   Pledged   = Σ over pledges not cancelled:
 //                 monthly → amountMinor × (dueDay dates in that year from
@@ -310,15 +310,6 @@ enum PartnersRoute: Hashable {
 
 // MARK: - The statement arithmetic (shared rule — see the header comment)
 
-/// One currency's Pledged / Paid / Remaining for a year — the STATEMENT
-/// card's three numbers. Currencies are never added together.
-struct PartnerFigures: Equatable, Sendable {
-    let currency: String
-    let pledgedMinor: Int
-    let paidMinor: Int
-    let remainingMinor: Int
-}
-
 enum PledgeMath {
     // MARK: The church's calendar — Africa/Nairobi, as the server counts days
 
@@ -515,11 +506,19 @@ enum PledgeMath {
 
     /// The STATEMENT numbers for `s` — one rule for the Partners tab's card
     /// and the Partners statement, so they never disagree: the server's own
-    /// pledged / paid / remaining when the year is in ONE currency (its sums
-    /// do not separate currencies); otherwise per currency from its
-    /// `pledges[]` rows and payments; with no rows (an older server), from
-    /// the partnership's pledges by the same rule.
+    /// per-currency figures, as sent (`summary_by_currency`, Giving Cycle 9;
+    /// a currency with nothing in it is left out). An older server sends
+    /// none: its own three numbers when the year is in ONE currency (its sums
+    /// did not separate currencies); otherwise per currency from its
+    /// `pledges[]` rows and payments; with no rows, from the partnership's
+    /// pledges by the same rule.
     static func figures(_ s: GivingStatements, pledges: [Pledge]) -> [PartnerFigures] {
+        if let sent = s.summaryByCurrency {
+            let live = sent.filter { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
+            if !live.isEmpty { return live }
+            let currency = s.summaryCurrency ?? sent.first?.currency ?? "KES"
+            return [PartnerFigures(currency: currency, pledgedMinor: 0, paidMinor: 0, remainingMinor: 0)]
+        }
         let promises: [Promise] = s.pledges.isEmpty
             ? pledges.map { Promise(pledgeId: $0.pledgeId, currency: $0.currency, pledgedMinor: pledgedInYear($0, year: s.year)) }
             : s.pledges.map { Promise(pledgeId: $0.pledgeId, currency: $0.currency, pledgedMinor: $0.pledgedMinor) }
@@ -529,6 +528,42 @@ enum PledgeMath {
                                pledgedMinor: s.pledgedMinor ?? one.pledgedMinor,
                                paidMinor: s.paidMinor ?? one.paidMinor,
                                remainingMinor: s.remainingMinor.map { max($0, 0) } ?? one.remainingMinor)]
+    }
+
+    /// The statement's per-pledge rows when the server sends none (an older
+    /// server): every partnership pledge that lived in the year (an
+    /// instalment or due date in it, or a payment in it), with the year's
+    /// pledged / paid / kept by the same rule as the figures. A payment
+    /// counts toward a pledge only in the pledge's own currency (Giving
+    /// Cycle 9, as the server's rows). A cancelled pledge appears only when
+    /// money was paid toward it that year, and pledges nothing.
+    static func localRows(_ s: GivingStatements, pledges: [Pledge], today: String = PledgeMath.today()) -> [GivingStatements.StatementPledge] {
+        let year = s.year
+        // Fallen due so far: this year through today; any other, whole.
+        let dueThrough: String? = Int(today.prefix(4)) == year ? today : nil
+        return pledges.compactMap { pl in
+            let pays = s.payments.filter { $0.pledgeId == pl.pledgeId && $0.currency.uppercased() == pl.currency.uppercased() }
+            let paid = pays.reduce(0) { $0 + $1.amountMinor }
+            let cancelled = pl.status == "cancelled"
+            if cancelled && pays.isEmpty { return nil }
+            let pledged = pledgedInYear(pl, year: year)
+            let dueCount: Int
+            if pl.isMonthly {
+                guard !instalments(pl, in: year).isEmpty || !pays.isEmpty else { return nil }
+                dueCount = instalments(pl, in: year, through: dueThrough).count
+            } else {
+                let dueInYear = churchDay(pl.dueOn).map { Int($0.prefix(4)) == year } ?? false
+                guard dueInYear || !pays.isEmpty else { return nil }
+                dueCount = dueInYear ? 1 : 0
+            }
+            // `kept` counts DUE DATES kept; counting payments, it is capped
+            // at the due count — never "3 of 2".
+            return GivingStatements.StatementPledge(
+                pledgeId: pl.pledgeId, title: pl.displayTitle, shape: pl.shape,
+                amountMinor: pl.amountMinor, targetMinor: pl.targetMinor, currency: pl.currency,
+                status: pl.status, dueDay: pl.dueDay, dueOn: pl.dueOn, createdAt: pl.createdAt,
+                pledgedMinor: pledged, paidMinor: paid, kept: min(pays.count, dueCount), dueCount: dueCount)
+        }
     }
 
     /// Paid toward pledges in a statement: only payments that carry a pledge
@@ -1514,6 +1549,16 @@ struct PledgeDetailView: View {
     @State private var claims: [PledgeClaim]?
     @State private var claimsFailed = false
     @ObservedObject private var sync = SyncCoordinator.shared
+    /// What collecting this pledge automatically needs to know (Giving Cycle
+    /// 9): the rails (GET /giving/methods) and the recurring gifts (GET
+    /// /giving/schedules). Nil until they answer — the offer waits for both.
+    @State private var methods: GivingMethods?
+    @State private var schedules: [GivingSchedule]?
+    /// "Collect it automatically at this pace": in flight, its refusal in the
+    /// server's words, and its key (kept only when no answer came).
+    @State private var startingPace = false
+    @State private var paceError: String?
+    @State private var paceKey = GiveKey.fresh()
 
     /// Freshest first: the fetched detail, then the list's live copy, then the seed.
     private var pledge: Pledge? {
@@ -1535,11 +1580,21 @@ struct PledgeDetailView: View {
                             Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
                             Text("\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "") · \(money(p.progress.paidMinor, p.currency)) given in all")
                                 .font(.nCaption).foregroundStyle(Nuru.ink600)
+                            // A total pledge's pace (Giving Cycle 9), as the server sets it.
+                            if let pace = PledgePace.line(p) {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Icon(.calendarClock, size: 12, color: Nuru.gold).padding(.top, 2)
+                                    Text(pace).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(.top, 6)
+                            }
                         }
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
+                        collectionCard(p)
                         actions(p)
                     }
                     if loading && detail == nil {
@@ -1627,6 +1682,113 @@ struct PledgeDetailView: View {
         catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this pledge." } }
         loading = false
         await loadClaims()
+        await loadCollection()
+    }
+
+    /// The rails and the recurring gifts, side by side. A failed read keeps
+    /// what is on screen — with either unknown, nothing is offered (a second
+    /// collector must never be offered by guesswork).
+    private func loadCollection() async {
+        async let m = try? MemberAPI.givingMethods()
+        async let s = try? MemberAPI.schedules()
+        let (rails, gifts) = await (m, s)
+        if let rails { methods = rails }
+        if let gifts { schedules = gifts }
+    }
+
+    /// Collecting it automatically (Giving Cycle 9): the offer at the pace,
+    /// or the recurring gift that already collects the pledge, which opens
+    /// its sheet. Nothing when neither applies.
+    @ViewBuilder private func collectionCard(_ p: Pledge) -> some View {
+        switch PledgePace.offer(for: p, methods: methods, schedules: schedules) {
+        case .collect:
+            VStack(alignment: .leading, spacing: 8) {
+                Button { Task { await collectAtPace(p) } } label: {
+                    HStack(spacing: 8) {
+                        if startingPace { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
+                        else { Icon(.calendarClock, size: 14, color: Nuru.navy) }
+                        Text(startingPace ? "Setting it up…" : "Collect it automatically at this pace").font(.inter(13, .bold))
+                    }
+                    .foregroundStyle(Nuru.navy)
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.navy, lineWidth: 1.2))
+                }
+                .buttonStyle(.pressable)
+                .disabled(startingPace || busy || !sync.isOnline)
+                Text("Each month asks only what's left, and stops when you reach it.")
+                    .font(.nCaption).foregroundStyle(Nuru.ink400)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !sync.isOnline {
+                    Text("You're offline — setting this up needs a connection.")
+                        .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                } else if let paceError {
+                    Text(paceError).font(.inter(12)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .partnerCard()
+        case let .collected(scheduleId, line):
+            Button {
+                Haptics.tap()
+                // Its sheet (Resume / Change / Pause) lives on Give.
+                tabs.openGive(link: .schedule(scheduleId: scheduleId))
+            } label: {
+                HStack(spacing: 8) {
+                    Icon(.repeat, size: 13, color: Nuru.gold)
+                    Text(line).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Icon(.chevronRight, size: 13, color: Nuru.ink300)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressableSubtle)
+            .partnerCard()
+        case .none:
+            EmptyView()
+        }
+    }
+
+    /// POST /giving/schedules at the pace (Giving Cycle 9): a monthly M-Pesa
+    /// gift bound to the pledge, its first prompt now — shown on Give's own
+    /// result screen, as "give now" is (the prompt watched; or, when today's
+    /// could not go out, the gift standing with the server's reason). A
+    /// refusal is the server's words; the key is spent by any answer and
+    /// kept only when none came, so a resend finds the same gift.
+    private func collectAtPace(_ p: Pledge) async {
+        guard !startingPace, sync.isOnline, let body = PledgePace.scheduleBody(for: p, key: paceKey) else { return }
+        Haptics.action()
+        startingPace = true
+        paceError = nil
+        defer { startingPace = false }
+        let label = GiveMoney.format(body.amountMinor, body.currency)
+        do {
+            let made = try await MemberAPI.createSchedule(body)
+            paceKey = GiveKey.fresh()
+            Haptics.success()
+            GivingSignal.post()   // Give's recurring gifts and Partners hear of it
+            if let first = made.firstCharge {
+                tabs.openGive(watch: GiveWatch(outcome: .firstPrompt(transactionId: first.transactionId),
+                                               amountLabel: label, pledgeTitle: p.displayTitle))
+            } else {
+                tabs.openGive(watch: GiveWatch(outcome: .scheduled(note: made.firstChargeError, nextRunAt: made.nextRunAt),
+                                               amountLabel: label, pledgeTitle: p.displayTitle))
+            }
+            await load()
+        } catch {
+            if !GiveRefusal.gotNoServerAnswer(error) { paceKey = GiveKey.fresh() }
+            switch GiveRefusal.from(error, fallback: "That didn't go through. Nothing has changed.") {
+            case let .promptWaiting(tx, message):
+                // A prompt from a moment ago is still on the phone: nothing
+                // was made — watch that one, as Give does.
+                tabs.openGive(watch: GiveWatch(outcome: .waiting(transactionId: tx, message: message),
+                                               amountLabel: label, pledgeTitle: p.displayTitle))
+            case let .message(text):
+                Haptics.error()
+                paceError = text
+            }
+        }
     }
 
     /// A failed read keeps what is on screen; with nothing yet, one quiet line says so.

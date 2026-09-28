@@ -552,7 +552,37 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     let startsOn: String?
     /// The last day an instalment can fall due (YYYY-MM-DD); nil = open-ended.
     let untilOn: String?
+    /// A total pledge's pace (Giving Cycle 9): what is still owed spread over
+    /// the monthly collections left — one today, then the same day each month
+    /// through its date — rounded up to whole shillings. Nil for a monthly
+    /// pledge, one not active, fully paid or past its date, and on older
+    /// servers.
+    let pace: Pace?
     var id: String { pledgeId }
+
+    struct Pace: Codable, Sendable, Hashable {
+        /// Each collection, in the pledge's own currency's minor units.
+        let perMonthMinor: Int
+        /// How many collections are left, today's included (at least 1).
+        let collectionsLeft: Int
+        /// The pledge's date, YYYY-MM-DD.
+        let by: String
+
+        init(perMonthMinor: Int, collectionsLeft: Int, by: String) {
+            self.perMonthMinor = perMonthMinor; self.collectionsLeft = collectionsLeft; self.by = by
+        }
+
+        /// Strict: a pace missing any part is no pace (the pledge reads nil).
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            guard let per = c.flexInt(.perMonthMinor), per > 0,
+                  let left = c.flexInt(.collectionsLeft), left >= 1,
+                  let by = try? c.decodeIfPresent(String.self, forKey: .by), by.count >= 10 else {
+                throw DecodingError.dataCorrupted(.init(codingPath: d.codingPath, debugDescription: "an incomplete pace"))
+            }
+            perMonthMinor = per; collectionsLeft = left; self.by = String(by.prefix(10))
+        }
+    }
 
     struct FundRef: Codable, Sendable, Hashable {
         let code: String
@@ -612,6 +642,7 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         paysTo = (try? c.decodeIfPresent(FundRef.self, forKey: .paysTo)).flatMap { $0.code.isEmpty && $0.name.isEmpty ? nil : $0 }
         startsOn = (try? c.decodeIfPresent(String.self, forKey: .startsOn)).flatMap { $0.isEmpty ? nil : $0 }
         untilOn = (try? c.decodeIfPresent(String.self, forKey: .untilOn)).flatMap { $0.isEmpty ? nil : $0 }
+        pace = try? c.decodeIfPresent(Pace.self, forKey: .pace)
     }
 
     static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
@@ -893,6 +924,14 @@ struct GivingStatements: Decodable, Sendable {
     var paidMinor: Int? = nil
     /// max(pledged − paid, 0).
     var remainingMinor: Int? = nil
+    /// Giving Cycle 9: the currency the three numbers above are in —
+    /// shillings whenever any pledge money is (they used to add every
+    /// currency's minor units together). Nil on older servers.
+    var summaryCurrency: String? = nil
+    /// Giving Cycle 9: pledged / paid / remaining for EACH currency, that
+    /// currency's pledges against that currency's payments, shillings first.
+    /// Nil on older servers (the app then counts per currency itself).
+    var summaryByCurrency: [PartnerFigures]? = nil
     /// One row per pledge in the year (`pledges[]`); empty when absent.
     var pledges: [StatementPledge] = []
 
@@ -1127,6 +1166,10 @@ struct GivingStatements: Decodable, Sendable {
         pledgedMinor = try? c.decodeIfPresent(Int.self, forKey: .pledgedMinor)
         paidMinor = try? c.decodeIfPresent(Int.self, forKey: .paidMinor)
         remainingMinor = try? c.decodeIfPresent(Int.self, forKey: .remainingMinor)
+        summaryCurrency = (try? c.decodeIfPresent(String.self, forKey: .summaryCurrency))
+            .flatMap { $0.isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces).uppercased() }
+        summaryByCurrency = (try? c.decodeIfPresent([PartnerFigures].self, forKey: .summaryByCurrency))
+            .map { rows in rows.filter { !$0.currency.isEmpty } }
         pledges = (try? c.decodeIfPresent([StatementPledge].self, forKey: .pledges)) ?? []
         impact = try? c.decodeIfPresent(Impact.self, forKey: .impact)
         months = (try? c.decodeIfPresent([MonthStatus].self, forKey: .months)).flatMap { $0.isEmpty ? nil : $0 }
@@ -1136,8 +1179,33 @@ struct GivingStatements: Decodable, Sendable {
     }
     enum CodingKeys: String, CodingKey {
         case years, year, totalMinor, currency, totals, byPledge, byFund, payments
-        case pledgedMinor, paidMinor, remainingMinor, pledges
+        case pledgedMinor, paidMinor, remainingMinor, summaryCurrency, summaryByCurrency, pledges
         case impact, months, faithfulness, season, pending
+    }
+}
+
+/// One currency's Pledged / Paid / Remaining for a year — the STATEMENT
+/// card's three numbers, never added across currencies. The server sends
+/// them (`summary_by_currency`, Giving Cycle 9); on an older server the app
+/// counts them itself (PledgeMath.figures).
+struct PartnerFigures: Equatable, Sendable {
+    let currency: String
+    let pledgedMinor: Int
+    let paidMinor: Int
+    let remainingMinor: Int
+}
+
+extension PartnerFigures: Decodable {
+    private enum CodingKeys: String, CodingKey { case currency, pledgedMinor, paidMinor, remainingMinor }
+
+    /// Tolerant per figure (a figure the server left out reads 0); a row
+    /// without a currency reads "" and is dropped by the statement.
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        self.init(currency: ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "").trimmingCharacters(in: .whitespaces).uppercased(),
+                  pledgedMinor: c.flexInt(.pledgedMinor) ?? 0,
+                  paidMinor: c.flexInt(.paidMinor) ?? 0,
+                  remainingMinor: max(0, c.flexInt(.remainingMinor) ?? 0))
     }
 }
 
