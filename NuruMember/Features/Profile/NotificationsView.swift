@@ -383,7 +383,8 @@ struct NotificationsView: View {
         "reflection_approved": "Reflection approved", "reflection_returned": "Reflection returned",
         "reflection_deferred": "Reflection received",
         "serve_request_approved": "You're on the team", "serve_request_declined": "About your request to serve",
-        "department_post": "News from your department", "department_need_approved": "A need is open for giving",
+        "department_post": "News from your department",
+        // department_need_* take the server's words from GivingNotificationCopy.
     ]
     private func titleFor(_ n: NotificationRow) -> String {
         // Giving / Partners words first: on a pledge notice `payload.title`

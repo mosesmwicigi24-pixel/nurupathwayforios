@@ -393,6 +393,12 @@ enum GivingNotificationCopy {
         case "pledge_fulfilled": return "Pledge fulfilled — thank you"
         case "pledge_claim_confirmed": return "Your payment is recorded"
         case "pledge_claim_rejected": return "We couldn't match that payment"
+        // A department need — a giving target (PARTNERS_PROGRAMME §4). Its
+        // payload `title` is the NEED's name, so these words come first.
+        case "department_need_open": return "\(nonEmpty(payload?.title) ?? "A need") — giving is open"
+        case "department_need_approved": return "Your need was approved"
+        case "department_need_rejected": return "About the need you submitted"
+        case "department_need_closed": return "Need closed"
         default: return nil
         }
     }
@@ -444,6 +450,14 @@ enum GivingNotificationCopy {
         case "giving_schedule_paused":
             let why = nonEmpty(payload?.reason).map { "\($0) " } ?? ""
             return "\(why)We've stopped sending prompts for now. Open Give to resume it whenever you're ready."
+        case "department_need_open":
+            return "Your department has a need you can help carry. Open Departments to give."
+        case "department_need_approved":
+            return "\(nonEmpty(payload?.title) ?? "The need") is open for giving."
+        case "department_need_rejected":
+            return nonEmpty(payload?.note) ?? "\(nonEmpty(payload?.title) ?? "The need") was not approved this time."
+        case "department_need_closed":
+            return "\(nonEmpty(payload?.title) ?? "The need") has been closed. Thank you."
         case "giving_schedule_office_change":
             let gift = "\(payload?.frequency?.lowercased() == "weekly" ? "weekly" : "monthly") gift of \(amount)"
                 + (nonEmpty(payload?.fundName).map { " to \($0)" } ?? "")

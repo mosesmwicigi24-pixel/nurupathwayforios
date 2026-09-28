@@ -57,13 +57,16 @@ struct NotifPayload: Codable, Sendable {
     /// and the day a pause ends (YYYY-MM-DD) when it has one.
     var action: String? = nil
     var resumeOn: String? = nil
+    /// A department need's notices (department_need_*): the office's note
+    /// when it was not approved. Their `title` is the NEED's name.
+    var note: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case title, body, feedback, levelNumber, name, moduleId, announcementId, inviteToken, groupId, departmentId
         case transactionId, amountMinor, currency, fund, reason, hint
         case scheduleId, frequency, fundName, retryAt
         case pledgeId, coveredThrough, untilOn, scheduleStopped, pledgeTitle, partial, daysAway, dueOn, message
-        case action, resumeOn
+        case action, resumeOn, note
     }
 
     /// Field by field: one field of an unexpected type (a template this app
@@ -102,6 +105,7 @@ struct NotifPayload: Codable, Sendable {
         message = try? c.decodeIfPresent(String.self, forKey: .message)
         action = try? c.decodeIfPresent(String.self, forKey: .action)
         resumeOn = try? c.decodeIfPresent(String.self, forKey: .resumeOn)
+        note = try? c.decodeIfPresent(String.self, forKey: .note)
     }
 }
 

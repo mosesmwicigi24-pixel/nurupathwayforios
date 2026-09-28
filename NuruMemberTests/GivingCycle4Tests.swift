@@ -305,4 +305,32 @@ final class GivingCycle4Tests: XCTestCase {
         XCTAssertEqual(GivingNotificationCopy.body(template: cancelled.template, payload: cancelled.payload),
                        "The church office cancelled your weekly gift of KSh 1,000 to Tithe, as you asked. Nothing more will be prompted.")
     }
+
+    /// A department need is a giving target; its notices' `title` is the
+    /// NEED's name, so the inbox read "Roof repairs" and nothing else. The
+    /// server's words now come first (Giving Cycle 10, the same class as the
+    /// pledge notices' titles).
+    func testADepartmentNeedsNoticesSayWhatHappened() throws {
+        func row(_ template: String, _ extra: String = "") throws -> NotificationRow {
+            try decode(NotificationRow.self, """
+            {"notification_id":"n","template":"\(template)","payload":{"need_id":"x","department_id":"d","title":"Roof repairs"\(extra)}}
+            """)
+        }
+        let open = try row("department_need_open")
+        XCTAssertEqual(GivingNotificationCopy.title(template: open.template, payload: open.payload), "Roof repairs — giving is open")
+        XCTAssertEqual(GivingNotificationCopy.body(template: open.template, payload: open.payload),
+                       "Your department has a need you can help carry. Open Departments to give.")
+        let approved = try row("department_need_approved")
+        XCTAssertEqual(GivingNotificationCopy.title(template: approved.template, payload: approved.payload), "Your need was approved")
+        XCTAssertEqual(GivingNotificationCopy.body(template: approved.template, payload: approved.payload), "Roof repairs is open for giving.")
+        let rejected = try row("department_need_rejected", #","note":"Please add a quote from the supplier.""#)
+        XCTAssertEqual(GivingNotificationCopy.title(template: rejected.template, payload: rejected.payload), "About the need you submitted")
+        XCTAssertEqual(GivingNotificationCopy.body(template: rejected.template, payload: rejected.payload), "Please add a quote from the supplier.")
+        let rejectedQuietly = try row("department_need_rejected")
+        XCTAssertEqual(GivingNotificationCopy.body(template: rejectedQuietly.template, payload: rejectedQuietly.payload),
+                       "Roof repairs was not approved this time.")
+        let closed = try row("department_need_closed")
+        XCTAssertEqual(GivingNotificationCopy.title(template: closed.template, payload: closed.payload), "Need closed")
+        XCTAssertEqual(GivingNotificationCopy.body(template: closed.template, payload: closed.payload), "Roof repairs has been closed. Thank you.")
+    }
 }
