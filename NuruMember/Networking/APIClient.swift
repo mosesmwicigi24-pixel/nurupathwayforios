@@ -68,7 +68,8 @@ private struct ErrorEnvelope: Decodable {
 }
 
 /// The bits of an error's `details` the app acts on. Everything is optional —
-/// an unknown detail must never fail the decode of the error itself.
+/// an unknown detail must never fail the decode of the error itself, so each
+/// field is read on its own and an odd shape reads as absent.
 struct ErrorDetails: Decodable, Sendable {
     /// The server is asking the person to confirm their password (§5.3 step-up),
     /// not refusing them. Answerable — prompt, then retry.
@@ -77,6 +78,22 @@ struct ErrorDetails: Decodable, Sendable {
     let mfaRequired: Bool?
     /// How fresh a confirmation must be, in seconds.
     let maxAgeSeconds: Int?
+    /// 409 GIFT_IN_PROGRESS (Giving Cycle 1): the member's own prompt from a
+    /// moment ago that is still waiting on their phone — Give watches it
+    /// instead of sending a second one.
+    let transactionId: String?
+
+    private enum CodingKeys: String, CodingKey {
+        case passwordRequired, mfaRequired, maxAgeSeconds, transactionId
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        passwordRequired = try? c.decodeIfPresent(Bool.self, forKey: .passwordRequired)
+        mfaRequired = try? c.decodeIfPresent(Bool.self, forKey: .mfaRequired)
+        maxAgeSeconds = try? c.decodeIfPresent(Int.self, forKey: .maxAgeSeconds)
+        transactionId = (try? c.decodeIfPresent(String.self, forKey: .transactionId)).flatMap { $0.isEmpty ? nil : $0 }
+    }
 }
 
 actor APIClient {

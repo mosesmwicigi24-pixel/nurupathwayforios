@@ -513,6 +513,13 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/history", as: Envelope<GivingRecord>.self).data
     }
 
+    /// GET /giving/methods (Giving Cycle 1) — the rails this member can give
+    /// with here, their currency and limits, the number on file for a prompt,
+    /// and which rail to start on. Give draws its method list from this.
+    static func givingMethods() async throws -> GivingMethods {
+        try await APIClient.shared.get("giving/methods", as: GivingMethods.self)
+    }
+
     /// POST /giving/intents — create a real gift intent (server-authoritative).
     /// `accountName` is "named giving" (custom sheet, optional): rides the
     /// M-Pesa STK push AccountReference (sanitized server-side) and persists on

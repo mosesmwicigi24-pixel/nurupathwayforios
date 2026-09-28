@@ -28,6 +28,9 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     /// (`need_id`; absent on servers that don't send it). "Repeat last gift"
     /// skips these, as it skips pledge payments.
     var needId: String? = nil
+    /// Why a FAILED gift failed (Giving Cycle 1), in the server's words; nil
+    /// for every other status, on older servers, and when malformed.
+    var failure: GiftFailure? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -49,8 +52,36 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
         pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)).flatMap { $0.isEmpty ? nil : $0 }
         pledgeTitle = (try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)).flatMap { $0.isEmpty ? nil : $0 }
         needId = (try? c.decodeIfPresent(String.self, forKey: .needId)).flatMap { $0.isEmpty ? nil : $0 }
+        failure = try? c.decodeIfPresent(GiftFailure.self, forKey: .failure)
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
+    }
+}
+
+/// Why a gift did not go through (Giving Cycle 1) — from M-Pesa's own result
+/// code, in words the member can act on: what happened (`reason`) and what
+/// to do next, including whether money moved (`hint`). The server authors
+/// both and the app shows them VERBATIM — it never writes its own. `code` is
+/// one of cancelled | unreachable | expired | insufficient_funds | wrong_pin
+/// | busy | limit_exceeded | declined | system | no_answer | no_phone;
+/// `retryable` = the member never had a chance to answer (a recurring gift
+/// may try once more on its own).
+struct GiftFailure: Codable, Sendable, Hashable {
+    let code: String
+    let reason: String
+    let hint: String
+    let retryable: Bool
+
+    init(code: String, reason: String, hint: String, retryable: Bool) {
+        self.code = code; self.reason = reason; self.hint = hint; self.retryable = retryable
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+        reason = (try? c.decodeIfPresent(String.self, forKey: .reason)) ?? ""
+        hint = (try? c.decodeIfPresent(String.self, forKey: .hint)) ?? ""
+        retryable = (try? c.decodeIfPresent(Bool.self, forKey: .retryable)) ?? false
     }
 }
 
@@ -144,6 +175,8 @@ struct GivingDetail: Codable, Sendable {
     var memberName: String? = nil
     /// The giver's congregation, when known.
     var congregation: String? = nil
+    /// Why it failed (status failed), in the server's words; else nil.
+    var failure: GiftFailure? = nil
 
     struct NeedRef: Codable, Sendable {
         let needId: String
@@ -176,6 +209,7 @@ struct GivingDetail: Codable, Sendable {
         methodLabel = try? c.decodeIfPresent(String.self, forKey: .methodLabel)
         memberName = try? c.decodeIfPresent(String.self, forKey: .memberName)
         congregation = try? c.decodeIfPresent(String.self, forKey: .congregation)
+        failure = try? c.decodeIfPresent(GiftFailure.self, forKey: .failure)
     }
 }
 
@@ -186,9 +220,17 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
     let currency: String
     let frequency: String   // weekly | monthly
     let method: String
-    let status: String      // active | cancelled
+    let status: String      // active | paused | cancelled
     let nextRunAt: String
     let createdAt: String
+    /// The number each cycle's prompt goes to (Giving Cycle 1); nil = the
+    /// member's profile number, followed if it changes.
+    let phoneNumber: String?
+    /// When the current cycle will be tried again, while a retry is armed.
+    let retryAt: String?
+    /// Why the last charge failed, while the schedule is still failing —
+    /// the same server-authored words as a failed gift. Nil otherwise.
+    let lastFailure: GiftFailure?
     var id: String { scheduleId }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -201,6 +243,94 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
         status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
         nextRunAt = (try? c.decodeIfPresent(String.self, forKey: .nextRunAt)) ?? ""
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        phoneNumber = (try? c.decodeIfPresent(String.self, forKey: .phoneNumber)).flatMap { $0.isEmpty ? nil : $0 }
+        retryAt = (try? c.decodeIfPresent(String.self, forKey: .retryAt)).flatMap { $0.isEmpty ? nil : $0 }
+        lastFailure = try? c.decodeIfPresent(GiftFailure.self, forKey: .lastFailure)
+    }
+}
+
+// MARK: - Giving methods (Giving Cycle 1)
+
+/// GET /giving/methods — the rails this member can give with HERE: each one's
+/// currency and limits, whether a recurring gift can run on it, the number on
+/// file for a prompt, and which rail to start on. The Give form draws its
+/// method list from this instead of hard-coding one, so a rail that cannot
+/// take money (Airtel has no provider; cards need the Stripe step) is never
+/// offered as if it could.
+struct GivingMethods: Codable, Sendable, Hashable {
+    let methods: [GivingMethod]
+    /// The profile's number as E.164 when it is a Kenyan mobile number, else nil.
+    let phoneOnFile: String?
+    /// The first enabled rail — where the form starts. Nil when none is.
+    let defaultMethod: String?
+
+    init(methods: [GivingMethod], phoneOnFile: String?, defaultMethod: String?) {
+        self.methods = methods; self.phoneOnFile = phoneOnFile; self.defaultMethod = defaultMethod
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        // Rows are tolerant per field but strict on their key (a rail with no
+        // key is not a rail); an unreadable list reads as none, and Give then
+        // falls back to M-Pesa alone.
+        methods = ((try? c.decodeIfPresent([GivingMethod].self, forKey: .methods)) ?? [])
+            .filter { !$0.key.isEmpty }
+        phoneOnFile = (try? c.decodeIfPresent(String.self, forKey: .phoneOnFile)).flatMap { $0.isEmpty ? nil : $0 }
+        defaultMethod = (try? c.decodeIfPresent(String.self, forKey: .defaultMethod)).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// What Give offers while the server has not said — the call failed, or it
+    /// answered with no rails: M-Pesa alone, the one rail every Nuru server
+    /// runs. If it cannot take money after all, the server still refuses the
+    /// gift (422 METHOD_UNAVAILABLE) and the member reads why.
+    static func fallback(phoneOnFile: String? = nil) -> GivingMethods {
+        GivingMethods(methods: [GivingMethod(key: "mpesa", label: "M-Pesa", enabled: true, unavailableReason: nil,
+                                             currency: "KES", minMinor: 100, maxMinor: 25_000_000,
+                                             wholeUnits: true, recurring: true, needsPhone: true)],
+                      phoneOnFile: phoneOnFile, defaultMethod: "mpesa")
+    }
+}
+
+/// One giving rail as the server describes it (GET /giving/methods).
+struct GivingMethod: Codable, Sendable, Hashable, Identifiable {
+    let key: String                 // mpesa | airtel | paypal | card
+    let label: String
+    /// Can take a member's money on this server right now. ABSENT READS AS
+    /// FALSE: a rail is offered only when the server says it works.
+    let enabled: Bool
+    /// Why not, when not enabled: "coming_soon" | "unavailable".
+    let unavailableReason: String?
+    /// The rail's own currency (M-Pesa KES, PayPal USD); nil = any.
+    let currency: String?
+    let minMinor: Int
+    let maxMinor: Int
+    /// Whole shillings only (no cents) — M-Pesa.
+    let wholeUnits: Bool
+    /// A recurring gift can run on it here.
+    let recurring: Bool
+    /// It prompts a phone (mobile money), so the gift needs a number.
+    let needsPhone: Bool
+    var id: String { key }
+
+    init(key: String, label: String, enabled: Bool, unavailableReason: String?, currency: String?,
+         minMinor: Int, maxMinor: Int, wholeUnits: Bool, recurring: Bool, needsPhone: Bool) {
+        self.key = key; self.label = label; self.enabled = enabled; self.unavailableReason = unavailableReason
+        self.currency = currency; self.minMinor = minMinor; self.maxMinor = maxMinor
+        self.wholeUnits = wholeUnits; self.recurring = recurring; self.needsPhone = needsPhone
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? ""
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? false
+        unavailableReason = (try? c.decodeIfPresent(String.self, forKey: .unavailableReason)).flatMap { $0.isEmpty ? nil : $0 }
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)).flatMap { $0.isEmpty ? nil : $0 }
+        minMinor = (try? c.decodeIfPresent(Int.self, forKey: .minMinor)) ?? 0
+        maxMinor = (try? c.decodeIfPresent(Int.self, forKey: .maxMinor)) ?? 0
+        wholeUnits = (try? c.decodeIfPresent(Bool.self, forKey: .wholeUnits)) ?? false
+        recurring = (try? c.decodeIfPresent(Bool.self, forKey: .recurring)) ?? false
+        needsPhone = (try? c.decodeIfPresent(Bool.self, forKey: .needsPhone)) ?? false
     }
 }
 
