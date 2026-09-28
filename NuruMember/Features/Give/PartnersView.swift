@@ -15,8 +15,9 @@
 // posts `{}` and that is the whole ceremony. "Pay" never charges here: it
 // opens Give pre-filled (fund, amount still due) with the pledge id riding the
 // intent body (§1 rule a), so money stays on the one server-authoritative
-// path (§5.6). Pause / resume / edit / cancel / reminders live on the pledge
-// detail page (tap a pledge) — the list itself is read-only.
+// path (§5.6). Pause / resume / edit / cancel / reminders and "I paid another
+// way" (PledgeClaims.swift) live on the pledge detail page (tap a pledge) —
+// the list itself is read-only.
 //
 // The STATEMENT card's three numbers follow the rule shared with the server
 // (partnerStatementMath.ts), Android and the docs — the server's own numbers
@@ -1486,7 +1487,8 @@ private struct StatementPaymentRow: View {
     }
 }
 
-// MARK: - A pledge's detail (GET /giving/pledges/{id}) — payments + actions
+// MARK: - A pledge's detail (GET /giving/pledges/{id}) — payments + actions,
+// and what the member told the office they paid another way (…/claims)
 
 struct PledgeDetailView: View {
     let pledgeId: String
@@ -1503,6 +1505,13 @@ struct PledgeDetailView: View {
     @State private var error: String?
     @State private var editing: Pledge?
     @State private var cancelling: Pledge?
+    /// "I paid another way" is open for this pledge.
+    @State private var claiming: Pledge?
+    /// What the member has told the office (GET …/claims), newest first;
+    /// nil until it has loaded.
+    @State private var claims: [PledgeClaim]?
+    @State private var claimsFailed = false
+    @ObservedObject private var sync = SyncCoordinator.shared
 
     /// Freshest first: the fetched detail, then the list's live copy, then the seed.
     private var pledge: Pledge? {
@@ -1566,6 +1575,7 @@ struct PledgeDetailView: View {
                         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                     }
+                    claimsCard
                 }
                 .padding(Nuru.S.screen)
                 .padding(.bottom, Nuru.tabBarSpace)
@@ -1586,6 +1596,9 @@ struct PledgeDetailView: View {
                 if ok { await load() }
                 return ok
             }
+        }
+        .sheet(item: $claiming) { p in
+            PledgeClaimSheet(pledge: p) { body in await sendClaim(p, body) }
         }
         .confirmationDialog(
             "Cancel \u{201C}\(cancelling?.displayTitle ?? "this pledge")\u{201D}?",
@@ -1611,6 +1624,59 @@ struct PledgeDetailView: View {
         do { detail = try await MemberAPI.pledge(pledgeId) }
         catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this pledge." } }
         loading = false
+        await loadClaims()
+    }
+
+    /// A failed read keeps what is on screen; with nothing yet, one quiet line says so.
+    private func loadClaims() async {
+        do {
+            claims = try await MemberAPI.pledgeClaims(pledgeId)
+            claimsFailed = false
+        } catch {
+            claimsFailed = claims == nil
+        }
+    }
+
+    /// POST the claim (online only — the sheet will not send offline). Nil
+    /// when the office has it: it joins the list as pending. Otherwise the
+    /// words to show — the server's own for a refusal (currency, day, told
+    /// already, five waiting).
+    private func sendClaim(_ p: Pledge, _ body: MemberAPI.PledgeClaimBody) async -> String? {
+        do {
+            let claim = try await MemberAPI.claimPledgePayment(p.pledgeId, body)
+            claims = [claim] + (claims ?? []).filter { $0.id != claim.id }
+            claimsFailed = false
+            await loadClaims()
+            return nil
+        } catch {
+            if GiveRefusal.gotNoServerAnswer(error) {
+                return "We couldn't reach the church just now. Try again in a moment."
+            }
+            return (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing was sent."
+        }
+    }
+
+    /// PAID ANOTHER WAY — each thing the member told the office and where it
+    /// stands. Hidden while there is none.
+    @ViewBuilder private var claimsCard: some View {
+        if let claims, !claims.isEmpty {
+            let today = PledgeMath.today()
+            VStack(alignment: .leading, spacing: 0) {
+                Text("PAID ANOTHER WAY").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                    .padding(.bottom, 4)
+                ForEach(claims) { claim in
+                    PledgeClaimRow(claim: claim, today: today)
+                }
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        } else if claimsFailed {
+            Text("We couldn't load what you've told the office. Pull down to try again.")
+                .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+        }
     }
 
     // MARK: Actions — every one a server round-trip; the page never relabels itself
@@ -1670,16 +1736,27 @@ struct PledgeDetailView: View {
                 }
                 .disabled(busy)
 
-                // Claims (§1 rule d) are a later phase — say so, rather than hide it.
-                HStack(spacing: 6) {
-                    Icon(.check, size: 12, color: Nuru.ink300)
-                    Text("I paid another way").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink300)
-                    Text("coming soon").font(.inter(10, .semibold)).foregroundStyle(Nuru.ink400)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(Nuru.mutedBg, in: Capsule())
-                    Spacer(minLength: 0)
+                // "I paid another way" (§1 rule d, Giving Cycle 5): tell the
+                // office about money given outside the app. Online only —
+                // a claim about money is never queued.
+                VStack(alignment: .leading, spacing: 4) {
+                    Button { Haptics.tap(); claiming = p } label: {
+                        HStack(spacing: 6) {
+                            Icon(.check, size: 12, color: sync.isOnline ? Nuru.navy : Nuru.ink300)
+                            Text("I paid another way").font(.inter(12, .semibold))
+                                .foregroundStyle(sync.isOnline ? Nuru.navy : Nuru.ink300)
+                            Spacer(minLength: 0)
+                            Icon(.chevronRight, size: 12, color: Nuru.ink300)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!sync.isOnline || busy)
+                    if !sync.isOnline {
+                        Text("You're offline — telling the office needs a connection.")
+                            .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                    }
                 }
-                .accessibilityHint("Coming soon")
 
                 Toggle(isOn: Binding(get: { p.remindersEnabled },
                                      set: { on in Task { await vm.setReminders(p, on); await load() } })) {

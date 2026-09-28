@@ -791,6 +791,43 @@ struct PledgeDetail: Decodable, Sendable {
     enum CodingKeys: String, CodingKey { case pledge, payments }
 }
 
+/// "I paid another way" (GET / POST /giving/pledges/{id}/claims, Giving
+/// Cycle 5): money the member says they gave toward a pledge outside the app,
+/// in the pledge's own currency, until the office matches it. `status`:
+/// pending → confirmed (booked as a payment) or rejected. The list sends
+/// amounts as text, so they are read either way.
+struct PledgeClaim: Decodable, Sendable, Identifiable, Hashable {
+    let claimId: String
+    let pledgeId: String
+    let amountMinor: Int
+    let currency: String
+    /// The day the member says they paid, YYYY-MM-DD.
+    let paidOn: String
+    let note: String?
+    let status: String           // pending | confirmed | rejected
+    let decidedAt: String?
+    let createdAt: String?
+    var id: String { claimId.isEmpty ? "\(paidOn)|\(amountMinor)|\(createdAt ?? "")" : claimId }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        claimId = (try? c.decodeIfPresent(String.self, forKey: .claimId)) ?? ""
+        pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
+        amountMinor = max(0, c.flexInt(.amountMinor) ?? 0)
+        currency = ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES")
+            .trimmingCharacters(in: .whitespaces).uppercased()
+        paidOn = String(((try? c.decodeIfPresent(String.self, forKey: .paidOn)) ?? "").prefix(10))
+        note = (try? c.decodeIfPresent(String.self, forKey: .note))
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        status = ((try? c.decodeIfPresent(String.self, forKey: .status)) ?? "pending").lowercased()
+        decidedAt = try? c.decodeIfPresent(String.self, forKey: .decidedAt)
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+    enum CodingKeys: String, CodingKey {
+        case claimId, pledgeId, amountMinor, currency, paidOn, note, status, decidedAt, createdAt
+    }
+}
+
 /// POST /giving/partners/join → the membership (flat, or wrapped as
 /// `{membership: {…}}`).
 struct PartnerJoinResult: Decodable, Sendable {

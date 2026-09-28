@@ -759,6 +759,28 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/pledges/\(id)", as: PledgeDetail.self)
     }
 
+    /// POST /giving/pledges/{id}/claims — "I paid another way" (Giving Cycle
+    /// 5): `{amount_minor, currency, paid_on: YYYY-MM-DD, note?}`, in the
+    /// pledge's currency. 201 → the claim, pending. The server refuses with
+    /// 422 CURRENCY_MISMATCH / INVALID_DATE and 409 CONFLICT (told already,
+    /// or five waiting) — its words are the member's. Sent online only:
+    /// money is never queued.
+    struct PledgeClaimBody: Encodable, Equatable {
+        let amountMinor: Int
+        let currency: String
+        let paidOn: String
+        let note: String?
+    }
+    static func claimPledgePayment(_ pledgeId: String, _ body: PledgeClaimBody) async throws -> PledgeClaim {
+        try await APIClient.shared.post("giving/pledges/\(pledgeId)/claims", body: body, as: PledgeClaim.self)
+    }
+
+    /// GET /giving/pledges/{id}/claims — what the member has told the office
+    /// about this pledge, newest first.
+    static func pledgeClaims(_ pledgeId: String) async throws -> [PledgeClaim] {
+        try await APIClient.shared.get("giving/pledges/\(pledgeId)/claims", as: Envelope<PledgeClaim>.self).data
+    }
+
     /// GET /giving/statements?year= — the JSON statement by pledge and by
     /// fund. `nil` year = the server's default (the current year).
     static func givingStatements(year: Int? = nil) async throws -> GivingStatements {
