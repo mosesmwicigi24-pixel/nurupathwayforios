@@ -361,16 +361,19 @@ struct NotificationsView: View {
         "event_reminder_24h": "Event tomorrow", "event_reminder_1h": "Event starting soon",
         "reflection_approved": "Reflection approved", "reflection_returned": "Reflection returned",
         "reflection_deferred": "Reflection received",
-        "serve_request_approved": "You're on the team", "serve_request_declined": "About your request to serve",
-        "department_post": "News from your department", "department_need_approved": "A need is open for giving",
+        "department_need_approved": "A need is open for giving",
     ]
     private func titleFor(_ n: NotificationRow) -> String {
         if let t = n.payload?.title, !t.isEmpty { return t }
+        // serve_request_* / department_post: the push's own words (dispatch.ts).
+        if let t = DepartmentNotificationCopy.title(template: n.template, payload: n.payload) { return t }
         if let t = titles[n.template] { return t }
         return n.template.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalizingFirst()
     }
     private func bodyFor(_ n: NotificationRow) -> String? {
         if let b = n.payload?.body, !b.isEmpty { return b }
+        // Ahead of `feedback`, in dispatch.ts pushCopy()'s order.
+        if let b = DepartmentNotificationCopy.body(template: n.template, payload: n.payload) { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
         let t = n.template
         if t.hasPrefix("reflection_approved") { return "Your discipler approved your reflection — well done." }

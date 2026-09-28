@@ -101,11 +101,11 @@ final class LocalNotifier: NSObject, ObservableObject {
         if t == "plan_group_invite_accepted" { return "They joined your plan!" }
         if t == "plan_group_member_joined" { return "New reading partner" }
         if t == "plan_group_day_completed" { return "Reading update" }
-        // Departments (PARTNERS_PROGRAMME §4).
-        if t == "serve_request_approved" { return "You're on the team" }
-        if t == "serve_request_declined" { return "About your request to serve" }
+        // Departments (PARTNERS_PROGRAMME §4) — serve_request_* and
+        // department_post in the push's own words (dispatch.ts); the prefix
+        // line catches a serve_request_* template this app doesn't know yet.
+        if let d = DepartmentNotificationCopy.title(template: t, payload: n.payload) { return d }
         if t.hasPrefix("serve_request") { return "Request to serve" }
-        if t == "department_post" { return "News from your department" }
         if t == "department_need_approved" { return "A need is open for giving" }
         if t.hasPrefix("department_need") { return "Department need" }
         // Locked-pastoral rule (spec: generic copy, no preview) applied to ANY
@@ -118,6 +118,7 @@ final class LocalNotifier: NSObject, ObservableObject {
         // Never surface pastoral content in a banner (C3b).
         if n.template.hasPrefix("pastoral") { return nil }
         if let b = n.payload?.body, !b.isEmpty { return b }
+        if let b = DepartmentNotificationCopy.body(template: n.template, payload: n.payload) { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
         return nil
     }
