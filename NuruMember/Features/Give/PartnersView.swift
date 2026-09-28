@@ -222,13 +222,15 @@ enum GivingSignal {
         await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(remindersEnabled: on))
     }
 
-    /// Edit name / amount / due day. `title` nil = untouched, `.set` = a new
-    /// custom name, `.clear` = an explicit null so the server falls back to
-    /// its derived name. Returns true on success so the sheet can close.
+    /// Edit name / amount / due day. `amountMinor` is the new promise in the
+    /// pledge's own currency — a monthly amount or a total's target (the body
+    /// sends it as the one the pledge reads). `title` nil = untouched, `.set`
+    /// = a new custom name, `.clear` = an explicit null so the server falls
+    /// back to its derived name. Returns true on success so the sheet can close.
     @discardableResult
     func edit(_ pledge: Pledge, amountMinor: Int?, dueDay: Int?,
               title: MemberAPI.PledgePatchBody.TitlePatch? = nil) async -> Bool {
-        await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(amountMinor: amountMinor, dueDay: dueDay, title: title))
+        await patch(pledge.pledgeId, .edit(pledge, commitmentMinor: amountMinor, dueDay: dueDay, title: title))
     }
 
     @discardableResult

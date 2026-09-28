@@ -165,6 +165,81 @@ enum UsdEntry {
     }
 }
 
+// MARK: - Typing an amount in its own currency
+
+/// An amount typed into a field, in the currency of what it is for (Giving
+/// Cycle 6) — the rules Give's keypad keeps, for the fields outside it (a
+/// pledge's edit, "I paid another way"): shillings in whole shillings; any
+/// other currency in units and cents. Minor units in and out, never a float.
+enum MoneyEntry {
+    /// Shillings are whole; every other currency carries cents.
+    static func wholeUnits(_ currency: String) -> Bool { currency.uppercased() == "KES" }
+
+    /// "KSh" · "US$" · the code — the prefix beside an amount field.
+    static func prefix(_ currency: String) -> String {
+        switch currency.uppercased() {
+        case "KES": return "KSh"
+        case "USD": return "US$"
+        case let c: return c
+        }
+    }
+
+    /// The field as it is typed: digits only for shillings; digits and one
+    /// point (a comma reads as one) with at most two decimals otherwise. At
+    /// most 9 whole digits for shillings, 7 for anything else.
+    static func sanitize(_ text: String, currency: String) -> String {
+        if wholeUnits(currency) {
+            return String(text.filter { $0.isASCII && $0.isNumber }.prefix(9))
+        }
+        var out = ""
+        var point = false, whole = 0, decimals = 0
+        for ch in text {
+            if ch == "." || ch == "," {
+                guard !point else { continue }
+                point = true
+                out += out.isEmpty ? "0." : "."
+            } else if ch.isASCII, ch.isNumber {
+                if point {
+                    guard decimals < 2 else { continue }
+                    decimals += 1
+                } else {
+                    guard whole < 7 else { continue }
+                    whole += 1
+                }
+                out.append(ch)
+            }
+        }
+        return out
+    }
+
+    /// The field's amount in minor units; nil when it is not one. Shillings
+    /// must be whole ("1500" → 150000, "1500.50" → nil); dollars may carry
+    /// cents ("12.5" → 1250). Zero is not an amount.
+    static func minor(_ text: String, currency: String) -> Int? {
+        let t = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
+        let parts = t.split(separator: ".", omittingEmptySubsequences: false)
+        guard !t.isEmpty, parts.count <= 2 else { return nil }
+        if wholeUnits(currency) && parts.count == 2 { return nil }
+        let wholeText = String(parts[0])
+        let frac = parts.count == 2 ? String(parts[1]) : ""
+        guard wholeText.count <= 12, frac.count <= 2,
+              (wholeText + frac).allSatisfy({ $0.isASCII && $0.isNumber }),
+              !(wholeText + frac).isEmpty else { return nil }
+        let minor = (Int(wholeText.isEmpty ? "0" : wholeText) ?? 0) * 100 + (Int((frac + "00").prefix(2)) ?? 0)
+        return minor > 0 ? minor : nil
+    }
+
+    /// The big number above a field, without its prefix: "1,500" (cents
+    /// only when there are any, "1,500.50") for shillings; "20.00" otherwise.
+    static func display(_ minor: Int, currency: String) -> String {
+        guard wholeUnits(currency) else { return GiveMoney.number(minor) }
+        let a = abs(minor)
+        let whole = (a / 100).formatted(.number.grouping(.automatic))
+        let sign = minor < 0 ? "-" : ""
+        return a % 100 == 0 ? "\(sign)\(whole)" : "\(sign)\(whole).\(a % 100 < 10 ? "0" : "")\(a % 100)"
+    }
+}
+
 // MARK: - Cover the fee
 
 /// "Cover the transaction fee" (Giving Cycle 2): the member adds the M-Pesa

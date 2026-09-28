@@ -699,7 +699,7 @@ struct NewPledgeFlow: View {
         submitting = true
         defer { submitting = false }
         error = nil
-        var body = MemberAPI.PledgeCreateBody(shape: shape, currency: "KES", idempotencyKey: UUID().uuidString)
+        var body = MemberAPI.PledgeCreateBody(shape: shape, currency: "KES", idempotencyKey: GiveKey.fresh())
         if monthly {
             body.amountMinor = amount * 100
             body.dueDay = dueDay
@@ -806,32 +806,55 @@ struct NewPledgeFlow: View {
 
 // MARK: - Edit name / amount / due day (PATCH /giving/pledges/{id})
 
+/// A pledge's promise as its edit handles it (Giving Cycle 6): in the
+/// pledge's OWN currency — shillings whole, dollars with cents — by the same
+/// rules as Give (MoneyEntry, and Give's suggested amounts per currency). It
+/// used to be shillings for every pledge: a dollar pledge read "KSh" and
+/// could only be whole.
+enum PledgeAmountEdit {
+    /// The suggested amounts, in minor units: KSh 500 … 20,000, or Give's
+    /// dollar ones (US$ 5 … 100).
+    static func presets(_ currency: String) -> [Int] {
+        MoneyEntry.wholeUnits(currency) ? [500, 1000, 2000, 5000, 10_000, 20_000].map { $0 * 100 } : UsdEntry.presetsCents
+    }
+
+    /// What the save sends for the promise: the new amount when it is one
+    /// and differs from the pledge's, else nil (left as it is).
+    static func changed(_ minor: Int, from pledge: Pledge) -> Int? {
+        minor > 0 && minor != pledge.commitmentMinor ? minor : nil
+    }
+}
+
 struct EditPledgeSheet: View {
     let pledge: Pledge
     /// Returns true when the server accepted the change (the sheet closes).
-    /// `title` is nil when the name is untouched, `.set` for a new custom
-    /// name, `.clear` to drop it (the server falls back to its derived name).
+    /// `amountMinor` is the new promise in the pledge's own currency (nil =
+    /// untouched). `title` is nil when the name is untouched, `.set` for a
+    /// new custom name, `.clear` to drop it (the server falls back to its
+    /// derived name).
     let onSave: (_ amountMinor: Int?, _ dueDay: Int?, _ title: MemberAPI.PledgePatchBody.TitlePatch?) async -> Bool
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
-    @State private var amount: Int
+    /// The promise, in minor units of the pledge's own currency.
+    @State private var amountMinor: Int
     @State private var customAmount = ""
     @State private var dueDay: Int
     @State private var saving = false
     @FocusState private var amountFocused: Bool
     @FocusState private var nameFocused: Bool
 
-    private static let presets = [500, 1000, 2000, 5000, 10_000, 20_000]
     private static let nameLimit = 2...60
 
     init(pledge: Pledge, onSave: @escaping (_ amountMinor: Int?, _ dueDay: Int?, _ title: MemberAPI.PledgePatchBody.TitlePatch?) async -> Bool) {
         self.pledge = pledge
         self.onSave = onSave
         _name = State(initialValue: pledge.customTitle ?? pledge.displayTitle)
-        _amount = State(initialValue: pledge.commitmentMinor / 100)
+        _amountMinor = State(initialValue: pledge.commitmentMinor)
         _dueDay = State(initialValue: pledge.dueDay ?? 1)
     }
+
+    private var currency: String { pledge.currency.uppercased() }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
     /// Empty is allowed (it clears a custom name); anything else is 2–60.
@@ -846,7 +869,7 @@ struct EditPledgeSheet: View {
     }
 
     private var changed: Bool {
-        amount * 100 != pledge.commitmentMinor
+        PledgeAmountEdit.changed(amountMinor, from: pledge) != nil
             || (pledge.isMonthly && dueDay != (pledge.dueDay ?? 1))
             || titlePatch != nil
     }
@@ -896,22 +919,22 @@ struct EditPledgeSheet: View {
                 VStack(spacing: 4) {
                     Text(pledge.isMonthly ? "EACH MONTH" : "TOTAL").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
-                        Text(amount.formatted(.number.grouping(.automatic)))
+                        Text(MoneyEntry.prefix(currency)).font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
+                        Text(MoneyEntry.display(amountMinor, currency: currency))
                             .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
-                            .contentTransition(.numericText(value: Double(amount)))
+                            .contentTransition(.numericText(value: Double(amountMinor)))
                     }
                 }
                 .frame(maxWidth: .infinity)
 
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(Self.presets, id: \.self) { v in
-                        let on = amount == v && customAmount.isEmpty
+                    ForEach(PledgeAmountEdit.presets(currency), id: \.self) { v in
+                        let on = amountMinor == v && customAmount.isEmpty
                         Button {
                             Haptics.selection(); customAmount = ""; amountFocused = false
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amount = v }
+                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amountMinor = v }
                         } label: {
-                            Text(v.formatted(.number.grouping(.automatic)))
+                            Text((v / 100).formatted(.number.grouping(.automatic)))
                                 .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                                 .frame(maxWidth: .infinity).frame(height: 38)
                                 .background(on ? Nuru.navy : Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -923,19 +946,26 @@ struct EditPledgeSheet: View {
 
                 HStack(spacing: 8) {
                     Icon(.pencil, size: 13, color: Nuru.gold)
-                    TextField("Or enter your own amount", text: $customAmount)
-                        .keyboardType(.numberPad)
+                    TextField(MoneyEntry.wholeUnits(currency) ? "Or enter your own amount" : "Or enter your own amount, e.g. 20.00",
+                              text: $customAmount)
+                        .keyboardType(MoneyEntry.wholeUnits(currency) ? .numberPad : .decimalPad)
                         .font(.inter(14))
                         .focused($amountFocused)
                         .onChange(of: customAmount) { _, v in
-                            let digits = v.filter(\.isNumber)
-                            if digits != v { customAmount = digits }
-                            if let n = Int(digits), n > 0 { amount = n }
+                            // Give's rules, in the pledge's money: whole
+                            // shillings, or dollars and cents.
+                            let clean = MoneyEntry.sanitize(v, currency: currency)
+                            if clean != v { customAmount = clean; return }
+                            if let m = MoneyEntry.minor(clean, currency: currency) { amountMinor = m }
                         }
                 }
                 .padding(.horizontal, 14).frame(height: 44)
                 .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(amountFocused ? Nuru.gold : Nuru.border, lineWidth: 1))
+                if !MoneyEntry.wholeUnits(currency) {
+                    Text("This pledge is in \(GiveMoney.currencyWords(currency)).")
+                        .font(.nCaption).foregroundStyle(Nuru.ink400)
+                }
 
                 if pledge.isMonthly {
                     Text("DUE DAY").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
@@ -953,12 +983,13 @@ struct EditPledgeSheet: View {
                     }
                 }
 
-                GoldSheetButton(title: saving ? "Saving…" : "Save changes", busy: saving, disabled: !changed || amount <= 0 || !nameValid) {
+                GoldSheetButton(title: saving ? "Saving…" : "Save changes", busy: saving, disabled: !changed || amountMinor <= 0 || !nameValid) {
                     Haptics.action()
                     nameFocused = false
+                    amountFocused = false
                     Task {
                         saving = true
-                        let ok = await onSave(amount * 100 != pledge.commitmentMinor ? amount * 100 : nil,
+                        let ok = await onSave(PledgeAmountEdit.changed(amountMinor, from: pledge),
                                               pledge.isMonthly && dueDay != (pledge.dueDay ?? 1) ? dueDay : nil,
                                               titlePatch)
                         saving = false

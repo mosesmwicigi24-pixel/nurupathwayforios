@@ -335,7 +335,7 @@ struct GivingView: View {
     @State private var retryMethod: String?
     /// The retry's idempotency key (GiveRetry.key): replayed only after an
     /// attempt that got no server answer, never across gifts.
-    @State private var retryKey = UUID().uuidString
+    @State private var retryKey = GiveKey.fresh()
     /// A gift opened from a notification that did not fail after all — its
     /// receipt, in a sheet.
     @State private var receiptLink: ReceiptLink?
@@ -369,7 +369,7 @@ struct GivingView: View {
     /// key after ANY HTTP response (success, 4xx, 5xx — reusing one after a
     /// genuine failure would lock the member out of retrying), after the
     /// ceremony resolves, and whenever the form changes (formSignature).
-    @State private var submissionKey = UUID().uuidString
+    @State private var submissionKey = GiveKey.fresh()
     /// PayPal order id (the intent's provider_ref) for the in-flight gift —
     /// captured after the member approves on PayPal, then cleared.
     @State private var paypalOrderId: String?
@@ -551,7 +551,7 @@ struct GivingView: View {
             }
         }
         // A different submission from here on — never replay the old key.
-        .onChange(of: formSignature) { _, _ in submissionKey = UUID().uuidString }
+        .onChange(of: formSignature) { _, _ in submissionKey = GiveKey.fresh() }
         // Returning from the PayPal approval in Safari → nudge the capture;
         // and back from anywhere → refetch the year total / recent giving.
         .onChange(of: scenePhase) { _, p in
@@ -1455,7 +1455,7 @@ struct GivingView: View {
                                                          frequency: frequency, method: provider,
                                                          idempotencyKey: submissionKey, phoneNumber: phone,
                                                          firstCharge: giveNow ? "now" : "next")
-            submissionKey = UUID().uuidString   // answered — a replay (`reused`) is handled the same
+            submissionKey = GiveKey.fresh()   // answered — a replay (`reused`) is handled the same
             if let phone { phoneMemory.remember(phone, for: auth.profile?.userId) }
             Haptics.success()   // the server really created the schedule
             GivingSignal.post(from: vm)   // Partners' standing derives from schedules
@@ -1477,7 +1477,7 @@ struct GivingView: View {
             await vm.load()
         } catch {
             // Keep the key ONLY when the server never answered.
-            if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
+            if !Self.gotNoServerAnswer(error) { submissionKey = GiveKey.fresh() }
             switch GiveRefusal.from(error, fallback: "Couldn't create the schedule.") {
             case let .promptWaiting(tx, message):
                 // A prompt is already on the phone: nothing was created — watch
@@ -1513,13 +1513,17 @@ struct GivingView: View {
                                                  coverFeeMinor: charge.coverFeeMinor)
             // The server answered: this key is spent. A replay (`reused: true`,
             // the existing transaction) is handled exactly like a fresh one.
-            submissionKey = UUID().uuidString
+            submissionKey = GiveKey.fresh()
             await beginWatching(res, provider: provider, phone: phone)
         } catch {
             // Keep the key ONLY when the server never answered — the next
             // Pay tap then replays it and gets the transaction back if the
-            // request did land. After any HTTP response, a fresh key.
-            if !Self.gotNoServerAnswer(error) { submissionKey = UUID().uuidString }
+            // request did land. After any HTTP response, a fresh key: a 409
+            // CONFLICT (the key is another gift's) then goes through on the
+            // next tap, and a 429 RATE_LIMITED (several prompts to a number
+            // not the member's own) is said in the server's words — neither
+            // is ever sent again without a tap (Giving Cycle 6).
+            if !Self.gotNoServerAnswer(error) { submissionKey = GiveKey.fresh() }
             switch GiveRefusal.from(error, fallback: "Something went wrong.") {
             case let .promptWaiting(tx, message):
                 // Not a failure: this member's prompt from a moment ago is
@@ -1547,6 +1551,9 @@ struct GivingView: View {
             promptPhone = phone
         }
         pendingTxId = res.transactionId
+        // A resend of the same key answers with the gift's provider_ref —
+        // null while its prompt is still being sent (Giving Cycle 6). Not an
+        // error: the gift is watched by its transaction id either way.
         successRef = res.providerRef
         // The server's word on where the gift went (pledge names
         // contract) — the ceremony reads this, not the chip.
@@ -1594,6 +1601,10 @@ struct GivingView: View {
             retryTxId = nil
             await beginWatching(res, provider: retryMethod, phone: phone)
         } catch {
+            // A fresh key after any answer; the same gift stays the target
+            // only when there was no answer or only the key was refused (409
+            // CONFLICT) — a 429 RATE_LIMITED sends the member back to the
+            // form, and nothing is ever retried without a tap (Giving Cycle 6).
             retryKey = GiveRetry.key(after: error, current: retryKey)
             retryTxId = GiveRetry.target(after: error, retrying: failedTx)
             switch GiveRefusal.from(error, fallback: "Couldn't try again — check your connection.") {
@@ -1612,7 +1623,7 @@ struct GivingView: View {
     /// Points "Try again" at a failed gift. A different gift gets a fresh
     /// retry key — a key is never replayed across gifts.
     private func setRetryTarget(_ tx: String?, method: String?) {
-        if tx != retryTxId { retryKey = UUID().uuidString }
+        if tx != retryTxId { retryKey = GiveKey.fresh() }
         retryTxId = tx
         retryMethod = method
     }
@@ -1782,7 +1793,7 @@ struct GivingView: View {
         // ceremony leaves the key as the submit path set it — already fresh
         // if the server answered, kept only if it never did (so the retry
         // replays it and gets the transaction back if the request landed).
-        if ceremony != "failed" { submissionKey = UUID().uuidString }
+        if ceremony != "failed" { submissionKey = GiveKey.fresh() }
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil
         paypalOrderId = nil

@@ -548,7 +548,7 @@ extension MemberAPI {
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
                        method: method, phoneNumber: phoneNumber, accountName: accountName,
-                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? UUID().uuidString,
+                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? GiveKey.fresh(),
                        coverFeeMinor: coverFeeMinor),
             as: GivingIntentResult.self)
     }
@@ -723,24 +723,45 @@ extension MemberAPI {
     }
 
     /// PATCH /giving/pledges/{id} — `{status?: paused|active|cancelled,
-    /// amount_minor?, due_day?, reminders_enabled?, title?: string | null}`.
-    /// Only the keys set are sent. `title` is the one key that must be able
-    /// to travel as an explicit JSON `null` (clearing the custom name so the
-    /// server falls back to its derived one), so the body is encoded by hand
-    /// — the same idiom as `reactToEventPost`.
+    /// amount_minor?, target_minor?, due_day?, reminders_enabled?, title?:
+    /// string | null}`. Only the keys set are sent. `title` is the one key
+    /// that must be able to travel as an explicit JSON `null` (clearing the
+    /// custom name so the server falls back to its derived one), so the body
+    /// is encoded by hand — the same idiom as `reactToEventPost`.
     struct PledgePatchBody: Encodable {
         enum TitlePatch { case set(String), clear }
         var status: String? = nil
+        /// A monthly pledge's amount, in its own currency's minor units.
         var amountMinor: Int? = nil
+        /// A total pledge's target, in its own currency's minor units.
+        var targetMinor: Int? = nil
         var dueDay: Int? = nil
         var remindersEnabled: Bool? = nil
         var title: TitlePatch? = nil
 
-        enum CodingKeys: String, CodingKey { case status, amountMinor, dueDay, remindersEnabled, title }
+        /// An edit of `pledge` (Giving Cycle 6): its new promise — minor
+        /// units of the pledge's OWN currency (cents for dollars) — goes to
+        /// `amount_minor` on a monthly pledge and `target_minor` on a total
+        /// one. (A total's edit used to be sent as `amount_minor`, which a
+        /// total pledge does not read: its target never moved.) A due day
+        /// only moves a monthly pledge.
+        static func edit(_ pledge: Pledge, commitmentMinor: Int?, dueDay: Int?, title: TitlePatch?) -> PledgePatchBody {
+            var body = PledgePatchBody(title: title)
+            if pledge.isMonthly {
+                body.amountMinor = commitmentMinor
+                body.dueDay = dueDay
+            } else {
+                body.targetMinor = commitmentMinor
+            }
+            return body
+        }
+
+        enum CodingKeys: String, CodingKey { case status, amountMinor, targetMinor, dueDay, remindersEnabled, title }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             try c.encodeIfPresent(status, forKey: .status)
             try c.encodeIfPresent(amountMinor, forKey: .amountMinor)
+            try c.encodeIfPresent(targetMinor, forKey: .targetMinor)
             try c.encodeIfPresent(dueDay, forKey: .dueDay)
             try c.encodeIfPresent(remindersEnabled, forKey: .remindersEnabled)
             switch title {

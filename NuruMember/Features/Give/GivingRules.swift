@@ -209,6 +209,10 @@ enum GiveRefusal: Equatable {
     /// Anything else: the server's member-facing `message` as-is (the 422
     /// METHOD_UNAVAILABLE / METHOD_CURRENCY / AMOUNT_OUT_OF_RANGE /
     /// PHONE_REQUIRED and 409 SCHEDULE_EXISTS among them), else `fallback`.
+    /// Giving Cycle 6: 429 RATE_LIMITED — several prompts to a number that is
+    /// not the member's own just now; its words name the minutes — and 409
+    /// CONFLICT, a request key another gift holds. Neither is ever sent again
+    /// by itself: the answer spends the key, and only a tap sends anything.
     case message(String)
 
     static func from(_ error: Error, fallback: String) -> GiveRefusal {
@@ -235,6 +239,39 @@ enum GiveRefusal: Equatable {
         if let api = error as? APIError { return api.isNetwork }
         return error is URLError
     }
+
+    /// 409 CONFLICT "That request key is already in use" (Giving Cycle 6):
+    /// the key belongs to another gift and nothing was made or rung. The
+    /// request itself was fine — with a fresh key the member's next tap goes
+    /// through. (Never sent again by itself: a key is spent by any answer.)
+    static func isKeyConflict(_ error: Error) -> Bool {
+        if case let .http(status, code, _, _)? = error as? APIError { return status == 409 && code == "CONFLICT" }
+        return false
+    }
+}
+
+// MARK: - Request keys (Giving Cycle 6)
+
+/// The idempotency key a gift, a retry, a schedule or a pledge carries. The
+/// server keeps some shapes for itself — `sched:`, `claim:`, `pledge:`,
+/// `web:`, `website:`, `office:` (a member's key shaped like a schedule
+/// cycle's could make the scheduler skip that cycle) — and answers 400 to
+/// one; a key another gift holds is 409 CONFLICT. The app's keys are random
+/// UUIDs: never in those namespaces (a UUID has no colon), within the
+/// server's 8–255 characters, and never used again once any answer came.
+enum GiveKey {
+    /// The server's own namespaces (FinancialService.RESERVED_KEY), matched
+    /// without regard to case, as the server matches them.
+    static let reservedPrefixes = ["sched:", "claim:", "pledge:", "web:", "website:", "office:"]
+
+    /// A new key — the only way the app makes one for giving.
+    static func fresh() -> String { UUID().uuidString }
+
+    /// `key` is in one of the server's namespaces.
+    static func isReserved(_ key: String) -> Bool {
+        let k = key.lowercased()
+        return reservedPrefixes.contains { k.hasPrefix($0) }
+    }
 }
 
 // MARK: - Try again (Giving Cycle 3)
@@ -256,17 +293,19 @@ enum GiveRetry {
     }
 
     /// Which failed gift "Try again" retries after a retry attempt errored:
-    /// the same one while the server never answered; none after the server
-    /// refused (the same request would be refused again) — then it is the
-    /// form's turn.
+    /// the same one while the server never answered, or when only the KEY
+    /// was refused (409 CONFLICT — the next tap sends a fresh one, Giving
+    /// Cycle 6); none after the server refused the gift itself (the same
+    /// request would be refused again, a 429 RATE_LIMITED included) — then
+    /// it is the form's turn. Never retried without a tap.
     static func target(after error: Error, retrying transactionId: String) -> String? {
-        GiveRefusal.gotNoServerAnswer(error) ? transactionId : nil
+        GiveRefusal.gotNoServerAnswer(error) || GiveRefusal.isKeyConflict(error) ? transactionId : nil
     }
 
     /// The idempotency key the next retry sends: the same one only when the
     /// last attempt got no server answer (so a retry that did land is found,
     /// not doubled); a fresh one after any answer, and after success (`nil`).
-    static func key(after error: Error?, current: String, fresh: () -> String = { UUID().uuidString }) -> String {
+    static func key(after error: Error?, current: String, fresh: () -> String = GiveKey.fresh) -> String {
         if let error, GiveRefusal.gotNoServerAnswer(error) { return current }
         return fresh()
     }

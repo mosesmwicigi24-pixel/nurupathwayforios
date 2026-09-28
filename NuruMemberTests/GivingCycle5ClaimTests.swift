@@ -60,39 +60,39 @@ final class GivingCycle5ClaimTests: XCTestCase {
     // MARK: The amount — the pledge's currency; shillings whole
 
     func testShillingsAreWhole() {
-        XCTAssertEqual(ClaimRules.amountMinor("1500", currency: "KES"), 150_000)
-        XCTAssertNil(ClaimRules.amountMinor("1500.50", currency: "KES"), "no cents on a shilling pledge")
-        XCTAssertNil(ClaimRules.amountMinor("1500.00", currency: "KES"))
-        XCTAssertNil(ClaimRules.amountMinor("0", currency: "KES"), "zero is not an amount")
-        XCTAssertNil(ClaimRules.amountMinor("", currency: "KES"))
-        XCTAssertNil(ClaimRules.amountMinor("12a", currency: "KES"))
+        XCTAssertEqual(MoneyEntry.minor("1500", currency: "KES"), 150_000)
+        XCTAssertNil(MoneyEntry.minor("1500.50", currency: "KES"), "no cents on a shilling pledge")
+        XCTAssertNil(MoneyEntry.minor("1500.00", currency: "KES"))
+        XCTAssertNil(MoneyEntry.minor("0", currency: "KES"), "zero is not an amount")
+        XCTAssertNil(MoneyEntry.minor("", currency: "KES"))
+        XCTAssertNil(MoneyEntry.minor("12a", currency: "KES"))
         XCTAssertEqual(problem("1500.50"), "Shillings only — no cents.")
         XCTAssertEqual(problem(""), "Enter the amount you paid.")
         XCTAssertEqual(problem("0"), "Enter the amount you paid.")
         XCTAssertNil(problem("1500"))
 
-        XCTAssertEqual(ClaimRules.sanitize("1,500", currency: "KES"), "1500", "what is typed keeps digits only")
-        XCTAssertEqual(ClaimRules.sanitize("15.50", currency: "KES"), "1550")
-        XCTAssertEqual(ClaimRules.sanitize("1234567890", currency: "KES"), "123456789")
+        XCTAssertEqual(MoneyEntry.sanitize("1,500", currency: "KES"), "1500", "what is typed keeps digits only")
+        XCTAssertEqual(MoneyEntry.sanitize("15.50", currency: "KES"), "1550")
+        XCTAssertEqual(MoneyEntry.sanitize("1234567890", currency: "KES"), "123456789")
     }
 
     func testDollarsCarryCents() {
-        XCTAssertEqual(ClaimRules.amountMinor("12.5", currency: "USD"), 1_250)
-        XCTAssertEqual(ClaimRules.amountMinor("12.50", currency: "USD"), 1_250)
-        XCTAssertEqual(ClaimRules.amountMinor("12", currency: "USD"), 1_200)
-        XCTAssertEqual(ClaimRules.amountMinor("0.05", currency: "USD"), 5)
-        XCTAssertEqual(ClaimRules.amountMinor(".5", currency: "USD"), 50)
-        XCTAssertEqual(ClaimRules.amountMinor("12,5", currency: "USD"), 1_250, "a decimal comma reads as a point")
-        XCTAssertNil(ClaimRules.amountMinor("12.345", currency: "USD"), "never past cents")
-        XCTAssertNil(ClaimRules.amountMinor("1.2.3", currency: "USD"))
-        XCTAssertNil(ClaimRules.amountMinor("0.00", currency: "USD"))
-        XCTAssertNil(ClaimRules.amountMinor(".", currency: "USD"))
+        XCTAssertEqual(MoneyEntry.minor("12.5", currency: "USD"), 1_250)
+        XCTAssertEqual(MoneyEntry.minor("12.50", currency: "USD"), 1_250)
+        XCTAssertEqual(MoneyEntry.minor("12", currency: "USD"), 1_200)
+        XCTAssertEqual(MoneyEntry.minor("0.05", currency: "USD"), 5)
+        XCTAssertEqual(MoneyEntry.minor(".5", currency: "USD"), 50)
+        XCTAssertEqual(MoneyEntry.minor("12,5", currency: "USD"), 1_250, "a decimal comma reads as a point")
+        XCTAssertNil(MoneyEntry.minor("12.345", currency: "USD"), "never past cents")
+        XCTAssertNil(MoneyEntry.minor("1.2.3", currency: "USD"))
+        XCTAssertNil(MoneyEntry.minor("0.00", currency: "USD"))
+        XCTAssertNil(MoneyEntry.minor(".", currency: "USD"))
         XCTAssertNil(problem("20.00", "USD"))
 
-        XCTAssertEqual(ClaimRules.sanitize("12.345", currency: "USD"), "12.34")
-        XCTAssertEqual(ClaimRules.sanitize(".5", currency: "USD"), "0.5")
-        XCTAssertEqual(ClaimRules.sanitize("12,5", currency: "USD"), "12.5")
-        XCTAssertEqual(ClaimRules.sanitize("1.2.3", currency: "USD"), "1.23")
+        XCTAssertEqual(MoneyEntry.sanitize("12.345", currency: "USD"), "12.34")
+        XCTAssertEqual(MoneyEntry.sanitize(".5", currency: "USD"), "0.5")
+        XCTAssertEqual(MoneyEntry.sanitize("12,5", currency: "USD"), "12.5")
+        XCTAssertEqual(MoneyEntry.sanitize("1.2.3", currency: "USD"), "1.23")
     }
 
     // MARK: The note — at most 300 characters
@@ -155,8 +155,8 @@ final class GivingCycle5ClaimTests: XCTestCase {
     }
 
     func testTheAmountFieldsPrefixIsThePledgesCurrency() {
-        XCTAssertEqual(ClaimCopy.prefix("KES"), "KSh")
-        XCTAssertEqual(ClaimCopy.prefix("usd"), "US$")
-        XCTAssertEqual(ClaimCopy.prefix("EUR"), "EUR")
+        XCTAssertEqual(MoneyEntry.prefix("KES"), "KSh")
+        XCTAssertEqual(MoneyEntry.prefix("usd"), "US$")
+        XCTAssertEqual(MoneyEntry.prefix("EUR"), "EUR")
     }
 }

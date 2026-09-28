@@ -36,59 +36,11 @@ enum ClaimRules {
         return PledgeMath.churchDay(of: moved)
     }
 
-    /// Shillings are given in whole shillings; every other currency in cents.
-    static func wholeUnits(_ currency: String) -> Bool { currency.uppercased() == "KES" }
-
-    /// The amount field as it is typed: digits only for shillings; digits and
-    /// one point (a comma reads as one) with at most two decimals otherwise.
-    /// At most 9 whole digits for shillings, 7 for anything else.
-    static func sanitize(_ text: String, currency: String) -> String {
-        if wholeUnits(currency) {
-            return String(text.filter { $0.isASCII && $0.isNumber }.prefix(9))
-        }
-        var out = ""
-        var point = false, whole = 0, decimals = 0
-        for ch in text {
-            if ch == "." || ch == "," {
-                guard !point else { continue }
-                point = true
-                out += out.isEmpty ? "0." : "."
-            } else if ch.isASCII, ch.isNumber {
-                if point {
-                    guard decimals < 2 else { continue }
-                    decimals += 1
-                } else {
-                    guard whole < 7 else { continue }
-                    whole += 1
-                }
-                out.append(ch)
-            }
-        }
-        return out
-    }
-
-    /// The field's amount in minor units; nil when it is not one. Shillings
-    /// must be whole ("1500" → 150000, "1500.50" → nil); dollars may carry
-    /// cents ("12.5" → 1250). Zero is not an amount.
-    static func amountMinor(_ text: String, currency: String) -> Int? {
-        let t = text.trimmingCharacters(in: .whitespaces).replacingOccurrences(of: ",", with: ".")
-        let parts = t.split(separator: ".", omittingEmptySubsequences: false)
-        guard !t.isEmpty, parts.count <= 2 else { return nil }
-        if wholeUnits(currency) && parts.count == 2 { return nil }
-        let wholeText = String(parts[0])
-        let frac = parts.count == 2 ? String(parts[1]) : ""
-        guard wholeText.count <= 12, frac.count <= 2,
-              (wholeText + frac).allSatisfy({ $0.isASCII && $0.isNumber }),
-              !(wholeText + frac).isEmpty else { return nil }
-        let minor = (Int(wholeText.isEmpty ? "0" : wholeText) ?? 0) * 100 + (Int((frac + "00").prefix(2)) ?? 0)
-        return minor > 0 ? minor : nil
-    }
-
     /// What stops the claim from going, in words — nil when it can.
     static func problem(amountText: String, currency: String, paidOn: String, note: String, today: String) -> String? {
         let t = amountText.trimmingCharacters(in: .whitespaces)
-        if amountMinor(t, currency: currency) == nil {
-            if wholeUnits(currency) && (t.contains(".") || t.contains(",")) { return "Shillings only — no cents." }
+        if MoneyEntry.minor(t, currency: currency) == nil {
+            if MoneyEntry.wholeUnits(currency) && (t.contains(".") || t.contains(",")) { return "Shillings only — no cents." }
             return "Enter the amount you paid."
         }
         guard PledgeMath.isDay(paidOn), dayRange(today: today).contains(paidOn) else {
@@ -104,7 +56,7 @@ enum ClaimRules {
     /// pledge's own currency; an empty note is left out.
     static func body(amountText: String, currency: String, paidOn: String, note: String, today: String) -> MemberAPI.PledgeClaimBody? {
         guard problem(amountText: amountText, currency: currency, paidOn: paidOn, note: note, today: today) == nil,
-              let minor = amountMinor(amountText, currency: currency) else { return nil }
+              let minor = MoneyEntry.minor(amountText, currency: currency) else { return nil }
         let n = note.trimmingCharacters(in: .whitespacesAndNewlines)
         return MemberAPI.PledgeClaimBody(amountMinor: minor, currency: currency.uppercased(), paidOn: paidOn, note: n.isEmpty ? nil : n)
     }
@@ -153,15 +105,6 @@ enum ClaimCopy {
     static func line(_ claim: PledgeClaim, today: String) -> String {
         let when = PledgeMath.isDay(claim.paidOn) ? " · paid \(PledgeMath.dayLabel(claim.paidOn, today: today))" : ""
         return "\(GiveMoney.format(claim.amountMinor, claim.currency))\(when)"
-    }
-
-    /// "KSh" · "US$" · the code — the amount field's prefix.
-    static func prefix(_ currency: String) -> String {
-        switch currency.uppercased() {
-        case "KES": return "KSh"
-        case "USD": return "US$"
-        case let c: return c
-        }
     }
 }
 
@@ -225,20 +168,20 @@ struct PledgeClaimSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     label("AMOUNT · IN \(GiveMoney.currencyWords(currency).uppercased())")
                     HStack(spacing: 8) {
-                        Text(ClaimCopy.prefix(currency)).font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
-                        TextField(ClaimRules.wholeUnits(currency) ? "e.g. 2000" : "e.g. 20.00", text: $amountText)
-                            .keyboardType(ClaimRules.wholeUnits(currency) ? .numberPad : .decimalPad)
+                        Text(MoneyEntry.prefix(currency)).font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
+                        TextField(MoneyEntry.wholeUnits(currency) ? "e.g. 2000" : "e.g. 20.00", text: $amountText)
+                            .keyboardType(MoneyEntry.wholeUnits(currency) ? .numberPad : .decimalPad)
                             .font(.inter(16, .semibold))
                             .focused($amountFocused)
                             .onChange(of: amountText) { _, v in
-                                let clean = ClaimRules.sanitize(v, currency: currency)
+                                let clean = MoneyEntry.sanitize(v, currency: currency)
                                 if clean != v { amountText = clean }
                             }
                     }
                     .padding(.horizontal, 14).frame(height: 46)
                     .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(amountFocused ? Nuru.gold : Nuru.border, lineWidth: 1))
-                    Text(ClaimRules.wholeUnits(currency)
+                    Text(MoneyEntry.wholeUnits(currency)
                          ? "In whole shillings, as you paid it."
                          : "In \(GiveMoney.currencyWords(currency)) — this pledge's currency.")
                         .font(.nCaption).foregroundStyle(Nuru.ink400)
