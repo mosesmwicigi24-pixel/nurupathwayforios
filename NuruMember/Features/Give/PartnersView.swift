@@ -878,6 +878,22 @@ struct PartnersView: View {
                     .padding(.horizontal, 10).frame(height: 28)
                     .background(Nuru.urgentBg, in: Capsule())
                     .accessibilityLabel("\(pendingChipText(item)) — this payment is already on its way")
+            } else if item.kind == "schedule", item.action != "resume", let collected = ScheduleRhythm.collectedOn(item.dueOn) {
+                // A running recurring gift collects itself — no Pay, which
+                // gave a second, one-time gift (owner, 2026-09-28). A tap
+                // opens the gift's own sheet on Give (pause, change).
+                Button {
+                    Haptics.tap()
+                    tabs.openGive(link: .schedule(scheduleId: item.id))
+                } label: {
+                    Text(collected)
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .padding(.horizontal, 12).frame(height: 32)
+                        .background(Nuru.goldChipBg, in: Capsule())
+                }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("\(collected), automatically. Opens the recurring gift.")
             } else {
                 Button {
                     Haptics.action()

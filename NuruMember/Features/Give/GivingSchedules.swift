@@ -114,6 +114,16 @@ enum ScheduleRhythm {
         return "Your \(kind) gift is set up — the first prompt comes on \(format(d, "d MMM yyyy"))."
     }
 
+    /// What Partners' DUE row says for a running recurring gift, in place of
+    /// Pay (owner, 2026-09-28): "Collected on Mon 5 Oct". Pay only opened a
+    /// separate one-time gift while the gift still prompted on its day — the
+    /// member gave twice that cycle. `dueOn` is the server's Nairobi date of
+    /// the next prompt; nil when it is not one.
+    static func collectedOn(_ dueOn: String) -> String? {
+        guard let d = PauseDates.date(dueOn) else { return nil }
+        return "Collected on \(format(d, "EEE d MMM"))"
+    }
+
     /// A date on the church's calendar, in English (the app's language).
     static func format(_ date: Date, _ pattern: String) -> String {
         let f = DateFormatter()

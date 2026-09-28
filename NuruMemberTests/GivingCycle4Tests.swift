@@ -33,6 +33,15 @@ final class GivingCycle4Tests: XCTestCase {
         XCTAssertEqual(ScheduleRhythm.rowText(for: s), "KSh 500 every Sunday · next Sun 4 Oct")
     }
 
+    /// Partners' DUE row for a running recurring gift says when it collects
+    /// itself instead of offering Pay (owner, 2026-09-28).
+    func testADueRecurringGiftSaysWhenItIsCollected() {
+        XCTAssertEqual(ScheduleRhythm.collectedOn("2026-10-05"), "Collected on Mon 5 Oct")
+        XCTAssertEqual(ScheduleRhythm.collectedOn("2026-10-04T00:00:00"), "Collected on Sun 4 Oct", "only the day counts")
+        XCTAssertNil(ScheduleRhythm.collectedOn(""))
+        XCTAssertNil(ScheduleRhythm.collectedOn("soon"))
+    }
+
     func testWeeklyDayIsNairobisNotUTCs() throws {
         // 22:30 UTC on Saturday is 01:30 on Sunday in Nairobi.
         let s = try schedule(#""frequency":"weekly","status":"active","next_run_at":"2026-10-03T22:30:00Z""#)
