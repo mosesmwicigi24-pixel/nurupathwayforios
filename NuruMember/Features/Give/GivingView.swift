@@ -223,7 +223,7 @@ final class GivingViewModel: ObservableObject {
         loading = false
     }
 
-    /// The schedules Give lists under ACTIVE SCHEDULES (never a cancelled one).
+    /// The schedules Give lists under RECURRING GIFTS (never a cancelled one).
     var listedSchedules: [GivingSchedule] { GiveSchedules.listed(schedules) }
 
     /// What the year pill says was given this (church) year, per currency —
@@ -1074,7 +1074,7 @@ struct GivingView: View {
     /// is a valid one (the sheet asks for it otherwise).
     private func activeDetail(_ m: MethodRow) -> String {
         guard m.rail.needsPhone, let number = KenyanPhone.normalize(mpesaPhone) else { return m.look.sub }
-        return number
+        return KenyanPhone.display(number)
     }
 
     private func methodBadge(_ m: PayMethod) -> some View {
@@ -1113,9 +1113,11 @@ struct GivingView: View {
 
     /// Active schedules, then paused ones (labelled) — never a cancelled one
     /// (GiveSchedules.listed; the server returns every schedule ever made).
+    /// Titled RECURRING GIFTS, as on Android and the office's pages: it lists
+    /// paused gifts too, so "active" was not true of all of them.
     private var schedulesSection: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            overline("ACTIVE SCHEDULES")
+            overline("RECURRING GIFTS")
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(alignment: .top, spacing: 10) {
                     ForEach(vm.listedSchedules) { s in
@@ -3049,7 +3051,7 @@ private struct StkStage: View {
             if let phone {
                 HStack(spacing: 6) {
                     Icon(.smartphone, size: 13, color: Nuru.gold)
-                    Text("Prompt sent to \(phone)").font(.inter(11)).foregroundStyle(.white)
+                    Text("Prompt sent to \(KenyanPhone.display(phone))").font(.inter(11)).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.white.opacity(0.08), in: Capsule())

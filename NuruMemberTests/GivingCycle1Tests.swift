@@ -2,7 +2,7 @@
 // goes to a real Kenyan number the member chose (never a built-in one, never
 // another member's), the method list is the server's, a failed gift carries
 // the server's reason, a prompt still waiting is watched rather than failed,
-// and ACTIVE SCHEDULES never lists a cancelled schedule. The decoder is
+// and RECURRING GIFTS never lists a cancelled schedule. The decoder is
 // configured exactly like APIClient's: snake_case in, camelCase out.
 import XCTest
 @testable import NuruMember
@@ -48,6 +48,15 @@ final class GivingCycle1Tests: XCTestCase {
         XCTAssertEqual(KenyanPhone.check(""), .empty, "an empty field asks; it does not scold")
         XCTAssertEqual(KenyanPhone.check("   "), .empty)
         XCTAssertNil(KenyanPhone.normalize(""))
+    }
+
+    /// Giving Cycle 10 (parity with Android's kenyanMobileDisplay): the screen
+    /// reads a number the way a Kenyan does, never "+254711222333".
+    func testANumberIsShownTheWayAKenyanReadsIt() {
+        XCTAssertEqual(KenyanPhone.display("+254711222333"), "0711 222 333")
+        XCTAssertEqual(KenyanPhone.display("254111222333"), "0111 222 333")
+        XCTAssertEqual(KenyanPhone.display("0722 000 111"), "0722 000 111")
+        XCTAssertEqual(KenyanPhone.display("+1 415 555 0100"), "+1 415 555 0100", "not a Kenyan mobile → as given")
     }
 
     // MARK: The number a prompt goes to
@@ -237,7 +246,7 @@ final class GivingCycle1Tests: XCTestCase {
         XCTAssertEqual(partial.failure?.retryable, false)
     }
 
-    // MARK: ACTIVE SCHEDULES
+    // MARK: RECURRING GIFTS
 
     func testSchedulesDecodeTheCycle1Fields() throws {
         let s = try decode(GivingSchedule.self, """
@@ -272,7 +281,7 @@ final class GivingCycle1Tests: XCTestCase {
         XCTAssertEqual(GiveSchedules.listed(all).map(\.scheduleId), ["a1", "a2", "p1"],
                        "running first, then paused; never cancelled, never a status this build does not know")
         XCTAssertTrue(GiveSchedules.listed(Array(all.prefix(1))).isEmpty,
-                      "only cancelled schedules → no ACTIVE SCHEDULES strip at all")
+                      "only cancelled schedules → no RECURRING GIFTS strip at all")
     }
 
     // MARK: A refused gift

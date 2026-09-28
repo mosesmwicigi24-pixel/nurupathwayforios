@@ -44,6 +44,15 @@ enum KenyanPhone {
         return nil
     }
 
+    /// "0711 222 333" — how a Kenyan reads their own number (Android's
+    /// kenyanMobileDisplay); anything that is not one comes back as given.
+    /// For the screen only — the wire always carries E.164.
+    static func display(_ raw: String) -> String {
+        guard let e164 = normalize(raw) else { return raw }
+        let local = Array("0" + e164.dropFirst(4))   // "+254" → "0"
+        return "\(String(local[0..<4])) \(String(local[4..<7])) \(String(local[7...]))"
+    }
+
     /// Spaces (any kind), dashes, dots and brackets — and the invisible
     /// direction marks iOS wraps around a number copied from Contacts.
     private static func isSeparator(_ ch: Character) -> Bool {
@@ -187,10 +196,10 @@ extension GivingMethods {
     }
 }
 
-// MARK: - ACTIVE SCHEDULES
+// MARK: - RECURRING GIFTS
 
 enum GiveSchedules {
-    /// What Give lists under ACTIVE SCHEDULES: running schedules, then paused
+    /// What Give lists under RECURRING GIFTS: running schedules, then paused
     /// ones (labelled Paused, so the member can see why and resume) — never a
     /// cancelled one, which is history rather than a schedule. A status this
     /// build does not know stays out too.
