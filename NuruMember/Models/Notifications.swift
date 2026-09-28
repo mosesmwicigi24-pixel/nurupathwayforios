@@ -21,6 +21,12 @@ struct NotifPayload: Codable, Sendable {
     /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post /
     /// department_need_* carry `department_id` so a tap opens the page.
     let departmentId: String?
+    /// …and what their words are built from (DepartmentNotificationCopy):
+    /// serve_request_* / department_post carry the department's name, and a
+    /// department_post its first 90 characters. A leader's
+    /// serve_request_received names who asked in `name`.
+    let department: String?
+    let preview: String?
 }
 
 struct NotificationRow: Codable, Sendable, Identifiable {
