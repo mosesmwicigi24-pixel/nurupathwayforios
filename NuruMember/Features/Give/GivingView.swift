@@ -89,6 +89,9 @@ private func methodLook(_ rail: GivingMethod) -> PayMethod {
                      sub: "", badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet)
 }
 
+/// A gift's receipt to present (a notification's gift that did not fail).
+private struct ReceiptLink: Identifiable { let id: String }
+
 /// One row of the method list: the server's rail and how it looks.
 private struct MethodRow: Identifiable {
     let look: PayMethod
@@ -307,6 +310,18 @@ struct GivingView: View {
     /// waiting (409 GIFT_IN_PROGRESS) — described from that gift's own record,
     /// since it may not be the gift on the form.
     @State private var waitingGift: WaitingGift?
+    /// The failed gift the ceremony is showing — "Try again" retries THIS gift
+    /// on the server (Giving Cycle 3). Nil when the refusal made no gift: the
+    /// member goes back to the form instead.
+    @State private var retryTxId: String?
+    /// That gift's method — whether its retry prompts a phone.
+    @State private var retryMethod: String?
+    /// The retry's idempotency key (GiveRetry.key): replayed only after an
+    /// attempt that got no server answer, never across gifts.
+    @State private var retryKey = UUID().uuidString
+    /// A gift opened from a notification that did not fail after all — its
+    /// receipt, in a sheet.
+    @State private var receiptLink: ReceiptLink?
     /// "Named giving" (custom sheet, optional): set from the custom-amount
     /// keypad sheet. Rides the M-Pesa AccountReference + persists for
     /// receipts/statements/portal Finance.
@@ -390,10 +405,7 @@ struct GivingView: View {
 
     /// True when an attempt got NO server answer — the only case in which
     /// the same idempotency key may be sent again.
-    private static func gotNoServerAnswer(_ error: Error) -> Bool {
-        if let api = error as? APIError { return api.isNetwork }
-        return error is URLError
-    }
+    private static func gotNoServerAnswer(_ error: Error) -> Bool { GiveRefusal.gotNoServerAnswer(error) }
     private var cadenceWord: String { freq == "weekly" ? "week" : "month" }
     /// The server's rails in the member's order, each with its paint — the
     /// shilling rails only while paying a pledge or need (pledges are in
@@ -491,6 +503,18 @@ struct GivingView: View {
             freq = "once"
             DispatchQueue.main.async { tabs.givePreset = nil }
         }
+        // A giving notification's gift (Giving Cycle 3) — consumed once.
+        .onReceive(tabs.$giveLink) { link in
+            guard let link else { return }
+            DispatchQueue.main.async { tabs.giveLink = nil }
+            open(link)
+        }
+        .sheet(item: $receiptLink) { link in
+            NavigationStack {
+                GivingReceiptView(transactionId: link.id)
+                    .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
+            }
+        }
         // A different submission from here on — never replay the old key.
         .onChange(of: formSignature) { _, _ in submissionKey = UUID().uuidString }
         // Returning from the PayPal approval in Safari → nudge the capture;
@@ -552,11 +576,13 @@ struct GivingView: View {
                              txId: pendingTxId,
                              cadenceWord: cadenceWord,
                              nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateFull(scheduledNextAt),
+                             retrying: submitting,
                              onDone: { endCeremony() },
-                             // Back to the form with the same amount and fund
-                             // (a failure keeps them) — nothing is re-sent
-                             // until the member taps Give again.
-                             onRetry: { endCeremony() })
+                             // Giving Cycle 3: a failed gift is retried on the
+                             // server (same fund, amount, pledge, fee cover)
+                             // and watched; a refusal that made no gift goes
+                             // back to the form with the amount and fund kept.
+                             onRetry: { tryAgain() })
         }
     }
 
@@ -1279,7 +1305,7 @@ struct GivingView: View {
 
     private func give() async {
         guard giftMinor > 0, amountProblem == nil, !submitting else { return }
-        ceremonyFailure = nil; waitingGift = nil
+        ceremonyFailure = nil; waitingGift = nil; setRetryTarget(nil, method: nil)
         // Only a rail the server says can take money here (Cycle 1). The form
         // moves off any other as the methods load, so landing here means none
         // can — say so rather than send a request that cannot succeed.
@@ -1315,7 +1341,7 @@ struct GivingView: View {
         }
         guard !submitting else { return }   // one request in flight, ever
         submitting = true; defer { submitting = false }
-        ceremonyFailure = nil; waitingGift = nil
+        ceremonyFailure = nil; waitingGift = nil; setRetryTarget(nil, method: nil)
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
             let frequency: String; let method: String; let idempotencyKey: String
@@ -1355,6 +1381,7 @@ struct GivingView: View {
         paypalOrderId = nil
         intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
         waitingGift = nil; ceremonyFailure = nil; promptPhone = nil
+        setRetryTarget(nil, method: nil)
         // `amount_minor` is the TOTAL charged; `cover_fee_minor` the part of
         // it that covers the fee (Giving Cycle 2), so the receipt can say so.
         let charge = self.charge
@@ -1368,37 +1395,7 @@ struct GivingView: View {
             // The server answered: this key is spent. A replay (`reused: true`,
             // the existing transaction) is handled exactly like a fresh one.
             submissionKey = UUID().uuidString
-            // The server took a prompt to this number: it is where the next
-            // gift from this phone starts (kept per member), and what the
-            // ceremony says the prompt went to.
-            if let phone {
-                phoneMemory.remember(phone, for: auth.profile?.userId)
-                promptPhone = phone
-            }
-            pendingTxId = res.transactionId
-            successRef = res.providerRef
-            // The server's word on where the gift went (pledge names
-            // contract) — the ceremony reads this, not the chip.
-            intentFundName = res.fund.flatMap { $0.name.isEmpty ? nil : $0.name }
-            if let p = res.pledge {
-                intentIsPledge = true
-                intentPledgeTitle = p.title.isEmpty ? pledgeTitle : p.title
-            }
-            if provider == "paypal", let url = res.approveUrl.flatMap(URL.init) {
-                // The intent's provider_ref IS the PayPal order id — we capture it
-                // once the member approves and comes back (see attemptPayPalCapture).
-                paypalOrderId = res.providerRef
-                await UIApplication.shared.open(url)
-                ceremonyNote = "Approve in PayPal, then return to the app."
-            } else {
-                ceremonyNote = ""   // mobile-money STK push
-            }
-            ceremony = "stk"
-            // The intent exists (pending) — Partners shows it as Processing.
-            GivingSignal.post(from: vm)
-            let tx = res.transactionId
-            pollTask?.cancel()
-            pollTask = Task { await watchOutcome(tx) }
+            await beginWatching(res, provider: provider, phone: phone)
         } catch {
             // Keep the key ONLY when the server never answered — the next
             // Pay tap then replays it and gets the transaction back if the
@@ -1414,6 +1411,125 @@ struct GivingView: View {
                 ceremonyNote = text
                 ceremony = "failed"
                 Haptics.error()
+            }
+        }
+    }
+
+    /// The server made (or found) the gift — a new one, a retry, a schedule's
+    /// first — and the ceremony watches it: the number the prompt went to is
+    /// remembered and shown, where the SERVER routed the money is what the
+    /// ceremony says, PayPal opens its approval, and the poll reports the truth.
+    private func beginWatching(_ res: GivingIntentResult, provider: String?, phone: String?, note: String = "") async {
+        // The server took a prompt to this number: it is where the next
+        // gift from this phone starts (kept per member), and what the
+        // ceremony says the prompt went to.
+        if let phone {
+            phoneMemory.remember(phone, for: auth.profile?.userId)
+            promptPhone = phone
+        }
+        pendingTxId = res.transactionId
+        successRef = res.providerRef
+        // The server's word on where the gift went (pledge names
+        // contract) — the ceremony reads this, not the chip.
+        intentFundName = res.fund.flatMap { $0.name.isEmpty ? nil : $0.name }
+        if let p = res.pledge {
+            intentIsPledge = true
+            intentPledgeTitle = p.title.isEmpty ? pledgeTitle : p.title
+        }
+        if (res.provider ?? provider) == "paypal", let url = res.approveUrl.flatMap(URL.init) {
+            // The intent's provider_ref IS the PayPal order id — we capture it
+            // once the member approves and comes back (see attemptPayPalCapture).
+            paypalOrderId = res.providerRef
+            await UIApplication.shared.open(url)
+            ceremonyNote = "Approve in PayPal, then return to the app."
+        } else {
+            ceremonyNote = note   // mobile-money STK push
+        }
+        ceremony = "stk"
+        // The intent exists (pending) — Partners shows it as Processing.
+        GivingSignal.post(from: vm)
+        let tx = res.transactionId
+        pollTask?.cancel()
+        pollTask = Task { await watchOutcome(tx) }
+    }
+
+    /// "Try again" on the failed result (Giving Cycle 3): the gift that failed
+    /// is retried BY THE SERVER — same fund, amount, currency, pledge or need,
+    /// name and fee cover (POST /giving/transactions/{id}/retry) — with its
+    /// own idempotency key, and the ceremony watches the new gift like any
+    /// other. A prompt still waiting is watched instead (GIFT_IN_PROGRESS);
+    /// a refusal says why, and the next Try again goes back to the form.
+    private func retryGift(_ failedTx: String) async {
+        guard !submitting else { return }
+        submitting = true; defer { submitting = false }
+        paypalOrderId = nil
+        intentFundName = nil; intentPledgeTitle = nil; intentIsPledge = false
+        // Mobile money prompts the number that gift went to — else the
+        // member's own; PayPal and cards prompt no phone.
+        let prompts = retryMethod == "mpesa" || retryMethod == "airtel"
+        let phone = prompts ? (promptPhone ?? KenyanPhone.normalize(mpesaPhone)) : nil
+        do {
+            let res = try await MemberAPI.retryGift(failedTx, idempotencyKey: retryKey, phoneNumber: phone)
+            retryKey = GiveRetry.key(after: nil, current: retryKey)
+            ceremonyFailure = nil
+            retryTxId = nil
+            await beginWatching(res, provider: retryMethod, phone: phone)
+        } catch {
+            retryKey = GiveRetry.key(after: error, current: retryKey)
+            retryTxId = GiveRetry.target(after: error, retrying: failedTx)
+            switch GiveRefusal.from(error, fallback: "Couldn't try again — check your connection.") {
+            case let .promptWaiting(tx, message):
+                await watchWaitingPrompt(tx, message: message)
+            case let .message(text):
+                // Still the failed result — now saying why the retry was refused.
+                ceremonyFailure = nil
+                ceremonyNote = text
+                ceremony = "failed"
+                Haptics.error()
+            }
+        }
+    }
+
+    /// Points "Try again" at a failed gift. A different gift gets a fresh
+    /// retry key — a key is never replayed across gifts.
+    private func setRetryTarget(_ tx: String?, method: String?) {
+        if tx != retryTxId { retryKey = UUID().uuidString }
+        retryTxId = tx
+        retryMethod = method
+    }
+
+    /// The failed result's "Try again": retry the gift that failed, or — when
+    /// the refusal made no gift — back to the form, amount and fund kept.
+    private func tryAgain() {
+        switch GiveRetry.action(failedTransactionId: retryTxId) {
+        case .retry(let tx): Task { await retryGift(tx) }
+        case .backToForm: endCeremony()
+        }
+    }
+
+    /// A giving notification's target (Giving Cycle 3). A failed gift opens
+    /// its result — why, what to do, Try again — described from its own
+    /// record; one that did not fail (it may have been paid since) opens its
+    /// receipt. Never over a gift already on screen.
+    private func open(_ link: GiveLink) {
+        switch link {
+        case .failedGift(let tx):
+            guard ceremony == nil, !submitting else { return }
+            Task {
+                let d = try? await MemberAPI.givingDetail(tx)
+                guard ceremony == nil, !submitting else { return }
+                guard let d, ["failed", "cancelled"].contains(d.status) else {
+                    receiptLink = ReceiptLink(id: tx)
+                    return
+                }
+                waitingGift = WaitingGift(d)
+                ceremonyFailure = d.failure.flatMap { $0.reason.isEmpty ? nil : $0 }
+                ceremonyNote = ceremonyFailure == nil ? "The payment didn't complete — no charge was made." : ""
+                pendingTxId = tx
+                successRef = nil
+                promptPhone = nil
+                setRetryTarget(tx, method: d.method)
+                ceremony = "failed"
             }
         }
     }
@@ -1472,6 +1588,8 @@ struct GivingView: View {
             // generic line only for a server that sends no reason.
             ceremonyFailure = d.failure.flatMap { $0.reason.isEmpty ? nil : $0 }
             ceremonyNote = ceremonyFailure == nil ? "The payment didn't complete — no charge was made." : ""
+            // "Try again" retries THIS gift on the server (Cycle 3).
+            setRetryTarget(d.transactionId, method: d.method)
             ceremony = "failed"
             Haptics.error()
             GivingSignal.post(from: vm)   // Partners: drop the Processing row
@@ -1540,6 +1658,8 @@ struct GivingView: View {
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil
         paypalOrderId = nil
         ceremony = nil; ceremonyNote = ""
+        // Closed: nothing is left to retry from here.
+        retryTxId = nil; retryMethod = nil
         scheduledNextAt = ""
         // intentFundName / intentPledgeTitle / intentIsPledge are NOT reset
         // here: the cover re-renders during its dismiss, and clearing them in
@@ -2205,6 +2325,8 @@ private struct GiveCeremonyView: View {
     let txId: String?
     let cadenceWord: String
     let nextChargeLabel: String?
+    /// A retry of the failed gift is on its way (Try again spins).
+    var retrying: Bool = false
     var onDone: () -> Void
     var onRetry: () -> Void
     @State private var showReceipt = false
@@ -2223,7 +2345,9 @@ private struct GiveCeremonyView: View {
                 ScheduledStage(amountLabel: amountLabel, fundLabel: fundLabel,
                                cadenceWord: cadenceWord, nextChargeLabel: nextChargeLabel, onDone: onDone)
             default:
-                FailedStage(note: note, failure: failure, onRetry: onRetry, onDone: onDone)
+                FailedStage(note: note, failure: failure,
+                            giftLine: amountLabel.isEmpty ? nil : "\(amountLabel) \(destination.phrase)",
+                            busy: retrying, onRetry: onRetry, onDone: onDone)
             }
         }
         .sheet(isPresented: $showReceipt) {
@@ -2414,6 +2538,11 @@ private struct FailedStage: View {
     let note: String
     /// The server's reason + hint (Cycle 1), shown verbatim when it sent them.
     var failure: GiftFailure? = nil
+    /// Which gift this was ("KSh 1,000 to Tithe") — so a gift opened from a
+    /// notification says which one failed. Nil when unknown.
+    var giftLine: String? = nil
+    /// Try again is on its way (Giving Cycle 3): the button spins and waits.
+    var busy: Bool = false
     var onRetry: () -> Void
     var onDone: () -> Void
 
@@ -2427,6 +2556,12 @@ private struct FailedStage: View {
             Text("That didn't go through")
                 .font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
+            if let giftLine {
+                Text(giftLine)
+                    .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x74808F))
+                    .multilineTextAlignment(.center)
+                    .padding(.top, Nuru.S.xs).padding(.horizontal, Nuru.S.xl)
+            }
             if let failure, !failure.reason.isEmpty {
                 // What happened, then what to do next (and whether money moved).
                 Text(failure.reason)
@@ -2455,13 +2590,16 @@ private struct FailedStage: View {
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }.buttonStyle(.plain)
                 Button(action: onRetry) {
-                    Text("Try again")
-                        .font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
-                        .frame(maxWidth: .infinity).frame(height: 48)
-                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    ZStack {
+                        if busy { ProgressView().tint(Nuru.navy) }
+                        else { Text("Try again").font(.inter(14, .bold)).foregroundStyle(Nuru.navy) }
+                    }
+                    .frame(maxWidth: .infinity).frame(height: 48)
+                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.plain)
-                .accessibilityHint("Back to your gift, with the same amount and fund")
+                .disabled(busy)
+                .accessibilityHint("Tries the same gift again")
             }
             .padding(.horizontal, Nuru.S.xl).padding(.bottom, Nuru.S.xl)
         }

@@ -21,6 +21,43 @@ struct NotifPayload: Codable, Sendable {
     /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post /
     /// department_need_* carry `department_id` so a tap opens the page.
     let departmentId: String?
+    /// Giving (Giving Cycle 3): `giving_gift_failed` carries the gift's
+    /// `transaction_id` (a tap opens its result, with Try again), its amount,
+    /// currency and fund, and the server's `reason` + `hint` for the banner.
+    var transactionId: String? = nil
+    var amountMinor: Int? = nil
+    var currency: String? = nil
+    var fund: String? = nil
+    var reason: String? = nil
+    var hint: String? = nil
+
+    private enum CodingKeys: String, CodingKey {
+        case title, body, feedback, levelNumber, name, moduleId, announcementId, inviteToken, groupId, departmentId
+        case transactionId, amountMinor, currency, fund, reason, hint
+    }
+
+    /// Field by field: one field of an unexpected type (a template this app
+    /// has never seen) reads as absent instead of blanking the whole payload
+    /// — and with it the banner's words and the tap's destination.
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        title = try? c.decodeIfPresent(String.self, forKey: .title)
+        body = try? c.decodeIfPresent(String.self, forKey: .body)
+        feedback = try? c.decodeIfPresent(String.self, forKey: .feedback)
+        levelNumber = try? c.decodeIfPresent(Int.self, forKey: .levelNumber)
+        name = try? c.decodeIfPresent(String.self, forKey: .name)
+        moduleId = try? c.decodeIfPresent(String.self, forKey: .moduleId)
+        announcementId = try? c.decodeIfPresent(String.self, forKey: .announcementId)
+        inviteToken = try? c.decodeIfPresent(String.self, forKey: .inviteToken)
+        groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
+        departmentId = try? c.decodeIfPresent(String.self, forKey: .departmentId)
+        transactionId = try? c.decodeIfPresent(String.self, forKey: .transactionId)
+        amountMinor = try? c.decodeIfPresent(Int.self, forKey: .amountMinor)
+        currency = try? c.decodeIfPresent(String.self, forKey: .currency)
+        fund = try? c.decodeIfPresent(String.self, forKey: .fund)
+        reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+        hint = try? c.decodeIfPresent(String.self, forKey: .hint)
+    }
 }
 
 struct NotificationRow: Codable, Sendable, Identifiable {

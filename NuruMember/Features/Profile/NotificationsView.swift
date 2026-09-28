@@ -97,7 +97,14 @@ struct NotificationsView: View {
     /// pathway), or — when there is no target — the read-and-dismiss popup.
     @ViewBuilder private func rowLink(_ n: NotificationRow) -> some View {
         let t = n.template
-        if let aid = n.payload?.announcementId, !aid.isEmpty {
+        if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId) {
+            // A failed gift (Giving Cycle 3) opens its result on Give — why,
+            // what to do, and Try again.
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                tabs.openGive(link: link)
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        } else if let aid = n.payload?.announcementId, !aid.isEmpty {
             NavigationLink(value: AppRoute.announcement(aid)) { row(n) }
                 .buttonStyle(.pressableSubtle)
                 .simultaneousGesture(TapGesture().onEnded { markRead(n) })
@@ -366,12 +373,15 @@ struct NotificationsView: View {
     ]
     private func titleFor(_ n: NotificationRow) -> String {
         if let t = n.payload?.title, !t.isEmpty { return t }
+        if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
         if let t = titles[n.template] { return t }
         return n.template.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalizingFirst()
     }
     private func bodyFor(_ n: NotificationRow) -> String? {
         if let b = n.payload?.body, !b.isEmpty { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
+        // A failed gift is not "your receipt is ready" (Giving Cycle 3).
+        if let b = GivingNotificationCopy.body(template: n.template, payload: n.payload) { return b }
         let t = n.template
         if t.hasPrefix("reflection_approved") { return "Your discipler approved your reflection — well done." }
         if t.hasPrefix("reflection_returned") { return "Your discipler returned your reflection for another look." }

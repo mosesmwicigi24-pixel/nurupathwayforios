@@ -106,6 +106,9 @@ struct GivingIntentResult: Codable, Sendable {
     /// when it carried a `pledge_id`. Both absent on older servers.
     let fund: Pledge.FundRef?
     let pledge: PledgeRef?
+    /// The failed gift this one retries (POST /giving/transactions/{id}/retry,
+    /// Giving Cycle 3); nil for an ordinary intent.
+    var retryOf: String? = nil
 
     struct PledgeRef: Codable, Sendable {
         let pledgeId: String
@@ -128,6 +131,7 @@ struct GivingIntentResult: Codable, Sendable {
         reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
         fund = try? c.decodeIfPresent(Pledge.FundRef.self, forKey: .fund)
         pledge = try? c.decodeIfPresent(PledgeRef.self, forKey: .pledge)
+        retryOf = (try? c.decodeIfPresent(String.self, forKey: .retryOf)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

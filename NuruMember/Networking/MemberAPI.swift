@@ -558,6 +558,19 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/transactions/\(id)", as: GivingDetail.self)
     }
 
+    /// POST /giving/transactions/{id}/retry (Giving Cycle 3) — "Try again" on
+    /// one of the member's FAILED gifts: a new gift carrying everything the
+    /// failed one did (fund, amount, currency, method, pledge or need, name,
+    /// fee cover), answered like POST /giving/intents plus `retry_of`.
+    /// `phoneNumber`: mobile money's number for this prompt (omitted = the
+    /// profile number). 409 GIFT_IN_PROGRESS while a prompt is waiting.
+    static func retryGift(_ id: String, idempotencyKey: String, phoneNumber: String?) async throws -> GivingIntentResult {
+        struct Body: Encodable { let idempotencyKey: String; let phoneNumber: String? }
+        return try await APIClient.shared.post("giving/transactions/\(id)/retry",
+            body: Body(idempotencyKey: idempotencyKey, phoneNumber: phoneNumber),
+            as: GivingIntentResult.self)
+    }
+
     /// GET /giving/transactions/{id}/receipt.pdf — the branded receipt as PDF
     /// bytes. Rides APIClient's RawJSON passthrough (same as certificate PDFs),
     /// so the bearer header + single-flight 401 refresh come for free and the

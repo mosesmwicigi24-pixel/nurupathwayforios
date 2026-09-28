@@ -214,4 +214,86 @@ enum GiveRefusal: Equatable {
         case let .promptWaiting(_, text), let .message(text): return text
         }
     }
+
+    /// True when an attempt got NO server answer (offline, timeout,
+    /// transport) — the only case in which the same idempotency key may be
+    /// sent again: the server returns what it already made for a replayed
+    /// key, so a lost reply never becomes a second prompt.
+    static func gotNoServerAnswer(_ error: Error) -> Bool {
+        if let api = error as? APIError { return api.isNetwork }
+        return error is URLError
+    }
+}
+
+// MARK: - Try again (Giving Cycle 3)
+
+/// "Try again" on a failed result: the failed GIFT is retried by the server
+/// (POST /giving/transactions/{id}/retry) with everything it carried — fund,
+/// amount, currency, pledge or need, name, fee cover — so a retry can never
+/// quietly lose its pledge. A refusal that made no gift has nothing to retry:
+/// the member goes back to the form with the amount and fund kept.
+enum GiveRetry {
+    enum Action: Equatable {
+        case retry(transactionId: String)
+        case backToForm
+    }
+
+    static func action(failedTransactionId: String?) -> Action {
+        guard let tx = failedTransactionId, !tx.isEmpty else { return .backToForm }
+        return .retry(transactionId: tx)
+    }
+
+    /// Which failed gift "Try again" retries after a retry attempt errored:
+    /// the same one while the server never answered; none after the server
+    /// refused (the same request would be refused again) — then it is the
+    /// form's turn.
+    static func target(after error: Error, retrying transactionId: String) -> String? {
+        GiveRefusal.gotNoServerAnswer(error) ? transactionId : nil
+    }
+
+    /// The idempotency key the next retry sends: the same one only when the
+    /// last attempt got no server answer (so a retry that did land is found,
+    /// not doubled); a fresh one after any answer, and after success (`nil`).
+    static func key(after error: Error?, current: String, fresh: () -> String = { UUID().uuidString }) -> String {
+        if let error, GiveRefusal.gotNoServerAnswer(error) { return current }
+        return fresh()
+    }
+}
+
+// MARK: - Giving notifications (Giving Cycle 3)
+
+/// Where a giving notification lands on the Give tab.
+enum GiveLink: Equatable {
+    /// `giving_gift_failed` — that gift's result: why, what to do, Try again.
+    case failedGift(transactionId: String)
+
+    static func from(template: String, transactionId: String?) -> GiveLink? {
+        if template == "giving_gift_failed", let tx = transactionId, !tx.isEmpty { return .failedGift(transactionId: tx) }
+        return nil
+    }
+}
+
+/// The words on a giving notification — the server's push copy
+/// (workers/dispatch.ts), so the banner, the inbox and Android agree. Nil for
+/// a template this has no words for (the caller's own fallback applies).
+enum GivingNotificationCopy {
+    static func title(template: String, payload: NotifPayload?) -> String? {
+        switch template {
+        case "giving_gift_failed": return "Your gift didn't go through"
+        default: return nil
+        }
+    }
+
+    static func body(template: String, payload: NotifPayload?) -> String? {
+        switch template {
+        case "giving_gift_failed":
+            return "\(nonEmpty(payload?.reason) ?? "The payment didn't complete.") \(nonEmpty(payload?.hint) ?? "Open Give to try again.")"
+        default: return nil
+        }
+    }
+
+    static func nonEmpty(_ s: String?) -> String? {
+        guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        return t
+    }
 }

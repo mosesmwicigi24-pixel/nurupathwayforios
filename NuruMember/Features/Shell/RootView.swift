@@ -171,6 +171,10 @@ final class TabRouter: ObservableObject {
     /// A pre-filled gift for the Give screen (Partners → "Pay now"). GivingView
     /// consumes it (fund, amount, pledge id) and clears it.
     @Published var givePreset: GivePreset?
+    /// A gift to open on the Give screen from a giving notification (Giving
+    /// Cycle 3: a failed gift's result, with Try again). GivingView consumes
+    /// it and clears it.
+    @Published var giveLink: GiveLink?
     /// A conversation to open on the Chat stack (You → Community → Talk) —
     /// set by a Home "chat_unread" nudge or a Read-with-a-Friend "Sent to
     /// <name> in chat · Open chat" toast. ChatView consumes it (pushes the
@@ -198,6 +202,8 @@ final class TabRouter: ObservableObject {
     func openGive() { giveSegment = .give; selected = .give }
     /// Give, pre-filled (Partners "Pay now" / a due item).
     func openGive(preset: GivePreset) { givePreset = preset; openGive() }
+    /// Give, opening one gift (a giving notification's target).
+    func openGive(link: GiveLink) { giveLink = link; openGive() }
     func openPartners() { giveSegment = .partners; selected = .give }
 }
 
@@ -395,7 +401,12 @@ struct RootView: View {
             let level = info["levelNumber"] as? Int ?? 0
             let inviteToken = info["inviteToken"] as? String ?? ""
             let departmentId = info["departmentId"] as? String ?? ""
-            if !announcementId.isEmpty {
+            let transactionId = info["transactionId"] as? String ?? ""
+            if let link = GiveLink.from(template: template, transactionId: transactionId) {
+                // giving_gift_failed (Giving Cycle 3) — that gift's result:
+                // why it failed, what to do, and Try again.
+                tabs.openGive(link: link)
+            } else if !announcementId.isEmpty {
                 tabs.openAnnouncement(announcementId)
             } else if !moduleId.isEmpty {
                 tabs.openPathway(.module(moduleId))

@@ -70,6 +70,8 @@ final class LocalNotifier: NSObject, ObservableObject {
                 "levelNumber": n.payload?.levelNumber ?? 0,
                 "inviteToken": n.payload?.inviteToken ?? "",
                 "departmentId": n.payload?.departmentId ?? "",
+                // Giving (Cycle 3): the failed gift a tap opens.
+                "transactionId": n.payload?.transactionId ?? "",
             ]
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)
@@ -80,6 +82,8 @@ final class LocalNotifier: NSObject, ObservableObject {
     // Template → human copy (mirrors NotificationsView's mapping, condensed).
     private static func title(for n: NotificationRow) -> String {
         if let t = n.payload?.title, !t.isEmpty { return t }
+        // Giving notices say what happened (a failed gift is not a receipt).
+        if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
         let t = n.template
         if t.hasPrefix("reflection_approved") { return "Reflection approved" }
         if t.hasPrefix("reflection_returned") { return "Reflection returned" }
@@ -119,7 +123,7 @@ final class LocalNotifier: NSObject, ObservableObject {
         if n.template.hasPrefix("pastoral") { return nil }
         if let b = n.payload?.body, !b.isEmpty { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
-        return nil
+        return GivingNotificationCopy.body(template: n.template, payload: n.payload)
     }
 }
 
