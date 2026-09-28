@@ -367,6 +367,12 @@ struct NotificationsView: View {
         if t.hasPrefix("event") { return Meta(icon: .calendarDays, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }             // info
         if t.hasPrefix("announcement") { return Meta(icon: .megaphone, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }         // info
         if Self.isDepartmentTemplate(t) { return Meta(icon: .heartHandshake, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C)) } // departments (§4)
+        // Giving and Partners notices wear the Give tab's hand-and-heart — they
+        // fell through to the security gear (Giving Cycle 10, found comparing
+        // the inbox on both apps).
+        if t.hasPrefix("giving") || t.hasPrefix("pledge") || t.hasPrefix("payment") {
+            return Meta(icon: .handHeart, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C))
+        }
         return Meta(icon: .settings, bg: Color(hex: 0xE2E8F0), fg: Color(hex: 0x475569))                                             // security/system
     }
 

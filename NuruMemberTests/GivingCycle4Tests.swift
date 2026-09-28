@@ -278,4 +278,31 @@ final class GivingCycle4Tests: XCTestCase {
         XCTAssertEqual(GivingNotificationCopy.body(template: n.template, payload: n.payload),
                        "An M-Pesa prompt for KSh 500 to Tithe is coming to your phone in a few minutes. Enter your PIN to give.")
     }
+
+    /// Giving Cycle 7's notice when the office changes a gift at the member's
+    /// request — the server's words (workers/dispatch.ts), which the inbox
+    /// used to show without any (found comparing the apps, Cycle 10).
+    func testTheOfficesChangeSaysWhatItDidAndOpensTheGift() throws {
+        let paused = try decode(NotificationRow.self, """
+        {"notification_id":"n4","template":"giving_schedule_office_change","status":"sent",
+         "payload":{"schedule_id":"s1","action":"pause","resume_on":"2026-10-12","amount_minor":100000,"currency":"KES","frequency":"weekly","fund_name":"Tithe"}}
+        """)
+        XCTAssertEqual(GiveLink.from(template: paused.template, transactionId: nil, scheduleId: paused.payload?.scheduleId),
+                       .schedule(scheduleId: "s1"))
+        XCTAssertEqual(GivingNotificationCopy.title(template: paused.template, payload: paused.payload), "Your recurring gift is paused")
+        XCTAssertEqual(GivingNotificationCopy.body(template: paused.template, payload: paused.payload),
+                       "The church office paused your weekly gift of KSh 1,000 to Tithe, as you asked — it starts again on 12 October.")
+
+        let resumed = try decode(NotificationRow.self,
+            #"{"notification_id":"n5","template":"giving_schedule_office_change","payload":{"schedule_id":"s1","action":"resume","amount_minor":500000,"currency":"KES","frequency":"monthly"}}"#)
+        XCTAssertEqual(GivingNotificationCopy.title(template: resumed.template, payload: resumed.payload), "Your recurring gift is back on")
+        XCTAssertEqual(GivingNotificationCopy.body(template: resumed.template, payload: resumed.payload),
+                       "The church office resumed your monthly gift of KSh 5,000, as you asked.")
+
+        let cancelled = try decode(NotificationRow.self,
+            #"{"notification_id":"n6","template":"giving_schedule_office_change","payload":{"schedule_id":"s1","action":"cancel","amount_minor":100000,"currency":"KES","frequency":"weekly","fund_name":"Tithe"}}"#)
+        XCTAssertEqual(GivingNotificationCopy.title(template: cancelled.template, payload: cancelled.payload), "Your recurring gift was cancelled")
+        XCTAssertEqual(GivingNotificationCopy.body(template: cancelled.template, payload: cancelled.payload),
+                       "The church office cancelled your weekly gift of KSh 1,000 to Tithe, as you asked. Nothing more will be prompted.")
+    }
 }

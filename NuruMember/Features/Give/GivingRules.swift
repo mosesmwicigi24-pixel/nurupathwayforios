@@ -333,7 +333,9 @@ enum GiveLink: Equatable {
 
     static func from(template: String, transactionId: String?, scheduleId: String? = nil) -> GiveLink? {
         if template == "giving_gift_failed", let tx = transactionId, !tx.isEmpty { return .failedGift(transactionId: tx) }
-        if template == "giving_schedule_failed" || template == "giving_schedule_paused",
+        // …and the office's change to it at the member's request (Cycle 7) —
+        // a cancelled one is not listed, so that tap lands on Give itself.
+        if ["giving_schedule_failed", "giving_schedule_paused", "giving_schedule_office_change"].contains(template),
            let id = scheduleId, !id.isEmpty { return .schedule(scheduleId: id) }
         return nil
     }
@@ -367,6 +369,13 @@ enum GivingNotificationCopy {
             let kind = frequency == "weekly" ? "weekly" : frequency == "monthly" ? "monthly" : "recurring"
             return "Your \(kind) gift didn't go through"
         case "giving_schedule_paused": return "Your recurring gift is paused"
+        // Giving Cycle 7 — the office changed it at the member's request.
+        case "giving_schedule_office_change":
+            switch payload?.action {
+            case "cancel": return "Your recurring gift was cancelled"
+            case "resume": return "Your recurring gift is back on"
+            default: return "Your recurring gift is paused"
+            }
         // Giving Cycle 5 — the pledge collector, and the pledge's own notices.
         case "giving_schedule_covered": return "Nothing to pay this \(frequency == "weekly" ? "week" : "month")"
         case "giving_schedule_stopped":
@@ -435,6 +444,16 @@ enum GivingNotificationCopy {
         case "giving_schedule_paused":
             let why = nonEmpty(payload?.reason).map { "\($0) " } ?? ""
             return "\(why)We've stopped sending prompts for now. Open Give to resume it whenever you're ready."
+        case "giving_schedule_office_change":
+            let gift = "\(payload?.frequency?.lowercased() == "weekly" ? "weekly" : "monthly") gift of \(amount)"
+                + (nonEmpty(payload?.fundName).map { " to \($0)" } ?? "")
+            switch payload?.action {
+            case "cancel": return "The church office cancelled your \(gift), as you asked. Nothing more will be prompted."
+            case "resume": return "The church office resumed your \(gift), as you asked."
+            default:
+                let until = nonEmpty(payload?.resumeOn).map { " — it starts again on \(dayWords($0))" } ?? ""
+                return "The church office paused your \(gift), as you asked\(until)."
+            }
         default: return nil
         }
     }
