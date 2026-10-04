@@ -725,6 +725,8 @@ struct HomeView: View {
             ]
             path.append(PlanSegmentRef(planTitle: "Rooted: 10 Days in the Psalms", dayNumber: 2, segments: segs, index: 0))
         case "level": path.append(PathwayRoute.level(1))
+        // The exam screen as the server answers it — its refusal, its way out.
+        case "exam": path.append(PathwayRoute.exam(1))
         default: break
         }
         #endif
