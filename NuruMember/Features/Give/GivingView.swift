@@ -1505,7 +1505,7 @@ struct GivingView: View {
         } catch {
             // Keep the key ONLY when the server never answered.
             if !Self.gotNoServerAnswer(error) { submissionKey = GiveKey.fresh() }
-            switch GiveRefusal.from(error, fallback: "Couldn't create the schedule.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 // A prompt is already on the phone: nothing was created — watch
                 // that one; the member can set the schedule up after it.
@@ -1551,7 +1551,7 @@ struct GivingView: View {
             // not the member's own) is said in the server's words — neither
             // is ever sent again without a tap (Giving Cycle 6).
             if !Self.gotNoServerAnswer(error) { submissionKey = GiveKey.fresh() }
-            switch GiveRefusal.from(error, fallback: "Something went wrong.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 // Not a failure: this member's prompt from a moment ago is
                 // still on their phone (409 GIFT_IN_PROGRESS). Watch that one.
@@ -1635,7 +1635,7 @@ struct GivingView: View {
             // form, and nothing is ever retried without a tap (Giving Cycle 6).
             retryKey = GiveRetry.key(after: error, current: retryKey)
             retryTxId = GiveRetry.target(after: error, retrying: failedTx)
-            switch GiveRefusal.from(error, fallback: "Couldn't try again — check your connection.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 await watchWaitingPrompt(tx, message: message)
             case let .message(text):
@@ -2839,7 +2839,7 @@ private struct ScheduleDetailSheet: View {
                 // The server's words — SCHEDULE_EXISTS, AMOUNT_OUT_OF_RANGE,
                 // PHONE_REQUIRED, and (Giving Cycle 5) a monthly pledge's
                 // collector whose amount / day are the pledge's.
-                errorText = GiveRefusal.from(error, fallback: "Couldn't save — try again.").message
+                errorText = GiveRefusal.from(error).message
                 if case let .http(_, _, _, details)? = error as? APIError { errorPledgeId = details?.pledgeId }
                 Haptics.error()
             }
@@ -2861,7 +2861,7 @@ private struct ScheduleDetailSheet: View {
                 onUpdated()
             } catch {
                 headsUp = current.headsUp
-                errorText = GiveRefusal.from(error, fallback: "Couldn't change that — try again.").message
+                errorText = GiveRefusal.from(error).message
                 Haptics.error()
             }
             busy = false
@@ -2883,7 +2883,7 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // the server paused it
                 onChanged()
             } catch {
-                errorText = GiveRefusal.from(error, fallback: "Couldn't pause — try again.").message
+                errorText = GiveRefusal.from(error).message
                 busy = false
                 Haptics.error()
             }
@@ -2901,7 +2901,7 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // server confirmed the resume
                 onChanged()
             } catch {
-                errorText = GiveRefusal.from(error, fallback: "Couldn't resume — try again.").message
+                errorText = GiveRefusal.from(error).message
                 busy = false
                 Haptics.error()
             }
@@ -2917,7 +2917,7 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // server confirmed the cancellation
                 onChanged()
             } catch {
-                errorText = (error as? APIError)?.errorDescription ?? "Couldn't cancel — try again."
+                errorText = GiveRefusal.from(error).message
                 busy = false
                 Haptics.error()
             }

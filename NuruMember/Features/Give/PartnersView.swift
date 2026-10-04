@@ -219,7 +219,7 @@ enum GivingSignal {
             await loadStatements()   // the STATEMENT section appears with membership
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing has changed."
+            actionError = GiveRefusal.from(error).message
         }
     }
 
@@ -259,7 +259,7 @@ enum GivingSignal {
             return true
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your pledge is unchanged."
+            actionError = GiveRefusal.from(error).message
             return false
         }
     }
@@ -274,7 +274,7 @@ enum GivingSignal {
         do { try await MemberAPI.resumeSchedule(id); Haptics.success(); GivingSignal.post(from: self); await load() }
         catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your giving is unchanged."
+            actionError = GiveRefusal.from(error).message
         }
     }
 
@@ -302,7 +302,7 @@ enum GivingSignal {
             statementsRefreshFailed = false
         } catch {
             if quiet { statementsRefreshFailed = true }
-            else { statementsError = (error as? APIError)?.errorDescription ?? "We couldn't load your statement." }
+            else { statementsError = NuruStateCopy.failure(error).sentence }
         }
         if !quiet {
             statementLoadsInFlight -= 1
@@ -1716,7 +1716,7 @@ struct PledgeDetailView: View {
         loading = detail == nil
         error = nil
         do { detail = try await MemberAPI.pledge(pledgeId) }
-        catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this pledge." } }
+        catch { if detail == nil { self.error = NuruStateCopy.failure(error).sentence } }
         loading = false
         await loadClaims()
         await loadCollection()
@@ -1815,7 +1815,7 @@ struct PledgeDetailView: View {
             await load()
         } catch {
             if !GiveRefusal.gotNoServerAnswer(error) { paceKey = GiveKey.fresh() }
-            switch GiveRefusal.from(error, fallback: "That didn't go through. Nothing has changed.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 // A prompt from a moment ago is still on the phone: nothing
                 // was made — watch that one, as Give does.
@@ -1853,7 +1853,7 @@ struct PledgeDetailView: View {
             if GiveRefusal.gotNoServerAnswer(error) {
                 return "We couldn't reach the church just now. Try again in a moment."
             }
-            return (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing was sent."
+            return GiveRefusal.from(error).message
         }
     }
 

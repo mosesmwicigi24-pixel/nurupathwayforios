@@ -341,4 +341,43 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertEqual(off.title, "Notifications are off")
         XCTAssertEqual(off.message, "So your daily reading reminder can reach you. Turn them on for Nuru Pathway in Settings.")
     }
+
+    // MARK: Round 2 — Give's errors speak the one state language (§4, §7.3)
+
+    private let ours = "Something went wrong on our side. It isn't you — please try again in a moment."
+
+    func testGivesErrorsNeverShowTheServersRawText() {
+        let serverError = APIError.http(status: 500, code: "INTERNAL", message: "Internal server error")
+        XCTAssertEqual(GiveRefusal.from(serverError, deviceOnline: true).message, ours,
+                       "the Cycle 3 walk's failed screen said \"Internal server error\"")
+        XCTAssertEqual(GiveRefusal.from(APIError.decoding("keyNotFound(transaction_id)"), deviceOnline: true).message, ours)
+        XCTAssertEqual(GiveRefusal.from(APIError.transport("The request timed out."), deviceOnline: true).message, ours,
+                       "no answer while the phone has a network: ours, never \"check your connection\"")
+        XCTAssertEqual(GiveRefusal.from(APIError.transport("The request timed out."), deviceOnline: false).message,
+                       "You're offline. Connect to the internet, then try again.")
+        XCTAssertEqual(GiveRefusal.from(APIError.unauthorized, deviceOnline: true).message,
+                       "Your session has ended. Sign in again to pick up where you left off.")
+        // A refusal in our own words keeps them — the money rules say why.
+        let range = APIError.http(status: 422, code: "AMOUNT_OUT_OF_RANGE", message: "M-Pesa gifts are from KSh 1 to KSh 250,000.")
+        XCTAssertEqual(GiveRefusal.from(range, deviceOnline: true).message, "M-Pesa gifts are from KSh 1 to KSh 250,000.")
+    }
+
+    func testTheGenericValidationFailureIsOurSide() {
+        let parse = APIError.http(status: 400, code: "VALIDATION_FAILED", message: "Request body failed validation")
+        XCTAssertEqual(NuruStateCopy.failure(parse, deviceOnline: true), .serverSide,
+                       "the app sent what the server couldn't read — not words for a member")
+        XCTAssertEqual(GiveRefusal.from(parse, deviceOnline: true).message, ours)
+        let realWords = APIError.http(status: 400, code: "VALIDATION_FAILED", message: "That code is not valid")
+        XCTAssertEqual(NuruStateCopy.failure(realWords, deviceOnline: true).title, "That code is not valid",
+                       "real words under the same code keep them")
+    }
+
+    func testTheOneLineFormIsTheTitleThenTheLine() {
+        XCTAssertEqual(NuruStateCopy.serverSide.sentence, ours)
+        XCTAssertEqual(NuruStateCopy.notFound.sentence, "This isn't here any more. It may have been moved or removed.")
+        let exists = APIError.http(status: 409, code: "SCHEDULE_EXISTS",
+                                   message: "You already give KSh 1,000 every month to Tithe.")
+        XCTAssertEqual(NuruStateCopy.failure(exists, deviceOnline: true).sentence,
+                       "You already give KSh 1,000 every month to Tithe.", "a refusal is a whole sentence of the server's")
+    }
 }

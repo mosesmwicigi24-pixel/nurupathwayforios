@@ -51,7 +51,7 @@ final class GivingStatementViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { history = try await MemberAPI.givingHistory() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your statement." }
+        catch { self.error = NuruStateCopy.failure(error).sentence }   // §4, never raw text
         loading = false
     }
 
@@ -702,9 +702,11 @@ struct GivingStatementView: View {
         }
     }
 
+    /// Offline only when the phone has no network (§4) — a timeout while it
+    /// has one was ours, and the PDF just isn't available right now.
     private static func downloadMessage(for error: Error) -> String {
-        if let api = error as? APIError, api.isNetwork {
-            return "You appear to be offline — the PDF needs a connection."
+        if NuruStateCopy.failure(error).cause == .offline {
+            return "You're offline — the PDF needs a connection."
         }
         return "The PDF isn't available right now. The statement below is still complete."
     }

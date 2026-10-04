@@ -885,12 +885,14 @@ struct PartnersStatementView: View {
         }
     }
 
+    /// Offline only when the phone has no network (§4) — a timeout while it
+    /// has one was ours, and the PDF just isn't available right now.
     private static func downloadMessage(for error: Error) -> String {
-        if let api = error as? APIError {
-            if case let .http(status, _, _, _) = api, status == 404 {
-                return "There's no partners statement for you yet."
-            }
-            if api.isNetwork { return "You appear to be offline — the PDF needs a connection." }
+        if case let .http(status, _, _, _)? = error as? APIError, status == 404 {
+            return "There's no partners statement for you yet."
+        }
+        if NuruStateCopy.failure(error).cause == .offline {
+            return "You're offline — the PDF needs a connection."
         }
         return "The PDF isn't available right now. The statement above is still complete."
     }

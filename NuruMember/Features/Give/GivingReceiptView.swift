@@ -25,7 +25,7 @@ final class GivingReceiptViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.givingDetail(transactionId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this receipt." }
+        catch { self.error = NuruStateCopy.failure(error).sentence }   // §4, never raw text
         loading = false
     }
 }

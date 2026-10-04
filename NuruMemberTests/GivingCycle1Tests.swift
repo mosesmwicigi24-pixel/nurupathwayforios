@@ -291,28 +291,33 @@ final class GivingCycle1Tests: XCTestCase {
         XCTAssertEqual(details.transactionId, "tx-9")
         let words = "A prompt from a moment ago is still waiting on your phone. Approve it, or wait a minute and try again."
         let err = APIError.http(status: 409, code: "GIFT_IN_PROGRESS", message: words, details: details)
-        XCTAssertEqual(GiveRefusal.from(err, fallback: "Something went wrong."),
+        XCTAssertEqual(GiveRefusal.from(err, deviceOnline: true),
                        .promptWaiting(transactionId: "tx-9", message: words))
     }
 
     func testEveryOtherRefusalShowsTheServersWords() {
         let range = APIError.http(status: 422, code: "AMOUNT_OUT_OF_RANGE",
                                   message: "M-Pesa gifts are from KSh 1 to KSh 250,000.", details: nil)
-        XCTAssertEqual(GiveRefusal.from(range, fallback: "x"), .message("M-Pesa gifts are from KSh 1 to KSh 250,000."))
+        XCTAssertEqual(GiveRefusal.from(range, deviceOnline: true), .message("M-Pesa gifts are from KSh 1 to KSh 250,000."))
         let phone = APIError.http(status: 422, code: "PHONE_REQUIRED",
                                   message: "Add the M-Pesa number to prompt for this gift.", details: nil)
-        XCTAssertEqual(GiveRefusal.from(phone, fallback: "x").message, "Add the M-Pesa number to prompt for this gift.")
+        XCTAssertEqual(GiveRefusal.from(phone, deviceOnline: true).message, "Add the M-Pesa number to prompt for this gift.")
         let exists = APIError.http(status: 409, code: "SCHEDULE_EXISTS",
                                    message: "You already give KSh 1,000 every month to Tithe. Change that gift instead of adding a second one.",
                                    details: nil)
-        XCTAssertEqual(GiveRefusal.from(exists, fallback: "x").message,
+        XCTAssertEqual(GiveRefusal.from(exists, deviceOnline: true).message,
                        "You already give KSh 1,000 every month to Tithe. Change that gift instead of adding a second one.")
         let noTx = APIError.http(status: 409, code: "GIFT_IN_PROGRESS", message: "Still waiting.", details: nil)
-        XCTAssertEqual(GiveRefusal.from(noTx, fallback: "x"), .message("Still waiting."),
+        XCTAssertEqual(GiveRefusal.from(noTx, deviceOnline: true), .message("Still waiting."),
                        "no transaction to watch → just the words")
-        XCTAssertEqual(GiveRefusal.from(APIError.offline, fallback: "x"), .message("You appear to be offline."))
-        XCTAssertEqual(GiveRefusal.from(URLError(.badURL), fallback: "Something went wrong."),
-                       .message("Something went wrong."))
+        // No answer speaks the one state language (EXPERIENCE.md §4, §7.3):
+        // offline only when the phone has no network; otherwise it was ours.
+        XCTAssertEqual(GiveRefusal.from(APIError.offline, deviceOnline: false),
+                       .message("You're offline. Connect to the internet, then try again."))
+        XCTAssertEqual(GiveRefusal.from(APIError.offline, deviceOnline: true),
+                       .message("Something went wrong on our side. It isn't you — please try again in a moment."))
+        XCTAssertEqual(GiveRefusal.from(URLError(.badURL), deviceOnline: true),
+                       .message("Something went wrong on our side. It isn't you — please try again in a moment."))
     }
 
     func testErrorDetailsTolerateOddShapes() throws {

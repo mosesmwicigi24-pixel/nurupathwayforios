@@ -20,6 +20,18 @@ struct NuruStateCopy: Equatable {
     /// Nil for a refusal — the screen offers what it needs (a load: Try again).
     let action: Action?
 
+    /// The one-line form, for a note under a button, a sheet's error line or
+    /// an alert's message: "Title. Line" — or the title alone (a refusal is
+    /// a whole sentence of the server's). Android's StateMessage.sentence.
+    var sentence: String { line.map { "\(title). \($0)" } ?? title }
+
+    /// The server's generic body-parse refusal (400 VALIDATION_FAILED, Zod):
+    /// the app sent a request the server couldn't read — our side's fault,
+    /// not words written for a member (EXPERIENCE.md §7.3). Other
+    /// VALIDATION_FAILED answers carry real words ("That code is not valid")
+    /// and keep them.
+    static let bodyParseRefusal = "Request body failed validation"
+
     /// The phone has no network. `showingSaved` when the screen still shows
     /// what it last loaded; otherwise there is nothing to fall back on.
     static func offline(showingSaved: Bool) -> NuruStateCopy {
@@ -58,8 +70,10 @@ struct NuruStateCopy: Equatable {
             if status == 401 { return sessionEnded }
             if status == 404 { return notFound }
             // Our own words only: a 4xx without our envelope (a proxy's page,
-            // a bare status) is not something we said to the member.
+            // a bare status) is not something we said to the member — nor is
+            // the generic body-parse refusal (§7.3): that one is ours.
             let words = message.trimmingCharacters(in: .whitespacesAndNewlines)
+            if code == "VALIDATION_FAILED", words == bodyParseRefusal { return serverSide }
             if (400..<500).contains(status), code != nil, !words.isEmpty {
                 return NuruStateCopy(cause: .refusal, title: words, line: nil, action: nil)
             }

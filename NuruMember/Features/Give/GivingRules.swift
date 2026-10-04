@@ -230,22 +230,25 @@ enum GiveRefusal: Equatable {
     /// 409 GIFT_IN_PROGRESS: the member's prompt from a moment ago is still on
     /// their phone, and a second would fail as "busy" — watch THAT one.
     case promptWaiting(transactionId: String, message: String)
-    /// Anything else: the server's member-facing `message` as-is (the 422
-    /// METHOD_UNAVAILABLE / METHOD_CURRENCY / AMOUNT_OUT_OF_RANGE /
-    /// PHONE_REQUIRED and 409 SCHEDULE_EXISTS among them), else `fallback`.
-    /// Giving Cycle 6: 429 RATE_LIMITED — several prompts to a number that is
-    /// not the member's own just now; its words name the minutes — and 409
-    /// CONFLICT, a request key another gift holds. Neither is ever sent again
-    /// by itself: the answer spends the key, and only a tap sends anything.
+    /// Anything else, in the one state language (EXPERIENCE.md §4, §7.3): a
+    /// refusal in our own words keeps them — the 422 METHOD_UNAVAILABLE /
+    /// METHOD_CURRENCY / AMOUNT_OUT_OF_RANGE / PHONE_REQUIRED and 409
+    /// SCHEDULE_EXISTS among them; Giving Cycle 6's 429 RATE_LIMITED (several
+    /// prompts to a number not the member's own; its words name the minutes)
+    /// and 409 CONFLICT (a request key another gift holds), neither ever sent
+    /// again by itself. A 5xx, a dropped or unreadable answer, the generic
+    /// body-parse refusal — never the server's raw text ("Internal server
+    /// error" reached Give's failed screen) — read as §4 says: "Something
+    /// went wrong on our side. It isn't you — please try again in a moment.",
+    /// or "You're offline…" only when the phone has no network.
     case message(String)
 
-    static func from(_ error: Error, fallback: String) -> GiveRefusal {
-        guard let api = error as? APIError else { return .message(fallback) }
-        if case let .http(_, code, message, details) = api, code == "GIFT_IN_PROGRESS",
+    static func from(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> GiveRefusal {
+        if case let .http(_, code, message, details)? = error as? APIError, code == "GIFT_IN_PROGRESS",
            let tx = details?.transactionId {
             return .promptWaiting(transactionId: tx, message: message)
         }
-        return .message(api.errorDescription ?? fallback)
+        return .message(NuruStateCopy.failure(error, deviceOnline: deviceOnline).sentence)
     }
 
     /// The words to show the member, whichever it is.

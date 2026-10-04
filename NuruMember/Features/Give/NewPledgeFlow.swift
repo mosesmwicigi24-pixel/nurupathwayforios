@@ -793,8 +793,9 @@ struct NewPledgeFlow: View {
                 self.error = "We couldn't hear back from the church. Try again — if your pledge was made, it won't be made twice."
             } else {
                 // A refusal comes before anything is written: the server's
-                // words, and nothing has changed.
-                self.error = (error as? APIError)?.errorDescription ?? "Couldn't create the pledge. Nothing has changed."
+                // words. Anything else (a 5xx, an unreadable answer) says
+                // so in the one state language — never the raw text (§7.3).
+                self.error = GiveRefusal.from(error).message
             }
         }
     }
