@@ -2,11 +2,13 @@
 // §6): Home's YOUR WEEK, every row in every form of §6.1's table, in the
 // journey's order, each falling back to its "none" form when its data didn't
 // come (§6.1) — "this week" being today through the seventh day after, on the
-// church's clock; and a pledge its collector takes care of saying "Collected
-// on …" on Partners' DUE list instead of Pay — on the church's Nairobi
-// calendar, and only when the prompt comes on or before the instalment's date
-// (§6.4). The same rules as Android's YourWeek / pledgeCollectedOn. Payloads
-// are decoded exactly like APIClient's: snake_case in.
+// church's clock; the Events and Plans headers' one line, and a quiet Events
+// week (§6.2, §6.5); and a pledge its collector takes care of saying
+// "Collected on …" on Partners' DUE list instead of Pay — on the church's
+// Nairobi calendar, and only when the prompt comes on or before the
+// instalment's date (§6.4). The same rules as Android's YourWeek /
+// EventsHeader / pledgeCollectedOn. Payloads are decoded exactly like
+// APIClient's: snake_case in.
 import XCTest
 @testable import NuruMember
 
@@ -480,5 +482,45 @@ final class ExperienceCycle2Tests: XCTestCase {
         XCTAssertEqual(rows.map(\.title), ["Your pathway", "Start a reading plan", "No gatherings this week", "Give", "Find your cell"],
                        "nothing loaded: every row in its none form — the card still stands")
         XCTAssertTrue(HomeWeek.asksToGive(rows))
+    }
+
+    // MARK: §6.2 / §6.5 — one header line on Events and Plans; a quiet week is quiet
+
+    func testTheEventsHeaderSaysWhatIsNext() throws {
+        let later = try occurrence("occ-2", "Youth night", at: "2026-10-10T15:00:00.000Z")
+        let monday = try occurrence("occ-1", "Prayer breakfast", at: "2026-10-05T05:00:00.000Z")
+        XCTAssertEqual(EventsHeader.line([later, monday], now: now, timeZone: nairobi), "Next: Prayer breakfast · Mon 5 Oct",
+                       "the soonest, whatever order the calendar sent")
+        XCTAssertFalse(EventsHeader.isQuiet([later], now: now, timeZone: nairobi))
+        XCTAssertEqual(EventsHeader.fromToday([later, monday], now: now, timeZone: nairobi).map(\.occurrenceId), ["occ-1", "occ-2"])
+    }
+
+    func testTheEventsHeaderLooksAcrossAllTheTabLoadsFromToday() throws {
+        // Three weeks out is still what's next — and not a quiet week.
+        let harvest = try occurrence("occ-9", "Harvest", at: "2026-10-25T06:00:00.000Z")
+        XCTAssertEqual(EventsHeader.line([harvest], now: now, timeZone: nairobi), "Next: Harvest · Sun 25 Oct")
+        XCTAssertFalse(EventsHeader.isQuiet([harvest], now: now, timeZone: nairobi))
+        // From today on the church's day: this morning's gathering still counts.
+        let dawn = try occurrence("occ-3", "Morning prayer", at: "2026-10-04T04:00:00.000Z")
+        XCTAssertEqual(EventsHeader.line([dawn], now: now, timeZone: nairobi), "Next: Morning prayer · Sun 4 Oct")
+    }
+
+    func testNothingFromTodayOnIsAQuietWeek() throws {
+        // Ada: nothing on the calendar.
+        XCTAssertEqual(EventsHeader.line([], now: now, timeZone: nairobi), "Nothing planned this week")
+        XCTAssertTrue(EventsHeader.isQuiet([], now: now, timeZone: nairobi))
+        // The tab loads a week back: only past gatherings in range is still quiet.
+        let lastSunday = try occurrence("occ-0", "Last Sunday", at: "2026-09-27T06:00:00.000Z")
+        XCTAssertTrue(EventsHeader.isQuiet([lastSunday], now: now, timeZone: nairobi))
+        XCTAssertEqual(EventsHeader.line([lastSunday], now: now, timeZone: nairobi), "Nothing planned this week")
+    }
+
+    func testThePlansHeaderNamesThePlanBeingRead() throws {
+        // The same plan and day as Home's week row.
+        let rooted = try plan("rooted", "Rooted: 10 Days in the Psalms")
+        XCTAssertEqual(ReadingPlanRow.activeLine(in: [try plan("john", "Gospel of John", enrolled: false), rooted]),
+                       "Rooted: 10 Days in the Psalms · Day 1 of 10")
+        XCTAssertNil(ReadingPlanRow.activeLine(in: [try plan("john", "Gospel of John", enrolled: false)]),
+                     "none being read — the tagline stands")
     }
 }

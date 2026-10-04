@@ -5,7 +5,8 @@
 // catalogue), Growth Scores, Milestones (real enrollment + baptism flag) and
 // Certificates (real GET /certificates + public verify). How the APP BEHAVES
 // (security, notifications, display, language, privacy, help, sign out) moved
-// to SettingsView, pushed from the header's gear button.
+// to SettingsView — inside the You tab, its Settings segment (the header's
+// gear stays only for a Profile shown outside it).
 // The Figma's Connected-accounts / Social-links sections were removed from the
 // current design, so they are gone here too.
 import SwiftUI
@@ -177,14 +178,18 @@ struct ProfileView: View {
             HStack {
                 Text("ACCOUNT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A))
                 Spacer()
-                Button { Haptics.tap(); showSettings = true } label: {
-                    Icon(.settings, size: 18, color: Nuru.navy)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                // Inside the You tab the segment bar's Settings is the one way
+                // in (§6.2) — a second gear here was a second door to it.
+                if !embeddedInYou {
+                    Button { Haptics.tap(); showSettings = true } label: {
+                        Icon(.settings, size: 18, color: Nuru.navy)
+                            .frame(width: 40, height: 40)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Settings")
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("Settings")
             }
             HStack(spacing: 16) {
                 // Tap anywhere on the avatar (incl. the pencil) to pick a new photo.

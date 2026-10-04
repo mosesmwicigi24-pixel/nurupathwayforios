@@ -248,7 +248,9 @@ struct ReadingPlansView: View {
                     Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.catText)
                     Text("Grow in the Word").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(PL.navy)
                         .padding(.top, 4)
-                    Text("A little every day — with the whole family of God.")
+                    // One line of what matters now (§6.2): the plan being read —
+                    // the same plan and day Home's week names — else the tagline.
+                    Text(ReadingPlanRow.activeLine(in: vm.plans) ?? "A little every day — with the whole family of God.")
                         .font(.inter(12)).foregroundStyle(PL.ink2).padding(.top, 4)
                 }
                 Spacer(minLength: 8)

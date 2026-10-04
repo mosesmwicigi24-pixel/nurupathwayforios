@@ -225,6 +225,13 @@ extension ReadingPlanRow {
         plans.first { $0.enrolled && $0.completedAt == nil }
     }
 
+    /// The Plans header's line of what matters now (§6.2): "Rooted: 10 Days
+    /// in the Psalms · Day 1 of 10"; nil when no plan is being read (the
+    /// tagline then stands).
+    static func activeLine(in plans: [ReadingPlanRow]) -> String? {
+        active(in: plans).map { "\($0.title) · \($0.dayLine)" }
+    }
+
     /// "Day 3 of 10" — the day being read: the server's current day, else
     /// one past the days done; never before the first or past the last.
     var dayLine: String {

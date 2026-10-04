@@ -32,15 +32,19 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
         .padding(.horizontal, Nuru.S.screen)
         .frame(maxWidth: .infinity)
-        .padding(.top, 60)
+        // Laid out from the safe area's top, right under the status bar; only
+        // the band's paint reaches up behind it. (A fixed 60pt top plus the
+        // whole bar ignoring the safe area left an empty cream band under the
+        // switch — EXPERIENCE.md §6.2.)
+        .padding(.top, 8)
         .padding(.bottom, Nuru.S.md)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {
                     Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
                 }
+                .ignoresSafeArea(edges: .top)
         )
-        .ignoresSafeArea(edges: .top)
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 

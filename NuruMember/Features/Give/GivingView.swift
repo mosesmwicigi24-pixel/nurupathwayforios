@@ -496,6 +496,7 @@ struct GivingView: View {
                 case .statement: GivingStatementView()
                 }
             }
+            .inboxDestinations()   // the band's bell
         }
         // Stale-while-revalidate (2026-09-26: the year pill sat at KSh 0 after
         // pledge payments landed without a ceremony — a scheduled charge,
@@ -660,9 +661,10 @@ struct GivingView: View {
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ONE band (Partners UI v2): the GIVE · PARTNERS switch is the
-            // band's first row, so the "GIVE" eyebrow it replaced is gone.
+            // band's first row, so the "GIVE" eyebrow it replaced is gone —
+            // the tab's bell at its right (§6.2).
             if let segment, let onSelectSegment {
-                SplitSegmentBar(selection: segment, onSelect: onSelectSegment)
+                GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
             Text("Sow into the Kingdom")

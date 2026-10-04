@@ -663,6 +663,7 @@ struct PartnersView: View {
                         // statement's "Giving statement") pushes its gift rows
                         // as GivingRecord values — this stack must know them.
                         .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
+                        .inboxDestinations()   // the band's bell
                 }
             } else {
                 content
@@ -791,7 +792,7 @@ struct PartnersView: View {
     private var band: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let segment, let onSelectSegment {
-                SplitSegmentBar(selection: segment, onSelect: onSelectSegment)
+                GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
             Text("Walk with the church")

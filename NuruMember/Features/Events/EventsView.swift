@@ -5,7 +5,9 @@
 // gathering cards with quick-RSVP, a "Series you follow" rail and an
 // "Announcements" feed (both with real See-all pages). Bound to the real
 // calendar, series, rsvp and announcement endpoints; sections load
-// independently and hide when empty.
+// independently and hide when empty. The header's line says what is next
+// (EXPERIENCE.md §6.2), and a quiet week is quiet (§6.5): one calm card, the
+// calendar and check-in as two compact rows, no tabs, search or filters.
 import SwiftUI
 
 // MARK: helpers (port of eventHelpers.ts)
@@ -55,6 +57,48 @@ enum Ev {
     /// Short date label, e.g. "Jun 21".
     static func shortDate(_ iso: String) -> String {
         let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: date(iso))
+    }
+}
+
+/// The Events tab's one header line and its quiet week (EXPERIENCE.md §6.2,
+/// §6.5) — pure, so the tests pin them; Android's EventsHeader, the same
+/// rules. "In range" is what the tab loads, from today (the church's day) on;
+/// a quiet week is one with nothing in it, and the header says so in the
+/// same words.
+enum EventsHeader {
+    /// The gatherings from today on, soonest first — what the tab has to
+    /// show, and to filter.
+    static func fromToday(_ events: [CalendarOccurrence], now: Date,
+                          timeZone: TimeZone = GiveCalendar.nairobi) -> [CalendarOccurrence] {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        let today = cal.startOfDay(for: now)
+        return events.compactMap { o in parse(o.startAt).map { (o, $0) } }
+            .filter { cal.startOfDay(for: $0.1) >= today }
+            .sorted { $0.1 < $1.1 }
+            .map(\.0)
+    }
+
+    /// Nothing from today on: the quiet week — the calm card, and no tabs,
+    /// search or filters, since there is nothing to filter.
+    static func isQuiet(_ events: [CalendarOccurrence], now: Date, timeZone: TimeZone = GiveCalendar.nairobi) -> Bool {
+        fromToday(events, now: now, timeZone: timeZone).isEmpty
+    }
+
+    /// "Next: Sunday Service · Sun 5 Oct", else "Nothing planned this week".
+    static func line(_ events: [CalendarOccurrence], now: Date, timeZone: TimeZone = GiveCalendar.nairobi) -> String {
+        guard let next = fromToday(events, now: now, timeZone: timeZone).first, let start = parse(next.startAt) else {
+            return "Nothing planned this week"
+        }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        f.dateFormat = "EEE d MMM"
+        return "Next: \(next.title) · \(f.string(from: start))"
+    }
+
+    private static func parse(_ iso: String) -> Date? {
+        ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
     }
 }
 
@@ -184,6 +228,20 @@ final class EventsViewModel: ObservableObject {
     var monthLabel: String {
         let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f.string(from: todayStart).uppercased()
     }
+
+    /// Something from today on to show and filter (EventsHeader) — the
+    /// tabs, search, filters and the header's counts show only then.
+    var hasSomethingToFilter: Bool { !EventsHeader.fromToday(occurrences, now: Date()).isEmpty }
+    /// The calendar answered and has nothing from today on: the quiet week
+    /// (§6.5) — one calm card, and the calendar and check-in as two rows.
+    var quiet: Bool { !loading && failure == nil && !hasSomethingToFilter }
+    /// The header's one line (§6.2): "Next: «title» · EEE d MMM" or "Nothing
+    /// planned this week" once the calendar has answered — today's date
+    /// until then (and when it could not answer: never a quiet week it can't see).
+    var headerLine: String {
+        if occurrences.isEmpty && (loading || failure != nil) { return headerSubline }
+        return EventsHeader.line(occurrences, now: Date())
+    }
     var headerSubline: String {
         let f = DateFormatter(); f.dateFormat = "EEE, MMM d"
         return "Today · \(f.string(from: todayStart)) · East Africa Time"
@@ -300,12 +358,23 @@ struct EventsView: View {
                             NavigationLink(value: live) { LiveHeroCard(occ: live) }.buttonStyle(.pressableSubtle)
                         }
                         weekStrip
-                        calendarLink
-                        attendanceLink
-                        segmentBar
-                        searchBar
-                        categoryChips
-                        gatherings
+                        if vm.quiet {
+                            // A quiet week is quiet (§6.5): one calm card, then
+                            // the calendar and check-in as two compact rows.
+                            quietCard
+                            quietEntries
+                        } else {
+                            calendarLink
+                            attendanceLink
+                            // Tabs, search and filters only when there is
+                            // something to filter.
+                            if vm.hasSomethingToFilter {
+                                segmentBar
+                                searchBar
+                                categoryChips
+                            }
+                            gatherings
+                        }
                         if !vm.series.isEmpty { seriesSection }
                         if !vm.announcements.isEmpty { announcementsSection }
                     }
@@ -340,15 +409,16 @@ struct EventsView: View {
         }
     }
 
-    // MARK: 1 — cream header
+    // MARK: 1 — cream header (one header on every tab, §6.2: the eyebrow,
+    // the serif title, one line of what matters now, the bell at the right)
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("📅 EVENTS").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("EVENTS").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
                     Text("Gathered together").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
-                    Text(vm.headerSubline).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
+                    Text(vm.headerLine).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
                 }
                 Spacer()
                 NavigationLink(value: AppRoute.notifications) {
@@ -364,10 +434,14 @@ struct EventsView: View {
                 }
                 .buttonStyle(.plain)
             }
-            HStack(spacing: Nuru.S.sm) {
-                if vm.liveOccurrence != nil { livePulseChip }
-                pulseChip("\(vm.thisWeekCount) this week", icon: .calendarDays)
-                pulseChip("\(vm.goingCount) you're going", icon: .check)
+            // The counts only when there is something to count — a quiet
+            // week's header line already says it.
+            if vm.hasSomethingToFilter {
+                HStack(spacing: Nuru.S.sm) {
+                    if vm.liveOccurrence != nil { livePulseChip }
+                    pulseChip("\(vm.thisWeekCount) this week", icon: .calendarDays)
+                    pulseChip("\(vm.goingCount) you're going", icon: .check)
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -449,6 +523,48 @@ struct EventsView: View {
             .background(bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.pressable)
+    }
+
+    // MARK: 2b — a quiet week (§6.5): one calm card, then the calendar and
+    // check-in as two compact rows (Android's QuietWeekCard / QuietEntries)
+
+    private var quietCard: some View {
+        HStack(spacing: Nuru.S.md) {
+            Icon(.calendarDays, size: 18, color: Nuru.gold)
+                .frame(width: 40, height: 40)
+                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            Text("The calendar is quiet this week — gatherings the church posts appear here.")
+                .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardSurfaceEv()
+    }
+
+    private var quietEntries: some View {
+        VStack(spacing: 0) {
+            NavigationLink(value: EventsNav.calendar) { quietRow(.calendarDays, "All events & calendar") }
+                .buttonStyle(.pressableSubtle)
+            Rectangle().fill(Nuru.border).frame(height: 1).padding(.horizontal, Nuru.S.base)
+            NavigationLink(value: EventsNav.attendance) { quietRow(.qrCode, "Check in to a service") }
+                .buttonStyle(.pressableSubtle)
+        }
+        .cardSurfaceEv()
+    }
+
+    private func quietRow(_ icon: Lucide, _ title: String) -> some View {
+        HStack(spacing: Nuru.S.md) {
+            Icon(icon, size: 16, color: Nuru.navy)
+                .frame(width: 32, height: 32)
+                .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+            Spacer(minLength: 0)
+            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+        }
+        .padding(.horizontal, Nuru.S.base).padding(.vertical, 12)
+        .contentShape(Rectangle())
     }
 
     // MARK: 3 — calendar card (navy gradient + glow)
