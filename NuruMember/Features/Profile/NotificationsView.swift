@@ -14,15 +14,24 @@ final class NotificationsViewModel: ObservableObject {
     /// as "mark all read does nothing"). The server reload then confirms.
     @Published var locallyRead: Set<String> = []
 
+    /// Marks still on their way to the server — the bells re-read the count
+    /// only once they have landed.
+    private var pendingMarks = 0
+    /// The inbox has the server's count (a failed first load knows nothing
+    /// to tell the bells).
+    private var loaded = false
+
     func isUnread(_ n: NotificationRow) -> Bool {
         n.isUnread && !locallyRead.contains(n.notificationId)
     }
 
     func load() async {
         loading = true; error = nil
+        let ticket = InboxBadge.shared.ticket()
         do {
             let r = try await MemberAPI.notifications()
-            rows = r.rows; unread = r.unread; locallyRead = []
+            rows = r.rows; unread = r.unread; locallyRead = []; loaded = true
+            InboxBadge.shared.land(r.unread, ticket: ticket)   // every bell's dot (§7.2 #4)
         }
         catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load notifications." }
         loading = false
@@ -32,7 +41,10 @@ final class NotificationsViewModel: ObservableObject {
             locallyRead = Set(rows.map(\.notificationId))
             unread = 0
         }
+        InboxBadge.shared.set(0)
+        pendingMarks += 1
         try? await MemberAPI.markNotificationsRead()
+        pendingMarks -= 1
         await load()
     }
     func open(_ n: NotificationRow) async {
@@ -41,7 +53,19 @@ final class NotificationsViewModel: ObservableObject {
             locallyRead.insert(n.notificationId)
             unread = max(0, unread - 1)
         }
+        InboxBadge.shared.set(unread)
+        pendingMarks += 1
         try? await MemberAPI.markNotificationsRead([n.notificationId])
+        pendingMarks -= 1
+        await InboxBadge.shared.refresh()   // the server's count, once it's read
+    }
+
+    /// The inbox closed (§7.2 #4): the bells take what it knows now, then —
+    /// unless a mark is still on its way (it re-reads when it lands) — the
+    /// server's own count.
+    func closed() {
+        if loaded { InboxBadge.shared.set(unread) }
+        if pendingMarks == 0 { Task { await InboxBadge.shared.refresh() } }
     }
 }
 
@@ -79,6 +103,7 @@ struct NotificationsView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.rows.isEmpty { await vm.load() } }
+        .onDisappear { vm.closed() }
         // A notice with nowhere to go: the notice itself, then Dismiss.
         .sheet(item: $detail) { n in
             NotificationDetailSheet(meta: metaFor(n.template),

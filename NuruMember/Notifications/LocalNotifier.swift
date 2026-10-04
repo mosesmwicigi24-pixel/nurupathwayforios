@@ -43,7 +43,10 @@ final class LocalNotifier: NSObject, ObservableObject {
     func sync() async {
         guard !syncing else { return }
         syncing = true; defer { syncing = false }
+        let ticket = InboxBadge.shared.ticket()
         guard let result = try? await MemberAPI.notifications() else { return }
+        // Every bell's dot (§7.2 #4) — the same count as the icon's badge below.
+        InboxBadge.shared.land(result.unread, ticket: ticket)
 
         var seen = Set(UserDefaults.standard.stringArray(forKey: seenKey) ?? [])
         let firstRun = seen.isEmpty
@@ -142,6 +145,7 @@ extension LocalNotifier: UNUserNotificationCenterDelegate {
                                             userInfo: info as? [String: Any])
             if let id = info["notificationId"] as? String, !id.isEmpty {
                 try? await MemberAPI.markNotificationsRead([id])
+                await InboxBadge.shared.refresh()   // the bells, once it's read
             }
         }
         completionHandler()

@@ -298,7 +298,6 @@ final class ChatInboxViewModel: ObservableObject {
 // DM segment, renamed) · My Discipler · Talk with My Pastor. SuperAdmin keeps
 // Broadcast appended, unchanged.
 private enum ChatSegment: Int, CaseIterable { case space, dm, discipler, pastor, broadcast }
-private enum ChatDest: Hashable { case notifications }
 
 // Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
 private let storyRing = LinearGradient(
@@ -376,7 +375,8 @@ struct ChatView: View {
             // Threads opened WITH a known privacy context (My Discipler /
             // Talk with My Pastor tabs) carry it into the thread screen.
             .navigationDestination(for: ThreadRoute.self) { ChatThreadView(conversation: $0.conversation, context: $0.context) }
-            .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
+            // The bell's inbox, and the announcement a row of it opens.
+            .inboxDestinations()
             .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
         }
         // Coming back from a thread refreshes the inbox, so a conversation just
@@ -469,28 +469,14 @@ struct ChatView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
-    // White tile bell → NotificationsView; glowing gold dot when anything is unread.
+    // The one bell (EXPERIENCE.md §7.2 #4) → the inbox, its gold dot only
+    // while the inbox has something unread. It used to light for unread chat
+    // messages and pending connection requests too — those are counted where
+    // they live (the You tab's badge and the Community chip, ChatBadge); a
+    // connection request is also an inbox notice, so the inbox counts it.
     private var bellButton: some View {
-        Button {
-            Haptics.tap()
-            path.append(ChatDest.notifications)
-        } label: {
-            Icon(.bell, size: 19, color: Nuru.navy)
-                .frame(width: 44, height: 44)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .overlay(alignment: .topTrailing) {
-                    // Also lights up for a pending "wants to connect" ask — a
-                    // connection request is as much "needs you" as an unread.
-                    if vm.totalUnread > 0 || vm.pendingIncomingCount > 0 {
-                        Circle().fill(Nuru.gold)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: Nuru.gold.opacity(0.9), radius: 4)
-                            .padding(10)
-                    }
-                }
-        }
-        .buttonStyle(.pressable)
+        NuruBell(look: .init(size: 44, circle: false, iconSize: 19, iconColor: Nuru.navy,
+                             fill: .white, stroke: Nuru.border))
     }
 
     private var searchBar: some View {

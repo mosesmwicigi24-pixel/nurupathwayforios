@@ -273,19 +273,11 @@ struct ReadingPlansView: View {
         .shadow(color: Color(hex: 0x0A1628).opacity(0.16), radius: 12, y: 7)
     }
 
+    /// The one bell (EXPERIENCE.md §7.2 #4): its dot was painted on — now
+    /// only while the inbox has something unread.
     private var bellButton: some View {
-        NavigationLink(value: AppRoute.notifications) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)
-                RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1)
-                Icon(.bell, size: 18, color: PL.navy)
-            }
-            .overlay(alignment: .topTrailing) {
-                Circle().fill(PL.gold).frame(width: 8, height: 8).padding(8)
-            }
-            .frame(width: 40, height: 40)
-        }
-        .buttonStyle(.plain)
+        NuruBell(look: .init(size: 40, circle: false, iconSize: 18, iconColor: PL.navy,
+                             fill: .white, stroke: PL.border))
     }
 
     private var searchBar: some View {

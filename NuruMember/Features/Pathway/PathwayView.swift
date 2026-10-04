@@ -224,10 +224,14 @@ struct PathwayView: View {
                 }
             }
             // The Pathway stack registers only PathwayRoute; the Discipleship Hub
-            // is an AppRoute, so register it here too (the tab has no .nuruDestinations()).
+            // is an AppRoute, so register it here too (the tab has no .nuruDestinations()),
+            // with the bell's inbox and the announcement a row of it opens.
             .navigationDestination(for: AppRoute.self) { r in
                 switch r {
                 case .discipleshipHub: DiscipleshipHubView()
+                case .notifications: NotificationsView()
+                case .announcement(let id): AnnouncementDetailView(announcementId: id)
+                case .announcementsList: AnnouncementsAllView()
                 default: EmptyView()
                 }
             }
@@ -417,12 +421,10 @@ private struct PathwayHubHeader: View {
             }
             Spacer()
             HStack(spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    Icon(.bell, size: 17, color: PW.navy).frame(width: 36, height: 36)
-                        .background(Color.white, in: Circle())
-                        .overlay(Circle().stroke(PW.border, lineWidth: 1))
-                    Circle().fill(PW.gold).frame(width: 8, height: 8).offset(x: -6, y: 6)
-                }
+                // The one bell (§7.2 #4) — it was decorative here, opening
+                // nothing under a painted-on dot.
+                NuruBell(look: .init(size: 36, circle: true, iconSize: 17, iconColor: PW.navy,
+                                     fill: .white, stroke: PW.border))
                 PWHeaderRing(pct: journey?.progressPercent ?? 0)
             }
         }

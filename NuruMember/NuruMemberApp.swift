@@ -47,6 +47,9 @@ struct NuruMemberApp: App {
                     // on silent) into the phone's Notification Center.
                     LocalNotifier.shared.requestPermission()
                     await LocalNotifier.shared.sync()
+                } else {
+                    // Signed out: the next member starts with nobody's dot.
+                    InboxBadge.shared.reset()
                 }
             }
             .onChange(of: scenePhase) { _, phase in

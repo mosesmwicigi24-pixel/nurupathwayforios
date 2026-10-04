@@ -16,7 +16,6 @@ final class HomeViewModel: ObservableObject {
     // Core
     @Published var pathway: PathwaySummary?
     @Published var streak = 0
-    @Published var unread = 0
     @Published var greetingLine = "Grace for today's step."
     @Published var rhythm = RhythmToday(prayer: false, word: false, reflection: false)
     @Published var scores: ScoresSummary?
@@ -98,6 +97,7 @@ final class HomeViewModel: ObservableObject {
         async let letter = try? MemberAPI.latestLetter()
         async let pathway = Self.attempt { try await MemberAPI.pathway() }
         async let ach = try? MemberAPI.achievements()
+        let unreadTicket = InboxBadge.shared.ticket()
         async let unread = try? MemberAPI.unreadNotifications()
         async let greet = try? MemberAPI.dailyGreeting()
         async let nudges = try? MemberAPI.homeNudges()
@@ -135,7 +135,9 @@ final class HomeViewModel: ObservableObject {
         async let trail = Self.levelTrail(currentLevel)
         let achievements = await ach
         self.streak = achievements?.streak?.current ?? 0
-        self.unread = await unread ?? 0
+        // The inbox's count is the bells' one count (§7.2 #4) — landed with
+        // the ticket taken before the read, so a fresher one isn't undone.
+        if let n = await unread { InboxBadge.shared.land(n, ticket: unreadTicket) }
         if let g = await greet, !g.isEmpty { greetingLine = g }
         self.nudges = await nudges ?? []
         if let r = await rhythm { self.rhythm = r }
@@ -764,19 +766,10 @@ struct HomeView: View {
                 .buttonStyle(.pressable)
                 .accessibilityLabel("Scan to check in")
                 .padding(.trailing, 8)
-                NavigationLink(value: AppRoute.notifications) {
-                    ZStack(alignment: .topTrailing) {
-                        Icon(.bell, size: 18, color: Color(hex: 0xA8861C))
-                            .frame(width: 40, height: 40)
-                            .background(Color(hex: 0xFFF4DA), in: Circle())
-                            .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
-                        if vm.unread > 0 {
-                            HomeUnreadBadge(count: vm.unread).offset(x: 5, y: -5)
-                        }
-                    }
-                }
-                .buttonStyle(.pressable)
-                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
+                // The one bell (§7.2 #4): the inbox, and a gold dot only while
+                // something in it is unread (it used to carry a count here).
+                NuruBell(look: .init(size: 40, circle: true, iconSize: 18, iconColor: Color(hex: 0xA8861C),
+                                     fill: Color(hex: 0xFFF4DA), stroke: Nuru.gold.opacity(0.35)))
                 // Radio used to sit here. It moved out so the resting header is
                 // three buttons (scan · bell · ring) rather than five — it is
                 // still reachable from the On Air card below, the Community hub
@@ -2299,29 +2292,6 @@ private struct HomeLiveHeaderRing: View {
             .onAppear {
                 guard !reduceMotion else { return }
                 withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) { expand = true }
-            }
-    }
-}
-
-// MARK: - Unread bell badge (pops in once, counts roll numerically)
-
-private struct HomeUnreadBadge: View {
-    let count: Int
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
-    var body: some View {
-        Text(count > 9 ? "9+" : "\(count)")
-            .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
-            .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2)
-            .background(Nuru.gold, in: Capsule())
-            .contentTransition(.numericText())
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
-            .scaleEffect(shown || reduceMotion ? 1 : 0.4)
-            .opacity(shown || reduceMotion ? 1 : 0)
-            .onAppear {
-                guard !shown else { return }
-                // One springy arrival beat — attention without a looping pulse.
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.6).delay(0.35)) { shown = true }
             }
     }
 }

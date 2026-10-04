@@ -1,10 +1,11 @@
 // The Give tab band's first row (EXPERIENCE.md §6.2 — one header on every
 // tab, the bell always at the far right): the GIVE · PARTNERS switch with the
-// tab's bell at its right, opening the same notifications inbox as every
-// other bell. Both segments paint it (each in its own header band), and each
-// segment's stack learns the inbox's routes (`inboxDestinations`) — a bell
-// that opened nothing would be worse than none. Android's GiveBell, the same
-// look: white, a hairline, the other bells' gold dot, the switch's height.
+// tab's bell at its right — the one bell (§7.2 #4), opening the same inbox as
+// every other and wearing its gold dot only while something is unread. Both
+// segments paint it (each in its own header band), and each segment's stack
+// learns the inbox's routes (`inboxDestinations`) — a bell that opened
+// nothing would be worse than none. Android's GiveBell, the same look:
+// white, a hairline, the switch's height.
 import SwiftUI
 
 struct GiveSwitchRow: View {
@@ -14,18 +15,8 @@ struct GiveSwitchRow: View {
     var body: some View {
         HStack(spacing: 10) {
             SplitSegmentBar(selection: selection, onSelect: onSelect)
-            NavigationLink(value: AppRoute.notifications) {
-                Icon(.bell, size: 18, color: Nuru.navy)
-                    .frame(width: 44, height: 44)
-                    .background(Color.white, in: Circle())
-                    .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
-                    .overlay(alignment: .topTrailing) {
-                        Circle().fill(Nuru.gold).frame(width: 8, height: 8).padding(9)
-                    }
-            }
-            .buttonStyle(.pressable)
-            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
-            .accessibilityLabel("Notifications")
+            NuruBell(look: .init(size: 44, circle: true, iconSize: 18, iconColor: Nuru.navy,
+                                 fill: .white, stroke: Nuru.border))
         }
     }
 }

@@ -188,4 +188,33 @@ final class ExperienceCycle3Tests: XCTestCase {
                        "an older notice naming none: the newest watchable, as before")
         XCTAssertNil(LiveDiscoveryCenter.noticeTarget(in: [], named: nil))
     }
+
+    // MARK: #4 — one bell: its dot means something in the inbox is unread
+
+    func testTheBellsDotMeansSomethingIsUnread() {
+        XCTAssertFalse(InboxBadge.showsDot(unread: 0), "Ada, 0 unread: no dot on any bell")
+        XCTAssertTrue(InboxBadge.showsDot(unread: 1))
+        XCTAssertTrue(InboxBadge.showsDot(unread: 12), "one dot, never a count")
+    }
+
+    /// One shared count, refreshed from several places — an answer that left
+    /// first and lands last never undoes a fresher one.
+    @MainActor
+    func testALateReadNeverUndoesAFresherCount() {
+        let badge = InboxBadge.shared
+        badge.set(0)
+        let early = badge.ticket()     // a read that left first…
+        let later = badge.ticket()     // …and one that left after it
+        badge.land(2, ticket: later)
+        XCTAssertEqual(badge.unread, 2)
+        badge.land(5, ticket: early)   // the first lands last
+        XCTAssertEqual(badge.unread, 2, "an older answer never wins")
+        let stale = badge.ticket()
+        badge.set(0)                   // the member read everything meanwhile
+        badge.land(3, ticket: stale)
+        XCTAssertEqual(badge.unread, 0, "a read sent before \"Mark all read\" never brings the dot back")
+        badge.land(-1, ticket: badge.ticket())
+        XCTAssertEqual(badge.unread, 0)
+        badge.reset()
+    }
 }

@@ -421,18 +421,10 @@ struct EventsView: View {
                     Text(vm.headerLine).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
                 }
                 Spacer()
-                NavigationLink(value: AppRoute.notifications) {
-                    Icon(.bell, size: 19, color: Nuru.navy)
-                        .frame(width: 44, height: 44)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                        .overlay(alignment: .topTrailing) {
-                            Circle().fill(Nuru.gold).frame(width: 8, height: 8)
-                                .shadow(color: Nuru.gold.opacity(0.8), radius: 4)
-                                .padding(8)
-                        }
-                }
-                .buttonStyle(.plain)
+                // The one bell (§7.2 #4): the dot only while the inbox has
+                // something unread (it was painted on).
+                NuruBell(look: .init(size: 44, circle: false, iconSize: 19, iconColor: Nuru.navy,
+                                     fill: .white, stroke: Nuru.border))
             }
             // The counts only when there is something to count — a quiet
             // week's header line already says it.

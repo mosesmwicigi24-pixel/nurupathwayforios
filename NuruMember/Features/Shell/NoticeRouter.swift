@@ -148,7 +148,7 @@ extension NoticeRouter {
     /// False when the notice has nowhere to go: the caller shows the notice
     /// itself (the inbox's sheet; a banner opens the inbox).
     @discardableResult
-    static func open(_ route: NoticeRoute, tabs: TabRouter, live: LiveDiscoveryCenter = .shared) -> Bool {
+    static func open(_ route: NoticeRoute, tabs: TabRouter) -> Bool {
         switch route {
         case .pledge(let id): tabs.openPledge(id)
         case .gift(let link): tabs.openGive(link: link)
@@ -163,7 +163,8 @@ extension NoticeRouter {
         case .profile: tabs.openYou(.profile)
         case .readingInvite(let token): tabs.openReadingInvite(token)
         case .readWithFriend: tabs.openPlans(.readWithFriendHub)
-        case let .live(streamId, title): Task { await live.openNotice(streamId: streamId, title: title) }
+        case let .live(streamId, title):
+            Task { await LiveDiscoveryCenter.shared.openNotice(streamId: streamId, title: title) }
         case .itself: return false
         }
         return true
