@@ -56,10 +56,10 @@ struct NuruLiveTabView: View {
             LiveViewerPlayerView(item: .myRecording(row), replaysScope: row.scope, replaysCellId: row.cellId)
                 .id(row.recordingId)
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Delete this recording?",
-            isPresented: Binding(get: { confirmDeleteId != nil }, set: { if !$0 { confirmDeleteId = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { confirmDeleteId != nil }, set: { if !$0 { confirmDeleteId = nil } })
         ) {
             Button("Delete forever", role: .destructive) {
                 if let id = confirmDeleteId { Haptics.action(); Task { await deleteBroadcast(id) } }

@@ -72,7 +72,8 @@ struct BroadcastMiniPlayer: View {
         .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
         .padding(.horizontal, Nuru.S.base)
         .transition(.scale(scale: 0.85).combined(with: .opacity))
-        .confirmationDialog("End this stream?", isPresented: $confirmEnd, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("End this stream?", isPresented: $confirmEnd) {
             Button("End stream", role: .destructive) {
                 Task { await controller.end() }
             }

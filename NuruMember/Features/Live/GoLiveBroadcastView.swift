@@ -103,7 +103,8 @@ struct GoLiveBroadcastView: View {
             for r in fresh { reactionQueue.spawn(emoji: r.emoji, reduceMotion: reduceMotion) }
             controller.clearFreshReactions()
         }
-        .confirmationDialog("End this stream?", isPresented: $confirmEnd, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("End this stream?", isPresented: $confirmEnd) {
             Button("End stream", role: .destructive) {
                 Haptics.action()
                 Task { await controller.end() }
@@ -285,7 +286,8 @@ struct GoLiveBroadcastView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .confirmationDialog("Delete this recording?", isPresented: $confirmDeleteRecording, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Delete this recording?", isPresented: $confirmDeleteRecording) {
             Button("Delete forever", role: .destructive) {
                 Haptics.action()
                 Task { await deleteRecording() }

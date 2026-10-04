@@ -1694,10 +1694,10 @@ struct PledgeDetailView: View {
         .sheet(item: $claiming) { p in
             PledgeClaimSheet(pledge: p) { body in await sendClaim(p, body) }
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Cancel \u{201C}\(cancelling?.displayTitle ?? "this pledge")\u{201D}?",
-            isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } })
         ) {
             Button("Cancel the pledge", role: .destructive) {
                 if let p = cancelling {

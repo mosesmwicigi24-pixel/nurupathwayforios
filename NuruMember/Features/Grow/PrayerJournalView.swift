@@ -293,11 +293,11 @@ struct PrayerJournalView: View {
             // Sharing publishes a private entry to the whole cell — confirm
             // first. (Attached to the inner VStack so it never collides with
             // the delete dialog on the outer ZStack.)
-            .confirmationDialog(
+            // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+            .alert(
                 "Share to the prayer wall?",
                 isPresented: Binding(get: { pendingShare != nil },
-                                     set: { if !$0 { pendingShare = nil } }),
-                titleVisibility: .visible
+                                     set: { if !$0 { pendingShare = nil } })
             ) {
                 Button("Share to wall") {
                     if let e = pendingShare { Task { await vm.shareToWall(e) } }
@@ -327,11 +327,11 @@ struct PrayerJournalView: View {
             }
         }
         // Deleting a prayer is irreversible — ask before letting it go.
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Delete this prayer?",
             isPresented: Binding(get: { pendingDelete != nil },
-                                 set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
+                                 set: { if !$0 { pendingDelete = nil } })
         ) {
             Button("Delete prayer", role: .destructive) {
                 if let e = pendingDelete { Task { await vm.delete(e) } }

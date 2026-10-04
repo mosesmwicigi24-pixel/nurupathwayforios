@@ -76,7 +76,8 @@ struct SelahEditorView: View {
         .sheet(isPresented: $showDrawing) {
             SelahDrawingSheet { url in draft.drawingUrls.append(url) }
         }
-        .confirmationDialog("Delete this thought?", isPresented: $pendingDelete, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Delete this thought?", isPresented: $pendingDelete) {
             Button("Delete thought", role: .destructive) { onDelete?(); dismiss() }
             Button("Keep it", role: .cancel) {}
         } message: {

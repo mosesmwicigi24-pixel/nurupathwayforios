@@ -392,7 +392,8 @@ struct SettingsView: View {
             }
             .buttonStyle(.pressable)
             // Calm confirm — signing out is reversible, so no destructive red.
-            .confirmationDialog("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
+            // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+            .alert("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm) {
                 Button("Sign out") {
                     // Revoke the refresh-token family server-side FIRST (the token
                     // is captured synchronously, the call is fire-and-forget), then

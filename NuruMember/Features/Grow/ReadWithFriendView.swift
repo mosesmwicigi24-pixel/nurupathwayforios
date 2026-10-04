@@ -349,7 +349,8 @@ struct ReadingGroupDetailView: View {
                 onPick: { friend in Task { await vm.inviteFriend(friend) } },
                 onShareAnotherWay: { shareAfterPicker = true })
         }
-        .confirmationDialog("Leave this shared plan?", isPresented: $showLeaveConfirm, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Leave this shared plan?", isPresented: $showLeaveConfirm) {
             Button("Leave", role: .destructive) {
                 Task { if await vm.leave() { dismiss() } }
             }

@@ -525,11 +525,11 @@ struct ChatThreadView: View {
             }
         }
         // Deleting is irreversible for everyone in the thread — always confirm.
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Delete this message?",
             isPresented: Binding(get: { pendingDeleteMessage != nil },
-                                  set: { if !$0 { pendingDeleteMessage = nil } }),
-            titleVisibility: .visible
+                                  set: { if !$0 { pendingDeleteMessage = nil } })
         ) {
             Button("Delete", role: .destructive) {
                 guard let message = pendingDeleteMessage else { return }

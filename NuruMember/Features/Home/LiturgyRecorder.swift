@@ -377,10 +377,10 @@ struct LiturgyRecordingsSheet: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             deleteTarget.map { "Remove your \($0.label.lowercased()) recording?" } ?? "",
-            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
         ) {
             Button("Remove", role: .destructive) {
                 if let band = deleteTarget { Task { await delete(band) } }

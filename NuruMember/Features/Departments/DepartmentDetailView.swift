@@ -165,9 +165,10 @@ struct DepartmentDetailView: View {
             }
             .presentationDetents([.large])
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             row?.isRequested == true ? "Withdraw your request?" : "Leave this department?",
-            isPresented: $confirmLeave, titleVisibility: .visible
+            isPresented: $confirmLeave
         ) {
             Button(row?.isRequested == true ? "Withdraw request" : "Leave the department", role: .destructive) {
                 Haptics.action()
@@ -179,10 +180,10 @@ struct DepartmentDetailView: View {
                  ? "The leader won't see your request any more. You can ask again any time."
                  : "You'll stop appearing on the team. You can ask to serve again any time.")
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Remove this post?",
-            isPresented: Binding(get: { deletingPost != nil }, set: { if !$0 { deletingPost = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { deletingPost != nil }, set: { if !$0 { deletingPost = nil } })
         ) {
             Button("Remove the post", role: .destructive) {
                 if let p = deletingPost { Haptics.action(); Task { await vm.deletePost(p.postId) } }

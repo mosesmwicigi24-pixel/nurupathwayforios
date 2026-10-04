@@ -113,11 +113,11 @@ struct VerseLibraryView: View {
                 .presentationDetents([.medium, .large])
         }
         // Removing a verse is irreversible — a beat of confirmation first.
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Remove this verse?",
             isPresented: Binding(get: { pendingDelete != nil },
-                                 set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
+                                 set: { if !$0 { pendingDelete = nil } })
         ) {
             Button("Remove verse", role: .destructive) {
                 if let v = pendingDelete { Task { await vm.delete(v) } }
