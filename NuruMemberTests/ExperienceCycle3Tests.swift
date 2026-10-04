@@ -252,4 +252,24 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: "KSh 1,000", frequency: "weekly"), "Start Weekly Gift")
         XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: "", frequency: nil), "Give Now", "never a bare \"Give\"")
     }
+
+    // MARK: #7 — leaving a pledge half made asks first
+
+    func testLeavingAPledgeHalfMadeAsksFirst() {
+        let opened = NewPledgeDraft(shape: "monthly", amount: 2000, customAmount: "", selectedOptionId: nil,
+                                    useCustom: false, customName: "", dueDay: 4,
+                                    dueOn: Date(timeIntervalSince1970: 1_800_000_000), autoCharge: false)
+        XCTAssertFalse(NewPledgeDraft.asksBeforeLeaving(onFirstStep: true, draft: opened, opening: opened),
+                       "step 1 as it opened: ✕ closes at once")
+        var total = opened
+        total.shape = "total"
+        XCTAssertTrue(NewPledgeDraft.asksBeforeLeaving(onFirstStep: true, draft: total, opening: opened), "step 1 changed")
+        XCTAssertTrue(NewPledgeDraft.asksBeforeLeaving(onFirstStep: false, draft: opened, opening: opened),
+                      "past step 1 — on step 5 ✕ used to throw five steps away silently")
+        var named = opened
+        named.useCustom = true
+        named.customName = "Kenya trip"
+        XCTAssertTrue(NewPledgeDraft.asksBeforeLeaving(onFirstStep: true, draft: named, opening: opened),
+                      "back on step 1, still holding what later steps chose")
+    }
 }

@@ -29,6 +29,29 @@
 // back with the server's words so Partners can land on it and say why.
 import SwiftUI
 
+/// What the member has entered in the new-pledge flow, to compare with how it
+/// opened (EXPERIENCE.md §7.2 #7, §7.1 rule 4: leaving never loses what you
+/// entered without asking). The rail the flow moves off on its own
+/// (`autoMethod`, when the server takes no recurring gift on it) is not an
+/// entry, so it isn't here.
+struct NewPledgeDraft: Equatable {
+    var shape: String
+    var amount: Int
+    var customAmount: String
+    var selectedOptionId: String?
+    var useCustom: Bool
+    var customName: String
+    var dueDay: Int
+    var dueOn: Date
+    var autoCharge: Bool
+
+    /// ✕ asks first ("Leave this pledge?") once anything has been chosen —
+    /// past step 1, or step 1 changed. On step 1 as it opened, it closes at once.
+    static func asksBeforeLeaving(onFirstStep: Bool, draft: NewPledgeDraft, opening: NewPledgeDraft) -> Bool {
+        !(onFirstStep && draft == opening)
+    }
+}
+
 struct NewPledgeFlow: View {
     let isMember: Bool
     /// What a pledge may be for — GET /giving/partnership `pledge_options`
@@ -65,6 +88,25 @@ struct NewPledgeFlow: View {
     @State private var error: String?
     @FocusState private var amountFocused: Bool
     @FocusState private var nameFocused: Bool
+    /// How the flow opened — the draft ✕ compares against (§7.2 #7).
+    @State private var opening: NewPledgeDraft?
+    /// "Leave this pledge?" is up.
+    @State private var askingToLeave = false
+
+    private var draft: NewPledgeDraft {
+        NewPledgeDraft(shape: shape, amount: amount, customAmount: customAmount, selectedOptionId: selectedOptionId,
+                       useCustom: useCustom, customName: customName, dueDay: dueDay, dueOn: dueOn, autoCharge: autoCharge)
+    }
+
+    /// ✕: at once on step 1 as it opened; otherwise ask first — a promise
+    /// half made is never thrown away silently (it used to be, from step 5).
+    private func close() {
+        if NewPledgeDraft.asksBeforeLeaving(onFirstStep: step == .shape, draft: draft, opening: opening ?? draft) {
+            askingToLeave = true
+        } else {
+            dismiss()
+        }
+    }
 
     private static let presets = [500, 1000, 2000, 5000, 10_000, 20_000]
     /// The five funds Give offers, by code — the same codes the server keys
@@ -161,7 +203,16 @@ struct NewPledgeFlow: View {
         .background(Nuru.paper.ignoresSafeArea())
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomBar }
         .animation(.easeInOut(duration: 0.2), value: step)
+        .onAppear { if opening == nil { opening = draft } }
         .task { await loadMethods() }
+        // An alert, not a confirmation dialog: both answers stay on screen
+        // (a dialog's cancel can fold away into "tap outside").
+        .alert("Leave this pledge?", isPresented: $askingToLeave) {
+            Button("Keep editing", role: .cancel) {}
+            Button("Leave", role: .destructive) { dismiss() }
+        } message: {
+            Text("What you entered won't be kept.")
+        }
     }
 
     /// The server's rails, once. A failed read keeps M-Pesa alone — the
@@ -182,7 +233,7 @@ struct NewPledgeFlow: View {
     private var topBar: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
-                Button { Haptics.tap(); dismiss() } label: {
+                Button { Haptics.tap(); close() } label: {
                     ZStack {
                         Circle().fill(Color.white).frame(width: 40, height: 40)
                             .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
