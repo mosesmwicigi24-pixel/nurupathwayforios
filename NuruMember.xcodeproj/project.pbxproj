@@ -32,6 +32,8 @@
 		6E18103013BE4B8A82E0898C /* GivingCycle1Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF58CE1BD4A04FADAA26B3F3 /* GivingCycle1Tests.swift */; };
 		BFD288084025CF5AA6814C8B /* ExperienceCycle1Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0AD68BC7182591939CDD0C0 /* ExperienceCycle1Tests.swift */; };
 		DB124DB46B441BEB925EDE56 /* ExperienceCycle2Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 813CFA9BB14FB7304E4551B3 /* ExperienceCycle2Tests.swift */; };
+		8ADA4F886EFD977D2F287278 /* ScriptureRefsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11B8C07E305853D8293333D5 /* ScriptureRefsTests.swift */; };
+		FE39C21C73021F30212FF4A9 /* ReaderPolishTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 266B2FD79017221355C67F76 /* ReaderPolishTests.swift */; };
 		EB1124BC688542D684382202 /* LiveDockChromeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */; };
 		CD31422FF00F1309BF78577A /* NuruWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 664342554B6FC512AC94FFFA /* NuruWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		DE6BE7F6690E02A309C12402 /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = A1C0A2919201E148762801CB /* RTMPHaishinKit */; };
@@ -100,6 +102,8 @@
 		EF58CE1BD4A04FADAA26B3F3 /* GivingCycle1Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = GivingCycle1Tests.swift; sourceTree = "<group>"; };
 		B0AD68BC7182591939CDD0C0 /* ExperienceCycle1Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExperienceCycle1Tests.swift; sourceTree = "<group>"; };
 		813CFA9BB14FB7304E4551B3 /* ExperienceCycle2Tests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ExperienceCycle2Tests.swift; sourceTree = "<group>"; };
+		11B8C07E305853D8293333D5 /* ScriptureRefsTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ScriptureRefsTests.swift; sourceTree = "<group>"; };
+		266B2FD79017221355C67F76 /* ReaderPolishTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ReaderPolishTests.swift; sourceTree = "<group>"; };
 		C6E54440B71744DD829CC2F6 /* LiveDockChromeTests.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LiveDockChromeTests.swift; sourceTree = "<group>"; };
 		E694577B48D734E91F73C524 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -176,6 +180,8 @@
 				EF58CE1BD4A04FADAA26B3F3 /* GivingCycle1Tests.swift */,
 				B0AD68BC7182591939CDD0C0 /* ExperienceCycle1Tests.swift */,
 				813CFA9BB14FB7304E4551B3 /* ExperienceCycle2Tests.swift */,
+				11B8C07E305853D8293333D5 /* ScriptureRefsTests.swift */,
+				266B2FD79017221355C67F76 /* ReaderPolishTests.swift */,
 			);
 			name = NuruMemberTests;
 			path = NuruMemberTests;
@@ -421,6 +427,8 @@
 				6E18103013BE4B8A82E0898C /* GivingCycle1Tests.swift in Sources */,
 				BFD288084025CF5AA6814C8B /* ExperienceCycle1Tests.swift in Sources */,
 				DB124DB46B441BEB925EDE56 /* ExperienceCycle2Tests.swift in Sources */,
+				8ADA4F886EFD977D2F287278 /* ScriptureRefsTests.swift in Sources */,
+				FE39C21C73021F30212FF4A9 /* ReaderPolishTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
