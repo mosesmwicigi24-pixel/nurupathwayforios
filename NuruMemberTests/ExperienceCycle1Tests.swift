@@ -3,9 +3,10 @@
 // 2–6 with nothing published — the case that used to commission a Level 1
 // finisher), journey progress counted in levels and never 100 before the
 // summit, the summit only at the finish, awaiting_review as its own level
-// state, and the one state language for every failure (offline only when the
-// phone has no network). Payloads are decoded exactly like APIClient's:
-// snake_case in.
+// state, the one state language for every failure (offline only when the
+// phone has no network), and the small truths (the giving card names only
+// rails that work, one phone format). Payloads are decoded exactly like
+// APIClient's: snake_case in.
 import XCTest
 @testable import NuruMember
 
@@ -391,5 +392,51 @@ final class ExperienceCycle1Tests: XCTestCase {
         XCTAssertEqual(NuruState.resolve(loading: false, isEmpty: true, failure: APIError.unauthorized, empty: empty),
                        .failed(.sessionEnded))
         XCTAssertEqual(NuruState.resolve(loading: false, isEmpty: true, failure: nil, empty: empty), empty)
+    }
+
+    // MARK: Small truths — the rails that work, one phone format
+
+    private func methods(_ enabled: Set<String>) -> GivingMethods {
+        let rails: [(String, String, String?)] = [("mpesa", "M-Pesa", "KES"), ("airtel", "Airtel Money", "KES"),
+                                                 ("paypal", "PayPal", "USD"), ("card", "Card", nil)]
+        return GivingMethods(methods: rails.map { rail in
+            let (key, label, cur) = rail
+            return GivingMethod(key: key, label: label, enabled: enabled.contains(key),
+                         unavailableReason: enabled.contains(key) ? nil : "coming_soon", currency: cur,
+                         minMinor: 100, maxMinor: 1_000_000, wholeUnits: key != "paypal" && key != "card",
+                         recurring: key == "mpesa", needsPhone: key == "mpesa" || key == "airtel")
+        }, phoneOnFile: nil, defaultMethod: "mpesa")
+    }
+
+    func testTheGivingCardNamesOnlyRailsThatWork() {
+        XCTAssertEqual(GivingMethods.homeGiveLine(nil), "Tithe & offering", "not loaded yet: no rails named")
+        XCTAssertEqual(GivingMethods.homeGiveLine(methods(["mpesa"])), "Tithe & offering · M-Pesa")
+        XCTAssertEqual(GivingMethods.homeGiveLine(methods(["mpesa", "card"])), "Tithe & offering · M-Pesa",
+                       "a card the app can't carry is never promised, even where the server could take one")
+        XCTAssertEqual(GivingMethods.homeGiveLine(methods(["mpesa", "paypal"])), "Tithe & offering · M-Pesa, PayPal")
+        XCTAssertEqual(GivingMethods.homeGiveLine(methods([])), "Tithe & offering")
+    }
+
+    func testTheGivingCardReadsTheLiveMethodsAnswer() throws {
+        // GET /giving/methods on the local API, verbatim in shape: only M-Pesa enabled.
+        let json: [String: Any] = [
+            "methods": [
+                ["key": "mpesa", "label": "M-Pesa", "enabled": true, "unavailable_reason": NSNull(), "currency": "KES",
+                 "min_minor": 100, "max_minor": 25_000_000, "whole_units": true, "recurring": true, "needs_phone": true],
+                ["key": "airtel", "label": "Airtel Money", "enabled": false, "unavailable_reason": "coming_soon", "currency": "KES",
+                 "min_minor": 100, "max_minor": 15_000_000, "whole_units": true, "recurring": false, "needs_phone": true],
+                ["key": "paypal", "label": "PayPal", "enabled": false, "unavailable_reason": "coming_soon", "currency": "USD",
+                 "min_minor": 100, "max_minor": 1_000_000, "whole_units": false, "recurring": false, "needs_phone": false],
+                ["key": "card", "label": "Card", "enabled": false, "unavailable_reason": "coming_soon", "currency": NSNull(),
+                 "min_minor": 100, "max_minor": 100_000_000, "whole_units": false, "recurring": false, "needs_phone": false],
+            ],
+            "phone_on_file": "+254700000000", "default_method": "mpesa",
+        ]
+        XCTAssertEqual(GivingMethods.homeGiveLine(try decode(GivingMethods.self, json)), "Tithe & offering · M-Pesa")
+    }
+
+    func testProfileReadsThePhoneAsGiveDoes() {
+        XCTAssertEqual(KenyanPhone.display("+254700000000"), "0700 000 000")
+        XCTAssertEqual(KenyanPhone.display("+447700900123"), "+447700900123", "not a Kenyan mobile: as given")
     }
 }

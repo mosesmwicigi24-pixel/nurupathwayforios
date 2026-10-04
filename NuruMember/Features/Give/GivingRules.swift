@@ -176,6 +176,21 @@ extension GivingMethods {
                              : "Secure · \(names.joined(separator: " & ")) · Receipt sent instantly"
     }
 
+    /// The rails a gift can go through here, by name — the server says they
+    /// take money AND this build can carry a gift through them (`isSelectable`).
+    func selectableNames() -> [String] {
+        methods.filter { isSelectable($0.key) }
+            .map { $0.label.isEmpty ? givingMethodName($0.key) : $0.label }
+    }
+
+    /// Home's giving card line (EXPERIENCE.md §2, promise only what works):
+    /// "Tithe & offering · M-Pesa" — only the rails that work here; just
+    /// "Tithe & offering" until the methods have loaded, or when none does.
+    static func homeGiveLine(_ methods: GivingMethods?) -> String {
+        let names = methods?.selectableNames() ?? []
+        return names.isEmpty ? "Tithe & offering" : "Tithe & offering · " + names.joined(separator: ", ")
+    }
+
     /// The chip on a rail that cannot be picked: SOON for one that is coming
     /// (the server's `coming_soon`, or one this build cannot complete yet),
     /// UNAVAILABLE for one switched off on this server. Nil when selectable.

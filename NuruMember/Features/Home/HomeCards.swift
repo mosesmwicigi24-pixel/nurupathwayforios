@@ -787,6 +787,9 @@ struct HomeUpcomingEventRow: View {
 // MARK: - "Support God's work" give panel (centered ceremony layout)
 
 struct HomeGiveCard: View {
+    /// "Tithe & offering · M-Pesa" — names only the rails that can take a gift
+    /// here (GivingMethods.homeGiveLine); never a rail the member can't use.
+    let railsLine: String
     let action: () -> Void
     var body: some View {
         Button { Haptics.tap(); action() } label: {
@@ -834,7 +837,7 @@ struct HomeGiveCard: View {
                                                startPoint: .topLeading, endPoint: .bottomTrailing),
                                 in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .padding(.top, 16)
-                    Text("Tithe & offering · M-Pesa, card and more")
+                    Text(railsLine)
                         .font(.nCardMeta).foregroundStyle(.white.opacity(0.45))
                         .padding(.top, 10)
                 }

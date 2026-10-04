@@ -71,6 +71,9 @@ final class HomeViewModel: ObservableObject {
     /// The member's journey (EXPERIENCE.md §3): the header pill, the continue
     /// card and the progress line all read this one derivation.
     @Published var journey: Journey?
+    /// GET /giving/methods — the giving card names only the rails that work
+    /// here. Nil until the first answer; a failed refresh keeps the last one.
+    @Published var givingMethods: GivingMethods?
     /// The latest Sunday Letter (intelligence layer) — drives the gold
     /// "A letter for you" knock on Home while unread.
     @Published var letter: PastoralLetter?
@@ -108,6 +111,7 @@ final class HomeViewModel: ObservableObject {
         async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
         async let live = try? MemberAPI.fetchLiveNow()
+        async let methods = try? MemberAPI.givingMethods()
 
         self.letter = (await letter) ?? nil
         switch await pathway {
@@ -163,6 +167,7 @@ final class HomeViewModel: ObservableObject {
         self.onAir = Self.liveOnly((await radio) ?? nil)
         self.featuredEvent = (await fev) ?? nil
         self.liveStreams = await live ?? []
+        if let m = await methods { self.givingMethods = m }
         self.trail = await trail
         self.journey = Journey.derive(self.pathway, trail: self.trail)
 
@@ -907,7 +912,8 @@ struct HomeView: View {
                 style: AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
                                                     startPoint: .top, endPoint: .bottom)),
                 lineWidth: 3)
-            Text("\(growthScore)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
+            // A score out of 100 (the growth score), not a percent of anything.
+            Text("\(growthScore)").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }
@@ -915,7 +921,7 @@ struct HomeView: View {
         .overlay(alignment: .bottomTrailing) {
             if let t = growthTrend, t.delta != 0 { trendBadge(t).offset(x: 5, y: 4) }
         }
-        .accessibilityLabel("Growth score \(growthScore) percent")
+        .accessibilityLabel("Growth score \(growthScore) out of 100")
     }
 
     /// A tiny ▲/▼ badge — points earned or lost vs the previous 28 days.
@@ -2673,7 +2679,7 @@ struct HomeView: View {
     // MARK: 18 — Support God's work (give panel — centered ceremony layout)
 
     private var giveBanner: some View {
-        HomeGiveCard { tabs.openGive() }
+        HomeGiveCard(railsLine: GivingMethods.homeGiveLine(vm.givingMethods)) { tabs.openGive() }
     }
 
     // MARK: derived / helpers

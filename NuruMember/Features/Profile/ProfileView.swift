@@ -336,7 +336,9 @@ struct ProfileView: View {
         switch f.id {
         case "name": return p?.fullName ?? "—"
         case "email": return p?.email ?? "Not set"
-        case "phone": return p?.phoneNumber ?? "Not set"
+        // Read the Kenyan way ("0700 000 000"), the same as Give shows it; the
+        // edit sheet and the wire keep E.164.
+        case "phone": return p?.phoneNumber.map { KenyanPhone.display($0) } ?? "Not set"
         case "dob": return formattedDOB
         case "gender":
             guard let g = p?.gender, !g.isEmpty else { return "Not set" }
