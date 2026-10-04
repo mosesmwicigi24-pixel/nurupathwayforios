@@ -165,3 +165,61 @@ struct AppLiveBar: View {
         .overlay(alignment: .top) { Rectangle().fill(Nuru.gold.opacity(0.4)).frame(height: 1) }
     }
 }
+
+// MARK: - A Live notice whose stream is over
+
+/// "This Live has ended" (EXPERIENCE.md §7.2 #3) — what a Live notice opens,
+/// from a banner or the inbox, once its stream is over: calm, in the player's
+/// own ended look, naming the stream, with one way out. It replaced a tap that
+/// landed on Home without a word (a banner) or in a greeting sheet (the inbox).
+/// When /live/now didn't answer, it says why in the one state language
+/// instead — "ended" is never a guess.
+struct LiveEndedView: View {
+    let notice: LiveEndedNotice
+    let onClose: () -> Void
+
+    private var title: String { notice.failure?.title ?? "This Live has ended" }
+    private var line: String? { notice.failure?.line ?? notice.title }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: notice.failure == nil ? "antenna.radiowaves.left.and.right.slash" : "wifi.slash")
+                .font(.system(size: 36)).foregroundStyle(Nuru.gold.opacity(0.85))
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.fraunces(21, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                if let line {
+                    Text(line).font(.inter(13)).foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Button { Haptics.tap(); onClose() } label: {
+                Text("Close").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                    .padding(.horizontal, 28).padding(.vertical, 12)
+                    .background(Nuru.gold, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .padding(.top, 6)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(colors: [Nuru.navy, Nuru.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+        )
+        // The player's ended state keeps a ✕ at the top too.
+        .overlay(alignment: .topLeading) {
+            Button { Haptics.tap(); onClose() } label: {
+                Icon(.x, size: 18, color: .white)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.18), in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Close")
+            .padding(.horizontal, 16).padding(.top, 10)
+        }
+        .preferredColorScheme(.dark)
+    }
+}

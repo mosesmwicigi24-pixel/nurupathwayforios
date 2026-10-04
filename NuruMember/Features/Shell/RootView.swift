@@ -424,81 +424,26 @@ struct RootView: View {
             LiveViewerPlayerView(item: item, replaysScope: source?.scope, replaysCellId: source?.cellId)
                 .id(item.id)
         }
+        // A Live notice tapped once its stream is over — a banner or an inbox
+        // row alike (NoticeRouter): "This Live has ended", calm, one way out.
+        .fullScreenCover(item: Binding(
+            get: { liveDiscovery.endedNotice },
+            set: { liveDiscovery.endedNotice = $0 }
+        )) { notice in
+            LiveEndedView(notice: notice) { liveDiscovery.endedNotice = nil }
+        }
         // Celebration layer — server-milestone confetti cards + gold banners
         // (rhythm complete, streak marks, new badges, prayer posted, gift
         // confirmed). Mounted ONCE here, above every tab and the tab bar.
         .overlay { CelebrationHost() }
-        // A tapped iOS notification lands on its EXACT target: module/level →
-        // Pathway tab, announcement → Home stack, event/giving/badge families →
-        // their tab. Anything unroutable opens the in-app inbox as before.
+        // A tapped iOS notification lands on its EXACT target — the same one
+        // its row in the inbox opens (NoticeRouter, EXPERIENCE.md §7.2 #3):
+        // a pledge, a gift, an announcement, a module or level, a department,
+        // Read with a Friend, the Live player ("This Live has ended" once
+        // over). A notice with nowhere to go opens the in-app inbox.
         .onReceive(NotificationCenter.default.publisher(for: .nuruNotificationTap)) { note in
-            let info = note.userInfo ?? [:]
-            let template = info["template"] as? String ?? ""
-            let announcementId = info["announcementId"] as? String ?? ""
-            let moduleId = info["moduleId"] as? String ?? ""
-            let level = info["levelNumber"] as? Int ?? 0
-            let inviteToken = info["inviteToken"] as? String ?? ""
-            let departmentId = info["departmentId"] as? String ?? ""
-            let transactionId = info["transactionId"] as? String ?? ""
-            let scheduleId = info["scheduleId"] as? String ?? ""
-            let pledgeId = info["pledgeId"] as? String ?? ""
-            if let id = PledgeLink.from(template: template, pledgeId: pledgeId) {
-                // pledge_* and the pledge collector's notices (Giving Cycle
-                // 5: covered, stopped) — the pledge itself.
-                tabs.openPledge(id)
-            } else if let link = GiveLink.from(template: template, transactionId: transactionId, scheduleId: scheduleId) {
-                // giving_gift_failed (Giving Cycle 3) — that gift's result: why
-                // it failed, what to do, and Try again. giving_schedule_failed /
-                // _paused (Cycle 4) — that recurring gift's sheet. (The
-                // heads-up opens Give itself, below.)
-                tabs.openGive(link: link)
-            } else if !announcementId.isEmpty {
-                tabs.openAnnouncement(announcementId)
-            } else if !moduleId.isEmpty {
-                tabs.openPathway(.module(moduleId))
-            } else if template.hasPrefix("level"), level > 0 {
-                tabs.openPathway(.level(level))
-            } else if template.hasPrefix("event") {
-                tabs.openEvents()
-            } else if template.hasPrefix("pledge") {
-                // pledge_due_soon / pledge_overdue / pledge_fulfilled (§3) —
-                // the pledge lives in the Partners portal.
-                tabs.openPartners()
-            } else if template.hasPrefix("serve_request") || template.hasPrefix("department") {
-                // serve_request_* / department_post / department_need_* (§4) —
-                // the department page itself when the payload names it, else
-                // the Departments list.
-                if departmentId.isEmpty { tabs.openYou(.departments) } else { tabs.openDepartment(departmentId) }
-            } else if template.hasPrefix("giving") || template.hasPrefix("payment") {
-                tabs.openGive()
-            } else if template.hasPrefix("badge") || template.hasPrefix("certificate") {
-                tabs.openYou(.profile)
-            } else if template.hasPrefix("reflection") {
-                tabs.selected = .pathway
-            } else if template == "plan_group_invite_received", !inviteToken.isEmpty {
-                // Read with a Friend — same surface a nuru://join/{token} deep
-                // link opens (see onOpenURL below).
-                tabs.openReadingInvite(inviteToken)
-            } else if template.hasPrefix("plan_group") {
-                // Progress/joined pings without a token to redeem — land on
-                // the hub; the specific group is one tap away from there.
-                tabs.openPlans(.readWithFriendHub)
-            } else if template.hasPrefix("live") {
-                // A tapped `live_stream_started` push must land IN THE PLAYER —
-                // re-check /live/now (the stream may have already ended by the
-                // time the tap lands) and open the newest watchable stream;
-                // fall back to Home (which shows its own banner/mini-window
-                // if something else is live) when there's nothing left to join.
-                Task {
-                    await liveDiscovery.refresh()
-                    if let stream = liveDiscovery.newestWatchable {
-                        liveDiscovery.markSeen(stream.streamId)
-                        liveDiscovery.requestedItem = .live(stream)
-                    } else {
-                        tabs.selected = .home
-                    }
-                }
-            } else {
+            let route = NoticeRouter.route(NoticeTarget(userInfo: note.userInfo ?? [:]))
+            if !NoticeRouter.open(route, tabs: tabs) {
                 NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
             }
         }

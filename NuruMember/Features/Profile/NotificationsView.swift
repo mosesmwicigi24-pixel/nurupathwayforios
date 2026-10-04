@@ -79,11 +79,10 @@ struct NotificationsView: View {
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .task { if vm.rows.isEmpty { await vm.load() } }
-        // Fallback popup: read the whole notification, then dismiss.
+        // A notice with nowhere to go: the notice itself, then Dismiss.
         .sheet(item: $detail) { n in
             NotificationDetailSheet(meta: metaFor(n.template),
                                     reward: Self.isReward(n.template),
-                                    template: n.template,
                                     title: titleFor(n),
                                     bodyText: bodyFor(n),
                                     when: ago(n.sentAt ?? n.scheduledFor)) { detail = nil }
@@ -92,84 +91,40 @@ struct NotificationsView: View {
 
     // MARK: tap routing — every notification lands exactly where it points
 
-    /// Wraps a row in the right navigation: a push to the precise in-app target
-    /// (announcement, module, level), a tab switch (events / giving / profile /
-    /// pathway), or — when there is no target — the read-and-dismiss popup.
+    /// Wraps a row in its notice's route — the SAME decision a tapped banner
+    /// gets (NoticeRouter, EXPERIENCE.md §7.2 #3). An announcement opens on
+    /// this stack, so Back returns to the inbox; a Live opens its player (or
+    /// "This Live has ended") over the inbox, which stays beneath it; every
+    /// other route leaves the inbox for the tab that owns it; a notice with
+    /// nowhere to go shows itself.
     @ViewBuilder private func rowLink(_ n: NotificationRow) -> some View {
-        let t = n.template
-        if let pledge = PledgeLink.from(template: t, pledgeId: n.payload?.pledgeId) {
-            // A pledge notice, or its collector's (Giving Cycle 5) — the pledge.
-            Button {
-                markRead(n); Haptics.tap(); dismiss()
-                tabs.openPledge(pledge)
-            } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else if let link = GiveLink.from(template: t, transactionId: n.payload?.transactionId,
-                                           scheduleId: n.payload?.scheduleId) {
-            // A failed gift (Giving Cycle 3) opens its result on Give — why,
-            // what to do, and Try again; a failed or paused recurring gift
-            // (Cycle 4) opens its sheet.
-            Button {
-                markRead(n); Haptics.tap(); dismiss()
-                tabs.openGive(link: link)
-            } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else if let aid = n.payload?.announcementId, !aid.isEmpty {
+        let route = NoticeRouter.route(NoticeTarget(n))
+        switch route {
+        case .announcement(let aid):
             NavigationLink(value: AppRoute.announcement(aid)) { row(n) }
                 .buttonStyle(.pressableSubtle)
                 .simultaneousGesture(TapGesture().onEnded { markRead(n) })
-        } else if let mid = n.payload?.moduleId, !mid.isEmpty {
-            // Pathway content opens ON the Pathway tab (the tab bar tells the truth).
-            Button {
-                markRead(n); Haptics.tap(); dismiss()
-                tabs.openPathway(.module(mid))
-            } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else if t.hasPrefix("level"), let lvl = n.payload?.levelNumber {
-            Button {
-                markRead(n); Haptics.tap(); dismiss()
-                tabs.openPathway(.level(lvl))
-            } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else if Self.isDepartmentTemplate(t), let did = n.payload?.departmentId, !did.isEmpty {
-            // Departments (§4) — the page itself, on the You tab's Departments segment.
-            Button {
-                markRead(n); Haptics.tap(); dismiss()
-                tabs.openDepartment(did)
-            } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else if let dest = tabDest(t) {
-            Button {
-                markRead(n)
-                Haptics.tap()
-                dismiss()
-                switch dest {
-                case .tab(let tab): tabs.selected = tab
-                case .you(let seg): tabs.openYou(seg)
-                case .give: tabs.openGive()
-                case .partners: tabs.openPartners()
-                }
-            } label: { row(n) }.buttonStyle(.pressableSubtle)
-        } else {
+        case .itself:
             Button {
                 markRead(n)
                 Haptics.tap()
                 detail = n
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        case .live:
+            Button {
+                markRead(n); Haptics.tap()
+                NoticeRouter.open(route, tabs: tabs)
+            } label: { row(n) }.buttonStyle(.pressableSubtle)
+        default:
+            Button {
+                markRead(n); Haptics.tap(); dismiss()
+                NoticeRouter.open(route, tabs: tabs)
             } label: { row(n) }.buttonStyle(.pressableSubtle)
         }
     }
 
     private func markRead(_ n: NotificationRow) {
         if n.isUnread { Task { await vm.open(n) } }
-    }
-
-    /// Template families whose home is a whole tab, not one pushed page — since
-    /// L4, Events/Give/Profile no longer own a bottom-bar slot of their own,
-    /// so those land on the You tab's matching segment instead of a plain tab.
-    private enum NotifTarget { case tab(AppTab); case you(YouSegment); case give; case partners }
-    private func tabDest(_ t: String) -> NotifTarget? {
-        if t.hasPrefix("event") { return .tab(.events) }
-        if t.hasPrefix("pledge") { return .partners }   // pledge_due_soon / overdue / fulfilled (§3)
-        if Self.isDepartmentTemplate(t) { return .you(.departments) }   // serve_request_* / department_* (§4), no id
-        if t.hasPrefix("giving") || t.hasPrefix("payment") { return .give }
-        if t.hasPrefix("badge") || t.hasPrefix("certificate") { return .you(.profile) }
-        if t.hasPrefix("level") || t.hasPrefix("reflection") { return .tab(.pathway) }
-        return nil
     }
 
     /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post / department_need_*.
@@ -209,28 +164,29 @@ struct NotificationsView: View {
                 }
             }
             Spacer()
-            // ALWAYS legible (the old 40%-opacity ghost was an unreadable gray
-            // blob): unread → a full-strength navy/gold action; all read → a
-            // calm gold-tinted "All read" state, still at full opacity.
-            Button { Haptics.action(); Task { await vm.markAll() } } label: {
-                HStack(spacing: 4) {
-                    // Figma's CheckCheck (double tick) — composed from two check glyphs.
-                    ZStack {
-                        Icon(.check, size: 13, color: vm.unread > 0 ? Nuru.goldHi : Nuru.goldChipText).offset(x: -3)
-                        Icon(.check, size: 13, color: vm.unread > 0 ? Nuru.goldHi : Nuru.goldChipText).offset(x: 3)
+            // Only while something is unread (§7.2 #3, as Android): at zero
+            // the line beside the title already says "All caught up", and a
+            // disabled "All read" chip was a button that did nothing.
+            if vm.unread > 0 {
+                Button { Haptics.action(); Task { await vm.markAll() } } label: {
+                    HStack(spacing: 4) {
+                        // Figma's CheckCheck (double tick) — composed from two check glyphs.
+                        ZStack {
+                            Icon(.check, size: 13, color: Nuru.goldHi).offset(x: -3)
+                            Icon(.check, size: 13, color: Nuru.goldHi).offset(x: 3)
+                        }
+                        .frame(width: 18)
+                        Text("Mark all read")
+                            .font(.inter(11, .bold))
+                            .foregroundStyle(Nuru.goldHi)
                     }
-                    .frame(width: 18)
-                    Text(vm.unread > 0 ? "Mark all read" : "All read")
-                        .font(.inter(11, .bold))
-                        .foregroundStyle(vm.unread > 0 ? Nuru.goldHi : Nuru.goldChipText)
+                    .padding(.horizontal, 12).padding(.vertical, 7)
+                    .background(Nuru.navy, in: Capsule())
                 }
-                .padding(.horizontal, 12).padding(.vertical, 7)
-                .background(vm.unread > 0 ? AnyShapeStyle(Nuru.navy) : AnyShapeStyle(Nuru.goldChipBg), in: Capsule())
-                .overlay(Capsule().stroke(Nuru.gold.opacity(vm.unread > 0 ? 0 : 0.35), lineWidth: 1))
+                .transition(.opacity)
             }
-            .disabled(vm.unread == 0)
-            .animation(.easeInOut(duration: 0.25), value: vm.unread == 0)
         }
+        .animation(.easeInOut(duration: 0.25), value: vm.unread == 0)
         .padding(.horizontal, Nuru.S.base).padding(.top, 54).padding(.bottom, Nuru.S.md)
         .background(Nuru.white)
         .overlay(Rectangle().fill(Nuru.border).frame(height: 1), alignment: .bottom)
@@ -420,157 +376,76 @@ private extension String {
     func capitalizingFirst() -> String { isEmpty ? self : prefix(1).uppercased() + dropFirst() }
 }
 
-// MARK: - Read-and-dismiss popup (notifications with no in-app destination)
-// Not a flat message box: it greets the member BY NAME, carries the
-// notification, shows their live quick stats (streak · level · plan), and ends
-// with a word of encouragement + a gold door back onto the journey.
+// MARK: - The notice itself (a notice with no in-app destination)
+// EXPERIENCE.md §7.1 rule 1: a notice with nowhere to go shows only itself —
+// its title, its full words, when — and Dismiss. It used to greet the member
+// by name, show their journey chips and offer "Continue my journey": a door
+// to somewhere the notice never pointed. The sheet is as tall as the notice.
 
 private struct NotificationDetailSheet: View {
     let meta: NotificationsView.Meta
     let reward: Bool
-    let template: String
     let title: String
     let bodyText: String?
     let when: String
     let onDismiss: () -> Void
 
-    @EnvironmentObject private var auth: AuthStore
-    @EnvironmentObject private var tabs: TabRouter
-    @State private var streak: Int?
-    @State private var activeLevel: PathwayLevel?
-    @State private var plan: ReadingPlanRow?
-
-    private var firstName: String {
-        (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend"
-    }
-    private var greeting: String {
-        if Calendar.current.component(.weekday, from: Date()) == 1 { return "Happy Lord's Day" }
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
-    }
-    /// The keep-going word, tuned to what the notification is about.
-    private var nudge: String {
-        if template.hasPrefix("nudge") || template.contains("miss") {
-            return "The road is still yours, \(firstName). One small step today — a verse, a prayer, a page — and you're walking again."
-        }
-        if reward { return "God is faithful — and so were you. Keep walking; there's more ahead." }
-        return "Every step counts, \(firstName). Keep going — God isn't finished with you."
-    }
+    /// The notice's own height, measured — the sheet fits it (a long notice
+    /// scrolls inside a sheet that stops short of the top).
+    @State private var contentHeight: CGFloat = 240
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Personal greeting first — this popup speaks TO the member.
-            Text("\(greeting), \(firstName).")
-                .font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
-
-            // The notification itself.
-            HStack(alignment: .top, spacing: 14) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(reward
-                              ? AnyShapeStyle(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                              : AnyShapeStyle(meta.bg))
-                        .frame(width: 44, height: 44)
-                    Icon(meta.icon, size: 19, color: reward ? Nuru.navy : meta.fg)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 8) {
-                        Text(title).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                        Text(when).font(.nMicro).foregroundStyle(Nuru.faint)
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .top, spacing: 14) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(reward
+                                  ? AnyShapeStyle(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                                  : AnyShapeStyle(meta.bg))
+                            .frame(width: 44, height: 44)
+                        Icon(meta.icon, size: 19, color: reward ? Nuru.navy : meta.fg)
                     }
-                    if let b = bodyText, !b.isEmpty {
-                        Text(b).font(.inter(13)).foregroundStyle(Nuru.muted).lineSpacing(4)
-                            .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text(title).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                            Text(when).font(.nMicro).foregroundStyle(Nuru.faint)
+                        }
+                        if let b = bodyText, !b.isEmpty {
+                            Text(b).font(.inter(14)).foregroundStyle(Nuru.muted).lineSpacing(4)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
-            }
-            .padding(14)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            .padding(.top, 14)
-
-            // Quick stats — where the member actually stands, live from the server.
-            if streak != nil || activeLevel != nil || plan != nil {
-                HStack(spacing: 8) {
-                    if let s = streak {
-                        statChip(icon: .flame, tint: Color(hex: 0xB4530A), bg: Color(hex: 0xFFF4DA),
-                                 label: s > 0 ? "\(s) days with God" : "Begin today")
-                    }
-                    if let a = activeLevel {
-                        statChip(icon: .bookOpen, tint: Nuru.navy, bg: Nuru.tintBlue,
-                                 label: "Level \(a.levelNumber) · \(a.completedModules)/\(a.totalModules)")
-                    }
-                    if let p = plan {
-                        statChip(icon: .bookMarked, tint: Color(hex: 0x6366F1), bg: Color(hex: 0xEEF2FF),
-                                 label: "Day \(p.currentDay ?? 1) of \(p.dayCount)")
-                    }
+                Button {
+                    Haptics.tap()
+                    onDismiss()
+                } label: {
+                    Text("Dismiss").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
-                .padding(.top, 14)
-                .transition(.opacity)
+                .buttonStyle(.pressable)
+                .padding(.top, 22)
             }
-
-            // The word that sends them on.
-            Text(nudge)
-                .font(.fraunces(14.5, .regular)).italic()
-                .foregroundStyle(Color(hex: 0x3A4A5F)).lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 14)
-
-            Spacer(minLength: 16)
-            Button {
-                Haptics.tap()
-                onDismiss()
-                if let a = activeLevel { tabs.openPathway(.level(a.levelNumber)) }
-                else { tabs.selected = .pathway }
-            } label: {
-                HStack(spacing: 8) {
-                    Icon(.arrowRight, size: 15, color: Nuru.navy)
-                    Text("Continue my journey").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
-                }
-                .frame(maxWidth: .infinity, minHeight: 50)
-                .background(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.pressable)
-            Button {
-                Haptics.tap()
-                onDismiss()
-            } label: {
-                Text("Dismiss").font(.inter(13, .semibold)).foregroundStyle(Nuru.muted)
-                    .frame(maxWidth: .infinity, minHeight: 40)
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 2)
+            .padding(.horizontal, 20).padding(.top, 28).padding(.bottom, 16)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { contentHeight = g.size.height }
+                    .onChange(of: g.size.height) { _, h in contentHeight = h }
+            })
         }
-        .padding(20)
-        .presentationDetents([.medium, .large])
+        .scrollBounceBehavior(.basedOnSize)
+        .presentationDetents([.height(min(contentHeight, Self.maxHeight))])
         .presentationDragIndicator(.visible)
         .presentationBackground(Nuru.paper)
-        .animation(.easeInOut(duration: 0.25), value: streak == nil)
-        // Live stats — best-effort, in parallel; chips appear as data lands.
-        .task {
-            async let ach = try? MemberAPI.achievements()
-            async let pw = try? MemberAPI.pathway()
-            async let pl = try? MemberAPI.plans()
-            streak = (await ach)?.streak?.current
-            if let p = await pw {
-                activeLevel = p.levels.first { $0.status == .active }
-                    ?? p.levels.first { $0.levelNumber == p.currentLevel }
-                    ?? p.levels.first
-            }
-            plan = (await pl)?.first { $0.enrolled && $0.completedAt == nil }
-        }
     }
 
-    private func statChip(icon: Lucide, tint: Color, bg: Color, label: String) -> some View {
-        HStack(spacing: 5) {
-            Icon(icon, size: 12, color: tint)
-            Text(label).font(.inter(11, .bold)).foregroundStyle(tint)
-                .lineLimit(1).minimumScaleFactor(0.8)
-        }
-        .padding(.horizontal, 10).padding(.vertical, 7)
-        .background(bg, in: Capsule())
+    private static var maxHeight: CGFloat {
+        let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene
+        return (scene?.screen.bounds.height ?? 800) * 0.85
     }
 }

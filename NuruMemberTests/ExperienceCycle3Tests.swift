@@ -110,4 +110,82 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertTrue(PledgePace.paysEarly(try pledge(scheduleId: "s3"), schedules: [try gift("s3")]),
                       "an older row, bound by the pledge's own schedule_id")
     }
+
+    // MARK: #3 — one router for an inbox row and a tapped banner
+
+    /// A row of GET /me/notifications, verbatim in shape.
+    private func notice(_ template: String, _ payload: [String: Any] = [:]) throws -> NotificationRow {
+        try decode(NotificationRow.self, ["notification_id": "n1", "template": template, "payload": payload,
+                                          "status": "sent", "scheduled_for": "2026-10-04T06:56:24.450Z",
+                                          "sent_at": NSNull(), "read_at": NSNull()])
+    }
+
+    /// Ada's "Ring check" notices on the local API: they used to open the
+    /// greeting sheet from the inbox while a banner opened the player.
+    func testALiveNoticeOpensTheLiveFromTheInboxAsFromABanner() throws {
+        let started = try notice("live_stream_started", ["scope": "cell", "title": "Ring check", "cell_id": "c1",
+                                                          "stream_id": "a34a265b-9f24-4ba1-a474-8cf81db7cd52"])
+        let fromInbox = NoticeRouter.route(NoticeTarget(started))
+        XCTAssertEqual(fromInbox, .live(streamId: "a34a265b-9f24-4ba1-a474-8cf81db7cd52", title: "Ring check"))
+        XCTAssertEqual(NoticeRouter.route(NoticeTarget(userInfo: NoticeTarget(started).userInfo)), fromInbox,
+                       "the banner carries the same keys and lands the same")
+        let invite = try notice("live_guest_invite", ["title": "Ring check", "stream_id": "a34a265b-9f24-4ba1-a474-8cf81db7cd52"])
+        XCTAssertEqual(NoticeRouter.route(NoticeTarget(invite)), fromInbox, "a guest invite opens the same Live")
+        XCTAssertEqual(NoticeRouter.route(NoticeTarget(userInfo: ["template": "live_stream_started"])),
+                       .live(streamId: nil, title: nil), "an older banner names no stream")
+    }
+
+    func testEveryNoticeFamilyLandsTheSameFromBothDoors() throws {
+        let cases: [(NotificationRow, NoticeRoute)] = [
+            (try notice("pledge_due_soon", ["pledge_id": "p1", "title": "Kenya trip"]), .pledge("p1")),
+            (try notice("giving_schedule_covered", ["pledge_id": "p1"]), .pledge("p1")),
+            (try notice("giving_gift_failed", ["transaction_id": "t1"]), .gift(.failedGift(transactionId: "t1"))),
+            (try notice("giving_schedule_paused", ["schedule_id": "s1"]), .gift(.schedule(scheduleId: "s1"))),
+            (try notice("announcement_posted", ["announcement_id": "a1"]), .announcement("a1")),
+            (try notice("module_published", ["module_id": "m1"]), .pathway(.module("m1"))),
+            (try notice("level_ushered", ["level_number": 2]), .pathway(.level(2))),
+            (try notice("level_completed"), .pathwayTab),
+            (try notice("reflection_returned", ["feedback": "Look again at verse 3."]), .pathwayTab),
+            (try notice("department_post", ["department_id": "d1"]), .department("d1")),
+            (try notice("serve_request_approved"), .departments),
+            (try notice("event_reminder_24h"), .events),
+            (try notice("pledge_overdue"), .partners),
+            (try notice("giving_schedule_heads_up", ["frequency": "monthly"]), .give),
+            (try notice("badge_awarded", ["name": "Faithful"]), .profile),
+            (try notice("plan_group_invite_received", ["invite_token": "tok", "group_id": "g1"]), .readingInvite("tok")),
+            (try notice("plan_group_day_completed", ["group_id": "g1"]), .readWithFriend),
+            (try notice("sunday_letter", ["title": "A word for the week"]), .itself),
+            (try notice("connection_request_received", ["full_name": "Ben"]), .itself),
+        ]
+        for (n, want) in cases {
+            XCTAssertEqual(NoticeRouter.route(NoticeTarget(n)), want, "inbox: \(n.template)")
+            XCTAssertEqual(NoticeRouter.route(NoticeTarget(userInfo: NoticeTarget(n).userInfo)), want, "banner: \(n.template)")
+        }
+    }
+
+    /// The banner carries what routing needs and no more — a notice's title
+    /// rides along only for a Live (its stream's name).
+    func testABannerCarriesOnlyWhatRoutingNeeds() throws {
+        let letter = try notice("sunday_letter", ["title": "A word for the week"])
+        XCTAssertEqual(NoticeTarget(letter).userInfo["title"] as? String, "")
+        let live = try notice("live_stream_started", ["title": "Ring check", "stream_id": "s1"])
+        XCTAssertEqual(NoticeTarget(live).userInfo["title"] as? String, "Ring check")
+        XCTAssertEqual(NoticeTarget(live).userInfo["streamId"] as? String, "s1")
+    }
+
+    private func liveRow(_ id: String) throws -> LiveStreamSummary {
+        try decode(LiveStreamSummary.self, ["stream_id": id, "scope": "church", "title": "Live \(id)", "kind": "video",
+                                            "started_at": "2026-10-04T08:00:00Z", "hls_url": "/hls/\(id)/index.m3u8",
+                                            "started_by_name": "Pastor", "viewer_count": 3])
+    }
+
+    func testALiveNoticeOpensExactlyTheStreamItNames() throws {
+        let rows = [try liveRow("s1"), try liveRow("s2")]
+        XCTAssertEqual(LiveDiscoveryCenter.noticeTarget(in: rows, named: "s2")?.streamId, "s2")
+        XCTAssertNil(LiveDiscoveryCenter.noticeTarget(in: rows, named: "a34a265b"),
+                     "over: \"This Live has ended\" — never another stream in its place")
+        XCTAssertEqual(LiveDiscoveryCenter.noticeTarget(in: rows, named: nil)?.streamId, "s1",
+                       "an older notice naming none: the newest watchable, as before")
+        XCTAssertNil(LiveDiscoveryCenter.noticeTarget(in: [], named: nil))
+    }
 }

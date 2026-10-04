@@ -60,6 +60,9 @@ struct NotifPayload: Codable, Sendable {
     /// A department need's notices (department_need_*): the office's note
     /// when it was not approved. Their `title` is the NEED's name.
     var note: String? = nil
+    /// Nuru Live (`live_stream_started`, `live_guest_invite`): the stream a
+    /// tap opens — or says has ended (EXPERIENCE.md §7.2 #3).
+    var streamId: String? = nil
 
     private enum CodingKeys: String, CodingKey {
         case title, body, feedback, levelNumber, name, moduleId, announcementId, inviteToken, groupId, departmentId
@@ -67,6 +70,7 @@ struct NotifPayload: Codable, Sendable {
         case scheduleId, frequency, fundName, retryAt
         case pledgeId, coveredThrough, untilOn, scheduleStopped, pledgeTitle, partial, daysAway, dueOn, message
         case action, resumeOn, note
+        case streamId
     }
 
     /// Field by field: one field of an unexpected type (a template this app
@@ -106,6 +110,7 @@ struct NotifPayload: Codable, Sendable {
         action = try? c.decodeIfPresent(String.self, forKey: .action)
         resumeOn = try? c.decodeIfPresent(String.self, forKey: .resumeOn)
         note = try? c.decodeIfPresent(String.self, forKey: .note)
+        streamId = try? c.decodeIfPresent(String.self, forKey: .streamId)
     }
 }
 

@@ -61,21 +61,11 @@ final class LocalNotifier: NSObject, ObservableObject {
             content.title = Self.title(for: n)
             if let body = Self.body(for: n) { content.body = body }
             content.sound = .default   // silent mode → vibration
-            // Carry the routing payload so a TAP can land on the exact target.
-            content.userInfo = [
-                "notificationId": n.notificationId,
-                "template": n.template,
-                "announcementId": n.payload?.announcementId ?? "",
-                "moduleId": n.payload?.moduleId ?? "",
-                "levelNumber": n.payload?.levelNumber ?? 0,
-                "inviteToken": n.payload?.inviteToken ?? "",
-                "departmentId": n.payload?.departmentId ?? "",
-                // Giving: the failed gift (Cycle 3) or recurring gift (Cycle 4) a tap opens.
-                "transactionId": n.payload?.transactionId ?? "",
-                "scheduleId": n.payload?.scheduleId ?? "",
-                // Partners (Cycle 5): the pledge a pledge notice opens.
-                "pledgeId": n.payload?.pledgeId ?? "",
-            ]
+            // Carry the routing payload so a TAP lands where the inbox row
+            // would (NoticeRouter — one router for both, §7.2 #3).
+            var info = NoticeTarget(n).userInfo
+            info["notificationId"] = n.notificationId
+            content.userInfo = info
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)
             try? await UNUserNotificationCenter.current().add(req)
