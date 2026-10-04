@@ -1472,7 +1472,7 @@ private struct PledgeCard: View {
         if pledge.isMonthly { return keptLine ?? "" }
         let paid = pledge.progress.paidMinor
         let toGo = max(0, (pledge.targetMinor ?? 0) - paid)
-        return "\(money(paid, pledge.currency)) paid · \((toGo / 100).formatted(.number.grouping(.automatic))) to go"
+        return "\(money(paid, pledge.currency)) paid · \(GiveMoney.figures(toGo, pledge.currency)) to go"
     }
 
     /// "Next 10 Oct" — or, once the server's next due has passed unpaid (it

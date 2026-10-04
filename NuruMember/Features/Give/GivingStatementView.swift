@@ -739,10 +739,11 @@ func statusChip(_ status: String) -> some View {
     let (bg, fg, label): (Color, Color, String) = {
         switch status {
         case "succeeded", "settled", "completed": return (Nuru.successBg, Nuru.successText, "Succeeded")
-        case "processing": return (Nuru.goldChipBg, Nuru.goldChipText, "Processing")
-        case "failed": return (Nuru.danger.opacity(0.12), Nuru.danger, "Failed")
+        case "processing", "pending", "initiated": return (Nuru.goldChipBg, Nuru.goldChipText, "Processing")
+        case "requires_action": return (Nuru.goldChipBg, Nuru.goldChipText, "Waiting for you")
+        case "failed", "cancelled", "canceled", "expired": return (Nuru.danger.opacity(0.12), Nuru.danger, "Failed")
         case "refunded": return (Nuru.mutedBg, Nuru.ink600, "Refunded")
-        default: return (Nuru.mutedBg, Nuru.ink600, status.capitalized)
+        default: return (Nuru.mutedBg, Nuru.ink600, status.replacingOccurrences(of: "_", with: " ").capitalized)
         }
     }()
     Text(label).font(.nMicro).foregroundStyle(fg)

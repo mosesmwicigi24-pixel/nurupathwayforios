@@ -404,7 +404,7 @@ struct PartnersStatementView: View {
     static func currencyPrefix(_ currency: String?) -> String {
         switch currency?.uppercased() {
         case nil, "", "KES": return "KSh"
-        case "USD": return "$"
+        case "USD": return "US$"
         case let c?: return c
         }
     }

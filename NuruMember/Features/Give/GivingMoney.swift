@@ -30,6 +30,16 @@ enum GiveMoney {
     /// gift" may offer (a failed or waiting gift was never given).
     static func isSettled(_ status: String) -> Bool { settled.contains(status) }
 
+    /// "30,000" · "1,234.50" · "500.50" — an amount in its currency's own
+    /// figures without the prefix, for a line whose other amount already
+    /// names the currency ("KSh 0 paid · 20,000 to go"). A dollar pledge's
+    /// cents used to be dropped there.
+    static func figures(_ minor: Int, _ currency: String?) -> String {
+        let full = format(minor, currency)
+        guard let space = full.firstIndex(of: " ") else { return full }
+        return String(full[full.index(after: space)...])
+    }
+
     /// "KSh 1,234" (cents only when there are any: "KSh 1,234.50") ·
     /// "US$ 20.00" · "EUR 20.00". Integer minor units in, never a float.
     static func format(_ minor: Int, _ currency: String?) -> String {

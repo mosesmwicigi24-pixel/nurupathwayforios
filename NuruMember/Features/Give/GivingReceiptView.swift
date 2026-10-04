@@ -305,7 +305,8 @@ struct GivingReceiptView: View {
         case .other(let raw):
             return HeroLook(circle: Nuru.mutedBg, glyph: .clock, glyphColor: Nuru.ink600,
                             eyebrow: "GIFT", eyebrowColor: Nuru.ink600, thanks: true,
-                            chip: (raw.replacingOccurrences(of: "_", with: " ").capitalized, Nuru.mutedBg, Nuru.ink600))
+                            chip: raw.trimmingCharacters(in: .whitespaces).isEmpty ? nil
+                                : (raw.replacingOccurrences(of: "_", with: " ").capitalized, Nuru.mutedBg, Nuru.ink600))
         }
     }
 
@@ -436,7 +437,11 @@ struct GivingReceiptView: View {
     // MARK: Where it went
 
     private func whereItWent(_ d: GivingDetail) -> some View {
-        var line = "100% of this gift reaches the \(fundDisplayName(d)) fund."
+        let name = fundDisplayName(d)
+        // "the Tithe fund" — but "the Building Fund", never "Building Fund fund".
+        var line = name.lowercased().hasSuffix("fund")
+            ? "100% of this gift reaches the \(name)."
+            : "100% of this gift reaches the \(name) fund."
         if d.pledge != nil { line += " · counts toward your pledge" }
         return HStack(alignment: .top, spacing: 8) {
             Icon(.shieldCheck, size: 14, color: Color(hex: 0x16A34A))

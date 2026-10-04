@@ -278,6 +278,17 @@ final class StatementV2DecodingTests: XCTestCase {
         XCTAssertFalse(GiveMoney.isSettled("requires_action"))
     }
 
+    /// "KSh 0 paid · 20,000 to go" — the figures without the prefix, and a
+    /// dollar pledge keeps its cents (they were dropped). The Partners
+    /// statement's Given tile says "US$" like every other dollar amount.
+    func testToGoKeepsTheCurrencysOwnFigures() {
+        XCTAssertEqual(GiveMoney.figures(2_000_000, "KES"), "20,000")
+        XCTAssertEqual(GiveMoney.figures(123_450, "KES"), "1,234.50")
+        XCTAssertEqual(GiveMoney.figures(50_050, "USD"), "500.50")
+        XCTAssertEqual(PartnersStatementView.currencyPrefix("USD"), "US$")
+        XCTAssertEqual(PartnersStatementView.currencyPrefix("KES"), "KSh")
+    }
+
     func testCompactAmountRoundsDownAndNeverOverstates() {
         XCTAssertEqual(PartnersStatementView.compactAmount(85_000), "850")
         XCTAssertEqual(PartnersStatementView.compactAmount(250_000), "2.5k")

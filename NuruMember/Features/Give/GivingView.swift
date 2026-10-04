@@ -2483,7 +2483,7 @@ private struct ScheduleDetailSheet: View {
             row("Method", givingMethodName(current.method))
             Divider().overlay(Nuru.border)
             // Its own number, else the profile's (followed if it changes).
-            row("Prompts", current.phoneNumber ?? "Your profile number")
+            row("Prompts", current.phoneNumber.map(KenyanPhone.display) ?? "Your profile number")
         }
     }
 

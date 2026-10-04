@@ -58,10 +58,10 @@ enum PledgePace {
     /// does; else "collect it at this pace" only for an active shilling pledge
     /// with a pace, when M-Pesa takes recurring gifts here (GET /giving/methods)
     /// and the pledge says where its money goes.
-    static func offer(for pledge: Pledge, methods: GivingMethods?, schedules: [GivingSchedule]?) -> Offer {
+    static func offer(for pledge: Pledge, methods: GivingMethods?, schedules: [GivingSchedule]?, now: Date = Date()) -> Offer {
         guard let schedules else { return .none }
         if let s = collector(of: pledge, in: schedules) {
-            return .collected(scheduleId: s.scheduleId, line: collectedLine(s))
+            return .collected(scheduleId: s.scheduleId, line: collectedLine(s, now: now))
         }
         guard let pace = pledge.pace, pledge.status == "active", !pledge.isMonthly,
               pledge.currency.uppercased() == "KES",
@@ -75,12 +75,15 @@ enum PledgePace {
     /// "Collected automatically" when no prompt is coming (it is stopping
     /// with its pledge). `next_amount_minor` is the server's word for what
     /// the next prompt asks.
-    static func collectedLine(_ s: GivingSchedule) -> String {
+    static func collectedLine(_ s: GivingSchedule, now: Date = Date()) -> String {
         let head = "Collected automatically"
         if s.status.lowercased() == "paused" { return "\(head) — paused" }
         guard let next = s.nextAmountMinor else { return head }
         if next == 0 { return "\(head) — nothing to pay next time" }
-        let when = giveParseDate(s.nextRunAt).map { " on \(ScheduleRhythm.format($0, "d MMM"))" } ?? ""
+        let when = giveParseDate(s.nextRunAt).map { d -> String in
+            let sameYear = GiveCalendar.calendar.component(.year, from: d) == GiveCalendar.currentYear(now: now)
+            return " on \(ScheduleRhythm.format(d, sameYear ? "d MMM" : "d MMM yyyy"))"
+        } ?? ""
         return "\(head) — next \(GiveMoney.format(next, s.currency))\(when)"
     }
 

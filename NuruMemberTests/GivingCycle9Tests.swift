@@ -116,7 +116,8 @@ final class GivingCycle9Tests: XCTestCase {
 
     func testAGiftAlreadyCollectingThePledgeIsShownInstead() throws {
         let p = try paced()
-        XCTAssertEqual(PledgePace.offer(for: p, methods: methods(), schedules: [try schedule("s-1", pledge: "p-roof")]),
+        let sept28 = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-28T09:00:00Z"))
+        XCTAssertEqual(PledgePace.offer(for: p, methods: methods(), schedules: [try schedule("s-1", pledge: "p-roof")], now: sept28),
                        .collected(scheduleId: "s-1", line: "Collected automatically — next KSh \(grouped(5000)) on 28 Oct"))
         // Shown whatever the rails say — it is already there.
         if case .collected = PledgePace.offer(for: p, methods: nil, schedules: [try schedule("s-1", pledge: "p-roof")]) {} else {
@@ -130,14 +131,18 @@ final class GivingCycle9Tests: XCTestCase {
     }
 
     func testTheCollectedRowSaysWhatTheNextPromptAsks() throws {
-        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "300000")),
+        let sept28 = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-28T09:00:00Z"))
+        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "300000"), now: sept28),
                        "Collected automatically — next KSh \(grouped(3000)) on 28 Oct", "only what's left")
-        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "0")),
+        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "0"), now: sept28),
                        "Collected automatically — nothing to pay next time")
-        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "null")),
+        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "null"), now: sept28),
                        "Collected automatically", "no prompt coming: no next")
-        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "500000", nextRunAt: "2026-10-27T22:30:00Z")),
+        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "500000", nextRunAt: "2026-10-27T22:30:00Z"), now: sept28),
                        "Collected automatically — next KSh \(grouped(5000)) on 28 Oct", "the church's day: 01:30 on the 28th in Nairobi")
+        // Another year's prompt names its year (the Android parity pass).
+        XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "500000", nextRunAt: "2027-01-05T06:00:00Z"), now: sept28),
+                       "Collected automatically — next KSh \(grouped(5000)) on 5 Jan 2027")
     }
 
     // MARK: What "Collect it automatically at this pace" sends
