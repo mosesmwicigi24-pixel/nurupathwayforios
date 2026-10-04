@@ -389,6 +389,11 @@ struct ChatThreadView: View {
     /// already reverted itself — this just tells the member why).
     @State private var actionError: String?
     @State private var actionErrorDismiss: Task<Void, Never>?
+    /// "On screen" is both: the top of its stack (appeared, not covered by a
+    /// push) and not hidden behind another tab, You segment or Community door
+    /// — those stay mounted, so they never make it disappear.
+    @State private var onTop = false
+    @Environment(\.screenVisible) private var screenVisible
 
     init(conversation: ChatConversation, context: ChatThreadContext = .normal) {
         _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation, context: context))
@@ -497,14 +502,24 @@ struct ChatThreadView: View {
         .task { if vm.thread == nil { await vm.load() } }
         // A conversation owns the whole bottom edge: slide the tab bar away while
         // this screen is up so the composer sits on the home indicator / keyboard.
-        .onAppear { tabs.chromeHidden = true }
+        .onAppear {
+            tabs.chromeHidden = true
+            onTop = true
+            markOpenConversation()
+        }
         .onDisappear {
             tabs.chromeHidden = false
+            onTop = false
+            markOpenConversation()
             // Silence the thread's shared player on the way out — it's
             // process-wide, and once this screen is gone there is no visible
             // control anywhere to stop a note still talking over Home.
             ChatVoicePlayer.threadShared.stop()
         }
+        // Another tab, You segment or Community door hides this thread
+        // without a disappear (they're keep-alive) — a routed notification
+        // tap, or the capsule above the thread.
+        .onChange(of: screenVisible) { _, _ in markOpenConversation() }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             keyboardVisible = true
         }
@@ -635,6 +650,13 @@ struct ChatThreadView: View {
                 }
                 return (author, text)
             }
+    }
+
+    /// THE open conversation while it's on screen: a message for it lands as
+    /// a light tap, not a banner (NuruPush.foreground). Off screen, it lets go.
+    private func markOpenConversation() {
+        let id = vm.conversation.conversationId
+        if onTop && screenVisible { OpenConversation.opened(id) } else { OpenConversation.closed(id) }
     }
 }
 

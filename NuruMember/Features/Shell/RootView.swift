@@ -156,6 +156,22 @@ struct GiveWatch: Equatable {
 /// redeemable invite token — the group itself is one tap away from the hub).
 enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case readWithFriendHub }
 
+private struct ScreenVisibleKey: EnvironmentKey { static let defaultValue = true }
+
+extension EnvironmentValues {
+    /// False while a screen is mounted but hidden by a keep-alive container —
+    /// another tab (RootView), another You segment (YouTabView), another
+    /// Community door (CommunityView). They switch by opacity, so onAppear /
+    /// onDisappear never fire; a screen that must know whether the member can
+    /// SEE it reads this (ChatThreadView: the open conversation, whose
+    /// messages land as a light tap instead of a banner). Each container ANDs
+    /// its own choice into its parent's. (Give's segments: giveSegmentVisible.)
+    var screenVisible: Bool {
+        get { self[ScreenVisibleKey.self] }
+        set { self[ScreenVisibleKey.self] = newValue }
+    }
+}
+
 /// The selected primary tab, hoisted out of RootView so any screen can switch
 /// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
 @MainActor
@@ -302,6 +318,7 @@ struct RootView: View {
             ForEach(visibleTabs, id: \.self) { t in
                 if loaded.contains(t) {
                     tabView(t)
+                        .environment(\.screenVisible, t == tabs.selected)
                         .opacity(t == tabs.selected ? 1 : 0)
                         .allowsHitTesting(t == tabs.selected)
                         .accessibilityHidden(t != tabs.selected)
@@ -432,15 +449,22 @@ struct RootView: View {
         // their tab. Anything unroutable opens the in-app inbox as before.
         .onReceive(NotificationCenter.default.publisher(for: .nuruNotificationTap)) { note in
             let info = note.userInfo ?? [:]
+            // The local notifications LocalNotifier posts carry camelCase ids;
+            // a real push carries the notification's own snake_case keys (and,
+            // since 2026-09-28, its `template`), its numbers as strings.
+            func string(_ camel: String, _ snake: String) -> String {
+                if let s = info[camel] as? String, !s.isEmpty { return s }
+                return info[snake] as? String ?? ""
+            }
             let template = info["template"] as? String ?? ""
-            let announcementId = info["announcementId"] as? String ?? ""
-            let moduleId = info["moduleId"] as? String ?? ""
-            let level = info["levelNumber"] as? Int ?? 0
-            let inviteToken = info["inviteToken"] as? String ?? ""
-            let departmentId = info["departmentId"] as? String ?? ""
-            let transactionId = info["transactionId"] as? String ?? ""
-            let scheduleId = info["scheduleId"] as? String ?? ""
-            let pledgeId = info["pledgeId"] as? String ?? ""
+            let announcementId = string("announcementId", "announcement_id")
+            let moduleId = string("moduleId", "module_id")
+            let level = info["levelNumber"] as? Int ?? Int(info["level_number"] as? String ?? "") ?? 0
+            let inviteToken = string("inviteToken", "invite_token")
+            let departmentId = string("departmentId", "department_id")
+            let transactionId = string("transactionId", "transaction_id")
+            let scheduleId = string("scheduleId", "schedule_id")
+            let pledgeId = string("pledgeId", "pledge_id")
             if let id = PledgeLink.from(template: template, pledgeId: pledgeId) {
                 // pledge_* and the pledge collector's notices (Giving Cycle
                 // 5: covered, stopped) — the pledge itself.
