@@ -292,4 +292,33 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: "", onNowOccurrenceId: nil).count, 3,
                        "no featured gathering: up to three, in the server's order")
     }
+
+    // MARK: #11 — the tab bar comes back whenever a notice switches tabs
+
+    @MainActor
+    func testTheTabBarComesBackWhenANoticeSwitchesTabs() {
+        let tabs = TabRouter()
+        tabs.selected = .you
+        tabs.youSegmentShown = .chat
+        tabs.chromeHidden = true   // a chat thread owns the bottom edge
+        XCTAssertTrue(tabs.chromeHidden)
+
+        XCTAssertTrue(NoticeRouter.open(.pathway(.module("m1")), tabs: tabs))   // a tapped notice
+        XCTAssertEqual(tabs.selected, .pathway)
+        XCTAssertFalse(tabs.chromeHidden, "the bar is back on the tab the notice opened — it used to stay hidden")
+
+        tabs.selected = .you
+        XCTAssertTrue(tabs.chromeHidden, "back on the thread, its composer still owns the edge")
+
+        tabs.openYou(.profile)
+        tabs.youSegmentShown = .profile   // YouTabView follows the link to its segment
+        XCTAssertFalse(tabs.chromeHidden, "a notice landing on Profile isn't left bar-less by the thread under Community")
+        tabs.youSegmentShown = .chat
+        XCTAssertTrue(tabs.chromeHidden)
+
+        tabs.chromeHidden = false   // the thread closes
+        XCTAssertFalse(tabs.chromeHidden)
+        tabs.selected = .home
+        XCTAssertFalse(tabs.chromeHidden)
+    }
 }

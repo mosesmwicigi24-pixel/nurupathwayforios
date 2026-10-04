@@ -45,13 +45,18 @@ struct YouTabView: View {
             select(seg, haptic: false)
             DispatchQueue.main.async { tabs.youSegment = nil }
         }
-        .onAppear { ScreenTracker.record(screen: "you.\(segment.label.lowercased())") }
+        .onAppear {
+            tabs.youSegmentShown = segment   // a rebuilt You tab starts on its own segment
+            ScreenTracker.record(screen: "you.\(segment.label.lowercased())")
+        }
     }
 
     private func select(_ seg: YouSegment, haptic: Bool) {
         guard segment != seg else { return }
         if haptic { Haptics.selection() }
         withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
+        // The tab bar's state follows the segment on screen (§7.2 #11).
+        tabs.youSegmentShown = seg
         mounted.insert(seg)
         ScreenTracker.record(screen: "you.\(seg.label.lowercased())")
     }

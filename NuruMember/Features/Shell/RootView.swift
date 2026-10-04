@@ -162,9 +162,36 @@ enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case pl
 @MainActor
 final class TabRouter: ObservableObject {
     @Published var selected: AppTab = .initialTab
-    /// Full-screen conversation surfaces (chat threads) hide the tab bar so the
-    /// composer owns the bottom edge — set on appear, cleared on disappear.
-    @Published var chromeHidden = false
+    /// Full-screen surfaces (a chat thread, a plan, a module being read) hide
+    /// the tab bar so they own the bottom edge — set on appear, cleared on
+    /// disappear or by their tab's root. The bar is hidden only where it was
+    /// hidden: on the tab (and, on You, the segment) whose screen hid it
+    /// (EXPERIENCE.md §7.2 #11). A notice that switches tabs from an open
+    /// thread used to land with no bar at all; now the bar is back on the new
+    /// tab, and the thread still owns its edge when the member returns.
+    var chromeHidden: Bool {
+        get { chromeHiddenIn.contains(chromeScope) }
+        set {
+            let scope = chromeScope
+            guard newValue != chromeHiddenIn.contains(scope) else { return }
+            if newValue { chromeHiddenIn.insert(scope) } else { chromeHiddenIn.remove(scope) }
+        }
+    }
+    /// Where a full-screen surface has the bar hidden right now.
+    @Published private(set) var chromeHiddenIn: Set<ChromeScope> = []
+    /// The You tab's visible segment (YouTabView keeps it current) — on You
+    /// the bar belongs to the segment, so a notice landing on Profile isn't
+    /// left bar-less by a thread open under Community.
+    @Published var youSegmentShown: YouSegment = .chat
+
+    /// A tab, and on You its segment.
+    struct ChromeScope: Hashable {
+        let tab: AppTab
+        let segment: YouSegment?
+    }
+    private var chromeScope: ChromeScope {
+        ChromeScope(tab: selected, segment: selected == .you ? youSegmentShown : nil)
+    }
     /// True while Home's ON AIR bar is on screen — the island radio pill yields
     /// to it (one radio surface at a time; scroll the bar away and the pill
     /// slides into the notch, Apple-Music style).
