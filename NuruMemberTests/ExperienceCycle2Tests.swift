@@ -3,12 +3,12 @@
 // journey's order, each falling back to its "none" form when its data didn't
 // come (§6.1) — "this week" being today through the seventh day after, on the
 // church's clock; the Events and Plans headers' one line, and a quiet Events
-// week (§6.2, §6.5); and a pledge its collector takes care of saying
-// "Collected on …" on Partners' DUE list instead of Pay — on the church's
-// Nairobi calendar, and only when the prompt comes on or before the
-// instalment's date (§6.4). The same rules as Android's YourWeek /
-// EventsHeader / pledgeCollectedOn. Payloads are decoded exactly like
-// APIClient's: snake_case in.
+// week (§6.2, §6.5); a finished level's trail folding away (§6.3); and a
+// pledge its collector takes care of saying "Collected on …" on Partners' DUE
+// list instead of Pay — on the church's Nairobi calendar, and only when the
+// prompt comes on or before the instalment's date (§6.4). The same rules as
+// Android's YourWeek / EventsHeader / PathwayTrail / pledgeCollectedOn.
+// Payloads are decoded exactly like APIClient's: snake_case in.
 import XCTest
 @testable import NuruMember
 
@@ -522,5 +522,67 @@ final class ExperienceCycle2Tests: XCTestCase {
                        "Rooted: 10 Days in the Psalms · Day 1 of 10")
         XCTAssertNil(ReadingPlanRow.activeLine(in: [try plan("john", "Gospel of John", enrolled: false)]),
                      "none being read — the tagline stands")
+    }
+
+    // MARK: §6.3 — a finished level folds away
+
+    private func lessons(_ n: Int, level: Int = 1, done: Int? = nil) throws -> [LevelModule] {
+        let finished = done ?? n
+        return try json([LevelModule].self, (1...n).map { i in
+            module("m\(i)", level: level, seq: i, i <= finished ? "completed" : (i == finished + 1 ? "next" : "locked"),
+                   completed: i <= finished)
+        })
+    }
+
+    func testAFinishedLevelFoldsIntoOneRowThatOpensAndCloses() throws {
+        // Ada: every Level 1 module done, the exam ready.
+        let j = try journey(current: 1, level(1, "completed", done: 20, of: 20))
+        let mods = try lessons(20)
+        XCTAssertTrue(PathwayTrail.folds(j, levelNumber: 1, modules: mods))
+        XCTAssertEqual(PathwayTrail.foldLine(mods, expanded: false), "20 of 20 modules done · Show")
+        XCTAssertEqual(PathwayTrail.foldLine(mods, expanded: true), "20 of 20 modules done · Hide")
+    }
+
+    func testEveryStagePastLearningFolds() throws {
+        let soon = try journey(current: 1, level(1, "completed", done: 20, of: 20, examPublished: false))
+        XCTAssertEqual(soon?.stage, .examSoon)
+        XCTAssertTrue(PathwayTrail.folds(soon, levelNumber: 1, modules: try lessons(20)))
+        var passed = level(1, "completed", done: 20, of: 20)
+        passed["awaiting_review"] = true
+        let usher = try journey(current: 1, passed)
+        XCTAssertEqual(usher?.stage, .awaitingUsher)
+        XCTAssertTrue(PathwayTrail.folds(usher, levelNumber: 1, modules: try lessons(20)))
+    }
+
+    func testALevelStillBeingWalkedOrAnotherLevelStaysOpen() throws {
+        let walking = try journey(current: 2, level(2, "active", done: 3, of: 10))
+        XCTAssertFalse(PathwayTrail.folds(walking, levelNumber: 2, modules: try lessons(10, level: 2, done: 3)), "still learning")
+        let finished = try journey(current: 1, level(1, "completed", done: 20, of: 20))
+        XCTAssertFalse(PathwayTrail.folds(finished, levelNumber: 2, modules: try lessons(5, level: 2, done: 0)),
+                       "only the member's own level folds")
+        XCTAssertFalse(PathwayTrail.folds(finished, levelNumber: 1, modules: []), "nothing to fold")
+        XCTAssertFalse(PathwayTrail.folds(nil, levelNumber: 1, modules: try lessons(20)), "no journey, no fold")
+    }
+
+    func testTheFoldCountsLessonsNotTheExam() throws {
+        // Prod's shape: ten lessons and the exam row, still "active" at 10 of 11.
+        var rows = (1...10).map { module("m\($0)", level: 1, seq: $0, "completed", completed: true) }
+        var exam = module("exam", level: 1, seq: 11, "next")
+        exam["evaluation_kind"] = "exit_exam"
+        rows.append(exam)
+        let mods = try json([LevelModule].self, rows)
+        let j = try journey(current: 1, level(1, "active", done: 10, of: 11), trail: rows)
+        XCTAssertEqual(j?.stage, .examReady)
+        XCTAssertTrue(PathwayTrail.folds(j, levelNumber: 1, modules: mods))
+        XCTAssertEqual(PathwayTrail.foldLine(mods, expanded: false), "10 of 10 modules done · Show", "the exam is a step, not a module")
+    }
+
+    func testTheTrailsExamRowIsGoneWhileTheHeroShowsTheExam() throws {
+        let ready = try journey(current: 1, level(1, "completed", done: 20, of: 20))
+        XCTAssertTrue(PathwayTrail.examRowHidden(ready, levelNumber: 1))
+        XCTAssertFalse(PathwayTrail.examRowHidden(ready, levelNumber: 2), "another level's exam row stays")
+        let soon = try journey(current: 1, level(1, "completed", done: 20, of: 20, examPublished: false))
+        XCTAssertFalse(PathwayTrail.examRowHidden(soon, levelNumber: 1), "the hero isn't showing an exam to take")
+        XCTAssertFalse(PathwayTrail.examRowHidden(nil, levelNumber: 1))
     }
 }

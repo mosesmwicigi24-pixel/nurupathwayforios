@@ -296,8 +296,9 @@ struct PathwayView: View {
                         level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
-                        // The exam step is the journey's, for the member's own level only.
-                        examStep: journey.flatMap { $0.stage == .examReady && $0.levelNumber == sel.levelNumber ? $0 : nil },
+                        // The fold and the exam row are the journey's call, for
+                        // the member's own level only (§6.3).
+                        journey: journey,
                         openModule: { openModuleId($0) },
                         openExam: { path.append(PathwayRoute.exam($0)) })
                         .gentleEntrance(delay: 0.05)
@@ -737,6 +738,35 @@ private struct PWJourneyNode: View {
     }
 }
 
+// MARK: - PathwayHub · the trail's rules (EXPERIENCE.md §6.3)
+
+/// Pure, so the tests pin them; Android's PathwayTrail, the same rules.
+enum PathwayTrail {
+    /// The member's own level, once they are past learning it (every module
+    /// done — the exam ready, or soon, or passed): its list folds into one
+    /// row. Any other level's list, and a level still being learned, stays open.
+    static func folds(_ journey: Journey?, levelNumber: Int, modules: [LevelModule]) -> Bool {
+        guard let j = journey else { return false }
+        return j.stage != .learning && j.levelNumber == levelNumber && !modules.isEmpty
+    }
+
+    /// The folded row's words: "20 of 20 modules done · Show" — the level's
+    /// lessons, its exam being a step, not a module — and "· Hide" once open.
+    static func foldLine(_ modules: [LevelModule], expanded: Bool) -> String {
+        let lessons = modules.filter { !$0.isExam }
+        let done = lessons.filter { $0.completed || $0.status == .completed }.count
+        return "\(done) of \(lessons.count) modules done · \(expanded ? "Hide" : "Show")"
+    }
+
+    /// The hero shows the exam step — the journey at its exam on this level —
+    /// so the trail's own exam row is not shown again (nor offered by its
+    /// "Continue →").
+    static func examRowHidden(_ journey: Journey?, levelNumber: Int) -> Bool {
+        guard let j = journey else { return false }
+        return j.stage == .examReady && j.levelNumber == levelNumber
+    }
+}
+
 // MARK: - PathwayHub · selected level's modules (inline, real trail)
 
 private struct PathwaySelectedModules: View {
@@ -744,30 +774,33 @@ private struct PathwaySelectedModules: View {
     let modules: [LevelModule]
     let loading: Bool
     let resume: LevelModule?
-    /// The journey, when this level is the member's own and its exam is the
-    /// next step (examReady) — nil otherwise.
-    let examStep: Journey?
+    /// The member's journey (§3) — whether this level's list folds, and
+    /// whether the hero above already shows its exam.
+    let journey: Journey?
     let openModule: (String) -> Void
     let openExam: (Int) -> Void
+    /// The folded list, opened — per level, closed again on another level.
+    @State private var expanded = false
 
-    /// The journey says the exam is next → the exam gate row shows, unless the
-    /// trail carries its own exam row (prod's exit-exam module), which already
-    /// opens it. The old test (`level.status != .completed`) read the server's
-    /// "every module done" as "level passed", so the gate never showed once the
-    /// last module was finished. The server remains the eligibility authority
-    /// and answers politely if the gate isn't open; once the exam is passed the
-    /// level flips to awaitingReview and the gate is replaced by the waiting row.
-    private var examReady: Bool {
-        examStep != nil && !modules.isEmpty && !modules.contains(where: \.isExam) && !level.isAwaitingReview
-    }
+    /// Once the member is past learning their own level (the exam ready, or
+    /// soon, or passed), its list folds into one row that expands (§6.3).
+    private var folds: Bool { PathwayTrail.folds(journey, levelNumber: level.levelNumber, modules: modules) }
+    /// The hero shows the exam step — the trail's own exam row (prod's
+    /// exit-exam module) is not shown again. The gate row that used to stand
+    /// at the foot of a fully-walked trail only ever repeated the hero, and is
+    /// gone. The server remains the eligibility authority either way.
+    private var examHidden: Bool { PathwayTrail.examRowHidden(journey, levelNumber: level.levelNumber) }
     private var awaitingReview: Bool { level.isAwaitingReview }
+    /// "Continue →" goes where the list's open row goes — never to an exam
+    /// the hero already offers.
+    private var resumeShown: LevelModule? { resume.flatMap { examHidden && $0.isExam ? nil : $0 } }
 
     // Progression order — completed, then the one in progress, then locked (each
     // by sequence). Identical to raw sequence for a clean curriculum; for real
     // data it keeps finished modules from being buried below locked ones.
     private var ordered: [LevelModule] {
         func rank(_ m: LevelModule) -> Int { m.status == .completed ? 0 : m.status == .next ? 1 : 2 }
-        return modules.sorted { a, b in
+        return modules.filter { !(examHidden && $0.isExam) }.sorted { a, b in
             rank(a) != rank(b) ? rank(a) < rank(b) : a.moduleSequenceNumber < b.moduleSequenceNumber
         }
     }
@@ -780,7 +813,7 @@ private struct PathwaySelectedModules: View {
                     Text("\(level.completedModules) of \(level.totalModules) done").font(.inter(11)).foregroundStyle(PW.ink2)
                 }
                 Spacer()
-                if let r = resume {
+                if let r = resumeShown {
                     Button { Haptics.tap(); openModule(r.moduleId) } label: {
                         Text("Continue →").font(.inter(10, .bold)).foregroundStyle(PW.gold)
                             .padding(.vertical, 10).padding(.leading, 16)
@@ -797,20 +830,20 @@ private struct PathwaySelectedModules: View {
                     Text("Modules open as you progress.").font(.nCardBody).foregroundStyle(PW.ink3)
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
-                    ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
-                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady && !awaitingReview) {
-                            guard m.status != .locked else { return }
-                            if m.isExam { openExam(level.levelNumber) } else { openModule(m.moduleId) }
+                    if folds { PWFoldRow(line: PathwayTrail.foldLine(modules, expanded: expanded), expanded: expanded) {
+                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    } }
+                    if !folds || expanded {
+                        ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
+                            PWModuleRow(module: m, last: (i == ordered.count - 1) && !awaitingReview) {
+                                guard m.status != .locked else { return }
+                                if m.isExam { openExam(level.levelNumber) } else { openModule(m.moduleId) }
+                            }
+                            // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
+                            if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
                         }
-                        // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
-                        if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
-                    }
-                    // Exam passed → waiting to be ushered by a discipler (§1.9); else
-                    // every module done → the exam gate opens the way.
-                    if awaitingReview {
-                        PWAwaitingRow(levelNumber: level.levelNumber)
-                    } else if examReady, let step = examStep {
-                        PWExamGateRow(title: step.title, line: step.line) { openExam(level.levelNumber) }
+                        // Exam passed → waiting to be ushered by a discipler (§1.9).
+                        if awaitingReview { PWAwaitingRow(levelNumber: level.levelNumber) }
                     }
                 }
             }
@@ -818,6 +851,7 @@ private struct PathwaySelectedModules: View {
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PW.border, lineWidth: 1))
         }
+        .onChange(of: level.levelNumber) { _, _ in expanded = false }
     }
 
     /// Shimmering placeholder rows while a level's real trail is fetched.
@@ -942,47 +976,38 @@ private struct PWModuleRow: View {
     }
 }
 
-/// The exam gate row at the foot of a fully-walked trail — "Take the Level N
-/// exam", in the journey's own words. Taking the exam is still gated
-/// server-side (§1.9), so this row is only a doorway.
-private struct PWExamGateRow: View {
-    let title: String
+/// A finished level's trail, folded (§6.3): "20 of 20 modules done · Show" —
+/// a tap opens the list, "· Hide" folds it again. Android's FoldedTrailRow.
+private struct PWFoldRow: View {
     let line: String
+    let expanded: Bool
     let onTap: () -> Void
 
     var body: some View {
-        Button { Haptics.action(); onTap() } label: {
+        Button { Haptics.tap(); onTap() } label: {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(PW.gold.opacity(0.13))
                         .frame(width: 32, height: 32)
-                    Icon(.award, size: 16, color: PW.navy)
+                    Icon(.check, size: 14, color: PW.goldDeep)
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(title)
-                        .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text(line)
-                        .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(line).font(.inter(13, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
                 Spacer(minLength: 0)
-                Text("Begin").font(.inter(9, .bold)).foregroundStyle(PW.gold)
-                    .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
+                Icon(expanded ? .chevronUp : .chevronDown, size: 14, color: PW.ink3)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(PW.gold.opacity(0.10))
-            .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) { if expanded { Rectangle().fill(PW.border).frame(height: 1) } }
         }
         .buttonStyle(.pressable)
-        .accessibilityHint("Opens the exam.")
+        .accessibilityHint(expanded ? "Folds the finished modules away." : "Shows the finished modules.")
     }
 }
 
 /// The waiting node at the foot of a fully-passed level — the exam is done and the
 /// member is awaiting a discipler's usher (§1.9). Not tappable; purely reflects the
-/// awaitingReview flag. Replaces the exam gate row once the exam has been passed.
+/// awaitingReview flag — shown with the level's list (inside the fold, once opened).
 private struct PWAwaitingRow: View {
     let levelNumber: Int
 
