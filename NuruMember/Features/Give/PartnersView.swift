@@ -89,6 +89,11 @@ enum GivingSignal {
     /// (`auto_schedule_error`, Giving Cycle 5): its page says why, by pledge
     /// id, until the member dismisses it.
     @Published var pledgeNotices: [String: String] = [:]
+    /// The recurring gifts (GET /giving/schedules) — which DUE instalments a
+    /// pledge's collector takes care of (EXPERIENCE.md §6.4). Nil until the
+    /// first answer; a failed read keeps what was known. While unknown every
+    /// instalment keeps Pay: nothing is said to be collected by guesswork.
+    @Published var schedules: [GivingSchedule]?
 
     // Statements (GET /giving/statements?year=)
     @Published var statements: GivingStatements?
@@ -148,6 +153,9 @@ enum GivingSignal {
         failure = nil
         partnershipSeq += 1
         let seq = partnershipSeq
+        // Beside the partnership, so the DUE list renders once with both —
+        // never Pay first, then a chip a moment later.
+        async let gifts = try? MemberAPI.schedules()
         do {
             let p = try await MemberAPI.partnership()
             if seq > partnershipApplied {
@@ -159,6 +167,7 @@ enum GivingSignal {
             if partnership == nil { failure = error }
             else { partnershipRefreshFailed = true }
         }
+        if let g = await gifts { schedules = g }
         loading = false
     }
 
@@ -885,18 +894,18 @@ struct PartnersView: View {
                 // A running recurring gift collects itself — no Pay, which
                 // gave a second, one-time gift (owner, 2026-09-28). A tap
                 // opens the gift's own sheet on Give (pause, change).
-                Button {
-                    Haptics.tap()
+                collectedChip(collected, label: "\(collected), automatically. Opens the recurring gift.") {
                     tabs.openGive(link: .schedule(scheduleId: item.id))
-                } label: {
-                    Text(collected)
-                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
-                        .lineLimit(1).minimumScaleFactor(0.85)
-                        .padding(.horizontal, 12).frame(height: 32)
-                        .background(Nuru.goldChipBg, in: Capsule())
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("\(collected), automatically. Opens the recurring gift.")
+            } else if let pledge = p.pledges.first(where: { $0.pledgeId == item.id }),
+                      let day = PledgePace.collectedDay(item, by: vm.schedules.flatMap { PledgePace.collector(of: pledge, in: $0) }),
+                      let collected = ScheduleRhythm.collectedOn(day) {
+                // A pledge whose collector prompts on or before the date says
+                // so too (EXPERIENCE.md §6.4) — the same chip. A tap opens the
+                // pledge, where paying early by hand stays possible.
+                collectedChip(collected, label: "\(collected), automatically. Opens the pledge.") {
+                    path.append(PartnersRoute.pledge(item.id))
+                }
             } else {
                 Button {
                     Haptics.action()
@@ -914,6 +923,24 @@ struct PartnersView: View {
                 .disabled(busy)
             }
         }
+    }
+
+    /// "Collected on Mon 5 Oct" — the gold chip a DUE row wears in place of
+    /// Pay when a prompt will take care of it: a running recurring gift, or
+    /// a pledge's collector (§6.4). One look for both.
+    private func collectedChip(_ text: String, label: String, open: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            open()
+        } label: {
+            Text(text)
+                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                .lineLimit(1).minimumScaleFactor(0.85)
+                .padding(.horizontal, 12).frame(height: 32)
+                .background(Nuru.goldChipBg, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(label)
     }
 
     /// "Waiting for M-Pesa" when the rail of the in-flight payment is known

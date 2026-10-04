@@ -9,7 +9,9 @@
 // pledge, its first prompt now (the pace counts one collection today). Each
 // month's prompt asks only what is left and the gift stops when the pledge is
 // reached (the server's Cycle 5 rule). A pledge a recurring gift already
-// collects shows that gift instead. Pure, so it is pinned by tests.
+// collects shows that gift instead, and a DUE instalment that gift collects
+// on or before its date says so (EXPERIENCE.md §6.4). Pure, so it is pinned
+// by tests.
 import Foundation
 
 enum PledgePace {
@@ -44,13 +46,36 @@ enum PledgePace {
         case none
     }
 
-    /// The recurring gift that already collects `pledge`: one bound to it
-    /// that is running — else one that is paused (it still collects the
-    /// pledge once resumed; a second would only compete with it). A
-    /// cancelled one collects nothing.
+    /// The recurring gift that already collects `pledge`: one bound to it —
+    /// by the gift's own `pledge`, or (an older row) the pledge's own
+    /// `schedule_id` — that is running, else one that is paused (it still
+    /// collects the pledge once resumed; a second would only compete with
+    /// it). A cancelled one collects nothing.
     static func collector(of pledge: Pledge, in schedules: [GivingSchedule]) -> GivingSchedule? {
-        let mine = schedules.filter { !pledge.pledgeId.isEmpty && $0.pledge?.pledgeId == pledge.pledgeId }
+        guard !pledge.pledgeId.isEmpty else { return nil }
+        let own = pledge.scheduleId.flatMap { $0.isEmpty ? nil : $0 }
+        let mine = schedules.filter { $0.pledge?.pledgeId == pledge.pledgeId || (own != nil && $0.scheduleId == own) }
         return mine.first { $0.status.lowercased() == "active" } ?? mine.first { $0.status.lowercased() == "paused" }
+    }
+
+    /// The church-calendar day ("2026-10-05") a DUE instalment is collected
+    /// by its pledge's collector (EXPERIENCE.md §6.4): the collector running,
+    /// its next prompt asking for money (`next_amount_minor` > 0 — 0 is a
+    /// pledge already covered, nil a collector stopping with its pledge or an
+    /// older server) and falling on or before the instalment's date, both
+    /// read as Nairobi days. Partners then says "Collected on …", as it does
+    /// for a running recurring gift — Pay there only made a second, one-time
+    /// gift for money the prompt was about to take. Nil, and Pay stays, for
+    /// anything else: a row that is not a pledge's Pay row, no collector, a
+    /// paused one, one that asks nothing, one prompting after the date (the
+    /// instalment would be late). Paying early by hand stays possible from
+    /// the pledge's page either way. Android's pledgeCollectedOn, the same rule.
+    static func collectedDay(_ item: DueItem, by collector: GivingSchedule?) -> String? {
+        guard item.kind == "pledge", item.action == "pay",
+              let s = collector, s.status.lowercased() == "active", (s.nextAmountMinor ?? 0) > 0,
+              let prompt = giveParseDate(s.nextRunAt), PauseDates.date(item.dueOn) != nil else { return nil }
+        let day = PauseDates.wire(prompt)
+        return day <= String(item.dueOn.prefix(10)) ? day : nil
     }
 
     /// The offer, from what the server said: nothing until the recurring
