@@ -367,6 +367,11 @@ struct GivingView: View {
     /// out (Giving Cycle 4): the server's reason + when the first prompt comes.
     @State private var scheduledNote: String?
     @State private var pollTask: Task<Void, Never>?
+    /// When "Check your phone" began its wait, and whether it has passed the
+    /// minute (StkWatch, EXPERIENCE.md §7.2 #5): the line turns to "Still
+    /// processing…" and Done leads, while the watch keeps going.
+    @State private var stkStartedAt = Date()
+    @State private var stkLate = false
     /// Set when a pledge / need payment went through (or is pending): the
     /// form returns to its normal state once the ceremony has finished
     /// dismissing, so the closing cover never flashes a reset amount.
@@ -647,6 +652,7 @@ struct GivingView: View {
                              scheduledNote: scheduledNote,
                              nothingTodayLine: scheduledNextAt.isEmpty ? nil : ScheduleRhythm.nothingTodayLine(firstPromptISO: scheduledNextAt),
                              retrying: submitting,
+                             stkLate: stkLate,
                              onDone: { endCeremony() },
                              // Giving Cycle 3: a failed gift is retried on the
                              // server (same fund, amount, pledge, fee cover)
@@ -1595,9 +1601,7 @@ struct GivingView: View {
         ceremony = "stk"
         // The intent exists (pending) — Partners shows it as Processing.
         GivingSignal.post(from: vm)
-        let tx = res.transactionId
-        pollTask?.cancel()
-        pollTask = Task { await watchOutcome(tx) }
+        startWatching(res.transactionId)
     }
 
     /// "Try again" on the failed result (Giving Cycle 3): the gift that failed
@@ -1719,8 +1723,7 @@ struct GivingView: View {
             successRef = nil
             ceremonyNote = "Your \(kind) gift is set up — this is its first prompt."
             ceremony = "stk"
-            pollTask?.cancel()
-            pollTask = Task { await watchOutcome(tx) }
+            startWatching(tx)
         case let .waiting(tx, message):
             Task { await watchWaitingPrompt(tx, message: message) }
         case let .scheduled(note, nextRunAt):
@@ -1746,23 +1749,45 @@ struct GivingView: View {
         ceremony = "stk"
         // Already over by the time we asked? Show how it ended.
         if let detail, await settle(detail) { return }
+        startWatching(txId)
+    }
+
+    /// Starts watching the gift on "Check your phone" — the stage's minute
+    /// starts now (StkWatch). `resume` (a PayPal capture that came back after
+    /// the watch ended) watches again without turning a late stage back.
+    private func startWatching(_ txId: String, resume: Bool = false) {
+        stkStartedAt = Date()
+        if !resume { stkLate = false }
         pollTask?.cancel()
         pollTask = Task { await watchOutcome(txId) }
     }
 
-    /// Polls the REAL transaction for up to ~60s — the ceremony only ever shows
-    /// the server's status, never a fabricated one.
+    /// Polls the REAL transaction while the stage is on screen — every 3 s for
+    /// the first minute, then every 10 s up to five (StkWatch, §7.2 #5), so an
+    /// answer that comes late still lands. The ceremony only ever shows the
+    /// server's status, never a fabricated one; past the minute it says it is
+    /// still processing, and Done leads.
     private func watchOutcome(_ txId: String) async {
-        for _ in 0..<20 {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        let started = stkStartedAt
+        while let delay = StkWatch.nextDelay(elapsed: Date().timeIntervalSince(started)) {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             if Task.isCancelled || ceremony != "stk" { return }
+            noteLateIfDue(since: started)
             guard let d = try? await MemberAPI.givingDetail(txId) else { continue }
             // The member may have closed the ceremony while that was in flight.
             if Task.isCancelled || ceremony != "stk" { return }
             if await settle(d) { return }
         }
-        if ceremony == "stk" {
-            ceremonyNote = "Still processing — your gift will appear in Recent giving once it clears."
+        if ceremony == "stk" { noteLateIfDue(since: started) }
+    }
+
+    /// Past the minute: "Still processing — it will show in Recent giving
+    /// once it clears." and Done as the primary. Once.
+    private func noteLateIfDue(since started: Date) {
+        guard !stkLate, StkWatch.isLate(elapsed: Date().timeIntervalSince(started)) else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            stkLate = true
+            ceremonyNote = StkWatch.lateLine
         }
     }
 
@@ -1814,11 +1839,10 @@ struct GivingView: View {
             if let r = try? await MemberAPI.capturePayPal(orderId: orderId),
                r.status == "succeeded" || r.status == "failed" {
                 paypalOrderId = nil   // settled either way — the poll reports the truth
-                // If the 60s poll already lapsed (long PayPal detour), restart it so
+                // If the watch already lapsed (long PayPal detour), restart it so
                 // the ceremony can resolve from the server's status.
                 if let tx = pendingTxId, ceremony == "stk" {
-                    pollTask?.cancel()
-                    pollTask = Task { await watchOutcome(tx) }
+                    startWatching(tx, resume: true)
                 }
             }
         }
@@ -1854,10 +1878,13 @@ struct GivingView: View {
         // if the server answered, kept only if it never did (so the retry
         // replays it and gets the transaction back if the request landed).
         if ceremony != "failed" { submissionKey = GiveKey.fresh() }
+        // Closing stops only the watching — the gift itself is the server's
+        // and goes on as it was (§7.2 #5); the reload below shows how it ends.
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil
         paypalOrderId = nil
         ceremony = nil; ceremonyNote = ""
+        stkLate = false
         // Closed: nothing is left to retry from here.
         retryTxId = nil; retryMethod = nil
         scheduledNextAt = ""
@@ -2211,7 +2238,9 @@ private struct MobileMoneySheet: View {
                 Haptics.action()
                 dismiss(); onSubmit(number, frequency != nil && giveNow)
             } label: {
-                Text(cadenceWord == nil ? "Give Now" : "Start \(cadenceWord == "week" ? "Weekly" : "Monthly") Gift")
+                // The last tap before money moves names the money (§7.2 #6):
+                // "Give KSh 1,000"; a recurring start keeps "Start Monthly Gift".
+                Text(GiveButton.mobileMoneyLabel(amountLabel: amountLabel, frequency: frequency))
                     .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -2972,6 +3001,8 @@ private struct GiveCeremonyView: View {
     var nothingTodayLine: String? = nil
     /// A retry of the failed gift is on its way (Try again spins).
     var retrying: Bool = false
+    /// "Check your phone" has passed its minute (StkWatch): Done leads.
+    var stkLate: Bool = false
     var onDone: () -> Void
     var onRetry: () -> Void
     @State private var showReceipt = false
@@ -2981,7 +3012,8 @@ private struct GiveCeremonyView: View {
             (stage == "stk" ? Nuru.navy : Nuru.paper).ignoresSafeArea()
             switch stage {
             case "stk":
-                StkStage(amountLabel: amountLabel, destination: destination, giftName: giftName, phone: phone, note: note)
+                StkStage(amountLabel: amountLabel, destination: destination, giftName: giftName, phone: phone, note: note,
+                         late: stkLate, onClose: onDone)
             case "success":
                 SuccessStage(amountLabel: amountLabel, destination: destination, giftName: giftName, refCode: refCode,
                              hasReceipt: txId != nil,
@@ -3012,12 +3044,20 @@ private struct GiveCeremonyView: View {
     }
 }
 
+/// "Check your phone" (EXPERIENCE.md §7.2 #5, §7.1 rule 3): a quiet Close from
+/// the start — it used to have no button at all, and a prompt answered late
+/// trapped the member on this navy screen. Past the minute the line says it is
+/// still processing and Done leads; either way the watch keeps going while
+/// the stage is on screen, and closing leaves the gift as it is.
 private struct StkStage: View {
     let amountLabel: String
     let destination: GiveDestination
     var giftName: String? = nil
     let phone: String?
     let note: String
+    /// Past the minute (StkWatch): "Still processing…", Done as the primary.
+    var late: Bool = false
+    let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3059,13 +3099,39 @@ private struct StkStage: View {
                 .background(Color.white.opacity(0.08), in: Capsule())
                 .padding(.top, Nuru.S.md)
             }
-            HStack(spacing: 6) {
-                ProgressView().tint(.white.opacity(0.5)).scaleEffect(0.7)
-                Text("Waiting up to 60s…").font(.inter(11)).foregroundStyle(.white.opacity(0.5))
+            // True only for the prompt's first minute — gone once it isn't.
+            if !late {
+                HStack(spacing: 6) {
+                    ProgressView().tint(.white.opacity(0.5)).scaleEffect(0.7)
+                    Text("Waiting up to 60s…").font(.inter(11)).foregroundStyle(.white.opacity(0.5))
+                }
+                .padding(.top, Nuru.S.lg)
+                .transition(.opacity)
             }
-            .padding(.top, Nuru.S.lg)
             Spacer()
+            Group {
+                if late {
+                    Button(action: onClose) {
+                        Text("Done")
+                            .font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
+                            .frame(maxWidth: .infinity).frame(height: 48)
+                            .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: onClose) {
+                        Text("Close")
+                            .font(.inter(14, .semibold)).foregroundStyle(.white.opacity(0.7))
+                            .frame(maxWidth: .infinity).frame(height: 48)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Nuru.S.xl).padding(.bottom, Nuru.S.xl)
+            .transition(.opacity)
         }
+        .animation(.easeInOut(duration: 0.25), value: late)
     }
 }
 

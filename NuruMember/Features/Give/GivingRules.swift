@@ -335,6 +335,51 @@ enum GiveRetry {
     }
 }
 
+// MARK: - The M-Pesa wait (EXPERIENCE.md §7.2 #5)
+
+/// How "Check your phone" watches a gift while it is on screen. It used to
+/// give up after 20 looks 3 s apart: a prompt answered at 70 s never landed,
+/// and with no button the member had to quit the app. Now: every 3 s for the
+/// first minute (most prompts are answered in seconds), then every 10 s up to
+/// five minutes, so a late answer still lands. Past the minute the line says
+/// it is still processing and "Done" becomes the primary; a quiet "Close"
+/// is there from the start. Closing never cancels or changes the gift —
+/// Give's reload shows how it ended. Pure; Android uses the same line.
+enum StkWatch {
+    /// When the wait turns late: the line changes, Done leads.
+    static let lateAfter: TimeInterval = 60
+    /// How long the stage keeps looking while it is on screen.
+    static let watchFor: TimeInterval = 300
+    static let lateLine = "Still processing — it will show in Recent giving once it clears."
+
+    /// Seconds before the next look, `elapsed` seconds into the wait — nil
+    /// once the watch is over.
+    static func nextDelay(elapsed: TimeInterval) -> TimeInterval? {
+        guard elapsed < watchFor else { return nil }
+        return elapsed < lateAfter ? 3 : 10
+    }
+
+    /// Past the minute: the late line, and Done as the primary.
+    static func isLate(elapsed: TimeInterval) -> Bool { elapsed >= lateAfter }
+}
+
+// MARK: - The last tap before money moves (EXPERIENCE.md §7.2 #6)
+
+enum GiveButton {
+    /// The M-Pesa / Airtel number sheet's button names the money it sends
+    /// (§7.1 rule 7): "Give KSh 1,000" — the form's total, in its own
+    /// currency, exactly what the intent carries. A recurring start keeps
+    /// "Start Monthly Gift" / "Start Weekly Gift" (it names its money on the
+    /// line above). "Give Now" only if the amount is somehow unknown.
+    static func mobileMoneyLabel(amountLabel: String, frequency: String?) -> String {
+        if let frequency {
+            return "Start \(ScheduleRhythm.isWeekly(frequency) ? "Weekly" : "Monthly") Gift"
+        }
+        let amount = amountLabel.trimmingCharacters(in: .whitespaces)
+        return amount.isEmpty ? "Give Now" : "Give \(amount)"
+    }
+}
+
 // MARK: - Giving notifications (Giving Cycle 3)
 
 /// Where a giving notification lands on the Give tab. (Any other giving_*

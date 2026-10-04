@@ -217,4 +217,39 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertEqual(badge.unread, 0)
         badge.reset()
     }
+
+    // MARK: #5 — the M-Pesa wait keeps watching; the way out is there from the start
+
+    func testTheWaitKeepsLookingSoALateAnswerLands() {
+        XCTAssertEqual(StkWatch.nextDelay(elapsed: 0), 3)
+        XCTAssertEqual(StkWatch.nextDelay(elapsed: 59.9), 3)
+        XCTAssertEqual(StkWatch.nextDelay(elapsed: 60), 10)
+        XCTAssertEqual(StkWatch.nextDelay(elapsed: 299), 10)
+        XCTAssertNil(StkWatch.nextDelay(elapsed: 300), "five minutes, then the stage just waits for Done")
+        // Walk the whole watch: the first minute as before, then every 10 s.
+        var t: TimeInterval = 0
+        var looks: [TimeInterval] = []
+        while let d = StkWatch.nextDelay(elapsed: t) { t += d; looks.append(t) }
+        XCTAssertEqual(looks.filter { $0 <= 60 }.count, 20, "20 looks in the first minute, 3 s apart")
+        XCTAssertTrue(looks.contains(70), "a prompt answered at 70 s is seen at the next look — it used to never land")
+        XCTAssertEqual(looks.last, 300)
+    }
+
+    func testPastTheMinuteItSaysStillProcessing() {
+        XCTAssertFalse(StkWatch.isLate(elapsed: 59), "Waiting up to 60s… is still true")
+        XCTAssertTrue(StkWatch.isLate(elapsed: 60), "the line changes and Done leads")
+        XCTAssertEqual(StkWatch.lateLine, "Still processing — it will show in Recent giving once it clears.")
+    }
+
+    // MARK: #6 — the last tap before money moves names the money
+
+    func testTheNumberSheetsButtonNamesTheMoney() {
+        XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: GiveMoney.format(100_000, "KES"), frequency: nil),
+                       "Give KSh 1,000")
+        XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: GiveMoney.format(101_300, "KES"), frequency: nil),
+                       "Give KSh 1,013", "the total sent — a covered fee included")
+        XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: "KSh 1,000", frequency: "monthly"), "Start Monthly Gift")
+        XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: "KSh 1,000", frequency: "weekly"), "Start Weekly Gift")
+        XCTAssertEqual(GiveButton.mobileMoneyLabel(amountLabel: "", frequency: nil), "Give Now", "never a bare \"Give\"")
+    }
 }
