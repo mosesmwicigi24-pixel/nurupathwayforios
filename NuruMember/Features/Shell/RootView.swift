@@ -123,6 +123,32 @@ struct GivePreset: Equatable {
     /// card. Display only.
     var needTitle: String? = nil
     var needLine: String? = nil
+    /// The pledge's or need's currency (Giving Cycle 5): it decides the rails
+    /// Give offers — a KES promise M-Pesa, a USD one PayPal — and the amount's
+    /// money. Nil = shillings.
+    var currency: String? = nil
+}
+
+/// A gift made away from the Give form that Give's result screen should show
+/// (Giving Cycle 9: "Collect it automatically at this pace" on a pledge's
+/// page) — the same screen as Give's own "give now", watching the same way.
+struct GiveWatch: Equatable {
+    enum Outcome: Equatable {
+        /// The recurring gift's first prompt went out: watch it.
+        case firstPrompt(transactionId: String)
+        /// 409 GIFT_IN_PROGRESS: nothing was made, a prompt from a moment ago
+        /// is still on the phone — watch that one, as Give does.
+        case waiting(transactionId: String, message: String)
+        /// The gift stands, but today's prompt could not go out: the server's
+        /// reason (nil when it gave none) and when the first prompt comes.
+        case scheduled(note: String?, nextRunAt: String)
+    }
+    let outcome: Outcome
+    /// What each prompt asks: "KSh 5,000".
+    let amountLabel: String
+    /// The pledge it collects.
+    let pledgeTitle: String
+    var frequency: String = "monthly"
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
@@ -171,6 +197,17 @@ final class TabRouter: ObservableObject {
     /// A pre-filled gift for the Give screen (Partners → "Pay now"). GivingView
     /// consumes it (fund, amount, pledge id) and clears it.
     @Published var givePreset: GivePreset?
+    /// A gift to open on the Give screen from a giving notification (Giving
+    /// Cycle 3: a failed gift's result, with Try again). GivingView consumes
+    /// it and clears it.
+    @Published var giveLink: GiveLink?
+    /// A gift made on a pledge's page to show on Give's result screen (Giving
+    /// Cycle 9). GivingView consumes it and clears it.
+    @Published var giveWatch: GiveWatch?
+    /// A pledge to open on the Partners segment (Giving Cycle 5: a pledge
+    /// notice, a gift that collects a pledge). PartnersView pushes it and
+    /// clears it.
+    @Published var pledgeLink: String?
     /// A conversation to open on the Chat stack (You → Community → Talk) —
     /// set by a Home "chat_unread" nudge or a Read-with-a-Friend "Sent to
     /// <name> in chat · Open chat" toast. ChatView consumes it (pushes the
@@ -198,6 +235,12 @@ final class TabRouter: ObservableObject {
     func openGive() { giveSegment = .give; selected = .give }
     /// Give, pre-filled (Partners "Pay now" / a due item).
     func openGive(preset: GivePreset) { givePreset = preset; openGive() }
+    /// Give, opening one gift (a giving notification's target).
+    func openGive(link: GiveLink) { giveLink = link; openGive() }
+    /// Give's result screen for a gift made elsewhere (a pledge's page).
+    func openGive(watch: GiveWatch) { giveWatch = watch; openGive() }
+    /// Partners, opening one pledge.
+    func openPledge(_ id: String) { pledgeLink = id; openPartners() }
     func openPartners() { giveSegment = .partners; selected = .give }
 }
 
@@ -395,7 +438,20 @@ struct RootView: View {
             let level = info["levelNumber"] as? Int ?? 0
             let inviteToken = info["inviteToken"] as? String ?? ""
             let departmentId = info["departmentId"] as? String ?? ""
-            if !announcementId.isEmpty {
+            let transactionId = info["transactionId"] as? String ?? ""
+            let scheduleId = info["scheduleId"] as? String ?? ""
+            let pledgeId = info["pledgeId"] as? String ?? ""
+            if let id = PledgeLink.from(template: template, pledgeId: pledgeId) {
+                // pledge_* and the pledge collector's notices (Giving Cycle
+                // 5: covered, stopped) — the pledge itself.
+                tabs.openPledge(id)
+            } else if let link = GiveLink.from(template: template, transactionId: transactionId, scheduleId: scheduleId) {
+                // giving_gift_failed (Giving Cycle 3) — that gift's result: why
+                // it failed, what to do, and Try again. giving_schedule_failed /
+                // _paused (Cycle 4) — that recurring gift's sheet. (The
+                // heads-up opens Give itself, below.)
+                tabs.openGive(link: link)
+            } else if !announcementId.isEmpty {
                 tabs.openAnnouncement(announcementId)
             } else if !moduleId.isEmpty {
                 tabs.openPathway(.module(moduleId))

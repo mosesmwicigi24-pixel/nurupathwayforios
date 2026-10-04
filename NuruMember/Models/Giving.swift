@@ -28,6 +28,12 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
     /// (`need_id`; absent on servers that don't send it). "Repeat last gift"
     /// skips these, as it skips pledge payments.
     var needId: String? = nil
+    /// Why a FAILED gift failed (Giving Cycle 1), in the server's words; nil
+    /// for every other status, on older servers, and when malformed.
+    var failure: GiftFailure? = nil
+    /// How much of `amountMinor` was the fee the member covered (Giving
+    /// Cycle 2); nil when none. `amountMinor` stays the total charged.
+    var feeCoverMinor: Int? = nil
     let createdAt: String
     let settledAt: String?
     var id: String { transactionId }
@@ -49,8 +55,37 @@ struct GivingRecord: Codable, Sendable, Identifiable, Hashable {
         pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)).flatMap { $0.isEmpty ? nil : $0 }
         pledgeTitle = (try? c.decodeIfPresent(String.self, forKey: .pledgeTitle)).flatMap { $0.isEmpty ? nil : $0 }
         needId = (try? c.decodeIfPresent(String.self, forKey: .needId)).flatMap { $0.isEmpty ? nil : $0 }
+        failure = try? c.decodeIfPresent(GiftFailure.self, forKey: .failure)
+        feeCoverMinor = (try? c.decodeIfPresent(Int.self, forKey: .feeCoverMinor)).flatMap { $0 > 0 ? $0 : nil }
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         settledAt = try? c.decodeIfPresent(String.self, forKey: .settledAt)
+    }
+}
+
+/// Why a gift did not go through (Giving Cycle 1) — from M-Pesa's own result
+/// code, in words the member can act on: what happened (`reason`) and what
+/// to do next, including whether money moved (`hint`). The server authors
+/// both and the app shows them VERBATIM — it never writes its own. `code` is
+/// one of cancelled | unreachable | expired | insufficient_funds | wrong_pin
+/// | busy | limit_exceeded | declined | system | no_answer | no_phone;
+/// `retryable` = the member never had a chance to answer (a recurring gift
+/// may try once more on its own).
+struct GiftFailure: Codable, Sendable, Hashable {
+    let code: String
+    let reason: String
+    let hint: String
+    let retryable: Bool
+
+    init(code: String, reason: String, hint: String, retryable: Bool) {
+        self.code = code; self.reason = reason; self.hint = hint; self.retryable = retryable
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
+        reason = (try? c.decodeIfPresent(String.self, forKey: .reason)) ?? ""
+        hint = (try? c.decodeIfPresent(String.self, forKey: .hint)) ?? ""
+        retryable = (try? c.decodeIfPresent(Bool.self, forKey: .retryable)) ?? false
     }
 }
 
@@ -71,6 +106,9 @@ struct GivingIntentResult: Codable, Sendable {
     /// when it carried a `pledge_id`. Both absent on older servers.
     let fund: Pledge.FundRef?
     let pledge: PledgeRef?
+    /// The failed gift this one retries (POST /giving/transactions/{id}/retry,
+    /// Giving Cycle 3); nil for an ordinary intent.
+    var retryOf: String? = nil
 
     struct PledgeRef: Codable, Sendable {
         let pledgeId: String
@@ -93,6 +131,7 @@ struct GivingIntentResult: Codable, Sendable {
         reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
         fund = try? c.decodeIfPresent(Pledge.FundRef.self, forKey: .fund)
         pledge = try? c.decodeIfPresent(PledgeRef.self, forKey: .pledge)
+        retryOf = (try? c.decodeIfPresent(String.self, forKey: .retryOf)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -144,6 +183,11 @@ struct GivingDetail: Codable, Sendable {
     var memberName: String? = nil
     /// The giver's congregation, when known.
     var congregation: String? = nil
+    /// Why it failed (status failed), in the server's words; else nil.
+    var failure: GiftFailure? = nil
+    /// How much of `amountMinor` was the fee the member covered (Giving
+    /// Cycle 2); nil when none. The receipt then reads gift · fee · total.
+    var feeCoverMinor: Int? = nil
 
     struct NeedRef: Codable, Sendable {
         let needId: String
@@ -176,6 +220,8 @@ struct GivingDetail: Codable, Sendable {
         methodLabel = try? c.decodeIfPresent(String.self, forKey: .methodLabel)
         memberName = try? c.decodeIfPresent(String.self, forKey: .memberName)
         congregation = try? c.decodeIfPresent(String.self, forKey: .congregation)
+        failure = try? c.decodeIfPresent(GiftFailure.self, forKey: .failure)
+        feeCoverMinor = (try? c.decodeIfPresent(Int.self, forKey: .feeCoverMinor)).flatMap { $0 > 0 ? $0 : nil }
     }
 }
 
@@ -186,9 +232,36 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
     let currency: String
     let frequency: String   // weekly | monthly
     let method: String
-    let status: String      // active | cancelled
+    let status: String      // active | paused | cancelled
     let nextRunAt: String
     let createdAt: String
+    /// The number each cycle's prompt goes to (Giving Cycle 1); nil = the
+    /// member's profile number, followed if it changes.
+    let phoneNumber: String?
+    /// When the current cycle will be tried again, while a retry is armed.
+    let retryAt: String?
+    /// Why the last charge failed, while the schedule is still failing —
+    /// the same server-authored words as a failed gift. Nil otherwise.
+    let lastFailure: GiftFailure?
+    /// Why it is paused (Giving Cycle 4): "failures" (three prompts did not
+    /// go through), "member" (paused on purpose) or "pledge" (it follows its
+    /// pledge). Nil while running, and on older servers.
+    var pauseReason: String? = nil
+    /// A member's pause ends on its own on this Nairobi date ("YYYY-MM-DD").
+    var resumeOn: String? = nil
+    /// A push minutes before each prompt (default on).
+    var headsUp: Bool = true
+    /// A monthly gift's own day of the month (1–31, clamped into shorter
+    /// months); nil for weekly gifts and older servers.
+    var anchorDay: Int? = nil
+    /// The pledge this gift collects (Giving Cycle 5) — its id and title as
+    /// the pledge's card says it; nil for an ordinary gift.
+    var pledge: GivingIntentResult.PledgeRef? = nil
+    /// What the next prompt will ask (Giving Cycle 5): below `amountMinor`
+    /// when the pledge only owes the rest, 0 when it is already paid for that
+    /// cycle (no prompt comes), nil when no prompt is coming at all (paused,
+    /// cancelled, stopping with its pledge) — and on older servers.
+    var nextAmountMinor: Int? = nil
     var id: String { scheduleId }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
@@ -201,6 +274,128 @@ struct GivingSchedule: Codable, Sendable, Identifiable {
         status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
         nextRunAt = (try? c.decodeIfPresent(String.self, forKey: .nextRunAt)) ?? ""
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
+        phoneNumber = (try? c.decodeIfPresent(String.self, forKey: .phoneNumber)).flatMap { $0.isEmpty ? nil : $0 }
+        retryAt = (try? c.decodeIfPresent(String.self, forKey: .retryAt)).flatMap { $0.isEmpty ? nil : $0 }
+        lastFailure = try? c.decodeIfPresent(GiftFailure.self, forKey: .lastFailure)
+        pauseReason = (try? c.decodeIfPresent(String.self, forKey: .pauseReason)).flatMap { $0.isEmpty ? nil : $0 }
+        resumeOn = (try? c.decodeIfPresent(String.self, forKey: .resumeOn)).flatMap { $0.isEmpty ? nil : String($0.prefix(10)) }
+        headsUp = (try? c.decodeIfPresent(Bool.self, forKey: .headsUp)) ?? true
+        anchorDay = (try? c.decodeIfPresent(Int.self, forKey: .anchorDay)).flatMap { (1...31).contains($0) ? $0 : nil }
+        pledge = (try? c.decodeIfPresent(GivingIntentResult.PledgeRef.self, forKey: .pledge)).flatMap { $0.pledgeId.isEmpty ? nil : $0 }
+        nextAmountMinor = (try? c.decodeIfPresent(Int.self, forKey: .nextAmountMinor)).flatMap { $0 >= 0 ? $0 : nil }
+    }
+}
+
+/// POST /giving/schedules → the schedule, and (Giving Cycle 4) what happened
+/// to "give now": `firstCharge` is the first prompt's intent when it went out;
+/// nil with `firstChargeError` when today's prompt could not be sent (the
+/// schedule still stands); both nil when nothing was asked of today.
+struct ScheduleCreated: Decodable, Sendable {
+    let scheduleId: String
+    let status: String
+    let nextRunAt: String
+    let reused: Bool
+    let firstCharge: GivingIntentResult?
+    let firstChargeError: String?
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        scheduleId = (try? c.decodeIfPresent(String.self, forKey: .scheduleId)) ?? ""
+        status = (try? c.decodeIfPresent(String.self, forKey: .status)) ?? "active"
+        nextRunAt = (try? c.decodeIfPresent(String.self, forKey: .nextRunAt)) ?? ""
+        reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
+        firstCharge = (try? c.decodeIfPresent(GivingIntentResult.self, forKey: .firstCharge))
+            .flatMap { $0.transactionId.isEmpty ? nil : $0 }
+        firstChargeError = (try? c.decodeIfPresent(String.self, forKey: .firstChargeError)).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case scheduleId, status, nextRunAt, reused, firstCharge, firstChargeError
+    }
+}
+
+// MARK: - Giving methods (Giving Cycle 1)
+
+/// GET /giving/methods — the rails this member can give with HERE: each one's
+/// currency and limits, whether a recurring gift can run on it, the number on
+/// file for a prompt, and which rail to start on. The Give form draws its
+/// method list from this instead of hard-coding one, so a rail that cannot
+/// take money (Airtel has no provider; cards need the Stripe step) is never
+/// offered as if it could.
+struct GivingMethods: Codable, Sendable, Hashable {
+    let methods: [GivingMethod]
+    /// The profile's number as E.164 when it is a Kenyan mobile number, else nil.
+    let phoneOnFile: String?
+    /// The first enabled rail — where the form starts. Nil when none is.
+    let defaultMethod: String?
+
+    init(methods: [GivingMethod], phoneOnFile: String?, defaultMethod: String?) {
+        self.methods = methods; self.phoneOnFile = phoneOnFile; self.defaultMethod = defaultMethod
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        // Rows are tolerant per field but strict on their key (a rail with no
+        // key is not a rail); an unreadable list reads as none, and Give then
+        // falls back to M-Pesa alone.
+        methods = ((try? c.decodeIfPresent([GivingMethod].self, forKey: .methods)) ?? [])
+            .filter { !$0.key.isEmpty }
+        phoneOnFile = (try? c.decodeIfPresent(String.self, forKey: .phoneOnFile)).flatMap { $0.isEmpty ? nil : $0 }
+        defaultMethod = (try? c.decodeIfPresent(String.self, forKey: .defaultMethod)).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    /// What Give offers while the server has not said — the call failed, or it
+    /// answered with no rails: M-Pesa alone, the one rail every Nuru server
+    /// runs. If it cannot take money after all, the server still refuses the
+    /// gift (422 METHOD_UNAVAILABLE) and the member reads why.
+    static func fallback(phoneOnFile: String? = nil) -> GivingMethods {
+        GivingMethods(methods: [GivingMethod(key: "mpesa", label: "M-Pesa", enabled: true, unavailableReason: nil,
+                                             currency: "KES", minMinor: 100, maxMinor: 25_000_000,
+                                             wholeUnits: true, recurring: true, needsPhone: true)],
+                      phoneOnFile: phoneOnFile, defaultMethod: "mpesa")
+    }
+}
+
+/// One giving rail as the server describes it (GET /giving/methods).
+struct GivingMethod: Codable, Sendable, Hashable, Identifiable {
+    let key: String                 // mpesa | airtel | paypal | card
+    let label: String
+    /// Can take a member's money on this server right now. ABSENT READS AS
+    /// FALSE: a rail is offered only when the server says it works.
+    let enabled: Bool
+    /// Why not, when not enabled: "coming_soon" | "unavailable".
+    let unavailableReason: String?
+    /// The rail's own currency (M-Pesa KES, PayPal USD); nil = any.
+    let currency: String?
+    let minMinor: Int
+    let maxMinor: Int
+    /// Whole shillings only (no cents) — M-Pesa.
+    let wholeUnits: Bool
+    /// A recurring gift can run on it here.
+    let recurring: Bool
+    /// It prompts a phone (mobile money), so the gift needs a number.
+    let needsPhone: Bool
+    var id: String { key }
+
+    init(key: String, label: String, enabled: Bool, unavailableReason: String?, currency: String?,
+         minMinor: Int, maxMinor: Int, wholeUnits: Bool, recurring: Bool, needsPhone: Bool) {
+        self.key = key; self.label = label; self.enabled = enabled; self.unavailableReason = unavailableReason
+        self.currency = currency; self.minMinor = minMinor; self.maxMinor = maxMinor
+        self.wholeUnits = wholeUnits; self.recurring = recurring; self.needsPhone = needsPhone
+    }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        key = try c.decode(String.self, forKey: .key)
+        label = (try? c.decodeIfPresent(String.self, forKey: .label)) ?? ""
+        enabled = (try? c.decodeIfPresent(Bool.self, forKey: .enabled)) ?? false
+        unavailableReason = (try? c.decodeIfPresent(String.self, forKey: .unavailableReason)).flatMap { $0.isEmpty ? nil : $0 }
+        currency = (try? c.decodeIfPresent(String.self, forKey: .currency)).flatMap { $0.isEmpty ? nil : $0 }
+        minMinor = (try? c.decodeIfPresent(Int.self, forKey: .minMinor)) ?? 0
+        maxMinor = (try? c.decodeIfPresent(Int.self, forKey: .maxMinor)) ?? 0
+        wholeUnits = (try? c.decodeIfPresent(Bool.self, forKey: .wholeUnits)) ?? false
+        recurring = (try? c.decodeIfPresent(Bool.self, forKey: .recurring)) ?? false
+        needsPhone = (try? c.decodeIfPresent(Bool.self, forKey: .needsPhone)) ?? false
     }
 }
 
@@ -351,7 +546,43 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     /// default), so what a pledge says it pays to is where its money goes.
     /// Nil on older servers: Give then says "Routed by the church".
     let paysTo: FundRef?
+    /// The first day an instalment can fall due (YYYY-MM-DD) when later than
+    /// the creation day — a pledge collected automatically starts on its first
+    /// collection (Giving Cycle 5). Nil = the creation day (and on older servers).
+    let startsOn: String?
+    /// The last day an instalment can fall due (YYYY-MM-DD); nil = open-ended.
+    let untilOn: String?
+    /// A total pledge's pace (Giving Cycle 9): what is still owed spread over
+    /// the monthly collections left — one today, then the same day each month
+    /// through its date — rounded up to whole shillings. Nil for a monthly
+    /// pledge, one not active, fully paid or past its date, and on older
+    /// servers.
+    let pace: Pace?
     var id: String { pledgeId }
+
+    struct Pace: Codable, Sendable, Hashable {
+        /// Each collection, in the pledge's own currency's minor units.
+        let perMonthMinor: Int
+        /// How many collections are left, today's included (at least 1).
+        let collectionsLeft: Int
+        /// The pledge's date, YYYY-MM-DD.
+        let by: String
+
+        init(perMonthMinor: Int, collectionsLeft: Int, by: String) {
+            self.perMonthMinor = perMonthMinor; self.collectionsLeft = collectionsLeft; self.by = by
+        }
+
+        /// Strict: a pace missing any part is no pace (the pledge reads nil).
+        init(from d: Decoder) throws {
+            let c = try d.container(keyedBy: CodingKeys.self)
+            guard let per = c.flexInt(.perMonthMinor), per > 0,
+                  let left = c.flexInt(.collectionsLeft), left >= 1,
+                  let by = try? c.decodeIfPresent(String.self, forKey: .by), by.count >= 10 else {
+                throw DecodingError.dataCorrupted(.init(codingPath: d.codingPath, debugDescription: "an incomplete pace"))
+            }
+            perMonthMinor = per; collectionsLeft = left; self.by = String(by.prefix(10))
+        }
+    }
 
     struct FundRef: Codable, Sendable, Hashable {
         let code: String
@@ -409,6 +640,9 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         remindersEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .remindersEnabled)) ?? true
         createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
         paysTo = (try? c.decodeIfPresent(FundRef.self, forKey: .paysTo)).flatMap { $0.code.isEmpty && $0.name.isEmpty ? nil : $0 }
+        startsOn = (try? c.decodeIfPresent(String.self, forKey: .startsOn)).flatMap { $0.isEmpty ? nil : $0 }
+        untilOn = (try? c.decodeIfPresent(String.self, forKey: .untilOn)).flatMap { $0.isEmpty ? nil : $0 }
+        pace = try? c.decodeIfPresent(Pace.self, forKey: .pace)
     }
 
     static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
@@ -588,6 +822,43 @@ struct PledgeDetail: Decodable, Sendable {
     enum CodingKeys: String, CodingKey { case pledge, payments }
 }
 
+/// "I paid another way" (GET / POST /giving/pledges/{id}/claims, Giving
+/// Cycle 5): money the member says they gave toward a pledge outside the app,
+/// in the pledge's own currency, until the office matches it. `status`:
+/// pending → confirmed (booked as a payment) or rejected. The list sends
+/// amounts as text, so they are read either way.
+struct PledgeClaim: Decodable, Sendable, Identifiable, Hashable {
+    let claimId: String
+    let pledgeId: String
+    let amountMinor: Int
+    let currency: String
+    /// The day the member says they paid, YYYY-MM-DD.
+    let paidOn: String
+    let note: String?
+    let status: String           // pending | confirmed | rejected
+    let decidedAt: String?
+    let createdAt: String?
+    var id: String { claimId.isEmpty ? "\(paidOn)|\(amountMinor)|\(createdAt ?? "")" : claimId }
+
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        claimId = (try? c.decodeIfPresent(String.self, forKey: .claimId)) ?? ""
+        pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
+        amountMinor = max(0, c.flexInt(.amountMinor) ?? 0)
+        currency = ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES")
+            .trimmingCharacters(in: .whitespaces).uppercased()
+        paidOn = String(((try? c.decodeIfPresent(String.self, forKey: .paidOn)) ?? "").prefix(10))
+        note = (try? c.decodeIfPresent(String.self, forKey: .note))
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
+        status = ((try? c.decodeIfPresent(String.self, forKey: .status)) ?? "pending").lowercased()
+        decidedAt = try? c.decodeIfPresent(String.self, forKey: .decidedAt)
+        createdAt = try? c.decodeIfPresent(String.self, forKey: .createdAt)
+    }
+    enum CodingKeys: String, CodingKey {
+        case claimId, pledgeId, amountMinor, currency, paidOn, note, status, decidedAt, createdAt
+    }
+}
+
 /// POST /giving/partners/join → the membership (flat, or wrapped as
 /// `{membership: {…}}`).
 struct PartnerJoinResult: Decodable, Sendable {
@@ -606,6 +877,14 @@ struct PartnerJoinResult: Decodable, Sendable {
 /// POST /giving/pledges (and PATCH) → the pledge, flat or `{pledge: {…}}`.
 struct PledgeResult: Decodable, Sendable {
     let pledge: Pledge
+    /// The same pledge made a moment ago (a double tap, a request sent
+    /// twice): the server answered with THAT one — a success, never a second
+    /// pledge (Giving Cycle 5). False when absent.
+    var reused = false
+    /// "Charge me automatically" could not be set up: the pledge WAS made,
+    /// and these are the server's words for why. Nil when absent.
+    var autoScheduleError: String? = nil
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         if let nested = try? c.decodeIfPresent(Pledge.self, forKey: .pledge), !nested.pledgeId.isEmpty {
@@ -613,8 +892,11 @@ struct PledgeResult: Decodable, Sendable {
         } else {
             pledge = try Pledge(from: d)
         }
+        reused = (try? c.decodeIfPresent(Bool.self, forKey: .reused)) ?? false
+        autoScheduleError = (try? c.decodeIfPresent(String.self, forKey: .autoScheduleError))
+            .flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
     }
-    enum CodingKeys: String, CodingKey { case pledge }
+    enum CodingKeys: String, CodingKey { case pledge, reused, autoScheduleError }
 }
 
 /// GET /giving/statements?year= — the JSON statement (§5): totals by pledge
@@ -625,6 +907,10 @@ struct GivingStatements: Decodable, Sendable {
     let year: Int
     let totalMinor: Int
     let currency: String
+    /// The year's succeeded giving per currency, shillings first (Giving
+    /// Cycle 2) — never one sum across currencies. `totalMinor`/`currency`
+    /// are its first entry. An older server sends none: built from those two.
+    let totals: [CurrencyTotal]
     let byPledge: [ByPledge]
     let byFund: [ByFund]
     let payments: [PledgePayment]
@@ -638,6 +924,14 @@ struct GivingStatements: Decodable, Sendable {
     var paidMinor: Int? = nil
     /// max(pledged − paid, 0).
     var remainingMinor: Int? = nil
+    /// Giving Cycle 9: the currency the three numbers above are in —
+    /// shillings whenever any pledge money is (they used to add every
+    /// currency's minor units together). Nil on older servers.
+    var summaryCurrency: String? = nil
+    /// Giving Cycle 9: pledged / paid / remaining for EACH currency, that
+    /// currency's pledges against that currency's payments, shillings first.
+    /// Nil on older servers (the app then counts per currency itself).
+    var summaryByCurrency: [PartnerFigures]? = nil
     /// One row per pledge in the year (`pledges[]`); empty when absent.
     var pledges: [StatementPledge] = []
 
@@ -811,29 +1105,47 @@ struct GivingStatements: Decodable, Sendable {
         }
     }
 
+    /// One row per pledge PER CURRENCY (Giving Cycle 2); `pledgeId` is ""
+    /// for the "Gifts outside a pledge" row.
     struct ByPledge: Codable, Sendable, Identifiable {
         let pledgeId: String
         let title: String
+        let currency: String
         let totalMinor: Int
-        var id: String { pledgeId }
+        var id: String { "\(pledgeId)|\(currency)" }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
             pledgeId = (try? c.decodeIfPresent(String.self, forKey: .pledgeId)) ?? ""
             title = (try? c.decodeIfPresent(String.self, forKey: .title)) ?? ""
+            currency = ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES").uppercased()
             totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
         }
     }
+    /// One row per fund PER CURRENCY (Giving Cycle 2).
     struct ByFund: Codable, Sendable, Identifiable {
         let code: String
         let name: String
+        let currency: String
         let totalMinor: Int
-        var id: String { code }
+        var id: String { "\(code)|\(currency)" }
         init(from d: Decoder) throws {
             let c = try d.container(keyedBy: CodingKeys.self)
             code = (try? c.decodeIfPresent(String.self, forKey: .code)) ?? ""
             name = (try? c.decodeIfPresent(String.self, forKey: .name)) ?? ""
+            currency = ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES").uppercased()
             totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
         }
+    }
+
+    /// Split of the year's succeeded giving (Giving Cycle 2), per currency:
+    /// gifts outside a pledge, and pledge payments. The two partition every
+    /// payment, so gifts + pledges = `totals` for each currency.
+    var giftTotals: [CurrencyTotal] { Self.sum(byPledge.filter { $0.pledgeId.isEmpty }) }
+    var pledgeTotals: [CurrencyTotal] { Self.sum(byPledge.filter { !$0.pledgeId.isEmpty }) }
+
+    private static func sum(_ rows: [ByPledge]) -> [CurrencyTotal] {
+        GiveMoney.ordered(GiveMoney.merged(rows.map { CurrencyTotal(currency: $0.currency, totalMinor: $0.totalMinor) }))
+            .filter { $0.totalMinor != 0 }
     }
 
     init(from d: Decoder) throws {
@@ -844,12 +1156,20 @@ struct GivingStatements: Decodable, Sendable {
         years = ys.isEmpty ? [year] : ys
         totalMinor = (try? c.decodeIfPresent(Int.self, forKey: .totalMinor)) ?? 0
         currency = (try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "KES"
+        let sent = ((try? c.decodeIfPresent([CurrencyTotal].self, forKey: .totals)) ?? []).filter { $0.totalMinor != 0 }
+        totals = sent.isEmpty
+            ? (totalMinor != 0 ? [CurrencyTotal(currency: currency, totalMinor: totalMinor)] : [])
+            : GiveMoney.ordered(GiveMoney.merged(sent))
         byPledge = (try? c.decodeIfPresent([ByPledge].self, forKey: .byPledge)) ?? []
         byFund = (try? c.decodeIfPresent([ByFund].self, forKey: .byFund)) ?? []
         payments = (try? c.decodeIfPresent([PledgePayment].self, forKey: .payments)) ?? []
         pledgedMinor = try? c.decodeIfPresent(Int.self, forKey: .pledgedMinor)
         paidMinor = try? c.decodeIfPresent(Int.self, forKey: .paidMinor)
         remainingMinor = try? c.decodeIfPresent(Int.self, forKey: .remainingMinor)
+        summaryCurrency = (try? c.decodeIfPresent(String.self, forKey: .summaryCurrency))
+            .flatMap { $0.isEmpty ? nil : $0.trimmingCharacters(in: .whitespaces).uppercased() }
+        summaryByCurrency = (try? c.decodeIfPresent([PartnerFigures].self, forKey: .summaryByCurrency))
+            .map { rows in rows.filter { !$0.currency.isEmpty } }
         pledges = (try? c.decodeIfPresent([StatementPledge].self, forKey: .pledges)) ?? []
         impact = try? c.decodeIfPresent(Impact.self, forKey: .impact)
         months = (try? c.decodeIfPresent([MonthStatus].self, forKey: .months)).flatMap { $0.isEmpty ? nil : $0 }
@@ -858,9 +1178,34 @@ struct GivingStatements: Decodable, Sendable {
         pending = (try? c.decodeIfPresent([PledgePayment].self, forKey: .pending)) ?? []
     }
     enum CodingKeys: String, CodingKey {
-        case years, year, totalMinor, currency, byPledge, byFund, payments
-        case pledgedMinor, paidMinor, remainingMinor, pledges
+        case years, year, totalMinor, currency, totals, byPledge, byFund, payments
+        case pledgedMinor, paidMinor, remainingMinor, summaryCurrency, summaryByCurrency, pledges
         case impact, months, faithfulness, season, pending
+    }
+}
+
+/// One currency's Pledged / Paid / Remaining for a year — the STATEMENT
+/// card's three numbers, never added across currencies. The server sends
+/// them (`summary_by_currency`, Giving Cycle 9); on an older server the app
+/// counts them itself (PledgeMath.figures).
+struct PartnerFigures: Equatable, Sendable {
+    let currency: String
+    let pledgedMinor: Int
+    let paidMinor: Int
+    let remainingMinor: Int
+}
+
+extension PartnerFigures: Decodable {
+    private enum CodingKeys: String, CodingKey { case currency, pledgedMinor, paidMinor, remainingMinor }
+
+    /// Tolerant per figure (a figure the server left out reads 0); a row
+    /// without a currency reads "" and is dropped by the statement.
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        self.init(currency: ((try? c.decodeIfPresent(String.self, forKey: .currency)) ?? "").trimmingCharacters(in: .whitespaces).uppercased(),
+                  pledgedMinor: c.flexInt(.pledgedMinor) ?? 0,
+                  paidMinor: c.flexInt(.paidMinor) ?? 0,
+                  remainingMinor: max(0, c.flexInt(.remainingMinor) ?? 0))
     }
 }
 

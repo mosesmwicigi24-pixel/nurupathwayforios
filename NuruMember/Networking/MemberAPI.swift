@@ -513,6 +513,13 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/history", as: Envelope<GivingRecord>.self).data
     }
 
+    /// GET /giving/methods (Giving Cycle 1) — the rails this member can give
+    /// with here, their currency and limits, the number on file for a prompt,
+    /// and which rail to start on. Give draws its method list from this.
+    static func givingMethods() async throws -> GivingMethods {
+        try await APIClient.shared.get("giving/methods", as: GivingMethods.self)
+    }
+
     /// POST /giving/intents — create a real gift intent (server-authoritative).
     /// `accountName` is "named giving" (custom sheet, optional): rides the
     /// M-Pesa STK push AccountReference (sanitized server-side) and persists on
@@ -526,19 +533,23 @@ extension MemberAPI {
     /// only to retry an attempt that got no server answer — the server then
     /// returns the existing transaction instead of a second STK). A fresh one
     /// when nil.
+    /// `coverFeeMinor` (Giving Cycle 2): how much of `amountMinor` — still the
+    /// TOTAL charged — is the fee the member chose to cover. Omitted when nil.
     static func giving(fund: String, amountMinor: Int, currency: String,
                        method: String, phoneNumber: String? = nil, accountName: String? = nil,
                        pledgeId: String? = nil, needId: String? = nil,
-                       idempotencyKey: String? = nil) async throws -> GivingIntentResult {
+                       idempotencyKey: String? = nil, coverFeeMinor: Int? = nil) async throws -> GivingIntentResult {
         struct Body: Encodable {
             let fund: String; let amountMinor: Int; let currency: String
             let method: String; let phoneNumber: String?; let accountName: String?
             let pledgeId: String?; let needId: String?; let idempotencyKey: String
+            let coverFeeMinor: Int?
         }
         return try await APIClient.shared.post("giving/intents",
             body: Body(fund: fund, amountMinor: amountMinor, currency: currency,
                        method: method, phoneNumber: phoneNumber, accountName: accountName,
-                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? UUID().uuidString),
+                       pledgeId: pledgeId, needId: needId, idempotencyKey: idempotencyKey ?? GiveKey.fresh(),
+                       coverFeeMinor: coverFeeMinor),
             as: GivingIntentResult.self)
     }
 
@@ -547,12 +558,33 @@ extension MemberAPI {
         try await APIClient.shared.get("giving/transactions/\(id)", as: GivingDetail.self)
     }
 
+    /// POST /giving/transactions/{id}/retry (Giving Cycle 3) — "Try again" on
+    /// one of the member's FAILED gifts: a new gift carrying everything the
+    /// failed one did (fund, amount, currency, method, pledge or need, name,
+    /// fee cover), answered like POST /giving/intents plus `retry_of`.
+    /// `phoneNumber`: mobile money's number for this prompt (omitted = the
+    /// profile number). 409 GIFT_IN_PROGRESS while a prompt is waiting.
+    static func retryGift(_ id: String, idempotencyKey: String, phoneNumber: String?) async throws -> GivingIntentResult {
+        struct Body: Encodable { let idempotencyKey: String; let phoneNumber: String? }
+        return try await APIClient.shared.post("giving/transactions/\(id)/retry",
+            body: Body(idempotencyKey: idempotencyKey, phoneNumber: phoneNumber),
+            as: GivingIntentResult.self)
+    }
+
     /// GET /giving/transactions/{id}/receipt.pdf — the branded receipt as PDF
     /// bytes. Rides APIClient's RawJSON passthrough (same as certificate PDFs),
     /// so the bearer header + single-flight 401 refresh come for free and the
     /// bytes are returned untouched.
     static func givingReceiptPdf(_ id: String) async throws -> Data {
         try await APIClient.shared.get("giving/transactions/\(id)/receipt.pdf", as: RawJSON.self).data
+    }
+
+    /// GET /giving/statement.pdf?year=YYYY — the giving statement for one
+    /// church (Nairobi) year as PDF bytes, rendered by the server (Giving
+    /// Cycle 2: per-currency totals, Nairobi dates) so the app, the office
+    /// and the paper agree. Same RawJSON passthrough as `givingReceiptPdf`.
+    static func givingStatementPdf(year: Int) async throws -> Data {
+        try await APIClient.shared.get("giving/statement.pdf", query: ["year": String(year)], as: RawJSON.self).data
     }
 
     /// GET /me/gifts — the member's spiritual-gifts profile.
@@ -578,6 +610,52 @@ extension MemberAPI {
     /// GET /giving/schedules — the member's recurring gifts.
     static func schedules() async throws -> [GivingSchedule] {
         try await APIClient.shared.get("giving/schedules", as: Envelope<GivingSchedule>.self).data
+    }
+
+    /// POST /giving/schedules — a real server-charged recurring gift.
+    /// `phoneNumber`: the number every cycle prompts (omitted = the profile's).
+    /// `firstCharge` (Giving Cycle 4): "now" sends the first prompt at once as
+    /// the schedule's first cycle; "next" waits for the next one.
+    static func createSchedule(fund: String, amountMinor: Int, currency: String, frequency: String,
+                               method: String, idempotencyKey: String, phoneNumber: String?,
+                               firstCharge: String) async throws -> ScheduleCreated {
+        try await createSchedule(ScheduleCreateBody(fund: fund, amountMinor: amountMinor, currency: currency,
+                                                    frequency: frequency, method: method, idempotencyKey: idempotencyKey,
+                                                    phoneNumber: phoneNumber, firstCharge: firstCharge))
+    }
+
+    /// The POST /giving/schedules body. `pledgeId` binds the gift to a pledge
+    /// (Giving Cycle 9: "Collect it automatically at this pace") — every
+    /// prompt then asks only what the pledge still owes, and the server
+    /// books it on the pledge's own fund. Nil keys are left out.
+    struct ScheduleCreateBody: Encodable, Equatable {
+        let fund: String
+        let amountMinor: Int
+        let currency: String
+        let frequency: String
+        let method: String
+        let idempotencyKey: String
+        var phoneNumber: String? = nil
+        let firstCharge: String
+        var pledgeId: String? = nil
+    }
+    static func createSchedule(_ body: ScheduleCreateBody) async throws -> ScheduleCreated {
+        try await APIClient.shared.post("giving/schedules", body: body, as: ScheduleCreated.self)
+    }
+
+    /// PATCH /giving/schedules/{id} (Giving Cycle 4) — change a recurring gift
+    /// instead of cancelling it: amount, day, number, heads-up. Only what the
+    /// patch carries changes; answers the schedule as GET lists it.
+    static func updateSchedule(_ id: String, _ patch: SchedulePatch) async throws -> GivingSchedule {
+        try await APIClient.shared.patch("giving/schedules/\(id)", body: patch, as: GivingSchedule.self)
+    }
+
+    /// POST /giving/schedules/{id}/pause (Giving Cycle 4) — the member pauses
+    /// it, until `resumeOn` ("YYYY-MM-DD", Nairobi; tomorrow to a year ahead)
+    /// or, when nil, until they resume it.
+    static func pauseSchedule(_ id: String, resumeOn: String?) async throws {
+        struct Body: Encodable { let resumeOn: String? }
+        _ = try await APIClient.shared.post("giving/schedules/\(id)/pause", body: Body(resumeOn: resumeOn), as: EmptyResponse.self)
     }
 
     /// POST /giving/schedules/{id}/cancel.
@@ -649,29 +727,53 @@ extension MemberAPI {
         var autoSchedule: AutoSchedule? = nil
         let idempotencyKey: String
     }
-    static func createPledge(_ body: PledgeCreateBody) async throws -> Pledge {
-        try await APIClient.shared.post("giving/pledges", body: body, as: PledgeResult.self).pledge
+    /// The answer carries the pledge, whether it is one made a moment ago
+    /// (`reused`), and why its automatic collection could not be set up
+    /// (`auto_schedule_error` — the pledge itself WAS made). Giving Cycle 5.
+    static func createPledge(_ body: PledgeCreateBody) async throws -> PledgeResult {
+        try await APIClient.shared.post("giving/pledges", body: body, as: PledgeResult.self)
     }
 
     /// PATCH /giving/pledges/{id} — `{status?: paused|active|cancelled,
-    /// amount_minor?, due_day?, reminders_enabled?, title?: string | null}`.
-    /// Only the keys set are sent. `title` is the one key that must be able
-    /// to travel as an explicit JSON `null` (clearing the custom name so the
-    /// server falls back to its derived one), so the body is encoded by hand
-    /// — the same idiom as `reactToEventPost`.
+    /// amount_minor?, target_minor?, due_day?, reminders_enabled?, title?:
+    /// string | null}`. Only the keys set are sent. `title` is the one key
+    /// that must be able to travel as an explicit JSON `null` (clearing the
+    /// custom name so the server falls back to its derived one), so the body
+    /// is encoded by hand — the same idiom as `reactToEventPost`.
     struct PledgePatchBody: Encodable {
         enum TitlePatch { case set(String), clear }
         var status: String? = nil
+        /// A monthly pledge's amount, in its own currency's minor units.
         var amountMinor: Int? = nil
+        /// A total pledge's target, in its own currency's minor units.
+        var targetMinor: Int? = nil
         var dueDay: Int? = nil
         var remindersEnabled: Bool? = nil
         var title: TitlePatch? = nil
 
-        enum CodingKeys: String, CodingKey { case status, amountMinor, dueDay, remindersEnabled, title }
+        /// An edit of `pledge` (Giving Cycle 6): its new promise — minor
+        /// units of the pledge's OWN currency (cents for dollars) — goes to
+        /// `amount_minor` on a monthly pledge and `target_minor` on a total
+        /// one. (A total's edit used to be sent as `amount_minor`, which a
+        /// total pledge does not read: its target never moved.) A due day
+        /// only moves a monthly pledge.
+        static func edit(_ pledge: Pledge, commitmentMinor: Int?, dueDay: Int?, title: TitlePatch?) -> PledgePatchBody {
+            var body = PledgePatchBody(title: title)
+            if pledge.isMonthly {
+                body.amountMinor = commitmentMinor
+                body.dueDay = dueDay
+            } else {
+                body.targetMinor = commitmentMinor
+            }
+            return body
+        }
+
+        enum CodingKeys: String, CodingKey { case status, amountMinor, targetMinor, dueDay, remindersEnabled, title }
         func encode(to encoder: Encoder) throws {
             var c = encoder.container(keyedBy: CodingKeys.self)
             try c.encodeIfPresent(status, forKey: .status)
             try c.encodeIfPresent(amountMinor, forKey: .amountMinor)
+            try c.encodeIfPresent(targetMinor, forKey: .targetMinor)
             try c.encodeIfPresent(dueDay, forKey: .dueDay)
             try c.encodeIfPresent(remindersEnabled, forKey: .remindersEnabled)
             switch title {
@@ -688,6 +790,28 @@ extension MemberAPI {
     /// GET /giving/pledges/{id} — the pledge with its payments (+ reminders).
     static func pledge(_ id: String) async throws -> PledgeDetail {
         try await APIClient.shared.get("giving/pledges/\(id)", as: PledgeDetail.self)
+    }
+
+    /// POST /giving/pledges/{id}/claims — "I paid another way" (Giving Cycle
+    /// 5): `{amount_minor, currency, paid_on: YYYY-MM-DD, note?}`, in the
+    /// pledge's currency. 201 → the claim, pending. The server refuses with
+    /// 422 CURRENCY_MISMATCH / INVALID_DATE and 409 CONFLICT (told already,
+    /// or five waiting) — its words are the member's. Sent online only:
+    /// money is never queued.
+    struct PledgeClaimBody: Encodable, Equatable {
+        let amountMinor: Int
+        let currency: String
+        let paidOn: String
+        let note: String?
+    }
+    static func claimPledgePayment(_ pledgeId: String, _ body: PledgeClaimBody) async throws -> PledgeClaim {
+        try await APIClient.shared.post("giving/pledges/\(pledgeId)/claims", body: body, as: PledgeClaim.self)
+    }
+
+    /// GET /giving/pledges/{id}/claims — what the member has told the office
+    /// about this pledge, newest first.
+    static func pledgeClaims(_ pledgeId: String) async throws -> [PledgeClaim] {
+        try await APIClient.shared.get("giving/pledges/\(pledgeId)/claims", as: Envelope<PledgeClaim>.self).data
     }
 
     /// GET /giving/statements?year= — the JSON statement by pledge and by
