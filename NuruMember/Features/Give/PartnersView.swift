@@ -1885,6 +1885,9 @@ struct PledgeDetailView: View {
     @ViewBuilder private func actions(_ p: Pledge) -> some View {
         let paused = p.status == "paused"
         let fulfilled = p.status == "fulfilled" || p.progress.label == "fulfilled"
+        // The church collects it automatically (the card above says so):
+        // paying is a choice — "Pay early", as quiet as Pause (§7.2 #2).
+        let early = PledgePace.paysEarly(p, schedules: schedules)
         if !fulfilled && p.status != "cancelled" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -1901,12 +1904,14 @@ struct PledgeDetailView: View {
                             currency: p.currency))
                     } label: {
                         HStack(spacing: 6) {
-                            Text("Pay now").font(.inter(13, .bold))
+                            Text(early ? "Pay early" : "Pay now").font(.inter(13, early ? .semibold : .bold))
                             Icon(.arrowRight, size: 12, color: Nuru.navy)
                         }
                         .foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(early ? Nuru.surface : Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(early ? Nuru.border : .clear, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                     .disabled(paused || busy)

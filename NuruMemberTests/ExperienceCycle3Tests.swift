@@ -67,4 +67,47 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertNil(LevelExamViewModel.refusal(APIError.http(status: 404, code: "NOT_FOUND", message: "Level not found"), deviceOnline: true),
                      "not found is §4's own state")
     }
+
+    // MARK: #2 — the pledge page: collected automatically, paying is a choice
+
+    private func decode<T: Decodable>(_ type: T.Type, json: String) throws -> T {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(T.self, from: Data(json.utf8))
+    }
+
+    /// Ada's Kenya trip — `schedule_id` set on an older row.
+    private func pledge(_ id: String = "p-kenya", scheduleId: String? = nil) throws -> Pledge {
+        let sid = scheduleId.map { #""\#($0)""# } ?? "null"
+        return try decode(Pledge.self, json: #"{"pledge_id":"\#(id)","shape":"monthly","amount_minor":500000,"currency":"KES","due_day":5,"title":"Kenya trip","status":"active","schedule_id":\#(sid)}"#)
+    }
+
+    /// A recurring gift — bound to `pledge` when given (its collector).
+    private func gift(_ id: String, pledge: String? = nil, status: String = "active") throws -> GivingSchedule {
+        let bound = pledge.map { #""pledge":{"pledge_id":"\#($0)","title":"Kenya trip"}"# } ?? #""pledge":null"#
+        return try decode(GivingSchedule.self, json: #"""
+        {"schedule_id":"\#(id)","fund":"mission","amount_minor":500000,"currency":"KES","method":"mpesa",
+         "frequency":"monthly","status":"\#(status)","next_run_at":"2026-10-05T06:01:00.000Z",\#(bound),"next_amount_minor":500000}
+        """#)
+    }
+
+    func testThePledgePagePaysEarlyWhileItsCollectorRuns() throws {
+        let kenya = try pledge()
+        let collector = try gift("s1", pledge: "p-kenya")
+        XCTAssertTrue(PledgePace.paysEarly(kenya, schedules: [collector]), "collected automatically: Pay early + Pause, both quiet")
+        guard case .collected(let id, let line) = PledgePace.offer(for: kenya, methods: nil, schedules: [collector]) else {
+            return XCTFail("the page's card says the same thing")
+        }
+        XCTAssertEqual(id, "s1")
+        XCTAssertTrue(line.hasPrefix("Collected automatically — next KSh 5,000"), line)
+
+        XCTAssertFalse(PledgePace.paysEarly(kenya, schedules: [try gift("s1", pledge: "p-kenya", status: "paused")]),
+                       "a paused collector collects nothing: Pay now")
+        XCTAssertFalse(PledgePace.paysEarly(kenya, schedules: []), "no collector: Pay now stays the gold primary")
+        XCTAssertFalse(PledgePace.paysEarly(kenya, schedules: nil), "the gifts not known yet: never guessed")
+        XCTAssertFalse(PledgePace.paysEarly(kenya, schedules: [try gift("s2", pledge: "p-other")]), "another pledge's collector")
+        XCTAssertFalse(PledgePace.paysEarly(kenya, schedules: [try gift("s4", status: "cancelled")]))
+        XCTAssertTrue(PledgePace.paysEarly(try pledge(scheduleId: "s3"), schedules: [try gift("s3")]),
+                      "an older row, bound by the pledge's own schedule_id")
+    }
 }

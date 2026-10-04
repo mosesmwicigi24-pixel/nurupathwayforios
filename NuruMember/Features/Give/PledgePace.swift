@@ -58,6 +58,18 @@ enum PledgePace {
         return mine.first { $0.status.lowercased() == "active" } ?? mine.first { $0.status.lowercased() == "paused" }
     }
 
+    /// The pledge page's pay button (EXPERIENCE.md §7.2 #2, §7.1 rule 6):
+    /// while a collector is running for the pledge — the page says "Collected
+    /// automatically — next …" — paying by hand is a choice, "Pay early",
+    /// quiet beside Pause; the call to action is the church's own prompt.
+    /// With no collector running (none, a paused one, or the gifts not known
+    /// yet) "Pay now" stays the gold primary. Labels only: either button pays
+    /// the same way.
+    static func paysEarly(_ pledge: Pledge, schedules: [GivingSchedule]?) -> Bool {
+        guard let schedules, let s = collector(of: pledge, in: schedules) else { return false }
+        return s.status.lowercased() == "active"
+    }
+
     /// The church-calendar day ("2026-10-05") a DUE instalment is collected
     /// by its pledge's collector (EXPERIENCE.md §6.4): the collector running,
     /// its next prompt asking for money (`next_amount_minor` > 0 — 0 is a
