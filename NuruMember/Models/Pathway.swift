@@ -6,6 +6,11 @@ import Foundation
 
 enum LevelStatus: String, Codable, Sendable {
     case completed, active, locked
+    /// The member passed this level's exam and waits for their discipler to
+    /// usher them on (§1.9). Its own state: it used to fall through to
+    /// `locked` below, so a member who had just passed saw their own level
+    /// locked (the rail's lock seal, the map's refusal shake).
+    case awaitingReview = "awaiting_review"
     // Tolerate any status the server sends that we don't model (prod may use a
     // vocabulary this client predates) — decode unknowns to `locked` rather than
     // throwing, which would fail the whole pathway response and blank the page.
@@ -37,6 +42,13 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     var examPublished: Bool = true
 
     var id: Int { levelNumber }
+
+    /// Exam passed, waiting for the usher — by the status word or the flag
+    /// (the server sends both; either is enough).
+    var isAwaitingReview: Bool { awaitingReview || status == .awaitingReview }
+    /// The level is behind the member: ushered past (completed), or its exam
+    /// passed and awaiting the usher.
+    var walked: Bool { status == .completed || isAwaitingReview }
 
     private enum CodingKeys: String, CodingKey {
         case levelNumber, title, theme, description, totalModules

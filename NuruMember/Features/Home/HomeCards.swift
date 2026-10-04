@@ -383,13 +383,19 @@ struct HomeNeedsYouCard: View {
 
 struct HomeResumeHero: View {
     let title: String
-    let meta: String
-    let pct: Int
+    /// The level line ("Level 1 · Exam ready") and its bar belong to a pathway
+    /// step — nil for any other ask, so a prayer card never wears a level's 100%.
+    let meta: String?
+    let pct: Int?
     let note: String?
     let ctaLabel: String
     let action: () -> Void
 
-    private var clamped: Int { min(max(pct, 0), 100) }
+    private var clamped: Int? { pct.map { min(max($0, 0), 100) } }
+
+    /// "Almost there" is for the last stretch of a level still being walked —
+    /// never at 100%, where there is nothing left to finish (EXPERIENCE.md §3).
+    static func showsAlmostThere(_ pct: Int) -> Bool { pct >= 60 && pct < 100 }
 
     var body: some View {
         Button { Haptics.tap(); action() } label: {
@@ -424,21 +430,25 @@ struct HomeResumeHero: View {
                 .lineLimit(3).truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
-            Text(meta).font(.nCardBody).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
-            HStack(spacing: 8) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.16)).frame(height: 6)
-                        Capsule()
-                            .fill(LinearGradient(colors: [HomeFig.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * CGFloat(clamped) / 100, height: 6)
-                    }
-                }
-                .frame(height: 6)
-                Text("\(clamped)%").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.7))
+            if let meta {
+                Text(meta).font(.nCardBody).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
             }
-            .padding(.top, 12)
-            if clamped >= 60 {
+            if let clamped {
+                HStack(spacing: 8) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.16)).frame(height: 6)
+                            Capsule()
+                                .fill(LinearGradient(colors: [HomeFig.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * CGFloat(clamped) / 100, height: 6)
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(clamped)%").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(.top, 12)
+            }
+            if let clamped, Self.showsAlmostThere(clamped) {
                 Text("Almost there — finish strong 🎉")
                     .font(.inter(11, .semibold)).foregroundStyle(HomeFig.goldSoft).padding(.top, 6)
             } else if let note, !note.isEmpty {

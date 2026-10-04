@@ -33,6 +33,9 @@ final class LevelDetailViewModel: ObservableObject {
     @Published var modules: [LevelModule] = []
     @Published var encouragements: [LevelEncouragement] = []
     @Published var level: PathwayLevel?
+    /// The member's journey (EXPERIENCE.md §3) — read for the level gate, so
+    /// this page and the Pathway hub agree on when the exam is the next step.
+    @Published var journey: Journey?
     @Published var totalLevels = 7
     @Published var loading = true
     @Published var error: String?
@@ -63,6 +66,7 @@ final class LevelDetailViewModel: ObservableObject {
         if let summary = await path {
             level = summary.levels.first { $0.levelNumber == levelNumber }
             totalLevels = summary.levels.count
+            journey = Journey.derive(summary, trail: loaded)
         }
         if let loaded { modules = loaded }
         else if level == nil { error = "Couldn't load this level." }
@@ -112,15 +116,17 @@ final class LevelDetailViewModel: ObservableObject {
 
     /// The member passed the exam and is waiting to be ushered onward by a
     /// discipler (§1.9). While set, the exam gate is replaced by the waiting card.
-    var awaitingReview: Bool { level?.awaitingReview ?? false }
+    var awaitingReview: Bool { level?.isAwaitingReview ?? false }
 
-    /// The trail is fully walked but the level isn't passed (and not already awaiting
-    /// a discipler's usher) — surface the exam gate. The fields here are the pathway
-    /// API's own (module `completed`, level `status`, `awaitingReview`); the true
-    /// eligibility answer stays the server's (§1.9).
+    /// The journey says this level's exam is the member's next step — surface
+    /// the exam gate, unless the trail carries its own exam row (which opens
+    /// it already). The old test (`level?.status != .completed`) read the
+    /// server's "every module done" as "level passed", so the gate never showed
+    /// once the last module was finished. The true eligibility answer stays
+    /// the server's (§1.9).
     var examAvailable: Bool {
-        !modules.isEmpty && modules.allSatisfy(\.completed) && level?.status != .completed && !awaitingReview
-            && (level?.examPublished ?? true)   // hidden until the admin publishes the exam
+        guard let j = journey, j.stage == .examReady, j.levelNumber == levelNumber else { return false }
+        return !modules.isEmpty && !modules.contains(where: \.isExam) && !awaitingReview
     }
 
     // Derived stats for the strip card.
@@ -521,7 +527,9 @@ struct LevelDetailView: View {
             .frame(width: 36)
 
             NavigationLink(value: PathwayRoute.exam(vm.levelNumber)) {
-                ExamGateCard(levelNumber: vm.levelNumber)
+                ExamGateCard(title: vm.journey?.title ?? "Take the Level \(vm.levelNumber) exam",
+                             line: vm.journey?.line ?? "",
+                             actionLabel: vm.journey?.actionLabel ?? "Begin the exam")
             }
             .buttonStyle(.pressable)
             .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
@@ -864,7 +872,11 @@ private struct EncouragementTrailCard: View {
 // MARK: - Exam gate card (navy + gold — the trail's ceremonial final door)
 
 private struct ExamGateCard: View {
-    let levelNumber: Int
+    /// The journey's own words for the exam step (§3) — the same title, line
+    /// and action the Pathway hero and Home's continue card say.
+    let title: String
+    let line: String
+    let actionLabel: String
 
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
@@ -873,15 +885,15 @@ private struct ExamGateCard: View {
                 Text("THE LEVEL GATE")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
             }
-            Text("Take the Level \(levelNumber) exam")
+            Text(title)
                 .font(.nCardTitle).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Every module is complete — the exam draws from the whole level and opens the way forward.")
+            Text(line)
                 .font(.nCardBody).foregroundStyle(Color.white.opacity(0.65))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 6) {
-                Text("Begin the exam").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                Text(actionLabel).font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
                 Icon(.arrowRight, size: 13, color: Nuru.navyDeep)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)

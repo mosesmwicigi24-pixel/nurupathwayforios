@@ -1,11 +1,316 @@
 // Experience Cycle 1 — the foundation, pinned (pathway docs/EXPERIENCE.md
-// §4): the one state language for every failure — offline only when the
-// phone has no network, an ended session asks to sign in, a 5xx is ours, a
-// 404 offers the way back, and only our own refusals keep their words.
+// §3–§4): the member's journey stage for every row of the table (and Levels
+// 2–6 with nothing published — the case that used to commission a Level 1
+// finisher), journey progress counted in levels and never 100 before the
+// summit, the summit only at the finish, awaiting_review as its own level
+// state, and the one state language for every failure (offline only when the
+// phone has no network). Payloads are decoded exactly like APIClient's:
+// snake_case in.
 import XCTest
 @testable import NuruMember
 
 final class ExperienceCycle1Tests: XCTestCase {
+
+    // MARK: Fixtures — the /me/pathway and /levels/{n}/modules wire shapes
+
+    private func decode<T: Decodable>(_ type: T.Type, _ object: Any) throws -> T {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(T.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    private func level(_ n: Int, _ status: String, done: Int = 0, of total: Int = 0,
+                       awaiting: Bool = false, examPublished: Bool = true) -> [String: Any] {
+        ["level_number": n, "title": "Level \(n) title", "theme": NSNull(), "description": NSNull(),
+         "total_modules": total, "completed_modules": done, "minutes": 0, "status": status,
+         "awaiting_review": awaiting, "exam_published": examPublished]
+    }
+
+    /// Six levels: `current` takes `row`; before it completed (10/10), after it
+    /// locked with nothing published — today's real catalogue shape.
+    private func summary(current: Int, _ row: [String: Any]) throws -> PathwaySummary {
+        let levels: [[String: Any]] = (1...6).map { n in
+            if n == current { return row }
+            return n < current ? level(n, "completed", done: 10, of: 10) : level(n, "locked")
+        }
+        return try decode(PathwaySummary.self, ["current_level": current, "levels": levels])
+    }
+
+    private func module(_ id: String, level: Int, seq: Int, _ status: String,
+                        completed: Bool = false, kind: String = "none") -> [String: Any] {
+        ["module_id": id, "level_number": level, "module_sequence_number": seq, "title": "Module \(id)",
+         "summary": NSNull(), "estimated_minutes": 10, "evaluation_kind": kind, "quiz_pass_mark": 70,
+         "completed": completed, "status": status, "progress": completed ? 100 : 0, "locked": status == "locked"]
+    }
+
+    private func trail(_ rows: [[String: Any]]) throws -> [LevelModule] {
+        try decode([LevelModule].self, rows)
+    }
+
+    // MARK: §3 — every row of the table
+
+    func testLearningContinuesTheNextModule() throws {
+        let s = try summary(current: 2, level(2, "active", done: 3, of: 10))
+        let t = try trail([module("a", level: 2, seq: 3, "completed", completed: true),
+                           module("b", level: 2, seq: 4, "next"),
+                           module("c", level: 2, seq: 5, "locked")])
+        let j = try XCTUnwrap(Journey.derive(s, trail: t))
+        XCTAssertEqual(j.stage, .learning)
+        XCTAssertEqual(j.pill, "3 of 10 modules")
+        XCTAssertEqual(j.kicker, "Continue · Level 2")
+        XCTAssertEqual(j.title, "Module b")
+        XCTAssertEqual(j.line, "3 of 10 modules in Level 2")
+        XCTAssertEqual(j.actionLabel, "Continue")
+        XCTAssertEqual(j.destination, .module("b"))
+        XCTAssertEqual(j.destination?.route, .module("b"))
+        XCTAssertEqual(j.levelPercent, 30)
+        XCTAssertFalse(j.summitReached)
+    }
+
+    func testLearningAtZeroSaysStart() throws {
+        let s = try summary(current: 1, level(1, "active", done: 0, of: 20))
+        let j = try XCTUnwrap(Journey.derive(s, trail: try trail([module("m1", level: 1, seq: 1, "next")])))
+        XCTAssertEqual(j.stage, .learning)
+        XCTAssertEqual(j.pill, "0 of 20 modules")
+        XCTAssertEqual(j.kicker, "Start · Level 1")
+        XCTAssertEqual(j.actionLabel, "Start")
+        XCTAssertEqual(j.destination, .module("m1"))
+    }
+
+    func testLearningWithoutItsTrailOpensTheLevel() throws {
+        // The trail hasn't loaded (or failed): the step still speaks, from the summary.
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 2, level(2, "active", done: 4, of: 10))))
+        XCTAssertEqual(j.title, "Level 2 title")
+        XCTAssertEqual(j.destination, .level(2))
+        // A trail for another level is ignored.
+        let other = try trail([module("x", level: 1, seq: 1, "next")])
+        XCTAssertEqual(Journey.derive(try summary(current: 2, level(2, "active", done: 4, of: 10)), trail: other)?.destination, .level(2))
+    }
+
+    func testContinueNeverReopensAFinishedModule() throws {
+        // Every trail row done but the summary still says active (counts can
+        // drift): no module to "continue" — the step opens the level instead.
+        let s = try summary(current: 2, level(2, "active", done: 9, of: 10))
+        let t = try trail([module("a", level: 2, seq: 1, "completed", completed: true),
+                           module("b", level: 2, seq: 2, "completed", completed: true)])
+        XCTAssertEqual(Journey.derive(s, trail: t)?.destination, .level(2))
+    }
+
+    func testExamReadyWhenEveryModuleIsDoneAndTheExamIsPublished() throws {
+        let s = try summary(current: 1, level(1, "completed", done: 20, of: 20))
+        let j = try XCTUnwrap(Journey.derive(s, trail: try trail([module("m20", level: 1, seq: 20, "completed", completed: true)])))
+        XCTAssertEqual(j.stage, .examReady)
+        XCTAssertEqual(j.pill, "Exam ready")
+        XCTAssertEqual(j.kicker, "Exam ready · Level 1")
+        XCTAssertEqual(j.title, "Take the Level 1 exam")
+        XCTAssertEqual(j.line, "Every module is done — the exam opens the way to Level 2.")
+        XCTAssertEqual(j.actionLabel, "Begin the exam")
+        XCTAssertEqual(j.destination, .exam(1))
+        XCTAssertEqual(j.destination?.route, .exam(1))
+        XCTAssertEqual(j.levelPercent, 100)
+        XCTAssertFalse(j.summitReached)
+    }
+
+    func testExamReadyWhenTheTrailsOwnExamRowIsNext() throws {
+        // Prod's shape: the exit-exam row counts as a module, so the summary
+        // still says active (10 of 11) — but the exam is what's left.
+        let s = try summary(current: 1, level(1, "active", done: 10, of: 11))
+        let t = try trail([module("m10", level: 1, seq: 10, "completed", completed: true),
+                           module("exam", level: 1, seq: 11, "next", kind: "exit_exam")])
+        let j = try XCTUnwrap(Journey.derive(s, trail: t))
+        XCTAssertEqual(j.stage, .examReady)
+        XCTAssertEqual(j.destination, .exam(1), "the exam row opens the exam, never the lesson reader")
+        XCTAssertEqual(j.progressPercent, 17, "every module done counts the level whole — the same in either shape")
+    }
+
+    func testTheLastLevelsExamOpensTheWayToBeingSent() throws {
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 6, level(6, "completed", done: 8, of: 8))))
+        XCTAssertEqual(j.stage, .examReady)
+        XCTAssertEqual(j.line, "Every module is done — the exam opens the way to being sent.", "there is no Level 7")
+    }
+
+    func testExamSoonWhenTheExamIsNotPublished() throws {
+        let s = try summary(current: 1, level(1, "completed", done: 20, of: 20, examPublished: false))
+        let j = try XCTUnwrap(Journey.derive(s))
+        XCTAssertEqual(j.stage, .examSoon)
+        XCTAssertEqual(j.pill, "Exam opens soon")
+        XCTAssertEqual(j.kicker, "Exam opens soon · Level 1")
+        XCTAssertEqual(j.title, "Level 1 complete")
+        XCTAssertEqual(j.line, "Every module is done. The exam opens soon — we'll let you know.")
+        XCTAssertNil(j.actionLabel)
+        XCTAssertNil(j.destination)
+    }
+
+    func testAwaitingUsherOnceTheExamIsPassed() throws {
+        // The server says it twice: status "awaiting_review" and awaiting_review: true.
+        let s = try summary(current: 1, level(1, "awaiting_review", done: 20, of: 20, awaiting: true))
+        let j = try XCTUnwrap(Journey.derive(s))
+        XCTAssertEqual(j.stage, .awaitingUsher)
+        XCTAssertEqual(j.pill, "Exam passed")
+        XCTAssertEqual(j.kicker, "Exam passed · Level 1")
+        XCTAssertEqual(j.title, "Level 2 is next")
+        XCTAssertEqual(j.line, "You passed the Level 1 exam. Your leader will open Level 2 — you'll get a notice.")
+        XCTAssertEqual(j.actionLabel, "See Level 1")
+        XCTAssertEqual(j.destination, .level(1))
+        XCTAssertFalse(j.summitReached)
+    }
+
+    func testFinishedWhenTheLastLevelAwaitsItsUsher() throws {
+        let s = try summary(current: 6, level(6, "awaiting_review", done: 8, of: 8, awaiting: true))
+        let j = try XCTUnwrap(Journey.derive(s))
+        XCTAssertEqual(j.stage, .finished)
+        XCTAssertEqual(j.pill, "Commissioned")
+        XCTAssertEqual(j.title, "You have been commissioned")
+        XCTAssertEqual(j.line, "Sent to make disciples — Matthew 28:19")
+        XCTAssertEqual(j.actionLabel, "See your journey")
+        XCTAssertEqual(j.destination, .walk)
+        XCTAssertEqual(j.destination?.route, .walk)
+        XCTAssertTrue(j.summitReached)
+        XCTAssertEqual(j.progressPercent, 100)
+    }
+
+    func testFinishedStaysFinishedAfterTheFinalUsher() throws {
+        // After the last usher the summary no longer says awaiting; the trail's
+        // exam row still says passed.
+        let s = try summary(current: 6, level(6, "active", done: 8, of: 9))
+        let t = try trail([module("m8", level: 6, seq: 8, "completed", completed: true),
+                           module("exam6", level: 6, seq: 9, "completed", completed: true, kind: "exit_exam")])
+        XCTAssertEqual(Journey.derive(s, trail: t)?.stage, .finished)
+    }
+
+    func testALevelWithNothingPublishedYet() throws {
+        // Ushered into Level 2, which has no modules yet.
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 2, level(2, "active"))))
+        XCTAssertEqual(j.stage, .learning)
+        XCTAssertEqual(j.pill, "Modules open soon")
+        XCTAssertEqual(j.title, "Level 2 is being prepared")
+        XCTAssertEqual(j.line, "Its modules open soon — we'll let you know.")
+        XCTAssertNil(j.destination)
+        XCTAssertFalse(j.summitReached)
+        XCTAssertEqual(j.progressPercent, 17)
+        XCTAssertEqual(j.progressLine.bold, "Level 2 is being prepared")
+    }
+
+    /// Ada on the local API, verbatim: Level 1 at 20 of 20 with its exam
+    /// published, Levels 2–6 locked with 0 modules each. Was: "Begin today",
+    /// "0 modules left before Level 2", a 100% ring and "You have been commissioned".
+    func testAdasPathwayIsExamReadyNotCommissioned() throws {
+        let levels: [[String: Any]] = [level(1, "completed", done: 20, of: 20)] + (2...6).map { level($0, "locked") }
+        let s = try decode(PathwaySummary.self, ["current_level": 1, "levels": levels])
+        let j = try XCTUnwrap(Journey.derive(s))
+        XCTAssertEqual(j.stage, .examReady)
+        XCTAssertEqual(j.pill, "Exam ready")
+        XCTAssertEqual(j.progressPercent, 17, "Level 1 of 6 — never 20 of 20 published modules = 100%")
+        XCTAssertFalse(j.summitReached)
+        XCTAssertEqual(j.progressLine.bold, "Take the Level 1 exam")
+        XCTAssertEqual(j.progressLine.rest, "")
+    }
+
+    func testTheSummitIsReachedOnlyAtFinished() throws {
+        let cases: [(PathwaySummary, Journey.Stage)] = [
+            (try summary(current: 2, level(2, "active", done: 3, of: 10)), .learning),
+            (try summary(current: 2, level(2, "active")), .learning),
+            (try summary(current: 1, level(1, "completed", done: 20, of: 20)), .examReady),
+            (try summary(current: 1, level(1, "completed", done: 20, of: 20, examPublished: false)), .examSoon),
+            (try summary(current: 5, level(5, "awaiting_review", done: 9, of: 9, awaiting: true)), .awaitingUsher),
+            (try summary(current: 6, level(6, "completed", done: 8, of: 8)), .examReady),
+            (try summary(current: 6, level(6, "awaiting_review", done: 8, of: 8, awaiting: true)), .finished),
+        ]
+        for (s, stage) in cases {
+            let j = try XCTUnwrap(Journey.derive(s))
+            XCTAssertEqual(j.stage, stage)
+            XCTAssertEqual(j.summitReached, stage == .finished, "\(stage)")
+        }
+    }
+
+    func testNoLevelsNoJourney() throws {
+        XCTAssertNil(Journey.derive(nil))
+        XCTAssertNil(Journey.derive(try decode(PathwaySummary.self, ["current_level": 1, "levels": [[String: Any]]()])))
+    }
+
+    // MARK: §3 — journey progress, counted in levels
+
+    func testJourneyProgressIsCountedInLevels() throws {
+        // (levels before the current + the current fraction) / all levels
+        XCTAssertEqual(Journey.derive(try summary(current: 3, level(3, "active", done: 5, of: 10)))?.progressPercent, 42)  // 2.5 / 6
+        XCTAssertEqual(Journey.derive(try summary(current: 1, level(1, "active", done: 0, of: 20)))?.progressPercent, 0)
+        XCTAssertEqual(Journey.derive(try summary(current: 4, level(4, "awaiting_review", done: 7, of: 7, awaiting: true)))?.progressPercent, 67)  // 4 / 6
+        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "awaiting_review", done: 8, of: 8, awaiting: true)))?.progressPercent, 100)
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 3, level(3, "active", done: 5, of: 10))))
+        XCTAssertEqual(j.progress, 2.5 / 6, accuracy: 0.0001)
+    }
+
+    func testProgressNeverReadsOneHundredBeforeTheSummit() throws {
+        // Every module of the last level done, its exam still ahead: 99, and
+        // the summit hasn't fired.
+        let ready = try XCTUnwrap(Journey.derive(try summary(current: 6, level(6, "completed", done: 8, of: 8))))
+        XCTAssertEqual(ready.progressPercent, 99)
+        XCTAssertFalse(ready.summitReached)
+        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "completed", done: 8, of: 8, examPublished: false)))?.progressPercent, 99)
+        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "active", done: 7, of: 8)))?.progressPercent, 98)  // 5.875 / 6
+        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "active", done: 799, of: 800)))?.progressPercent, 99,
+                       "rounding never reaches 100 either")
+        let sent = try XCTUnwrap(Journey.derive(try summary(current: 6, level(6, "awaiting_review", done: 8, of: 8, awaiting: true))))
+        XCTAssertEqual(sent.progressPercent, 100)
+        XCTAssertTrue(sent.summitReached)
+    }
+
+    func testALockedNextModuleOpensItsLevel() throws {
+        // The next lesson is still behind its gate: the server would refuse it,
+        // so the step opens the level page.
+        let s = try summary(current: 2, level(2, "active", done: 3, of: 10))
+        let t = try trail([module("a", level: 2, seq: 3, "completed", completed: true),
+                           module("b", level: 2, seq: 4, "locked")])
+        let j = try XCTUnwrap(Journey.derive(s, trail: t))
+        XCTAssertEqual(j.title, "Module b")
+        XCTAssertEqual(j.actionLabel, "Continue")
+        XCTAssertEqual(j.destination, .level(2))
+    }
+
+    func testPastTheLastLevelIsCommissioned() throws {
+        let levels: [[String: Any]] = (1...6).map { level($0, "completed", done: 8, of: 8) }
+        let s = try decode(PathwaySummary.self, ["current_level": 7, "levels": levels])
+        let j = try XCTUnwrap(Journey.derive(s))
+        XCTAssertEqual(j.stage, .finished)
+        XCTAssertEqual(j.levelNumber, 6)
+        XCTAssertEqual(j.progressPercent, 100)
+    }
+
+    // MARK: awaiting_review is its own level state
+
+    func testAwaitingReviewDecodesAsItsOwnState() throws {
+        let both = try decode(PathwayLevel.self, level(1, "awaiting_review", done: 20, of: 20, awaiting: true))
+        XCTAssertEqual(both.status, .awaitingReview, "not locked — the member just passed this level's exam")
+        XCTAssertTrue(both.isAwaitingReview)
+        XCTAssertTrue(both.walked)
+        // Either signal alone is enough.
+        XCTAssertTrue(try decode(PathwayLevel.self, level(1, "awaiting_review")).isAwaitingReview)
+        XCTAssertTrue(try decode(PathwayLevel.self, level(1, "active", awaiting: true)).isAwaitingReview)
+        // A completed level is walked; a locked one is not; an unknown word still reads locked.
+        XCTAssertTrue(try decode(PathwayLevel.self, level(1, "completed", done: 10, of: 10)).walked)
+        XCTAssertFalse(try decode(PathwayLevel.self, level(2, "locked")).walked)
+        XCTAssertEqual(try decode(PathwayLevel.self, level(3, "some_future_word")).status, .locked)
+    }
+
+    // MARK: §3 — the small words around the step
+
+    func testAlmostThereNeverShowsAtOneHundred() {
+        XCTAssertFalse(HomeResumeHero.showsAlmostThere(100))
+        XCTAssertTrue(HomeResumeHero.showsAlmostThere(99))
+        XCTAssertTrue(HomeResumeHero.showsAlmostThere(60))
+        XCTAssertFalse(HomeResumeHero.showsAlmostThere(59))
+        XCTAssertNil(Journey.momentum(levelPercent: 100))
+        XCTAssertEqual(Journey.momentum(levelPercent: 60), "Almost there — finish strong 🎉")
+        XCTAssertEqual(Journey.momentum(levelPercent: 30), "Just 70% to your next badge")
+    }
+
+    func testTheProgressLineSaysTheNextStep() throws {
+        let walking = try XCTUnwrap(Journey.derive(try summary(current: 2, level(2, "active", done: 3, of: 10))))
+        XCTAssertEqual(walking.progressLine.bold, "3 of 10 modules")
+        XCTAssertEqual(walking.progressLine.rest, " in Level 2")
+        let passed = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "awaiting_review", done: 20, of: 20, awaiting: true))))
+        XCTAssertEqual(passed.progressLine.bold, "Level 2 is next")
+    }
 
     // MARK: §4 — one state language
 

@@ -65,6 +65,12 @@ final class HomeViewModel: ObservableObject {
     /// Why the dashboard's pathway didn't load — spoken through the one state
     /// language (NuruStateCopy), never as the server's raw text.
     @Published var failure: Error?
+    /// The current level's module trail — read only for the journey's next
+    /// step (which module to continue). Nil until it loads.
+    @Published var trail: [LevelModule]?
+    /// The member's journey (EXPERIENCE.md §3): the header pill, the continue
+    /// card and the progress line all read this one derivation.
+    @Published var journey: Journey?
     /// The latest Sunday Letter (intelligence layer) — drives the gold
     /// "A letter for you" knock on Home while unread.
     @Published var letter: PastoralLetter?
@@ -108,6 +114,13 @@ final class HomeViewModel: ObservableObject {
         case .success(let p): self.pathway = p
         case .failure(let e): self.pathway = nil; failure = e
         }
+        // The journey speaks as soon as the summary lands (the pill's words
+        // need nothing more); the trail below only names the module to continue.
+        self.journey = Journey.derive(self.pathway, trail: self.trail)
+        // The current level's trail, started now so it runs beside the rest
+        // of the dashboard rather than after it.
+        let currentLevel = self.pathway?.currentLevel
+        async let trail = Self.levelTrail(currentLevel)
         let achievements = await ach
         self.streak = achievements?.streak?.current ?? 0
         self.unread = await unread ?? 0
@@ -150,6 +163,8 @@ final class HomeViewModel: ObservableObject {
         self.onAir = Self.liveOnly((await radio) ?? nil)
         self.featuredEvent = (await fev) ?? nil
         self.liveStreams = await live ?? []
+        self.trail = await trail
+        self.journey = Journey.derive(self.pathway, trail: self.trail)
 
         loading = false
 
@@ -160,6 +175,13 @@ final class HomeViewModel: ObservableObject {
     /// failed, so its strip can say what really happened.
     private static func attempt<T>(_ op: () async throws -> T) async -> Result<T, Error> {
         do { return .success(try await op()) } catch { return .failure(error) }
+    }
+
+    /// The module trail of the member's current level (nil when there is no
+    /// level yet, or the read failed — the journey then speaks from the summary).
+    private static func levelTrail(_ level: Int?) async -> [LevelModule]? {
+        guard let level else { return nil }
+        return try? await MemberAPI.levelModules(level)
     }
 
     // MARK: Celebrations — server-truth milestones only (mirrors Android).
@@ -456,7 +478,7 @@ struct HomeView: View {
         }
         if !vm.disciplers.isEmpty { s.append(("disciplers", AnyView(disciplersCard))) }                 // 8
         if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // 9 · carousel: portal-marked announcements + events
-        s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
+        if let j = vm.journey { s.append(("continuelevel", AnyView(continueLevelCard(j)))) }            // 10 · the journey's next step
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
         s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
         s.append(("grow", AnyView(growSection)))                                                  // 14
@@ -809,24 +831,24 @@ struct HomeView: View {
             // more than flat gray: a hanging gold quote and a settled serif voice.
             HomePersonalWord(text: vm.greetingLine)
                 .padding(.top, 6)
-            if let a = active {
-                // The journey jewel — level · modules · streak, ringed in a soft
-                // gold gradient with a lit flame when the streak is alive.
+            if let j = vm.journey {
+                // The journey jewel — the level · where the member stands on it
+                // (the journey's pill: "3 of 10 modules", "Exam ready"…) · the
+                // streak while it is alive, ringed in a soft gold gradient. No
+                // "Begin today" beside a finished level: the pill says the truth.
                 HStack(spacing: 6) {
-                    Text("Level \(a.levelNumber)").font(.inter(12, .bold)).foregroundStyle(Nuru.navy)
+                    Text("Level \(j.levelNumber)").font(.inter(12, .bold)).foregroundStyle(Nuru.navy)
                     Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
-                    Text("\(a.completedModules) of \(a.totalModules) modules")
+                    Text(j.pill)
                         .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
                     if vm.streak > 0 {
+                        Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
                         HStack(spacing: 3) {
                             Icon(.flame, size: 11, color: Color(hex: 0xDC6B26))
                             Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB4530A))
                                 .contentTransition(.numericText())
                                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: vm.streak)
                         }
-                    } else {
-                        Text("Begin today").font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
@@ -1217,23 +1239,41 @@ struct HomeView: View {
     // MARK: 2 — Next-action hero ("For you today" — real pathway numbers)
 
     private func heroCard(_ a: NextAction) -> some View {
-        let done = active?.completedModules ?? 0
-        let total = active?.totalModules ?? 0
-        let pct = total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
+        // A pathway step wears the level: the journey's pill (the header's own
+        // words, "Level 1 · Exam ready") and the level's bar. Any other ask
+        // ("Grow in prayer") wears neither — never a level's 100% on a prayer card.
+        let j = vm.journey
+        let pathwayStep = a.route == "module" || a.route == "pathway"
         return HomeResumeHero(
             title: a.title,
-            meta: total > 0 ? "Level \(active?.levelNumber ?? 1) · \(done) of \(total) modules" : a.body,
-            pct: pct,
+            meta: pathwayStep ? j.map { "Level \($0.levelNumber) · \($0.pill)" } : nil,
+            pct: pathwayStep ? j?.levelPercent : nil,
             note: a.body,
             ctaLabel: a.ctaLabel
-        ) {
-            // "For you today" continues the pathway — land on the Pathway tab.
-            if a.route == "module", let m = a.params?.moduleId {
-                tabs.openPathway(.module(m))
-            } else if let lvl = active?.levelNumber {
-                tabs.openPathway(.level(lvl))
-            }
+        ) { openNextAction(a) }
+    }
+
+    /// The hero lands where its own words point (the server's `route`) —
+    /// "Open prayer journal" opens the prayer journal, not the Pathway tab.
+    /// Pathway content opens INSIDE the Pathway tab (the TabRouter contract);
+    /// "pathway" (and any route this build doesn't know) is the journey's next
+    /// step, else the member's level.
+    private func openNextAction(_ a: NextAction) {
+        switch a.route {
+        case "module":
+            if let m = a.params?.moduleId, !m.isEmpty { tabs.openPathway(.module(m)) } else { openJourney() }
+        case "prayer": path.append(GrowDestination.prayerJournal)
+        case "memoryVerses": path.append(GrowDestination.memoryVerses)
+        case "devotional": path.append(GrowDestination.devotional)
+        case "events": tabs.openEvents()
+        default: openJourney()
         }
+    }
+
+    /// The journey's next step, inside the Pathway tab.
+    private func openJourney() {
+        if let d = vm.journey?.destination { tabs.openPathway(d.route) }
+        else { tabs.openPathway(.level(vm.journey?.levelNumber ?? active?.levelNumber ?? 1)) }
     }
 
     // MARK: 3 — Featured welcome video
@@ -2124,58 +2164,68 @@ struct HomeView: View {
     }
 
 
-    // MARK: 10 — Continue · Level n
+    // MARK: 10 — The journey's next step (Continue · Level n, the exam, the usher…)
 
-    private var continueLevelCard: some View {
-        let a = active
-        let done = a?.completedModules ?? 0
-        let total = a?.totalModules ?? 0
-        let pct = total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
+    /// Home's continue card, by stage (EXPERIENCE.md §3): kicker, title, line
+    /// and CTA are the journey's own words — "Take the Level 1 exam · Begin
+    /// the exam", never "Continue" back into a finished module. The bar and its
+    /// nudge belong to a level still being walked, so they show only then.
+    private func continueLevelCard(_ j: Journey) -> some View {
+        let pct = j.levelPercent
+        let walking = j.stage == .learning && j.totalModules > 0
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .center, spacing: Nuru.S.md) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
-                    Icon(.play, size: 18, color: HomeFig.navy).offset(x: 1)
+                    Icon(j.stage.glyph ?? .play, size: 18, color: HomeFig.navy).offset(x: j.stage == .learning ? 1 : 0)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("CONTINUE · LEVEL \(a?.levelNumber ?? 1)").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
-                    Text(a?.title ?? "Foundations of Faith").font(.nRowTitle).foregroundStyle(HomeFig.navy)
-                    Text("\(done) of \(total) modules").font(.nCardMeta).foregroundStyle(HomeFig.faintGray)
+                    Text(j.kicker.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
+                    Text(j.title).font(.nRowTitle).foregroundStyle(HomeFig.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(j.line).font(.nCardMeta).foregroundStyle(HomeFig.faintGray)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
-            HStack(spacing: Nuru.S.sm) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 6)
-                        Capsule()
-                            .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * CGFloat(pct) / 100, height: 6)
-                    }
-                }.frame(height: 6)
-                Text("\(pct)% complete").font(.inter(10, .bold)).foregroundStyle(HomeFig.eyebrow)
-            }
-            .padding(.top, Nuru.S.md)
-            // Goal-gradient nudge — momentum grows nearer the finish (Figma).
-            Text(pct >= 60 ? "Almost there — finish strong 🎉" : "Just \(100 - pct)% to your next badge")
-                .font(.inter(11, .semibold)).foregroundStyle(HomeFig.eyebrow)
-                .padding(.top, 6)
-            Button {
-                Haptics.tap()
-                if let m = nextModuleId { tabs.openPathway(.module(m)) }
-                else { tabs.openPathway(.level(a?.levelNumber ?? 1)) }
-            } label: {
-                HStack(spacing: 6) {
-                    Text("Continue").font(.nCardCTA).foregroundStyle(Nuru.gold)
-                    Icon(.chevronRight, size: 15, color: Nuru.gold)
+            if walking {
+                HStack(spacing: Nuru.S.sm) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 6)
+                            Capsule()
+                                .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * CGFloat(pct) / 100, height: 6)
+                        }
+                    }.frame(height: 6)
+                    Text("\(pct)% complete").font(.inter(10, .bold)).foregroundStyle(HomeFig.eyebrow)
                 }
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .background(HomeFig.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(.top, Nuru.S.md)
+                // Goal-gradient nudge — momentum grows nearer the finish (Figma);
+                // silent once every module is done.
+                if let nudge = Journey.momentum(levelPercent: pct) {
+                    Text(nudge)
+                        .font(.inter(11, .semibold)).foregroundStyle(HomeFig.eyebrow)
+                        .padding(.top, 6)
+                }
             }
-            .buttonStyle(.pressable)
-            .padding(.top, Nuru.S.md)
+            if let label = j.actionLabel, let d = j.destination {
+                Button {
+                    Haptics.tap()
+                    tabs.openPathway(d.route)
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(label).font(.nCardCTA).foregroundStyle(Nuru.gold)
+                        Icon(.chevronRight, size: 15, color: Nuru.gold)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 46)
+                    .background(HomeFig.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+                .buttonStyle(.pressable)
+                .padding(.top, Nuru.S.md)
+            }
         }
         .padding(Nuru.S.base)
         .cardSurface()
@@ -2316,14 +2366,16 @@ struct HomeView: View {
                 scoreBar("Attendance", s.attendance.score, Color(hex: 0x16A34A), delta: s.trend?.domains?["attendance"])
             }
             .padding(.top, Nuru.S.base)
-            if let a = active {
-                let left = max(0, a.totalModules - a.completedModules)
+            if let j = vm.journey {
+                // The journey's next step in one line ("3 of 10 modules in
+                // Level 2", "Take the Level 1 exam") — never "0 modules left".
+                let line = j.progressLine
                 HStack(spacing: Nuru.S.sm) {
                     Icon(.target, size: 16, color: Nuru.goldChipText)
                         .frame(width: 30, height: 30)
                         .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    (Text("\(left) modules ").font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
-                     + Text("left before Level \(a.levelNumber + 1)").font(.inter(12)).foregroundStyle(Nuru.muted))
+                    (Text(line.bold).font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
+                     + Text(line.rest).font(.inter(12)).foregroundStyle(Nuru.muted))
                     Spacer(minLength: 0)
                 }
                 .padding(Nuru.S.sm)
@@ -2549,8 +2601,10 @@ struct HomeView: View {
             rhythmDone: vm.rhythm.doneCount,
             wordDone: vm.rhythm.word,
             prayerDone: vm.rhythm.prayer,
-            modulesLeft: active.map { max(0, $0.totalModules - $0.completedModules) },
-            levelNumber: active?.levelNumber,
+            // Modules still to walk — only while the member is walking them
+            // (the journey's learning stage); an exam left is not "a module".
+            modulesLeft: vm.journey.flatMap { $0.stage == .learning ? max(0, $0.totalModules - $0.completedModules) : nil },
+            levelNumber: vm.journey?.levelNumber,
             cellPrayerCount: vm.prayerPosts.count
         )
     }
@@ -2623,12 +2677,6 @@ struct HomeView: View {
     }
 
     // MARK: derived / helpers
-
-    /// The specific next lesson to resume, when the next-action CTA is a module.
-    private var nextModuleId: String? {
-        guard let a = vm.nextAction, a.route == "module" else { return nil }
-        return a.params?.moduleId
-    }
 
     private func verseShareText() -> String {
         let text = vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”"

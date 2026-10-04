@@ -84,7 +84,7 @@ private func pwSubtitle(_ l: PathwayLevel?) -> String {
 struct PWReward { let name: String; let emoji: String; let remaining: Int; let pct: Int }
 
 private func nextReward(_ s: PathwaySummary) -> PWReward? {
-    guard let idx = s.levels.firstIndex(where: { $0.status != .completed }) else { return nil }
+    guard let idx = s.levels.firstIndex(where: { !$0.walked }) else { return nil }
     let l = s.levels[idx]
     let remaining = max(l.totalModules - l.completedModules, 0)
     let pct = l.totalModules > 0 ? Int((Double(l.completedModules) / Double(l.totalModules) * 100).rounded()) : 0
@@ -110,15 +110,22 @@ final class PathwayViewModel: ObservableObject {
             failure = error
         }
         streak = (try? await MemberAPI.achievements())?.streak?.current ?? 0
-        if let active = active(in: summary) { await fetchModules(active.levelNumber) }
+        // The current level's trail is re-read on every load (pull-to-refresh
+        // included): the journey's next step is read from it.
+        if let current = summary?.currentLevel { await fetchModules(current, force: true) }
         loading = false
     }
 
     /// Lazily fetch (and cache) a level's real module trail — driven by taps on
     /// the journey rail so each level's list is the server's, not a placeholder.
-    func fetchModules(_ levelNumber: Int) async {
-        if modulesByLevel[levelNumber] != nil { return }
+    func fetchModules(_ levelNumber: Int, force: Bool = false) async {
+        if !force, modulesByLevel[levelNumber] != nil { return }
         modulesByLevel[levelNumber] = (try? await MemberAPI.levelModules(levelNumber)) ?? []
+    }
+
+    /// The member's journey (EXPERIENCE.md §3) — the same derivation Home reads.
+    var journey: Journey? {
+        Journey.derive(summary, trail: summary.flatMap { modulesByLevel[$0.currentLevel] })
     }
 
     private func active(in p: PathwaySummary?) -> PathwayLevel? {
@@ -129,22 +136,26 @@ final class PathwayViewModel: ObservableObject {
     }
     var activeLevel: PathwayLevel? { active(in: summary) }
 
-    /// The module to resume in a level (status-driven from the real trail).
+    /// The module to resume in a level (status-driven from the real trail) —
+    /// nil once every module is done: a finished level has nothing to resume,
+    /// and "Continue" must never re-open a finished module.
     func resumeModule(in levelNumber: Int) -> LevelModule? {
         let mods = modulesByLevel[levelNumber] ?? []
-        return mods.first { $0.status == .next } ?? mods.first { !$0.completed } ?? mods.last
+        return mods.first { $0.status == .next } ?? mods.first { !$0.completed }
     }
 
     /// The level (if any) the member just passed and is now waiting to be ushered
     /// past — surfaced by the pathway API's `awaitingReview` flag. Drives the
     /// "awaiting your discipler" banner; the next level stays locked while set.
-    var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.awaitingReview } }
+    var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.isAwaitingReview } }
 
-    var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }
+    var levelsDone: Int { summary?.levels.filter(\.walked).count ?? 0 }
     var doneModules: Int { summary?.levels.reduce(0) { $0 + $1.completedModules } ?? 0 }
     var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.totalModules } ?? 0 }
     var levelCount: Int { summary?.levels.count ?? 6 }
-    var overallPct: Int { totalModules > 0 ? Int(round(Double(doneModules) / Double(totalModules) * 100)) : 0 }
+    // (The old overallPct — modules done ÷ every PUBLISHED module — is gone: with
+    // Levels 2–6 unpublished it read Level 1's twenty as 100% and commissioned
+    // the member. The ring and the summit read the journey, counted in levels.)
     func pct(_ l: PathwayLevel) -> Int { l.totalModules > 0 ? Int(round(Double(l.completedModules) / Double(l.totalModules) * 100)) : 0 }
 }
 
@@ -250,11 +261,13 @@ struct PathwayView: View {
 
     private func content(_ s: PathwaySummary) -> some View {
         let active = vm.activeLevel
+        let journey = vm.journey
         return VStack(spacing: 0) {
             PathwayHubHeader(
-                vm: vm, firstName: firstName, active: active,
-                resume: active.flatMap { vm.resumeModule(in: $0.levelNumber) },
-                openModule: { openModuleId($0) })
+                vm: vm, firstName: firstName, active: active, journey: journey,
+                open: { d in
+                    if case .module(let id) = d { openModuleId(id) } else { path.append(d.route) }
+                })
 
             VStack(alignment: .leading, spacing: 24) {
                 // Awaiting your discipler — the level exam is passed; the member waits
@@ -269,7 +282,8 @@ struct PathwayView: View {
                 CellPresenceLine().gentleEntrance()
 
                 PathwayJourneyRail(
-                    levels: s.levels, selected: selectedLevel?.levelNumber ?? -1,
+                    levels: s.levels, current: journey?.levelNumber,
+                    selected: selectedLevel?.levelNumber ?? -1,
                     onSelect: { n in
                         Haptics.selection()
                         withAnimation(.easeInOut(duration: 0.2)) { selectedLevelNumber = n }
@@ -282,6 +296,8 @@ struct PathwayView: View {
                         level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
+                        // The exam step is the journey's, for the member's own level only.
+                        examStep: journey.flatMap { $0.stage == .examReady && $0.levelNumber == sel.levelNumber ? $0 : nil },
                         openModule: { openModuleId($0) },
                         openExam: { path.append(PathwayRoute.exam($0)) })
                         .gentleEntrance(delay: 0.05)
@@ -305,7 +321,7 @@ struct PathwayView: View {
                     })
                     .gentleEntrance(delay: 0.1)
 
-                PathwaySummitCard(overallPct: vm.overallPct, levels: s.levels, firstName: firstName)
+                PathwaySummitCard(reached: journey?.summitReached ?? false, levels: s.levels, firstName: firstName)
                     .gentleEntrance(delay: 0.15)
             }
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
@@ -328,15 +344,21 @@ private struct PathwayHubHeader: View {
     @ObservedObject var vm: PathwayViewModel
     let firstName: String
     let active: PathwayLevel?
-    let resume: LevelModule?
-    let openModule: (String) -> Void
+    /// The member's journey — the hero card's next step and the ring (§3).
+    let journey: Journey?
+    let open: (Journey.Destination) -> Void
 
     private var idx: Int {
         guard let a = active, let levels = vm.summary?.levels else { return 0 }
         return levels.firstIndex { $0.levelNumber == a.levelNumber } ?? 0
     }
     private var activePct: Int { active.map { vm.pct($0) } ?? 0 }
-    private var remaining: Int { active.map { max($0.totalModules - $0.completedModules, 0) } ?? 0 }
+    /// Modules still to walk — said only while the member is walking them
+    /// (an exam row left in the trail is the exam, not "1 module to go").
+    private var remaining: Int {
+        guard journey?.stage == .learning else { return 0 }
+        return active.map { max($0.totalModules - $0.completedModules, 0) } ?? 0
+    }
 
     var body: some View {
         // Fresh Figma PathwayHub: LIGHT cream hero (navy text) with a navy Continue CTA.
@@ -399,24 +421,40 @@ private struct PathwayHubHeader: View {
                         .overlay(Circle().stroke(PW.border, lineWidth: 1))
                     Circle().fill(PW.gold).frame(width: 8, height: 8).offset(x: -6, y: 6)
                 }
-                PWHeaderRing(pct: vm.overallPct)
+                PWHeaderRing(pct: journey?.progressPercent ?? 0)
             }
         }
     }
 
-    // Navy CTA that pops on the light header (fresh Figma).
+    // Navy CTA that pops on the light header (fresh Figma) — the journey's
+    // next step: the module to continue, the exam to take, the level a leader
+    // will open. A step with no action (the exam still in review) just says so.
     private var continueCard: some View {
-        Button { if let m = resume { Haptics.tap(); openModule(m.moduleId) } } label: {
+        Button { if let d = journey?.destination { Haptics.tap(); open(d) } } label: {
             HStack(spacing: 12) {
-                Icon(.playCircle, size: 22, color: PW.navy)
+                Icon(journey?.stage.glyph ?? .playCircle, size: 22, color: PW.navy)
                     .frame(width: 44, height: 44)
                     .background(PW.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CONTINUE WHERE YOU LEFT OFF").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
-                    Text(resume?.title ?? "Level complete").font(.inter(14, .semibold)).foregroundStyle(.white).lineLimit(1)
+                    Text((journey?.kicker ?? "Your pathway").uppercased())
+                        .font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight).lineLimit(1)
+                    Text(journey?.title ?? "Your pathway").font(.inter(14, .semibold)).foregroundStyle(.white).lineLimit(2)
+                    if let line = journey?.line {
+                        Text(line).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let label = journey?.actionLabel {
+                        HStack(spacing: 4) {
+                            Text(label).font(.inter(11, .bold))
+                            Icon(.chevronRight, size: 12, color: PW.navy)
+                        }
+                        .foregroundStyle(PW.navy)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(PW.gold, in: Capsule())
+                        .padding(.top, 8)
+                    }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: .white)
             }
             .padding(12)
             .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -424,6 +462,24 @@ private struct PathwayHubHeader: View {
             .shadow(color: Color(hex: 0x0A1628).opacity(0.5), radius: 17, y: 10)
         }
         .buttonStyle(.pressable)
+        .disabled(journey?.destination == nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(journey?.actionLabel ?? "")
+    }
+}
+
+extension Journey.Stage {
+    /// The step's glyph once it is no longer a lesson to continue (each surface
+    /// keeps its own play glyph for that): the exam, its wait, the person who
+    /// opens the next level, the summit. Home's continue card wears the same.
+    var glyph: Lucide? {
+        switch self {
+        case .learning: return nil
+        case .examReady: return .award
+        case .examSoon: return .clock
+        case .awaitingUsher: return .heartHandshake
+        case .finished: return .sparkles
+        }
     }
 }
 
@@ -558,16 +614,24 @@ private struct PathwayWalkRow: View {
 
 private struct PathwayJourneyRail: View {
     let levels: [PathwayLevel]
+    /// The member's own level (the journey's) — wears "▾ You" whatever its
+    /// status: still walking it, every module done, or its exam passed.
+    let current: Int?
     let selected: Int
     let onSelect: (Int) -> Void
     let onMap: () -> Void
 
-    /// The level right after the active one — "up next" wears a gold ring and
+    private var currentIndex: Int? {
+        if let current, let i = levels.firstIndex(where: { $0.levelNumber == current }) { return i }
+        return levels.firstIndex { $0.status == .active }
+    }
+
+    /// The level right after the member's — "up next" wears a gold ring and
     /// its own "▾ Next" marker, but only while it is still locked (an
     /// awaiting-review hand-off leaves it locked too, which is exactly when
     /// the member most wants to see where the thread goes).
     private var upNextIndex: Int? {
-        guard let a = levels.firstIndex(where: { $0.status == .active }) else { return nil }
+        guard let a = currentIndex else { return nil }
         let i = a + 1
         return i < levels.count && levels[i].status == .locked ? i : nil
     }
@@ -589,11 +653,12 @@ private struct PathwayJourneyRail: View {
                 HStack(spacing: 0) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
                         PWJourneyNode(level: lvl, number: i + 1, selected: lvl.levelNumber == selected,
+                                      isCurrent: i == currentIndex,
                                       upNext: i == upNextIndex) { onSelect(lvl.levelNumber) }
                         if i < levels.count - 1 {
                             // Connectors ahead of the member read at 0.28 — 0.12
                             // vanished into the cream (locked-rail pass, 2026-09).
-                            Capsule().fill(lvl.status == .completed ? PW.gold : PW.navy.opacity(0.28))
+                            Capsule().fill(lvl.walked ? PW.gold : PW.navy.opacity(0.28))
                                 .frame(width: 28, height: 3).padding(.top, 40)
                         }
                     }
@@ -608,11 +673,15 @@ private struct PWJourneyNode: View {
     let level: PathwayLevel
     let number: Int
     let selected: Bool
-    /// The locked level right after the active one — gold ring + "▾ Next".
+    /// The member's own level — "▾ You" and the navy ring.
+    var isCurrent: Bool = false
+    /// The locked level right after the member's — gold ring + "▾ Next".
     var upNext: Bool = false
     let onTap: () -> Void
-    private var done: Bool { level.status == .completed }
-    private var active: Bool { level.status == .active }
+    /// Walked: ushered past, or its exam passed (awaiting the usher) — never
+    /// shown locked (an awaiting level used to decode as locked).
+    private var done: Bool { level.walked }
+    private var active: Bool { isCurrent }
 
     var body: some View {
         Button(action: onTap) {
@@ -675,20 +744,23 @@ private struct PathwaySelectedModules: View {
     let modules: [LevelModule]
     let loading: Bool
     let resume: LevelModule?
+    /// The journey, when this level is the member's own and its exam is the
+    /// next step (examReady) — nil otherwise.
+    let examStep: Journey?
     let openModule: (String) -> Void
     let openExam: (Int) -> Void
 
-    /// Trail walked, level not yet passed, and not already awaiting a discipler's
-    /// usher → the exam gate row shows. Built only from fields the pathway/levels
-    /// API already returns; the server remains the eligibility authority and answers
-    /// politely if the gate isn't open. Once the exam is passed the level flips to
-    /// awaitingReview and the gate is replaced by the waiting row.
+    /// The journey says the exam is next → the exam gate row shows, unless the
+    /// trail carries its own exam row (prod's exit-exam module), which already
+    /// opens it. The old test (`level.status != .completed`) read the server's
+    /// "every module done" as "level passed", so the gate never showed once the
+    /// last module was finished. The server remains the eligibility authority
+    /// and answers politely if the gate isn't open; once the exam is passed the
+    /// level flips to awaitingReview and the gate is replaced by the waiting row.
     private var examReady: Bool {
-        !modules.isEmpty && modules.allSatisfy(\.completed)
-            && level.status != .completed && !level.awaitingReview
-            && level.examPublished   // hidden until the admin publishes the exam
+        examStep != nil && !modules.isEmpty && !modules.contains(where: \.isExam) && !level.isAwaitingReview
     }
-    private var awaitingReview: Bool { level.awaitingReview }
+    private var awaitingReview: Bool { level.isAwaitingReview }
 
     // Progression order — completed, then the one in progress, then locked (each
     // by sequence). Identical to raw sequence for a clean curriculum; for real
@@ -737,8 +809,8 @@ private struct PathwaySelectedModules: View {
                     // every module done → the exam gate opens the way.
                     if awaitingReview {
                         PWAwaitingRow(levelNumber: level.levelNumber)
-                    } else if examReady {
-                        PWExamGateRow(levelNumber: level.levelNumber) { openExam(level.levelNumber) }
+                    } else if examReady, let step = examStep {
+                        PWExamGateRow(title: step.title, line: step.line) { openExam(level.levelNumber) }
                     }
                 }
             }
@@ -871,10 +943,11 @@ private struct PWModuleRow: View {
 }
 
 /// The exam gate row at the foot of a fully-walked trail — "Take the Level N
-/// exam". Visibility is derived from the API's own module/level fields; taking
-/// the exam is still gated server-side (§1.9), so this row is only a doorway.
+/// exam", in the journey's own words. Taking the exam is still gated
+/// server-side (§1.9), so this row is only a doorway.
 private struct PWExamGateRow: View {
-    let levelNumber: Int
+    let title: String
+    let line: String
     let onTap: () -> Void
 
     var body: some View {
@@ -888,10 +961,11 @@ private struct PWExamGateRow: View {
                     Icon(.award, size: 16, color: PW.navy)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("Take the Level \(levelNumber) exam")
+                    Text(title)
                         .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text("Every module is done — the gate is open")
+                    Text(line)
                         .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Text("Begin").font(.inter(9, .bold)).foregroundStyle(PW.gold)
@@ -902,7 +976,7 @@ private struct PWExamGateRow: View {
             .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
         }
         .buttonStyle(.pressable)
-        .accessibilityHint("Opens the Level \(levelNumber) exam.")
+        .accessibilityHint("Opens the exam.")
     }
 }
 
@@ -954,7 +1028,7 @@ private struct PathwayMilestones: View {
     let levels: [PathwayLevel]
     let reward: PWReward?
     let openResume: () -> Void
-    private var earned: Int { levels.filter { $0.status == .completed }.count }
+    private var earned: Int { levels.filter(\.walked).count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -967,7 +1041,7 @@ private struct PathwayMilestones: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWRewardBadge(name: pwShortName(lvl.title), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.status == .completed)
+                        PWRewardBadge(name: pwShortName(lvl.title), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.walked)
                     }
                 }.padding(.horizontal, 2)
             }
@@ -1063,11 +1137,16 @@ private struct PWSurrenderFigure: View {
 // MARK: - PathwayHub · the summit (redesigned commissioning card — Android parity)
 
 private struct PathwaySummitCard: View {
-    let overallPct: Int
+    /// The journey reached `finished` — the final level's exam is passed
+    /// (§3). Never "every published module done": Level 1 finishers were being
+    /// commissioned while Levels 2–6 had nothing published yet.
+    let reached: Bool
     let levels: [PathwayLevel]
     let firstName: String
-    private var reached: Bool { overallPct >= 100 }
-    private var levelsLeft: Int { levels.filter { $0.status != .completed }.count }
+    /// Levels still between the member and being sent — at least one until
+    /// the summit: every module done at the last level still leaves its exam
+    /// (it used to read "0 levels between you and being sent").
+    private var levelsLeft: Int { max(1, levels.filter { !$0.walked }.count) }
     // Real sending: a worship gathering, hands raised, JESUS over the stage —
     // visually verified (not picked blind from an ID).
     private let img = "https://images.unsplash.com/photo-1507692049790-de58290a4334?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
@@ -1144,7 +1223,7 @@ private struct PathwaySummitCard: View {
             // The road itself: one dot per level, gold when walked.
             HStack(spacing: 8) {
                 ForEach(levels) { lv in
-                    let done = lv.status == .completed
+                    let done = reached || lv.walked
                     Circle()
                         .fill(done ? PW.gold : Color.white.opacity(0.28))
                         .overlay(Circle().strokeBorder(done ? PW.goldLight : .clear, lineWidth: 1))
@@ -1178,6 +1257,14 @@ struct LevelsMapView: View {
 
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
 
+    /// The member's own level wears the journey's word once its modules are
+    /// done ("Exam ready", "Exam passed") — not the server's bare "completed",
+    /// which says every module is done, not that the level is passed.
+    private func stagePill(for level: PathwayLevel) -> String? {
+        guard let j = vm.journey, j.levelNumber == level.levelNumber, j.stage != .learning else { return nil }
+        return j.pill
+    }
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
@@ -1190,7 +1277,9 @@ struct LevelsMapView: View {
                         sectionHeader.padding(.bottom, 12)
                         VStack(spacing: 12) {
                             ForEach(s.levels) { level in
-                                PWLevelCard(level: level) { if level.status != .locked { onOpenLevel(level.levelNumber) } }
+                                PWLevelCard(level: level, stagePill: stagePill(for: level)) {
+                                    if level.status != .locked { onOpenLevel(level.levelNumber) }
+                                }
                             }
                         }
                     }
@@ -1230,7 +1319,7 @@ struct LevelsMapView: View {
                             .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
                     }
                     Spacer(minLength: 0)
-                    PWProgressRing(pct: vm.overallPct)
+                    PWProgressRing(pct: vm.journey?.progressPercent ?? 0)
                 }.padding(.top, 12)
                 HStack(spacing: 8) {
                     PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
@@ -1361,11 +1450,16 @@ private struct PWContinueCard: View {
 
 private struct PWLevelCard: View {
     let level: PathwayLevel
+    /// The journey's word for the member's own level once its modules are
+    /// done ("Exam ready", "Exam passed") — nil for every other level.
+    var stagePill: String? = nil
     let onTap: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shakes = 0
 
-    private var isCompleted: Bool { level.status == .completed }
+    /// Walked: ushered past, or its exam passed and awaiting the usher — an
+    /// awaiting level is the member's own, never "locked".
+    private var isCompleted: Bool { level.walked }
     private var isActive: Bool { level.status == .active }
     private var isLocked: Bool { level.status == .locked }
     private var pct: Int { level.totalModules > 0 ? Int(round(Double(level.completedModules) / Double(level.totalModules) * 100)) : 0 }
@@ -1447,6 +1541,8 @@ private struct PWLevelCard: View {
 
     private var statusPill: some View {
         let (label, bg, fg): (String, Color, Color) = {
+            if let stagePill { return (stagePill, PW.goldTint, Color(hex: 0x8A6B10)) }
+            if level.isAwaitingReview { return ("Exam passed", PW.goldTint, Color(hex: 0x8A6B10)) }
             if isCompleted { return ("Complete", PW.goldTint, Color(hex: 0x8A6B10)) }
             if isActive    { return ("Active", Color(hex: 0xDDF4C6), Color(hex: 0x22612A)) }
             return ("Locked", PW.mutedBg, PW.ink3)
