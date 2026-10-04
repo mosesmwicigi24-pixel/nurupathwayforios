@@ -168,15 +168,16 @@ struct AppLiveBar: View {
 
 // MARK: - A Live notice whose stream is over
 
-/// "This Live has ended" (EXPERIENCE.md §7.2 #3) — what a Live notice opens,
-/// from a banner or the inbox, once its stream is over: calm, in the player's
-/// own ended look, naming the stream, with one way out. It replaced a tap that
-/// landed on Home without a word (a banner) or in a greeting sheet (the inbox).
-/// When /live/now didn't answer, it says why in the one state language
-/// instead — "ended" is never a guess.
+/// "This Live has ended" (EXPERIENCE.md §7.2 #3, §7.3) — what a Live notice
+/// opens, from a banner or the inbox, once its stream is over: calm, in the
+/// player's own ended look, naming the stream, and one way out — "Go back",
+/// the same action as §4's "This isn't here any more" (both apps). It
+/// replaced a tap that landed on Home without a word (a banner) or in a
+/// greeting sheet (the inbox). When /live/now didn't answer, it says why in
+/// the one state language instead — "ended" is never a guess.
 struct LiveEndedView: View {
     let notice: LiveEndedNotice
-    let onClose: () -> Void
+    let onBack: () -> Void
 
     private var title: String { notice.failure?.title ?? "This Live has ended" }
     private var line: String? { notice.failure?.line ?? notice.title }
@@ -195,8 +196,8 @@ struct LiveEndedView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            Button { Haptics.tap(); onClose() } label: {
-                Text("Close").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+            Button { Haptics.tap(); onBack() } label: {
+                Text("Go back").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                     .padding(.horizontal, 28).padding(.vertical, 12)
                     .background(Nuru.gold, in: Capsule())
             }
@@ -209,15 +210,15 @@ struct LiveEndedView: View {
             LinearGradient(colors: [Nuru.navy, Nuru.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .ignoresSafeArea()
         )
-        // The player's ended state keeps a ✕ at the top too.
+        // The way back at the top too — every full-screen state has one (§7.1 rule 3).
         .overlay(alignment: .topLeading) {
-            Button { Haptics.tap(); onClose() } label: {
-                Icon(.x, size: 18, color: .white)
+            Button { Haptics.tap(); onBack() } label: {
+                Icon(.arrowLeft, size: 18, color: .white)
                     .frame(width: 38, height: 38)
                     .background(Color.white.opacity(0.18), in: Circle())
             }
             .buttonStyle(.pressable)
-            .accessibilityLabel("Close")
+            .accessibilityLabel("Go back")
             .padding(.horizontal, 16).padding(.top, 10)
         }
         .preferredColorScheme(.dark)

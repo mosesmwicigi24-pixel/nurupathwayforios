@@ -452,7 +452,7 @@ struct RootView: View {
                 .id(item.id)
         }
         // A Live notice tapped once its stream is over — a banner or an inbox
-        // row alike (NoticeRouter): "This Live has ended", calm, one way out.
+        // row alike (NoticeRouter): "This Live has ended", calm, Go back.
         .fullScreenCover(item: Binding(
             get: { liveDiscovery.endedNotice },
             set: { liveDiscovery.endedNotice = $0 }
