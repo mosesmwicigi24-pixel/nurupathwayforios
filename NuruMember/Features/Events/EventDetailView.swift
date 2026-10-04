@@ -178,7 +178,15 @@ struct EventDetailView: View {
             .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
-    private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
+    /// Over once its end has passed — or, when the end isn't known (an
+    /// occurrence handed over from Home or an RSVP carries none), once its
+    /// day has. An unknown end used to read as long past, so a gathering
+    /// opened from Home said COMPLETED and offered no check-in.
+    private var isCompleted: Bool {
+        guard !isLive else { return false }
+        if occ.endAt.isEmpty { return Ev.date(occ.startAt) < Calendar.current.startOfDay(for: Date()) }
+        return Ev.date(occ.endAt) < Date()
+    }
     private var isToday: Bool { Calendar.current.isDateInToday(Ev.date(occ.startAt)) }
     /// QR check-in shows for live or same-day occurrences; the server still
     /// enforces qr_enabled / checkin_opens_at, so this is presentation only.

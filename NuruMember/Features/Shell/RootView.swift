@@ -152,9 +152,10 @@ struct GiveWatch: Equatable {
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
-/// or the "Read with a Friend" hub (a plan_group_* notification without a
-/// redeemable invite token — the group itself is one tap away from the hub).
-enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case readWithFriendHub }
+/// that plan's day to read (Home's YOUR WEEK — the plan's page is the back
+/// stop), or the "Read with a Friend" hub (a plan_group_* notification without
+/// a redeemable invite token — the group itself is one tap away from the hub).
+enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case planDay(ReadingPlanRow); case readWithFriendHub }
 
 /// The selected primary tab, hoisted out of RootView so any screen can switch
 /// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
@@ -648,6 +649,9 @@ private struct PlansTab: View {
                 path = NavigationPath()
                 switch link {
                 case .plan(let row): path.append(row)
+                case .planDay(let row):
+                    path.append(row)
+                    Task { await openDay(of: row) }
                 case .readWithFriendHub: path.append(GrowDestination.readWithFriendHub)
                 case .catalogue: break
                 }
@@ -663,6 +667,16 @@ private struct PlansTab: View {
                 path.append(ReadingInviteRef(token: token))
                 DispatchQueue.main.async { tabs.readingInviteToken = nil }
             }
+    }
+
+    /// Lands on the plan's day — the one its page's Continue opens — once the
+    /// plan answers. A failed read, a day still behind its gate, or a member
+    /// who has already moved on leaves the plan's page as it is: one tap
+    /// from the day.
+    private func openDay(of row: ReadingPlanRow) async {
+        guard let d = try? await MemberAPI.plan(row.planId), let day = d.continueDay, !day.locked,
+              path.count == 1 else { return }
+        path.append(PlanDayRef(planId: d.planId, day: day, planTitle: d.title))
     }
 }
 

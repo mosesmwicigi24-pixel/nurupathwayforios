@@ -722,9 +722,7 @@ struct PlanDetailView: View {
 
     // Real completion state, derived from the day rows the server returns.
     private func completedCount(_ d: ReadingPlanDetail) -> Int { d.days.filter { $0.completed == true }.count }
-    private func firstIncomplete(_ d: ReadingPlanDetail) -> ReadingPlanDay? {
-        d.days.first { $0.completed != true } ?? d.days.first
-    }
+    private func firstIncomplete(_ d: ReadingPlanDetail) -> ReadingPlanDay? { d.continueDay }
 
     private func content(_ d: ReadingPlanDetail) -> some View {
         VStack(spacing: 0) {

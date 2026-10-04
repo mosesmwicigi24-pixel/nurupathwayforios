@@ -206,6 +206,32 @@ struct ReadingPlanDetail: Codable, Sendable {
         days = (try? c.decodeIfPresent([ReadingPlanDay].self, forKey: .days)) ?? []
         nextDay = try? c.decodeIfPresent(Int.self, forKey: .nextDay)
     }
+
+    /// The day to open — the first not yet finished, else the first (a
+    /// finished plan reads again from the top). The plan page's Continue
+    /// and Home's YOUR WEEK both land here.
+    var continueDay: ReadingPlanDay? { days.first { $0.completed != true } ?? days.first }
+}
+
+// MARK: - The plan being read (one rule for Plans and Home)
+
+extension ReadingPlanRow {
+    /// The plan the member is reading: the first enrolled, unfinished plan in
+    /// the server's order — the one Plans continues first, the Plans header
+    /// names and Home's YOUR WEEK points to (EXPERIENCE.md §6.1–§6.2). Nil
+    /// when none is: a catalogue plan the member never started is never
+    /// shown as "Day 1 of 10".
+    static func active(in plans: [ReadingPlanRow]) -> ReadingPlanRow? {
+        plans.first { $0.enrolled && $0.completedAt == nil }
+    }
+
+    /// "Day 3 of 10" — the day being read: the server's current day, else
+    /// one past the days done; never before the first or past the last.
+    var dayLine: String {
+        let raw = currentDay ?? ((completedDays?.count ?? 0) + 1)
+        guard dayCount > 0 else { return "Day \(max(1, raw))" }
+        return "Day \(min(max(1, raw), dayCount)) of \(dayCount)"
+    }
 }
 
 struct SegmentCompleteResult: Codable, Sendable {

@@ -17,7 +17,9 @@ enum Ev {
     static func timeOf(_ iso: String) -> String {
         let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: date(iso))
     }
-    static func timeRange(_ s: String, _ e: String) -> String { "\(timeOf(s)) – \(timeOf(e))" }
+    /// "9:00 AM – 11:00 AM" — just the start when the end isn't known (it
+    /// used to print the end as a midnight that never was).
+    static func timeRange(_ s: String, _ e: String) -> String { e.isEmpty ? timeOf(s) : "\(timeOf(s)) – \(timeOf(e))" }
     static func isLive(_ s: String, _ e: String) -> Bool {
         let now = Date(); return date(s) <= now && now <= date(e)
     }

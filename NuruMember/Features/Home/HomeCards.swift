@@ -664,123 +664,65 @@ struct HomeEncouragementCard: View {
     }
 }
 
-// MARK: - "You're not in a cell yet" belonging cue (cohort cold start)
+// MARK: - YOUR WEEK (EXPERIENCE.md §6.1) — one row per pillar, one card
 
-struct HomeCohortColdStart: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
+/// The week block: Pathway · Plans · Events · Giving · Cell — an icon, the
+/// next thing, one line of when or where it stands, a chevron. The words are
+/// HomeWeek's (pure, pinned by tests); this only draws them and hands a tap
+/// back to Home, which knows where each pillar lives.
+struct HomeWeekCard: View {
+    let rows: [HomeWeekRow]
+    let open: (HomeWeekRow) -> Void
+
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(HomeFig.gold.opacity(0.12))
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(HomeFig.gold.opacity(0.4), lineWidth: 1)
-                    .opacity(pulse ? 0.85 : 0.3)
-                Icon(.users, size: 15, color: HomeFig.gold)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("YOUR WEEK").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
+                .padding(.bottom, 4)
+            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                Button { Haptics.tap(); open(row) } label: { rowView(row) }
+                    .buttonStyle(.pressableSubtle)
+                if i < rows.count - 1 {
+                    Rectangle().fill(Nuru.border).frame(height: 1).padding(.leading, 48)
+                }
             }
-            .frame(width: 32, height: 32)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("You're not in a cell yet").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
-                Text("Find your people — grow where your absence is noticed.")
-                    .font(.nCardMeta).foregroundStyle(HomeFig.subGray)
-            }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 15, color: HomeFig.faintGray)
         }
-        .padding(12)
-        .background(LinearGradient(colors: [HomeFig.gold.opacity(0.08), HomeFig.gold.opacity(0.02)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(HomeFig.gold.opacity(0.2), lineWidth: 1))
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
     }
-}
 
-// MARK: - Upcoming card: next-gathering row (thumb · kicker/title/sub · RSVP pill)
-
-struct HomeUpcomingEventRow: View {
-    let kicker: String        // "Today · 9:00 AM"
-    let soon: Bool            // today/tomorrow → blinking gold dot
-    let title: String
-    let sub: String           // "3 going" or the location
-    let subHighlight: Bool    // gold-bold when it's a going-count
-    let imageUrl: String?
-    /// The member's RSVP for this occurrence — "going" | "maybe" | "declined" | nil.
-    /// nil (the default) keeps the original static gold-on-navy "RSVP" call-to-action;
-    /// a real status swaps in a tinted state pill (same palette as the Events tab's
-    /// RSVP row — EvD in EventDetailView.swift).
-    var rsvpStatus: String? = nil
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
-
-    var body: some View {
+    private func rowView(_ row: HomeWeekRow) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.goldChipBg)
-                if let s = imageUrl, let u = URL(string: s) {
-                    // Contained fill image — keeps the thumb ZStack at exactly
-                    // 56×56 so the crop stays centred and nothing paints outside.
-                    Color.clear.overlay {
-                        CachedAsyncImage(url: u) { phase in
-                            if let img = phase.image { HomeFadeInImage(image: img) }
-                            else { Rectangle().fill(Nuru.mutedBg) }
-                        }
-                    }
-                } else {
-                    Icon(.calendarDays, size: 18, color: Nuru.goldChipText)
+            Icon(Self.icon(row.pillar), size: 16, color: Nuru.goldChipText)
+                .frame(width: 36, height: 36)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(row.title).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
+                if !row.line.isEmpty {
+                    Text(row.line).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    if soon {
-                        Circle().fill(HomeFig.gold).frame(width: 4, height: 4).opacity(pulse ? 0.3 : 1)
-                    }
-                    Text(kicker).font(.inter(10, .bold)).foregroundStyle(HomeFig.gold).lineLimit(1)
-                }
-                Text(title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
-                Text(sub)
-                    .font(.inter(10, subHighlight ? .bold : .regular))
-                    .foregroundStyle(subHighlight ? HomeFig.eyebrow : HomeFig.subGray)
-                    .lineLimit(1)
             }
             Spacer(minLength: 8)
-            rsvpPill
+            Icon(.chevronRight, size: 14, color: HomeFig.faintGray)
         }
-        .padding(10)
-        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
-    /// nil → the original gold-on-navy "RSVP" call-to-action. A real status swaps
-    /// in a tinted state pill — same hexes as the Events tab's RSVP row (EvD in
-    /// EventDetailView.swift; that enum is private to its file, so reused by value).
-    @ViewBuilder private var rsvpPill: some View {
-        switch rsvpStatus {
-        case "going":
-            rsvpStatePill("Going", fg: Color(hex: 0x166534), bg: Color(hex: 0x16A34A).opacity(0.14))
-        case "maybe":
-            rsvpStatePill("Maybe", fg: Color(hex: 0xB45309), bg: Color(hex: 0xD97706).opacity(0.14))
-        case "declined":
-            rsvpStatePill("Can't go", fg: Color(hex: 0x59667C), bg: Color(hex: 0x74808F).opacity(0.14))
-        default:
-            Text("RSVP").font(.inter(9, .bold)).foregroundStyle(HomeFig.gold)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(HomeFig.navy, in: Capsule())
+    /// Each pillar wears its tab's own glyph (the cell, Community's people).
+    private static func icon(_ p: HomeWeekRow.Pillar) -> Lucide {
+        switch p {
+        case .pathway: return .bookOpen
+        case .plans: return .bookMarked
+        case .events: return .calendar
+        case .giving: return .handHeart
+        case .cell: return .users
         }
-    }
-
-    private func rsvpStatePill(_ label: String, fg: Color, bg: Color) -> some View {
-        Text(label).font(.inter(9, .bold)).foregroundStyle(fg)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(bg, in: Capsule())
     }
 }
 

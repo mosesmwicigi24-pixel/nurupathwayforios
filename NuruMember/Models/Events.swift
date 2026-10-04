@@ -115,6 +115,24 @@ extension CalendarOccurrence {
         going = 0
         attendees = nil
     }
+
+    /// The same, from one of the member's RSVPs (GET /me/rsvps) — `event_id`
+    /// IS the occurrence id, so the detail page loads it like any other.
+    init(rsvp r: MyRsvp) {
+        occurrenceId = r.eventId
+        seriesId = ""
+        title = r.title
+        description = nil
+        location = nil
+        category = nil
+        primaryImageUrl = nil
+        startAt = r.occursAt ?? ""
+        endAt = ""
+        status = nil
+        rescheduled = nil
+        going = 0
+        attendees = nil
+    }
 }
 
 /// GET /calendar/series — a followable event series (Events "Series you follow").
