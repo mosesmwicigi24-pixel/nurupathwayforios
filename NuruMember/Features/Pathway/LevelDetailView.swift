@@ -124,8 +124,15 @@ final class LevelDetailViewModel: ObservableObject {
     /// server's "every module done" as "level passed", so the gate never showed
     /// once the last module was finished. The true eligibility answer stays
     /// the server's (§1.9).
-    var examAvailable: Bool {
-        guard let j = journey, j.stage == .examReady, j.levelNumber == levelNumber else { return false }
+    var examAvailable: Bool { gateShows(at: .examReady) }
+
+    /// Every module is done but the exam can't be taken yet (in review, or no
+    /// questions): the gate says so in the journey's words, with nothing to
+    /// tap (EXPERIENCE.md §3, §7.2 #1).
+    var examSoon: Bool { gateShows(at: .examSoon) }
+
+    private func gateShows(at stage: Journey.Stage) -> Bool {
+        guard let j = journey, j.stage == stage, j.levelNumber == levelNumber else { return false }
         return !modules.isEmpty && !modules.contains(where: \.isExam) && !awaitingReview
     }
 
@@ -401,7 +408,7 @@ struct LevelDetailView: View {
 
     private var moduleTrail: some View {
         let items = vm.trailItems
-        let showGate = vm.examAvailable
+        let showGate = vm.examAvailable || vm.examSoon
         let showWaiting = vm.awaitingReview
         return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
@@ -526,13 +533,22 @@ struct LevelDetailView: View {
             }
             .frame(width: 36)
 
-            NavigationLink(value: PathwayRoute.exam(vm.levelNumber)) {
-                ExamGateCard(title: vm.journey?.title ?? "Take the Level \(vm.levelNumber) exam",
-                             line: vm.journey?.line ?? "",
-                             actionLabel: vm.journey?.actionLabel ?? "Begin the exam")
+            Group {
+                if vm.examAvailable {
+                    NavigationLink(value: PathwayRoute.exam(vm.levelNumber)) {
+                        ExamGateCard(title: vm.journey?.title ?? "Take the Level \(vm.levelNumber) exam",
+                                     line: vm.journey?.line ?? "",
+                                     actionLabel: vm.journey?.actionLabel ?? "Begin the exam")
+                    }
+                    .buttonStyle(.pressable)
+                    .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
+                } else {
+                    // "Level N complete · …The exam opens soon" — no way into
+                    // an exam that can't be taken yet.
+                    ExamGateCard(title: vm.journey?.title ?? "Level \(vm.levelNumber) complete",
+                                 line: vm.journey?.line ?? "", actionLabel: nil)
+                }
             }
-            .buttonStyle(.pressable)
-            .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
             .padding(.bottom, Nuru.S.base)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -595,6 +611,10 @@ struct LevelDetailView: View {
             Group {
                 if m.locked {
                     LockedTrailCard(module: m)
+                } else if m.examOpensSoon {
+                    // The exam has no questions yet: the card says it opens
+                    // soon, and opens nothing (EXPERIENCE.md §7.2 #1).
+                    ModuleTrailCard(module: m)
                 } else {
                     // The level's exam container opens the exam; every other module
                     // opens its lesson reader.
@@ -668,7 +688,7 @@ struct LevelDetailView: View {
     /// discipler's usher (that's the existing end-of-level element — this adds
     /// a WITHIN-level presence, it doesn't replace it).
     private func maybeShowDisciplerReminder() {
-        guard vm.completed >= 3, !vm.examAvailable, !vm.awaitingReview else { return }
+        guard vm.completed >= 3, !vm.examAvailable, !vm.examSoon, !vm.awaitingReview else { return }
         guard DisciplerReminderPolicy.shouldShow(level: levelNumber) else { return }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.5, dampingFraction: 0.85)) {
             showReminder = true
@@ -793,6 +813,8 @@ private struct ModuleTrailCard: View {
         } else if module.locked {
             Text("Unlocks when you finish the one before.")
                 .font(.nMicro).foregroundStyle(Nuru.faint)
+        } else if module.examOpensSoon {
+            Text("Opens soon").font(.inter(12, .semibold)).foregroundStyle(Nuru.faint)
         } else {
             HStack(spacing: 4) {
                 Text("Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
@@ -873,10 +895,11 @@ private struct EncouragementTrailCard: View {
 
 private struct ExamGateCard: View {
     /// The journey's own words for the exam step (§3) — the same title, line
-    /// and action the Pathway hero and Home's continue card say.
+    /// and action the Pathway hero and Home's continue card say. No action
+    /// while the exam opens soon: the card only says where things stand.
     let title: String
     let line: String
-    let actionLabel: String
+    let actionLabel: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
@@ -892,13 +915,15 @@ private struct ExamGateCard: View {
                 .font(.nCardBody).foregroundStyle(Color.white.opacity(0.65))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
-                Text(actionLabel).font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
-                Icon(.arrowRight, size: 13, color: Nuru.navyDeep)
+            if let actionLabel {
+                HStack(spacing: 6) {
+                    Text(actionLabel).font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                    Icon(.arrowRight, size: 13, color: Nuru.navyDeep)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Nuru.goldGradient, in: Capsule())
+                .padding(.top, 4)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(Nuru.goldGradient, in: Capsule())
-            .padding(.top, 4)
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)

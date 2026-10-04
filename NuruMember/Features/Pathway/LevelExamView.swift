@@ -9,8 +9,11 @@
 // against levels.required_exam_pass_mark and the client renders ONLY the
 // server's verdict — never grades locally, never reveals answers. Attempts are
 // idempotent on a stable client_mutation_id (§2.1/§3.6); "Retry Exam" mints a
-// fresh id. If the server says the gate isn't open (GATE_LOCKED — modules
-// remaining or a locked level) that answer is surfaced honestly, not hidden.
+// fresh id. If the server refuses the exam (GATE_LOCKED — modules remaining
+// or a locked level; UNPROCESSABLE — no questions yet) its own words are the
+// screen, with Go back — never Try again, which would only be refused again
+// (EXPERIENCE.md §7.2 #1). Every state has a back at the top, and every
+// bottom button sits clear of the tab bar (§7.1 rule 3).
 import SwiftUI
 
 @MainActor
@@ -18,7 +21,13 @@ final class LevelExamViewModel: ObservableObject {
     @Published var exam: AssembledExam?
     @Published var levelTitle: String?
     @Published var loading = true
-    @Published var notEligible: String?   // the server's own GATE_LOCKED/UNPROCESSABLE explanation
+    /// The server refused the exam — its own words (GATE_LOCKED /
+    /// UNPROCESSABLE, any refusal in §4's sense), shown with Go back only.
+    @Published var notEligible: String?
+    /// The exam didn't load for another reason — offline, our server, a
+    /// session that ended — in the one state language (§4).
+    @Published var loadFailure: NuruStateCopy?
+    /// A submit that didn't land (the CTA bar's line).
     @Published var error: String?
     @Published var submitting = false
     @Published var result: ExamResult?
@@ -42,7 +51,7 @@ final class LevelExamViewModel: ObservableObject {
     init(levelNumber: Int) { self.levelNumber = levelNumber }
 
     func load() async {
-        loading = true; error = nil; notEligible = nil
+        loading = true; error = nil; notEligible = nil; loadFailure = nil
         do {
             let fresh = try await MemberAPI.levelExam(levelNumber)
             exam = fresh
@@ -64,16 +73,24 @@ final class LevelExamViewModel: ObservableObject {
         }
     }
 
-    /// GATE_LOCKED ("finish every module…" / "level is locked") and UNPROCESSABLE
-    /// ("no exam questions yet" / "no active enrollment") are honest server states,
-    /// not failures — everything else is a genuine load error worth retrying.
+    /// A refusal — GATE_LOCKED ("Finish every module…" / "Level is locked"),
+    /// UNPROCESSABLE ("Your Level N exam isn't ready yet…" / "No active
+    /// enrollment"), any 4xx in our own words — is an honest server state,
+    /// not a failure: its words, and Go back. Everything else (offline, our
+    /// server, an ended session) speaks the one state language (§4).
     private func classify(_ error: Error) {
-        if case let APIError.http(_, code, message, _) = error,
-           code == "GATE_LOCKED" || code == "UNPROCESSABLE" {
-            notEligible = message
+        if let words = Self.refusal(error) {
+            notEligible = words
         } else {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the exam."
+            loadFailure = NuruStateCopy.failure(error)
         }
+    }
+
+    /// The server's own words when it refused the exam (§4: a member-facing
+    /// 4xx keeps its words); nil for any other failure. Pure — pinned by tests.
+    nonisolated static func refusal(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String? {
+        let copy = NuruStateCopy.failure(error, deviceOnline: deviceOnline)
+        return copy.cause == .refusal ? copy.title : nil
     }
 
     func toggleCheck(_ qid: String, _ choiceId: String) {
@@ -118,8 +135,11 @@ final class LevelExamViewModel: ObservableObject {
                                           title: "Congratulations",
                                           subtitle: "You've finished the exam.")
         } catch {
-            if case let APIError.http(_, code, message, _) = error, code == "GATE_LOCKED" {
-                notEligible = message   // the gate closed between assemble and submit
+            if let words = Self.refusal(error) {
+                // The gate closed between assemble and submit, or the exam
+                // lost its questions: the server's words, and Go back. (The
+                // answers stay in the draft for when it opens again.)
+                notEligible = words
             } else {
                 self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
                 Haptics.error()
@@ -157,6 +177,37 @@ private let examGoldGradient = LinearGradient(
     colors: [Color(hex: 0xC9A227), Color(hex: 0xB6862F)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
+/// Where the exam's chrome sits (EXPERIENCE.md §7.1 rule 3). The exam is
+/// pushed on a tab's stack under the shell's own overlays: a paper stripe
+/// over the status bar, and the tab bar over the bottom 52pt of the safe
+/// area (NuruTabBar: 6 + 44 + 2). The back sits below the one; every bottom
+/// button clears the other ("Back to Level" used to sit under it).
+private enum ExamLayout {
+    static var backTop: CGFloat { NuruSafeArea.top + 8 }
+    static let bottomClearance: CGFloat = 52 + Nuru.S.base
+}
+
+/// The back at the top-left that every state of the exam carries — the
+/// question flow's header has its own; this one is for every other state.
+private struct ExamTopBack: View {
+    /// White on the navy states (the first load, the pass ceremony).
+    var onDark = false
+    let action: () -> Void
+
+    var body: some View {
+        Button { Haptics.tap(); action() } label: {
+            Icon(.arrowLeft, size: 17, color: onDark ? .white : EX.navy)
+                .frame(width: 40, height: 40)
+                .background(onDark ? Color.white.opacity(0.10) : Color(hex: 0x0A2540, alpha: 0.06), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Back")
+        .padding(.leading, Nuru.S.screen)
+        .padding(.top, ExamLayout.backTop)
+    }
+}
+
 struct LevelExamView: View {
     let levelNumber: Int
     /// Passed from PathwayView — advances into the next module after a pass.
@@ -184,7 +235,7 @@ struct LevelExamView: View {
             } else if vm.loading && vm.exam == nil {
                 examSkeleton
             } else if let reason = vm.notEligible {
-                ExamNotEligibleScreen(levelNumber: levelNumber, reason: reason) { dismiss() }
+                ExamNotEligibleScreen(reason: reason) { dismiss() }
             } else if let exam = vm.exam, !vm.questions.isEmpty {
                 flow(exam)
             } else {
@@ -283,28 +334,20 @@ struct LevelExamView: View {
         }
         .nuruShimmer()
         .accessibilityLabel("Loading the exam")
+        // A slow first load is never a trap: the way back is there from the start.
+        .overlay(alignment: .topLeading) { ExamTopBack(onDark: true) { dismiss() } }
     }
 
+    /// The exam didn't come for a reason that isn't a refusal — offline, our
+    /// server, an ended session — in the one state language (§4), with the
+    /// way back at the top. (An exam that came with no questions is ours.)
     private var loadFailed: some View {
-        VStack(spacing: Nuru.S.md) {
-            Text(vm.error ?? "Couldn't load the exam.")
-                .font(.inter(14)).foregroundStyle(EX.copy).multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                Text("Try again").font(.inter(13, .semibold)).foregroundStyle(EX.navy)
-                    .padding(.horizontal, 20).padding(.vertical, 10)
-                    .background(examGoldGradient, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-            Button { Haptics.tap(); dismiss() } label: {
-                Text("Back").font(.inter(13, .semibold)).foregroundStyle(EX.copy)
-                    .padding(.horizontal, 20).padding(.vertical, 10)
-            }
-            .buttonStyle(.pressable)
-        }
-        .padding(Nuru.S.screen)
+        NuruStateView(state: .failed(vm.loadFailure ?? .serverSide),
+                      retry: { Task { await vm.load() } },
+                      back: { dismiss() })
+            .padding(.horizontal, Nuru.S.screen)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) { ExamTopBack { dismiss() } }
     }
 
     // MARK: - Answer renderers (same white-card language as the quiz)
@@ -409,7 +452,9 @@ private struct ExamHeader: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Nuru.S.screen)
-            .padding(.top, 52)
+            // Below the shell's paper stripe — at a fixed 52 the stripe
+            // covered the back's top edge on a Dynamic Island phone.
+            .padding(.top, ExamLayout.backTop)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -540,7 +585,7 @@ private struct ExamCTABar: View {
         .animation(.easeInOut(duration: 0.2), value: error != nil)
         .padding(.top, 16)
         .padding(.horizontal, Nuru.S.lg)
-        .padding(.bottom, Nuru.S.md)
+        .padding(.bottom, ExamLayout.bottomClearance)   // clear of the tab bar
         .background(
             Color.white
                 .overlay(Rectangle().fill(EX.ctaHairline).frame(height: 1), alignment: .top)
@@ -549,10 +594,15 @@ private struct ExamCTABar: View {
     }
 }
 
-// MARK: - Not eligible (the server said the gate isn't open — honest, kind)
+// MARK: - Not eligible (the server refused the exam — its words, and Go back)
 
+/// A refusal is the server's own words (§4) — "Your Level 1 exam isn't
+/// ready yet — we'll let you know when it opens.", "Finish every module in
+/// this level before the exam" — and one way out, Go back. Never Try again
+/// (it would only be refused again), and no "finish every module" line of
+/// our own: the old one stood under "no questions yet" for a member who had
+/// finished every module (EXPERIENCE.md §7.2 #1).
 private struct ExamNotEligibleScreen: View {
-    let levelNumber: Int
     let reason: String
     let onBack: () -> Void
 
@@ -562,32 +612,26 @@ private struct ExamNotEligibleScreen: View {
             Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                 .frame(width: 100, height: 100)
                 .overlay(Icon(.lock, size: 36, color: EX.copy))
-            Text("The gate isn't open yet")
-                .font(.inter(22, .bold)).foregroundStyle(EX.ink)
-                .padding(.top, 24)
             Text(reason)
-                .font(.inter(16)).foregroundStyle(EX.copy)
+                .font(.inter(20, .bold)).foregroundStyle(EX.ink)
                 .multilineTextAlignment(.center)
                 .lineSpacing(4)
-                .padding(.top, 10)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 24)
                 .padding(.horizontal, 36)
-            Text("Finish every module in Level \(levelNumber), then come back — the exam will be waiting.")
-                .font(.inter(13)).foregroundStyle(EX.kicker)
-                .multilineTextAlignment(.center)
-                .lineSpacing(3)
-                .padding(.top, 12)
-                .padding(.horizontal, 44)
             Spacer()
             Button { Haptics.tap(); onBack() } label: {
-                Text("Back to Level")
+                Text("Go back")
                     .font(.inter(16, .semibold)).foregroundStyle(.white)
                     .frame(maxWidth: .infinity, minHeight: 56)
                     .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             }
             .buttonStyle(.pressable)
             .padding(.horizontal, Nuru.S.lg)
-            .padding(.bottom, Nuru.S.lg)
+            .padding(.bottom, ExamLayout.bottomClearance)
         }
+        .frame(maxWidth: .infinity)
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onBack) }
         .gentleEntrance()
     }
 }
@@ -675,10 +719,8 @@ private struct ExamPassScreen: View {
                 divider.padding(.top, 24)
                 Spacer()
                 Button {
-                    guard !advancing else { return }
-                    advancing = true
-                    Haptics.tap()
-                    onContinue()   // refresh the pathway + return to the hub (no jump)
+                    if !advancing { Haptics.tap() }
+                    advance()
                 } label: {
                     Group {
                         if advancing {
@@ -695,11 +737,14 @@ private struct ExamPassScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
-                .padding(.bottom, Nuru.S.lg)
+                .padding(.bottom, ExamLayout.bottomClearance)
             }
             // Confetti over the whole ceremony — fires on arrival, once.
             CelebrationConfetti().allowsHitTesting(false)
         }
+        // The back at the top goes the same way as the button — the pathway
+        // refreshed, so it shows the passed level as it now stands.
+        .overlay(alignment: .topLeading) { ExamTopBack(onDark: true) { advance() } }
         .onAppear {
             Haptics.success()
             guard !bloomed else { return }
@@ -710,6 +755,14 @@ private struct ExamPassScreen: View {
         .task {
             if levelScore == nil { levelScore = try? await MemberAPI.levelScore(levelNumber) }
         }
+    }
+
+    /// Back to the pathway — once, however it is asked for (the button or
+    /// the back at the top): the hub refreshes, then the exam pops.
+    private func advance() {
+        guard !advancing else { return }
+        advancing = true
+        onContinue()   // refresh the pathway + return to the hub (no jump)
     }
 
     // Concentric rings (190/154/122) with the trophy, laurelled by eight gold
@@ -837,9 +890,10 @@ private struct ExamFailScreen: View {
                     .buttonStyle(.pressable)
                 }
                 .padding(.horizontal, Nuru.S.lg)
-                .padding(.bottom, Nuru.S.lg)
+                .padding(.bottom, ExamLayout.bottomClearance)
             }
         }
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onReview) }
         .onAppear { Haptics.error() }   // kind copy stays; the hand hears "not yet"
     }
 }
@@ -874,9 +928,10 @@ private struct ExamReviewScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
-                .padding(.bottom, Nuru.S.lg)
+                .padding(.bottom, ExamLayout.bottomClearance)
             }
         }
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onDone) }
         .onAppear { Haptics.success() }   // the submission itself landed safely
     }
 }

@@ -14,9 +14,11 @@ struct Journey: Equatable {
     enum Stage: Equatable {
         /// The current level is open — modules to walk (or none published yet).
         case learning
-        /// Every module is done and the level's exam is published.
+        /// Every module is done and the level's exam can be taken (published,
+        /// with questions — `exam_available`).
         case examReady
-        /// Every module is done; the exam is still in review.
+        /// Every module is done; the exam is still in review, or published
+        /// with no questions yet — nothing to take, so nothing is offered.
         case examSoon
         /// The exam is passed — the member's leader opens the next level.
         case awaitingUsher
@@ -120,6 +122,12 @@ extension Journey {
         let exam = mods.first { $0.isExam }
         let examPassed = exam?.completed == true
         let examOpen = exam.map { !$0.completed && $0.status == .next } ?? false
+        // The exam is offered only when it can be TAKEN (EXPERIENCE.md §7.2
+        // #1): published AND with questions — `exam_available` on the level
+        // and on the trail's exam row. A published exam with no questions
+        // answered 422 behind an "Exam ready" pill. Absent (an older server)
+        // reads as available, so that server behaves exactly as before.
+        let examTakeable = cur.examAvailable && (exam?.examAvailable ?? true)
         // The lesson to continue — Pathway's resume rule without its old "else
         // the last one" fallback (which re-opened a finished module), and never
         // the exam row (the exam is a stage, not a lesson).
@@ -132,9 +140,10 @@ extension Journey {
         } else if cur.isAwaitingReview || examPassed {
             stage = isLast ? .finished : .awaitingUsher
         } else if cur.status == .completed {
-            stage = cur.examPublished ? .examReady : .examSoon
+            stage = cur.examPublished && examTakeable ? .examReady : .examSoon
         } else if examOpen {
-            stage = .examReady   // a level counting its exam row stays "active" at 20 of 21
+            // A level counting its exam row stays "active" at 20 of 21.
+            stage = examTakeable ? .examReady : .examSoon
         } else {
             stage = .learning
         }

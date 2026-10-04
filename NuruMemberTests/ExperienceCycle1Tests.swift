@@ -20,11 +20,15 @@ final class ExperienceCycle1Tests: XCTestCase {
         return try d.decode(T.self, from: JSONSerialization.data(withJSONObject: object))
     }
 
+    /// `examAvailable` nil = the key absent (a server that predates it).
     private func level(_ n: Int, _ status: String, done: Int = 0, of total: Int = 0,
-                       awaiting: Bool = false, examPublished: Bool = true) -> [String: Any] {
-        ["level_number": n, "title": "Level \(n) title", "theme": NSNull(), "description": NSNull(),
-         "total_modules": total, "completed_modules": done, "minutes": 0, "status": status,
-         "awaiting_review": awaiting, "exam_published": examPublished]
+                       awaiting: Bool = false, examPublished: Bool = true, examAvailable: Bool? = nil) -> [String: Any] {
+        var row: [String: Any] = [
+            "level_number": n, "title": "Level \(n) title", "theme": NSNull(), "description": NSNull(),
+            "total_modules": total, "completed_modules": done, "minutes": 0, "status": status,
+            "awaiting_review": awaiting, "exam_published": examPublished]
+        if let examAvailable { row["exam_available"] = examAvailable }
+        return row
     }
 
     /// Six levels: `current` takes `row`; before it completed (10/10), after it
@@ -38,10 +42,13 @@ final class ExperienceCycle1Tests: XCTestCase {
     }
 
     private func module(_ id: String, level: Int, seq: Int, _ status: String,
-                        completed: Bool = false, kind: String = "none") -> [String: Any] {
-        ["module_id": id, "level_number": level, "module_sequence_number": seq, "title": "Module \(id)",
-         "summary": NSNull(), "estimated_minutes": 10, "evaluation_kind": kind, "quiz_pass_mark": 70,
-         "completed": completed, "status": status, "progress": completed ? 100 : 0, "locked": status == "locked"]
+                        completed: Bool = false, kind: String = "none", examAvailable: Bool? = nil) -> [String: Any] {
+        var row: [String: Any] = [
+            "module_id": id, "level_number": level, "module_sequence_number": seq, "title": "Module \(id)",
+            "summary": NSNull(), "estimated_minutes": 10, "evaluation_kind": kind, "quiz_pass_mark": 70,
+            "completed": completed, "status": status, "progress": completed ? 100 : 0, "locked": status == "locked"]
+        if let examAvailable { row["exam_available"] = examAvailable }
+        return row
     }
 
     private func trail(_ rows: [[String: Any]]) throws -> [LevelModule] {
@@ -140,6 +147,77 @@ final class ExperienceCycle1Tests: XCTestCase {
         XCTAssertEqual(j.line, "Every module is done. The exam opens soon — we'll let you know.")
         XCTAssertNil(j.actionLabel)
         XCTAssertNil(j.destination)
+    }
+
+    // MARK: §7.2 #1 — the exam is offered only when it can be taken
+
+    /// Cycle 3: a published exam with no questions answered 422 behind "Exam
+    /// ready". `exam_available` (published AND questions) decides: available
+    /// → examReady; not → examSoon in §3's words, nothing to tap; absent (an
+    /// older server) → exactly as before.
+    func testExamReadyNeedsTheExamToBeAvailable() throws {
+        let ready = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "completed", done: 20, of: 20, examAvailable: true))))
+        XCTAssertEqual(ready.stage, .examReady)
+        XCTAssertEqual(ready.destination, .exam(1))
+
+        let soon = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "completed", done: 20, of: 20, examAvailable: false))))
+        XCTAssertEqual(soon.stage, .examSoon, "published with no questions is not ready")
+        XCTAssertEqual(soon.pill, "Exam opens soon")
+        XCTAssertEqual(soon.kicker, "Exam opens soon · Level 1")
+        XCTAssertEqual(soon.title, "Level 1 complete")
+        XCTAssertEqual(soon.line, "Every module is done. The exam opens soon — we'll let you know.")
+        XCTAssertNil(soon.actionLabel)
+        XCTAssertNil(soon.destination, "nothing may open the exam")
+        XCTAssertEqual(soon.progressLine.bold, "Level 1 complete")
+
+        let older = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "completed", done: 20, of: 20))))
+        XCTAssertEqual(older.stage, .examReady, "no exam_available key: as before, published = ready")
+        let unpublished = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "completed", done: 20, of: 20,
+                                                                                    examPublished: false, examAvailable: true))))
+        XCTAssertEqual(unpublished.stage, .examSoon, "available never outranks unpublished")
+    }
+
+    /// Prod's shape: the trail's own exam row (`exam_available` on it) is the
+    /// step at "10 of 11". Next but not available → examSoon; available or
+    /// absent → examReady. A level saying not-available holds it too.
+    func testTheTrailsExamRowIsOfferedOnlyWhenAvailable() throws {
+        func journey(row: Bool?, level levelAvailable: Bool? = nil) throws -> Journey {
+            let s = try summary(current: 1, level(1, "active", done: 10, of: 11, examAvailable: levelAvailable))
+            let t = try trail([module("m10", level: 1, seq: 10, "completed", completed: true),
+                               module("exam", level: 1, seq: 11, "next", kind: "exit_exam", examAvailable: row)])
+            return try XCTUnwrap(Journey.derive(s, trail: t))
+        }
+        XCTAssertEqual(try journey(row: true).stage, .examReady)
+        XCTAssertEqual(try journey(row: nil).stage, .examReady, "an older server: as before")
+        let soon = try journey(row: false)
+        XCTAssertEqual(soon.stage, .examSoon)
+        XCTAssertNil(soon.destination)
+        XCTAssertEqual(soon.progressPercent, 17, "every lesson done counts the level whole either way")
+        XCTAssertEqual(try journey(row: true, level: false).stage, .examSoon, "the level's own word counts too")
+    }
+
+    /// Ada on the local API once the server serves the field: Level 1 at 20
+    /// of 20, published, no questions — "Exam opens soon" on Home's pill and
+    /// the week row; nothing opens the exam.
+    func testAdasPathwayWithAnEmptyExamOpensSoon() throws {
+        let levels: [[String: Any]] = [level(1, "completed", done: 20, of: 20, examAvailable: false)]
+            + (2...6).map { level($0, "locked", examAvailable: false) }
+        let j = try XCTUnwrap(Journey.derive(try decode(PathwaySummary.self, ["current_level": 1, "levels": levels])))
+        XCTAssertEqual(j.stage, .examSoon)
+        let row = HomeWeek.pathwayRow(j, enrolledLevel: 1)
+        XCTAssertEqual(row.title, "Level 1 complete")
+        XCTAssertEqual(row.line, "Level 1 · Exam opens soon")
+        XCTAssertEqual(row.destination, .journey(nil), "the week row opens the Pathway tab, never the exam")
+    }
+
+    func testExamAvailableDecodesAndDefaultsToAvailable() throws {
+        XCTAssertFalse(try decode(PathwayLevel.self, level(1, "completed", examAvailable: false)).examAvailable)
+        XCTAssertTrue(try decode(PathwayLevel.self, level(1, "completed", examAvailable: true)).examAvailable)
+        XCTAssertTrue(try decode(PathwayLevel.self, level(1, "completed")).examAvailable, "absent = available")
+        let rows = try trail([module("exam", level: 1, seq: 11, "next", kind: "exit_exam", examAvailable: false),
+                              module("exam2", level: 1, seq: 11, "next", kind: "exit_exam"),
+                              module("m1", level: 1, seq: 1, "next")])
+        XCTAssertEqual(rows.map(\.examAvailable), [false, true, true])
     }
 
     func testAwaitingUsherOnceTheExamIsPassed() throws {

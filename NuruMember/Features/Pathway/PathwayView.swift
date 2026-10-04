@@ -138,9 +138,10 @@ final class PathwayViewModel: ObservableObject {
 
     /// The module to resume in a level (status-driven from the real trail) —
     /// nil once every module is done: a finished level has nothing to resume,
-    /// and "Continue" must never re-open a finished module.
+    /// and "Continue" must never re-open a finished module — nor an exam that
+    /// can't be taken yet (EXPERIENCE.md §7.2 #1: it would only answer 422).
     func resumeModule(in levelNumber: Int) -> LevelModule? {
-        let mods = modulesByLevel[levelNumber] ?? []
+        let mods = (modulesByLevel[levelNumber] ?? []).filter { !$0.examOpensSoon }
         return mods.first { $0.status == .next } ?? mods.first { !$0.completed }
     }
 
@@ -836,7 +837,8 @@ private struct PathwaySelectedModules: View {
                     if !folds || expanded {
                         ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
                             PWModuleRow(module: m, last: (i == ordered.count - 1) && !awaitingReview) {
-                                guard m.status != .locked else { return }
+                                // An exam that can't be taken yet opens nothing (§7.2 #1).
+                                guard m.status != .locked, !m.examOpensSoon else { return }
                                 if m.isExam { openExam(level.levelNumber) } else { openModule(m.moduleId) }
                             }
                             // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
@@ -882,7 +884,11 @@ private struct PWModuleRow: View {
     @State private var shakes = 0
     @State private var lockHint = false
     private var done: Bool { module.status == .completed }
-    private var active: Bool { module.status == .next }
+    /// The exam row is open but its exam has no questions yet: it says
+    /// "opens soon", wears no lock and no "Start exam", and is not a link
+    /// (EXPERIENCE.md §7.2 #1 — the server would answer 422).
+    private var opensSoon: Bool { module.examOpensSoon }
+    private var active: Bool { module.status == .next && !opensSoon }
     private var locked: Bool { module.status == .locked }
     private var isExam: Bool { module.isExam }
 
@@ -891,6 +897,7 @@ private struct PWModuleRow: View {
     private var caption: String {
         if isExam {
             return done ? "Level exam · passed"
+                 : opensSoon ? "Level exam · opens soon"
                  : active ? "Level exam · ready — tap to begin"
                  : lockHint ? "Finish every module to unlock the exam" : "Level exam · locked"
         }
@@ -900,65 +907,71 @@ private struct PWModuleRow: View {
     }
 
     var body: some View {
-        Button(action: handleTap) {
-            HStack(spacing: 12) {
-                // The module NUMBER stays put; completion/locks move to a corner
-                // seal. The exam tile keeps its award identity.
-                ZStack(alignment: .topTrailing) {
+        if opensSoon {
+            rowLabel.accessibilityElement(children: .combine)
+        } else {
+            Button(action: handleTap) { rowLabel }
+                .buttonStyle(.pressable)
+                .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
+                .accessibilityHint(locked ? "Locked. Finish the previous module to unlock." : "")
+        }
+    }
+
+    private var rowLabel: some View {
+        HStack(spacing: 12) {
+            // The module NUMBER stays put; completion/locks move to a corner
+            // seal. The exam tile keeps its award identity.
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
+                              : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
+                              : AnyShapeStyle(PW.mutedBg))
+                        .frame(width: 32, height: 32)
+                    if isExam { Icon(.award, size: 15, color: done || active ? PW.goldDeep : PW.goldDeep) }
+                    else {
+                        Text("\(module.moduleSequenceNumber)")
+                            .font(.inter(13, .bold))
+                            .foregroundStyle(done ? PW.goldDeep : active ? PW.navy : PW.ink3)
+                    }
+                }
+                if done {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
-                                  : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                  : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
-                                  : AnyShapeStyle(PW.mutedBg))
-                            .frame(width: 32, height: 32)
-                        if isExam { Icon(.award, size: 15, color: done || active ? PW.goldDeep : PW.goldDeep) }
-                        else {
-                            Text("\(module.moduleSequenceNumber)")
-                                .font(.inter(13, .bold))
-                                .foregroundStyle(done ? PW.goldDeep : active ? PW.navy : PW.ink3)
-                        }
+                        Circle().fill(PW.navy).frame(width: 13, height: 13)
+                        Icon(.check, size: 7, color: .white)
                     }
-                    if done {
-                        ZStack {
-                            Circle().fill(PW.navy).frame(width: 13, height: 13)
-                            Icon(.check, size: 7, color: .white)
-                        }
-                        .overlay(Circle().stroke(.white, lineWidth: 1.2))
-                        .offset(x: 4, y: -3)
-                    } else if !active && !done {
-                        ZStack {
-                            Circle().fill(PW.mutedBg).frame(width: 13, height: 13)
-                            Icon(.lock, size: 7, color: PW.ink3)
-                        }
-                        .overlay(Circle().stroke(.white, lineWidth: 1.2))
-                        .offset(x: 4, y: -3)
+                    .overlay(Circle().stroke(.white, lineWidth: 1.2))
+                    .offset(x: 4, y: -3)
+                } else if !active && !done && !opensSoon {
+                    ZStack {
+                        Circle().fill(PW.mutedBg).frame(width: 13, height: 13)
+                        Icon(.lock, size: 7, color: PW.ink3)
                     }
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    // Locked titles stay legible ink (only the caption goes faint) —
-                    // #8B95A5-on-white washed the whole card out on device.
-                    Text(module.title).font(.inter(13, (active || isExam) ? .bold : .medium))
-                        .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
-                    Text(caption)
-                        .font(.inter(9, (active || isExam) ? .bold : .medium))
-                        .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
-                }
-                Spacer(minLength: 0)
-                if active {
-                    Text(isExam ? "Start exam" : "Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
-                        .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
-                } else if done {
-                    Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
+                    .overlay(Circle().stroke(.white, lineWidth: 1.2))
+                    .offset(x: 4, y: -3)
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(active ? PW.gold.opacity(0.05) : isExam ? PW.gold.opacity(0.03) : Color.clear)
-            .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
+            VStack(alignment: .leading, spacing: 1) {
+                // Locked titles stay legible ink (only the caption goes faint) —
+                // #8B95A5-on-white washed the whole card out on device.
+                Text(module.title).font(.inter(13, (active || isExam) ? .bold : .medium))
+                    .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
+                Text(caption)
+                    .font(.inter(9, (active || isExam) ? .bold : .medium))
+                    .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
+            }
+            Spacer(minLength: 0)
+            if active {
+                Text(isExam ? "Start exam" : "Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                    .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
+            } else if done {
+                Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
+            }
         }
-        .buttonStyle(.pressable)
-        .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
-        .accessibilityHint(locked ? "Locked. Finish the previous module to unlock." : "")
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(active ? PW.gold.opacity(0.05) : isExam ? PW.gold.opacity(0.03) : Color.clear)
+        .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
     }
 
     /// Locked rows stay locked (server-authoritative) — a tap just answers with a

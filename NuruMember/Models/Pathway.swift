@@ -40,6 +40,11 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     /// exam gate is hidden until this is true. Defaults TRUE so payloads from a
     /// server that predates the gate keep showing the exam (no regression).
     var examPublished: Bool = true
+    /// The exam can be TAKEN: published AND it has at least one active
+    /// question (EXPERIENCE.md §7.2 #1) — a published exam with no questions
+    /// answers 422, so it is never offered. Defaults TRUE: a server that
+    /// predates the field behaves exactly as before.
+    var examAvailable: Bool = true
 
     var id: Int { levelNumber }
 
@@ -52,7 +57,7 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
 
     private enum CodingKeys: String, CodingKey {
         case levelNumber, title, theme, description, totalModules
-        case completedModules, minutes, status, awaitingReview, examPublished
+        case completedModules, minutes, status, awaitingReview, examPublished, examAvailable
     }
 
     init(from decoder: Decoder) throws {
@@ -67,6 +72,7 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
         status = (try? c.decodeIfPresent(LevelStatus.self, forKey: .status)) ?? .locked
         awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
         examPublished = (try? c.decodeIfPresent(Bool.self, forKey: .examPublished)) ?? true
+        examAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .examAvailable)) ?? true
     }
 }
 
@@ -175,6 +181,11 @@ struct LevelModule: Codable, Sendable, Identifiable {
     let status: ModuleStatus
     let progress: Double
     let locked: Bool
+    /// On the exam row: the exam can be taken — published with at least one
+    /// active question (EXPERIENCE.md §7.2 #1). An open row whose exam has no
+    /// questions yet reads "opens soon" and opens nothing. Absent (an older
+    /// server, or a lesson row) reads as available, as before.
+    let examAvailable: Bool
 
     var id: String { moduleId }
 
@@ -182,6 +193,9 @@ struct LevelModule: Codable, Sendable, Identifiable {
     /// visible, locked-until-ready row at the foot of the trail; tapping it once
     /// unlocked opens the level exam rather than the lesson reader.
     var isExam: Bool { evaluationKind == "exit_exam" }
+    /// The exam row is open but its exam can't be taken yet: it says so, and
+    /// is never a way into the exam (the server would answer 422).
+    var examOpensSoon: Bool { isExam && !completed && !locked && !examAvailable }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -199,6 +213,7 @@ struct LevelModule: Codable, Sendable, Identifiable {
         progress = (try? c.decodeIfPresent(Double.self, forKey: .progress)) ?? 0.0
         // A missing gate must never unlock content (§1.9) — default LOCKED.
         locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? true
+        examAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .examAvailable)) ?? true
     }
 }
 
