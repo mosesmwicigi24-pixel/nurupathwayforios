@@ -7,8 +7,8 @@
 // Sound (2026-09-28): each notification sounds by its kind and the member's
 // Sound and vibration switch — the rules a real push follows (NuruPush) — and
 // carries the same `nuru_kind` / `nuru_sound` keys, so the foreground rules
-// below treat both alike: quiet in the open conversation, sound only when
-// it's on.
+// below treat both alike: quiet in the open conversation, a ringing
+// full-screen invite for a Live guest invite, sound only when it's on.
 import Foundation
 import UserNotifications
 import UIKit
@@ -172,9 +172,9 @@ final class LocalNotifier: NSObject, ObservableObject {
 
 extension LocalNotifier: UNUserNotificationCenterDelegate {
     /// While the app is open (NuruPush.foreground): a message for the
-    /// conversation on screen is a light tap, not a banner; anything else
-    /// shows as a banner, sounding only when the member's Sound and vibration
-    /// is on.
+    /// conversation on screen is a light tap, not a banner; a Live guest
+    /// invite rings full-screen instead of a banner; anything else shows as
+    /// a banner, sounding only when the member's Sound and vibration is on.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
@@ -185,9 +185,10 @@ extension LocalNotifier: UNUserNotificationCenterDelegate {
             case .quiet(let tap):
                 if tap { Haptics.tap() }
             case .ring:
-                // A Live guest invite has no ringing screen yet — a quiet
-                // banner, never nothing.
-                shown = .show(sound: false)
+                // No ring while the member is broadcasting (or with no window
+                // to ring in) — then it's a quiet banner, never nothing.
+                let rang = IncomingLiveInvite(push: push).map { IncomingLiveInviteCenter.shared.ring($0) } ?? false
+                if !rang { shown = .show(sound: false) }
             case .show:
                 break
             }

@@ -5,7 +5,8 @@
 // open conversation, another conversation, muted, a ring, a ring that missed
 // its 30 s); the ring's clock, and an answered invite's second copy; the sound
 // a local notification makes; the Sound and vibration preference on the wire;
-// and the invite's words.
+// the invite's words; and the ringing invite itself — its stream and words,
+// muted, out of time, and the ring it plays.
 import UserNotifications
 import XCTest
 @testable import NuruMember
@@ -271,5 +272,56 @@ final class NotificationSoundTests: XCTestCase {
         XCTAssertEqual(OpenConversation.id, "c-2")
         OpenConversation.closed("c-2")
         XCTAssertNil(OpenConversation.id)
+    }
+
+    // MARK: The ringing invite
+
+    func testTheInviteTakesTheStreamsNameFromTitleAndItsWordsFromAlertTitleAndBody() throws {
+        let invite = try XCTUnwrap(IncomingLiveInvite(push: NuruPush(userInfo: ringUserInfo, deliveredAt: now.addingTimeInterval(-10))))
+        XCTAssertEqual(invite.streamId, "st-1")
+        XCTAssertEqual(invite.streamTitle, "Sunday service", "`title` is the STREAM's name")
+        XCTAssertEqual(invite.heading, "You're invited to go live", "`alert_title`, never the stream's name")
+        XCTAssertEqual(invite.message, "You've been invited to join \"Sunday service\" as a guest.")
+        XCTAssertFalse(invite.silent)
+        XCTAssertEqual(NuruRing.remaining(since: invite.startedAt, now: now), 20, "its 30 s run from when it went out")
+    }
+
+    func testARingFromAnOlderServerTakesTheStreamsNameFromTitleAndTheWordsFromTheApp() throws {
+        // No alert_title / alert_body: `title` is still the STREAM's name —
+        // never the heading — and the words are the server's own copy.
+        let push = NuruPush(userInfo: ["template": "live_guest_invite", "stream_id": "st-4", "title": "Night of prayer",
+                                       "body": "You've been invited to join \"Night of prayer\" as a guest."], deliveredAt: now)
+        XCTAssertEqual(push.kind, .ring)
+        XCTAssertNil(push.alertTitle)
+        let invite = try XCTUnwrap(IncomingLiveInvite(push: push, now: now))
+        XCTAssertEqual(invite.streamTitle, "Night of prayer")
+        XCTAssertEqual(invite.heading, "You're invited to go live")
+        XCTAssertEqual(invite.message, "You've been invited to join \"Night of prayer\" as a guest.")
+        let untitled = try XCTUnwrap(IncomingLiveInvite(push: NuruPush(userInfo: ["template": "live_guest_invite", "stream_id": "st-5"])))
+        XCTAssertEqual(untitled.streamTitle, "Nuru Live")
+        XCTAssertEqual(untitled.message, "You've been invited to join a live broadcast as a guest.")
+        XCTAssertNil(IncomingLiveInvite(push: NuruPush(userInfo: ["template": "live_guest_invite", "title": "Night of prayer"])),
+                     "nothing to join without a stream")
+    }
+
+    func testAMutedMembersInviteRingsSilently() throws {
+        var info = ringUserInfo
+        info["nuru_sound"] = "off"
+        XCTAssertTrue(try XCTUnwrap(IncomingLiveInvite(push: NuruPush(userInfo: info, deliveredAt: now))).silent,
+                      "the same screen — no ring, no buzz")
+    }
+
+    @MainActor
+    func testAnInviteWhoseThirtySecondsAreGoneDoesNotRing() throws {
+        let late = try XCTUnwrap(IncomingLiveInvite(push: NuruPush(userInfo: ringUserInfo, deliveredAt: Date().addingTimeInterval(-31))))
+        let center = IncomingLiveInviteCenter.shared
+        XCTAssertFalse(center.ring(late), "willPresent turns it into a quiet banner instead")
+        XCTAssertNil(center.invite, "nothing on screen, nothing ringing")
+    }
+
+    func testTheRingTheServerNamesIsBundled() {
+        XCTAssertEqual(NuruPush.ringSoundName, "nuru_ring.caf")
+        XCTAssertNotNil(Bundle.main.url(forResource: "nuru_ring", withExtension: "caf"), "iOS falls back to the default sound without it")
+        XCTAssertNotNil(Bundle.main.url(forResource: "nuru_ring_once", withExtension: "caf"))
     }
 }

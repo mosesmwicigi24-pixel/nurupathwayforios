@@ -506,6 +506,18 @@ struct RootView: View {
                 // Progress/joined pings without a token to redeem — land on
                 // the hub; the specific group is one tap away from there.
                 tabs.openPlans(.readWithFriendHub)
+            } else if template == "live_guest_invite", let invite = IncomingLiveInvite(push: NuruPush(userInfo: info)) {
+                // A Live guest invite RINGS (2026-09-28). Tapped inside its
+                // 30 s, it opens the same ringing screen the foreground gets;
+                // after that, straight into ITS stream — not just the newest
+                // one — where the player's own invite card answers it (Home
+                // when the stream has ended).
+                let rings = IncomingLiveInviteCenter.shared
+                if !rings.ring(invite) {
+                    Task {
+                        if await rings.openStream(invite.streamId, accept: false) != .opened { tabs.selected = .home }
+                    }
+                }
             } else if template.hasPrefix("live") {
                 // A tapped `live_stream_started` push must land IN THE PLAYER —
                 // re-check /live/now (the stream may have already ended by the
@@ -580,6 +592,11 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showLocationInvite) { LocationInviteSheet() }
+        #if DEBUG
+        // Scripted check of the ringing Live invite (NURU_RING) — a simulator
+        // gets no pushes. Compiled out of Release, modifier and all.
+        .task { await IncomingLiveInviteCenter.shared.debugRingIfRequested() }
+        #endif
         // The You tab's icon badge (and its Chat segment chip) must be right
         // even for a member who hasn't opened the You tab yet this session —
         // ChatInboxViewModel itself keeps it current once Chat has loaded, but
