@@ -272,4 +272,24 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertTrue(NewPledgeDraft.asksBeforeLeaving(onFirstStep: true, draft: named, opening: opened),
                       "back on step 1, still holding what later steps chose")
     }
+
+    // MARK: #9 — the featured gathering, never twice on one screen
+
+    private func homeEvent(_ occurrence: String, series: String) throws -> HomeEventRow {
+        try decode(HomeEventRow.self, ["occurrence_id": occurrence, "series_id": series, "title": "Event \(occurrence)",
+                                       "venue": "Main hall", "starts_at": "2026-10-11T06:00:00Z",
+                                       "primary_image_url": NSNull(), "my_rsvp": NSNull()])
+    }
+
+    func testTheFeaturedGatheringIsNeverTwiceOnHome() throws {
+        let rows = [try homeEvent("o1", series: "featured"), try homeEvent("o2", series: "s2"),
+                    try homeEvent("o3", series: "featured"), try homeEvent("o4", series: "s4"),
+                    try homeEvent("o5", series: "s5")]
+        XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: "featured", onNowOccurrenceId: nil).map(\.occurrenceId),
+                       ["o2", "o4", "o5"], "the featured gathering has its own card below the carousel")
+        XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: nil, onNowOccurrenceId: "o2").map(\.occurrenceId),
+                       ["o1", "o3", "o4"], "the gathering on now has the live-now card")
+        XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: "", onNowOccurrenceId: nil).count, 3,
+                       "no featured gathering: up to three, in the server's order")
+    }
 }

@@ -1693,19 +1693,19 @@ struct HomeView: View {
 
     // MARK: 9 — Featured carousel (owner's revision, 2026-08-24)
     //
-    // One sliding rail for everything the portal has marked or scheduled: the
-    // featured announcement, the featured gathering, and the next few events.
-    // Auto-advances gently; a swipe is always respected. "View all" opens the
-    // full events list (You ▸ Events), per the owner's spec.
+    // One sliding rail for what the portal has marked or scheduled: the
+    // featured announcement and the next few events. Auto-advances gently; a
+    // swipe is always respected. "View all" opens the full events list (You ▸
+    // Events), per the owner's spec. The featured gathering is NOT a page here
+    // (EXPERIENCE.md §7.2 #9): it has its own card further down Home, and the
+    // carousel showed it beside that card — never twice on one screen.
 
     private enum FeaturedPage: Identifiable {
         case announcement(FeaturedAnnouncement)
-        case event(FeaturedEvent)
         case occurrence(HomeEventRow)
         var id: String {
             switch self {
             case .announcement(let a): return "ann-" + a.announcementId
-            case .event(let e): return "fev-" + e.seriesId
             case .occurrence(let o): return "occ-" + o.occurrenceId
             }
         }
@@ -1714,11 +1714,9 @@ struct HomeView: View {
     private var featuredPages: [FeaturedPage] {
         var pages: [FeaturedPage] = []
         if let a = vm.featuredAnnouncement { pages.append(.announcement(a)) }
-        if let e = vm.featuredEvent { pages.append(.event(e)) }
-        let featuredSeries = vm.featuredEvent?.seriesId
-        for ev in vm.homeEvents.filter({ $0.seriesId != featuredSeries }).prefix(3) {
-            pages.append(.occurrence(ev))
-        }
+        let events = HomeFeatured.carouselEvents(vm.homeEvents, featuredSeriesId: vm.featuredEvent?.seriesId,
+                                                 onNowOccurrenceId: liveNowInfo?.occ.occurrenceId)
+        pages += events.map { .occurrence($0) }
         return pages
     }
 
@@ -1771,13 +1769,6 @@ struct HomeView: View {
                 featuredPageBody(kicker: "ANNOUNCEMENT", imageUrl: a.primaryImageUrl,
                                  title: a.title, body: a.body,
                                  meta: a.sentAt.map(shortDate), cta: "Read more")
-            }
-            .buttonStyle(.pressableSubtle)
-        case .event(let e):
-            Button { Haptics.tap(); tabs.openEvents() } label: {
-                featuredPageBody(kicker: "FEATURED GATHERING", imageUrl: e.primaryImageUrl,
-                                 title: e.title, body: e.description ?? (e.location ?? ""),
-                                 meta: e.dtstartLocal.isEmpty ? nil : eventKicker(e.dtstartLocal), cta: "See details")
             }
             .buttonStyle(.pressableSubtle)
         case .occurrence(let o):
@@ -2315,5 +2306,22 @@ private struct HomeRingTrim: View {
                 if reduceMotion { shown = true }
                 else { withAnimation(.spring(response: 0.8, dampingFraction: 0.85).delay(0.2)) { shown = true } }
             }
+    }
+}
+
+// MARK: - The featured carousel's events (EXPERIENCE.md §7.2 #9)
+
+/// Never twice on one screen: the carousel's upcoming events skip any that has
+/// its own card on Home — the featured gathering's series (its card stands
+/// below the carousel; the carousel used to show it again beside it) and the
+/// gathering happening now (the live-now card). Up to three, in the server's
+/// order. Pure — pinned by tests.
+enum HomeFeatured {
+    static func carouselEvents(_ rows: [HomeEventRow], featuredSeriesId: String?,
+                               onNowOccurrenceId: String?) -> [HomeEventRow] {
+        let featured = featuredSeriesId.flatMap { $0.isEmpty ? nil : $0 }
+        return Array(rows.filter { row in
+            !(featured != nil && row.seriesId == featured) && row.occurrenceId != onNowOccurrenceId
+        }.prefix(3))
     }
 }
