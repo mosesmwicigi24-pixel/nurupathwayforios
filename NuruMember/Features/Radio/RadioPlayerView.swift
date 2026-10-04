@@ -1233,6 +1233,10 @@ private struct GlassCircleButton<Content: View>: View {
 private struct RemindMeCTA: View {
     let next: RadioProgram
     @State private var notified = false
+    /// "Allow notifications?" — the one line saying why, before the phone
+    /// asks (EXPERIENCE.md §7.2 #12).
+    @State private var ask: NotificationAsk?
+    static let why = "So we can tell you when Nuru Radio goes live."
 
     private var key: String { "nuru.radio.remind.\(next.id)" }
 
@@ -1269,6 +1273,9 @@ private struct RemindMeCTA: View {
         .onChange(of: next.id) { _, _ in
             notified = UserDefaults.standard.bool(forKey: key)
         }
+        .notificationAsk($ask) { allowed in
+            if allowed { Task { await remind() } } else { Haptics.error() }
+        }
     }
 
     private func toggle() async {
@@ -1280,10 +1287,15 @@ private struct RemindMeCTA: View {
             Haptics.tap()
             return
         }
+        // The member asked to be reminded: the phone is asked now, with its
+        // one line — or not at all when it already allows (§7.2 #12).
+        if let a = await NotificationPermission.askIfNeeded(why: Self.why) { ask = a; return }
+        await remind()
+    }
+
+    private func remind() async {
         guard let date = radioISODate(next.scheduledAt) else { return }
         let centre = UNUserNotificationCenter.current()
-        let granted = (try? await centre.requestAuthorization(options: [.alert, .sound])) ?? false
-        guard granted else { Haptics.error(); return }
         let content = UNMutableNotificationContent()
         content.title = "Nuru Radio is live"
         content.body = "\(next.title) is starting — tune in now."

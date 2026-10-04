@@ -28,14 +28,13 @@ final class LocalNotifier: NSObject, ObservableObject {
     private let seenKey = "notif.seenIds"
     private var syncing = false
 
-    /// Ask once after sign-in; safe to call repeatedly (no-op when decided).
-    func requestPermission() {
-        #if targetEnvironment(simulator) && DEBUG
-        // Scripted UI verification must not be blocked by the OS permission alert.
-        if ProcessInfo.processInfo.environment["NURU_AUTOLOGIN"] == "1" { return }
-        #endif
+    /// After sign-in: taps on our notifications route through here. It no
+    /// longer asks the phone for permission — that prompt used to appear
+    /// cold, before the member had asked for anything (EXPERIENCE.md §7.2
+    /// #12). Permission is asked only when the member turns on something that
+    /// needs it (NotificationPermission). Safe to call repeatedly.
+    func attach() {
         UNUserNotificationCenter.current().delegate = self
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     /// Fetch the server inbox and post an iOS notification for anything unseen.

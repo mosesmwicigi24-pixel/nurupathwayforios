@@ -20,15 +20,20 @@ import AVFoundation
 /// Schedules ONE repeating daily local notification that nudges the member back
 /// into their reading plan, deep-specific to the plan + day. Grace-first tone: a
 /// warm invitation, never a guilt trip. Re-scheduling replaces the pending one.
+/// It never asks for permission itself — Plans re-schedules on every visit, and
+/// that must not put the phone's prompt up cold (EXPERIENCE.md §7.2 #12): the
+/// switch asks, with its one line (`why`), when the member turns it on.
 enum PlanReminders {
     static let id = "nuru.plan.daily"
+    /// The one line saying why, when the switch asks to notify.
+    static let why = "So your daily reading reminder can reach you."
 
     static func schedule(enabled: Bool, hour: Int, minute: Int, planTitle: String?, day: Int?) {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         guard enabled else { return }
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            guard granted else { return }
+        center.getNotificationSettings { settings in
+            guard NotificationPermission.status(of: settings.authorizationStatus) == .allowed else { return }
             let content = UNMutableNotificationContent()
             content.title = "Time in the Word 🌱"
             if let planTitle, let day {
@@ -112,6 +117,8 @@ struct ReadingPlansView: View {
     @AppStorage("planReminderHour") private var reminderHour = 7
     @AppStorage("planReminderMinute") private var reminderMinute = 0
     @AppStorage("streakQuiet") private var streakQuiet = false
+    /// "Allow notifications?" — asked when the member turns the reminder on (§7.2 #12).
+    @State private var reminderAsk: NotificationAsk?
 
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
     private var searching: Bool { !q.isEmpty || category != "all" }
@@ -377,7 +384,8 @@ struct ReadingPlansView: View {
                     Text("A gentle nudge to keep your rhythm").font(.inter(11.5)).foregroundStyle(PL.ink3)
                 }
                 Spacer(minLength: 8)
-                Toggle("", isOn: $reminderOn).labelsHidden().tint(PL.gold)
+                // Only the member's own tap asks (the day reader shares the setting).
+                Toggle("", isOn: Binding(get: { reminderOn }, set: { turnReminder($0) })).labelsHidden().tint(PL.gold)
             }
             if reminderOn {
                 Rectangle().fill(PL.border).frame(height: 1)
@@ -388,7 +396,21 @@ struct ReadingPlansView: View {
         .padding(16)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.border, lineWidth: 1))
-        .onChange(of: reminderOn) { _, _ in reschedule() }
+        .notificationAsk($reminderAsk) { allowed in
+            if allowed { reschedule() } else { reminderOn = false }
+        }
+    }
+
+    /// Turned on: the phone is asked now — with its one line — or not at all
+    /// when it already allows (§7.2 #12). A "no" turns the switch back off: a
+    /// reminder that can't reach the member never shows as on.
+    private func turnReminder(_ on: Bool) {
+        reminderOn = on
+        guard on else { reschedule(); return }
+        Task {
+            if let ask = await NotificationPermission.askIfNeeded(why: PlanReminders.why) { reminderAsk = ask }
+            else { reschedule() }
+        }
     }
 
     // MARK: plan of the day (shimmering badge + sparkles)
@@ -1381,6 +1403,8 @@ struct PlanDayView: View {
     @AppStorage("planReminderHour") private var reminderHour = 7
     @AppStorage("planReminderMinute") private var reminderMinute = 0
     @State private var walkDays: Int?
+    /// "Allow notifications?" — asked when the member turns the reminder on (§7.2 #12).
+    @State private var reminderAsk: NotificationAsk?
 
     @ViewBuilder private var walkStrip: some View {
         if !streakQuiet, let days = walkDays, days > 0 {
@@ -1406,15 +1430,31 @@ struct PlanDayView: View {
                  : "Set a daily reminder")
                 .font(.inter(12, .semibold)).foregroundStyle(pal.ink)
             Spacer(minLength: 8)
-            Toggle("", isOn: $reminderOn).labelsHidden().tint(pal.gold)
+            // Only the member's own tap asks (the Plans list shares the setting).
+            Toggle("", isOn: Binding(get: { reminderOn }, set: { turnReminder($0) })).labelsHidden().tint(pal.gold)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .background(pal.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(pal.border, lineWidth: 1))
-        .onChange(of: reminderOn) { _, _ in
-            PlanReminders.schedule(enabled: reminderOn, hour: reminderHour, minute: reminderMinute,
-                                   planTitle: ref.planTitle ?? ref.day.title, day: ref.day.dayNumber)
+        .notificationAsk($reminderAsk) { allowed in
+            if allowed { scheduleReminder() } else { reminderOn = false }
         }
+    }
+
+    /// Turned on: the phone is asked now, with its one line, or not at all
+    /// when it already allows (§7.2 #12); a "no" turns the switch back off.
+    private func turnReminder(_ on: Bool) {
+        reminderOn = on
+        guard on else { scheduleReminder(); return }
+        Task {
+            if let ask = await NotificationPermission.askIfNeeded(why: PlanReminders.why) { reminderAsk = ask }
+            else { scheduleReminder() }
+        }
+    }
+
+    private func scheduleReminder() {
+        PlanReminders.schedule(enabled: reminderOn, hour: reminderHour, minute: reminderMinute,
+                               planTitle: ref.planTitle ?? ref.day.title, day: ref.day.dayNumber)
     }
 
     // MARK: navy header (fresh DayReader)

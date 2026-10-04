@@ -321,4 +321,24 @@ final class ExperienceCycle3Tests: XCTestCase {
         tabs.selected = .home
         XCTAssertFalse(tabs.chromeHidden)
     }
+
+    // MARK: #12 — notifications are asked for only when something needs them
+
+    func testThePhonesAnswerReadsAsAllowedUndecidedOrDenied() {
+        XCTAssertEqual(NotificationPermission.status(of: .authorized), .allowed)
+        XCTAssertEqual(NotificationPermission.status(of: .provisional), .allowed)
+        XCTAssertEqual(NotificationPermission.status(of: .ephemeral), .allowed)
+        XCTAssertEqual(NotificationPermission.status(of: .notDetermined), .undecided, "the app's question, then the phone's")
+        XCTAssertEqual(NotificationPermission.status(of: .denied), .denied, "where to turn them on")
+    }
+
+    /// The one line saying why, in the words the switch asks with.
+    func testTheAskSaysWhyInOneLine() {
+        let allow = NotificationAsk(kind: .allow, why: PlanReminders.why)
+        XCTAssertEqual(allow.title, "Allow notifications?")
+        XCTAssertEqual(allow.message, "So your daily reading reminder can reach you.")
+        let off = NotificationAsk(kind: .openSettings, why: PlanReminders.why)
+        XCTAssertEqual(off.title, "Notifications are off")
+        XCTAssertEqual(off.message, "So your daily reading reminder can reach you. Turn them on for Nuru Pathway in Settings.")
+    }
 }

@@ -42,10 +42,12 @@ struct NuruMemberApp: App {
             .task(id: auth.isAuthenticated) {
                 if auth.isAuthenticated {
                     sync.start()
-                    // Real iOS notifications: ask permission, then surface any
-                    // new server notifications with banner + sound (vibration
-                    // on silent) into the phone's Notification Center.
-                    LocalNotifier.shared.requestPermission()
+                    // Real iOS notifications: surface any new server
+                    // notifications with banner + sound (vibration on silent)
+                    // into the phone's Notification Center — once the member
+                    // has allowed them. Nothing asks here: permission is asked
+                    // only when they turn on something that needs it (§7.2 #12).
+                    LocalNotifier.shared.attach()
                     await LocalNotifier.shared.sync()
                 } else {
                     // Signed out: the next member starts with nobody's dot.

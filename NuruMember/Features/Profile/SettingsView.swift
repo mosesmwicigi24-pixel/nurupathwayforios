@@ -26,6 +26,10 @@ struct SettingsView: View {
     // never blocks. Toggles are optimistic and roll back on a failed PUT; push
     // additionally requests the real system permission.
     @State private var prefSaveFailed = false
+    /// "Allow notifications?" — asked when the member turns push on, with
+    /// its one line (EXPERIENCE.md §7.2 #12), never cold.
+    @State private var pushAsk: NotificationAsk?
+    static let pushWhy = "So devotionals, events and reminders reach this phone."
     @AppStorage("nuru.notif.push") private var pushOn = true
     @AppStorage("nuru.notif.email") private var emailOn = true
     @AppStorage("nuru.notif.sms") private var smsOn = false
@@ -109,6 +113,7 @@ struct SettingsView: View {
             Button("OK") { mfaError = nil }
         } message: { Text(mfaError ?? "") }
         .onChange(of: shareLocation) { _, on in Task { await applyLocationSharing(on) } }
+        .notificationAsk($pushAsk) { _ in }
     }
 
     // MARK: Header (standard pushed-screen idiom: back tile, kicker, Fraunces title)
@@ -165,9 +170,11 @@ struct SettingsView: View {
 
     // MARK: Settings side-effects
 
-    /// Ask iOS for notification permission when the member turns push on.
+    /// The member turned push on: the phone is asked now — with its one line
+    /// first — or not at all when it already allows. The preference itself
+    /// is the server's, saved either way; this is only this phone's say.
     private func requestPushPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        Task { pushAsk = await NotificationPermission.askIfNeeded(why: Self.pushWhy) }
     }
 
     /// Optimistic toggle: flip the local (@AppStorage-cached) value immediately,
