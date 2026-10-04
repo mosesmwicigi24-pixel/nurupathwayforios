@@ -84,7 +84,9 @@ final class EventsViewModel: ObservableObject {
     @Published var search = ""
     @Published var category = "All"
     @Published var loading = true
-    @Published var error: String?
+    /// Why the gatherings didn't load — spoken through the one state language
+    /// (NuruStateCopy): it says "offline" only when it was the connection.
+    @Published var failure: Error?
     /// occurrenceId → "going" / "maybe" / "declined" — seeded from /me/rsvps,
     /// updated optimistically by the quick-RSVP button on each card.
     @Published var quickRsvps: [String: String] = [:]
@@ -106,19 +108,23 @@ final class EventsViewModel: ObservableObject {
     }
 
     func load() async {
-        loading = true; error = nil
-        async let occ = try? MemberAPI.calendar(from: from, to: to)
+        loading = true; failure = nil
+        async let occ = MemberAPI.calendar(from: from, to: to)
         async let ser = try? MemberAPI.eventSeries()
         async let ann = try? MemberAPI.myAnnouncements()
         async let rs = try? MemberAPI.myRsvps()
-        occurrences = (await occ ?? []).sorted { Ev.date($0.startAt) < Ev.date($1.startAt) }
+        // The gatherings are the calendar's — keep WHY it failed, so the list
+        // can say what really happened (the rest stays best-effort).
+        do {
+            occurrences = try await occ.sorted { Ev.date($0.startAt) < Ev.date($1.startAt) }
+        } catch {
+            occurrences = []
+            failure = error
+        }
         series = await ser ?? []
         announcements = await ann ?? []
         quickRsvps = Dictionary((await rs ?? []).map { ($0.eventId, $0.status) },
                                 uniquingKeysWith: { a, _ in a })
-        if occurrences.isEmpty && series.isEmpty && announcements.isEmpty {
-            error = "Couldn't load events."
-        }
         loading = false
     }
 
@@ -623,23 +629,10 @@ struct EventsView: View {
                 skeletonCard
                 skeletonCard.opacity(0.55)
             }
-        } else if vm.error != nil && vm.occurrences.isEmpty {
-            VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("Couldn't load events").font(.nRowTitle).foregroundStyle(Nuru.ink)
-                Text("Check your connection, then try again.").font(.nCardBody).foregroundStyle(Nuru.muted)
-                Button {
-                    Haptics.tap()
-                    Task { await vm.load() }
-                } label: {
-                    Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
-                        .padding(.horizontal, 16).padding(.vertical, 8)
-                        .background(Nuru.navy, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-                .padding(.top, 4)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading).padding(Nuru.S.base)
-            .cardSurfaceEv()
+        } else if let f = vm.failure, vm.occurrences.isEmpty {
+            // What really happened, in the one state language (§4) — not
+            // "check your connection" when the session ended or we failed.
+            NuruStateView(state: .failed(.failure(f)), retry: { Task { await vm.load() } })
         } else if vm.list.isEmpty {
             emptyGatherings
         } else {

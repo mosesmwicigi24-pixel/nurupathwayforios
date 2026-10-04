@@ -20,13 +20,15 @@ enum DepartmentRoute: Hashable {
 @MainActor final class DepartmentsModel: ObservableObject {
     @Published var rows: [DepartmentRow] = []
     @Published var loading = false
-    @Published var error: String?
+    /// Why the list didn't load (nothing to show yet) — spoken through the one
+    /// state language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
 
     func load() async {
         loading = rows.isEmpty
-        error = nil
+        failure = nil
         do { rows = try await MemberAPI.departments() }
-        catch { if rows.isEmpty { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load the departments just now." } }
+        catch { if rows.isEmpty { failure = error } }
         loading = false
     }
 
@@ -74,8 +76,8 @@ struct DepartmentsView: View {
                 VStack(alignment: .leading, spacing: Nuru.S.lg) {
                     if vm.loading && vm.rows.isEmpty {
                         skeleton
-                    } else if let e = vm.error, vm.rows.isEmpty {
-                        errorState(e)
+                    } else if let f = vm.failure, vm.rows.isEmpty {
+                        NuruStateView(state: .failed(.failure(f)), retry: { Task { await vm.load() } })
                     } else if vm.rows.isEmpty {
                         emptyState
                     } else {
@@ -177,21 +179,6 @@ struct DepartmentsView: View {
         .padding(.horizontal, Nuru.S.lg)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-    }
-
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: Nuru.S.sm) {
-            Icon(.circleHelp, size: 24, color: Nuru.ink400)
-            Text(message).font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button { Haptics.tap(); Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
     }
 }
 

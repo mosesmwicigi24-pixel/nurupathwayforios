@@ -62,7 +62,9 @@ final class HomeViewModel: ObservableObject {
     @Published var liveStreams: [LiveStreamSummary] = []
 
     @Published var loading = true
-    @Published var error: String?
+    /// Why the dashboard's pathway didn't load — spoken through the one state
+    /// language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
     /// The latest Sunday Letter (intelligence layer) — drives the gold
     /// "A letter for you" knock on Home while unread.
     @Published var letter: PastoralLetter?
@@ -74,9 +76,9 @@ final class HomeViewModel: ObservableObject {
     private var lastRhythmDone: Int?
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         async let letter = try? MemberAPI.latestLetter()
-        async let pathway = try? MemberAPI.pathway()
+        async let pathway = Self.attempt { try await MemberAPI.pathway() }
         async let ach = try? MemberAPI.achievements()
         async let unread = try? MemberAPI.unreadNotifications()
         async let greet = try? MemberAPI.dailyGreeting()
@@ -102,7 +104,10 @@ final class HomeViewModel: ObservableObject {
         async let live = try? MemberAPI.fetchLiveNow()
 
         self.letter = (await letter) ?? nil
-        self.pathway = await pathway
+        switch await pathway {
+        case .success(let p): self.pathway = p
+        case .failure(let e): self.pathway = nil; failure = e
+        }
         let achievements = await ach
         self.streak = achievements?.streak?.current ?? 0
         self.unread = await unread ?? 0
@@ -146,10 +151,15 @@ final class HomeViewModel: ObservableObject {
         self.featuredEvent = (await fev) ?? nil
         self.liveStreams = await live ?? []
 
-        if self.pathway == nil { error = "Couldn't load your dashboard." }
         loading = false
 
         celebrateMilestones(achievements)
+    }
+
+    /// A call's answer or its failure — the dashboard keeps WHY the pathway
+    /// failed, so its strip can say what really happened.
+    private static func attempt<T>(_ op: () async throws -> T) async -> Result<T, Error> {
+        do { return .success(try await op()) } catch { return .failure(error) }
     }
 
     // MARK: Celebrations — server-truth milestones only (mirrors Android).
@@ -398,10 +408,12 @@ struct HomeView: View {
         if let live = churchLiveStream {
             s.append(("livebanner", AnyView(liveBannerCard(live))))
         }
-        // The whole dashboard failed (offline / server down) — a quiet retry
-        // strip on top; the sections below degrade gracefully as usual.
-        if vm.error != nil && vm.pathway == nil {
-            s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
+        // The whole dashboard failed — a quiet strip on top, saying what really
+        // happened (offline, the session ended, our server) in the one state
+        // language; the sections below degrade gracefully as usual.
+        if let f = vm.failure, vm.pathway == nil {
+            s.append(("loaderror", AnyView(NuruStateView(state: .failed(.failure(f)),
+                                                          retry: { Task { await vm.load() } }, compact: true))))
         }
         if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first, only while live)
         // Owner's order (2026-08-25, stated exactly): verse for today → featured
@@ -2720,35 +2732,6 @@ private struct HomeFeedSkeleton: View {
             .frame(height: height)
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             .nuruShimmer()
-    }
-}
-
-// MARK: - Dashboard-failed strip (quiet retry; the rest degrades gracefully)
-
-private struct HomeLoadErrorCard: View {
-    let retry: () -> Void
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "wifi.slash")
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(HomeFig.metaGray)
-                .frame(width: 36, height: 36)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Couldn't load your dashboard").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                Text("Check your connection and try again.").font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
-            }
-            Spacer(minLength: 8)
-            Button { Haptics.tap(); retry() } label: {
-                Text("Retry")
-                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(HomeFig.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .padding(12)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }
 

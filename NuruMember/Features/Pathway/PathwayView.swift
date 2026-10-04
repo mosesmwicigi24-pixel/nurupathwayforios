@@ -97,15 +97,17 @@ final class PathwayViewModel: ObservableObject {
     @Published var streak = 0
     @Published var modulesByLevel: [Int: [LevelModule]] = [:]   // real module trails, cached per level
     @Published var loading = true
-    @Published var error: String?
+    /// Why the pathway didn't load — spoken through the one state language
+    /// (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         do {
             summary = try await MemberAPI.pathway()
         } catch {
             summary = nil
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your pathway."
+            failure = error
         }
         streak = (try? await MemberAPI.achievements())?.streak?.current ?? 0
         if let active = active(in: summary) { await fetchModules(active.levelNumber) }
@@ -171,9 +173,12 @@ struct PathwayView: View {
                     } else {
                         // Includes a decoded-but-empty levels array — rendering
                         // "Level 1 of 0" with dead CTAs is worse than retrying.
-                        errorState.padding(.top, 120)
+                        errorState.padding(.horizontal, 20).padding(.top, 120)
                     }
                 }
+                // Full width whatever the state: a narrow error column left the
+                // ScrollView (and its cream) hugging it, with white bands beside.
+                .frame(maxWidth: .infinity)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
             .ignoresSafeArea(edges: .top)
@@ -307,20 +312,11 @@ struct PathwayView: View {
         }
     }
 
+    /// The pathway didn't come — in the one state language (§4). A summary
+    /// that arrived with no levels is the server's fault, not the member's.
     private var errorState: some View {
-        VStack(spacing: Nuru.S.md) {
-            Text(vm.error ?? "Something went wrong.")
-                .font(.nBody).foregroundStyle(PW.ink2).multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                Text("Try again").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
-                    .padding(.horizontal, 22).padding(.vertical, 11)
-                    .background(PW.gold, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }.padding(Nuru.S.xl)
+        NuruStateView(state: .failed(vm.failure.map { NuruStateCopy.failure($0) } ?? .serverSide),
+                      retry: { Task { await vm.load() } })
     }
 
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }

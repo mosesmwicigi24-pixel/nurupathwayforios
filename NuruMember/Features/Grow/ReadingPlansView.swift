@@ -83,17 +83,19 @@ final class ReadingPlansViewModel: ObservableObject {
     @Published var streak = 0
     @Published var todayWordDone = false
     @Published var loading = true
-    @Published var error: String?
+    /// Why the catalogue didn't load — spoken through the one state language
+    /// (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         async let ach = try? MemberAPI.achievements()
         async let rhythm = try? MemberAPI.rhythmToday()
         // Best-effort and in parallel: a promo failure (offline, older server)
         // must leave today's page exactly as it was.
         async let promoList = try? MemberAPI.planPromos()
         do { plans = try await MemberAPI.plans() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
+        catch { failure = error }
         streak = (await ach)?.streak?.current ?? 0
         todayWordDone = (await rhythm)?.word ?? false
         promos = (await promoList) ?? []
@@ -198,9 +200,13 @@ struct ReadingPlansView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
                 header
-                LoadStateView(loading: vm.loading && vm.plans.isEmpty,
-                              isEmpty: vm.plans.isEmpty, error: vm.error,
-                              emptyText: "Plans are being prepared — check back soon.", retry: { Task { await vm.load() } }) {
+                // Loading, empty and failed speak the one state language (§4)
+                // in the shared full-width card; content wins whenever there is any.
+                if let state = NuruState.resolve(loading: vm.loading, isEmpty: vm.plans.isEmpty, failure: vm.failure,
+                                                 empty: .empty(title: "Plans are being prepared — check back soon.")) {
+                    NuruStateView(state: state, retry: { Task { await vm.load() } })
+                        .padding(.horizontal, 20).padding(.top, 20)
+                } else {
                     VStack(alignment: .leading, spacing: 24) {
                         if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
                         if !searching, !continueReading.isEmpty { continueSection }

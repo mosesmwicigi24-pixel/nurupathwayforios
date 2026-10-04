@@ -76,7 +76,9 @@ enum GivingSignal {
 @MainActor final class PartnersModel: ObservableObject {
     @Published var partnership: Partnership?
     @Published var loading = false
-    @Published var error: String?
+    /// Why the portal didn't load (nothing to show yet) — spoken through the
+    /// one state language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
     /// The pledge / schedule id with an action in flight — its control shows a
     /// spinner and refuses a second tap.
     @Published var busyId: String?
@@ -143,7 +145,7 @@ enum GivingSignal {
 
     func load() async {
         loading = partnership == nil
-        error = nil
+        failure = nil
         partnershipSeq += 1
         let seq = partnershipSeq
         do {
@@ -154,7 +156,7 @@ enum GivingSignal {
             }
             partnershipRefreshFailed = false
         } catch {
-            if partnership == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this just now." }
+            if partnership == nil { failure = error }
             else { partnershipRefreshFailed = true }
         }
         loading = false
@@ -767,10 +769,11 @@ struct PartnersView: View {
             } else {
                 joinCard(p)
             }
-        } else if vm.loading {
-            ProgressView().tint(Nuru.gold).frame(maxWidth: .infinity).padding(.top, 60)
+        } else if let f = vm.failure, !vm.loading {
+            errorState(f)
         } else {
-            errorState
+            // Loading — and the first frame before the first read begins.
+            ProgressView().tint(Nuru.gold).frame(maxWidth: .infinity).padding(.top, 60)
         }
     }
 
@@ -1161,22 +1164,12 @@ struct PartnersView: View {
 
     // MARK: Error / retry states
 
-    private var errorState: some View {
-        VStack(spacing: Nuru.S.md) {
-            Icon(.circleHelp, size: 28, color: Nuru.muted)
-            Text("We couldn't load this just now").font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
-            Text(vm.error ?? "Your giving is unaffected.")
-                .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                .padding(.horizontal, Nuru.S.xl)
-            Button { Haptics.tap(); Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+    /// Nothing loaded yet and the read failed — what really happened, in the
+    /// one state language (§4). (A failed refresh over a loaded portal keeps
+    /// the portal and says so in its own row.)
+    private func errorState(_ failure: Error) -> some View {
+        NuruStateView(state: .failed(.failure(failure)), retry: { Task { await vm.load() } })
+            .padding(.top, 24)
     }
 
     private func retryRow(_ message: String, retry: @escaping () -> Void) -> some View {
