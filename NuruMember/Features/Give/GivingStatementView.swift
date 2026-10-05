@@ -259,7 +259,7 @@ struct GivingStatementView: View {
                         fundTotalsCard.gentleEntrance()
                         historyList
                         if hasPledgeRows { partnerPledgesCard }
-                        Text("Statement reflects records held under Finance · receipts emailed per gift.")
+                        Text("Tap a gift to open its receipt.")
                             .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                             .frame(maxWidth: .infinity, alignment: .center)
                             .padding(.top, 2)

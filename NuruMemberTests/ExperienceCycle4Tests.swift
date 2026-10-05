@@ -496,6 +496,21 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(vm.records(in: 2026).map(\.transactionId), ["t1"])
     }
 
+    // MARK: Android walk A5 / iOS walk E13, E18 — no internal ids shown as facts
+
+    func testNoInternalIdIsShownAsAFactToRead() throws {
+        func source(_ rel: String) throws -> String {
+            try String(contentsOf: TypeScan.appRoot.appendingPathComponent(rel), encoding: .utf8)
+        }
+        let receipt = try source("Features/Give/GivingReceiptView.swift")
+        XCTAssertFalse(receipt.contains("transactionId.prefix(8)) + \"…\""), "the receipt never prints the internal transaction id")
+        let profile = try source("Features/Profile/ProfileView.swift")
+        XCTAssertFalse(profile.contains("Text(memberIdLabel)"), "Profile never opens on a raw member ID")
+        XCTAssertTrue(profile.contains("\"Copy member ID\""), "the ID still copies whole, from the foot")
+        let statement = try source("Features/Give/GivingStatementView.swift")
+        XCTAssertFalse(statement.contains("held under Finance"), "no internal department names")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

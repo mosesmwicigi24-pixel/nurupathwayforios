@@ -315,9 +315,6 @@ struct GivingReceiptView: View {
     private func details(_ d: GivingDetail) -> some View {
         let ref = d.receiptCode ?? d.providerRef
         let refLabel = referenceLabel(d)
-        // Never two rows called "Reference": when the provider code already
-        // owns that word, the internal id is "Transaction".
-        let idLabel = (ref != nil && refLabel == "Reference") ? "Transaction" : "Reference"
         return VStack(spacing: 0) {
             // The member covered the fee (Giving Cycle 2): what was the gift,
             // what was the fee, and the total charged — it used to be one
@@ -347,8 +344,10 @@ struct GivingReceiptView: View {
             }
             hairline
             row("Date", whenFull(d.shownAt))
-            hairline
-            row(idLabel, String(d.transactionId.prefix(8)) + "…", mono: true, copy: (key: "txid", text: d.transactionId))
+            // No internal transaction id ("Reference bd48d11d…", the walks'
+            // E18 and A5; §8.1 rule 8): the member's reference is the
+            // provider's code above; the office finds a gift by it, or by
+            // member, day and amount.
         }
         .padding(.horizontal, Nuru.S.base)
         .receiptCard(radius: 20)

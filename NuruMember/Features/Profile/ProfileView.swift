@@ -1,9 +1,10 @@
 // Account / Profile — native port of the Figma ProfileTab (current make): who
 // the member IS. Cream header with avatar + gold level chip, then the journey
-// cards: Personal Information (Member ID + live /me fields, all editable via
-// PATCH /me except email §5.8), Achievements (real /me/achievements + /badges
-// catalogue), Growth Scores, Milestones (real enrollment + baptism flag) and
-// Certificates (real GET /certificates + public verify). How the APP BEHAVES
+// cards: Personal Information (live /me fields, all editable via PATCH /me
+// except email §5.8), Achievements (real /me/achievements + /badges
+// catalogue), Growth Scores, Milestones (real enrollment + baptism flag),
+// Certificates (real GET /certificates + public verify), and at the foot
+// "Copy member ID". How the APP BEHAVES
 // (security, notifications, display, language, privacy, help, sign out) moved
 // to SettingsView — inside the You tab, its Settings segment (the header's
 // gear stays only for a Profile shown outside it).
@@ -76,6 +77,7 @@ struct ProfileView: View {
                     aiCompanionSection
                     milestonesSection
                     certificates
+                    memberIdFoot
                 }
                 .scrollsToTopOnReselect(.you)   // a re-tap at the root returns to the top (B10)
                 .padding(.horizontal, Nuru.S.screen)
@@ -369,7 +371,6 @@ struct ProfileView: View {
 
     private var personalInfo: some View {
         sectionCard("PERSONAL INFORMATION", icon: .user) {
-            memberIdRow
             ForEach(Self.fields) { f in
                 Button { Haptics.tap(); editingField = f } label: {
                     infoRow(f.icon, f.label.uppercased(), displayValue(for: f), editable: true)
@@ -382,57 +383,36 @@ struct ProfileView: View {
         }
     }
 
-    /// Immutable, server-issued identity — the permanent anchor every interaction,
-    /// gift and certificate is tied to (unlike the editable attributes below).
-    private var memberIdRow: some View {
-        HStack(spacing: Nuru.S.md) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
-                    .frame(width: 36, height: 36)
-                Icon(.fingerprint, size: 16, color: Color(hex: 0xA8861C))
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 3) {
-                    Text("MEMBER ID").font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
-                    Icon(.lock, size: 9, color: Color(hex: 0x74808F))
+    /// The member's ID, at the page's foot as an action (the Cycle 3 walk's
+    /// E13 and the Android walk's A5): Profile opened on a raw "MEMBER ID
+    /// 4e94ac22-…" — 36 characters no one reads (§8.1 rule 8). The ID itself is
+    /// still the real one (see `memberIdLabel`) and still copies whole, for the
+    /// office or support; it is just not shown as a fact to read.
+    @ViewBuilder private var memberIdFoot: some View {
+        if let uid = p?.userId, !uid.isEmpty {
+            Button {
+                UIPasteboard.general.string = uid
+                Haptics.tap()
+                withAnimation { justCopied = true }
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    withAnimation { justCopied = false }
                 }
-                Text(memberIdLabel)
-                    .font(.inter(11, .medium).monospacedDigit())
-                    .foregroundStyle(Nuru.navy)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    .textSelection(.enabled)
-            }
-            Spacer(minLength: 0)
-            // 36 characters is not something anyone retypes, so the whole row
-            // copies. "PERMANENT" becomes "COPIED" for a beat — the label is
-            // the confirmation, so the layout never shifts.
-            Text(justCopied ? "COPIED" : "PERMANENT")
-                .font(.inter(11, .semibold)).kerning(0.9)
-                .foregroundStyle(justCopied ? Color(hex: 0xA8861C) : Color(hex: 0x74808F))
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(justCopied ? .check : .fingerprint, size: 14, color: Nuru.goldChipText)
+                    Text(justCopied ? "Member ID copied" : "Copy member ID")
+                        .font(.nActionLabel).foregroundStyle(Nuru.goldChipText)
+                }
+                .frame(minHeight: 44)
+                .padding(.horizontal, Nuru.S.base)
+                .contentShape(Rectangle())
                 .animation(.easeOut(duration: 0.18), value: justCopied)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard let uid = p?.userId else { return }
-            UIPasteboard.general.string = uid
-            Haptics.tap()
-            withAnimation { justCopied = true }
-            Task {
-                try? await Task.sleep(nanoseconds: 1_600_000_000)
-                withAnimation { justCopied = false }
             }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(justCopied ? "Member ID copied" : "Copy member ID")
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Member ID, permanent. Double tap to copy.")
-        .accessibilityValue(memberIdLabel)
-        .padding(10)
-        .background(
-            LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.surface], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.23), lineWidth: 1))
-        .padding(.bottom, Nuru.S.sm)
     }
 
     /// The member's `user_id` — the actual server-issued identifier, in full.
