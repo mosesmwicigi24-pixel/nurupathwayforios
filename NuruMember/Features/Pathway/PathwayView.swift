@@ -434,7 +434,9 @@ private struct PathwayHubHeader: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text((journey?.kicker ?? "Your pathway").uppercased())
                         .font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight).lineLimit(1)
-                    Text(journey?.title ?? "Your pathway").font(.inter(14, .semibold)).foregroundStyle(.white).lineLimit(2)
+                    // The card's title (§8.1 rule 3): Fraunces 18, wrapping.
+                    Text(journey?.title ?? "Your pathway").font(.nCardTitle).foregroundStyle(.white)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if let line = journey?.line {
                         Text(line).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)
@@ -942,7 +944,9 @@ private struct PWModuleRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 // Locked titles stay legible ink (only the caption goes faint) —
                 // #8B95A5-on-white washed the whole card out on device.
-                Text(ExamWords.rowTitle(module)).font(.inter(13, (active || isExam) ? .bold : .medium))
+                // A module is a thing: the content row title, Fraunces 15 — the
+                // same face the level page gives it (§8.1 rule 3).
+                Text(ExamWords.rowTitle(module)).font(.nRowTitle)
                     .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
                 Text(caption)
                     .font(.inter(11, (active || isExam) ? .bold : .medium))

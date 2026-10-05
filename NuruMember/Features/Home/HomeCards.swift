@@ -290,7 +290,8 @@ struct HomeNeedsYouCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     iconTile
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(nudge.title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        // A prompt's title is a card title (§8.1 rule 3).
+                        Text(nudge.title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
                             .lineLimit(2).multilineTextAlignment(.leading)
                         if !nudge.body.isEmpty {
                             Text(nudge.body).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))

@@ -92,9 +92,10 @@ struct MemoryVerseView: View {
                                 CurrentVerseCard(verse: current) { practiceTarget = current }
                             }
                             if !vm.libraryVerses.isEmpty {
+                                // A kicker is gold (§8.1 rule 3).
                                 Text("YOUR VERSE LIBRARY")
-                                    .font(.inter(11, .semibold)).tracking(1.8)
-                                    .foregroundStyle(Nuru.muted)
+                                    .font(.nCardKicker).kerning(1.4)
+                                    .foregroundStyle(Nuru.eyebrow)
                                     .padding(.horizontal, Nuru.S.xs)
                                     .padding(.top, Nuru.S.sm)
                                 ForEach(vm.libraryVerses) { v in
@@ -278,8 +279,9 @@ private struct MilestoneCard: View {
                 .background(Nuru.goldGlow, in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.inter(13, .semibold))
+                    .font(.nCardTitle)   // a prompt's title is a card title (§8.1 rule 3)
                     .foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(subtitle)
                     .font(.nCardBody)
                     .foregroundStyle(Nuru.muted)

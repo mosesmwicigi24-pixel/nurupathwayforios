@@ -1958,8 +1958,9 @@ struct HomeView: View {
         let days = StreakWords.days(vm.streak, activeToday: active)
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
+                // A card title (§8.1 rule 3): Fraunces 18.
                 Text(complete ? "Today's rhythm complete 🎉" : "Today's rhythm")
-                    .font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
+                    .font(.nCardTitle).foregroundStyle(HomeFig.navy)
                 Spacer()
                 if days > 0 {
                     HStack(spacing: 4) {
@@ -2040,7 +2041,7 @@ struct HomeView: View {
     private func progressCard(_ s: ScoresSummary) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Your progress").font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
+                Text("Your progress").font(.nCardTitle).foregroundStyle(HomeFig.navy)   // a card title (§8.1 rule 3)
                 Spacer()
                 Button {
                     Haptics.tap(); tabs.openPathway(.level(active?.levelNumber ?? 1))
@@ -2097,8 +2098,10 @@ struct HomeView: View {
                     Icon(.target, size: 18, color: Nuru.goldChipText)
                         .frame(width: 30, height: 30)
                         .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    (Text(line.bold).font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
-                     + Text(line.rest).font(.inter(12)).foregroundStyle(Nuru.muted))
+                    // The next step is a thing: the content row title, Fraunces
+                    // 15 (§8.1 rule 3), the rest of the line in body type.
+                    (Text(line.bold).font(.nRowTitle).foregroundStyle(Nuru.ink)
+                     + Text(line.rest).font(.nCardBody).foregroundStyle(Nuru.muted))
                     Spacer(minLength: 0)
                 }
                 .padding(Nuru.S.sm)
