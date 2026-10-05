@@ -42,7 +42,7 @@ struct NuruHeaderText: View {
             }
             Text(title)
                 .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(Nuru.navy)
-                .lineLimit(2).minimumScaleFactor(0.85)
+                .nuruLineLimit(2).minimumScaleFactor(0.85)
                 .fixedSize(horizontal: false, vertical: true)
             if let line, !line.isEmpty {
                 Text(line)
@@ -55,6 +55,24 @@ struct NuruHeaderText: View {
         .accessibilityElement(children: .combine)
         .accessibilityAddTraits(.isHeader)
     }
+}
+
+/// A line limit for the sizes most members read at; at the accessibility
+/// sizes the text wraps in full — it grows with the phone's text size and is
+/// never cut (EXPERIENCE.md §9.6 #4). Titles still wrap to two lines at the
+/// everyday sizes (§8.1 rule 9).
+struct NuruLineLimit: ViewModifier {
+    let lines: Int
+    @Environment(\.dynamicTypeSize) private var size
+    func body(content: Content) -> some View {
+        content.lineLimit(size.isAccessibilitySize ? nil : lines)
+    }
+}
+
+extension View {
+    /// `.lineLimit(lines)` at the everyday sizes, none at the accessibility
+    /// sizes (§9.6 #4).
+    func nuruLineLimit(_ lines: Int) -> some View { modifier(NuruLineLimit(lines: lines)) }
 }
 
 /// A white card that floats on one soft shadow.

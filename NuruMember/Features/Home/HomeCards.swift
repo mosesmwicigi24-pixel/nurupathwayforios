@@ -292,10 +292,12 @@ struct HomeNeedsYouCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         // A prompt's title is a card title (§8.1 rule 3).
                         Text(nudge.title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
-                            .lineLimit(2).multilineTextAlignment(.leading)
+                            .nuruLineLimit(2).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         if !nudge.body.isEmpty {
                             Text(nudge.body).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
-                                .lineLimit(2).multilineTextAlignment(.leading)
+                                .nuruLineLimit(2).multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer(minLength: 0)
@@ -715,10 +717,10 @@ struct HomeWeekCard: View {
                 // rule 3: Fraunces 15 semibold, as Android), wrapping to two
                 // lines rather than cut (rule 9).
                 Text(row.title).font(.nRowTitle).foregroundStyle(HomeFig.navy)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 if !row.line.isEmpty {
                     Text(row.line).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 8)

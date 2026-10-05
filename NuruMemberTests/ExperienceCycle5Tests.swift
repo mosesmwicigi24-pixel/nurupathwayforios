@@ -2,6 +2,7 @@
 // context, states under stress, one product, fewer and better things — the
 // rules pinned. Payloads are decoded exactly like APIClient's: snake_case in.
 import XCTest
+import SwiftUI
 @testable import NuruMember
 
 final class ExperienceCycle5Tests: XCTestCase {
@@ -618,4 +619,61 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertTrue(sheet.contains("Text(\"Set amount\")"), "Android's words")
         XCTAssertFalse(sheet.contains("Text(\"Give \\("), "the last tap before money moves is the one that names the money")
     }
+
+    // MARK: §9.6 #4 — text grows with the phone's text size, and is never cut
+
+    /// The height a view takes across a phone's width at a text size.
+    @MainActor
+    func renderedHeight<V: View>(_ view: V, _ size: DynamicTypeSize, width: CGFloat = 375) throws -> CGFloat {
+        let r = ImageRenderer(content: view.frame(width: width).environment(\.dynamicTypeSize, size))
+        r.proposedSize = ProposedViewSize(width: width, height: nil)
+        return CGFloat(try XCTUnwrap(r.cgImage, "nothing rendered").height) / r.scale
+    }
+
+    /// At the largest accessibility size, on a 375-pt phone, the shared pieces
+    /// every screen is built from wrap their words in full: given twice and
+    /// four times the words, each is taller again. A piece that cut its text
+    /// at N lines would stop growing (the tab header, the YOUR WEEK rows and
+    /// "What needs you today" cut at two lines).
+    @MainActor
+    func testAtTheLargestTextSizeTextWrapsAndIsNeverCut() throws {
+        let base = "Practical Life Questions and the Way of Grace"
+        let texts = [base, [base, base].joined(separator: " — "), [base, base, base, base].joined(separator: " — ")]
+        func nudge(_ t: String) throws -> HomeNudge {
+            try decode(HomeNudge.self, ["id": "n1", "kind": "plan_day_due", "title": t, "body": t, "cta_label": "Open", "route": "plan"])
+        }
+        let pieces: [(String, (String) throws -> AnyView)] = [
+            ("the tab header", { t in AnyView(NuruHeaderText(kicker: "Pathway", title: t, line: t)) }),
+            ("a YOUR WEEK row", { t in AnyView(HomeWeekCard(rows: [HomeWeekRow(pillar: .pathway, title: t, line: t, destination: .plans)], open: { _ in })) }),
+            ("a \"What needs you today\" card", { t in AnyView(HomeNeedsYouCard(nudge: try nudge(t), fixedWidth: nil, action: {})) }),
+            ("the primary button", { t in AnyView(PButton(title: t, action: {})) }),
+        ]
+        for (name, piece) in pieces {
+            let h = try texts.map { try renderedHeight(try piece($0), .accessibility5) }
+            XCTAssertLessThan(h[0], h[1], "\(name) stopped growing — its words are cut at the largest size")
+            XCTAssertLessThan(h[1], h[2], "\(name) stopped growing — its words are cut at the largest size")
+        }
+        // Text grows with the phone's text size (the custom faces scale with
+        // Dynamic Type): the same header is far taller at the largest size.
+        let header = NuruHeaderText(kicker: "Pathway", title: "Foundations of Faith", line: "Level 1 of 6 · 10 of 10 modules")
+        XCTAssertGreaterThan(try renderedHeight(header, .accessibility5), 1.8 * (try renderedHeight(header, .large)))
+        // At the everyday sizes a title still wraps to two lines (§8.1 rule 9).
+        let everyday = try texts.map { try renderedHeight(NuruHeaderText(title: $0), .large) }
+        XCTAssertEqual(everyday[1], everyday[2], accuracy: 1, "two lines at the everyday sizes, as designed")
+    }
+
+    /// Every other fixed line limit is a place text can still be cut at the
+    /// largest size. The count may only fall: a new one is a choice to make
+    /// on purpose (or `.nuruLineLimit`, which lifts at the accessibility sizes).
+    func testFixedLineLimitsOnlyFall() throws {
+        var n = 0
+        for (_, text) in try TypeScan.files() {
+            for line in text.split(separator: "\n", omittingEmptySubsequences: false)
+            where line.contains(".lineLimit(") && !line.contains("content.lineLimit(size") {
+                n += line.components(separatedBy: ".lineLimit(").count - 1
+            }
+        }
+        XCTAssertLessThanOrEqual(n, Self.fixedLineLimitCeiling, "a new fixed line limit can cut text at the largest size — use .nuruLineLimit, which lifts there")
+    }
+    static let fixedLineLimitCeiling = 273
 }
