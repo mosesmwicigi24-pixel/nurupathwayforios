@@ -105,7 +105,7 @@ enum EventsHeader {
 enum EventSegment: String, CaseIterable { case today = "Today", upcoming = "Upcoming", rsvps = "My RSVPs" }
 
 /// Pushable routes within the Events stack.
-enum EventsNav: Hashable { case calendar, seriesAll, announcementsAll, attendance, broadcasts }
+enum EventsNav: Hashable { case calendar, seriesAll, seriesMore, announcementsAll, attendance, broadcasts }
 
 /// One cell in the scrollable date strip.
 struct WeekDay: Identifiable {
@@ -126,6 +126,8 @@ final class EventsViewModel: ObservableObject {
     @Published var series: [EventSeries] = []
     @Published var announcements: [MyAnnouncement] = []
     @Published var segment: EventSegment = .today
+    /// The member picked a tab (or a date) — loads stop choosing it for them.
+    var segmentChosen = false
     @Published var selectedDay: Date
     @Published var search = ""
     @Published var category = "All"
@@ -171,8 +173,30 @@ final class EventsViewModel: ObservableObject {
         announcements = await ann ?? []
         quickRsvps = Dictionary((await rs ?? []).map { ($0.eventId, $0.status) },
                                 uniquingKeysWith: { a, _ in a })
+        // Open on the first tab that has something (§7.4 #6) — not on an
+        // empty "Today (0)" with the gatherings waiting under Upcoming.
+        if !segmentChosen {
+            segment = Self.openingSegment(today: count(.today), upcoming: count(.upcoming), rsvps: count(.rsvps))
+        }
         loading = false
     }
+
+    /// The tab Events opens on: the first that has something — Today, then
+    /// Upcoming, then My RSVPs; Today when none has. Pure.
+    nonisolated static func openingSegment(today: Int, upcoming: Int, rsvps: Int) -> EventSegment {
+        if today > 0 { return .today }
+        if upcoming > 0 { return .upcoming }
+        if rsvps > 0 { return .rsvps }
+        return .today
+    }
+
+    /// The member picked a tab.
+    func choose(_ s: EventSegment) { segmentChosen = true; segment = s }
+
+    /// The member picked a date on the strip: that date's gatherings, on the
+    /// Today tab — the strip filters that tab, so it is brought forward
+    /// (a date tap while Upcoming showed would otherwise change nothing).
+    func selectDay(_ d: Date) { selectedDay = d; choose(.today) }
 
     /// Cycle the quick RSVP (none → going → maybe → declined) and persist it.
     func quickRsvp(_ occ: CalendarOccurrence) async {
@@ -248,7 +272,7 @@ final class EventsViewModel: ObservableObject {
     }
 
     func isSelected(_ d: Date) -> Bool { cal.isDate(d, inSameDayAs: selectedDay) }
-    func selectToday() { selectedDay = todayStart }
+    func selectToday() { selectDay(todayStart) }
 
     /// Occurrence ids with an active RSVP (going or maybe).
     private var rsvpIds: Set<String> {
@@ -391,6 +415,7 @@ struct EventsView: View {
                 switch nav {
                 case .calendar: CalendarView()
                 case .seriesAll: SeriesListPage(vm: vm)
+                case .seriesMore: SeriesListPage(vm: vm, discover: true)
                 case .announcementsAll: AnnouncementsListPage(vm: vm)
                 case .attendance: AttendanceView()
                 case .broadcasts: NuruLiveTabView(pushed: true)
@@ -497,9 +522,9 @@ struct EventsView: View {
         let on = vm.isSelected(d.date)
         let bg: Color = on ? Nuru.navy : (d.isToday ? Nuru.gold.opacity(0.12) : .clear)
         return Button {
-            guard !on else { return }
+            guard !(on && vm.segment == .today) else { return }
             Haptics.selection()
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectedDay = d.date }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectDay(d.date) }
         } label: {
             VStack(spacing: 3) {
                 Text(d.letter).font(.inter(9, .semibold)).kerning(0.8)
@@ -639,7 +664,7 @@ struct EventsView: View {
         return Button {
             guard !on else { return }
             Haptics.selection()
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.segment = s }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.choose(s) }
         } label: {
             HStack(spacing: 6) {
                 Text(s.rawValue).font(.inter(11, .semibold)).foregroundStyle(on ? .white : Nuru.ink600)
@@ -793,14 +818,23 @@ struct EventsView: View {
         .cardSurfaceEv()
     }
 
-    // MARK: 8 — series you follow (header inside the card, per the make)
+    // MARK: 8 — series you follow, then more series (header inside the card)
 
-    private var seriesSection: some View {
+    /// "Series you follow" holds only the series the member follows; the
+    /// rest sit under "More series", each with + Follow (§7.4 #7). A follow
+    /// moves its row across.
+    @ViewBuilder private var seriesSection: some View {
+        let split = EventSeries.split(vm.series)
+        if !split.following.isEmpty { seriesCard("SERIES YOU FOLLOW", split.following, nav: .seriesAll) }
+        if !split.more.isEmpty { seriesCard("MORE SERIES", split.more, nav: .seriesMore) }
+    }
+
+    private func seriesCard(_ title: String, _ rows: [EventSeries], nav: EventsNav) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            railHeader(icon: .sparkles, title: "SERIES YOU FOLLOW", nav: .seriesAll)
-            ForEach(Array(vm.series.enumerated()), id: \.element.id) { idx, s in
+            railHeader(icon: .sparkles, title: title, nav: nav)
+            ForEach(Array(rows.enumerated()), id: \.element.id) { idx, s in
                 SeriesRailRow(series: s) { await vm.toggleFollow(s) }
-                if idx < vm.series.count - 1 { Divider().overlay(Nuru.border) }
+                if idx < rows.count - 1 { Divider().overlay(Nuru.border) }
             }
         }
         .padding(Nuru.S.base)
@@ -1011,19 +1045,35 @@ private struct FollowButton: View {
 }
 
 // Cadence subline shared by the rail and the See-all page ("Every Sunday · 9:00 AM").
-private extension EventSeries {
-    var cadenceLine: String {
+extension EventSeries {
+    var cadenceLine: String { Self.cadenceLine(cadence, nextAt: nextAt) }
+
+    /// The series line says its time ONCE (§7.4 #8). The server's label
+    /// already names it ("Every Sunday · 9:00 AM", "One-off · 3:00 PM",
+    /// "Monthly · 3:00 PM") — appending the next gathering's time read
+    /// "Every Sunday · 9:00 AM · 9:00 AM". Only a label without a time (an
+    /// older server) borrows the next gathering's. Pure.
+    static func cadenceLine(_ cadence: String, nextAt: String?) -> String {
+        let c = cadence.trimmingCharacters(in: .whitespaces)
+        if c.contains("·") { return c }
         let time = nextAt.map { Ev.timeOfDate(Ev.date($0)) }
         let head: String
-        let c = cadence.lowercased()
-        if c.contains("week") {
-            if let next = nextAt { head = "Every \(Ev.weekday(next, "EEEE"))" } else { head = cadence }
-        } else if c.contains("one") || c.contains("once") {
+        let low = c.lowercased()
+        if low.contains("week"), let next = nextAt {
+            head = "Every \(Ev.weekday(next, "EEEE"))"
+        } else if low.contains("one") || low.contains("once") {
             head = "One-off"
         } else {
-            head = cadence
+            head = c
         }
-        return time.map { "\(head) · \($0)" } ?? head
+        guard let time else { return head }
+        return head.isEmpty ? time : "\(head) · \(time)"
+    }
+
+    /// The series the member follows, and the rest — each in the server's
+    /// order (§7.4 #7). Pure.
+    static func split(_ series: [EventSeries]) -> (following: [EventSeries], more: [EventSeries]) {
+        (series.filter(\.following), series.filter { !$0.following })
     }
 }
 
@@ -1367,7 +1417,13 @@ private struct AnnouncementsListPage: View {
 
 private struct SeriesListPage: View {
     @ObservedObject var vm: EventsViewModel
-    @State private var discover = false
+    /// "More series → See all" opens on Discover (§7.4 #7).
+    @State private var discover: Bool
+
+    init(vm: EventsViewModel, discover: Bool = false) {
+        self.vm = vm
+        _discover = State(initialValue: discover)
+    }
 
     private var shown: [EventSeries] { vm.series.filter { $0.following != discover } }
 

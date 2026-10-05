@@ -159,4 +159,43 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         let finished = try decode(ReadingPlanRow.self, planRow("done", enrolled: true, finished: true))
         XCTAssertFalse(PlanPicks.isBeingRead(finished), "a finished plan is not in Continue reading")
     }
+
+    // MARK: §7.4 #6 — Events opens on the first tab that has something
+
+    func testEventsOpensOnTheFirstTabThatHasSomething() {
+        XCTAssertEqual(EventsViewModel.openingSegment(today: 0, upcoming: 12, rsvps: 1), .upcoming,
+                       "Ada on a weekday: nothing today, the gatherings are Upcoming")
+        XCTAssertEqual(EventsViewModel.openingSegment(today: 1, upcoming: 12, rsvps: 1), .today)
+        XCTAssertEqual(EventsViewModel.openingSegment(today: 0, upcoming: 0, rsvps: 2), .rsvps)
+        XCTAssertEqual(EventsViewModel.openingSegment(today: 0, upcoming: 0, rsvps: 0), .today, "nothing anywhere")
+    }
+
+    // MARK: §7.4 #7, #8 — the series the member follows, and the time once
+
+    private func series(_ id: String, _ cadence: String, next: String? = nil, following: Bool = false) -> EventSeries {
+        EventSeries(seriesId: id, title: "Series \(id)", category: "worship", cadence: cadence, nextAt: next,
+                    nextOccurrenceId: nil, nextEndAt: nil, location: nil, following: following, newCount: 0)
+    }
+
+    func testSeriesYouFollowHoldsOnlyFollowedSeries() {
+        let all = [series("a", "One-off · 3:00 PM"), series("b", "Every Sunday · 9:00 AM", following: true),
+                   series("c", "Monthly · 3:00 PM"), series("d", "Every Sunday · 2:00 PM", following: true)]
+        let split = EventSeries.split(all)
+        XCTAssertEqual(split.following.map(\.seriesId), ["b", "d"])
+        XCTAssertEqual(split.more.map(\.seriesId), ["a", "c"], "the rest, in the server's order")
+        XCTAssertTrue(EventSeries.split([series("x", "Daily · 6:00 AM")]).following.isEmpty, "Ada follows none")
+    }
+
+    func testTheSeriesLineSaysItsTimeOnce() {
+        let sunday = "2026-10-11T06:00:00.000Z"
+        // The local API's own labels, as served for Ada.
+        XCTAssertEqual(EventSeries.cadenceLine("Every Sunday · 9:00 AM", nextAt: sunday), "Every Sunday · 9:00 AM")
+        XCTAssertEqual(EventSeries.cadenceLine("One-off · 3:00 PM", nextAt: nil), "One-off · 3:00 PM",
+                       "a past one-off keeps its time")
+        XCTAssertEqual(EventSeries.cadenceLine("Monthly · 3:30 PM", nextAt: "2026-10-25T12:30:00.000Z"), "Monthly · 3:30 PM")
+        // A label without a time (an older server) borrows the next gathering's.
+        let time = Ev.timeOfDate(Ev.date(sunday))
+        XCTAssertEqual(EventSeries.cadenceLine("weekly", nextAt: sunday), "Every \(Ev.weekday(sunday, "EEEE")) · \(time)")
+        XCTAssertEqual(EventSeries.cadenceLine("once", nextAt: nil), "One-off")
+    }
 }
