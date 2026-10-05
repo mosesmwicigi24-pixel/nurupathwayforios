@@ -597,6 +597,14 @@ final class ExperienceCycle4Tests: XCTestCase {
                        "from its first day, the month's progress — and no \"KSh 0 given in all\"")
     }
 
+    // MARK: Cycle 3 close walk E18 — sheets fit what they hold
+
+    func testAFittedSheetIsAsTallAsItsContent() {
+        XCTAssertEqual(PSheetFit.height(content: 160, chrome: 58, screen: 874), 218, "a name field and Save: no empty lower half")
+        XCTAssertEqual(PSheetFit.height(content: 40, chrome: 58, screen: 874), 200, "never under the floor")
+        XCTAssertEqual(PSheetFit.height(content: 2000, chrome: 58, screen: 874), 874 * 0.9, accuracy: 0.01, "a long list scrolls inside 90%")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

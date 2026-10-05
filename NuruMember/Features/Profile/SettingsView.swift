@@ -483,14 +483,13 @@ private struct PasswordChangeSheet: View {
     @State private var succeeded = false
 
     var body: some View {
-        PSheetShell(title: "Change password") {
+        PSheetShell(title: "Change password", fitsContent: true) {
             if succeeded {
                 successView
             } else {
                 formView
             }
         }
-        .presentationDetents([.medium])
     }
 
     // Clear confirmation — the member sees exactly what happened before dismissing.
@@ -608,9 +607,10 @@ private struct AppLanguageSheet: View {
         ("sw", "Swahili", "Available", true),
         ("fr", "French", "Coming soon", false),
     ]
+    private var currentCode: String { String(current.prefix(2)).lowercased() == "sw" ? "sw" : "en" }
 
     var body: some View {
-        PSheetShell(title: "App language") {
+        PSheetShell(title: "App language", fitsContent: true) {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("Choose the language for the app interface.")
                     .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
@@ -635,11 +635,11 @@ private struct AppLanguageSheet: View {
                     }
                 }
                 if let error { Text(error).font(.inter(12)).foregroundStyle(Nuru.danger) }
-                GoldSheetButton(title: "Save", busy: saving) { Task { await save() } }
+                // Save waits for a change (the walk's E18).
+                GoldSheetButton(title: "Save", busy: saving, disabled: picked == currentCode) { Task { await save() } }
             }
         }
-        .presentationDetents([.medium])
-        .onAppear { picked = String(current.prefix(2)).lowercased() == "sw" ? "sw" : "en" }
+        .onAppear { picked = currentCode }
     }
 
     private func save() async {

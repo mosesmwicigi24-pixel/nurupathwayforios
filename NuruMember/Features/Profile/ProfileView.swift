@@ -928,7 +928,7 @@ private struct BadgeDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        PSheetShell(title: "") {
+        PSheetShell(title: "", fitsContent: true) {
             VStack(spacing: Nuru.S.md) {
                 ZStack {
                     if badge.earned {
@@ -971,7 +971,6 @@ private struct BadgeDetailSheet: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .presentationDetents([.medium])
     }
 }
 
@@ -1264,7 +1263,7 @@ private struct VerifyCertificateSheet: View {
     @State private var failed = false
 
     var body: some View {
-        PSheetShell(title: "Verify certificate") {
+        PSheetShell(title: "Verify certificate", fitsContent: true) {
             if let r = result {
                 let color = r.valid ? Color(hex: 0x16A34A) : Color(hex: 0xDC2626)
                 VStack(spacing: Nuru.S.md) {
@@ -1312,7 +1311,6 @@ private struct VerifyCertificateSheet: View {
                 .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl)
             }
         }
-        .presentationDetents([.medium])
         .task {
             do { result = try await APIClient.shared.get("verify/\(cert.verificationCode)", as: PVerifyResult.self) }
             catch { failed = true }
@@ -1346,9 +1344,17 @@ private struct EditFieldSheet: View {
     @State private var date = Date()
     @State private var saving = false
     @State private var error: String?
+    /// The wheel moved — a birthday never set has no value to differ from.
+    @State private var dateTouched = false
+
+    /// Something to save: the value differs from what the profile holds.
+    private var changed: Bool {
+        if field.kind == .date && current.isEmpty { return dateTouched }
+        return newValue != current
+    }
 
     var body: some View {
-        PSheetShell(title: "Edit \(field.label.lowercased())") {
+        PSheetShell(title: "Edit \(field.label.lowercased())", fitsContent: true) {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 switch field.kind {
                 case .select:
@@ -1392,10 +1398,12 @@ private struct EditFieldSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                GoldSheetButton(title: "Save changes", busy: saving) { Task { await save() } }
+                // Save waits for a change (the walk's E18: "Save changes" was
+                // live on an untouched field).
+                GoldSheetButton(title: "Save changes", busy: saving, disabled: !changed) { Task { await save() } }
             }
         }
-        .presentationDetents([.medium])
+        .onChange(of: date) { _, _ in dateTouched = true }
         .onAppear {
             text = current
             selected = current
@@ -1447,12 +1455,27 @@ private struct EditFieldSheet: View {
 // MARK: - Shared sheet chrome (native port of the Figma SheetShell)
 
 /// Bottom-sheet chrome: grab handle, Fraunces title, X close, scrollable content.
+/// `fitsContent`: the sheet is as tall as what it holds (the Cycle 3 walk's
+/// E18: field edits opened on a half-height sheet whose lower half was empty).
 struct PSheetShell<Content: View>: View {
     let title: String
+    var fitsContent: Bool = false
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
+    @State private var contentHeight: CGFloat = 0
+    /// Handle (10 + 4) and the title row (12 + 32) above the content.
+    private static var chromeHeight: CGFloat { 58 }
 
     var body: some View {
+        if fitsContent {
+            shell.presentationDetents([.height(PSheetFit.height(content: contentHeight, chrome: Self.chromeHeight,
+                                                                screen: UIScreen.main.bounds.height))])
+        } else {
+            shell
+        }
+    }
+
+    private var shell: some View {
         VStack(alignment: .leading, spacing: 0) {
             Capsule().fill(Color(hex: 0x0B1F33).opacity(0.15))
                 .frame(width: 40, height: 4)
@@ -1471,7 +1494,13 @@ struct PSheetShell<Content: View>: View {
             .padding(.top, 12)
             ScrollView(showsIndicators: false) {
                 content().padding(.top, Nuru.S.base).padding(.bottom, Nuru.S.xl)
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { contentHeight = g.size.height }
+                            .onChange(of: g.size.height) { _, h in contentHeight = h }
+                    })
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .padding(.horizontal, Nuru.S.screen)
         .background(Color.white.ignoresSafeArea())
@@ -1500,5 +1529,14 @@ struct GoldSheetButton: View {
         .buttonStyle(.pressable)
         .disabled(disabled || busy)
         .animation(.easeInOut(duration: 0.2), value: disabled || busy)
+    }
+}
+
+/// How tall a content-fitted sheet is: its content plus its chrome, never
+/// under a floor that keeps the ✕ and one row in reach, never over 90% of
+/// the screen (the content then scrolls). Pure, so the tests pin it.
+enum PSheetFit {
+    static func height(content: CGFloat, chrome: CGFloat, screen: CGFloat) -> CGFloat {
+        min(max(content + chrome, 200), screen * 0.9)
     }
 }
