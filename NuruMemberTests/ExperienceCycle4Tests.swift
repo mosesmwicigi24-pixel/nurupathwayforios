@@ -564,6 +564,24 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 2, journey: jw), "Complete Level 1 to unlock")
     }
 
+    // MARK: Android walk A1 — no standing until there is one
+
+    func testNoPartnerStandingBeforeAPledgeOrAGiftThatWentThrough() throws {
+        // Ben, verbatim from the local API (2026-10-05): a schedule whose first collection failed.
+        let ben: [String: Any] = ["is_partner": true, "ever_partnered": true, "status": "active",
+                                  "since": "2026-10-05T07:08:32.900Z", "kept": 0, "given_minor": 0, "currency": "KES",
+                                  "membership": NSNull(),
+                                  "tier": ["name": "carries one disciple through a level, every year",
+                                           "monthly_minor": 170000, "disciples_per_year": 1],
+                                  "pledges": [], "due": [],
+                                  "trouble": ["paused": false, "consecutive_failures": 1, "last_failed_at": "2026-10-05T02:08:32.930Z"]]
+        XCTAssertFalse(PartnerStanding.isReal(try decode(Partnership.self, ben)),
+                       "no \"Partner since\", no \"0 gifts kept\", no tier beside a gift that failed")
+        var kept = ben; kept["kept"] = 1; kept["given_minor"] = 200000
+        XCTAssertTrue(PartnerStanding.isReal(try decode(Partnership.self, kept)), "a gift that went through")
+        XCTAssertFalse(PartnerStanding.notYet.contains("0"))
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

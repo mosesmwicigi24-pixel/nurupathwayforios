@@ -1133,14 +1133,19 @@ struct PartnersView: View {
         let figures = PledgeMath.figures(s, pledges: p.pledges)
         let rows = s.pledgePayments
         let pending = s.pendingPledgePayments
+        // Three "KSh 0" tiles say nothing (§7.4 #9; the walks' E14/A1 for
+        // Ben): the figures show once any of them is more than nothing.
+        let anyFigure = figures.contains { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
-                summaryColumn("Paid", figures.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
-                summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
-            }
+            if anyFigure {
+                HStack(alignment: .top, spacing: 8) {
+                    summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
+                    summaryColumn("Paid", figures.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
+                    summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
+                }
 
-            Divider().overlay(Nuru.border).padding(.vertical, 14)
+                Divider().overlay(Nuru.border).padding(.vertical, 14)
+            }
 
             // Still processing: listed first, never in Paid above.
             ForEach(pending) { pay in
@@ -1318,23 +1323,15 @@ private struct StandingCard: View {
         VStack(alignment: .leading, spacing: 14) {
             eyebrow("STANDING")
 
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
-                    Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
-                }
-                Spacer(minLength: 8)
-                if let t = partnership.tier, !t.name.isEmpty {
-                    HStack(spacing: 5) {
-                        Icon(.award, size: 12, color: Nuru.goldChipText)
-                        Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Nuru.goldChipBg, in: Capsule())
-                    .accessibilityElement(children: .ignore)
-                    // The tier sentence lives here and nowhere on screen.
-                    .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
-                }
+            // A standing only once there is one — a pledge or a gift that
+            // went through (the Android walk's A1: Ben read "Partner since
+            // Oct 2026 · 0 gifts kept" and a tier beside a gift that failed).
+            if PartnerStanding.isReal(partnership) {
+                standingRow
+            } else {
+                Text(PartnerStanding.notYet)
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             HStack(spacing: 10) {
@@ -1361,6 +1358,28 @@ private struct StandingCard: View {
             }
         }
         .partnerCard()
+    }
+
+    /// Since · kept, and the tier — shown once the standing is real.
+    private var standingRow: some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
+                Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
+            }
+            Spacer(minLength: 8)
+            if let t = partnership.tier, !t.name.isEmpty {
+                HStack(spacing: 5) {
+                    Icon(.award, size: 14, color: Nuru.goldChipText)
+                    Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Nuru.goldChipBg, in: Capsule())
+                .accessibilityElement(children: .ignore)
+                // The tier sentence lives here and nowhere on screen.
+                .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
+            }
+        }
     }
 
     /// "Partner since Sep 2026" — the shared formatter (partnerSinceLine).
@@ -2115,4 +2134,15 @@ enum PartnerFormat {
     static func grouped(_ n: Int) -> String {
         number.string(from: NSNumber(value: n)) ?? "\(n)"
     }
+}
+
+/// Whether the Partners page has a standing to show (the Android walk's A1;
+/// §7.4 #9, no zero facts): a pledge that isn't cancelled, or a gift that
+/// went through. A schedule set up whose first collection failed is not yet
+/// a standing — no "Partner since", no "0 gifts kept", no tier.
+enum PartnerStanding {
+    static func isReal(_ p: Partnership) -> Bool {
+        p.pledges.contains { $0.status != "cancelled" } || p.kept > 0 || p.givenMinor > 0
+    }
+    static let notYet = "Your standing shows here after your first gift or pledge."
 }
