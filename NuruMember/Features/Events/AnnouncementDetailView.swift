@@ -40,10 +40,10 @@ struct AnnouncementDetailView: View {
 
     init(announcementId: String) { _vm = StateObject(wrappedValue: AnnouncementDetailViewModel(announcementId: announcementId)) }
 
+    /// The strip under the words — never the cover again (§7.4 #12).
     private var images: [String] {
-        let d = vm.detail
-        let gallery = (d?.images.isEmpty == false ? d?.images : d?.galleryImageUrls) ?? []
-        return gallery.filter { !$0.isEmpty }
+        guard let d = vm.detail else { return [] }
+        return AnnouncementGallery.photos(images: d.images, gallery: d.galleryImageUrls, cover: d.primaryImageUrl)
     }
 
     var body: some View {
@@ -197,5 +197,22 @@ struct AnnouncementDetailView: View {
     private func whenString(_ iso: String) -> String {
         guard let d = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
         let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"; return f.string(from: d)
+    }
+}
+
+/// The announcement's photo strip (EXPERIENCE.md §7.4 #12: the cover once).
+/// The server's `images` is [cover, …gallery] — `gallery_image_urls` when it
+/// sends none — and the cover is already the hero above the words, so the
+/// strip keeps only the other photos, each once. Pure.
+enum AnnouncementGallery {
+    static func photos(images: [String], gallery: [String]?, cover: String?) -> [String] {
+        let all = images.isEmpty ? (gallery ?? []) : images
+        let hero = cover?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        var seen = Set<String>()
+        return all.compactMap { raw in
+            let s = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !s.isEmpty, s != hero, seen.insert(s).inserted else { return nil }
+            return s
+        }
     }
 }

@@ -263,4 +263,19 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertEqual(CellAttendanceWords.lines(you: older.attendance.you, turnout: older.turnout),
                        ["The cell: 48% · last 8 meetings"])
     }
+
+    // MARK: §7.4 #12 — the cover once
+
+    func testTheAnnouncementsCoverIsShownOnce() {
+        let cover = "https://res.cloudinary.com/x/nuru/announcements/cover.jpg"
+        // "Graduation is Calling", as the local API serves it: images = [cover].
+        XCTAssertTrue(AnnouncementGallery.photos(images: [cover], gallery: [], cover: cover).isEmpty,
+                      "the cover is the hero — the strip never repeats it")
+        XCTAssertEqual(AnnouncementGallery.photos(images: [cover, "b.jpg", "c.jpg", "b.jpg"], gallery: nil, cover: cover),
+                       ["b.jpg", "c.jpg"], "the other photos, each once, in order")
+        XCTAssertEqual(AnnouncementGallery.photos(images: [], gallery: ["g.jpg", " "], cover: nil), ["g.jpg"],
+                       "no images: the gallery field; blanks dropped")
+        XCTAssertEqual(AnnouncementGallery.photos(images: [cover], gallery: nil, cover: nil), [cover],
+                       "no hero: the strip shows the photo")
+    }
 }
