@@ -623,7 +623,7 @@ private struct PlansTab: View {
     var body: some View {
         // .nuruDestinations() MUST be inside the stack — applied to the stack from
         // outside, SwiftUI never registers the destinations and plan taps do nothing.
-        NavigationStack(path: $path) { ReadingPlansView().nuruDestinations() }
+        NavigationStack(path: $path) { ReadingPlansView().nuruDestinations().nuruEdgeSwipeBack() }
             .popsToRoot(on: .plans, path: $path)
             // "Begin Day 1" opens the day it just started on this stack —
             // the plan's page stays beneath it as the way back (§7.4 #2).

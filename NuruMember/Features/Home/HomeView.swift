@@ -583,6 +583,7 @@ struct HomeView: View {
             }
             // Home root always shows the tab bar (plan screens hide it while inside).
             .onAppear { tabs.chromeHidden = false }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .nuruDestinations()
         }
         // A re-tap on Home returns to Home's top (§7.4 #17 — a stale "not

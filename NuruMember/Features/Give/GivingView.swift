@@ -498,6 +498,7 @@ struct GivingView: View {
             .ignoresSafeArea(edges: .top)
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
             .navigationDestination(for: GiveRoute.self) { route in
                 switch route {

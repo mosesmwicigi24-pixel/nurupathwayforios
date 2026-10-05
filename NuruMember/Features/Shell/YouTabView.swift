@@ -66,7 +66,7 @@ struct YouTabView: View {
         case .chat:        CommunityView(embeddedInYou: true)   // Talk (ChatView) + Pray (PrayerRoomView)
         case .departments: DepartmentsView()
         case .profile:     ProfileView(embeddedInYou: true)
-        case .settings:    NavigationStack { SettingsView(embeddedInYou: true) }
+        case .settings:    NavigationStack { SettingsView(embeddedInYou: true).nuruEdgeSwipeBack() }
         }
     }
 }

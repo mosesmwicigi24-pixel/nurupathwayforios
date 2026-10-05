@@ -83,6 +83,7 @@ struct ProfileView: View {
             .background(Nuru.paper.ignoresSafeArea(edges: .bottom))
             .ignoresSafeArea(edges: .top)
             .toolbar(.hidden, for: .navigationBar)
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(isPresented: $showSettings) { SettingsView() }
             .navigationDestination(isPresented: $showDisciples) { DisciplerRosterView() }
             // A re-tap on You while Profile shows returns to its top (§7.4 #17):

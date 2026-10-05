@@ -290,7 +290,8 @@ struct LevelDetailView: View {
         }
         .frame(height: 280)
         .overlay(alignment: .topLeading) {
-            // Custom back button (nav bar is hidden).
+            // Custom back button (nav bar is hidden). Once it scrolls away with
+            // the hero, the edge swipe goes back (nuruEdgeSwipeBack, B9).
             Button { Haptics.tap(); dismiss() } label: {
                 Icon(.arrowLeft, size: 18, color: Nuru.navy)
                     .frame(width: 40, height: 40)
@@ -299,13 +300,16 @@ struct LevelDetailView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             .padding(.leading, Nuru.S.screen)
             .padding(.top, 58)
         }
     }
 
-    /// Short overline above the serif title (the title's first word, e.g. "Foundations").
-    private var overline: String { vm.title.split(separator: " ").first.map(String.init) ?? "Level \(levelNumber)" }
+    /// The kicker above the serif title says where the member is — "LEVEL 1"
+    /// (§8.1 rule 2: back · kicker · title). It was the title's first word:
+    /// "FOUNDATIONS" over "Foundations of Faith", "THE" over "The …".
+    private var overline: String { "Level \(levelNumber)" }
 
     // MARK: - Stats strip
 

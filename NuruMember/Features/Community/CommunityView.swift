@@ -82,6 +82,7 @@ struct CommunityView: View {
         case .pray:
             NavigationStack {
                 PrayerRoomView(asDoor: true)
+                    .nuruEdgeSwipeBack()
                     .navigationDestination(for: CommunityRoute.self) { r in
                         switch r {
                         case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)

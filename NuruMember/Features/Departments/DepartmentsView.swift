@@ -45,6 +45,7 @@ struct DepartmentsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             content
+                .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: DepartmentRoute.self) { route in
                     switch route {

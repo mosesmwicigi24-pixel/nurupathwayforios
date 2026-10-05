@@ -411,6 +411,7 @@ struct EventsView: View {
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: EventsNav.self) { nav in
                 switch nav {
                 case .calendar: CalendarView()

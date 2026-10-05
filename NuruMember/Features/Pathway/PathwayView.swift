@@ -191,6 +191,7 @@ struct PathwayView: View {
             .background(PW.bg.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: PathwayRoute.self) { r in
                 switch r {
                 case .level(let n): LevelDetailView(levelNumber: n)

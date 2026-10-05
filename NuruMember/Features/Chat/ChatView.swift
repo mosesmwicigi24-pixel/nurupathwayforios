@@ -391,6 +391,7 @@ struct ChatView: View {
             .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
             // Threads opened WITH a known privacy context (My Discipler /
             // Talk with My Pastor tabs) carry it into the thread screen.
