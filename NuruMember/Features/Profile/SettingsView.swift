@@ -391,10 +391,12 @@ struct SettingsView: View {
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
             .buttonStyle(.pressable)
-            // Calm confirm — signing out is reversible, so no destructive red.
-            // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+            // The answer that ends the session wears the alert's destructive
+            // role (EXPERIENCE.md §8.1 rule 4, §8.2 #19) — it was plain, with
+            // "Stay signed in" the bold one. An alert, not a confirmation
+            // dialog: on this iOS a dialog hides its cancel answer (§7.3).
             .alert("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm) {
-                Button("Sign out") {
+                Button("Sign out", role: .destructive) {
                     // Revoke the refresh-token family server-side FIRST (the token
                     // is captured synchronously, the call is fire-and-forget), then
                     // clear local state — the sign-out never waits on the network.
