@@ -1263,10 +1263,7 @@ private struct PathwaySummitCard: View {
 struct LevelsMapView: View {
     @ObservedObject var vm: PathwayViewModel
     let onOpenLevel: (Int) -> Void
-    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
-
-    private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
 
     /// The member's own level wears the journey's word once its modules are
     /// done ("Exam ready", "Exam passed") — not the server's bare "completed",
@@ -1322,7 +1319,9 @@ struct LevelsMapView: View {
                     }.buttonStyle(.pressable)
                     Spacer()
                 }
-                Text("Welcome back, \(firstName)".uppercased())
+                // A pushed page's kicker names the page (§8.1 rule 2) — the
+                // greeting is Home's alone (the walk's E5: "WELCOME BACK, ADA").
+                Text("MAP VIEW")
                     .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A)).padding(.top, 14)
                 HStack(alignment: .bottom, spacing: 16) {
                     VStack(alignment: .leading, spacing: 0) {

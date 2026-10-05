@@ -873,9 +873,13 @@ struct HomeView: View {
                     .buttonStyle(.pressable).padding(.leading, 8)
                     .accessibilityLabel("Go live")
                 }
-                progressRing.padding(.leading, 8)
+                // The score once there is one (the Android walk's A3: no
+                // fact before it loads; §7.4 #9: no "0" ring).
+                if HomeHeaderWords.showsScore(vm.scores?.overall.score) {
+                    progressRing.padding(.leading, 8)
+                }
             }
-            Text("\(greeting), \(firstName).")
+            Text(HomeHeaderWords.greeting(greeting, fullName: auth.profile?.fullName))
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
                 .lineLimit(1).minimumScaleFactor(0.8)   // long first names shrink, never wrap
                 .padding(.top, 10)
@@ -2390,4 +2394,16 @@ enum HomeRefresh {
     static func should(loading: Bool, loaded: Bool, online: Bool?, last: Date, now: Date = Date()) -> Bool {
         loaded && !loading && online != false && now.timeIntervalSince(last) >= minimumGap
     }
+}
+
+/// What Home's header says before it knows (the Android walk's A3: a fact
+/// shown while loading is a fact made up). No name until the profile names
+/// the member — "Good evening." not "Good evening, Friend." — and no growth
+/// ring until a score has come back above zero.
+enum HomeHeaderWords {
+    static func greeting(_ greeting: String, fullName: String?) -> String {
+        guard let first = fullName?.split(separator: " ").first, !first.isEmpty else { return "\(greeting)." }
+        return "\(greeting), \(first)."
+    }
+    static func showsScore(_ score: Int?) -> Bool { (score ?? 0) > 0 }
 }

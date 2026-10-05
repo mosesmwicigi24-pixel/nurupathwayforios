@@ -605,6 +605,16 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(PSheetFit.height(content: 2000, chrome: 58, screen: 874), 874 * 0.9, accuracy: 0.01, "a long list scrolls inside 90%")
     }
 
+    // MARK: Android walk A3 — no fact before it loads
+
+    func testHomeSaysNothingItDoesNotKnowYet() {
+        XCTAssertEqual(HomeHeaderWords.greeting("Good evening", fullName: nil), "Good evening.", "never \"Friend\" for a name not loaded")
+        XCTAssertEqual(HomeHeaderWords.greeting("Good evening", fullName: "Ada Thriving"), "Good evening, Ada.")
+        XCTAssertFalse(HomeHeaderWords.showsScore(nil), "no ring before the score comes back")
+        XCTAssertFalse(HomeHeaderWords.showsScore(0), "and no \"0\" ring (§7.4 #9)")
+        XCTAssertTrue(HomeHeaderWords.showsScore(26))
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))
