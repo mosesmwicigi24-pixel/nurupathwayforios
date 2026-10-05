@@ -605,7 +605,7 @@ struct TalkItOverView: View {
         .toolbar(.hidden, for: .navigationBar)
         // Deliberately NO auto-marking here: the back arrow leaves the day
         // untouched (owner ask — sometimes you just want to look and leave).
-        // Only the gold "I've talked it over" button seals the part.
+        // Posting, or the gold "I've talked it over", seals the part.
         .onAppear { tabs.chromeHidden = true }
         .task { await load() }
         .refreshable { await load() }
@@ -655,6 +655,9 @@ struct TalkItOverView: View {
                 composing = false
                 postFailed = false
                 Haptics.success()
+                // Posting is talking it over: the part is sealed too (the
+                // server's post does not seal it on its own).
+                sealTalk()
             } else {
                 Haptics.error()
                 postFailed = true // the draft is kept; say why it's still here
@@ -831,22 +834,30 @@ struct TalkItOverView: View {
 
     // MARK: done — seal the part and return to the day hub
 
-    /// Talk it Over completes the moment it's opened (nobody is forced to post),
-    /// but the page still ends with the SAME gold button every other part has —
-    /// one consistent gesture: read/respond, press gold, back at the hub, ticked.
+    /// Talk it Over is a required part of the day (owner, 2026-10-05), sealed
+    /// by posting in the conversation OR by the gold "I've talked it over" —
+    /// nobody is forced to post. Opening the page never seals it. The server's
+    /// ack ticks the hub's row and, when this was the day's last part, seals
+    /// the day — the same broadcast as every other part's finish.
+    private func sealTalk() {
+        guard let sid = route.talkSegmentId, !route.talkDone, !markedRead else { return }
+        markedRead = true
+        let planId = route.planId
+        Task {
+            guard let ack = try? await MemberAPI.completePlanSegment(sid) else {
+                markedRead = false   // not sealed (offline, refused) — the gold button tries again
+                return
+            }
+            NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
+            PlanDayUnlockAck.announce(ack, planId: planId)
+        }
+    }
+
+    /// The page ends with the SAME gold button every other part has — one
+    /// consistent gesture: read/respond, press gold, back at the hub, ticked.
     private var doneBar: some View {
         Button {
-            // Backstop: make sure the tick landed even if the appear-marking raced.
-            if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
-                markedRead = true
-                Task {
-                    let ack = try? await MemberAPI.completePlanSegment(sid)
-                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
-                    // Talk it Over can be the LAST part of a day too — same
-                    // authoritative-ack broadcast as the segment reader's CTA.
-                    if let ack { PlanDayUnlockAck.announce(ack, planId: route.planId) }
-                }
-            }
+            sealTalk()
             Haptics.success()
             dismiss()
         } label: {
