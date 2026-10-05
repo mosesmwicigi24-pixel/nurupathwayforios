@@ -183,13 +183,13 @@ enum PlanLines {
 
     /// Home's YOUR WEEK line.
     static func todayLine(_ p: ReadingPlanRow, readToday: Bool, now: Date = Date()) -> String {
-        doneLine(p, readToday: readToday, now: now) ?? "Day \(day(p)) of \(p.dayCount) · today's reading"
+        doneOrPausedLine(p, readToday: readToday, now: now) ?? "Day \(day(p)) of \(p.dayCount) · today's reading"
     }
 
     /// The Plans tab's continue card: the same story as Home's row, else
     /// "Today · " and the plan's own subtitle.
     static func cardLine(_ p: ReadingPlanRow, readToday: Bool, now: Date = Date()) -> String {
-        if let line = doneLine(p, readToday: readToday, now: now) { return line }
+        if let line = doneOrPausedLine(p, readToday: readToday, now: now) { return line }
         let sub = (p.subtitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         return "Today · " + (sub.isEmpty ? "Day \(day(p)) of \(p.dayCount)" : sub)
     }
@@ -199,5 +199,34 @@ enum PlanLines {
         guard readToday else { return nil }
         let d = day(p)
         return d > 1 ? "Day \(d - 1) done today · Day \(d) next" : "Done today · Day \(d) next"
+    }
+
+    /// The two lines Home and Plans share: today's day read, or a pause named.
+    static func doneOrPausedLine(_ p: ReadingPlanRow, readToday: Bool, now: Date = Date()) -> String? {
+        if let done = doneLine(p, readToday: readToday, now: now) { return done }
+        return pausedOn(p, now: now).map { pauseLine(pausedOn: $0, waitingDay: day(p), now: now) }
+    }
+
+    /// When the member paused the plan (§9.1 rule 5): the moment its last day
+    /// was finished, when that fell two or more church (Nairobi) days ago —
+    /// not yesterday's reading, not today's. Nil while it's being read, once
+    /// it's finished, and before any day is (the server says only when a day
+    /// was finished).
+    static func pausedOn(_ p: ReadingPlanRow, now: Date = Date()) -> Date? {
+        guard p.enrolled, p.completedAt == nil,
+              let at = p.lastDayFinishedAt.flatMap(StreakToday.date) else { return nil }
+        return PlanPicks.nairobiDay(at) <= PlanPicks.nairobiDay(now) - 2 ? at : nil
+    }
+
+    /// A pause named kindly, once (EXPERIENCE.md §9.1 rule 5): when, and the
+    /// day that waits — "You paused on Thursday — Day 2 is waiting" — never a
+    /// count of days missed. The weekday within the week; "Thu 24 Sep"
+    /// further back. Android's pauseLine, word for word.
+    static func pauseLine(pausedOn at: Date, waitingDay: Int, now: Date = Date()) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = GiveCalendar.nairobi
+        f.dateFormat = PlanPicks.nairobiDay(now) - PlanPicks.nairobiDay(at) < 7 ? "EEEE" : "EEE d MMM"
+        return "You paused on \(f.string(from: at)) — Day \(waitingDay) is waiting"
     }
 }

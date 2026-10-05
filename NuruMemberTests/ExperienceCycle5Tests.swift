@@ -211,6 +211,33 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertFalse(HomeWeek.repeats(try nudge("reflection_due"), in: week), "held for the first day, not as a repeat")
     }
 
+    // MARK: §9.2 #5 — a pause named kindly, once
+
+    func testAPauseIsNamedByTheDayItBeganAndTheDayThatWaits() throws {
+        // Cara: First Steps, Day 1 finished on Thursday 1 Oct; Monday now.
+        let cara = try plan("first", day: 2, done: [1], lastFinished: "2026-10-01T09:33:50.486Z")
+        XCTAssertNotNil(PlanLines.pausedOn(cara, now: monday))
+        XCTAssertEqual(PlanLines.todayLine(cara, readToday: false, now: monday), "You paused on Thursday — Day 2 is waiting")
+        XCTAssertEqual(PlanLines.cardLine(cara, readToday: false, now: monday), "You paused on Thursday — Day 2 is waiting")
+        XCTAssertEqual(HomeWeek.plansRow([cara], now: monday).line, "You paused on Thursday — Day 2 is waiting")
+        // Further back than a week: the date.
+        let longAgo = try plan("first", day: 2, done: [1], lastFinished: "2026-09-24T09:00:00Z")
+        XCTAssertEqual(PlanLines.todayLine(longAgo, readToday: false, now: monday), "You paused on Thu 24 Sep — Day 2 is waiting")
+        // Yesterday's reading is not a pause; nor a plan with no day finished, nor a finished plan.
+        XCTAssertNil(PlanLines.pausedOn(try plan("first", day: 2, done: [1], lastFinished: "2026-10-04T18:00:00Z"), now: monday))
+        XCTAssertNil(PlanLines.pausedOn(try plan("first", day: 1, done: []), now: monday))
+        var finished = try decode(ReadingPlanRow.self,
+                                  ["plan_id": "first", "title": "First Steps", "day_count": 7, "current_day": 7,
+                                   "completed_days": [1, 2, 3, 4, 5, 6, 7], "enrolled": true,
+                                   "completed_at": "2026-10-02T08:00:00Z", "last_day_finished_at": "2026-10-02T08:00:00Z"])
+        XCTAssertNil(PlanLines.pausedOn(finished, now: monday))
+        finished = cara
+        // Read today, the done line wins.
+        XCTAssertEqual(PlanLines.todayLine(finished, readToday: true, now: monday), "Day 1 done today · Day 2 next")
+        // Never a count of days missed.
+        XCTAssertFalse(PlanLines.todayLine(cara, readToday: false, now: monday).contains("days"))
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

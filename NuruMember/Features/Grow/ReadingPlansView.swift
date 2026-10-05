@@ -944,6 +944,17 @@ struct PlanDetailView: View {
                         .font(.inter(11, .bold)).foregroundStyle(PL.catText)
                 }
             }
+            // A pause named kindly, once, on gold tint (§9.1 rule 5) — the
+            // same words as Home's row and the Plans card.
+            if let at = PlanLines.pausedOn(plan) {
+                Text(PlanLines.pauseLine(pausedOn: at, waitingDay: PlanLines.day(plan)))
+                    .font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.top, 10)
+            }
             VStack(spacing: 6) {
                 ForEach(visible) { day in
                     if day.locked, vm.awaitingUnlock == day.dayNumber {
