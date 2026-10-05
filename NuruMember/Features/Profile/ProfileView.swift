@@ -85,6 +85,13 @@ struct ProfileView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showSettings) { SettingsView() }
             .navigationDestination(isPresented: $showDisciples) { DisciplerRosterView() }
+            // A re-tap on You while Profile shows returns to its top (§7.4 #17):
+            // Profile's only pushes are these two.
+            .onReceive(tabs.reselected) { t in
+                guard t == .you, tabs.youSegmentShown == .profile else { return }
+                showSettings = false
+                showDisciples = false
+            }
             .task { await loadExtras() }
             .sheet(item: $editingField) { f in
                 EditFieldSheet(field: f, current: currentValue(for: f), rowVersion: p?.rowVersion ?? 1) {

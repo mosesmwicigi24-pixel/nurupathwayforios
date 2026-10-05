@@ -694,6 +694,8 @@ struct PartnersView: View {
             DispatchQueue.main.async { tabs.pledgeLink = nil }
             path = NavigationPath([PartnersRoute.pledge(id)])
         }
+        // A re-tap on Give while Partners shows returns to its top (§7.4 #17).
+        .popsToRoot(on: .give, path: $path, when: { segment == nil || segment == .partners })
         .fullScreenCover(isPresented: $showNewPledge) {
             NewPledgeFlow(isMember: vm.partnership?.isProgrammeMember ?? false,
                           pledgeOptions: vm.partnership?.pledgeOptions ?? [],

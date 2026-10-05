@@ -8,6 +8,7 @@
 // for members holding `live:go` (LiveBroadcastEligibility). A custom cream bar
 // draws a navy active icon + label on a gold-tinted pill; the system tab bar
 // is hidden so we can match the design exactly.
+import Combine
 import SwiftUI
 
 enum AppTab: Hashable, CaseIterable {
@@ -248,6 +249,12 @@ final class TabRouter: ObservableObject {
     /// clears it.
     @Published var departmentLink: String?
 
+    /// A tap on the tab already shown (§7.4 #17): its stack returns to the
+    /// root. A subject, not @Published — a re-tap is a moment, never a value
+    /// replayed to a stack that mounts later (it would pop a deep link that
+    /// had just landed).
+    let reselected = PassthroughSubject<AppTab, Never>()
+
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
     func openEvent(_ o: CalendarOccurrence) { eventLink = o; openEvents() }
@@ -412,7 +419,7 @@ struct RootView: View {
                         }
                         .transition(reduceMotionForLiveBar ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
-                    NuruTabBar(selection: $tabs.selected, tabs: visibleTabs)
+                    NuruTabBar(selection: $tabs.selected, tabs: visibleTabs) { tabs.reselected.send($0) }
                 }
                 .ignoresSafeArea(edges: .bottom)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -615,6 +622,7 @@ private struct PlansTab: View {
         // .nuruDestinations() MUST be inside the stack — applied to the stack from
         // outside, SwiftUI never registers the destinations and plan taps do nothing.
         NavigationStack(path: $path) { ReadingPlansView().nuruDestinations() }
+            .popsToRoot(on: .plans, path: $path)
             // Cross-tab deep link (Home's resume banner / plan mini / Grow tile):
             // land exactly on the plan with the catalogue as the back stop.
             .onReceive(tabs.$planLink) { link in
@@ -661,6 +669,8 @@ private struct NuruTabBar: View {
     @Binding var selection: AppTab
     /// The tabs to render, in order.
     let tabs: [AppTab]
+    /// A tap on the tab already shown — its stack returns to the root.
+    var onReselect: (AppTab) -> Void = { _ in }
     /// The dms-unread + pending-connection-request count — surfaced on the
     /// You tab's icon exactly like the Chat segment's own chip (ChatBadge is
     /// the one shared source both read from).
@@ -675,8 +685,9 @@ private struct NuruTabBar: View {
             ForEach(tabs, id: \.self) { t in
                 let focused = selection == t
                 Button {
-                    // Re-taps on the current tab are a no-op — no haptic, no bounce.
-                    guard selection != t else { return }
+                    // A re-tap returns the tab to its root (§7.4 #17 — Home kept
+                    // a stale "not found" page in its stack); no haptic, no bounce.
+                    guard selection != t else { onReselect(t); return }
                     Haptics.selection()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selection = t }
                 } label: {
@@ -745,3 +756,26 @@ private struct NuruTabBar: View {
 }
 
 // ProfileView (full Account screen) lives in Features/Profile/ProfileView.swift.
+
+/// A tap on the tab already shown returns that tab's stack to its root
+/// (EXPERIENCE.md §7.4 #17). `when` narrows it to the segment on screen (You,
+/// Give): a re-tap pops what the member is looking at, never a hidden stack.
+private struct PopsToRootOnReselect: ViewModifier {
+    let tab: AppTab
+    @Binding var path: NavigationPath
+    let when: () -> Bool
+    @EnvironmentObject private var tabs: TabRouter
+
+    func body(content: Content) -> some View {
+        content.onReceive(tabs.reselected) { t in
+            guard t == tab, when(), !path.isEmpty else { return }
+            path = NavigationPath()
+        }
+    }
+}
+
+extension View {
+    func popsToRoot(on tab: AppTab, path: Binding<NavigationPath>, when: @escaping () -> Bool = { true }) -> some View {
+        modifier(PopsToRootOnReselect(tab: tab, path: path, when: when))
+    }
+}

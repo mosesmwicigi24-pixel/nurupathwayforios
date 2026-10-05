@@ -424,6 +424,7 @@ struct EventsView: View {
             .nuruDestinations()
         }
         .task { if vm.occurrences.isEmpty && vm.series.isEmpty && vm.announcements.isEmpty { await vm.load() } }
+        .popsToRoot(on: .events, path: $path)   // a re-tap returns to the list (§7.4 #17)
         // Cross-tab deep link (Home's live-now card): open the event detail
         // inside THIS tab, with the Events list as the back stop.
         .onReceive(tabs.$eventLink) { link in

@@ -67,6 +67,7 @@ struct DepartmentsView: View {
             path.append(DepartmentRoute.department(id))
             DispatchQueue.main.async { tabs.departmentLink = nil }
         }
+        .popsToRoot(on: .you, path: $path, when: { tabs.youSegmentShown == .departments })
     }
 
     private var content: some View {

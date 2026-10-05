@@ -267,6 +267,9 @@ struct GivingView: View {
     /// Whose number to remember — the prompt number is kept per member.
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
+    /// Give's own stack (the statement, a receipt) — bound so a re-tap on the
+    /// Give tab can return it to the top (§7.4 #17).
+    @State private var path = NavigationPath()
 
     /// The Give form's normal state — what the tab opens with, and what a
     /// pledge / need payment returns it to once it went through.
@@ -463,7 +466,7 @@ struct GivingView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 Nuru.paper.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
@@ -503,6 +506,7 @@ struct GivingView: View {
             }
             .inboxDestinations()   // the band's bell
         }
+        .popsToRoot(on: .give, path: $path, when: { segment == nil || segment == .give })
         // Stale-while-revalidate (2026-09-26: the year pill sat at KSh 0 after
         // pledge payments landed without a ceremony — a scheduled charge,
         // another device). Refetch whenever this segment is SHOWN — first

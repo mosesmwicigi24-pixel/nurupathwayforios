@@ -239,6 +239,7 @@ struct PathwayView: View {
             path.append(link)
             DispatchQueue.main.async { tabs.pathwayLink = nil }
         }
+        .popsToRoot(on: .pathway, path: $path)   // a re-tap returns to the hub (§7.4 #17)
     }
 
     /// Routes a module id to its screen: the level's exam container opens the

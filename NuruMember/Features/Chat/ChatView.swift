@@ -400,6 +400,8 @@ struct ChatView: View {
         .onChange(of: path.count) { old, new in
             if new < old { Task { await vm.load() } }
         }
+        // A re-tap on You while Community shows returns to its top (§7.4 #17).
+        .popsToRoot(on: .you, path: $path, when: { tabs.youSegmentShown == .chat })
         // Cross-tab deep link (a Home "chat_unread" nudge, the Read-with-a-
         // Friend "Open chat" toast): push THAT thread with the inbox as the
         // back stop. The real inbox row is preferred (title, avatar, unread);

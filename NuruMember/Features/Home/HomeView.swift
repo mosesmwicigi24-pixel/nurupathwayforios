@@ -573,6 +573,9 @@ struct HomeView: View {
             .onAppear { tabs.chromeHidden = false }
             .nuruDestinations()
         }
+        // A re-tap on Home returns to Home's top (§7.4 #17 — a stale "not
+        // found" page stayed in this stack).
+        .popsToRoot(on: .home, path: $path)
         // Tapping one of our iOS notifications lands on the in-app inbox.
         .onReceive(NotificationCenter.default.publisher(for: .nuruOpenNotifications)) { _ in
             tabs.selected = .home
