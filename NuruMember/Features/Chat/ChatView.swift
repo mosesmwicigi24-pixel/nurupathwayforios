@@ -1519,9 +1519,7 @@ private struct PersonRow: View {
     }
 
     private var subtitle: String {
-        let role = (person.role?.isEmpty == false) ? person.role! : "Member"
-        if let c = person.congregation, !c.isEmpty { return "\(role) · \(c)" }
-        return role
+        PersonWords.subtitle(role: person.role, level: person.level, congregation: person.congregation)
     }
 
     // MARK: Achievement flair — public aggregates only; every piece disappears
@@ -2068,5 +2066,21 @@ private struct SquircleAvatar: View {
         guard let f = parts.first?.first else { return "?" }
         if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
         return String(name.prefix(2)).uppercased()
+    }
+}
+
+/// A person's line in the people list (§8.1 rule 8): never a raw role
+/// ("Student · …" read like data). A member reads by where they walk
+/// ("Level 2"); the church's staff by what they are to a member.
+enum PersonWords {
+    static func subtitle(role: String?, level: Int?, congregation: String?) -> String {
+        let who: String
+        switch (role ?? "").lowercased() {
+        case "instructor": who = "Teacher"
+        case "admin", "superadmin": who = "Church staff"
+        default: who = level.map { "Level \($0)" } ?? "Member"
+        }
+        guard let c = congregation, !c.isEmpty else { return who }
+        return "\(who) · \(c)"
     }
 }

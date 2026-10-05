@@ -769,6 +769,18 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(src.contains("value: EventsWeek.days, to: todayStart"), "the count uses the same window")
     }
 
+    // MARK: §8.1 rule 8 — the people list never shows a raw role
+
+    func testThePeopleListNeverShowsARawRole() {
+        XCTAssertEqual(PersonWords.subtitle(role: "Student", level: 2, congregation: nil), "Level 2", "never \"Student\"")
+        XCTAssertEqual(PersonWords.subtitle(role: "Student", level: nil, congregation: "Nuru Place"), "Member · Nuru Place")
+        XCTAssertEqual(PersonWords.subtitle(role: "Instructor", level: 1, congregation: nil), "Teacher")
+        XCTAssertEqual(PersonWords.subtitle(role: "SuperAdmin", level: 1, congregation: nil), "Church staff")
+        for role in ["Student", "Instructor", "Admin", "SuperAdmin"] {
+            XCTAssertFalse(PersonWords.subtitle(role: role, level: 1, congregation: nil).contains(role) && role != "Admin")
+        }
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))
