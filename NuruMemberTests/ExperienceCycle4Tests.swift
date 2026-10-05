@@ -615,6 +615,21 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(HomeHeaderWords.showsScore(26))
     }
 
+    // MARK: §7.4 owner decision — the location switch waits for the server
+
+    func testTheLocationSwitchWaitsForTheServerEverywhereItIsTurned() throws {
+        XCTAssertTrue(LocationSharing.noFixLine(denied: true).hasPrefix("Couldn't save that. "))
+        XCTAssertTrue(LocationSharing.noFixLine(denied: false).hasPrefix("Couldn't save that. "))
+        var sources = ""
+        for rel in ["Features/Profile/SettingsView.swift", "Features/Shell/LocationInvite.swift", "Features/Shell/RootView.swift"] {
+            sources += try String(contentsOf: TypeScan.appRoot.appendingPathComponent(rel), encoding: .utf8)
+        }
+        XCTAssertEqual(sources.components(separatedBy: "try? await MemberAPI.shareLocation").count - 1, 1,
+                       "only the silent refresh for a member who already said yes may ignore the answer")
+        XCTAssertFalse(sources.contains("try? await MemberAPI.stopSharingLocation"), "stopping waits for the server too")
+        XCTAssertFalse(sources.contains("isOn: $shareLocation"), "the switch never moves ahead of the server")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

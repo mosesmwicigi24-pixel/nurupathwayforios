@@ -23,9 +23,13 @@ enum LocationOnboarding {
 
 struct LocationInviteSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
     @StateObject private var location = LocationManager()
     @State private var working = false
+    /// Why sharing didn't take (owner decision, §7.4): the sheet stays open.
+    @State private var failureLine: String?
+    /// The sheet is as tall as its words — at a fixed half height its
+    /// body was cut on smaller phones.
+    @State private var contentHeight: CGFloat = 520
 
     var body: some View {
         VStack(spacing: 0) {
@@ -48,16 +52,26 @@ struct LocationInviteSheet: View {
                 .padding(.top, 10).padding(.horizontal, 34)
             Spacer(minLength: 20)
             VStack(spacing: 10) {
+                // The failure sits above the button (§7.4 #2), in words.
+                if let failureLine {
+                    Text(failureLine)
+                        .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xF4C7C3))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 Button {
                     Haptics.action()
                     working = true
+                    failureLine = nil
                     Task {
-                        if let c = await location.requestCoarseFix() {
-                            try? await MemberAPI.shareLocation(lat: c.latitude, lng: c.longitude)
-                            shareLocation = true
-                        }
+                        // Shared only once the server says so; else the
+                        // member reads why and the sheet stays.
+                        let outcome = await LocationSharing.set(true, using: location)
                         working = false
-                        dismiss()
+                        switch outcome {
+                        case .saved: dismiss()
+                        case .failed(let line): Haptics.error(); failureLine = line
+                        }
                     }
                 } label: {
                     ZStack {
@@ -79,11 +93,19 @@ struct LocationInviteSheet: View {
             }
             .padding(.horizontal, 24).padding(.bottom, 26)
         }
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { contentHeight = g.size.height }
+                .onChange(of: g.size.height) { _, h in contentHeight = h }
+        })
+        .frame(maxHeight: .infinity, alignment: .top)
         .background(
             LinearGradient(colors: [Color(hex: 0x0F2A47), Color(hex: 0x081020)],
                            startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
         )
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.height(contentHeight)])
         .presentationDragIndicator(.hidden)
     }
 }

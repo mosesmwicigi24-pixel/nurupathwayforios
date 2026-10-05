@@ -35,6 +35,9 @@ struct SettingsView: View {
     @AppStorage("nuru.notif.sms") private var smsOn = false
     /// Approximate-location sharing consent (persisted); wired to /me/location.
     @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
+    /// The location switch is waiting for the server; what its last try said.
+    @State private var locationBusy = false
+    @State private var locationLine: String?
     /// Global text scale (persisted); the font helpers read Nuru.textScale from here.
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
     /// Global line spacing (persisted); `.nuruLineSpacing(_:)` reads Nuru.lineSpacing from here.
@@ -114,7 +117,6 @@ struct SettingsView: View {
         .alert("Two-factor authentication", isPresented: Binding(get: { mfaError != nil }, set: { if !$0 { mfaError = nil } })) {
             Button("OK") { mfaError = nil }
         } message: { Text(mfaError ?? "") }
-        .onChange(of: shareLocation) { _, on in Task { await applyLocationSharing(on) } }
         .notificationAsk($pushAsk) { _ in }
     }
 
@@ -198,17 +200,20 @@ struct SettingsView: View {
         })
     }
 
-    /// Share or stop sharing an approximate location fix (§proximity). If permission
-    /// is denied or a fix can't be obtained, revert the toggle so it never lies.
-    private func applyLocationSharing(_ on: Bool) async {
-        if on {
-            if let c = await location.requestCoarseFix() {
-                try? await MemberAPI.shareLocation(lat: c.latitude, lng: c.longitude)
-            } else {
-                shareLocation = false
-            }
+    /// Share or stop sharing an approximate location (§proximity). The switch
+    /// waits for the server (owner decision, §7.4): it moves on the server's
+    /// yes; on a failure it stays as it was and the line under it says why.
+    private func changeLocationSharing(_ on: Bool) async {
+        guard !locationBusy, on != shareLocation else { return }
+        locationBusy = true
+        locationLine = nil
+        let outcome = await LocationSharing.set(on, using: location)
+        locationBusy = false
+        if case .failed(let line) = outcome {
+            Haptics.error()
+            locationLine = line
         } else {
-            try? await MemberAPI.stopSharingLocation()
+            Haptics.success()
         }
     }
 
@@ -363,7 +368,21 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Toggle("", isOn: $shareLocation).labelsHidden().tint(Nuru.gold)
+                // The switch shows what the server holds; while it is asked,
+                // a spinner stands in its place.
+                if locationBusy {
+                    ProgressView().tint(Nuru.gold).frame(width: 51, height: 31)
+                } else {
+                    Toggle("", isOn: Binding(get: { shareLocation },
+                                             set: { want in Task { await changeLocationSharing(want) } }))
+                        .labelsHidden().tint(Nuru.gold)
+                }
+            }
+            if let locationLine {
+                Text(locationLine)
+                    .font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Nuru.S.xs)
             }
         }
     }
