@@ -743,6 +743,7 @@ struct PartnersView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     sections
                 }
+                .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.top, Nuru.S.base)
                 .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)

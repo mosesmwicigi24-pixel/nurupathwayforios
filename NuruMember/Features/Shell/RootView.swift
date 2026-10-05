@@ -254,6 +254,9 @@ final class TabRouter: ObservableObject {
     /// replayed to a stack that mounts later (it would pop a deep link that
     /// had just landed).
     let reselected = PassthroughSubject<AppTab, Never>()
+    /// A tap on the tab already shown while its stack is AT its root: the
+    /// root scrolls to its top (§7.4 #17 — the walk's B10).
+    let rootReselected = PassthroughSubject<AppTab, Never>()
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
@@ -773,8 +776,30 @@ private struct PopsToRootOnReselect: ViewModifier {
 
     func body(content: Content) -> some View {
         content.onReceive(tabs.reselected) { t in
-            guard t == tab, when(), !path.isEmpty else { return }
-            path = NavigationPath()
+            guard t == tab, when() else { return }
+            // At the root already: its top instead (B10 — it did nothing, and
+            // Plans took six swipes back up).
+            if path.isEmpty { tabs.rootReselected.send(tab) } else { path = NavigationPath() }
+        }
+    }
+}
+
+/// On a tab root's scroll content: a re-tap on the tab while the stack is
+/// at its root scrolls the root to its top (§7.4 #17: "Tapping the current
+/// tab returns to its top"; the walk's B10).
+private struct ScrollsToTopOnRootReselect: ViewModifier {
+    let tab: AppTab
+    @EnvironmentObject private var tabs: TabRouter
+    private static let anchor = "nuru.tab.root.top"
+
+    func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            content
+                .id(Self.anchor)
+                .onReceive(tabs.rootReselected) { t in
+                    guard t == tab else { return }
+                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(Self.anchor, anchor: .top) }
+                }
         }
     }
 }
@@ -782,5 +807,9 @@ private struct PopsToRootOnReselect: ViewModifier {
 extension View {
     func popsToRoot(on tab: AppTab, path: Binding<NavigationPath>, when: @escaping () -> Bool = { true }) -> some View {
         modifier(PopsToRootOnReselect(tab: tab, path: path, when: when))
+    }
+    /// On a tab root's scroll content — see ScrollsToTopOnRootReselect.
+    func scrollsToTopOnReselect(_ tab: AppTab) -> some View {
+        modifier(ScrollsToTopOnRootReselect(tab: tab))
     }
 }

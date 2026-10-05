@@ -377,6 +377,7 @@ struct ChatView: View {
                         // Skeleton hands off to real rows with a soft cross-fade.
                         .animation(.easeOut(duration: 0.22), value: vm.loading)
                     }
+                    .scrollsToTopOnReselect(.you)   // a re-tap at the root returns to the top (B10)
                 }
                 .ignoresSafeArea(edges: .top)
                 .background(Nuru.paper.ignoresSafeArea())

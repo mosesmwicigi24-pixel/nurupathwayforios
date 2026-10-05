@@ -556,6 +556,7 @@ struct HomeView: View {
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace - 20)  // last row brings its own 20pt skirt
                 }
+                .scrollsToTopOnReselect(.home)   // a re-tap at the root returns to the top (B10)
             }
             .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())

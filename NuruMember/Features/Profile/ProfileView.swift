@@ -77,6 +77,7 @@ struct ProfileView: View {
                     milestonesSection
                     certificates
                 }
+                .scrollsToTopOnReselect(.you)   // a re-tap at the root returns to the top (B10)
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
@@ -90,8 +91,12 @@ struct ProfileView: View {
             // Profile's only pushes are these two.
             .onReceive(tabs.reselected) { t in
                 guard t == .you, tabs.youSegmentShown == .profile else { return }
-                showSettings = false
-                showDisciples = false
+                if showSettings || showDisciples {
+                    showSettings = false
+                    showDisciples = false
+                } else {
+                    tabs.rootReselected.send(.you)   // at the root: its top (B10)
+                }
             }
             .task { await loadExtras() }
             .sheet(item: $editingField) { f in

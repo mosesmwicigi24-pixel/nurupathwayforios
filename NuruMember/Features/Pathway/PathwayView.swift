@@ -182,6 +182,7 @@ struct PathwayView: View {
                         errorState.padding(.horizontal, 20).padding(.top, 120)
                     }
                 }
+                .scrollsToTopOnReselect(.pathway)   // a re-tap at the root returns to the top (B10)
                 // Full width whatever the state: a narrow error column left the
                 // ScrollView (and its cream) hugging it, with white bands beside.
                 .frame(maxWidth: .infinity)

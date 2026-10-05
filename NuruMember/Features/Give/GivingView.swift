@@ -488,6 +488,7 @@ struct GivingView: View {
                         scriptureStrip
                         secureNote
                     }
+                    .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
                     .padding(.horizontal, Nuru.S.screen)
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace + 80)

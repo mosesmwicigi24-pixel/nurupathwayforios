@@ -406,6 +406,7 @@ struct EventsView: View {
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace)
                 }
+                .scrollsToTopOnReselect(.events)   // a re-tap at the root returns to the top (B10)
             }
             .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())

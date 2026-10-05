@@ -269,6 +269,7 @@ struct ReadingPlansView: View {
                     .padding(.bottom, Nuru.tabBarSpace + 20)
                 }
             }
+            .scrollsToTopOnReselect(.plans)   // a re-tap at the root returns to the top (B10)
         }
         .ignoresSafeArea(edges: .top)
         .background(
