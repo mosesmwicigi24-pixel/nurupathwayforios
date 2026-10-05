@@ -435,4 +435,27 @@ final class ExperienceCycle5Tests: XCTestCase {
         }
         XCTAssertEqual(found, pagers, "a back control wears Lucide's arrow-left, like every pushed page; a chevron only steps a pager")
     }
+
+    // MARK: Cycle 4 walk — no zero counts: "0 of 0 done" is "Level N is being prepared"
+
+    func testALevelWithNothingPublishedIsBeingPreparedNeverZeroOfZero() throws {
+        let s = try summary([level(1, "active", done: 3, of: 10), level(2, "active", done: 0, of: 10),
+                             level(3, "locked", done: 0, of: 0), level(4, "completed", done: 1, of: 1)])
+        let (walking, notBegun, empty, single) = (s.levels[0], s.levels[1], s.levels[2], s.levels[3])
+        XCTAssertEqual(PathwayTrail.sectionCountLine(empty), "Level 3 is being prepared")
+        XCTAssertEqual(PathwayTrail.emptyListLine(empty), "Its modules open soon — we'll let you know.")
+        XCTAssertEqual(PathwayTrail.cardCountLine(empty), "Level 3 is being prepared")
+        // Not begun: what lies ahead, never "0 of 10".
+        XCTAssertEqual(PathwayTrail.sectionCountLine(notBegun), "10 modules")
+        XCTAssertEqual(PathwayTrail.cardCountLine(notBegun), "10 modules")
+        XCTAssertEqual(PathwayTrail.sectionCountLine(walking), "3 of 10 done")
+        XCTAssertEqual(PathwayTrail.cardCountLine(walking), "3/10 modules")
+        XCTAssertEqual(PathwayTrail.sectionCountLine(single), "1 of 1 done")
+        XCTAssertEqual(PathwayTrail.emptyListLine(walking), "Modules open as you progress.",
+                       "a level with lessons the member can't see yet opens as they go")
+        for l in s.levels {
+            XCTAssertFalse(PathwayTrail.sectionCountLine(l).hasPrefix("0 "), "no zero count")
+            XCTAssertFalse(PathwayTrail.cardCountLine(l).hasPrefix("0/"), "no zero count")
+        }
+    }
 }

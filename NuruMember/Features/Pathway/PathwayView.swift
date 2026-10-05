@@ -735,6 +735,33 @@ enum PathwayTrail {
         return place + (done == 0 ? " · \(level.lessonCount) modules" : " · \(done) of \(level.lessonCount) modules")
     }
 
+    /// The count under a level's name over its list. The Cycle 4 walk saw
+    /// "0 of 0 done" over a level with nothing published: such a level is
+    /// §3's "Level N is being prepared", and a level not begun says what lies
+    /// ahead ("10 modules", §9.2 #4) — never a zero count.
+    static func sectionCountLine(_ level: PathwayLevel) -> String {
+        let total = level.lessonCount
+        guard total > 0 else { return "Level \(level.levelNumber) is being prepared" }
+        let done = min(level.lessonsDone, total)
+        return done == 0 ? "\(total) module\(total == 1 ? "" : "s")" : "\(done) of \(total) done"
+    }
+
+    /// Map view's card says the same, in its own shape: "Level 2 is being
+    /// prepared", "10 modules" before a lesson is done, then "3/10 modules".
+    static func cardCountLine(_ level: PathwayLevel) -> String {
+        let total = level.lessonCount
+        guard total > 0 else { return "Level \(level.levelNumber) is being prepared" }
+        let done = min(level.lessonsDone, total)
+        return done == 0 ? "\(total) module\(total == 1 ? "" : "s")" : "\(done)/\(total) modules"
+    }
+
+    /// An empty list's line: a level with nothing published keeps §3's
+    /// promise ("Its modules open soon — we'll let you know."); a level whose
+    /// lessons exist but aren't open to the member yet opens as they go.
+    static func emptyListLine(_ level: PathwayLevel) -> String {
+        level.lessonCount > 0 ? "Modules open as you progress." : "Its modules open soon — we'll let you know."
+    }
+
     /// The folded row's words: "20 of 20 modules done · Show" — the level's
     /// lessons, its exam being a step, not a module — and "· Hide" once open.
     static func foldLine(_ modules: [LevelModule], expanded: Bool) -> String {
@@ -800,7 +827,8 @@ private struct PathwaySelectedModules: View {
                     // KINGDOM PERSPECT…" wraps to a second line instead.
                     Text(level.title.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(PW.goldDeep)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Text("\(min(level.lessonsDone, level.lessonCount)) of \(level.lessonCount) done").font(.inter(11)).foregroundStyle(PW.ink2)
+                    Text(PathwayTrail.sectionCountLine(level)).font(.inter(11)).foregroundStyle(PW.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 if let r = resumeShown {
@@ -817,7 +845,8 @@ private struct PathwaySelectedModules: View {
                 if loading {
                     skeletonRows
                 } else if ordered.isEmpty {
-                    Text("Modules open as you progress.").font(.nCardBody).foregroundStyle(PW.ink3)
+                    Text(PathwayTrail.emptyListLine(level)).font(.nCardBody).foregroundStyle(PW.ink3)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
                     if folds { PWFoldRow(line: PathwayTrail.foldLine(modules, expanded: expanded), expanded: expanded) {
@@ -1563,12 +1592,15 @@ private struct PWLevelCard: View {
                             HStack {
                                 HStack(spacing: 4) {
                                     Icon(.bookOpen, size: 14, color: PW.ink2)
-                                    Text("\(min(level.lessonsDone, level.lessonCount))/\(level.lessonCount) modules").font(.nCardMeta).foregroundStyle(PW.ink2)
+                                    // No zero counts (the Cycle 4 walk): "Level 2 is
+                                    // being prepared", "10 modules", "3/10 modules".
+                                    Text(PathwayTrail.cardCountLine(level)).font(.nCardMeta).foregroundStyle(PW.ink2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
-                                Text("\(pct)%").font(.inter(11, .medium)).foregroundStyle(PW.navy)
+                                if pct > 0 { Text("\(pct)%").font(.inter(11, .medium)).foregroundStyle(PW.navy) }
                             }
-                            PWBar(pct: pct, height: 6, fill: .color(PW.gold), track: PW.navy.opacity(0.10))
+                            if pct > 0 { PWBar(pct: pct, height: 6, fill: .color(PW.gold), track: PW.navy.opacity(0.10)) }
                         }
                         .padding(.top, 12)
                     }
