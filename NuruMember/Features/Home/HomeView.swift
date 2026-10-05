@@ -855,11 +855,8 @@ struct HomeView: View {
                 .buttonStyle(.pressable)
                 .accessibilityLabel("Scan to check in")
                 .padding(.trailing, 8)
-                // The one bell (§7.2 #4): the inbox, and a gold dot only while
-                // something in it is unread (it used to carry a count here).
-                NuruBell()
                 // Radio used to sit here. It moved out so the resting header is
-                // three buttons (scan · bell · ring) rather than five — it is
+                // three things (scan · ring · bell) rather than five — it is
                 // still reachable from the On Air card below, the Community hub
                 // and the radio deep link.
                 // Nuru Live header entry (2026-07-31 viewer redesign) — same
@@ -885,7 +882,7 @@ struct HomeView: View {
                         }
                         .frame(width: 40, height: 40)
                     }
-                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .buttonStyle(.pressable).padding(.trailing, 8)
                     .accessibilityLabel("Live now — \(live.title)")
                 }
                 // Nuru Live (L3) — gold "Go Live" affordance, visible ONLY when
@@ -903,14 +900,20 @@ struct HomeView: View {
                             .background(Nuru.gold, in: Circle())
                             .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
                     }
-                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .buttonStyle(.pressable).padding(.trailing, 8)
                     .accessibilityLabel("Go live")
                 }
                 // The score once there is one (the Android walk's A3: no
-                // fact before it loads; §7.4 #9: no "0" ring).
+                // fact before it loads; §7.4 #9: no "0" ring) — immediately
+                // left of the bell, 12 pt clear of it for the trend badge.
                 if HomeHeaderWords.showsScore(vm.scores?.overall.score) {
-                    progressRing.padding(.leading, 8)
+                    progressRing.padding(.trailing, 12)
                 }
+                // The one bell (§7.2 #4), at the far right as on every tab
+                // (§8.1 rule 2; the Cycle 4 walk saw the ring, Live and "Go
+                // live" right of it): the inbox, and a gold dot only while
+                // something in it is unread (it used to carry a count here).
+                NuruBell()
             }
             Text(HomeHeaderWords.greeting(greeting, fullName: auth.profile?.fullName))
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
@@ -997,7 +1000,8 @@ struct HomeView: View {
                                                     startPoint: .top, endPoint: .bottom)),
                 lineWidth: 3)
             // A score out of 100 (the growth score), not a percent of anything.
-            Text("\(growthScore)").font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
+            // A ring's figure is Fraunces, as every ring's (both apps).
+            Text("\(growthScore)").font(.fraunces(13, .semibold)).foregroundStyle(Nuru.goldChipText)
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }

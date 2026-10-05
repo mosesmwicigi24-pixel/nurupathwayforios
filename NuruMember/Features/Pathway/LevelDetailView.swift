@@ -1062,7 +1062,8 @@ private struct StatsRing: View {
                 .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
-            Text("\(pct)%").font(.inter(14, .bold)).foregroundStyle(.white)
+            // A ring's figure is Fraunces, as every ring's (both apps).
+            Text("\(pct)%").font(.fraunces(14, .semibold)).foregroundStyle(.white)
                 .contentTransition(.numericText())
                 .animation(.default, value: pct)
         }

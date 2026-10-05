@@ -414,12 +414,14 @@ private struct PathwayHubHeader: View {
             Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
             Spacer()
             HStack(spacing: 8) {
-                // The one bell (§7.2 #4) — it was decorative here, opening
-                // nothing under a painted-on dot.
-                NuruBell()
                 // Shown once there is progress to show — never a "0%" ring on
-                // a first day (§9.2 #4).
+                // a first day (§9.2 #4) — left of the bell.
                 if let pct = journey?.progressPercent, pct > 0 { PWHeaderRing(pct: pct) }
+                // The one bell (§7.2 #4), at the far right as on every tab
+                // (§8.1 rule 2; the Cycle 4 walk saw the ring right of it) —
+                // it was decorative here once, opening nothing under a
+                // painted-on dot.
+                NuruBell()
             }
         }
     }
@@ -494,7 +496,8 @@ private struct PWHeaderRing: View {
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
-            Text("\(pct)%").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+            // A ring's figure is Fraunces, as every ring's (both apps).
+            Text("\(pct)%").font(.fraunces(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 .contentTransition(.numericText())
                 .animation(.default, value: pct)
         }
