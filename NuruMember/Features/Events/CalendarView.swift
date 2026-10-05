@@ -130,7 +130,7 @@ final class CalendarViewModel: ObservableObject {
 
     var listTitle: String {
         guard let selected else { return "UPCOMING" }
-        return Ev.weekday(iso(selected), "MMM d").uppercased()      // "JUN 15"
+        return NuruDates.day(selected).uppercased()                 // "MON 15 JUN" — the one shape
     }
 
     private func iso(_ d: Date) -> String { ISO8601DateFormatter().string(from: d) }

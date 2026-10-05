@@ -1422,11 +1422,10 @@ private struct MLHeader: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Row 1 — back · centred overline · fullscreen · share.
-            ZStack {
-                Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
-                    .font(.inter(11, .bold)).kerning(2)
-                    .foregroundStyle(ML.overline)
+            // Row 1 — back · explain · fullscreen · share; the overline on its
+            // own line beneath, so the buttons never cover it (the walk's
+            // E15: "LEVEL 1 · MODUL…").
+            VStack(spacing: 10) {
                 HStack(spacing: 8) {
                     MLSquareButton(icon: .arrowLeft, action: onBack)
                     Spacer(minLength: 0)
@@ -1439,6 +1438,11 @@ private struct MLHeader: View {
                     }
                     .buttonStyle(.plain)
                 }
+                Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
+                    .font(.inter(11, .bold)).kerning(2)
+                    .foregroundStyle(ML.overline)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             // Title — centred serif.
             Text(title)
@@ -1515,13 +1519,20 @@ private struct MLHeader: View {
 
     private func finishedRibbon(_ f: MLFinishedSummary) -> some View {
         HStack(spacing: 8) {
-            Icon(.check, size: 14, color: ML.navy)
-            Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ML.navy)
-            if let s = f.score {
-                Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
-            }
-            if let w = f.when {
-                Text("· \(w)").font(.inter(11)).foregroundStyle(ML.secondary).lineLimit(1)
+            // The date on its own line — it was cut ("5 Oct 2026 · 10:…", the
+            // walk's E15) sharing one line with the status and Retake.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Icon(.check, size: 14, color: ML.navy)
+                    Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ML.navy)
+                    if let s = f.score {
+                        Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
+                    }
+                }
+                if let w = f.when {
+                    Text(w).font(.inter(11)).foregroundStyle(ML.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 6)
             if f.canRetake {
@@ -1534,8 +1545,8 @@ private struct MLHeader: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(ML.gold.opacity(0.14), in: Capsule())
-        .overlay(Capsule().stroke(ML.gold.opacity(0.35), lineWidth: 1))
+        .background(ML.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ML.gold.opacity(0.35), lineWidth: 1))
     }
 
     private var headerBackground: some View {

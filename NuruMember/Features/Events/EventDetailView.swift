@@ -201,7 +201,7 @@ struct EventDetailView: View {
 
     /// What the hero share button and the Share action send.
     private var shareText: String {
-        var lines = [title, "\(Ev.weekday(occ.startAt, "EEEE, MMMM d")) · \(Ev.timeRange(occ.startAt, occ.endAt))"]
+        var lines = [title, "\(NuruDates.day(Ev.date(occ.startAt))) · \(Ev.timeRange(occ.startAt, occ.endAt))"]
         if let location, !location.isEmpty { lines.append(location) }
         return lines.joined(separator: "\n")
     }
@@ -541,7 +541,7 @@ private struct EvdMetaCard: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 EvdMetaTile(icon: .calendarDays, label: "Date",
-                            value: Ev.weekday(occ.startAt, "EEEE, MMMM d"), accent: accent)
+                            value: NuruDates.day(Ev.date(occ.startAt)), accent: accent)
                 EvdMetaTile(icon: .clock, label: "Time",
                             value: Ev.timeRange(occ.startAt, occ.endAt), accent: accent)
             }
@@ -611,15 +611,18 @@ private struct EvdMetaTile: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(accent.opacity(0.12))
                 .frame(width: 32, height: 32)
-                .overlay(Icon(icon, size: 15, color: accent))
+                .overlay(Icon(icon, size: 14, color: accent))
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
                     .font(.inter(11, .bold)).kerning(1.3)
                     .foregroundStyle(EvD.tertiary)
+                // The fact wraps, never cut (§8.1 rule 9; the walk's E9:
+                // "Sunday, Octobe…", "9:00 AM – 1:00…", "The Good News…").
                 Text(value)
-                    .font(.inter(11, .semibold))
+                    .font(.inter(12, .semibold))
                     .foregroundStyle(EvD.ink)
-                    .lineLimit(1)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }

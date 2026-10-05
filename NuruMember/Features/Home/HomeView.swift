@@ -2188,12 +2188,17 @@ struct HomeView: View {
             Icon(t.icon, size: 16, color: Color(hex: t.fg))
                 .frame(width: 36, height: 36)
                 .background(Color(hex: t.tint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // Words wrap to two lines, never cut (§8.1 rule 9; the walk's E15:
+            // "Hide His W…", "My Prayer R…", "Discover your…").
             VStack(alignment: .leading, spacing: 0) {
-                Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
-                Text(t.sub).font(.nCardMeta).foregroundStyle(HomeFig.metaGray).lineLimit(1)
+                Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                Text(t.sub).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
+        .frame(minHeight: 44)
         .padding(Nuru.S.md)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))

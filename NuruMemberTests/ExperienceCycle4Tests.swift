@@ -819,6 +819,13 @@ final class ExperienceCycle4Tests: XCTestCase {
                 if f.contains("MMM"), f.contains("d"), !f.hasPrefix("yyyy") { found.append("\(rel): \(f)") }
             }
             if text.contains("East Africa Time\"") || text.contains("\" · EAT\"") { found.append("\(rel): a hard-coded zone") }
+            // A day format handed to a formatting helper ("EEEE, MMMM d").
+            let passed = try NSRegularExpression(pattern: "weekday\\([^,]+, \"([^\"]*)\"\\)")
+            for m in passed.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let r = Range(m.range(at: 1), in: text) else { continue }
+                let f = String(text[r])
+                if f.contains("MMM"), f.contains("d") { found.append("\(rel): \(f)") }
+            }
         }
         XCTAssertEqual(found, [], "one date shape (E16): \"EEE d MMM\", the year only when it isn't this year")
     }

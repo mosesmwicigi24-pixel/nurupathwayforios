@@ -1541,7 +1541,7 @@ private struct SeriesListRow: View {
                 if let next = series.nextAt {
                     HStack(spacing: 4) {
                         Icon(.calendarDays, size: 14, color: Nuru.faint)
-                        Text("Next \(Ev.weekday(next, "EEE, MMM d"))").font(.inter(11)).foregroundStyle(Nuru.faint)
+                        Text("Next \(NuruDates.day(Ev.date(next)))").font(.inter(11)).foregroundStyle(Nuru.faint)
                     }
                 }
             }
