@@ -630,6 +630,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertFalse(sources.contains("isOn: $shareLocation"), "the switch never moves ahead of the server")
     }
 
+    // MARK: §7.4 owner decision — hearts never claim "Saved"
+
+    func testHeartsOnTheDevotionalAndPlanPagesNeverClaimSaved() throws {
+        XCTAssertEqual(HeartWords.label, "Like")
+        for rel in ["Features/Grow/DevotionalView.swift", "Features/Grow/ReadingPlansView.swift"] {
+            let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent(rel), encoding: .utf8)
+            XCTAssertFalse(src.contains("loved ? \"Saved\""), rel)
+            XCTAssertFalse(src.contains("saved ? \"Saved\""), rel)
+        }
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

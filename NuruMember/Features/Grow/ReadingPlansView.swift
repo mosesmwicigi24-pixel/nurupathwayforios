@@ -884,11 +884,15 @@ struct PlanDetailView: View {
                     Icon(.heart, size: 17, color: .white)
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .background(Color.black.opacity(0.35), in: Circle())
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: saved)
         }
         .buttonStyle(.pressable)
+        // A quiet like — nothing is saved anywhere, so it never says so
+        // (owner decision, §7.4).
+        .accessibilityLabel(HeartWords.label)
+        .accessibilityValue(saved ? "Liked" : "")
     }
 
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {

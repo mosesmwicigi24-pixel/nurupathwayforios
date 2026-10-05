@@ -310,7 +310,10 @@ private struct ReflectionCard: View {
 
 private struct FooterActions: View {
     let devotional: Devotional
-    @State private var loved = false   // local, like the Figma bookmark state
+    /// A quiet like, on this screen only — nothing is saved anywhere, so the
+    /// heart never says "Saved" (owner decision, EXPERIENCE.md §7.4) until
+    /// real saving exists as its own feature.
+    @State private var loved = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -318,11 +321,11 @@ private struct FooterActions: View {
                 loved.toggle()
                 Haptics.love()
             } label: {
-                column(icon: .heart, label: loved ? "Saved" : "Save",
-                       color: loved ? Nuru.gold : Nuru.navy)
+                column(icon: .heart, label: HeartWords.label, color: loved ? Nuru.gold : Nuru.navy)
             }
             .buttonStyle(.pressable)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: loved)
+            .accessibilityValue(loved ? "Liked" : "")
 
             ShareLink(item: shareText) {
                 column(icon: .share2, label: "Share", color: Nuru.navy)
@@ -374,4 +377,10 @@ private struct EncouragementStrip: View {
         .padding(Nuru.S.md)
         .background(Nuru.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
     }
+}
+
+/// The heart's one word (owner decision, §7.4): "Like" — never "Save" or
+/// "Saved", because a heart on these pages keeps nothing anywhere.
+enum HeartWords {
+    static let label = "Like"
 }
