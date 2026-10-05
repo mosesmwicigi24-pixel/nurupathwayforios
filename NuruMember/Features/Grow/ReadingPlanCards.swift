@@ -163,6 +163,10 @@ struct PLStreakStrip: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Android's words, whole, with room to read (§8.1 rule 9): the
+            // words take the card's width — beside seven week dots they had
+            // ~106 pt, and "Read today to start your streak 🔥" broke over four
+            // lines with the flame alone on the last. The week has its own row.
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -171,23 +175,20 @@ struct PLStreakStrip: View {
                     PLFlame()
                 }
                 .frame(width: 44, height: 44)
-                // Android's words, whole — never cut (§8.1 rule 9): the title
-                // keeps one line (easing its size before it would break as
-                // "0-day / streak"); the line under it wraps.
                 VStack(alignment: .leading, spacing: 1) {
                     Text(StreakWords.title(shown))
                         .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(StreakWords.line(shown, todayDone: todayDone, today: today))
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                .layoutPriority(1)
-                Spacer(minLength: 8)
-                HStack(spacing: 4) {
-                    ForEach(0..<7, id: \.self) { i in weekDot(i) }
-                }
+                Spacer(minLength: 0)
             }
+            HStack(spacing: 0) {
+                ForEach(0..<7, id: \.self) { i in weekDot(i).frame(maxWidth: .infinity) }
+            }
+            .padding(.top, 12)
             HStack(spacing: 10) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -480,12 +481,17 @@ struct PLDetailDayRow: View {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
+                // Nothing that matters truncates (§8.1 rule 9): a title takes
+                // two lines, and the day's line wraps — it read "opens when
+                // today is d…".
+                Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text(done ? "Completed · \(day.reference)"
                      : syncing ? "Finishing your sync… tap to check"
                      : locked ? "\(day.reference) · opens when today is done"
                      : "\(day.reference) · about \(ReadTime.minutes(for: day)) min")
-                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3)).lineLimit(1)
+                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             if isNext {
