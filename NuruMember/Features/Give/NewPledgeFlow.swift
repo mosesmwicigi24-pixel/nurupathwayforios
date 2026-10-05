@@ -389,23 +389,13 @@ struct NewPledgeFlow: View {
             }
             .frame(maxWidth: .infinity)
 
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                ForEach(Self.presets, id: \.self) { v in
-                    let on = amount == v && customAmount.isEmpty
-                    Button {
-                        Haptics.selection()
-                        customAmount = ""
-                        amountFocused = false
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amount = v }
-                    } label: {
-                        Text(v.formatted(.number.grouping(.automatic)))
-                            .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
-                            .frame(maxWidth: .infinity).frame(height: 40)
-                            .background(on ? Nuru.navy : Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                    }
-                    .buttonStyle(.pressable)
-                }
+            // Amount choices are pills, as on Give (§8.1 rule 6, §8.2 #12) —
+            // they were square tiles. Six of them, three across.
+            NuruAmountPills(amounts: Self.presets, selected: customAmount.isEmpty ? amount : nil, columns: 3,
+                            label: { $0.formatted(.number.grouping(.automatic)) }) { v in
+                customAmount = ""
+                amountFocused = false
+                withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amount = v }
             }
 
             HStack(spacing: 8) {
@@ -979,21 +969,11 @@ struct EditPledgeSheet: View {
                 }
                 .frame(maxWidth: .infinity)
 
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(PledgeAmountEdit.presets(currency), id: \.self) { v in
-                        let on = amountMinor == v && customAmount.isEmpty
-                        Button {
-                            Haptics.selection(); customAmount = ""; amountFocused = false
-                            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amountMinor = v }
-                        } label: {
-                            Text((v / 100).formatted(.number.grouping(.automatic)))
-                                .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
-                                .frame(maxWidth: .infinity).frame(height: 38)
-                                .background(on ? Nuru.navy : Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                        }
-                        .buttonStyle(.pressable)
-                    }
+                // The same pills as the new-pledge step (§8.1 rule 6).
+                NuruAmountPills(amounts: PledgeAmountEdit.presets(currency), selected: customAmount.isEmpty ? amountMinor : nil,
+                                columns: 3, label: { ($0 / 100).formatted(.number.grouping(.automatic)) }) { v in
+                    customAmount = ""; amountFocused = false
+                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { amountMinor = v }
                 }
 
                 HStack(spacing: 8) {
