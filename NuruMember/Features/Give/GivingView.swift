@@ -1837,16 +1837,10 @@ struct GivingView: View {
     }
 
     private func endCeremony() {
-        // A server-confirmed gift gets its warm moment as the ceremony closes
-        // (the fullScreenCover would sit over the root-mounted CelebrationHost,
-        // so we fire on the way out). Keyed by the real transaction/receipt ref
-        // so each gift celebrates exactly once.
-        if ceremony == "success", let ref = pendingTxId ?? successRef {
-            CelebrationCenter.shared.fire(
-                key: "gift-\(ref)",
-                title: "Thank you for sowing",
-                subtitle: "Every gift carries the gospel further.")
-        }
+        // One celebration per gift (§7.4 #14, §8.2 #17): the gift's own
+        // success screen ("Thank you for your generosity · KSh 1,000 · Tithe ·
+        // Ref …"). A second "Thank you for sowing · Amen 🙌" card used to fire
+        // here on the way out and land later, on whatever tab came next.
         // Double-pay guard: a pledge / need payment that SUCCEEDED, or is
         // still PENDING ("stk" — the intent exists: STK prompt out, PayPal
         // approval, or the poll lapsed while processing), must not be payable

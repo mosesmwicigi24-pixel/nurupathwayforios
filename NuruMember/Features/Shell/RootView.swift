@@ -460,8 +460,9 @@ struct RootView: View {
             LiveEndedView(notice: notice) { liveDiscovery.endedNotice = nil }
         }
         // Celebration layer — server-milestone confetti cards + gold banners
-        // (rhythm complete, streak marks, new badges, prayer posted, gift
-        // confirmed). Mounted ONCE here, above every tab and the tab bar.
+        // (rhythm complete, streak marks, new badges, prayer posted; a gift's
+        // one celebration is its own success screen, §7.4 #14). Mounted ONCE
+        // here, above every tab and the tab bar.
         .overlay { CelebrationHost() }
         // A tapped iOS notification lands on its EXACT target — the same one
         // its row in the inbox opens (NoticeRouter, EXPERIENCE.md §7.2 #3):
