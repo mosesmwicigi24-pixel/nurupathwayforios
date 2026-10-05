@@ -514,7 +514,9 @@ struct HomeView: View {
         if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }
         s.append(("celebrations", AnyView(CelebrationsRail())))                                           // Celebrate the family (moments, Phase 4)
         if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // carousel: portal-marked announcements + events
-        if let fe = vm.featuredEvent { s.append(("event", AnyView(featuredGatheringCard(fe)))) }   // admin-featured event
+        if let fe = vm.featuredEvent, let next = fe.nextStart() {                                   // admin-featured event,
+            s.append(("event", AnyView(featuredGatheringCard(fe, next: next))))                     // only while it meets again (B6)
+        }
         // 6 · Growing.
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }
         s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
@@ -1769,7 +1771,8 @@ struct HomeView: View {
     private var featuredPages: [FeaturedPage] {
         var pages: [FeaturedPage] = []
         if let a = vm.featuredAnnouncement { pages.append(.announcement(a)) }
-        let events = HomeFeatured.carouselEvents(vm.homeEvents, featuredSeriesId: vm.featuredEvent?.seriesId,
+        let shownFeatured = vm.featuredEvent.flatMap { $0.nextStart() == nil ? nil : $0.seriesId }
+        let events = HomeFeatured.carouselEvents(vm.homeEvents, featuredSeriesId: shownFeatured,
                                                  onNowOccurrenceId: liveNowInfo?.occ.occurrenceId)
         pages += events.map { .occurrence($0) }
         return pages
@@ -2159,7 +2162,7 @@ struct HomeView: View {
 
     // The ONE admin-featured event (portal "feature on homepage" toggle) —
     // GET /home/featured-event was declared but rendered by no client until now.
-    private func featuredGatheringCard(_ fe: FeaturedEvent) -> some View {
+    private func featuredGatheringCard(_ fe: FeaturedEvent, next: Date) -> some View {
         Button {
             Haptics.selection(); tabs.openEvents()
         } label: {
@@ -2175,7 +2178,7 @@ struct HomeView: View {
                         Text(d).font(.nCaption).foregroundStyle(Nuru.ink600)
                             .lineLimit(2).multilineTextAlignment(.leading)
                     }
-                    Text([featuredWhen(fe.dtstartLocal), fe.location].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "  ·  "))
+                    Text([NuruDates.dayTime(next), fe.location].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "  ·  "))
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }
                 .padding(Nuru.S.base)
@@ -2184,13 +2187,6 @@ struct HomeView: View {
             .cardSurface()
         }
         .buttonStyle(.pressableSubtle)
-    }
-
-    private func featuredWhen(_ dtstartLocal: String) -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        guard let d = f.date(from: String(dtstartLocal.prefix(19))) else { return dtstartLocal }
-        let out = DateFormatter(); out.dateFormat = "EEE, MMM d · h:mm a"
-        return out.string(from: d)
     }
 
     private func eventKicker(_ startAt: String) -> String {

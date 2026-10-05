@@ -434,6 +434,42 @@ final class ExperienceCycle4Tests: XCTestCase {
                        "at most every \(Int(HomeRefresh.minimumGap)) s")
     }
 
+    // MARK: Cycle 3 close walk B6 — a featured gathering only while it meets again; E16 one date shape
+
+    func testTheFeaturedGatheringShowsItsNextMeetingOrNoCard() throws {
+        let nairobi = try XCTUnwrap(TimeZone(identifier: "Africa/Nairobi"))
+        let now = try XCTUnwrap(NuruDates.parse("2026-10-05T14:00:00Z"))
+        // The walk's case: a weekly series first met 30 Aug and has ended — old server, no next_at.
+        let ended = try decode(FeaturedEvent.self, ["series_id": "s1", "title": "Pathway Discipleship Classes",
+                                                    "dtstart_local": "2026-08-30T14:00:00", "next_at": NSNull()])
+        XCTAssertNil(ended.nextStart(now: now, timeZone: nairobi), "never the series' first date, five weeks gone")
+        // A newer server says when it next meets.
+        let weekly = try decode(FeaturedEvent.self, ["series_id": "s2", "title": "Sunday Service",
+                                                     "dtstart_local": "2026-08-30T09:00:00",
+                                                     "next_at": "2026-10-11T06:00:00.000Z", "next_end_at": "2026-10-11T10:00:00.000Z"])
+        let next = try XCTUnwrap(weekly.nextStart(now: now, timeZone: nairobi))
+        XCTAssertEqual(NuruDates.dayTime(next, now: now, timeZone: nairobi), "Sun 11 Oct · 9:00 AM")
+        // Kept while the meeting runs; gone once it has ended.
+        let during = try XCTUnwrap(NuruDates.parse("2026-10-11T08:00:00Z"))
+        XCTAssertNotNil(weekly.nextStart(now: during, timeZone: nairobi))
+        let after = try XCTUnwrap(NuruDates.parse("2026-10-11T10:30:00Z"))
+        XCTAssertNil(weekly.nextStart(now: after, timeZone: nairobi))
+        // A one-off still ahead, from a server without next_at.
+        let ahead = try decode(FeaturedEvent.self, ["series_id": "s3", "title": "Ablaze", "dtstart_local": "2026-10-16T15:00:00"])
+        XCTAssertNotNil(ahead.nextStart(now: now, timeZone: nairobi))
+    }
+
+    func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))
+        let sameYear = try XCTUnwrap(NuruDates.parse("2026-10-25T15:30:00Z"))
+        let nextYear = try XCTUnwrap(NuruDates.parse("2027-01-01T09:00:00Z"))
+        XCTAssertEqual(NuruDates.day(sameYear, now: now, timeZone: utc), "Sun 25 Oct")
+        XCTAssertEqual(NuruDates.day(nextYear, now: now, timeZone: utc), "Fri 1 Jan 2027")
+        XCTAssertEqual(NuruDates.time(sameYear, timeZone: utc), "3:30 PM")
+        XCTAssertEqual(NuruDates.dayTime(sameYear, now: now, timeZone: utc), "Sun 25 Oct · 3:30 PM")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)
