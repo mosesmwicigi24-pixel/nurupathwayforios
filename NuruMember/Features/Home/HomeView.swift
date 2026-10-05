@@ -48,6 +48,9 @@ final class HomeViewModel: ObservableObject {
     @Published var announcements: [MyAnnouncement] = []
     /// The member's OWN cell (GET /me/cell-summary) — YOUR WEEK's cell row.
     @Published var cell: CellSummary.Cell?
+    /// When the member asked to be connected to a cell (GET
+    /// /me/cell-connection), on any phone — the row says so (§9.2 #12).
+    @Published var cellAskedAt: String?
     @Published var events: [CalendarOccurrence] = []
     /// GET /home/events — up to 5 curated, soonest-first rows: the featured
     /// carousel's gatherings and YOUR WEEK's events row. Server-capped and
@@ -172,6 +175,10 @@ final class HomeViewModel: ObservableObject {
         self.featuredAnnouncement = await fann ?? nil
         self.announcements = await anns ?? []
         self.cell = (await summary)?.cell
+        // Asked to be connected? Only worth asking while there's no cell.
+        if self.cell == nil, let s = try? await MemberAPI.cellConnection(), !s.inCell {
+            self.cellAskedAt = s.request?.requestedAt
+        }
         self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
         // Rendered exactly as received — the server caps at 5 and orders
         // soonest-first; the client never caps, sorts, or filters.
@@ -1309,6 +1316,7 @@ struct HomeView: View {
                       calendar: vm.events, homeEvents: vm.homeEvents, rsvps: vm.rsvps,
                       partnership: vm.partnership, schedules: vm.schedules,
                       railsLine: GivingMethods.homeGiveLine(vm.givingMethods), cell: vm.cell,
+                      cellAskedAt: vm.cellAskedAt,
                       planSealedHere: PlanDayLog.sealedToday())
     }
 
@@ -1329,6 +1337,7 @@ struct HomeView: View {
         case .partners: tabs.openPartners()
         case .give: tabs.openGive()
         case .cell: path.append(AppRoute.cell)
+        case .cellConnect: path.append(AppRoute.cellConnect)
         case .community: tabs.openYou(.chat)
         }
     }

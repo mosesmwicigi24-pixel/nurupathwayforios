@@ -467,8 +467,9 @@ final class ExperienceCycle2Tests: XCTestCase {
         // cell is the church's pick, not theirs — it never fills this row.
         let r = HomeWeek.cellRow(try json(CellSummary.self, ["cell": NSNull()]).cell, timeZone: nairobi)
         XCTAssertEqual(r.title, "Find your cell")
-        XCTAssertEqual(r.line, "Gather with believers near you.")
-        XCTAssertEqual(r.destination, .community)
+        // "Ask to be connected" (§9.2 #12) — it opened Community, which has no way to find one.
+        XCTAssertEqual(r.line, "Ask to be connected — tell the church where you live.")
+        XCTAssertEqual(r.destination, .cellConnect)
         XCTAssertEqual(HomeWeek.cellRow(nil, timeZone: nairobi), r, "the summary didn't load — the none form")
     }
 

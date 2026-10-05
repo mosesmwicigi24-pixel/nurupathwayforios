@@ -40,6 +40,8 @@ struct HomeWeekRow: Equatable, Identifiable {
         case give
         /// The member's own cell page.
         case cell
+        /// "Ask to be connected" — no cell yet (§9.2 #12).
+        case cellConnect
         /// You ▸ Community.
         case community
     }
@@ -62,13 +64,13 @@ enum HomeWeek {
     static func rows(journey: Journey?, enrolledLevel: Int?, plans: [ReadingPlanRow]?,
                      calendar: [CalendarOccurrence]?, homeEvents: [HomeEventRow]?, rsvps: [MyRsvp]?,
                      partnership: Partnership?, schedules: [GivingSchedule]?, railsLine: String,
-                     cell: CellSummary.Cell?, planSealedHere: Bool = false,
+                     cell: CellSummary.Cell?, cellAskedAt: String? = nil, planSealedHere: Bool = false,
                      now: Date = Date(), timeZone: TimeZone = GiveCalendar.nairobi) -> [HomeWeekRow] {
         [pathwayRow(journey, enrolledLevel: enrolledLevel),
          plansRow(plans, sealedHere: planSealedHere, now: now),
          eventsRow(calendar: calendar, home: homeEvents, rsvps: rsvps, now: now, timeZone: timeZone),
          givingRow(partnership: partnership, schedules: schedules, railsLine: railsLine, now: now),
-         cellRow(cell, timeZone: timeZone)]
+         cellRow(cell, askedAt: cellAskedAt, timeZone: timeZone, now: now)]
     }
 
     /// Support God's work shows only while the week's giving row is "Give" —
@@ -304,10 +306,14 @@ enum HomeWeek {
     /// featured cell, which is the church's pick, not theirs: its name and
     /// next gathering, else the honest "not set" and how many walk in it. No
     /// cell (or the read failed): the way to find one.
-    static func cellRow(_ c: CellSummary.Cell?, timeZone: TimeZone) -> HomeWeekRow {
+    static func cellRow(_ c: CellSummary.Cell?, askedAt: String? = nil, timeZone: TimeZone,
+                        now: Date = Date()) -> HomeWeekRow {
         guard let c else {
-            return HomeWeekRow(pillar: .cell, title: "Find your cell", line: "Gather with believers near you.",
-                               destination: .community)
+            // "Ask to be connected" (§9.2 #12): it opened Community, which has
+            // no way to find a cell. Once asked — on any phone — it says so.
+            return HomeWeekRow(pillar: .cell, title: "Find your cell",
+                               line: askedAt.map { CellConnectWords.sent($0, now: now, timeZone: timeZone) } ?? CellConnectWords.weekLine,
+                               destination: .cellConnect)
         }
         let line = c.next.flatMap { parse($0.startAt) }.map { "Next gathering \(format($0, "EEE d MMM", timeZone))" }
             ?? "Next gathering not set · \(c.members) \(c.members == 1 ? "member" : "members")"

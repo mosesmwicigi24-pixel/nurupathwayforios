@@ -307,6 +307,33 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(Journey.levelPercent(passed, journey: eli), 100)
     }
 
+    // MARK: §9.2 #12 — "Find your cell" becomes "Ask to be connected"
+
+    func testAskingToBeConnectedSaysWhereItWent() throws {
+        let nairobi = TimeZone(identifier: "Africa/Nairobi")!
+        XCTAssertEqual(CellConnectWords.sent("2026-10-05T09:30:00Z", now: monday, timeZone: nairobi),
+                       "Sent to your pastor on Mon 5 Oct — they'll connect you")
+        XCTAssertEqual(CellConnectWords.sent("2025-12-28T09:30:00Z", now: monday, timeZone: nairobi),
+                       "Sent to your pastor on Sun 28 Dec 2025 — they'll connect you", "the year when it isn't this year")
+        XCTAssertEqual(CellConnectWords.sent("not a date", now: monday), "Sent to your pastor — they'll connect you")
+        // The row: before and after asking.
+        let ask = HomeWeek.cellRow(nil, timeZone: nairobi, now: monday)
+        XCTAssertEqual(ask.title, "Find your cell")
+        XCTAssertEqual(ask.line, "Ask to be connected — tell the church where you live.")
+        XCTAssertEqual(ask.destination, .cellConnect)
+        XCTAssertEqual(HomeWeek.cellRow(nil, askedAt: "2026-10-05T09:30:00Z", timeZone: nairobi, now: monday).line,
+                       "Sent to your pastor on Mon 5 Oct — they'll connect you")
+        // "Ask the church" waits for the server's bounds.
+        XCTAssertFalse(CellConnectWords.canAsk(area: "K", availability: "Evenings", note: ""))
+        XCTAssertTrue(CellConnectWords.canAsk(area: "Kasarani", availability: "Weekday evenings", note: ""))
+        XCTAssertFalse(CellConnectWords.canAsk(area: "Kasarani", availability: "Weekday evenings", note: String(repeating: "a", count: 301)))
+        // The wire: in a cell, asked, neither.
+        XCTAssertTrue(try decode(CellConnectionStatus.self, ["in_cell": true, "request": NSNull()]).inCell)
+        let asked = try decode(CellConnectionStatus.self, ["in_cell": false,
+                                                           "request": ["requested_at": "2026-10-05T09:30:00Z", "conversation_id": "c1"]])
+        XCTAssertEqual(asked.request?.conversationId, "c1")
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)
