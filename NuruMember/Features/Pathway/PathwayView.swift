@@ -1283,12 +1283,15 @@ struct LevelsMapView: View {
                 if let s = vm.summary {
                     VStack(alignment: .leading, spacing: 0) {
                         if let a = vm.activeLevel {
-                            PWContinueCard(level: a) { onOpenLevel(a.levelNumber) }.padding(.bottom, 20)
+                            PWContinueCard(level: a, words: LevelsMapWords.continueCard(level: a, journey: vm.journey)) {
+                                onOpenLevel(a.levelNumber)
+                            }.padding(.bottom, 20)
                         }
                         sectionHeader.padding(.bottom, 12)
                         VStack(spacing: 12) {
                             ForEach(s.levels) { level in
-                                PWLevelCard(level: level, stagePill: stagePill(for: level)) {
+                                PWLevelCard(level: level, stagePill: stagePill(for: level),
+                                            lockLine: LevelsMapWords.lockLine(levelNumber: level.levelNumber, journey: vm.journey)) {
                                     if level.status != .locked { onOpenLevel(level.levelNumber) }
                                 }
                             }
@@ -1412,20 +1415,26 @@ private struct PWStatCard: View {
 
 private struct PWContinueCard: View {
     let level: PathwayLevel
+    /// The journey's words for this level (the walk's E5: "CONTINUE YOUR
+    /// JOURNEY · Level 1" over a level whose every module was done).
+    let words: LevelsMapWords.Card
     let onTap: () -> Void
     private var pct: Int { level.lessonCount > 0 ? min(100, Int(round(Double(level.lessonsDone) / Double(level.lessonCount) * 100))) : 0 }
 
     var body: some View {
         Button { Haptics.tap(); onTap() } label: {
             ZStack(alignment: .trailing) {
-                // Right tone strip (w-32, opacity 90) + decorative ring.
+                // Right tone strip + decorative ring — narrow enough that the
+                // words never run under it (the walk's E5: "the navy panel cuts
+                // its own words"); the chevron sits on it.
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
                     LinearGradient(colors: PW.tone(level.levelNumber), startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .frame(width: 128).opacity(0.9)
+                        .frame(width: 56).opacity(0.9)
                         .overlay(alignment: .topTrailing) {
-                            Circle().stroke(Color.white.opacity(0.25), lineWidth: 1).frame(width: 80, height: 80).offset(x: -8, y: 24)
+                            Circle().stroke(Color.white.opacity(0.25), lineWidth: 1).frame(width: 44, height: 44).offset(x: 10, y: 14)
                         }
+                        .clipped()
                 }
 
                 HStack(spacing: 16) {
@@ -1436,15 +1445,21 @@ private struct PWContinueCard: View {
                     .frame(width: 44, height: 44)
 
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("CONTINUE YOUR JOURNEY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.goldDeep)
-                        Text("Level \(level.levelNumber): \(level.title)")
+                        Text(words.kicker).font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.goldDeep)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        Text(words.title)
                             .font(.nCardTitle).kerning(-0.54).foregroundStyle(PW.ink)
                             .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
-                        PWBar(pct: pct, height: 8, fill: .linearGradient(colors: [Color(hex: 0xB8911F), Color(hex: 0xD8B84D)], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let line = words.line {
+                            Text(line).font(.nCardBody).foregroundStyle(PW.ink2)
+                                .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+                        }
+                        PWBar(pct: words.line == nil ? pct : 100, height: 8, fill: .linearGradient(colors: [Color(hex: 0xB8911F), Color(hex: 0xD8B84D)], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
                             .padding(.top, 12)
                     }
-                    .padding(.trailing, 8)
-                    Icon(.chevronRight, size: 20, color: PW.gold)
+                    .padding(.trailing, 12)
+                    Icon(.chevronRight, size: 18, color: PW.gold)
                 }
                 .padding(16)
             }
@@ -1464,6 +1479,8 @@ private struct PWLevelCard: View {
     /// The journey's word for the member's own level once its modules are
     /// done ("Exam ready", "Exam passed") — nil for every other level.
     var stagePill: String? = nil
+    /// What opens this level when it is locked, in the journey's words.
+    var lockLine: String = ""
     let onTap: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shakes = 0
@@ -1507,7 +1524,8 @@ private struct PWLevelCard: View {
                     if isLocked {
                         HStack(spacing: 6) {
                             Icon(.lock, size: 12, color: PW.ink3)
-                            Text("Complete Level \(level.levelNumber - 1) to unlock").font(.nCardMeta).foregroundStyle(PW.ink3)
+                            Text(lockLine).font(.nCardMeta).foregroundStyle(PW.ink3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 12)
                     } else {
@@ -1539,7 +1557,7 @@ private struct PWLevelCard: View {
         }
         .buttonStyle(.pressableSubtle)
         .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
-        .accessibilityHint(isLocked ? "Locked. Complete Level \(level.levelNumber - 1) to unlock." : "")
+        .accessibilityHint(isLocked ? "Locked. \(lockLine)." : "")
     }
 
     /// Locked levels stay locked (server-authoritative, §1.9) — a tap answers
@@ -1680,5 +1698,34 @@ enum ModuleRowWords {
     }
     static func openAction(progress: Double) -> String {
         progress > 0 ? "Resume" : "Start"
+    }
+}
+
+/// Map view speaks the journey's words (the Cycle 3 walk's E5): it said
+/// "CONTINUE YOUR JOURNEY · Level 1" and "Complete Level 1 to unlock" while
+/// Level 1's every module was done and its exam was next. Pure, so the
+/// tests pin it.
+enum LevelsMapWords {
+    struct Card: Equatable { let kicker: String; let title: String; let line: String? }
+
+    /// The continue card for the member's level: the journey's next step once
+    /// the modules are done; "continue" only while there are modules to walk.
+    static func continueCard(level: PathwayLevel, journey j: Journey?) -> Card {
+        guard let j, j.levelNumber == level.levelNumber, j.stage != .learning else {
+            return Card(kicker: "CONTINUE YOUR JOURNEY", title: "Level \(level.levelNumber): \(level.title)", line: nil)
+        }
+        return Card(kicker: j.kicker.uppercased(), title: j.title, line: j.line)
+    }
+
+    /// What opens a locked level: the step before it, in the journey's words.
+    static func lockLine(levelNumber n: Int, journey j: Journey?) -> String {
+        let prev = n - 1
+        guard let j, j.levelNumber == prev else { return "Complete Level \(prev) to unlock" }
+        switch j.stage {
+        case .learning: return "Complete Level \(prev) to unlock"
+        case .examReady: return "Pass the Level \(prev) exam — then your leader opens Level \(n)"
+        case .examSoon: return "The Level \(prev) exam opens soon — then your leader opens Level \(n)"
+        case .awaitingUsher, .finished: return "Your leader will open Level \(n) — you'll get a notice"
+        }
     }
 }

@@ -543,6 +543,27 @@ final class ExperienceCycle4Tests: XCTestCase {
                        ["airtel", "paypal", "mpesa"])
     }
 
+    // MARK: Cycle 3 close walk E5 — Map view says what the journey says
+
+    func testMapViewSpeaksTheJourneysWordsForAFinishedLevel() throws {
+        let s = try summary(current: 1, adasLevelOne)
+        let j = try XCTUnwrap(Journey.derive(s, trail: try adasTrail()))
+        XCTAssertEqual(j.stage, .examReady)
+        let one = try XCTUnwrap(s.levels.first { $0.levelNumber == 1 })
+        let card = LevelsMapWords.continueCard(level: one, journey: j)
+        XCTAssertEqual(card.title, "Take the Level 1 exam", "never CONTINUE YOUR JOURNEY over a level whose modules are done")
+        XCTAssertFalse(card.kicker.contains("CONTINUE"))
+        XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 2, journey: j),
+                       "Pass the Level 1 exam — then your leader opens Level 2", "never \"Complete Level 1\" for a level that is")
+        XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 3, journey: j), "Complete Level 2 to unlock")
+        // Still walking modules: the card continues, the next level waits on this one.
+        let walking = try summary(current: 1, level(1, "active", done: 4, of: 10))
+        let jw = try XCTUnwrap(Journey.derive(walking))
+        let w1 = try XCTUnwrap(walking.levels.first { $0.levelNumber == 1 })
+        XCTAssertEqual(LevelsMapWords.continueCard(level: w1, journey: jw).kicker, "CONTINUE YOUR JOURNEY")
+        XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 2, journey: jw), "Complete Level 1 to unlock")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))
