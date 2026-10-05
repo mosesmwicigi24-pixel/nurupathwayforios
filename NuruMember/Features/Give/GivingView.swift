@@ -44,7 +44,8 @@ import Combine
 /// the Give tab's second segment (GiveTabView, PARTNERS_PROGRAMME §0).
 enum GiveRoute: Hashable { case statement }
 
-// MARK: - Funds (exact Figma palette)
+// MARK: - Funds (one look: §8.1 rules 1 and 7 — a gold-tint tile, navy icon;
+// the walk's E17 found the Offering tile red and the Gift tile purple)
 
 private struct Fund: Identifiable {
     let code, label, tagline: String
@@ -53,38 +54,39 @@ private struct Fund: Identifiable {
     var id: String { code }
 }
 private let funds: [Fund] = [
-    Fund(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: 0xFFF4DA, fg: 0xC89B3C),
-    Fund(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626),
-    Fund(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: 0xF3E8FF, fg: 0xA855F7),
-    Fund(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: 0xE0F2FE, fg: 0x0EA5E9),
-    Fund(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: 0xDCFCE7, fg: 0x16A34A),
+    Fund(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: Nuru.tileTint, fg: Nuru.tileIcon),
 ]
 private let presets = [200, 500, 1000, 2500, 5000]
 
-// MARK: - Pay methods (Figma brand badges — square, rounded-xl)
+// MARK: - Pay methods (square, rounded-xl badges — the rail's mark in navy on
+// gold tint, never a brand hue: §8.1 rule 1)
 
 /// How a rail LOOKS. Which rails appear, and whether one can take money, is
 /// the server's answer (GET /giving/methods) — this is only the paint.
 private struct PayMethod: Identifiable {
     let key, label, sub: String
     let badgeText: String           // short logo text inside the badge
-    let badgeBg, badgeFg: UInt32    // brand colours for the badge
+    let badgeBg, badgeFg: UInt32    // the one tile look (Nuru.tileTint / tileIcon)
     let icon: Lucide?               // shown instead of badge text when set
     var id: String { key }
 }
 private let methodLooks: [PayMethod] = [
     PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "STK push to your phone",
-              badgeText: "M-PESA", badgeBg: 0x16A34A, badgeFg: 0xFFFFFF, icon: nil),
+              badgeText: "M-PESA", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
     PayMethod(key: "airtel",   label: "Pay with Airtel Money",       sub: "Mobile money",
-              badgeText: "AIRTEL", badgeBg: 0xDC2626, badgeFg: 0xFFFFFF, icon: nil),
+              badgeText: "AIRTEL", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
     PayMethod(key: "equity",   label: "Pay with Equity Bank",        sub: "Bank account",
-              badgeText: "", badgeBg: 0xA6093D, badgeFg: 0xFFFFFF, icon: .landmark),
+              badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .landmark),
     PayMethod(key: "card",     label: "Pay with Card",               sub: "Visa · Mastercard",
-              badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .creditCard),
+              badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .creditCard),
     PayMethod(key: "applepay", label: "Pay with Apple / Google Pay", sub: "Device wallet",
-              badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet),
+              badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .wallet),
     PayMethod(key: "paypal",   label: "Pay with PayPal",             sub: "PayPal balance / linked",
-              badgeText: "PP", badgeBg: 0xE8F1FB, badgeFg: 0x0070BA, icon: nil),
+              badgeText: "PP", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
 ]
 
 /// A rail's paint; one the server lists that this build has no badge for
@@ -92,7 +94,7 @@ private let methodLooks: [PayMethod] = [
 private func methodLook(_ rail: GivingMethod) -> PayMethod {
     methodLooks.first { $0.key == rail.key }
         ?? PayMethod(key: rail.key, label: "Pay with \(rail.label.isEmpty ? givingMethodName(rail.key) : rail.label)",
-                     sub: "", badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet)
+                     sub: "", badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .wallet)
 }
 
 /// A gift's receipt to present (a notification's gift that did not fail).
@@ -2173,7 +2175,7 @@ private struct MobileMoneySheet: View {
 
     private var isMpesa: Bool { methodKey != "airtel" }
     private var railName: String { isMpesa ? "M-Pesa" : "Airtel Money" }
-    private var tint: Color { Color(hex: isMpesa ? 0x16A34A : 0xDC2626) }
+    private var tint: Color { Nuru.navy }   // the rail is named, not coloured (§8.1 rule 1)
     private var check: KenyanPhone.Check { KenyanPhone.check(phone) }
     /// The number as E.164 — nil until the field holds a valid one.
     private var number: String? { KenyanPhone.normalize(phone) }
@@ -2712,7 +2714,7 @@ private struct ScheduleDetailSheet: View {
         fieldLabel("M-Pesa number")
         if !draft.useProfileNumber {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.smartphone, size: 16, color: Color(hex: 0x16A34A))
+                Icon(.smartphone, size: 18, color: Nuru.navy)
                 TextField("07XX XXX XXX", text: $draft.phoneText)
                     .keyboardType(.phonePad)
                     .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)

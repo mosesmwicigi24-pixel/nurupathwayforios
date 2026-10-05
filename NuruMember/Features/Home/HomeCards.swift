@@ -173,13 +173,11 @@ struct HomeLiveNowCard: View {
     private var onAirChip: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
+                // One red dot: "live" is a state (§8.1 rule 1) — no amber
+                // and green lights for decoration.
                 Circle().fill(Color(hex: 0xEF4444)).frame(width: 8, height: 8)
                     .shadow(color: Color(hex: 0xEF4444), radius: 4)
                     .opacity(pulse ? 0.25 : 1)
-                Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
-                    .shadow(color: Color(hex: 0xF59E0B), radius: 3)
-                Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
-                    .shadow(color: Color(hex: 0x22C55E), radius: 3)
             }
             Text("ON AIR").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(.white)
         }
@@ -895,16 +893,13 @@ struct HomeOnAirCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    // Red pulses; amber + green glow steady — the studio lamp trio.
+    // One red lamp pulses — "live" is a state (§8.1 rule 1); the amber and
+    // green lamps beside it were decoration.
     private var studioLights: some View {
         HStack(spacing: 4) {
             Circle().fill(Color(hex: 0xEF4444)).frame(width: 8, height: 8)
                 .shadow(color: Color(hex: 0xEF4444), radius: 4)
                 .opacity(pulse ? 0.25 : 1)
-            Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
-                .shadow(color: Color(hex: 0xF59E0B), radius: 3)
-            Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
-                .shadow(color: Color(hex: 0x22C55E), radius: 3)
         }
     }
 }

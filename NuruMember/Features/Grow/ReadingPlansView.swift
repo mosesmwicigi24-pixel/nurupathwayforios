@@ -1732,7 +1732,7 @@ private struct FireworksCelebration: View {
     private static let gold = Color(hex: 0xC89B3C)
     private static let goldLight = Color(hex: 0xE0B85E)
     private static let cream = Color(hex: 0xFFF4C7)
-    private static let accent = Color(hex: 0xFB7185)   // one accent spark color, used sparingly
+    private static let accent = Color(hex: 0xE6CA68)   // the gold glow — no pink spark (§8.1 rule 1)
     private static let palette: [Color] = [gold, gold, goldLight, goldLight, cream, .white, accent]
 
     private static let sparkLife = 1.25   // seconds a spark stays visible once it bursts

@@ -35,18 +35,9 @@ enum Ev {
         if days == 1 { return "Tomorrow" }
         return "In \(days) days"
     }
-    /// Category accents — matched to the make (Worship gold, Cell indigo,
-    /// Leaders sky #0EA5E9, Youth green #16A34A).
-    static func categoryColor(_ c: String?) -> Color {
-        switch (c ?? "").lowercased() {
-        case "worship": return Color(hex: 0xC89B3C)
-        case "youth": return Color(hex: 0x16A34A)
-        case "leaders": return Color(hex: 0x0EA5E9)
-        case "cell": return Color(hex: 0x6366F1)
-        case "marketplace": return Color(hex: 0xE07B39)
-        default: return Color(hex: 0x59667C)
-        }
-    }
+    /// A category is a WORD on a pill, never a hue (§8.1 rules 1, 6): one
+    /// accent for every category (Cell was indigo, Leaders sky, Youth green).
+    static func categoryColor(_ c: String?) -> Color { Nuru.gold }
     static func weekday(_ iso: String, _ fmt: String) -> String {
         let f = DateFormatter(); f.dateFormat = fmt; return f.string(from: date(iso))
     }
@@ -721,7 +712,6 @@ struct EventsView: View {
             HStack(spacing: Nuru.S.sm) {
                 ForEach(vm.categories, id: \.self) { c in
                     let on = vm.category == c
-                    let color = c == "All" ? Nuru.navy : Ev.categoryColor(c)
                     Button {
                         guard !on else { return }
                         Haptics.selection()
@@ -730,7 +720,7 @@ struct EventsView: View {
                         Text(c).font(.inter(12, on ? .semibold : .medium))
                             .foregroundStyle(on ? .white : Nuru.ink600)
                             .padding(.horizontal, Nuru.S.base).padding(.vertical, 9)
-                            .background(on ? color : Nuru.white, in: Capsule())
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
@@ -1002,9 +992,9 @@ private struct SeriesRailRow: View {
     var body: some View {
         HStack(spacing: Nuru.S.md) {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Ev.categoryColor(series.category).opacity(0.12))
+                .fill(Color(hex: Nuru.tileTint))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(Ev.categoryColor(series.category).opacity(0.2), lineWidth: 1))
+                    .stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
                 .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -1541,8 +1531,8 @@ private struct SeriesListRow: View {
         HStack(spacing: Nuru.S.md) {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Ev.categoryColor(series.category).opacity(0.12))
-                Icon(.sparkles, size: 16, color: Ev.categoryColor(series.category))
+                    .fill(Color(hex: Nuru.tileTint))
+                Icon(.sparkles, size: 18, color: Color(hex: Nuru.tileIcon))
             }
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {

@@ -287,16 +287,14 @@ private enum Aurora {
         colors: [Color(hex: 0xF6F4EE), Color(hex: 0xF1ECE1)],
         startPoint: .top, endPoint: .bottom)
 
-    /// SENDER_PALETTE `name` colors — stable, harmonious accents (Telegram pattern).
+    /// Sender `name` colours — stable per person, and only navy or gold
+    /// (§8.1 rule 1: no indigo, sky, teal, pink or violet names).
     static let senderPalette: [Color] = [
-        Color(hex: 0x4F46E5), // indigo
-        Color(hex: 0x0284C7), // sky
-        Color(hex: 0x0D9488), // teal
-        Color(hex: 0x059669), // emerald
-        Color(hex: 0xDB2777), // pink
-        Color(hex: 0xC2410C), // burnt orange
-        Color(hex: 0x7C3AED), // violet
-        Color(hex: 0xB45309), // amber
+        Color(hex: 0x0B1F33), // navy
+        Color(hex: 0x7A5A14), // deep gold
+        Color(hex: 0x143559), // navy 700
+        Color(hex: 0xA87F2E), // gold low
+        Color(hex: 0x315F8C), // navy mid
     ]
 
     /// Same stable hash as the make: `h = (h * 31 + charCodeAt(i)) >>> 0`.
@@ -712,7 +710,7 @@ private struct ThreadHeader: View {
     @ViewBuilder private var avatar: some View {
         if isSpace {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(hex: 0x2E7D6B))
+                .fill(Nuru.navy)   // a space's mark: navy, not teal (§8.1 rule 1)
                 .frame(width: 38, height: 38)
                 .overlay(Text("#").font(.inter(18, .bold)).foregroundStyle(.white))
         } else {
@@ -1524,7 +1522,7 @@ private struct ReadTicksView: View {
         Text(read ? "✓✓" : "✓")
             .font(.inter(11, .semibold))
             .kerning(-1)
-            .foregroundStyle(Color(hex: 0x2F80ED))
+            .foregroundStyle(Nuru.gold)   // read ticks in the accent, not blue (§8.1 rule 1)
             .opacity(dark ? 1 : 0.95)
     }
 }

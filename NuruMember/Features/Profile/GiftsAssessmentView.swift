@@ -313,7 +313,8 @@ private struct ResultsPane: View {
     let onDone: () -> Void
 
     /// Figma's result-bar palette, cycled across the top gifts.
-    private static let barColors: [Color] = [Color(hex: 0x6366F1), Color(hex: 0xDC2626), Nuru.gold]
+    /// Navy and gold only (§8.1 rule 1) — no indigo or red bars.
+    private static let barColors: [Color] = [Nuru.navy, Nuru.gold, Nuru.navyMid]
 
     /// One resolved result row (gift key → persona title + normalised %).
     private struct TopGift: Identifiable {

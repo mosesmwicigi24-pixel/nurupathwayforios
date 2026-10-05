@@ -115,11 +115,11 @@ struct NewPledgeFlow: View {
     /// fallback list, for a server that sends no `pledge_options`.
     private struct FundLook { let code, label, tagline: String; let icon: Lucide; let tint, fg: UInt32 }
     private static let funds: [FundLook] = [
-        FundLook(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: 0xFFF4DA, fg: 0xC89B3C),
-        FundLook(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626),
-        FundLook(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: 0xF3E8FF, fg: 0xA855F7),
-        FundLook(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: 0xE0F2FE, fg: 0x0EA5E9),
-        FundLook(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: 0xDCFCE7, fg: 0x16A34A),
+        FundLook(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: Nuru.tileTint, fg: Nuru.tileIcon),
+        FundLook(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon),
+        FundLook(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon),
+        FundLook(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: Nuru.tileTint, fg: Nuru.tileIcon),
+        FundLook(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: Nuru.tileTint, fg: Nuru.tileIcon),
     ]
     /// A custom name is 2–60 characters (the contract's bounds).
     private static let customLimit = 2...60
@@ -454,13 +454,13 @@ struct NewPledgeFlow: View {
             if let f = Self.funds.first(where: { $0.code == code }) {
                 return OptionLook(icon: f.icon, tint: Color(hex: f.tint), fg: Color(hex: f.fg), subtitle: f.tagline)
             }
-            return OptionLook(icon: .landmark, tint: Color(hex: 0xFFF4DA), fg: Nuru.gold, subtitle: "A fund of the church")
+            return OptionLook(icon: .landmark, tint: Color(hex: Nuru.tileTint), fg: Color(hex: Nuru.tileIcon), subtitle: "A fund of the church")
         case "campaign":
-            return OptionLook(icon: .megaphone, tint: Color(hex: 0xFFF4DA), fg: Nuru.gold, subtitle: "Church campaign")
+            return OptionLook(icon: .megaphone, tint: Color(hex: Nuru.tileTint), fg: Color(hex: Nuru.tileIcon), subtitle: "Church campaign")
         case "need":
-            return OptionLook(icon: .handHeart, tint: Color(hex: 0xFEE2E2), fg: Color(hex: 0xDC2626), subtitle: "Department need")
+            return OptionLook(icon: .handHeart, tint: Color(hex: Nuru.tileTint), fg: Color(hex: Nuru.tileIcon), subtitle: "Department need")
         default:
-            return OptionLook(icon: .target, tint: Color(hex: 0xEEF1F5), fg: Nuru.navy, subtitle: "Another cause of the church")
+            return OptionLook(icon: .target, tint: Color(hex: Nuru.tileTint), fg: Color(hex: Nuru.tileIcon), subtitle: "Another cause of the church")
         }
     }
 
@@ -660,7 +660,7 @@ struct NewPledgeFlow: View {
                 Text("BY").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                 HStack(spacing: 8) {
                     ForEach(autoRails) { rail in
-                        methodChip(rail.key, railName(rail.key), bg: rail.key == "airtel" ? 0xDC2626 : 0x16A34A)
+                        methodChip(rail.key, railName(rail.key))
                     }
                 }
                 Text("Never today — then on the \(ordinal(dueDay)) of each month. You can stop it at any time from your recurring gifts.")
@@ -675,15 +675,16 @@ struct NewPledgeFlow: View {
         .animation(.easeInOut(duration: 0.2), value: autoCharge)
     }
 
-    private func methodChip(_ key: String, _ label: String, bg: UInt32) -> some View {
+    private func methodChip(_ key: String, _ label: String) -> some View {
         let on = autoMethod == key
         return Button {
             Haptics.selection(); autoMethod = key
         } label: {
             HStack(spacing: 8) {
-                Text(key == "mpesa" ? "M" : "A").font(.inter(11, .bold)).foregroundStyle(.white)
+                // The rail's mark on the one tile look (§8.1 rule 1), not its brand hue.
+                Text(key == "mpesa" ? "M" : "A").font(.inter(11, .bold)).foregroundStyle(Color(hex: Nuru.tileIcon))
                     .frame(width: 26, height: 26)
-                    .background(Color(hex: bg), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
                 Text(label).font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
             }
             .frame(maxWidth: .infinity).frame(height: 46)

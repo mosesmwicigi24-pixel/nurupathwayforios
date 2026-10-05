@@ -130,8 +130,9 @@ private enum RadioUX {
     static let red     = Color(hex: 0xEF4444)
     static let redDeep = Color(hex: 0xDC2626)
     static let redSoft = Color(hex: 0xFCA5A5)
-    static let indigo     = Color(hex: 0x4338CA)
-    static let indigoSoft = Color(hex: 0x818CF8)
+    // Navy and gold for what was indigo (§8.1 rule 1).
+    static let indigo     = Color(hex: 0x143559)
+    static let indigoSoft = Color(hex: 0xE0B85E)
     static let green = Color(hex: 0x16A34A)
 
     /// The design's ON AIR neon photograph — centerpiece fallback artwork.
@@ -144,9 +145,9 @@ private enum RadioUX {
 
     /// Stable 2-color monogram gradients (the design's palette pairs).
     static let monogramPairs: [(Color, Color)] = [
-        (Color(hex: 0x6366F1), Color(hex: 0x4338CA)),   // indigo
-        (Color(hex: 0x16A34A), Color(hex: 0x15803D)),   // green
-        (Color(hex: 0xDC2626), Color(hex: 0x991B1B)),   // red
+        // Navy and gold only (§8.1 rule 1).
+        (Color(hex: 0x143559), Color(hex: 0x0B1F33)),   // navy
+        (Color(hex: 0x315F8C), Color(hex: 0x143559)),   // navy mid
         (Color(hex: 0xC89B3C), Color(hex: 0x8A6711)),   // gold (also "mine")
     ]
 

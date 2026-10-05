@@ -176,17 +176,17 @@ final class GivingStatementViewModel: ObservableObject {
     }
 }
 
-// MARK: - Fund meta (exact Figma palette; mirrors the Give tab funds)
+// MARK: - Fund meta (one look, as the Give tab's funds: §8.1 rules 1, 7)
 
 private struct FundMeta { let icon: Lucide; let tint: UInt32; let fg: UInt32 }
 private func fundMeta(_ code: String) -> FundMeta {
     switch code.lowercased() {
-    case "tithe":        return FundMeta(icon: .percent,   tint: 0xFFF4DA, fg: 0xC89B3C)
-    case "offering":     return FundMeta(icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626)
-    case "gift":         return FundMeta(icon: .gift,      tint: 0xF3E8FF, fg: 0xA855F7)
-    case "mission":      return FundMeta(icon: .globe,     tint: 0xE0F2FE, fg: 0x0EA5E9)
-    case "discipleship": return FundMeta(icon: .bookOpen,  tint: 0xDCFCE7, fg: 0x16A34A)
-    default:             return FundMeta(icon: .gift,      tint: 0xFFF4DA, fg: 0xC89B3C)
+    case "tithe":        return FundMeta(icon: .percent,   tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "offering":     return FundMeta(icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "gift":         return FundMeta(icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "mission":      return FundMeta(icon: .globe,     tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "discipleship": return FundMeta(icon: .bookOpen,  tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    default:             return FundMeta(icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon)
     }
 }
 

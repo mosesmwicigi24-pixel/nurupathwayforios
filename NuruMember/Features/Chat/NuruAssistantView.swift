@@ -19,26 +19,28 @@ struct AssistantMessage: Codable, Sendable, Identifiable, Hashable {
 
 private enum NUR {
     static let navy     = Color(hex: 0x0A1628)
-    static let purple   = Color(hex: 0x7C3AED)
-    static let purpleLt = Color(hex: 0xA78BFA)
-    static let green    = Color(hex: 0x10B981)
+    // Navy with gold (§8.1 rule 1) — the purple and the green are gone; green
+    // stays only for the "online" dot, which is a state.
+    static let purple   = Color(hex: 0xC89B3C)
+    static let purpleLt = Color(hex: 0xE0B85E)
+    static let green    = Color(hex: 0x1E7F4F)
     static let gold     = Color(hex: 0xC89B3C)
     static let cream    = Color(hex: 0xF6F4EE)
     static let creamLo  = Color(hex: 0xEFEAE0)
     static let border   = Color(hex: 0x0B1F33, alpha: 0.08)
     static let hint     = Color(hex: 0x9AA3AF)
 
-    static let header  = LinearGradient(colors: [Color(hex: 0x2A1259), Color(hex: 0x0A1628), Color(hex: 0x053F30)], startPoint: .topLeading, endPoint: .bottomTrailing)
-    static let orb     = LinearGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let header  = LinearGradient(colors: [Color(hex: 0x143559), Color(hex: 0x0A1628), Color(hex: 0x081C36)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let orb     = Nuru.aiOrb
     static let ink     = LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x163655)], startPoint: .topLeading, endPoint: .bottomTrailing)
-    static let sendG   = LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0x34D399)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    static let sendG   = LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0xC89B3C)], startPoint: .topLeading, endPoint: .bottomTrailing)
 
     struct Suggestion { let label: String; let color: Color }
     static let suggestions = [
         Suggestion(label: "Summarize my cell", color: gold),
-        Suggestion(label: "Draft an encouragement", color: purple),
-        Suggestion(label: "Find prayer requests", color: green),
-        Suggestion(label: "Plan my quiet time", color: Color(hex: 0x0EA5E9)),
+        Suggestion(label: "Draft an encouragement", color: navy),
+        Suggestion(label: "Find prayer requests", color: gold),
+        Suggestion(label: "Plan my quiet time", color: navy),
     ]
     static let taglines = [
         "Online · ready when you are",
@@ -192,11 +194,11 @@ struct NuruAssistantView: View {
                     Circle().fill(NUR.purple.opacity(0.55)).frame(width: 176, height: 176).blur(radius: 44).offset(x: -40, y: -40)
                 }
                 .overlay(alignment: .bottomTrailing) {
-                    Circle().fill(NUR.green.opacity(0.45)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 20, y: 64)
+                    Circle().fill(NUR.gold.opacity(0.25)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 20, y: 64)
                 }
         )
         .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous))
-        .shadow(color: Color(hex: 0x2A1259).opacity(0.5), radius: 24, y: 14)
+        .shadow(color: Color(hex: 0x0B1F33).opacity(0.5), radius: 24, y: 14)
     }
 
     // Live, rotating status line under the title (Figma NuruStatus).

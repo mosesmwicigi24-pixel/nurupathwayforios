@@ -782,21 +782,17 @@ func sectionCard<C: View>(_ title: String, icon: Lucide,
     .nuruShadow()
 }
 
-/// Neutral 36pt icon tile (personal-info / notification-pref / privacy rows).
-func fieldIconTile(_ icon: Lucide) -> some View {
-    ZStack {
-        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            .frame(width: 36, height: 36)
-        Icon(icon, size: 15, color: Nuru.navy)
-    }
-}
+/// A row's 36pt icon tile — every row the same (§8.1 rules 1, 7): a
+/// gold-tint tile, the icon in navy at 18. (Settings' rows were indigo,
+/// pink, sky and green; the walk's E17.)
+func fieldIconTile(_ icon: Lucide) -> some View { iconTile(icon) }
 
-/// Tinted 36pt icon tile (security / help rows).
-func iconTile(_ icon: Lucide, tint: Color, color: Color) -> some View {
+func iconTile(_ icon: Lucide) -> some View {
     ZStack {
-        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint).frame(width: 36, height: 36)
-        Icon(icon, size: 16, color: color)
+        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: Nuru.tileTint))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+            .frame(width: 36, height: 36)
+        Icon(icon, size: 18, color: Color(hex: Nuru.tileIcon))
     }
 }
 
@@ -887,15 +883,18 @@ private struct PBadgeItem: Identifiable {
     var id: String { code }
     var earned: Bool { awardedAt != nil }
 
-    /// Category → medallion icon + colors (mirrors the Figma badge palette).
+    /// Category → medallion icon; one colour for every category (§8.1 rule
+    /// 1: gold is the accent — no green, sky or purple medallions).
     var style: (icon: Lucide, color: Color, tint: Color) {
+        let icon: Lucide
         switch category {
-        case "journey": return (.sparkles, Nuru.gold, Color(hex: 0xFFF4DA))
-        case "consistency": return (.flame, Color(hex: 0x16A34A), Color(hex: 0xDCFCE7))
-        case "community": return (.users, Color(hex: 0x0EA5E9), Color(hex: 0xE0F2FE))
-        case "service": return (.handHeart, Color(hex: 0xA855F7), Color(hex: 0xF3E8FF))
-        default: return (.award, Nuru.gold, Nuru.goldTint)
+        case "journey": icon = .sparkles
+        case "consistency": icon = .flame
+        case "community": icon = .users
+        case "service": icon = .handHeart
+        default: icon = .award
         }
+        return (icon, Nuru.gold, Color(hex: Nuru.tileTint))
     }
 }
 

@@ -443,10 +443,12 @@ struct HomeView: View {
     // are where a plan lives. Android's order, tile for tile.
     private var growTiles: [GrowTile] {
         [
-            GrowTile(label: "Devotional", sub: "Today's devotional", icon: .sun, tint: 0xFFF4DA, fg: 0x9A7A2A, dest: GrowDestination.devotional),
-            GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFEF3C7, fg: 0xB45309, dest: GrowDestination.memoryVerses),
-            GrowTile(label: "My Prayer Room", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
-            GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF5E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
+            // One tile look (§8.1 rules 1, 7): the walk's E17 found a
+            // pink-red Prayer Room and a purple Calling.
+            GrowTile(label: "Devotional", sub: "Today's devotional", icon: .sun, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: GrowDestination.devotional),
+            GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: GrowDestination.memoryVerses),
+            GrowTile(label: "My Prayer Room", sub: "Pray with the family", icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: CommunityRoute.prayerWall),
+            GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: GrowDestination.gifts),
         ]
     }
 
@@ -907,8 +909,8 @@ struct HomeView: View {
                     if vm.streak > 0 {
                         Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
                         HStack(spacing: 3) {
-                            Icon(.flame, size: 11, color: Color(hex: 0xDC6B26))
-                            Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB4530A))
+                            Icon(.flame, size: 14, color: Nuru.gold)
+                            Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Nuru.goldChipText)
                                 .contentTransition(.numericText())
                                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: vm.streak)
                         }
@@ -963,15 +965,16 @@ struct HomeView: View {
     // The arc sweeps in once on appear and re-tracks smoothly as data lands.
     private var progressRing: some View {
         ZStack {
-            Circle().fill(Color(hex: 0xDCFCE7).opacity(0.6))
-            Circle().stroke(Color(hex: 0x16A34A).opacity(0.15), lineWidth: 3)
+            // A score is progress, and progress is gold (§8.1 rule 1).
+            Circle().fill(Color(hex: Nuru.tileTint).opacity(0.8))
+            Circle().stroke(Nuru.gold.opacity(0.18), lineWidth: 3)
             HomeRingTrim(
                 pct: CGFloat(growthScore) / 100,
-                style: AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
+                style: AnyShapeStyle(LinearGradient(colors: [Nuru.goldLo, Nuru.goldHi],
                                                     startPoint: .top, endPoint: .bottom)),
                 lineWidth: 3)
             // A score out of 100 (the growth score), not a percent of anything.
-            Text("\(growthScore)").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x166534))
+            Text("\(growthScore)").font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }
@@ -990,7 +993,7 @@ struct HomeView: View {
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 3.5).padding(.vertical, 1.5)
-        .background(t.isDown ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A), in: Capsule())
+        .background(t.isDown ? Nuru.warning : Nuru.success, in: Capsule())
         .overlay(Capsule().stroke(Color.white, lineWidth: 1))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: t.delta)
     }
@@ -2043,7 +2046,7 @@ struct HomeView: View {
                         HStack(spacing: 4) {
                             Image(systemName: t.isDown ? "arrow.down.right" : t.isUp ? "arrow.up.right" : "minus")
                                 .font(.symbol(10, weight: .bold))
-                                .foregroundStyle(t.isDown ? Color(hex: 0xDC6B26) : t.isUp ? Color(hex: 0x16A34A) : HomeFig.metaGray)
+                                .foregroundStyle(t.isDown ? Nuru.warning : t.isUp ? Nuru.success : HomeFig.metaGray)
                             Text(trendCaption(t)).font(.nCardBody).foregroundStyle(HomeFig.metaGray)
                         }
                     } else {
@@ -2055,10 +2058,12 @@ struct HomeView: View {
             .padding(.top, Nuru.S.base)
             VStack(spacing: 10) {
                 scoreBar("Habits", s.habits.score, Nuru.gold, delta: s.trend?.domains?["habits"])
-                scoreBar("Word", s.word.score, Color(hex: 0x2F6FB0), delta: s.trend?.domains?["word"])
-                scoreBar("Prayer", s.prayer.score, Color(hex: 0xC98A3C), delta: s.trend?.domains?["prayer"])
-                scoreBar("Curriculum", s.curriculum.score, HomeFig.navy, delta: s.trend?.domains?["curriculum"])
-                scoreBar("Attendance", s.attendance.score, Color(hex: 0x16A34A), delta: s.trend?.domains?["attendance"])
+                // Every bar is progress — gold (§8.1 rule 1; Word was blue,
+                // Attendance green).
+                scoreBar("Word", s.word.score, Nuru.gold, delta: s.trend?.domains?["word"])
+                scoreBar("Prayer", s.prayer.score, Nuru.gold, delta: s.trend?.domains?["prayer"])
+                scoreBar("Curriculum", s.curriculum.score, Nuru.gold, delta: s.trend?.domains?["curriculum"])
+                scoreBar("Attendance", s.attendance.score, Nuru.gold, delta: s.trend?.domains?["attendance"])
             }
             .padding(.top, Nuru.S.base)
             if let j = vm.journey {
@@ -2097,7 +2102,7 @@ struct HomeView: View {
                     Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.symbol(8, weight: .bold))
                     Text("\(abs(d))").font(.inter(11, .bold))
                 }
-                .foregroundStyle(d < 0 ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A))
+                .foregroundStyle(d < 0 ? Nuru.warning : Nuru.success)
                 .frame(width: 26, alignment: .trailing)
             } else {
                 Spacer().frame(width: 26)

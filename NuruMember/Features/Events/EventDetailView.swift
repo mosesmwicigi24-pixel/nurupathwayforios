@@ -142,10 +142,10 @@ private enum EvD {
     static let placeholder = Color(hex: 0x9A8C6A)
 
     /// Deterministic avatar accent for members without a photo (port of colorFor).
+    /// Navy or gold only (§8.1 rule 1).
     static let avatarPalette: [Color] = [
-        Color(hex: 0x0A1628), Color(hex: 0xC9A227), Color(hex: 0x16A34A),
-        Color(hex: 0x0EA5E9), Color(hex: 0xA855F7), Color(hex: 0xDC2626),
-        Color(hex: 0xD97706),
+        Color(hex: 0x0A1628), Color(hex: 0xC9A227), Color(hex: 0x143559),
+        Color(hex: 0xA87F2E), Color(hex: 0x315F8C),
     ]
     static func avatarAccent(_ seed: String) -> Color {
         var h: UInt32 = 0

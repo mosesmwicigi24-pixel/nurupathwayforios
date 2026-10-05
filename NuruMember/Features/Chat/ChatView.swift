@@ -319,7 +319,8 @@ private let storyRing = LinearGradient(
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
 // Per-row tint cycle (backend sends no space colour) — mirrors the mock palette.
-private let rowTints: [UInt32] = [0xC89B3C, 0x6366F1, 0x0EA5E9, 0x16A34A, 0xDB2777, 0x0D9488]
+// Navy or gold only (§8.1 rule 1) — no indigo, sky, green, pink or teal rows.
+private let rowTints: [UInt32] = [0xC89B3C, 0x143559, 0xA87F2E, 0x315F8C]
 private func rowTint(_ index: Int) -> Color { Color(hex: rowTints[index % rowTints.count]) }
 
 // "9:42 AM" today · "Yesterday" · "Tue" within the week · "4 Jun" beyond.
@@ -1818,12 +1819,12 @@ struct BroadcastComposer: View {
                     // ✨ Ask Nuru to polish (or write) the draft.
                     Button { Task { await aiAssist() } } label: {
                         Group {
-                            if aiDrafting { ProgressView().tint(Color(hex: 0x7C3AED)).scaleEffect(0.7) }
-                            else { Icon(.sparkles, size: 15, color: Color(hex: 0x7C3AED)) }
+                            if aiDrafting { ProgressView().tint(Nuru.navy).scaleEffect(0.7) }
+                            else { Icon(.sparkles, size: 14, color: Nuru.navy) }
                         }
                         .frame(width: 38, height: 38)
-                        .background(Color(hex: 0x7C3AED, alpha: 0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color(hex: 0x7C3AED, alpha: 0.25), lineWidth: 1))
+                        .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .disabled(aiDrafting || sending)

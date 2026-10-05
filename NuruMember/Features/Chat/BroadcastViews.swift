@@ -297,7 +297,7 @@ struct BroadcastDetailView: View {
                 Image(systemName: "checkmark").font(.symbol(10, weight: .bold))
                 if !one { Image(systemName: "checkmark").font(.symbol(10, weight: .bold)) }
             }
-            .foregroundStyle(Color(hex: 0x3DA8E0))
+            .foregroundStyle(Nuru.gold)
             Text(label).font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
         }
     }
@@ -318,10 +318,10 @@ struct BroadcastDetailView: View {
                             Image(systemName: "checkmark").font(.symbol(10, weight: .bold))
                             if r.seen { Image(systemName: "checkmark").font(.symbol(10, weight: .bold)) }
                         }
-                        .foregroundStyle(Color(hex: 0x3DA8E0))
+                        .foregroundStyle(Nuru.gold)
                         Text(r.seen ? "Seen" : "Delivered")
                             .font(.inter(11, .semibold))
-                            .foregroundStyle(r.seen ? Color(hex: 0x3DA8E0) : Nuru.ink600)
+                            .foregroundStyle(r.seen ? Nuru.gold : Nuru.ink600)
                     }
                 }
                 .padding(.horizontal, Nuru.S.md).padding(.vertical, 8)

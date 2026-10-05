@@ -21,10 +21,8 @@ struct AiDraftButton: View {
     @State private var summary: String?
     @State private var draft = ""
 
-    // The NuruAssistant orb palette (NUR.orb) + the brand gold story ring.
-    private let orb = LinearGradient(
-        colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
+    // Nuru's orb — navy with gold (§8.1 rule 1) — + the brand gold story ring.
+    private let orb = Nuru.aiOrb
     private let goldGrad = LinearGradient(
         colors: [Color(hex: 0xE6C068), Color(hex: 0xC89B3C), Color(hex: 0xB07D2E)],
         startPoint: .topLeading, endPoint: .bottomTrailing)

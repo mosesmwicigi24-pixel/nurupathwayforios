@@ -37,6 +37,13 @@ enum Nuru {
     /// (EXPERIENCE.md §8.1 rule 3). Android's `Nuru.eyebrow`, the same value.
     static let eyebrow      = Color(hex: 0x9A7A2A)
     static let priorityBg   = Color(hex: 0xFFFAEC)   // selected-tile tint (giving funds)
+    /// A row or tile icon (EXPERIENCE.md §8.1 rules 1, 7): a gold-tint tile
+    /// with the icon in navy — never a per-item hue.
+    static let tileTint: UInt32 = 0xFFF4DA
+    static let tileIcon: UInt32 = 0x0B1F33
+    /// Nuru (the AI) is navy with gold — never purple (§8.1 rule 1).
+    static let aiOrb = LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0x143559), Color(hex: 0x0B1F33)],
+                                      startPoint: .topLeading, endPoint: .bottomTrailing)
 
     // MARK: Ink (text)
     static let ink     = Color(hex: 0x0B0B0C)   // primary text on light

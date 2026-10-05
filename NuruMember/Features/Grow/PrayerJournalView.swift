@@ -575,10 +575,11 @@ private struct JournalCard: View {
     let remove: () -> Void
     let compose: () -> Void
 
-    /// Green answered · orange on-the-wall · gold private.
+    /// Green answered (a state) · navy on-the-wall · gold private — no
+    /// orange (§8.1 rule 1).
     private var statusColor: Color {
         if entry.isAnswered { return Color(hex: 0x16A34A) }
-        if shared { return Color(hex: 0xF97316) }
+        if shared { return Nuru.navy }
         return Color(hex: 0xC9A227)
     }
     private var initials: String {
@@ -647,8 +648,8 @@ private struct JournalCard: View {
                     .padding(.top, Nuru.S.md)
             } else if shared {
                 HStack(spacing: 6) {
-                    Icon(.handHeart, size: 13, color: Color(hex: 0xF97316))
-                    Text("On the Corporate wall").font(.nMicro).foregroundStyle(Color(hex: 0xF97316))
+                    Icon(.handHeart, size: 14, color: Nuru.navy)
+                    Text("On the Corporate wall").font(.nMicro).foregroundStyle(Nuru.navy)
                 }
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.top, Nuru.S.md)

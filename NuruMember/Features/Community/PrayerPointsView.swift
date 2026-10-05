@@ -74,8 +74,7 @@ private struct ConsentGateCard: View {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 8) {
                     Circle().fill(
-                        LinearGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Nuru.aiOrb)
                         .frame(width: 26, height: 26)
                         .overlay(Icon(.sparkles, size: 13, color: .white))
                     Text("NURU INTELLIGENCE").font(.inter(11, .bold)).tracking(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
@@ -140,8 +139,7 @@ private struct AssistComposerCard: View {
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
                         .background(
-                            LinearGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            Nuru.aiOrb,
                             in: Capsule())
                     }
                     .buttonStyle(.pressable)

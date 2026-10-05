@@ -676,6 +676,55 @@ final class ExperienceCycle4Tests: XCTestCase {
         }
     }
 
+    // MARK: §8.1 rule 1 — no other hues
+
+    /// A hex colour's family: nil for the palette's own (neutrals, golds,
+    /// navies) and the state colours (green, red); else the hue that isn't
+    /// ours. The same thresholds as the scan that found 255 sites.
+    private static func offPaletteFamily(_ hex: UInt32) -> String? {
+        let r = Double((hex >> 16) & 0xFF) / 255, g = Double((hex >> 8) & 0xFF) / 255, b = Double(hex & 0xFF) / 255
+        let mx = max(r, g, b), mn = min(r, g, b), l = (mx + mn) / 2, d = mx - mn
+        guard d > 0 else { return nil }
+        let sat = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn)
+        var h: Double
+        if mx == r { h = (g - b) / d + (g < b ? 6 : 0) } else if mx == g { h = (b - r) / d + 2 } else { h = (r - g) / d + 4 }
+        h *= 60
+        if sat < 0.18 || l > 0.94 || l < 0.08 { return nil }
+        if (30...55).contains(h) { return nil }                       // gold / amber
+        if (195...225).contains(h) && (l < 0.45 || sat < 0.45) { return nil }   // navy, blue-grey
+        if (90...160).contains(h) || h >= 345 || h <= 12 { return nil }       // green / red: state
+        if h > 12 && h < 30 { return "orange" }
+        if h > 160 && h < 195 { return "teal" }
+        if (195...225).contains(h) { return "blue" }
+        if h > 225 && h < 270 { return "indigo" }
+        if h >= 270 && h < 330 { return "purple" }
+        return "pink"
+    }
+
+    func testNoOtherHuesThanThePalettesAndTheStates() throws {
+        // The classifier itself: the walk's purple Gift tile and indigo row
+        // are caught; gold, navy and the state green/red are not.
+        XCTAssertEqual(Self.offPaletteFamily(0xA855F7), "purple")
+        XCTAssertEqual(Self.offPaletteFamily(0x6366F1), "indigo")
+        XCTAssertEqual(Self.offPaletteFamily(0x0EA5E9), "blue")
+        XCTAssertNil(Self.offPaletteFamily(0xC89B3C)); XCTAssertNil(Self.offPaletteFamily(0x0B1F33))
+        XCTAssertNil(Self.offPaletteFamily(0x16A34A)); XCTAssertNil(Self.offPaletteFamily(0xDC2626))
+        // Art and reaction effects are their own media; the RSVP "maybe"
+        // amber is a state that reads orange to the scan.
+        let allowed: Set<String> = ["Features/Home/LetterIllustrations.swift", "Features/Live/LiveReactionEffects.swift",
+                                    "Features/Live/LiveViewerPlayerView.swift", "Features/Events/EventsView.swift"]
+        let hex = try NSRegularExpression(pattern: "0x([0-9A-Fa-f]{6})\\b")
+        var found: [String] = []
+        for (rel, text) in try TypeScan.files() where !allowed.contains(rel) && !rel.hasSuffix("NuruTheme.swift") {
+            for m in hex.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let r = Range(m.range(at: 1), in: text), let v = UInt32(text[r], radix: 16),
+                      let fam = Self.offPaletteFamily(v) else { continue }
+                found.append("\(rel): \(fam) 0x\(text[r])")
+            }
+        }
+        XCTAssertEqual(found, [], "§8.1 rule 1: paper, white, navy, gold — green, amber and red only for state")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

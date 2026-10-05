@@ -227,14 +227,12 @@ struct SettingsView: View {
     private var security: some View {
         sectionCard("SECURITY & LOGIN", icon: .lock) {
             Button { Haptics.tap(); showPasswordSheet = true } label: {
-                actionRow(.key, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
+                actionRow(.key,
                           "Change password", "Keep your account secure")
             }.buttonStyle(.pressableSubtle)
             Divider()
             HStack(spacing: Nuru.S.md) {
-                iconTile(.fingerprint,
-                         tint: twoFactorOn ? Color(hex: 0x16A34A).opacity(0.13) : Color(hex: 0xFEF3C7),
-                         color: twoFactorOn ? Color(hex: 0x16A34A) : Color(hex: 0xD97706))
+                iconTile(.fingerprint)   // its state is in its words (rule 1)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Two-factor authentication").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text(twoFactorOn ? "Active · Authenticator app" : "Not enabled · recommended")
@@ -249,7 +247,7 @@ struct SettingsView: View {
             }
             .padding(.vertical, 10)
             Divider()
-            actionRow(.smartphone, tint: Color(hex: 0xFCE7F3), color: Color(hex: 0xDB2777),
+            actionRow(.smartphone,
                       "Active sessions", "This device")
         }
     }
@@ -270,7 +268,7 @@ struct SettingsView: View {
             }
             Button { Haptics.tap(); openSystemSettings() } label: {
                 HStack(spacing: Nuru.S.md) {
-                    iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
+                    iconTile(.bell)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Notification settings").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         Text("Manage sounds & toggles in phone settings").font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
@@ -349,7 +347,7 @@ struct SettingsView: View {
     private var language: some View {
         sectionCard("LANGUAGE", icon: .languages) {
             Button { Haptics.tap(); helpSheet = .language } label: {
-                actionRow(.languages, tint: Color(hex: 0xE0F2FE), color: Color(hex: 0x0EA5E9),
+                actionRow(.languages,
                           "Language", "App language · \(nuruLanguageName(p?.locale))")
             }.buttonStyle(.pressableSubtle)
         }
@@ -392,12 +390,12 @@ struct SettingsView: View {
     private var helpPrivacy: some View {
         sectionCard("HELP & PRIVACY", icon: .lifeBuoy) {
             Button { Haptics.tap(); helpSheet = .support } label: {
-                actionRow(.lifeBuoy, tint: Nuru.successBg, color: Color(hex: 0x16A34A),
+                actionRow(.lifeBuoy,
                           "Help & support", "FAQs, contact us")
             }.buttonStyle(.pressableSubtle)
             Divider()
             Button { Haptics.tap(); helpSheet = .privacyPolicy } label: {
-                actionRow(.shieldCheck, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
+                actionRow(.shieldCheck,
                           "Privacy policy", "How we handle your data")
             }.buttonStyle(.pressableSubtle)
         }
@@ -451,9 +449,9 @@ struct SettingsView: View {
 
     // MARK: building blocks (rows only used on this screen)
 
-    private func actionRow(_ icon: Lucide, tint: Color, color: Color, _ title: String, _ sub: String) -> some View {
+    private func actionRow(_ icon: Lucide, _ title: String, _ sub: String) -> some View {
         HStack(spacing: Nuru.S.md) {
-            iconTile(icon, tint: tint, color: color)
+            iconTile(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text(sub).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))

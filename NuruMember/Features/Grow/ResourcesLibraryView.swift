@@ -46,10 +46,11 @@ private enum RES {
     static func meta(_ kind: String) -> KindMeta {
         switch kind {
         // Outline symbols — the Figma tiles use stroked Lucide icons, not filled.
-        case "audio":   return KindMeta(label: "Audio",   sf: "headphones",     color: gold,                 tint: Color(hex: 0xFFF4DA))
-        case "video":   return KindMeta(label: "Video",   sf: "play.rectangle", color: Color(hex: 0xDC2626), tint: Color(hex: 0xFEE2E2))
-        case "article": return KindMeta(label: "Article", sf: "doc.text",       color: Color(hex: 0x16A34A), tint: Color(hex: 0xDCFCE7))
-        default:        return KindMeta(label: "Book",    sf: "book",           color: Color(hex: 0x6366F1), tint: Color(hex: 0xEEF2FF))
+        // One tile look (§8.1 rules 1, 7) — the kind is its word and icon.
+        case "audio":   return KindMeta(label: "Audio",   sf: "headphones",     color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
+        case "video":   return KindMeta(label: "Video",   sf: "play.rectangle", color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
+        case "article": return KindMeta(label: "Article", sf: "doc.text",       color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
+        default:        return KindMeta(label: "Book",    sf: "book",           color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
         }
     }
     static let filters = ["all", "book", "audio", "video", "article"]
