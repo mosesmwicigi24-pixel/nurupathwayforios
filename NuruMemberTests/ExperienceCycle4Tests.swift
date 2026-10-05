@@ -511,6 +511,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertFalse(statement.contains("held under Finance"), "no internal department names")
     }
 
+    // MARK: Cycle 3 close walk E3 — one gold primary on Plans
+
+    func testPlansHasOneGoldPrimaryAndOneWayToStartAPlan() throws {
+        XCTAssertFalse(PlanPromoWords.cta.hasPrefix("Begin"), "a promo opens the plan; starting is the plan page's Begin Day 1")
+        let view = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Grow/ReadingPlansView.swift"), encoding: .utf8)
+        XCTAssertEqual(view.components(separatedBy: "primary: continueReading.isEmpty").count - 1, 2,
+                       "only the hero promo may be gold, and only while no plan is being read")
+        XCTAssertFalse(view.contains("primary: true"))
+        XCTAssertTrue(view.contains("PlansPrimaryLabel(text: \"Continue · Day"), "the plan in progress holds the gold")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

@@ -205,8 +205,8 @@ struct ReadingPlansView: View {
     private var trailingPromos: [ResolvedPromo] { Array(resolvedPromos.dropFirst()) }
 
     @ViewBuilder
-    private func promoCard(_ rp: ResolvedPromo) -> some View {
-        PLPlanPromo(plan: rp.plan, kicker: rp.kicker, reason: rp.promo.reason)
+    private func promoCard(_ rp: ResolvedPromo, primary: Bool = false) -> some View {
+        PLPlanPromo(plan: rp.plan, kicker: rp.kicker, reason: rp.promo.reason, primary: primary)
     }
 
     /// A second plan to promote further down the page — never the one already
@@ -253,11 +253,13 @@ struct ReadingPlansView: View {
                         if !searching, !continueReading.isEmpty { reminderCard }
                         // The day's invitation, given room to actually invite:
                         // cover + subtitle + the plan's own opening line + a CTA.
+                        // The hero promo is the tab's gold primary only when no
+                        // plan is being read; else the continue card holds it (E3).
                         if !searching {
                             if let hero = resolvedPromos.first {
-                                promoCard(hero)
+                                promoCard(hero, primary: continueReading.isEmpty)
                             } else if let pod = planOfDay {
-                                PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY")
+                                PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY", primary: continueReading.isEmpty)
                             }
                         }
                         categoriesSection
@@ -357,29 +359,36 @@ struct ReadingPlansView: View {
     }
 
     /// Prominent navy "Continue · Day N" banner (mirrors the Home resume nudge).
+    /// It carries the tab's one gold primary (§8.1 rule 4; the Cycle 3 walk's
+    /// E3: four gold "Begin the journey" promos while Ada's real next step was
+    /// to continue First Steps). Its title and line wrap, never cut (rule 9).
     private func planResumeBanner(_ p: ReadingPlanRow) -> some View {
         let day = p.currentDay ?? 1
         let done = p.completedDays?.count ?? max(0, day - 1)
         let pct = p.dayCount > 0 ? CGFloat(done) / CGFloat(p.dayCount) : 0
-        return HStack(spacing: 14) {
-            ZStack {
-                Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
-                Circle().trim(from: 0, to: pct)
-                    .stroke(PL.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Icon(.bookMarked, size: 17, color: .white)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
+                    Circle().trim(from: 0, to: pct)
+                        .stroke(PL.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Icon(.bookMarked, size: 18, color: .white)
+                }
+                .frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    Text("Day \(day) of \(p.dayCount) · pick up where you left off")
+                        .font(.inter(12)).foregroundStyle(.white.opacity(0.72))
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white).lineLimit(1)
-                Text("Day \(day) of \(p.dayCount) · pick up where you left off")
-                    .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Icon(.arrowRight, size: 18, color: PL.gold)
+            PlansPrimaryLabel(text: "Continue · Day \(day)")
         }
-        .padding(16).frame(maxWidth: .infinity)
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
         .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }

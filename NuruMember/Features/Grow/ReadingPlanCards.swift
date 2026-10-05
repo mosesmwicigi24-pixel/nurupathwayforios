@@ -531,6 +531,9 @@ struct PLPlanPromo: View {
     /// takes the hook's place (same styling) — a sentence about the reader beats
     /// the plan's own opening line.
     var reason: String? = nil
+    /// The tab's one gold primary (§8.1 rule 4) — only the hero, and only
+    /// while no plan is being read. Every other promo is a secondary.
+    var primary: Bool = false
 
     /// The opening of the plan's description — the hook, never the essay.
     /// A sentence ends at `.!?` only when a SPACE and a capital follow it;
@@ -602,13 +605,12 @@ struct PLPlanPromo: View {
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 2)
                     }
-                    HStack(spacing: 6) {
-                        Text(plan.enrolled ? "Continue the journey" : "Begin the journey")
-                            .font(.inter(12, .bold)).foregroundStyle(PL.navy)
-                        Icon(.arrowRight, size: 13, color: PL.navy)
+                    // It opens the plan, so it says so; the one way to start a
+                    // plan is the plan page's "Begin Day 1" (the walk's E3).
+                    Group {
+                        if primary { PlansPrimaryLabel(text: PlanPromoWords.cta) }
+                        else { PlansSecondaryLabel(text: PlanPromoWords.cta) }
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(PL.gold, in: Capsule())
                     .padding(.top, 6)
                     HStack(spacing: 4) {
                         Icon(.clock, size: 11, color: PL.ink3)
@@ -626,5 +628,43 @@ struct PLPlanPromo: View {
             .shadow(color: PL.navyDeep.opacity(0.14), radius: 16, y: 8)
         }
         .buttonStyle(.pressableSubtle)
+    }
+}
+
+/// A promo's words (the Cycle 3 walk's E3): it opens the plan's page, so it
+/// never says "Begin" — starting is the plan page's "Begin Day 1".
+enum PlanPromoWords {
+    static let cta = "See the plan"
+}
+
+/// The Plans tab's one primary, drawn as a label inside a tappable card:
+/// gold fill, navy text, radius 14 (§8.1 rule 4).
+struct PlansPrimaryLabel: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text).font(.nCardCTA).foregroundStyle(PL.navy)
+                .lineLimit(2).multilineTextAlignment(.center)
+            Icon(.arrowRight, size: 14, color: PL.navy)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, 14)
+        .background(PL.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// A secondary: white, hairline border, navy text (§8.1 rule 4).
+struct PlansSecondaryLabel: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text).font(.nCardCTA).foregroundStyle(PL.navy)
+                .lineLimit(2).multilineTextAlignment(.center)
+            Icon(.arrowRight, size: 14, color: PL.navy)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, 14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }
