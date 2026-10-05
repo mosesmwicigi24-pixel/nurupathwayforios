@@ -389,6 +389,13 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertNil(FootprintsStrip.line(try decode(FootprintsRes.self, ["count": 0, "scope": "cell", "footprints": []]), mineDone: false))
     }
 
+    // MARK: Cycle 3 close walk B4 — a done Talk says so
+
+    func testADoneTalkSaysCompletedWithAQuietWayBack() {
+        XCTAssertEqual(TalkWords.done, "Completed ✓")
+        XCTAssertEqual(TalkWords.back(day: 4), "Back to Day 4")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

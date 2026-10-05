@@ -912,6 +912,19 @@ struct TalkItOverView: View {
     /// day; on a refusal or no answer the member stays, told why above it.
     private var doneBar: some View {
         VStack(spacing: 8) {
+            if route.talkDone || talkSealed {
+                // Already done (the walk's B4): say so, and a quiet way back —
+                // no gold "I've talked it over" asking again for a part the day
+                // page already shows as completed.
+                Text(TalkWords.done).font(.inter(13, .semibold)).foregroundStyle(Nuru.successText)
+                Button { Haptics.tap(); dismiss() } label: {
+                    Text(TalkWords.back(day: route.dayNumber)).font(.inter(14, .semibold)).foregroundStyle(PL.navy)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous).stroke(PL.border, lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+            } else {
             // Above the button (both apps): read before the retry tap.
             if let sealError {
                 Text(sealError)
@@ -951,10 +964,17 @@ struct TalkItOverView: View {
             }
             .buttonStyle(.pressable)
             .disabled(sealing)
+            }
         }
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
         .background(Color.white)
     }
+}
+
+/// Talk it Over's words once its part is done (the walk's B4).
+enum TalkWords {
+    static let done = "Completed ✓"
+    static func back(day: Int) -> String { "Back to Day \(day)" }
 }
 
 /// One response row — avatar, name, time-ago, body, encouragement heart.
