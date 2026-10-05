@@ -247,7 +247,7 @@ struct MyRsvp: Codable, Sendable, Identifiable {
     var id: String { rsvpId }
 }
 
-/// GET /events/{id}/posts — one buzz post on the event wall ("Who's coming").
+/// GET /events/{id}/posts — one buzz post on the event wall ("The wall").
 /// Reaction fields are `var` so the screen can apply optimistic updates.
 struct EventPost: Codable, Sendable, Identifiable {
     let postId: String

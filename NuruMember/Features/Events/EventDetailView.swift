@@ -3,8 +3,8 @@
 // gradient fallback, parallax stretch, navy scrim, category/live/completed
 // pills, serif title), a white content card flush beneath it with the 2x2 meta
 // grid and add-to-calendar/share actions, the "About this gathering" card, the
-// "Who's going" avatar rail, the going/maybe/can't RSVP selector, the
-// "Who's coming" buzz card with the visual hype composer, a "Check in" button
+// "Who's going" avatar rail, the going/maybe/can't RSVP selector, "The wall"
+// (the buzz card, with the visual hype composer), a "Check in" button
 // for today's/live occurrences that opens the real QR scanner
 // (CheckInScannerView → POST /events/{id}/attendance), and a dashed "check-in
 // opens when live" notice for future scheduled events. Bound to the real
@@ -46,7 +46,7 @@ final class EventDetailViewModel: ObservableObject {
         if sync.isOnline { await load() }  // refresh authoritative counts + roster
     }
 
-    // ---- Event wall ("Who's coming" buzz posts — GET/POST /events/{id}/posts) ----
+    // ---- The wall (buzz posts — GET/POST /events/{id}/posts) ----
 
     @Published var posts: [EventPost] = []
     @Published var postDraft = ""
@@ -541,8 +541,12 @@ private struct EvdMetaCard: View {
             HStack(spacing: 8) {
                 EvdMetaTile(icon: .mapPin, label: "Where",
                             value: location ?? "To be announced", accent: accent)
-                EvdMetaTile(icon: .users, label: "Going",
-                            value: going == 1 ? "1 person" : "\(going) people", accent: accent)
+                // No zero counts (§7.4 #9): nobody going yet leaves "Where"
+                // the whole row — the RSVP card below asks.
+                if going > 0 {
+                    EvdMetaTile(icon: .users, label: "Going",
+                                value: going == 1 ? "1 person" : "\(going) people", accent: accent)
+                }
             }
         }
     }
@@ -669,8 +673,11 @@ private struct EvdRosterCard: View {
             HStack {
                 EvdOverline("Who's going")
                 Spacer(minLength: 0)
-                Text(going == 1 ? "1 going" : "\(going) going")
-                    .font(.inter(11, .bold)).foregroundStyle(EvD.ink)
+                // No zero counts (§7.4 #9) — "Be the first to RSVP." says it.
+                if going > 0 {
+                    Text(going == 1 ? "1 going" : "\(going) going")
+                        .font(.inter(11, .bold)).foregroundStyle(EvD.ink)
+                }
             }
             if shown.isEmpty {
                 Text("Be the first to RSVP.")
@@ -802,7 +809,9 @@ private struct EvdRsvpCard: View {
     }
 }
 
-// MARK: - Who's coming — buzz header + working hype composer + real post feed.
+// MARK: - The wall — buzz header + working hype composer + real post feed.
+// "The wall", not "Who's coming" (it sat beside "Who's going"), and
+// "Buzzing" only when there are posts (§7.4 #9).
 // Wired to GET/POST /events/{id}/posts and /events/{id}/posts/{postId}/react.
 // The make's image/camera pickers are not built: the posts contract carries an
 // image_url, but the app has no member image-upload path yet, so those two
@@ -850,19 +859,21 @@ private struct EvdBuzzCard: View {
         HStack {
             HStack(spacing: 6) {
                 Icon(.users, size: 12, color: EvD.overline)
-                EvdOverline("Who's coming")
+                EvdOverline("The wall")
             }
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                EvdPulseDot(size: 6)
-                Text(vm.posts.isEmpty ? "Buzzing" : "Buzzing · \(vm.posts.count)")
-                    .font(.inter(10, .bold)).foregroundStyle(.white)
+            if !vm.posts.isEmpty {
+                HStack(spacing: 6) {
+                    EvdPulseDot(size: 6)
+                    Text("Buzzing · \(vm.posts.count)")
+                        .font(.inter(10, .bold)).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: Capsule())
+                .shadow(color: EvD.going.opacity(0.35), radius: 5, x: 0, y: 3)
             }
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: Capsule())
-            .shadow(color: EvD.going.opacity(0.35), radius: 5, x: 0, y: 3)
         }
     }
 }
@@ -1074,9 +1085,12 @@ private struct EvdBuzzPostRow: View {
         } label: {
             HStack(spacing: 4) {
                 Text(emoji).font(.system(size: 12))
-                Text("\(count)").font(.inter(10, .bold))
-                    .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
-                    .contentTransition(.numericText())
+                // The chip is the way to react; its count only once there is one.
+                if count > 0 {
+                    Text("\(count)").font(.inter(10, .bold))
+                        .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
+                        .contentTransition(.numericText())
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(on ? EvD.gold.opacity(0.14) : Color.white, in: Capsule())

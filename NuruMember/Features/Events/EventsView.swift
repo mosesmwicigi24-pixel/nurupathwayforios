@@ -451,10 +451,11 @@ struct EventsView: View {
             // The counts only when there is something to count — a quiet
             // week's header line already says it.
             if vm.hasSomethingToFilter {
+                // No zero chips (§7.4 #9): "0 you're going" said nothing.
                 HStack(spacing: Nuru.S.sm) {
                     if vm.liveOccurrence != nil { livePulseChip }
-                    pulseChip("\(vm.thisWeekCount) this week", icon: .calendarDays)
-                    pulseChip("\(vm.goingCount) you're going", icon: .check)
+                    if vm.thisWeekCount > 0 { pulseChip("\(vm.thisWeekCount) this week", icon: .calendarDays) }
+                    if vm.goingCount > 0 { pulseChip("\(vm.goingCount) you're going", icon: .check) }
                 }
             }
         }

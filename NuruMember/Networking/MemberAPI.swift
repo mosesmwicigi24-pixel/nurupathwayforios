@@ -473,7 +473,7 @@ extension MemberAPI {
         try await APIClient.shared.get("me/rsvps", as: Envelope<MyRsvp>.self).data
     }
 
-    // MARK: Event wall ("Who's coming" buzz posts)
+    // MARK: Event wall ("The wall" — buzz posts)
 
     /// GET /events/{id}/posts — the event's buzz posts, newest first.
     static func eventPosts(_ eventId: String) async throws -> [EventPost] {
