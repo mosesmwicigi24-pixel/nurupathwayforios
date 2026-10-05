@@ -1009,9 +1009,11 @@ struct HomeView: View {
             Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.symbol(7, weight: .black))
             Text("\(abs(t.delta))").font(.inter(11, .bold)).contentTransition(.numericText())
         }
-        .foregroundStyle(.white)
+        // A score's movement is not a state (§8.1 rule 1): one quiet colour,
+        // never "on track" green or "due" amber for a rise or a fall.
+        .foregroundStyle(Nuru.goldChipText)
         .padding(.horizontal, 3.5).padding(.vertical, 1.5)
-        .background(t.isDown ? Nuru.warning : Nuru.success, in: Capsule())
+        .background(Nuru.goldChipBg, in: Capsule())
         .overlay(Capsule().stroke(Color.white, lineWidth: 1))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: t.delta)
     }
@@ -2072,7 +2074,7 @@ struct HomeView: View {
                         HStack(spacing: 4) {
                             Image(systemName: t.isDown ? "arrow.down.right" : t.isUp ? "arrow.up.right" : "minus")
                                 .font(.symbol(10, weight: .bold))
-                                .foregroundStyle(t.isDown ? Nuru.warning : t.isUp ? Nuru.success : HomeFig.metaGray)
+                                .foregroundStyle(HomeFig.metaGray)   // no state colour for a score (§8.1 rule 1)
                             Text(trendCaption(t)).font(.nCardBody).foregroundStyle(HomeFig.metaGray)
                         }
                     } else {
@@ -2130,7 +2132,7 @@ struct HomeView: View {
                     Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.symbol(8, weight: .bold))
                     Text("\(abs(d))").font(.inter(11, .bold))
                 }
-                .foregroundStyle(d < 0 ? Nuru.warning : Nuru.success)
+                .foregroundStyle(HomeFig.metaGray)   // no state colour for a score (§8.1 rule 1)
                 .frame(width: 26, alignment: .trailing)
             } else {
                 Spacer().frame(width: 26)

@@ -547,13 +547,10 @@ private struct PathwayWalkRow: View {
     var body: some View {
         Button { Haptics.tap(); onTap() } label: {
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(LinearGradient(colors: [PW.navy, Color(hex: 0x1B3A5C)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 44, height: 44)
-                    Icon(.flag, size: 22, color: PW.gold)
-                }
+                // A row's icon sits on a gold-tint tile (§8.1 rules 1, 7).
+                Icon(.flag, size: 22, color: PW.navy)
+                    .frame(width: 44, height: 44)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("EVERY STEP, REMEMBERED").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
                     Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
@@ -1088,21 +1085,23 @@ private struct PathwayMilestones: View {
             HStack(spacing: 12) {
                 Icon(r.glyph, size: 22, color: Nuru.navy)
                     .frame(width: 48, height: 48)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("NEXT REWARD").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
-                    Text("The “\(r.name)” badge").font(.inter(13, .bold)).foregroundStyle(.white).lineLimit(1)
+                    Text("NEXT REWARD").font(.nCardKicker).kerning(1.4).foregroundStyle(PW.goldDeep)
+                    Text("The “\(r.name)” badge").font(.nRowTitle).foregroundStyle(PW.navy)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 8) {
-                        PWBar(pct: r.pct, height: 6, fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing), track: Color.white.opacity(0.16))
-                        Text("\(r.remaining) to go").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.7))
+                        PWBar(pct: r.pct, height: 6, fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
+                        Text("\(r.remaining) to go").font(.inter(11, .semibold)).foregroundStyle(PW.ink2)
                     }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: .white.opacity(0.5))
+                Icon(.chevronRight, size: 18, color: PW.chevron)
             }
             .padding(14)
-            .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: PW.navyDeep.opacity(0.6), radius: 20, y: 12)
+            // A white card (§8.1 rule 1): the navy one was a third dark card.
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
     }
@@ -1183,9 +1182,6 @@ private struct PathwaySummitCard: View {
     /// the summit: every module done at the last level still leaves its exam
     /// (it used to read "0 levels between you and being sent").
     private var levelsLeft: Int { max(1, levels.filter { !$0.walked }.count) }
-    // Real sending: a worship gathering, hands raised, JESUS over the stage —
-    // visually verified (not picked blind from an ID).
-    private let img = "https://images.unsplash.com/photo-1507692049790-de58290a4334?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -1204,23 +1200,16 @@ private struct PathwaySummitCard: View {
         }
     }
 
+    /// A light card on gold tint (§8.1 rule 1): Pathway's one dark feature
+    /// card is the journey's step at the top; the summit under a photograph
+    /// and a navy wash was a second (the Cycle 4 walk's 09).
     private var card: some View {
-        ZStack {
-            // Overlay-on-Color.clear so the artwork's fill width can't inflate
-            // the card (and with it the whole Pathway column) past the screen.
-            if let u = URL(string: img) {
-                Color.clear
-                    .overlay {
-                        CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
-                    }
-                    .clipped()
-            }
-            // Navy scrim: 0x26 → 0x73 → 0xF2 of 0A1628, top → bottom.
-            LinearGradient(colors: [Color(hex: 0x0A1628, alpha: 0.15), Color(hex: 0x0A1628, alpha: 0.45), Color(hex: 0x0A1628, alpha: 0.95)], startPoint: .top, endPoint: .bottom)
-            content
-        }
-        .frame(height: 300).frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        content
+            .padding(.top, 28)
+            .frame(maxWidth: .infinity)
+            .background(Nuru.verseBg)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(PW.gold.opacity(0.25), lineWidth: 1))
         // Reached earns a gold ceremonial ring; the road there stays quiet.
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
             .strokeBorder(reached ? PW.gold.opacity(0.85) : .clear, lineWidth: 1.5))
@@ -1229,46 +1218,46 @@ private struct PathwaySummitCard: View {
 
     private var statusChip: some View {
         HStack(spacing: 4) {
-            if reached { Image(systemName: "star.fill").font(.symbol(10)) } else { Icon(.lock, size: 14, color: .white) }
+            if reached { Image(systemName: "star.fill").font(.symbol(10)) } else { Icon(.lock, size: 14, color: PW.ink2) }
             Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(11, .bold)).kerning(1)
         }
-        .foregroundStyle(reached ? PW.navy : .white)
+        .foregroundStyle(reached ? PW.navy : PW.ink2)
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(reached ? PW.gold : Color.white.opacity(0.18), in: Capsule())
+        .background(reached ? PW.gold : PW.mutedBg, in: Capsule())
     }
 
     private var content: some View {
         VStack(spacing: 0) {
             // Ceremonial seal — double gold ring, medal, no emoji.
             ZStack {
-                Circle().fill(Color.white.opacity(reached ? 0.14 : 0.07)).frame(width: 58, height: 58)
+                Circle().fill(PW.gold.opacity(reached ? 0.16 : 0.08)).frame(width: 58, height: 58)
                     .overlay(Circle().strokeBorder(PW.gold.opacity(reached ? 0.95 : 0.45), lineWidth: 1.5))
                 Circle().strokeBorder(PW.goldLight.opacity(reached ? 0.8 : 0.35), lineWidth: 1).frame(width: 46, height: 46)
                 Icon(.award, size: 24, color: reached ? PW.goldLight : PW.gold.opacity(0.75))
             }
             .padding(.bottom, 10)
-            Text("COMMISSIONED").font(.inter(11, .bold)).kerning(2.4).foregroundStyle(PW.goldLight)
+            Text("COMMISSIONED").font(.inter(11, .bold)).kerning(2.4).foregroundStyle(PW.goldDeep)
             // The actual charge, not a caption — the words carry the weight.
             Text("“Go therefore and make disciples of all nations…”")
                 .font(.fraunces(18, .semibold)).italic().kerning(-0.2)
-                .foregroundStyle(.white).multilineTextAlignment(.center).lineSpacing(4)
+                .foregroundStyle(PW.navy).multilineTextAlignment(.center).lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
             Text("MATTHEW 28:19").font(.inter(11, .bold)).kerning(1.8)
-                .foregroundStyle(.white.opacity(0.75)).padding(.top, 4)
+                .foregroundStyle(PW.ink2).padding(.top, 4)
             // The road itself: one dot per level, gold when walked.
             HStack(spacing: 8) {
                 ForEach(levels) { lv in
                     let done = reached || lv.walked
                     Circle()
-                        .fill(done ? PW.gold : Color.white.opacity(0.28))
+                        .fill(done ? PW.gold : PW.navy.opacity(0.15))
                         .overlay(Circle().strokeBorder(done ? PW.goldLight : .clear, lineWidth: 1))
                         .frame(width: done ? 9 : 7, height: done ? 9 : 7)
                 }
             }
             .padding(.top, 14)
             Text(personalLine)
-                .font(.inter(11, .bold)).foregroundStyle(PW.goldLight)
+                .font(.inter(11, .bold)).foregroundStyle(PW.goldDeep)
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
         }
@@ -1328,7 +1317,7 @@ struct LevelsMapView: View {
             .padding(.bottom, Nuru.tabBarSpace)
         }
         .ignoresSafeArea(edges: .top)
-        .background(PW.bg.ignoresSafeArea())
+        .background(Nuru.paper.ignoresSafeArea())   // the page is paper (§8.1 rule 1)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
