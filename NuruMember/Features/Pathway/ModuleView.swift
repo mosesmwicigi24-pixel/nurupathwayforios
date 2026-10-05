@@ -1872,6 +1872,14 @@ private struct MLAudioCard: View {
 
 private struct MLScriptureCard: View {
     let line: String
+    @StateObject private var loader = ScripturePassageLoader()
+    @State private var reading: ScriptureSheetItem?
+
+    /// The lesson gave a reference only ("John 1:1–18") — the card fetches
+    /// the words (the walk's E22: it printed the reference in quotes, as if
+    /// it were the verse).
+    private var isReference: Bool { ScriptureRefs.isReference(line) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
@@ -1880,17 +1888,58 @@ private struct MLScriptureCard: View {
                     .font(.inter(11, .bold)).kerning(1.8)
                     .foregroundStyle(ML.kicker)
             }
-            Text("\u{201C}\(line)\u{201D}")
-                .font(.fraunces(16, .regular)).italic()
-                .foregroundStyle(ML.navy)
-                .lineSpacing(5)
-                .fixedSize(horizontal: false, vertical: true)
+            if let words = KeyVerseWords.text(line: line, isReference: isReference, fetched: loader.passage?.text) {
+                Text("\u{201C}\(words)\u{201D}")
+                    .font(.fraunces(16, .regular)).italic()
+                    .foregroundStyle(ML.navy)
+                    .lineSpacing(5)
+                    .lineLimit(KeyVerseWords.lineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if isReference {
+                // The reference under the words — or alone while they come,
+                // or if they can't (never in quotes).
+                Button { Haptics.tap(); reading = ScriptureSheetItem(reference: line) } label: {
+                    HStack(spacing: 4) {
+                        Text(KeyVerseWords.caption(reference: line, version: loader.passage?.version))
+                            .font(.inter(12, .semibold)).foregroundStyle(ML.kicker)
+                        Icon(.chevronRight, size: 14, color: ML.kicker)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the passage")
+            }
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(ML.surface)
         .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .task { if isReference { await loader.load(line) } }
+        .sheet(item: $reading) { item in
+            ScripturePassageSheet(reference: item.reference)
+                .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+/// The key verse card's words (the walk's E22). Pure, so the tests pin it.
+enum KeyVerseWords {
+    /// A long passage shows its opening lines; the reference opens the rest.
+    static let lineLimit = 8
+
+    /// The words to quote: the fetched passage for a reference, the authored
+    /// line otherwise — never the reference itself.
+    static func text(line: String, isReference: Bool, fetched: String?) -> String? {
+        guard isReference else { return line }
+        let t = fetched?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? nil : t
+    }
+
+    /// "John 1:1–18 · NIV" under the words; the reference alone before them.
+    static func caption(reference: String, version: String?) -> String {
+        let v = version?.trimmingCharacters(in: .whitespaces) ?? ""
+        return v.isEmpty ? reference : "\(reference) · \(v)"
     }
 }
 

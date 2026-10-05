@@ -791,6 +791,20 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(Lucide.armchair.rawValue, "\u{E2C0}", "the empty seat, from the bundled Lucide font")
     }
 
+    // MARK: Walk E22 — the key verse is the verse, the reference under it
+
+    func testTheKeyVerseIsTheVerseNeverTheReferenceInQuotes() {
+        XCTAssertTrue(ScriptureRefs.isReference("John 1:1-18"))
+        XCTAssertNil(KeyVerseWords.text(line: "John 1:1-18", isReference: true, fetched: nil),
+                     "before the words come: no quoted reference")
+        XCTAssertEqual(KeyVerseWords.text(line: "John 3:16", isReference: true, fetched: " For God so loved the world… "),
+                       "For God so loved the world…")
+        XCTAssertEqual(KeyVerseWords.text(line: "Be still, and know that I am God.", isReference: false, fetched: nil),
+                       "Be still, and know that I am God.", "authored words stay as written")
+        XCTAssertEqual(KeyVerseWords.caption(reference: "John 3:16", version: "NIV"), "John 3:16 · NIV")
+        XCTAssertEqual(KeyVerseWords.caption(reference: "John 3:16", version: nil), "John 3:16")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))
