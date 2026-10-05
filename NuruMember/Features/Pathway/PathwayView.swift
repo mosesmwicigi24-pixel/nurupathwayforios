@@ -292,7 +292,8 @@ struct PathwayView: View {
 
                 if let sel = selectedLevel {
                     PathwaySelectedModules(
-                        level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
+                        level: sel, nextPreparing: UsherWords.nextPreparing(after: sel.levelNumber, in: s),
+                        modules: vm.modulesByLevel[sel.levelNumber] ?? [],
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
                         // The fold and the exam row are the journey's call, for
@@ -740,6 +741,8 @@ enum PathwayTrail {
 
 private struct PathwaySelectedModules: View {
     let level: PathwayLevel
+    /// The level after this one has no lessons yet (§9.2 #7).
+    var nextPreparing: Bool = false
     let modules: [LevelModule]
     let loading: Bool
     let resume: LevelModule?
@@ -813,7 +816,7 @@ private struct PathwaySelectedModules: View {
                             if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
                         }
                         // Exam passed → waiting to be ushered by a discipler (§1.9).
-                        if awaitingReview { PWAwaitingRow(levelNumber: level.levelNumber) }
+                        if awaitingReview { PWAwaitingRow(levelNumber: level.levelNumber, nextPreparing: nextPreparing) }
                     }
                 }
             }
@@ -994,6 +997,7 @@ private struct PWFoldRow: View {
 /// awaitingReview flag — shown with the level's list (inside the fold, once opened).
 private struct PWAwaitingRow: View {
     let levelNumber: Int
+    var nextPreparing: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -1002,12 +1006,12 @@ private struct PWAwaitingRow: View {
                     .fill(PW.gold.opacity(0.16))
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(PW.gold.opacity(0.4), lineWidth: 1))
                     .frame(width: 32, height: 32)
-                Text("🌿").font(.emoji(15))
+                Icon(.flag, size: 14, color: PW.goldDeep)   // a glyph, not a colour emoji (§8.1 rule 7)
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text("Level \(levelNumber) complete")
                     .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
-                Text(UsherWords.line(passed: levelNumber))
+                Text(UsherWords.line(passed: levelNumber, nextPreparing: nextPreparing))
                     .font(.inter(11, .semibold)).foregroundStyle(PW.goldDeep)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1017,7 +1021,7 @@ private struct PWAwaitingRow: View {
         .background(PW.gold.opacity(0.08))
         .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Level \(levelNumber) complete. \(UsherWords.line(passed: levelNumber))")
+        .accessibilityLabel("Level \(levelNumber) complete. \(UsherWords.line(passed: levelNumber, nextPreparing: nextPreparing))")
     }
 }
 
@@ -1288,7 +1292,8 @@ struct LevelsMapView: View {
                         VStack(spacing: 12) {
                             ForEach(s.levels) { level in
                                 PWLevelCard(level: level, stagePill: stagePill(for: level),
-                                            lockLine: LevelsMapWords.lockLine(levelNumber: level.levelNumber, journey: vm.journey)) {
+                                            lockLine: LevelsMapWords.lockLine(levelNumber: level.levelNumber, journey: vm.journey,
+                                                                              preparing: level.lessonCount <= 0)) {
                                     if level.status != .locked { onOpenLevel(level.levelNumber) }
                                 }
                             }
@@ -1717,14 +1722,24 @@ enum LevelsMapWords {
     }
 
     /// What opens a locked level: the step before it, in the journey's words.
-    static func lockLine(levelNumber n: Int, journey j: Journey?) -> String {
+    /// A level with no lessons yet is being prepared, and says so — nobody is
+    /// promised to open it (§9.1 rule 7, §9.2 #7). Android's lockLine.
+    static func lockLine(levelNumber n: Int, journey j: Journey?, preparing: Bool = false) -> String {
         let prev = n - 1
-        guard let j, j.levelNumber == prev else { return "Complete Level \(prev) to unlock" }
+        guard let j, j.levelNumber == prev else {
+            return preparing ? "Level \(n) is being prepared" : "Complete Level \(prev) to unlock"
+        }
         switch j.stage {
-        case .learning: return "Complete Level \(prev) to unlock"
-        case .examReady: return "Pass the Level \(prev) exam — then your leader opens Level \(n)"
-        case .examSoon: return "The Level \(prev) exam opens soon — then your leader opens Level \(n)"
-        case .awaitingUsher, .finished: return "Your leader will open Level \(n) — you'll get a notice"
+        case .learning: return preparing ? "Level \(n) is being prepared" : "Complete Level \(prev) to unlock"
+        case .examReady:
+            return preparing ? "Pass the Level \(prev) exam — Level \(n) is being prepared"
+                : "Pass the Level \(prev) exam — then your leader opens Level \(n)"
+        case .examSoon:
+            return preparing ? "The Level \(prev) exam opens soon — Level \(n) is being prepared"
+                : "The Level \(prev) exam opens soon — then your leader opens Level \(n)"
+        case .awaitingUsher, .finished:
+            return preparing ? "Level \(n) is being prepared — we'll let you know"
+                : "Your leader will open Level \(n) — you'll get a notice"
         }
     }
 }

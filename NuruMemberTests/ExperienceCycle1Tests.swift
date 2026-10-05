@@ -229,8 +229,11 @@ final class ExperienceCycle1Tests: XCTestCase {
         XCTAssertEqual(j.stage, .awaitingUsher)
         XCTAssertEqual(j.pill, "Exam passed")
         XCTAssertEqual(j.kicker, "Exam passed · Level 1")
-        XCTAssertEqual(j.title, "Level 2 is next")
-        XCTAssertEqual(j.line, "You passed the Level 1 exam. Your leader will open Level 2 — you'll get a notice.")
+        // Level 2 has no lessons in this (today's) catalogue: nobody is
+        // promised to open it (§9.2 #7). The leader's words, for a level with
+        // lessons, are pinned in ExperienceCycle5Tests.
+        XCTAssertEqual(j.title, "Level 2 is being prepared")
+        XCTAssertEqual(j.line, "You passed the Level 1 exam — we'll let you know when Level 2 opens.")
         XCTAssertEqual(j.actionLabel, "See Level 1")
         XCTAssertEqual(j.destination, .level(1))
         XCTAssertFalse(j.summitReached)
@@ -390,7 +393,7 @@ final class ExperienceCycle1Tests: XCTestCase {
         XCTAssertEqual(walking.progressLine.bold, "3 of 10 modules")
         XCTAssertEqual(walking.progressLine.rest, " in Level 2")
         let passed = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "awaiting_review", done: 20, of: 20, awaiting: true))))
-        XCTAssertEqual(passed.progressLine.bold, "Level 2 is next")
+        XCTAssertEqual(passed.progressLine.bold, "Level 2 is being prepared")
     }
 
     // MARK: §4 — one state language

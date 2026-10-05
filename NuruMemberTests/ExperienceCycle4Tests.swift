@@ -324,7 +324,8 @@ final class ExperienceCycle4Tests: XCTestCase {
         row["awaiting_review"] = true
         let j = try XCTUnwrap(Journey.derive(try summary(current: 1, row)))
         XCTAssertEqual(j.stage, .awaitingUsher)
-        XCTAssertEqual(j.line, UsherWords.line(passed: 1), "the hero says the same sentence")
+        XCTAssertEqual(j.line, UsherWords.line(passed: 1, nextPreparing: true),
+                       "the hero says the same sentence — Level 2 has no lessons here, so nobody is promised (§9.2 #7)")
         XCTAssertFalse(j.line.contains("discipler"))
     }
 

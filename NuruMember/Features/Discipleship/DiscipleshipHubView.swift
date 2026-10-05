@@ -302,13 +302,16 @@ struct DiscipleshipHubView: View {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.16))
                     .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.emoji(22))
+                Icon(.flag, size: 22, color: Nuru.goldChipText)   // a glyph, not a colour emoji (§8.1 rule 7)
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Level \(level) complete")
                     .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
-                Text("Awaiting your discipler's blessing to continue.")
+                // The journey's own words (§9.2 #7): one card, one word — it
+                // said "Awaiting your discipler's blessing" while Pathway said
+                // "Your leader will open Level 2". It names no one.
+                Text("You passed the Level \(level) exam — we'll let you know when Level \(level + 1) opens.")
                     .font(.inter(11)).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

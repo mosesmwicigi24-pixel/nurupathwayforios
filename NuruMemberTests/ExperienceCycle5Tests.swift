@@ -238,6 +238,33 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertFalse(PlanLines.todayLine(cara, readToday: false, now: monday).contains("days"))
     }
 
+    // MARK: §9.2 #7 — "Level 2 is being prepared — we'll let you know"
+
+    func testANextLevelWithNoLessonsIsBeingPrepared() throws {
+        // Eli: passed the Level 1 exam; Level 2 has no lessons.
+        let eli = try summary([level(1, "awaiting_review", done: 10, of: 10, awaiting: true), level(2, "locked"), level(3, "locked")])
+        let j = try XCTUnwrap(Journey.derive(eli))
+        XCTAssertEqual(j.stage, .awaitingUsher)
+        XCTAssertEqual(j.title, "Level 2 is being prepared")
+        XCTAssertEqual(j.line, "You passed the Level 1 exam — we'll let you know when Level 2 opens.")
+        XCTAssertFalse(j.line.contains("leader") || j.line.contains("discipler"), "one word, no promise")
+        XCTAssertTrue(UsherWords.nextPreparing(after: 1, in: eli))
+        // A Level 2 with lessons keeps the leader's words.
+        let ready = try summary([level(1, "awaiting_review", done: 10, of: 10, awaiting: true), level(2, "locked", of: 8)])
+        let jr = try XCTUnwrap(Journey.derive(ready))
+        XCTAssertEqual(jr.title, "Level 2 is next")
+        XCTAssertEqual(jr.line, "You passed the Level 1 exam. Your leader will open Level 2 — you'll get a notice.")
+        XCTAssertFalse(UsherWords.nextPreparing(after: 1, in: ready))
+        // Map view's lock lines say the same.
+        let ada = try XCTUnwrap(Journey.derive(try summary([level(1, "completed", done: 10, of: 10), level(2, "locked")])))
+        XCTAssertEqual(ada.stage, .examReady)
+        XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 2, journey: ada, preparing: true),
+                       "Pass the Level 1 exam — Level 2 is being prepared")
+        XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 2, journey: j, preparing: true),
+                       "Level 2 is being prepared — we'll let you know")
+        XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 3, journey: j, preparing: true), "Level 3 is being prepared")
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

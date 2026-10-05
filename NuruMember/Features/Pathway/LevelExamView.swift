@@ -254,6 +254,7 @@ struct LevelExamView: View {
             EX.bg.ignoresSafeArea()
             if let result = vm.result {
                 ExamResultScreen(levelNumber: levelNumber, result: result,
+                                 nextPreparing: UsherWords.nextPreparing(after: levelNumber, in: vm.summary),
                                  onDone: { dismiss() },
                                  onPassContinue: { (onPassContinue ?? { dismiss() })() },
                                  onRetry: { vm.retry(); idx = 0 })
@@ -722,6 +723,7 @@ private struct ExamCTABar: View {
 private struct ExamResultScreen: View {
     let levelNumber: Int
     let result: ExamResult
+    var nextPreparing: Bool = false
     let onDone: () -> Void
     let onPassContinue: () -> Void
     let onRetry: () -> Void
@@ -731,6 +733,7 @@ private struct ExamResultScreen: View {
             ExamPassScreen(levelNumber: levelNumber,
                            score: result.scoreAchieved,
                            mentorReview: result.requiresManualReview,
+                           nextPreparing: nextPreparing,
                            onContinue: onPassContinue)
         } else if result.requiresManualReview {
             ExamReviewScreen(levelNumber: levelNumber, onDone: onDone)
@@ -752,6 +755,7 @@ private struct ExamPassScreen: View {
     let levelNumber: Int
     let score: Int
     let mentorReview: Bool
+    var nextPreparing: Bool = false
     let onContinue: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
@@ -786,9 +790,10 @@ private struct ExamPassScreen: View {
                 // Who opens the next level, in §3's one word — "your leader"
                 // (E2, Cycle 4 B1): a member with no discipler read "your
                 // discipler's blessing" as untrue.
-                Text(mentorReview
-                     ? "A true milestone. Your leader will read your written answers and open Level \(levelNumber + 1) — you'll get a notice. 🌿"
-                     : "A true milestone. Your leader will open Level \(levelNumber + 1) — you'll get a notice. 🌿")
+                // While Level N+1 has no lessons, nobody is promised to open
+                // it (§9.2 #7): "we'll let you know when Level 2 opens."
+                Text((mentorReview ? "Your leader will read your written answers. " : "")
+                     + UsherWords.line(passed: levelNumber, nextPreparing: nextPreparing))
                     .font(.inter(15)).foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)

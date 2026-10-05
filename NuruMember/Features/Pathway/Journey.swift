@@ -127,6 +127,9 @@ extension Journey {
         let n = cur.levelNumber
         let isLast = idx == levels.count - 1
         let nextLevel = idx + 1 < levels.count ? levels[idx + 1].levelNumber : n + 1
+        // The next level has no lessons yet (Levels 2–6 in production today):
+        // nobody can open it, so no one is promised to (§9.1 rule 7).
+        let nextPreparing = idx + 1 < levels.count && levels[idx + 1].lessonCount <= 0
         // Lessons — the exam is a step, not a module (§8.2 #4).
         let y = max(0, cur.lessonCount), x = min(max(0, cur.lessonsDone), y)
 
@@ -215,10 +218,13 @@ extension Journey {
             title = "Level \(n) complete"
             line = "Every module is done. The exam opens soon — we'll let you know."
         case .awaitingUsher:
+            // "Level 2 is being prepared — we'll let you know" while it has no
+            // lessons (EXPERIENCE.md §9.2 #7): Eli was told "Your leader will
+            // open Level 2" for a level with none, and no cell has a leader.
             pill = "Exam passed"
             kicker = "Exam passed · Level \(n)"
-            title = "Level \(nextLevel) is next"
-            line = UsherWords.line(passed: n, next: nextLevel)
+            title = nextPreparing ? "Level \(nextLevel) is being prepared" : "Level \(nextLevel) is next"
+            line = UsherWords.line(passed: n, next: nextLevel, nextPreparing: nextPreparing)
             action = ("See Level \(n)", .level(n))
         case .finished:
             pill = "Commissioned"
@@ -290,8 +296,19 @@ enum ExamWords {
 /// discipler read as untrue. The hero, the level's fold, the level page and
 /// the exam's pass screen all say it the same way.
 enum UsherWords {
-    static func line(passed n: Int, next: Int? = nil) -> String {
+    /// While the next level has no lessons, nobody is promised to open it
+    /// (§9.1 rule 7, §9.2 #7): "we'll let you know when Level 2 opens."
+    static func line(passed n: Int, next: Int? = nil, nextPreparing: Bool = false) -> String {
         let next = next ?? n + 1
+        if nextPreparing { return "You passed the Level \(n) exam — we'll let you know when Level \(next) opens." }
         return "You passed the Level \(n) exam. Your leader will open Level \(next) — you'll get a notice."
+    }
+
+    /// The level after Level `n` exists and has no lessons yet — it is being
+    /// prepared. False when it isn't known (no summary, the last level).
+    static func nextPreparing(after n: Int, in summary: PathwaySummary?) -> Bool {
+        guard let levels = summary?.levels.sorted(by: { $0.levelNumber < $1.levelNumber }),
+              let i = levels.firstIndex(where: { $0.levelNumber == n }), i + 1 < levels.count else { return false }
+        return levels[i + 1].lessonCount <= 0
     }
 }

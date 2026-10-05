@@ -51,6 +51,8 @@ final class LevelDetailViewModel: ObservableObject {
     /// Current streak in days (GET /me/achievements) — the same figure the
     /// Pathway hub header already shows.
     @Published var streak = 0
+    /// The level after this one has no lessons yet (§9.2 #7).
+    @Published var nextPreparing = false
 
     let levelNumber: Int
     init(levelNumber: Int) { self.levelNumber = levelNumber }
@@ -67,6 +69,7 @@ final class LevelDetailViewModel: ObservableObject {
         if let summary = await path {
             level = summary.levels.first { $0.levelNumber == levelNumber }
             totalLevels = summary.levels.count
+            nextPreparing = UsherWords.nextPreparing(after: levelNumber, in: summary)
             journey = Journey.derive(summary, trail: loaded)
         }
         if let loaded { modules = loaded }
@@ -448,7 +451,7 @@ struct LevelDetailView: View {
                 ZStack {
                     Circle().fill(Nuru.goldTint).frame(width: 36, height: 36)
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                    Text("🌿").font(.emoji(16))
+                    Icon(.flag, size: 18, color: Nuru.goldChipText)   // a glyph, not a colour emoji (§8.1 rule 7)
                 }
             }
             .frame(width: 36)
@@ -463,7 +466,7 @@ struct LevelDetailView: View {
                     .font(.nCardTitle).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 // §3's words for who opens the next level (E2, B1).
-                Text(UsherWords.line(passed: vm.levelNumber))
+                Text(UsherWords.line(passed: vm.levelNumber, nextPreparing: vm.nextPreparing))
                     .font(.nCardBody).foregroundStyle(Nuru.ink600)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
