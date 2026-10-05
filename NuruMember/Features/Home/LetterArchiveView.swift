@@ -9,7 +9,9 @@ import SwiftUI
 struct LetterArchiveView: View {
     @State private var letters: [PastoralLetter] = []
     @State private var loading = true
-    @State private var loadFailed = false
+    /// Why the letters didn't come, said in §4's words (it read "Check
+    /// your connection" whatever the cause).
+    @State private var loadFailure: Error?
     @State private var selected: PastoralLetter?
     @Environment(\.dismiss) private var dismiss
 
@@ -60,11 +62,10 @@ struct LetterArchiveView: View {
     private var emptyState: some View {
         VStack(spacing: 10) {
             Icon(.mail, size: 30, color: Color(hex: 0x6B7A8F))
-            Text(loadFailed ? "Couldn't load your letters" : "No letters yet")
+            Text(loadFailure.map { NuruStateCopy.failure($0).title } ?? "No letters yet")
                 .font(.fraunces(18, .semibold)).foregroundStyle(.white)
-            Text(loadFailed
-                 ? "Check your connection and try again."
-                 : "One arrives every Sunday evening, written from your own week.")
+            Text(loadFailure.map { NuruStateCopy.failure($0).line ?? "" }
+                 ?? "One arrives every Sunday evening, written from your own week.")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x9AA8BC))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -103,7 +104,7 @@ struct LetterArchiveView: View {
         do {
             letters = try await MemberAPI.letters()
         } catch {
-            loadFailed = true
+            loadFailure = error
         }
         loading = false
     }

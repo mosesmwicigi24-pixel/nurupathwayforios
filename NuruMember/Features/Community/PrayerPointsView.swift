@@ -13,7 +13,8 @@ import SwiftUI
 struct PrayerPointsView: View {
     @State private var optedOut: Bool?
     @State private var consentBusy = false
-    @State private var consentFailed = false
+    /// Why the consent switch didn't save, in §4's words.
+    @State private var consentError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -27,7 +28,7 @@ struct PrayerPointsView: View {
                 case nil:
                     ProgressView().padding(.top, Nuru.S.xl)
                 case true?:
-                    ConsentGateCard(busy: consentBusy, failed: consentFailed) { Task { await enableAi() } }
+                    ConsentGateCard(busy: consentBusy, error: consentError) { Task { await enableAi() } }
                         .gentleEntrance(delay: 0.05)
                 case false?:
                     AssistComposerCard()
@@ -49,14 +50,14 @@ struct PrayerPointsView: View {
     private func enableAi() async {
         guard !consentBusy else { return }
         consentBusy = true
-        consentFailed = false
+        consentError = nil
         do {
             _ = try await MemberAPI.setAiConsent(optOut: false)
             Haptics.success()
             withAnimation { optedOut = false }
         } catch {
             Haptics.error()
-            consentFailed = true
+            consentError = NuruStateCopy.saveFailureLine(error)
         }
         consentBusy = false
     }
@@ -66,7 +67,7 @@ struct PrayerPointsView: View {
 
 private struct ConsentGateCard: View {
     let busy: Bool
-    let failed: Bool
+    let error: String?
     let enable: () -> Void
 
     var body: some View {
@@ -83,8 +84,8 @@ private struct ConsentGateCard: View {
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Nuru remembers your journey to walk with you personally. Your prayer journal is never read — ever. This is the same switch as your Sunday Letter and personal companion; turning it on here turns it on everywhere, and you can turn it off again anytime in Profile.")
                     .font(.inter(12)).foregroundStyle(Nuru.muted).lineSpacing(3)
-                if failed {
-                    Text("Couldn't save that — check your connection and try again.")
+                if let error {
+                    Text(error)
                         .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
                 }
                 Button {

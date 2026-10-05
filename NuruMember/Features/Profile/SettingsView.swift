@@ -26,7 +26,8 @@ struct SettingsView: View {
     // preferences) with @AppStorage as the offline cache/fallback so the UI
     // never blocks. Toggles are optimistic and roll back on a failed PUT; push
     // additionally requests the real system permission.
-    @State private var prefSaveFailed = false
+    /// Why a preference didn't save, in §4's words.
+    @State private var prefSaveError: String?
     /// "Allow notifications?" — asked when the member turns push on, with
     /// its one line (EXPERIENCE.md §7.2 #12), never cold.
     @State private var pushAsk: NotificationAsk?
@@ -194,13 +195,15 @@ struct SettingsView: View {
             let old = value.wrappedValue
             value.wrappedValue = on
             if isPush, on { requestPushPermission() }
+            prefSaveError = nil
             Task {
                 do {
                     try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn, sound: soundOn)
                 } catch {
                     Haptics.error()
                     value.wrappedValue = old
-                    prefSaveFailed = true // say it, don't just snap the toggle back
+                    // Say it, don't just snap the toggle back — and say why.
+                    prefSaveError = NuruStateCopy.failureLine("Couldn't save your preferences.", error)
                 }
             }
         })
@@ -272,8 +275,8 @@ struct SettingsView: View {
                       prefBinding($soundOn)); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
-            if prefSaveFailed {
-                Text("Couldn't save your preferences — check your connection and try again.")
+            if let line = prefSaveError {
+                Text(line)
                     .font(.nCardMeta).foregroundStyle(Nuru.danger)
                     .padding(.top, 6)
             }

@@ -51,7 +51,8 @@ struct ProfileView: View {
     @State private var aiOptOut = false
     /// The consent WRITE failed — the toggle was reverted and the member told.
     /// A consent control must never show a state the server hasn't recorded.
-    @State private var aiConsentSaveFailed = false
+    /// Why the consent switch didn't save, in §4's words.
+    @State private var aiConsentSaveError: String?
     @State private var aiConsentLoaded = false
     @State private var scoreDetailPillar: ScorePillar?
 
@@ -541,7 +542,7 @@ struct ProfileView: View {
                 set: { on in
                     let previous = aiOptOut
                     aiOptOut = !on
-                    aiConsentSaveFailed = false
+                    aiConsentSaveError = nil
                     Haptics.tap()
                     Task {
                         do { try await MemberAPI.setAiConsent(optOut: !on) }
@@ -549,7 +550,7 @@ struct ProfileView: View {
                             // Consent is the one toggle that must never lie:
                             // if the server didn't record it, don't display it.
                             aiOptOut = previous
-                            aiConsentSaveFailed = true
+                            aiConsentSaveError = NuruStateCopy.saveFailureLine(error)
                             Haptics.error()
                         }
                     }
@@ -562,8 +563,8 @@ struct ProfileView: View {
                 }
             }
             .tint(Nuru.gold)
-            if aiConsentSaveFailed {
-                Text("Couldn't save that — check your connection and try again.")
+            if let line = aiConsentSaveError {
+                Text(line)
                     .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
             }
             EmptyView()

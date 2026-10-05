@@ -353,12 +353,11 @@ struct GoLiveSetupSheet: View {
                 case "FORBIDDEN_SCOPE":
                     forbiddenAlert = true
                 default:
-                    conflictMessage = message
+                    conflictMessage = NuruStateCopy.failureLine("Couldn't start the broadcast.", error)
                 }
-            } else if api?.isNetwork == true {
-                conflictMessage = "You're offline — going live needs a connection."
             } else {
-                conflictMessage = api?.errorDescription ?? "Couldn't start the broadcast. Try again."
+                // §4's words — offline only when the phone is, never raw text.
+                conflictMessage = NuruStateCopy.failureLine("Couldn't start the broadcast.", error)
             }
         }
     }

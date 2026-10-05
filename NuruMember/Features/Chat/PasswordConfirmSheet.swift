@@ -118,16 +118,18 @@ struct PasswordConfirmSheet: View {
             Haptics.error()
             // Say the true thing. A wrong password and a locked account are
             // different problems, and "try again" is bad advice for the second.
-            if case let .http(status, _, message, _) = e {
+            if case let .http(status, _, message, _) = e, status == 429 || status == 401 {
                 errorText = status == 429
                     ? message   // the server names the cooldown — do not paraphrase it
-                    : status == 401 ? "That password isn't right." : message
+                    : "That password isn't right."
             } else {
-                errorText = "Couldn't reach the server. Check your connection."
+                // Anything else in §4's words — never "check your connection"
+                // when it wasn't the connection.
+                errorText = NuruStateCopy.failureLine("Couldn't confirm your password.", e)
             }
         } catch {
             Haptics.error()
-            errorText = "Couldn't confirm just now — please try again."
+            errorText = NuruStateCopy.failureLine("Couldn't confirm your password.", error)
         }
     }
 }

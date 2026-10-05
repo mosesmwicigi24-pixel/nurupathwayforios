@@ -198,7 +198,9 @@ final class IncomingLiveInviteCenter: ObservableObject {
                 if self.invite?.streamId == invite.streamId { dismiss() }
             case .unreachable:
                 // Stays up, quietly, for another try until its 30 s run out.
-                notice = "Couldn't open the stream — check your connection and try again."
+                // §4: offline only when the phone is — else our side.
+                notice = "Couldn't open the stream. "
+                    + NuruStateCopy.noAnswer(deviceOnline: SyncCoordinator.devicePathOnline, showingSaved: false).sentence
             }
         }
     }

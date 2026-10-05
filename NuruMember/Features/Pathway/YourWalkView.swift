@@ -9,7 +9,8 @@ import SwiftUI
 struct YourWalkView: View {
     @State private var events: [WalkEvent] = []
     @State private var loading = true
-    @State private var failed = false
+    /// Why the walk didn't come, in §4's words — offline ≠ "no walk yet".
+    @State private var failure: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -21,8 +22,7 @@ struct YourWalkView: View {
                 } else if events.isEmpty {
                     VStack(spacing: 8) {
                         Icon(.flag, size: 26, color: Nuru.gold)
-                        Text(failed ? "Couldn't load your walk — check your connection and come back."
-                                    : "Your walk begins with the next lesson you open.")
+                        Text(failure ?? "Your walk begins with the next lesson you open.")
                             .font(.inter(14)).foregroundStyle(Nuru.ink)
                             .multilineTextAlignment(.center)
                     }
@@ -41,8 +41,8 @@ struct YourWalkView: View {
         .background(Color(hex: 0xFAF7F0).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task {
-            do { events = try await MemberAPI.myWalk(); failed = false }
-            catch { failed = true } // offline ≠ "no walk yet" — tell the truth
+            do { events = try await MemberAPI.myWalk(); failure = nil }
+            catch { failure = NuruStateCopy.failureLine("Couldn't load your walk.", error) } // offline ≠ "no walk yet" — tell the truth
             loading = false
         }
     }

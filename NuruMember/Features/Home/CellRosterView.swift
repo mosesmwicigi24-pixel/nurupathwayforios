@@ -31,7 +31,9 @@ enum CellRosterMessageState: Equatable {
 final class CellRosterViewModel: ObservableObject {
     @Published var roster: CellRoster?
     @Published var loading = true
-    @Published var error: String?
+    /// Why the roster didn't come, said in §4's words (it read "Check your
+    /// connection and try again" whatever the cause).
+    @Published var loadFailure: Error?
 
     // The chat module's state, read-only — what makes the "…" menu honest.
     @Published private(set) var conversations: [ChatConversation] = []
@@ -77,21 +79,19 @@ final class CellRosterViewModel: ObservableObject {
     }
 
     func load() async {
-        loading = true; error = nil
+        loading = true; loadFailure = nil
         // The roster is the screen; the four chat reads are best-effort colour
         // for the "…" menu and must never fail the load.
-        async let rosterReq = try? MemberAPI.cellRoster()
         async let inboxReq = try? MemberAPI.chatInbox()
         async let connectionsReq = try? MemberAPI.listConnections()
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
         async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
 
-        roster = await rosterReq
+        do { roster = try await MemberAPI.cellRoster() } catch { loadFailure = error }
         conversations = (await inboxReq)?.conversations ?? []
         connections = await connectionsReq ?? []
         outgoingRequests = await outgoingReq ?? []
         incomingRequests = await incomingReq ?? []
-        if roster == nil { error = "Couldn't load your cell roster." }
         loading = false
     }
 
@@ -448,11 +448,10 @@ struct CellRosterView: View {
                 Icon(.users, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text(vm.error == nil ? "No one here yet" : "Couldn't load the roster")
+                Text(vm.loadFailure.map { NuruStateCopy.failure($0).title } ?? "No one here yet")
                     .font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
-                Text(vm.error == nil
-                     ? "When your leader adds people to this cell, they'll appear here."
-                     : "Check your connection and try again.")
+                Text(vm.loadFailure.map { NuruStateCopy.failure($0).line ?? "" }
+                     ?? "When your leader adds people to this cell, they'll appear here.")
                     .font(.nCaption).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

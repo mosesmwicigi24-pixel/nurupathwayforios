@@ -106,10 +106,10 @@ final class PrayerJournalViewModel: ObservableObject {
                 // Offline-created entries live in the mutation queue until the
                 // next sync — the server can't share what it hasn't seen yet.
                 shareError = "This prayer hasn't finished syncing yet. Give it a moment and try again."
-            } else if api?.isNetwork == true {
-                shareError = "You're offline — sharing to the wall needs a connection."
             } else {
-                shareError = api?.errorDescription ?? "Couldn't share this prayer right now. Try again."
+                // §4's words: offline only when the phone is; the server's own
+                // refusal as it said it; never raw error text.
+                shareError = NuruStateCopy.failureLine("Couldn't share this prayer.", error)
             }
         }
     }

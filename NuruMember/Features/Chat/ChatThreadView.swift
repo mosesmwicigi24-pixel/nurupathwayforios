@@ -224,7 +224,7 @@ final class ChatThreadViewModel: ObservableObject {
             _ = try await MemberAPI.removeConnection(peerUserId)
             connectionNotice = "Connection removed. This chat's history is kept."
         } catch {
-            connectionNotice = "Couldn't remove this connection — try again."
+            connectionNotice = NuruStateCopy.failureLine("Couldn't remove this connection.", error)
         }
     }
 
@@ -235,7 +235,7 @@ final class ChatThreadViewModel: ObservableObject {
             _ = try await MemberAPI.blockConnection(peerUserId)
             connectionNotice = "Blocked. They can no longer message you."
         } catch {
-            connectionNotice = "Couldn't block — try again."
+            connectionNotice = NuruStateCopy.failureLine("Couldn't block them.", error)
         }
     }
 
@@ -250,9 +250,9 @@ final class ChatThreadViewModel: ObservableObject {
             // unconditionally since the client has no per-pair status read;
             // this is the expected, harmless outcome when it wasn't needed.
             if case .http(404, _, _, _) = err { connectionNotice = "This person wasn't blocked." }
-            else { connectionNotice = "Couldn't unblock — try again." }
+            else { connectionNotice = NuruStateCopy.failureLine("Couldn't unblock them.", err) }
         } catch {
-            connectionNotice = "Couldn't unblock — try again."
+            connectionNotice = NuruStateCopy.failureLine("Couldn't unblock them.", error)
         }
     }
 }

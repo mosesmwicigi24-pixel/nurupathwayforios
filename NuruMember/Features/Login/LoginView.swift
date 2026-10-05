@@ -41,7 +41,6 @@ struct LoginView: View {
     @State private var remember = true
 
     private let rememberKey = "auth.rememberEmail"
-    private let connectError = "Can't reach the server. Check your connection and try again."
 
     var body: some View {
         GeometryReader { geo in
@@ -408,12 +407,17 @@ struct LoginView: View {
         } catch let e as APIError {
             error = errorMessage(for: e)
         } catch {
-            self.error = "Something went wrong. Please try again."
+            self.error = NuruStateCopy.failure(error).sentence
         }
     }
 
     private func errorMessage(for e: APIError) -> String {
-        if e.isNetwork { return connectError }
+        // No answer, or our side failed: §4's words. Offline only when the
+        // phone is; a server error is ours — never "Invalid email or password"
+        // or "check your connection" on a guess.
+        if e.isNetwork { return NuruStateCopy.failure(e).sentence }
+        if case .decoding = e { return NuruStateCopy.serverSide.sentence }
+        if case .http(let status, _, _, _) = e, status >= 500 { return NuruStateCopy.serverSide.sentence }
         switch mode {
         case .login: return "Invalid email or password."
         case .mfa: return "That code didn't match. Try again or use a recovery code."

@@ -170,11 +170,17 @@ final class ScripturePassageLoader: ObservableObject {
     @Published var passage: ScripturePassage?
     @Published var loading = false
     @Published var failed = false
+    /// Why the passage didn't come, in §4's words (it said "check your
+    /// connection" whatever the cause).
+    @Published private(set) var failureLine = "Couldn't load this passage."
 
     func load(_ ref: String) async {
         guard passage == nil, !loading else { return }
         loading = true; failed = false
-        do { passage = try await ScripturePassageStore.shared.passage(ref) } catch { failed = true }
+        do { passage = try await ScripturePassageStore.shared.passage(ref) } catch {
+            failed = true
+            failureLine = NuruStateCopy.failureLine("Couldn't load this passage.", error)
+        }
         loading = false
     }
 }
@@ -309,7 +315,7 @@ struct ScripturePassageText: View {
                 flash("Saved to your verses")
             } catch {
                 Haptics.error()
-                flash("Couldn't save — try again")
+                flash(NuruStateCopy.saveFailureLine(error))
             }
         }
     }
@@ -378,7 +384,7 @@ struct ScriptureRefCard: View {
                     Button {
                         Task { await loader.load(reference) }
                     } label: {
-                        Text("Couldn't load this passage — tap to try again.")
+                        Text(loader.failureLine)
                             .font(.inter(12, .medium)).foregroundStyle(pal.inkDim)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 14).padding(.bottom, 14)
@@ -462,7 +468,7 @@ struct ScripturePassageSheet: View {
                                 .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
                     } else if loader.failed {
-                        Text("Couldn't load this passage — check your connection and try again.")
+                        Text(loader.failureLine)
                             .font(.inter(13)).foregroundStyle(pal.inkDim)
                             .fixedSize(horizontal: false, vertical: true)
                         Button { Task { await loader.load(reference) } } label: {

@@ -546,11 +546,9 @@ private struct PartReflectionBox: View {
             }
         } catch {
             Haptics.error()
-            let api = error as? APIError
             withAnimation(.easeOut(duration: 0.2)) {
-                self.error = (api?.isNetwork == true)
-                    ? "You're offline — your reflection needs a connection to save."
-                    : (api?.errorDescription ?? "Couldn't save your reflection. Try again.")
+                // §4's words — offline only when the phone is, never raw text.
+                self.error = NuruStateCopy.failureLine("Couldn't save your reflection.", error)
             }
         }
         saving = false

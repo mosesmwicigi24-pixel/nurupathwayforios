@@ -443,13 +443,7 @@ struct ServiceCheckInView: View {
     }
 
     private func friendlyFailure(_ error: Error) -> String {
-        guard let api = error as? APIError else {
-            return "Something went wrong — try again."
-        }
-        if api.isNetwork {
-            return "You're offline — check-in needs a connection. Reconnect and try again."
-        }
-        if case .http(_, let code, let message, _) = api {
+        if case .http(_, let code, _, _)? = error as? APIError {
             switch code ?? "" {
             case "VALIDATION_FAILED":
                 return "That code isn't valid — it may have expired. Grab the latest one on the screen and scan again."
@@ -457,11 +451,13 @@ struct ServiceCheckInView: View {
                 return "We couldn't find that service. Scan the code on the screen again."
             case "FORBIDDEN_SCOPE":
                 return "That code belongs to another congregation."
-            default:
-                return message   // e.g. "Check-in has closed for this service"
+            default: break
             }
         }
-        return api.errorDescription ?? "Something went wrong — try again."
+        // Everything else in §4's words: the server's own refusal as it said
+        // it ("Check-in has closed for this service"), else what really
+        // happened — offline only when the phone is, never raw error text.
+        return NuruStateCopy.failureLine("Couldn't check you in.", error)
     }
 }
 

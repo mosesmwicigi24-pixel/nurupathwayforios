@@ -1107,7 +1107,7 @@ struct PlanDetailView: View {
             showInviteSent(InviteSentToast(name: inviteFirstName(friend.fullName), peerUserId: friend.userId))
         } catch {
             Haptics.error()
-            inviteError = NuruStateCopy.failureLine("Check your connection and try again.", error)
+            inviteError = NuruStateCopy.failureLine("Couldn't send the invite.", error)
         }
     }
 
@@ -1138,7 +1138,7 @@ struct PlanDetailView: View {
             presentSystemShareSheet([message])
         } catch {
             Haptics.error()
-            inviteError = NuruStateCopy.failureLine("Check your connection and try again.", error)
+            inviteError = NuruStateCopy.failureLine("Couldn't make the invite link.", error)
         }
     }
 
@@ -1215,7 +1215,7 @@ final class PlanDayViewModel: ObservableObject {
             PlanDayLog.noteSealed()   // the server sealed it: the streak card's tick (§7.4 #4)
             return true
         } catch {
-            completeError = "Couldn't save today — check your connection and try again."
+            completeError = NuruStateCopy.failureLine("Couldn't save today.", error)
             return false
         }
     }
@@ -1252,10 +1252,8 @@ final class PlanDayViewModel: ObservableObject {
             }
         } catch {
             Haptics.error()
-            let api = error as? APIError
-            reflectionError = (api?.isNetwork == true)
-                ? "You're offline — your reflection needs a connection to save."
-                : (api?.errorDescription ?? "Couldn't save your reflection. Try again.")
+            // §4's words — offline only when the phone is, never raw text.
+            reflectionError = NuruStateCopy.failureLine("Couldn't save your reflection.", error)
         }
         reflectionSaving = false
     }

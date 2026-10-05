@@ -563,4 +563,39 @@ final class ExperienceCycle5Tests: XCTestCase {
         let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Pathway/ModuleView.swift"), encoding: .utf8)
         XCTAssertFalse(src.contains("min read"), "no second, word-counted time")
     }
+
+    // MARK: §9.5 #1 — every state line in §4's words
+
+    /// A failure line says what really happened, in §4's words: no raw server
+    /// or exception text (APIError.errorDescription passed decoding details
+    /// and transport messages straight to the member), and never "check your
+    /// connection" when it wasn't the connection (§2) — nine screens said it
+    /// whatever the cause, and check-in called a timeout "offline".
+    func testNoStateLineLeaksRawTextOrGuessesTheCause() throws {
+        var raw: [String] = [], guesses: [String] = []
+        for (rel, text) in try TypeScan.files() where !rel.hasPrefix("Networking/") && rel != "Features/Shared/StateLanguage.swift" {
+            for (i, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.hasPrefix("//") { continue }
+                // The assistant reads it only to hear "unavailable"; it never shows it.
+                if t.contains(".errorDescription"), !(rel == "Features/Chat/NuruAssistantView.swift" && t.hasPrefix("let msg =")) {
+                    raw.append("\(rel):\(i + 1)")
+                }
+                if t.lowercased().contains("check your connection") { guesses.append("\(rel):\(i + 1)") }
+            }
+        }
+        XCTAssertEqual(raw, [], "raw server or exception text never reaches a member (§4)")
+        XCTAssertEqual(guesses, [], "never \"check your connection\" on a guess (§2)")
+        // What the lines now say, by cause.
+        XCTAssertEqual(NuruStateCopy.failureLine("Couldn't check you in.", APIError.transport("The request timed out."), deviceOnline: true),
+                       "Couldn't check you in. Something went wrong on our side. It isn't you — please try again in a moment.",
+                       "a timeout on a working network is our side, not \"offline\"")
+        XCTAssertEqual(NuruStateCopy.failureLine("Couldn't check you in.", APIError.offline, deviceOnline: false),
+                       "Couldn't check you in. You're offline. Connect to the internet, then try again.")
+        XCTAssertEqual(NuruStateCopy.failureLine("Couldn't check you in.", APIError.http(status: 409, code: "CONFLICT", message: "Check-in has closed for this service"), deviceOnline: true),
+                       "Couldn't check you in. Check-in has closed for this service", "the server's own refusal, as it said it")
+        XCTAssertEqual(NuruStateCopy.failureLine("Couldn't save your reflection.", APIError.decoding("keyNotFound(…)"), deviceOnline: true),
+                       "Couldn't save your reflection. Something went wrong on our side. It isn't you — please try again in a moment.",
+                       "never the decoder's own words")
+    }
 }
