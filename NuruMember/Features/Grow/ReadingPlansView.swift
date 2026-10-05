@@ -151,7 +151,7 @@ struct ReadingPlansView: View {
                 && (q.isEmpty || p.title.lowercased().contains(q) || (p.category ?? "").lowercased().contains(q))
         }
     }
-    private var continueReading: [ReadingPlanRow] { vm.plans.filter { $0.enrolled && $0.completedAt == nil } }
+    private var continueReading: [ReadingPlanRow] { vm.plans.filter(PlanPicks.isBeingRead) }
     /// The picks follow PlanPicks — one rule, both apps (§8.2 #6).
     private var planOfDay: ReadingPlanRow? { PlanPicks.planOfDay(vm.plans) }
     private var categories: [String] {

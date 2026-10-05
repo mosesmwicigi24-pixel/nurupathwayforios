@@ -134,4 +134,29 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         PlanDayLog.forget(in: defaults)
         XCTAssertFalse(PlanDayLog.sealedToday(now: morning, in: defaults), "signed out: the next member starts clean")
     }
+
+    // MARK: §7.4 #3 — one card for the plan in progress
+
+    private func planRow(_ id: String, enrolled: Bool = false, finished: Bool = false) -> [String: Any] {
+        ["plan_id": id, "title": "Plan \(id)", "description": "Words.", "day_count": 7, "enrolled": enrolled,
+         "current_day": 1, "completed_at": finished ? "2026-10-01T08:00:00Z" : NSNull()]
+    }
+
+    func testThePlanBeingReadIsNeverPromotedBesideItsContinueCard() throws {
+        let rows = try decode([ReadingPlanRow].self, [planRow("first-steps", enrolled: true), planRow("b"), planRow("c")])
+        // The local API's promos for Ada, in its order.
+        let promos = try decode([PlanPromo].self, [
+            ["plan_id": "first-steps", "slot": "continue", "kicker": "PICK UP WHERE YOU LEFT OFF"],
+            ["plan_id": "b", "slot": "fresh", "kicker": "WORTH YOUR WEEK"],
+            ["plan_id": "c", "slot": "fresh", "kicker": "FROM THE LIBRARY"],
+        ])
+        let resolved = PlanPicks.resolve(promos, in: rows)
+        XCTAssertEqual(resolved.map(\.plan.planId), ["b", "c"], "First Steps has its one card: Continue reading")
+        XCTAssertEqual(resolved.first?.kicker, "WORTH YOUR WEEK", "the hero is the next promo, in the server's order")
+
+        XCTAssertTrue(PlanPicks.isBeingRead(rows[0]))
+        XCTAssertFalse(PlanPicks.isBeingRead(rows[1]), "not started")
+        let finished = try decode(ReadingPlanRow.self, planRow("done", enrolled: true, finished: true))
+        XCTAssertFalse(PlanPicks.isBeingRead(finished), "a finished plan is not in Continue reading")
+    }
 }

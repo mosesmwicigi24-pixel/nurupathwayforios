@@ -5,8 +5,11 @@
 //
 // • The hero: the server's promos (GET /growth/plans/promos) in the server's
 //   order, each joined to the catalogue the page holds — a promo whose plan
-//   isn't there is dropped, a plan is never promoted twice — and the first
-//   one leads, with the server's kicker ("FOR YOU" if it ever sent none).
+//   isn't there is dropped, a plan is never promoted twice, and a plan the
+//   member is reading (enrolled, not finished) is never promoted: "Continue
+//   reading" is that plan's one card (§7.4 #3 — the server's "PICK UP WHERE
+//   YOU LEFT OFF" showed the same plan a second time) — and the first one
+//   leads, with the server's kicker ("FOR YOU" if it ever sent none).
 // • PLAN OF THE DAY (no promo to show): the first plan in the server's order
 //   (GET /growth/plans, never re-sorted) the member hasn't started; else the
 //   first plan.
@@ -52,14 +55,18 @@ enum PlanPicks {
         }
     }
 
-    /// The server's promos, in its order, joined to the plans the page holds.
+    /// The server's promos, in its order, joined to the plans the page holds
+    /// — never one the member is reading (its card is "Continue reading").
     static func resolve(_ promos: [PlanPromo], in plans: [ReadingPlanRow]) -> [Resolved] {
         guard !promos.isEmpty, !plans.isEmpty else { return [] }
         let byId = Dictionary(plans.map { ($0.planId, $0) }, uniquingKeysWith: { a, _ in a })
         var seen = Set<String>()
         return promos.compactMap { p in
-            guard let plan = byId[p.planId], seen.insert(plan.planId).inserted else { return nil }
+            guard let plan = byId[p.planId], !isBeingRead(plan), seen.insert(plan.planId).inserted else { return nil }
             return Resolved(promo: p, plan: plan)
         }
     }
+
+    /// In "Continue reading": enrolled and not finished.
+    static func isBeingRead(_ plan: ReadingPlanRow) -> Bool { plan.enrolled && plan.completedAt == nil }
 }
