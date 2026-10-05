@@ -50,6 +50,11 @@ final class ModuleViewModel: ObservableObject {
     @Published var savedReflection: String?
     @Published var submittingReflection = false
     @Published var reflectionError: String?
+    /// The step after this lesson once it is finished. A finished lesson used
+    /// to end on "Revisit this module", with Back its only way on (the Cycle 4
+    /// walk). Read from the level's own list, so it only offers what the
+    /// server will open.
+    @Published var onward: LessonOnward?
 
     private let moduleId: String
     init(moduleId: String) { self.moduleId = moduleId }
@@ -59,6 +64,14 @@ final class ModuleViewModel: ObservableObject {
         do { detail = try await MemberAPI.module(moduleId) }
         catch { self.error = NuruStateCopy.failureLine("Couldn't load this lesson.", error) }
         loading = false
+    }
+
+    /// What follows a finished lesson: the next lesson, or the level's exam.
+    /// Silent on failure — the page keeps its way back, as before.
+    func loadOnward() async {
+        guard let d = detail, d.isFinished,
+              let list = try? await MemberAPI.levelModules(d.levelNumber) else { return }
+        onward = LessonOnward.after(moduleId: d.moduleId, levelNumber: d.levelNumber, in: list)
     }
 
     /// Marks the module complete server-side. Success/failure is surfaced (the
@@ -406,6 +419,7 @@ struct ModuleView: View {
     @State private var startingQuiz = false       // flushing engagement before the quiz
     @State private var quizTarget: String?        // pushes QuizView once the flush lands
     @State private var nextModuleTarget: String?  // the server-unlocked next module (post-quiz-pass)
+    @State private var examTarget: Int?           // the level's exam, from a finished last lesson
 
     /// Instructor and above may leave "a word from your discipler" on the
     /// lesson for their whole congregation (server enforces the same ladder).
@@ -636,6 +650,7 @@ struct ModuleView: View {
             // hasn't started typing) so it reads as already-done on return.
             if reflection.isEmpty, let saved = vm.savedReflection { reflection = saved }
             applyResume(await totals)
+            await vm.loadOnward()
         }
         .onAppear {
             viewOnScreen = true
@@ -668,6 +683,7 @@ struct ModuleView: View {
             })
         }
         .navigationDestination(item: $nextModuleTarget) { ModuleView(moduleId: $0) }
+        .navigationDestination(item: $examTarget) { LevelExamView(levelNumber: $0) }
         .confirmationDialog("Hear it another way", isPresented: $showExplainMenu, titleVisibility: .visible) {
             Button("In simple English") { explainTarget = ExplainTarget(style: "simple") }
             Button("Kwa Kiswahili") { explainTarget = ExplainTarget(style: "swahili") }
@@ -998,6 +1014,10 @@ struct ModuleView: View {
                     if d.isFinished && !editingReflection {
                         VStack(spacing: 14) {
                             MLReflectionFolded(text: vm.savedReflection ?? reflection)
+                            // The way on: the next lesson, or the level's exam.
+                            if let next = vm.onward {
+                                MLOnwardCard(onward: next) { goOnward(next) }
+                            }
                             // The module is sealed — changing anything is an
                             // intentional act, behind one quiet door.
                             Button {
@@ -1043,6 +1063,16 @@ struct ModuleView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Open the step after a finished lesson.
+    private func goOnward(_ o: LessonOnward) {
+        Haptics.tap()
+        switch o {
+        case .lesson(let id, _, _): nextModuleTarget = id
+        case .exam(let level): examTarget = level
+        case .examSoon: break
+        }
     }
 
     // Read / Reflect (+ Watch when a video exists, + Listen when audio exists) —
@@ -2003,6 +2033,84 @@ struct MLFinishedSummary {
 
 /// Finished modules show the reflection FOLDED — the words the member wrote,
 /// read-only and sealed (edits flow through the "Revisit this module" door).
+/// The step after a finished lesson (the Cycle 4 walk: it was a dead end).
+/// The next lesson in its level, in the server's sequence; after the last
+/// lesson, the level's exam while it is the member's to take — or, while it
+/// isn't ready, §7.3's word that it opens soon. A lesson still behind its
+/// gate, or an exam already passed, offers nothing: Back stays the way out.
+enum LessonOnward: Equatable {
+    case lesson(id: String, number: Int, title: String)
+    case exam(level: Int)
+    case examSoon(level: Int)
+
+    static func after(moduleId: String, levelNumber: Int, in modules: [LevelModule]) -> LessonOnward? {
+        let lessons = modules.filter { !$0.isExam }.sorted { $0.moduleSequenceNumber < $1.moduleSequenceNumber }
+        guard let i = lessons.firstIndex(where: { $0.moduleId == moduleId }) else { return nil }
+        if i + 1 < lessons.count {
+            let next = lessons[i + 1]
+            guard next.status != .locked, !next.locked else { return nil }
+            return .lesson(id: next.moduleId, number: next.moduleSequenceNumber, title: next.title)
+        }
+        guard let exam = modules.first(where: \.isExam), !exam.completed,
+              exam.status != .locked, !exam.locked else { return nil }
+        return exam.examAvailable ? .exam(level: levelNumber) : .examSoon(level: levelNumber)
+    }
+
+    var kicker: String {
+        switch self {
+        case .lesson(_, let n, _): return "UP NEXT · MODULE \(n)"
+        case .exam(let l), .examSoon(let l): return "UP NEXT · LEVEL \(l) EXAM"
+        }
+    }
+    var title: String {
+        switch self {
+        case .lesson(_, _, let t): return t
+        case .exam(let l): return "Take the Level \(l) exam"
+        case .examSoon(let l): return "Level \(l) complete"
+        }
+    }
+    var line: String? {
+        switch self {
+        case .examSoon: return "Every module is done. The exam opens soon — we'll let you know."
+        default: return nil
+        }
+    }
+    var actionLabel: String? {
+        switch self {
+        case .lesson: return "Next lesson ›"
+        case .exam: return "Begin the exam ›"
+        case .examSoon: return nil
+        }
+    }
+}
+
+/// The way on, at the foot of a finished lesson: what comes next, and its
+/// one gold action.
+private struct MLOnwardCard: View {
+    let onward: LessonOnward
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(onward.kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(onward.title).font(.nRowTitle).foregroundStyle(ML.navy)
+                .fixedSize(horizontal: false, vertical: true)
+            if let line = onward.line {
+                Text(line).font(.nCardBody).foregroundStyle(ML.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let label = onward.actionLabel {
+                PButton(title: label, action: action).padding(.top, 8)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ML.border, lineWidth: 1))
+    }
+}
+
 private struct MLReflectionFolded: View {
     let text: String
     var body: some View {

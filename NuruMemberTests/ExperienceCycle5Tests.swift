@@ -676,4 +676,43 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertLessThanOrEqual(n, Self.fixedLineLimitCeiling, "a new fixed line limit can cut text at the largest size — use .nuruLineLimit, which lifts there")
     }
     static let fixedLineLimitCeiling = 273
+
+    // MARK: Cycle 4 walk — a finished lesson offers the way on
+
+    func testAFinishedLessonOffersTheWayOn() throws {
+        func trail(_ rows: [[String: Any]]) throws -> [LevelModule] { try decode([LevelModule].self, rows) }
+        let m9 = module("m9", seq: 9, "completed", completed: true, kind: "quiz", title: "Relationships & Community")
+        let m10 = module("m10", seq: 10, "completed", completed: true, kind: "quiz", title: "Practical Life Questions")
+        let exam = module("x", seq: 900, "next", kind: "exit_exam", title: "Level 1 Review")
+        // Out of order on the wire: the sequence decides.
+        let ada = try trail([exam, m10, m9])
+        XCTAssertEqual(LessonOnward.after(moduleId: "m9", levelNumber: 1, in: ada),
+                       .lesson(id: "m10", number: 10, title: "Practical Life Questions"))
+        XCTAssertEqual(LessonOnward.after(moduleId: "m10", levelNumber: 1, in: ada), .exam(level: 1),
+                       "after the last lesson: the Level 1 exam")
+        // The words: "Next lesson ›", or the exam by its one name.
+        let next = LessonOnward.lesson(id: "m10", number: 10, title: "Practical Life Questions")
+        XCTAssertEqual(next.kicker, "UP NEXT · MODULE 10")
+        XCTAssertEqual(next.actionLabel, "Next lesson ›")
+        XCTAssertEqual(LessonOnward.exam(level: 1).title, "Take the Level 1 exam")
+        XCTAssertEqual(LessonOnward.exam(level: 1).actionLabel, "Begin the exam ›")
+        // An exam with no questions yet: said in §7.3's words, not offered.
+        var unready = exam; unready["exam_available"] = false
+        let soon = try XCTUnwrap(LessonOnward.after(moduleId: "m10", levelNumber: 1, in: try trail([m9, m10, unready])))
+        XCTAssertEqual(soon, .examSoon(level: 1))
+        XCTAssertEqual(soon.title, "Level 1 complete")
+        XCTAssertEqual(soon.line, "Every module is done. The exam opens soon — we'll let you know.")
+        XCTAssertNil(soon.actionLabel)
+        // Passed (Eli): nothing more on this level — Back is the way out.
+        let passed = module("x", seq: 900, "completed", completed: true, kind: "exit_exam")
+        XCTAssertNil(LessonOnward.after(moduleId: "m10", levelNumber: 1, in: try trail([m9, m10, passed])))
+        // A next lesson still behind its gate is never offered (the server would refuse it).
+        let gated = module("m10", seq: 10, "locked", title: "Practical Life Questions")
+        XCTAssertNil(LessonOnward.after(moduleId: "m9", levelNumber: 1, in: try trail([m9, gated, exam])))
+        // An exam row still locked, or none at all: nothing to offer.
+        XCTAssertNil(LessonOnward.after(moduleId: "m10", levelNumber: 1,
+                                        in: try trail([m9, m10, module("x", seq: 900, "locked", kind: "exit_exam")])))
+        XCTAssertNil(LessonOnward.after(moduleId: "m10", levelNumber: 1, in: try trail([m9, m10])))
+        XCTAssertNil(LessonOnward.after(moduleId: "gone", levelNumber: 1, in: ada), "a lesson not in its level's list")
+    }
 }
