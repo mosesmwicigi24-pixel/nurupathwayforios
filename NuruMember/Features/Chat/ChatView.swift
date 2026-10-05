@@ -762,9 +762,10 @@ struct ChatView: View {
                 Haptics.tap()
                 Task { await vm.load() }
             } label: {
+                // A compact action is a navy pill (§8.1 rule 4).
                 Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
                     .padding(.horizontal, Nuru.S.lg).padding(.vertical, 9)
-                    .background(storyRing, in: Capsule())
+                    .background(Nuru.navy, in: Capsule())
             }
             .buttonStyle(.pressable)
         }
@@ -1208,7 +1209,7 @@ private struct DoubleCheck: View {
 private struct UnreadBadge: View {
     let count: Int
     var body: some View {
-        Text("\(count)").font(.inter(11, .bold)).foregroundStyle(.white)
+        Text("\(count)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)   // navy on gold (§8.1 rule 4)
             .padding(.horizontal, 5)
             .frame(minWidth: 17, minHeight: 17)
             .background(storyRing, in: Capsule())
@@ -1497,7 +1498,9 @@ private struct PersonRow: View {
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 10).frame(height: 28)
-            .background(storyRing, in: Capsule())
+            // A compact in-row action is a navy pill (§8.1 rule 4) — a list of
+            // gold "Connect"s was a column of primaries.
+            .background(Nuru.navy, in: Capsule())
         case .requestSent:
             HStack(spacing: 4) {
                 Text("Request sent").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
@@ -1701,8 +1704,7 @@ private struct DiscoverSpaceRow: View {
                     .padding(.horizontal, 12)
                     .frame(height: 30)
                     .frame(minWidth: 44)   // spinner state stays a comfortable target
-                    .background(storyRing, in: Capsule())
-                    .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+                    .background(Nuru.navy, in: Capsule())   // a compact in-row action (§8.1 rule 4)
                 }
                 .buttonStyle(.pressable)
                 .disabled(joining)
