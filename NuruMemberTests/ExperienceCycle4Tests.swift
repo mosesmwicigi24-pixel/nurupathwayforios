@@ -757,6 +757,18 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(journal.contains("Text(\"Add Prayer\").font(.nActionLabel).foregroundStyle(Nuru.navy)"))
     }
 
+    // MARK: Walk E21 — the Events week strip and "N this week" mean the same seven days
+
+    @MainActor
+    func testTheEventsWeekStripStartsTodayAndMatchesTheWeekCount() throws {
+        let vm = EventsViewModel()
+        let week = vm.week
+        XCTAssertEqual(week.count, EventsWeek.days)
+        XCTAssertTrue(week.first?.isToday == true, "today first — never two days back")
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Events/EventsView.swift"), encoding: .utf8)
+        XCTAssertTrue(src.contains("value: EventsWeek.days, to: todayStart"), "the count uses the same window")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

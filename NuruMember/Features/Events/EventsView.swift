@@ -208,7 +208,7 @@ final class EventsViewModel: ObservableObject {
 
     // Summary counts (header pills).
     var thisWeekCount: Int {
-        let weekEnd = cal.date(byAdding: .day, value: 7, to: todayStart)!
+        let weekEnd = cal.date(byAdding: .day, value: EventsWeek.days, to: todayStart)!
         return occurrences.filter { let d = Ev.date($0.startAt); return d >= todayStart && d < weekEnd }.count
     }
     var goingCount: Int { quickRsvps.values.filter { $0 == "going" }.count }
@@ -223,12 +223,14 @@ final class EventsViewModel: ObservableObject {
         occurrences.filter { Ev.isLive($0.startAt, $0.endAt) }.count
     }
 
-    /// Scrollable strip: 14 days starting two days back (Figma week-picker).
+    /// The week strip: today and the next six days — the same seven days
+    /// "N this week" counts (the walk's E21: the strip began two days back and
+    /// ran fourteen days, so its week and the header's never agreed).
     var week: [WeekDay] {
         let letters = DateFormatter()
         letters.dateFormat = "EEEEE"
         let eventDays = Set(occurrences.map { cal.startOfDay(for: Ev.date($0.startAt)) })
-        return (-2..<12).map { i in
+        return (0..<EventsWeek.days).map { i in
             let d = cal.date(byAdding: .day, value: i, to: todayStart)!
             return WeekDay(
                 date: d,
@@ -501,10 +503,9 @@ struct EventsView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(vm.week) { d in dayPill(d) }
-                }
+            // Seven days fill the card — no scrolling to find this week.
+            HStack(spacing: 4) {
+                ForEach(vm.week) { d in dayPill(d) }
             }
         }
         .padding(Nuru.S.md)
@@ -526,7 +527,7 @@ struct EventsView: View {
                 Text("\(d.day)").font(.fraunces(16, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                 Circle().fill(d.hasEvents ? Nuru.gold : .clear).frame(width: 4, height: 4)
             }
-            .frame(width: 44)
+            .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.vertical, 8)
             .background(bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
@@ -1559,4 +1560,10 @@ extension View {
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             .nuruShadow()
     }
+}
+
+/// The one "week" on Events (the walk's E21): the strip and the header's
+/// "N this week" both mean today and the next six days.
+enum EventsWeek {
+    static let days = 7
 }
