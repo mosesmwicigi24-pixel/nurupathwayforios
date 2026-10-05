@@ -885,6 +885,14 @@ struct PartnersView: View {
                      ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
                      : dueSubtitle(item, p))
                     .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                // What the office is already checking, on the row it covers
+                // (§9.3 rule 1): said, never subtracted — the row and Pay
+                // still ask what is owed.
+                if let claim = item.claimLine {
+                    Text(claim)
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             if item.fullyPending {

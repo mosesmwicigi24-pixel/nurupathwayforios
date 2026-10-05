@@ -334,6 +334,31 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(asked.request?.conversationId, "c1")
     }
 
+    // MARK: §9.3 #1 — a claim the office is checking sits on the DUE row it covers
+
+    func due(_ id: String = "roof", dueOn: String = "2026-12-31", amount: Int = 2_000_000, claim: Int? = nil,
+             kind: String = "pledge", currency: String = "KES", overdueSince: String? = nil) throws -> DueItem {
+        var row: [String: Any] = ["kind": kind, "id": id, "title": "Roof sheets for the new hall", "amount_minor": amount,
+                                  "currency": currency, "due_on": dueOn, "action": "pay", "pending_minor": 0]
+        if let claim { row["pending_claim_minor"] = claim }
+        if let overdueSince { row["overdue_since"] = overdueSince }
+        return try decode(DueItem.self, row)
+    }
+
+    func testAClaimBeingCheckedIsSaidOnItsRowNeverSubtracted() throws {
+        let ada = try due(claim: 200_000)
+        XCTAssertEqual(ada.claimLine, "KSh 2,000 is being checked by the office")
+        XCTAssertEqual(ada.amountMinor, 2_000_000, "the row still asks what is owed")
+        XCTAssertNil(try due(claim: 0).claimLine)
+        XCTAssertNil(try due().claimLine, "an older server: nothing is said")
+        XCTAssertNil(try due(claim: 200_000, kind: "schedule").claimLine, "a recurring gift's run carries no claims")
+        // Postgres NUMERIC can arrive as a string.
+        let numeric = try decode(DueItem.self, ["kind": "pledge", "id": "roof", "title": "Roof", "amount_minor": 2_000_000,
+                                                "currency": "KES", "due_on": "2026-12-31", "action": "pay",
+                                                "pending_claim_minor": "200000"])
+        XCTAssertEqual(numeric.pendingClaimMinor, 200_000)
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

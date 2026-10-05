@@ -730,6 +730,20 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
     /// "2 overdue since 10 Aug".
     let overdueCount: Int
     let overdueSince: String?
+    /// kind "pledge": what the office is checking toward it — the member's
+    /// pending "I paid another way" claims, in the pledge's currency (pathway
+    /// 563185e). Said beside the row, never subtracted: a claim counts once
+    /// the office confirms it (GIVING.md). 0 when none, or from an older server.
+    let pendingClaimMinor: Int
+
+    /// "KSh 2,000 is being checked by the office" — what is already happening
+    /// is said first, so nobody pays twice (EXPERIENCE.md §9.3 rule 1). Nil
+    /// with nothing being checked.
+    var claimLine: String? {
+        guard kind == "pledge", pendingClaimMinor > 0 else { return nil }
+        return "\(GiveMoney.format(pendingClaimMinor, currency)) is being checked by the office"
+    }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "pledge"
@@ -743,6 +757,7 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
         pendingMinor = max(0, c.flexInt(.pendingMinor) ?? 0)
         overdueCount = max(0, c.flexInt(.overdueCount) ?? 0)
         overdueSince = (try? c.decodeIfPresent(String.self, forKey: .overdueSince)).flatMap { $0.isEmpty ? nil : $0 }
+        pendingClaimMinor = max(0, c.flexInt(.pendingClaimMinor) ?? 0)
     }
 }
 
