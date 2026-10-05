@@ -246,8 +246,10 @@ enum HomeWeek {
         guard let p = partnership, let gifts = schedules else { return give }
         let today = PauseDates.wire(now)
         func pledge(_ id: String) -> Pledge? { p.pledges.first { $0.pledgeId == id } }
+        // Nothing is urgent before it is (§9.3 rule 2): a total pledge's far
+        // deadline is not this week's ask.
         let owedByHand = p.due.filter { d in
-            d.kind == "pledge" && d.action == "pay" && !d.fullyPending
+            d.kind == "pledge" && d.action == "pay" && !d.fullyPending && dueIsSoon(d, today: today)
                 && PledgePace.collectedDay(d, by: pledge(d.id).flatMap { PledgePace.collector(of: $0, in: gifts) }) == nil
         }
         let owedIds = Set(owedByHand.map(\.id))
@@ -289,6 +291,20 @@ enum HomeWeek {
             return HomeWeekRow(pillar: .giving, title: "Pay · \(title)", line: line, destination: .partners)
         }
         return give
+    }
+
+    /// How near a due must be to be called DUE (EXPERIENCE.md §9.3 rule 2):
+    /// the fortnight.
+    static let dueSoonDays = 14
+
+    /// Nothing is urgent before it is (§9.3 rule 2): a row is DUE when it is
+    /// overdue or falls within the fortnight; further out it is coming up — a
+    /// total pledge's 31 Dec read "DUE" 87 days ahead. An undated row stays
+    /// DUE. Android's dueIsSoon.
+    static func dueIsSoon(_ d: DueItem, today: String) -> Bool {
+        if overdue(d, today: today) { return true }
+        guard let n = days(from: today, to: String(d.dueOn.prefix(10))) else { return true }
+        return n <= dueSoonDays
     }
 
     /// The server says it is late — overdue instalments behind it, or since

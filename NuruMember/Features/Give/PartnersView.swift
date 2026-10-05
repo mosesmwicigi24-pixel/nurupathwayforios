@@ -852,13 +852,26 @@ struct PartnersView: View {
 
     // MARK: Due — soonest first, one action each
 
+    /// "DUE" only within the fortnight; further out the same rows read
+    /// "COMING UP" (EXPERIENCE.md §9.3 rule 2) — Pay still there, for paying
+    /// early. A total pledge's 31 Dec read "DUE" 87 days ahead.
     private func dueSection(_ p: Partnership) -> some View {
+        let today = PauseDates.wire(Date())
+        let soon = p.due.filter { HomeWeek.dueIsSoon($0, today: today) }
+        let later = p.due.filter { !HomeWeek.dueIsSoon($0, today: today) }
+        return VStack(alignment: .leading, spacing: 16) {
+            if !soon.isEmpty { dueGroup("DUE", soon, p) }
+            if !later.isEmpty { dueGroup("COMING UP", later, p) }
+        }
+    }
+
+    private func dueGroup(_ label: String, _ rows: [DueItem], _ p: Partnership) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            eyebrow("DUE")
+            eyebrow(label)
             VStack(spacing: 0) {
-                ForEach(Array(p.due.enumerated()), id: \.element.id) { i, item in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, item in
                     dueRow(item, p)
-                    if i != p.due.count - 1 {
+                    if i != rows.count - 1 {
                         Divider().overlay(Nuru.border).padding(.vertical, 10)
                     }
                 }

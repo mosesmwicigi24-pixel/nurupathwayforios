@@ -359,6 +359,19 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(numeric.pendingClaimMinor, 200_000)
     }
 
+    // MARK: §9.3 #2 — "DUE" only within the fortnight
+
+    func testDueOnlyWithinTheFortnight() throws {
+        let today = "2026-10-05"
+        XCTAssertTrue(HomeWeek.dueIsSoon(try due(dueOn: "2026-10-19"), today: today), "the 14th day")
+        XCTAssertFalse(HomeWeek.dueIsSoon(try due(dueOn: "2026-10-20"), today: today), "the 15th day is coming up")
+        XCTAssertFalse(HomeWeek.dueIsSoon(try due(dueOn: "2026-12-31"), today: today), "Ada's 31 Dec, 87 days ahead")
+        XCTAssertTrue(HomeWeek.dueIsSoon(try due(dueOn: "2026-10-01"), today: today), "overdue is always due")
+        XCTAssertTrue(HomeWeek.dueIsSoon(try due(dueOn: "2026-12-31", overdueSince: "2026-09-01"), today: today),
+                      "late by the server's word")
+        XCTAssertTrue(HomeWeek.dueIsSoon(try due(dueOn: ""), today: today), "an undated row stays DUE")
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

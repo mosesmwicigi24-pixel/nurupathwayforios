@@ -387,11 +387,11 @@ final class ExperienceCycle2Tests: XCTestCase {
         XCTAssertEqual(r.line, "KSh 20,000 due Thu 8 Oct")
         XCTAssertEqual(r.destination, .partners)
         XCTAssertFalse(HomeWeek.asksToGive([r]))
-        // A total pledge is due until fulfilled — the server's DUE list says so,
-        // not a client window: Ada's Roof sheets, with nothing collected this week.
+        // Nothing is urgent before it is (§9.3 rule 2): Ada's Roof sheets, due
+        // 31 Dec, is not this week's ask — Partners lists it under COMING UP.
         let total = try standing(pledges: [roofPledge],
                                  due: [dueJSON("p-roof", "Roof sheets for the new hall", dueOn: "2026-12-31", amount: 2_000_000)])
-        XCTAssertEqual(givingRow(total, []).line, "KSh 20,000 due Thu 31 Dec")
+        XCTAssertEqual(givingRow(total, []).title, "Give")
     }
 
     func testAnOverdueInstalmentSaysSince() throws {
