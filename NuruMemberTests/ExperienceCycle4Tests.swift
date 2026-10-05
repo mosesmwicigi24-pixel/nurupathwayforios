@@ -352,6 +352,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(vm.examAvailable)
     }
 
+    // MARK: Cycle 3 close walk B3 — no progress claimed before there is any
+
+    func testANeverOpenedModuleIsUpNextNotInProgress() throws {
+        let fresh = try decode([LevelModule].self, [module("m1", level: 1, seq: 1, "next")]).first!
+        XCTAssertEqual(fresh.progress, 0)
+        XCTAssertEqual(ModuleRowWords.openCaption(progress: fresh.progress), "Up next · tap to start")
+        XCTAssertEqual(ModuleRowWords.openAction(progress: fresh.progress), "Start")
+        XCTAssertEqual(ModuleRowWords.openCaption(progress: 40), "In progress · tap to continue")
+        XCTAssertEqual(ModuleRowWords.openAction(progress: 40), "Resume")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

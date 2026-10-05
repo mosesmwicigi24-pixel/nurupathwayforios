@@ -874,7 +874,7 @@ private struct PWModuleRow: View {
                  : lockHint ? "Finish every module to unlock the exam" : "Level exam · locked"
         }
         return done ? "Completed"
-             : active ? "In progress · tap to continue"
+             : active ? ModuleRowWords.openCaption(progress: module.progress)
              : lockHint ? "Finish the previous module to unlock" : "Locked"
     }
 
@@ -935,7 +935,8 @@ private struct PWModuleRow: View {
             }
             Spacer(minLength: 0)
             if active {
-                Text(isExam ? "Start exam" : "Resume").font(.inter(11, .bold)).foregroundStyle(PW.gold)
+                Text(isExam ? "Start exam" : ModuleRowWords.openAction(progress: module.progress))
+                    .font(.inter(11, .bold)).foregroundStyle(PW.gold)
                     .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
             } else if done {
                 Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
@@ -1665,5 +1666,19 @@ private struct CrossMark: View {
         }
         .foregroundStyle(color)
         .frame(width: size, height: size)
+    }
+}
+
+
+/// The open module's words follow the server's progress (the walk's B3): a
+/// module never opened (`progress` 0) is "Up next · tap to start" with
+/// "Start" — it read "In progress · tap to continue" with "Resume" beside a
+/// hero that said "Start", claiming progress that didn't exist.
+enum ModuleRowWords {
+    static func openCaption(progress: Double) -> String {
+        progress > 0 ? "In progress · tap to continue" : "Up next · tap to start"
+    }
+    static func openAction(progress: Double) -> String {
+        progress > 0 ? "Resume" : "Start"
     }
 }
