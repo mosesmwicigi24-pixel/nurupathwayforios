@@ -37,6 +37,7 @@ final class HomeViewModel: ObservableObject {
     @Published var verseEncouragement: Encouragement?
     @Published var reactions: VerseReactions?
     @Published var verseSaved = false
+    @Published var verseSaving = false
 
     // Rich home cards
     @Published var welcomeVideo: WelcomeVideo?
@@ -262,11 +263,19 @@ final class HomeViewModel: ObservableObject {
         do { reactions = try await MemberAPI.setVerseReaction(emoji) }
         catch { reactions = previous }                   // server said no → restore
     }
+    /// "Saved" only on the server's word (§7.4 #2): the heart fills, with its
+    /// haptic, once the verse is kept; a failure is felt and leaves "Save".
     func saveVerse() async {
-        guard !verseSaved, let v = verse else { return }
-        verseSaved = true
-        do { try await MemberAPI.saveVerseQuick(reference: v.reference, version: v.version, text: v.text) }
-        catch { verseSaved = false }
+        guard !verseSaved, !verseSaving, let v = verse else { return }
+        verseSaving = true
+        defer { verseSaving = false }
+        do {
+            try await MemberAPI.saveVerseQuick(reference: v.reference, version: v.version, text: v.text)
+            verseSaved = true
+            Haptics.success()
+        } catch {
+            Haptics.error()
+        }
     }
 
     // Welcome-video reaction toggle
@@ -1549,7 +1558,6 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 4)
                 Button {
-                    if !vm.verseSaved { Haptics.success() }
                     Task { await vm.saveVerse() }
                 } label: {
                     pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)

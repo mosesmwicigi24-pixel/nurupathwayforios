@@ -320,4 +320,18 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertTrue(StreakToday.done(plans: [], sealedHere: true, now: morningOf5th))
         XCTAssertEqual(try plansRow("a", finishedAt: "2026-10-04T21:10:00Z").lastDayFinishedAt, "2026-10-04T21:10:00Z")
     }
+
+    // MARK: Follow-up 2 — no success before the server says so (§7.4 #2)
+
+    func testAFailedSaveSaysCouldntSaveThatInSection4sWords() {
+        XCTAssertEqual(NuruStateCopy.saveFailureLine(APIError.http(status: 503, code: nil, message: "Bad gateway"), deviceOnline: true),
+                       "Couldn't save that. Something went wrong on our side. It isn't you — please try again in a moment.")
+        XCTAssertEqual(NuruStateCopy.saveFailureLine(URLError(.notConnectedToInternet), deviceOnline: false),
+                       "Couldn't save that. You're offline. Connect to the internet, then try again.")
+        // The server's own refusal keeps its words (a day still behind the gate).
+        XCTAssertEqual(NuruStateCopy.saveFailureLine(APIError.http(status: 409, code: "GATE_LOCKED",
+                                                                   message: "Finish the earlier days of this plan first"),
+                                                     deviceOnline: true),
+                       "Couldn't save that. Finish the earlier days of this plan first")
+    }
 }

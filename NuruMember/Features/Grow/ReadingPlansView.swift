@@ -68,6 +68,8 @@ struct ReaderPalette {
     var goldDeep: Color { night ? Color(hex: 0xCBA24A) : PL.goldDeep }
     var border: Color { night ? Color.white.opacity(0.09) : PL.border }
     var verseBg: Color { night ? Color(hex: 0x251E13) : PL.highlight }
+    /// A save the server refused, under the button that tried (§7.4 #2).
+    var danger: Color { night ? Color(hex: 0xF0A0A0) : Color(hex: 0xB91C1C) }
 }
 private struct ReaderPaletteKey: EnvironmentKey { static let defaultValue = ReaderPalette() }
 extension EnvironmentValues {

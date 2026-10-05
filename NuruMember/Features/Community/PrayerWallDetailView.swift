@@ -33,9 +33,18 @@ final class PrayerWallDetailViewModel: ObservableObject {
         catch { Haptics.error() }   // draft is kept so the words aren't lost
     }
 
+    /// Mark (or unmark) answered — the celebration only on the server's word
+    /// (§7.4 #2); a failure is felt, and the reload shows what really stands.
     func toggleAnswered() async {
         guard let d = detail else { return }
-        try? await MemberAPI.prayerWallAnswered(postId, answered: !d.post.isAnswered); await load()
+        let marking = !d.post.isAnswered
+        do {
+            try await MemberAPI.prayerWallAnswered(postId, answered: marking)
+            if marking { Haptics.success() } else { Haptics.tap() }
+        } catch {
+            Haptics.error()
+        }
+        await load()
     }
 }
 
@@ -149,8 +158,8 @@ struct PrayerWallDetailView: View {
             .padding(.top, Nuru.S.md)
             if post.mine {
                 Button {
-                    // Marking a prayer answered is a small celebration; unmarking is quiet.
-                    if post.isAnswered { Haptics.tap() } else { Haptics.success() }
+                    // Marking a prayer answered is a small celebration; unmarking
+                    // is quiet — both felt once the server has it (toggleAnswered).
                     Task { await vm.toggleAnswered() }
                 } label: {
                     HStack(spacing: 6) {

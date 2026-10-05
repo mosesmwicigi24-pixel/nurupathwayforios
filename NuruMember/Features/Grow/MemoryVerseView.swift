@@ -22,9 +22,13 @@ final class MemoryVerseViewModel: ObservableObject {
         loading = false
     }
 
-    func practice(_ id: String, matchPct: Int) async {
-        try? await MemberAPI.practiceVerse(id, matchPct: matchPct)
+    /// Record a practice. Returns why the server didn't, or nil once it did —
+    /// the sheet closes with its success only then (§7.4 #2).
+    func practice(_ id: String, matchPct: Int) async -> Error? {
+        do { try await MemberAPI.practiceVerse(id, matchPct: matchPct) }
+        catch { return error }
         await load()
+        return nil
     }
 
     // The Figma "This week" hero — first verse still being learned.
@@ -401,11 +405,13 @@ private struct LibraryVerseRow: View {
 
 private struct PracticeSheet: View {
     let verse: MemoryVerseRow
-    let onSave: (Int) async -> Void
+    /// Returns why the server didn't record it, or nil once it did.
+    let onSave: (Int) async -> Error?
 
     @Environment(\.dismiss) private var dismiss
     @State private var typed = ""
     @State private var saving = false
+    @State private var saveError: String?
 
     private var matchPct: Int { Self.matchPct(typed: typed, target: verse.verseText) }
 
@@ -470,16 +476,31 @@ private struct PracticeSheet: View {
                     if new / 25 != old / 25, new > old { Haptics.selection() }
                 }
 
+                // No success before the server says so (§7.4 #2): the sheet
+                // closes with its haptic only once the practice is recorded;
+                // otherwise it stays, with §4's words for why under the button.
                 PButton(title: "Save practice", variant: .gold, busy: saving,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    guard !saving else { return }
                     Task {
                         Haptics.action()
                         saving = true
-                        await onSave(matchPct)
+                        saveError = nil
+                        let failed = await onSave(matchPct)
                         saving = false
-                        Haptics.success()
-                        dismiss()
+                        if let failed {
+                            saveError = NuruStateCopy.saveFailureLine(failed)
+                            Haptics.error()
+                        } else {
+                            Haptics.success()
+                            dismiss()
+                        }
                     }
+                }
+                if let saveError {
+                    Text(saveError)
+                        .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(Nuru.S.screen)

@@ -1302,7 +1302,13 @@ private struct RemindMeCTA: View {
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(
             timeInterval: max(1, date.timeIntervalSinceNow), repeats: false)
-        try? await centre.add(UNNotificationRequest(identifier: key, content: content, trigger: trigger))
+        // "Reminder set" only once the phone has actually scheduled it.
+        do {
+            try await centre.add(UNNotificationRequest(identifier: key, content: content, trigger: trigger))
+        } catch {
+            Haptics.error()
+            return
+        }
         UserDefaults.standard.set(true, forKey: key)
         withAnimation(.easeOut(duration: 0.2)) { notified = true }
         Haptics.success()

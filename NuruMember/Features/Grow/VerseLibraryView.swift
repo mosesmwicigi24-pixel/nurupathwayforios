@@ -252,8 +252,9 @@ private struct SavedVerseCard: View {
 }
 
 /// Type-from-memory practice for a saved verse — the Figma practice sheet
-/// (serif title + close, editor, gold match bar, save). Presentation-only:
-/// saved verses have no practice endpoint, so "Save practice" simply closes.
+/// (serif title + close, editor, gold match bar, Done). Presentation-only:
+/// saved verses have no practice endpoint, so nothing is saved — the button
+/// says "Done", never "Save practice" with a success it didn't have (§7.4 #2).
 private struct VersePracticeSheet: View {
     let verse: SavedVerse
     @Environment(\.dismiss) private var dismiss
@@ -285,9 +286,9 @@ private struct VersePracticeSheet: View {
                     .onChange(of: matchPct) { old, new in
                         if new / 25 != old / 25, new > old { Haptics.selection() }
                     }
-                PButton(title: "Save practice", variant: .gold,
+                PButton(title: "Done", variant: .gold,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                    Haptics.success()
+                    Haptics.tap()
                     dismiss()
                 }
             }
