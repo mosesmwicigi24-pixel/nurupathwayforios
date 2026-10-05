@@ -64,15 +64,8 @@ struct PlanSegmentView: View {
         default: return [segment]
         }
     }
-    private func rank(_ s: PlanSegment) -> Int {
-        switch s.kind.lowercased() {
-        case "video", "audio": return 0
-        case "scripture": return 1
-        case "talk": return 3
-        case "reading": return 5
-        default: return s.title.lowercased().hasPrefix("pray") ? 4 : 2
-        }
-    }
+    /// The day hub's grouping (PlanDayParts) — one truth for every part.
+    private func rank(_ s: PlanSegment) -> Int { PlanDayParts.rank(s) }
 
     var body: some View {
         ZStack {

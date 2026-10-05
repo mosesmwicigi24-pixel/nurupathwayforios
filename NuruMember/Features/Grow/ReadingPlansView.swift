@@ -951,13 +951,13 @@ struct PlanDetailView: View {
 
     // Sticky CTA — Start plan (enroll) when not enrolled; once enrolled it
     // deep-links straight into the first incomplete day (or day 1 to review).
+    // The words follow progress (§7.4 #2): a member with any part done reads
+    // "Continue · Day N", never "Begin Day 1".
     private func ctaBar(_ d: ReadingPlanDetail) -> some View {
         let done = completedCount(d)
         let allDone = !d.days.isEmpty && done >= d.days.count
         let target = allDone ? d.days.first : firstIncomplete(d)
-        let label: String = done > 0
-            ? (allDone ? "Read again" : "Continue · Day \(target?.dayNumber ?? 1)")
-            : "Begin Day 1"
+        let label = PlanDayParts.planButton(d)
         return HStack(spacing: 10) {
             Group {
                 if d.enrolled, let target {
@@ -1169,22 +1169,11 @@ struct PlanDayView: View {
         _vm = StateObject(wrappedValue: PlanDayViewModel(ref: ref))
     }
 
-    /// The day's parts in the STUDY flow: watch/listen first (media sets the
-    /// scene), then the Word (Scripture), the teaching (Devotional), the
-    /// conversation (Talk it Over), the prayer, and Go Deeper for the hungry.
+    /// The day's parts in the STUDY flow (PlanDayParts — the one grouping the
+    /// plan's page and the Plans streak card count with, §7.4 #2, #4).
     /// Stable within ranks (DB sort breaks ties), so authored order is respected.
-    private var segments: [PlanSegment] {
-        (ref.day.segments ?? []).sorted { rank($0) == rank($1) ? $0.sort < $1.sort : rank($0) < rank($1) }
-    }
-    private func rank(_ s: PlanSegment) -> Int {
-        switch s.kind.lowercased() {
-        case "video", "audio": return 0
-        case "scripture": return 1
-        case "talk": return 3
-        case "reading": return 5
-        default: return s.title.lowercased().hasPrefix("pray") ? 4 : 2   // Pray after Talk; teaching before
-        }
-    }
+    private var segments: [PlanSegment] { PlanDayParts.ordered(ref.day.segments ?? []) }
+    private func rank(_ s: PlanSegment) -> Int { PlanDayParts.rank(s) }
     private var progress: Double {
         if vm.dayCompleted { return 1 }
         guard !segments.isEmpty else { return 0 }
@@ -1268,31 +1257,24 @@ struct PlanDayView: View {
     /// then THE WORD (Scripture woven into the teaching, Go Deeper folded in),
     /// then RESPOND (Talk it Over + Prayer + Reflection together).
     private var hubParts: [HubPart] {
-        let segs = segments
-        var parts: [HubPart] = []
-        for (i, s) in segs.enumerated() where rank(s) == 0 {
-            let audio = s.kind.lowercased() == "audio"
-            parts.append(HubPart(id: s.segmentId, tag: "media",
-                                 label: audio ? "Listen" : "Watch",
-                                 icon: .play, segs: [s], firstIndex: i))
+        PlanDayParts.parts(ref.day.segments ?? []).map { p in
+            switch p.kind {
+            case .media:
+                let audio = p.segments.first?.kind.lowercased() == "audio"
+                return HubPart(id: p.id, tag: "media", label: audio ? "Listen" : "Watch",
+                               icon: .play, segs: p.segments, firstIndex: p.firstIndex)
+            case .word:
+                return HubPart(id: p.id, tag: "word", label: "The Word",
+                               icon: .bookOpen, segs: p.segments, firstIndex: p.firstIndex)
+            case .respond:
+                return HubPart(id: p.id, tag: "respond", label: "Respond",
+                               icon: .handHeart, segs: p.segments, firstIndex: p.firstIndex)
+            case .talk:
+                // Talk it Over stands alone — the family's shared conversation.
+                return HubPart(id: p.id, tag: "talk", label: "Talk it Over",
+                               icon: .messageCircle, segs: p.segments, firstIndex: p.firstIndex)
+            }
         }
-        let word = segs.enumerated().filter { [1, 2, 5].contains(rank($0.element)) }
-        if let f = word.first {
-            parts.append(HubPart(id: "word", tag: "word", label: "The Word",
-                                 icon: .bookOpen, segs: word.map(\.element), firstIndex: f.offset))
-        }
-        let respond = segs.enumerated().filter { rank($0.element) == 4 }
-        if let f = respond.first {
-            parts.append(HubPart(id: "respond", tag: "respond", label: "Respond",
-                                 icon: .handHeart, segs: respond.map(\.element), firstIndex: f.offset))
-        }
-        // Talk it Over stands alone — the family's shared conversation.
-        let talk = segs.enumerated().filter { rank($0.element) == 3 }
-        if let f = talk.first {
-            parts.append(HubPart(id: "talk", tag: "talk", label: "Talk it Over",
-                                 icon: .messageCircle, segs: talk.map(\.element), firstIndex: f.offset))
-        }
-        return parts
     }
 
     /// The day's talk questions, joined — seeds the conversation page prompt.

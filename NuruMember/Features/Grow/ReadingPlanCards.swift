@@ -466,7 +466,8 @@ struct PLDetailDayRow: View {
             }
             Spacer(minLength: 0)
             if isNext {
-                Text("Start").font(.inter(9, .bold)).foregroundStyle(PL.navy)
+                // "1 part left" once the day is begun, "Start" before (§7.4 #2).
+                Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(9, .bold)).foregroundStyle(PL.navy)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(PL.gold, in: Capsule())
             } else if syncing {
