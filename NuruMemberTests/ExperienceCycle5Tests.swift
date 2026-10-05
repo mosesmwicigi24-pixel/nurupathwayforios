@@ -598,4 +598,24 @@ final class ExperienceCycle5Tests: XCTestCase {
                        "Couldn't save your reflection. Something went wrong on our side. It isn't you — please try again in a moment.",
                        "never the decoder's own words")
     }
+
+    // MARK: §9.6 #3 — one way to do each thing
+
+    func testOneWayToShareAndOneWayToGive() throws {
+        func src(_ rel: String) throws -> String { try String(contentsOf: TypeScan.appRoot.appendingPathComponent(rel), encoding: .utf8) }
+        // A gathering offered Share twice (a disc over its photo, and beside
+        // "Add to calendar"); a receipt twice (its header, and "Share receipt").
+        XCTAssertEqual(try src("Features/Events/EventDetailView.swift").components(separatedBy: "icon: .share2").count - 1, 1,
+                       "a gathering offers Share once, beside Add to calendar")
+        XCTAssertEqual(try src("Features/Give/GivingReceiptView.swift").components(separatedBy: "Button { share(d) }").count - 1, 1,
+                       "a receipt offers Share once: \"Share receipt\"")
+        // The amount sheet sets the amount; only the form's button gives.
+        let give = try src("Features/Give/GivingView.swift")
+        let start = try XCTUnwrap(give.range(of: "private struct GiveKeypadSheet"))
+        let rest = give[start.upperBound...]
+        let end = rest.range(of: "\nprivate struct ")?.lowerBound ?? rest.endIndex
+        let sheet = String(rest[..<end])
+        XCTAssertTrue(sheet.contains("Text(\"Set amount\")"), "Android's words")
+        XCTAssertFalse(sheet.contains("Text(\"Give \\("), "the last tap before money moves is the one that names the money")
+    }
 }

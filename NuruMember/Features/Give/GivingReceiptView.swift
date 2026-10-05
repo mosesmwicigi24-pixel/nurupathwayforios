@@ -130,21 +130,8 @@ struct GivingReceiptView: View {
             .accessibilityLabel("Back")
             Text("Receipt").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
             Spacer()
-            // Same action as the primary "Share receipt" button below.
-            if let d = vm.detail {
-                Button { share(d) } label: {
-                    Group {
-                        if downloading { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
-                        else { Icon(.share, size: 18, color: Nuru.navy) }
-                    }
-                    .frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-                .buttonStyle(.pressable)
-                .disabled(downloading)
-                .accessibilityLabel("Share receipt")
-            }
+            // Share is offered once — "Share receipt" below, beside "View
+            // statement" (EXPERIENCE.md §9.6 #3: the header said it too).
         }
         .padding(.horizontal, Nuru.S.lg)
         // Right under the status bar — the real inset, never a fixed 60.

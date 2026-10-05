@@ -2018,7 +2018,11 @@ private struct GiveKeypadSheet: View {
                     nameFocused = false
                     onConfirm(minor, trimmedName.isEmpty ? nil : trimmedName); dismiss()
                 } label: {
-                    Text("Give \(GiveMoney.format(minor, currency))")
+                    // It sets the amount and closes; the gift itself is the
+                    // form's "Give KSh X" — one way to give, and the last tap
+                    // before money moves names the money (§7.1 rule 7; §9.6
+                    // #3). Android's words.
+                    Text("Set amount")
                         .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 48)
                         .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

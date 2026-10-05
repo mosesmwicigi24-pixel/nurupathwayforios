@@ -215,7 +215,7 @@ struct EventDetailView: View {
                 VStack(spacing: 0) {
                     EvdHero(title: title, category: category, imageUrl: imageUrl,
                             isLive: isLive, isCompleted: isCompleted,
-                            shareText: shareText, onBack: { dismiss() })
+                            onBack: { dismiss() })
                     content(proxy)
                 }
             }
@@ -345,7 +345,6 @@ private struct EvdHero: View {
     let imageUrl: String?
     let isLive: Bool
     let isCompleted: Bool
-    let shareText: String
     let onBack: () -> Void
 
     /// Natural aspect (w/h) of the decoded cover photo; nil until measured.
@@ -437,14 +436,13 @@ private struct EvdHero: View {
 
     private var overlay: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // top chrome — back (left) + share (right)
+            // Top chrome: back. Share is offered once, beside "Add to
+            // calendar" (EXPERIENCE.md §9.6 #3 — it was here too).
             HStack {
                 Button(action: onBack) { EvdCircleGlyph(icon: .arrowLeft, size: 18) }
                     .buttonStyle(.pressable)
                     .accessibilityLabel("Back")
                 Spacer()
-                ShareLink(item: shareText) { EvdCircleGlyph(icon: .share2, size: 17) }
-                    .buttonStyle(.pressable)
             }
             .padding(.horizontal, 16)
             .padding(.top, 54)   // Figma frames 42; nudged for the real status bar
