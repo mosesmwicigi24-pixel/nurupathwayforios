@@ -93,7 +93,7 @@ struct LiveHandsGuestsSheet: View {
             Spacer(minLength: 8)
             if let status = guestStatus(for: hand.userId) {
                 Text(status == "accepted" ? "Joining soon" : "Invited")
-                    .font(.inter(10, .semibold)).foregroundStyle(Nuru.ink400)
+                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink400)
             } else {
                 Button {
                     Haptics.tap()

@@ -34,12 +34,9 @@ struct VerseTableauHeader: View {
     let reference: String
     let version: String
 
-    /// Long verses step down gently so the photograph still breathes.
-    /// (Owner, 2026-08-25: smaller — the words keep to the image's lower third.)
-    private var verseFont: Font {
-        let n = verseText?.count ?? 0
-        return .fraunces(n > 220 ? 12 : n > 140 ? 13 : 14)
-    }
+    // Long verses step down gently so the photograph still breathes (owner,
+    // 2026-08-25: smaller — the words keep to the image's lower third); the
+    // steps are written where the verse is drawn, so the type test reads them.
 
     var body: some View {
         Color.clear
@@ -88,11 +85,13 @@ struct VerseTableauHeader: View {
             .overlay(alignment: .bottomLeading) {
                 VStack(alignment: .leading, spacing: 6) {
                     if let t = verseText, !t.isEmpty {
+                        // Long verses step down 14 → 13 → 12 and may give way to
+                        // 11 (12 × 0.92) — never under it.
                         Text("\u{201C}\(t)\u{201D}")
-                            .font(verseFont).foregroundStyle(.white)
+                            .font(.fraunces(t.count > 220 ? 12 : t.count > 140 ? 13 : 14)).foregroundStyle(.white)
                             .nuruLineSpacing(3)
                             .lineLimit(4)
-                            .minimumScaleFactor(0.8)
+                            .minimumScaleFactor(0.92)
                             .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                             .fixedSize(horizontal: false, vertical: true)
                     }

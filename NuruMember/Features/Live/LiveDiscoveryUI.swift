@@ -99,7 +99,7 @@ struct LiveMiniPopup: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     DiscoveryPulseDot()
-                    Text("LIVE").font(.inter(9, .bold)).kerning(1.4).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(Color(hex: 0xDC2626), in: Capsule())
@@ -185,10 +185,10 @@ struct LiveEndedView: View {
     var body: some View {
         VStack(spacing: 18) {
             Image(systemName: notice.failure == nil ? "antenna.radiowaves.left.and.right.slash" : "wifi.slash")
-                .font(.system(size: 36)).foregroundStyle(Nuru.gold.opacity(0.85))
+                .font(.symbol(36)).foregroundStyle(Nuru.gold.opacity(0.85))
             VStack(spacing: 6) {
                 Text(title)
-                    .font(.fraunces(21, .semibold)).foregroundStyle(.white)
+                    .font(.fraunces(22, .semibold)).foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 if let line {
                     Text(line).font(.inter(13)).foregroundStyle(.white.opacity(0.6))

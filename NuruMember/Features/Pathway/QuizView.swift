@@ -658,7 +658,7 @@ private struct QuizPassScreen: View {
             Circle().stroke(QZ.gold.opacity(0.30), lineWidth: 1).frame(width: 138, height: 138)
             Circle().fill(QZ.gold.opacity(0.09)).frame(width: 110, height: 110)
                 .overlay(Circle().stroke(QZ.gold.opacity(0.45), lineWidth: 1))
-            Text("🏅").font(.system(size: 44))
+            Text("🏅").font(.emoji(44))
             ForEach(0..<6, id: \.self) { i in
                 let a = Double(i) * .pi / 3
                 Circle().fill(QZ.gold).frame(width: 5, height: 5)
@@ -694,7 +694,7 @@ private struct QuizFailScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("📖").font(.system(size: 44)))
+                    .overlay(Text("📖").font(.emoji(44)))
                 Text("You've finished the test.")
                     .font(.inter(13, .semibold)).foregroundStyle(QZ.copy)
                     .padding(.top, 20)
@@ -763,7 +763,7 @@ private struct QuizReviewScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("✍️").font(.system(size: 44)))
+                    .overlay(Text("✍️").font(.emoji(44)))
                 Text("Submitted for review")
                     .font(.inter(22, .bold)).foregroundStyle(QZ.ink)
                     .padding(.top, 24)

@@ -88,7 +88,7 @@ struct HomeLiveNowCard: View {
                 Button { Haptics.tap(); onOpen() } label: {
                     HStack(spacing: 8) {
                         if isLive { Icon(.play, size: 15, color: HomeFig.navy) }
-                        else { Image(systemName: "bell.badge.fill").font(.system(size: 14)).foregroundStyle(HomeFig.navy) }
+                        else { Image(systemName: "bell.badge.fill").font(.symbol(14)).foregroundStyle(HomeFig.navy) }
                         Text(isLive ? "Watch live" : "Set reminder")
                             .font(.nCardCTA).foregroundStyle(HomeFig.navy)
                     }
@@ -151,7 +151,7 @@ struct HomeLiveNowCard: View {
                 .shadow(color: HomeFig.gold.opacity(0.65), radius: 14, y: 7)
             Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
             if isLive { Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2) }
-            else { Image(systemName: "bell.badge.fill").font(.system(size: 22)).foregroundStyle(HomeFig.navy) }
+            else { Image(systemName: "bell.badge.fill").font(.symbol(22)).foregroundStyle(HomeFig.navy) }
         }
     }
 
@@ -845,7 +845,7 @@ struct HomeOnAirCard: View {
                                 Text(program.title).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                                     .lineLimit(1)
                             }
-                            Text("❤️ 🙏 🙌").font(.system(size: 11))
+                            Text("❤️ 🙏 🙌").font(.emoji(11))
                         }
                     }
                     Spacer(minLength: 4)
@@ -858,7 +858,7 @@ struct HomeOnAirCard: View {
                 if isPlayingThis { radio.pause() } else { radio.tune(program) }
             } label: {
                 Image(systemName: isPlayingThis ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14, weight: .bold)).foregroundStyle(HomeFig.navy)
+                    .font(.symbol(14, weight: .bold)).foregroundStyle(HomeFig.navy)
                     .frame(width: 36, height: 36)
                     .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep],
                                                startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
@@ -887,7 +887,7 @@ struct HomeOnAirCard: View {
             if let u = (program.artworkUrl.flatMap(URL.init(string:))) ?? Self.fallbackArt {
                 CachedAsyncImage(url: u) { ph in
                     if let img = ph.image { HomeFadeInImage(image: img) }
-                    else { Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 14)).foregroundStyle(HomeFig.gold) }
+                    else { Image(systemName: "dot.radiowaves.left.and.right").font(.symbol(14)).foregroundStyle(HomeFig.gold) }
                 }
             }
         }

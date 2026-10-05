@@ -868,7 +868,7 @@ struct PlanDetailView: View {
         } label: {
             Group {
                 if saved {
-                    Image(systemName: "heart.fill").font(.system(size: 15)).foregroundStyle(PL.gold)
+                    Image(systemName: "heart.fill").font(.symbol(15)).foregroundStyle(PL.gold)
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else {
                     Icon(.heart, size: 17, color: .white)
@@ -1415,14 +1415,14 @@ struct PlanDayView: View {
             }
             Spacer(minLength: 8)
             if done {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(pal.gold)
+                Image(systemName: "checkmark.circle.fill").font(.symbol(20)).foregroundStyle(pal.gold)
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             } else if isNext {
                 Text("Next").font(.inter(11, .bold)).foregroundStyle(PL.navy)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(pal.gold, in: Capsule())
             } else {
-                Image(systemName: "circle").font(.system(size: 20)).foregroundStyle(pal.inkDim.opacity(0.35))
+                Image(systemName: "circle").font(.symbol(20)).foregroundStyle(pal.inkDim.opacity(0.35))
             }
         }
         .padding(14)
@@ -1524,7 +1524,7 @@ struct PlanDayView: View {
                 Spacer()
                 if let pt = ref.planTitle, !pt.isEmpty {
                     Text(pt.uppercased()).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(PL.gold)
-                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button {

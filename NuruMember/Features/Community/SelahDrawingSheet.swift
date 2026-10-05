@@ -55,7 +55,7 @@ struct SelahDrawingSheet: View {
                     Text("Cancel").font(.inter(14, .semibold)).foregroundStyle(Color(hex: 0x59667C))
                 }
                 Spacer(minLength: 0)
-                Text("Draw").font(.fraunces(17, .medium)).foregroundStyle(Nuru.navy)
+                Text("Draw").font(.fraunces(18, .medium)).foregroundStyle(Nuru.navy)
                 Spacer(minLength: 0)
                 Button { Haptics.tap(); canvasView.drawing = PKDrawing(); hasStrokes = false } label: {
                     Text("Clear").font(.inter(14, .semibold)).foregroundStyle(Color(hex: 0x59667C))

@@ -143,7 +143,7 @@ struct GoLiveSetupSheet: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("GO LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
-                Text("Start a broadcast").font(.fraunces(19, .medium)).foregroundStyle(Nuru.navy)
+                Text("Start a broadcast").font(.fraunces(18, .medium)).foregroundStyle(Nuru.navy)
             }
             Spacer(minLength: 0)
             Button { Haptics.tap(); dismiss() } label: {
@@ -157,7 +157,7 @@ struct GoLiveSetupSheet: View {
 
     private var titleField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TITLE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("TITLE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             TextField("What's happening?", text: $title)
                 .font(.inter(14, .regular)).foregroundStyle(Nuru.navy)
                 .padding(Nuru.S.md)
@@ -170,7 +170,7 @@ struct GoLiveSetupSheet: View {
 
     private var kindToggle: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("FORMAT").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("FORMAT").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             HStack(spacing: 4) {
                 segmentButton("Video", selected: kind == .video) { kind = .video }
                 segmentButton("Audio only", selected: kind == .audio) { kind = .audio }
@@ -183,7 +183,7 @@ struct GoLiveSetupSheet: View {
 
     @ViewBuilder private var scopeSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("AUDIENCE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("AUDIENCE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             if let forcedCell {
                 scopeLabelRow(icon: .users, text: forcedCell.name)
             } else if churchEligible && cellSectionAvailable {

@@ -699,7 +699,7 @@ struct LiveViewerPlayerView: View {
             HStack(spacing: 6) {
                 Icon(.handHeart, size: 12, color: Nuru.navy)
                 Text("Invited on stage")
-                    .font(.inter(10.5, .bold)).foregroundStyle(Nuru.navy)
+                    .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Nuru.gold, in: Capsule())
@@ -814,7 +814,7 @@ struct LiveViewerPlayerView: View {
             if item.isLive {
                 HStack(spacing: 4) {
                     PulsingLiveDot()
-                    Text("LIVE").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(Color(hex: 0xDC2626), in: Capsule())
@@ -848,10 +848,10 @@ struct LiveViewerPlayerView: View {
     private var endedState: some View {
         VStack(spacing: 18) {
             Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                .font(.system(size: 36)).foregroundStyle(Nuru.gold.opacity(0.85))
+                .font(.symbol(36)).foregroundStyle(Nuru.gold.opacity(0.85))
             VStack(spacing: 4) {
                 Text(controller.endedMessage)
-                    .font(.fraunces(19, .semibold)).foregroundStyle(.white)
+                    .font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 Text(item.title).font(.inter(12)).foregroundStyle(.white.opacity(0.55))
                     .lineLimit(1)
@@ -900,7 +900,7 @@ private struct BigHeartBurstView: View {
 
     var body: some View {
         Image(systemName: "heart.fill")
-            .font(.system(size: 88))
+            .font(.symbol(88))
             .foregroundStyle(Color(hex: 0xE0245E))
             .shadow(color: .black.opacity(0.35), radius: 8)
             .scaleEffect(scale)
@@ -952,7 +952,7 @@ private struct LiveAudioBackdrop: View {
                 }
                 waveform
                 Text(isLive ? "LISTENING LIVE" : "REPLAY")
-                    .font(.inter(10, .bold)).kerning(1.6)
+                    .font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(Nuru.gold.opacity(0.85))
                 Text(title).font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     .multilineTextAlignment(.center)

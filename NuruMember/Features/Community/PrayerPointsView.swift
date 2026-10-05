@@ -19,7 +19,7 @@ struct PrayerPointsView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Nuru.S.base) {
                 Text("Let Nuru help you pray")
-                    .font(.fraunces(21, .medium)).foregroundStyle(Nuru.navy)
+                    .font(.fraunces(22, .medium)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .gentleEntrance()
 
@@ -78,7 +78,7 @@ private struct ConsentGateCard: View {
                                        startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 26, height: 26)
                         .overlay(Icon(.sparkles, size: 13, color: .white))
-                    Text("NURU INTELLIGENCE").font(.inter(10, .bold)).tracking(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("NURU INTELLIGENCE").font(.inter(11, .bold)).tracking(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 Text("Turn on AI personalization to use the prayer assistant.")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
@@ -153,7 +153,7 @@ private struct AssistComposerCard: View {
                 }
                 if !draft.isEmpty {
                     Divider().overlay(Nuru.border)
-                    Text("YOUR DRAFT").font(.inter(10, .bold)).tracking(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("YOUR DRAFT").font(.inter(11, .bold)).tracking(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
                     TextField("", text: $draft, axis: .vertical)
                         .lineLimit(3...12)
                         .font(.inter(14, .regular)).foregroundStyle(Nuru.navy).lineSpacing(4)

@@ -357,7 +357,7 @@ private struct MLParagraphText: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(MLMarkdown.inline(text))
-            .font(.inter(15)).foregroundStyle(ML.bodyInk)
+            .font(.nBodyLg).foregroundStyle(ML.bodyInk)   // the one 16 pt reading body
             .nuruLineSpacing(6)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -387,7 +387,7 @@ private struct MLBulletList: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Circle().fill(ML.navy).frame(width: 5, height: 5).offset(y: -2)
                     Text(MLMarkdown.inline(item))
-                        .font(.inter(15)).foregroundStyle(ML.bodyInk)
+                        .font(.nBodyLg).foregroundStyle(ML.bodyInk)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -407,7 +407,7 @@ private struct MLNumberedList: View {
                         .font(.inter(14, .bold)).foregroundStyle(ML.gold)
                         .frame(minWidth: 20, alignment: .trailing)
                     Text(MLMarkdown.inline(pair.1))
-                        .font(.inter(15)).foregroundStyle(ML.bodyInk)
+                        .font(.nBodyLg).foregroundStyle(ML.bodyInk)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)

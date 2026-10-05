@@ -181,7 +181,7 @@ private struct VerseCard: View {
     }
 }
 
-// MARK: - Body paragraphs (Figma: 14pt ink on 24pt lines, split on blank lines)
+// MARK: - Body paragraphs (the one 16 pt reading body, §8.2 #21; split on blank lines)
 
 private struct BodyParagraphs: View {
     let text: String
@@ -196,7 +196,7 @@ private struct BodyParagraphs: View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
                 Text(p)
-                    .font(.inter(14, .regular))
+                    .font(.nBodyLg)   // long reading: the one 16 pt body
                     .foregroundStyle(Nuru.ink)
                     .nuruLineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)

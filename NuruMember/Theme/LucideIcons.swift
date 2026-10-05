@@ -118,6 +118,10 @@ enum Lucide: String {
     case circleX = "\u{E084}"
     case share = "\u{E155}"
     case fileText = "\u{E0CC}"
+    // Cycle 4 (§8.1 rule 7 — one icon family): codepoints read from the
+    // bundled Resources/Fonts/lucide.ttf cmap with fontTools.
+    /// Lucide `cross` — the Latin cross that marks a reading.
+    case cross = "\u{E1E5}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).

@@ -756,7 +756,7 @@ private struct ExamPassScreen: View {
             Circle().stroke(EX.gold.opacity(0.30), lineWidth: 1).frame(width: 154, height: 154)
             Circle().fill(EX.gold.opacity(0.09)).frame(width: 122, height: 122)
                 .overlay(Circle().stroke(EX.gold.opacity(0.45), lineWidth: 1))
-            Text("🏆").font(.system(size: 50))
+            Text("🏆").font(.emoji(50))
             ForEach(0..<8, id: \.self) { i in
                 let a = Double(i) * .pi / 4
                 Circle().fill(EX.gold).frame(width: 5, height: 5)
@@ -836,7 +836,7 @@ private struct ExamFailScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("📖").font(.system(size: 44)))
+                    .overlay(Text("📖").font(.emoji(44)))
                 Text("MARKS SCORED")
                     .font(.inter(11, .bold)).kerning(2)
                     .foregroundStyle(EX.copy)
@@ -892,7 +892,7 @@ private struct ExamReviewScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("✍️").font(.system(size: 44)))
+                    .overlay(Text("✍️").font(.emoji(44)))
                 Text("Submitted for review")
                     .font(.inter(22, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 24)

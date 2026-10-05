@@ -165,7 +165,7 @@ struct NuruLiveTabView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.title).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink).lineLimit(2)
                         HStack(spacing: 6) {
-                            Text(row.scope == "church" ? "CHURCH" : "CELL").font(.inter(10, .bold)).kerning(0.6)
+                            Text(row.scope == "church" ? "CHURCH" : "CELL").font(.inter(11, .bold)).kerning(0.6)
                                 .foregroundStyle(Nuru.goldChipText)
                                 .padding(.horizontal, 8).padding(.vertical, 2)
                                 .background(Nuru.goldChipBg, in: Capsule())
@@ -198,7 +198,7 @@ struct NuruLiveTabView: View {
                         .frame(width: 30, height: 30)
                 } else {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.symbol(16, weight: .semibold))
                         .foregroundStyle(Nuru.muted)
                         .frame(width: 30, height: 30)
                         .background(Nuru.surface, in: Circle())

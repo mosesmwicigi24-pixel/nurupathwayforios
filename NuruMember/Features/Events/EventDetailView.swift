@@ -1084,7 +1084,7 @@ private struct EvdBuzzPostRow: View {
             tap()
         } label: {
             HStack(spacing: 4) {
-                Text(emoji).font(.system(size: 12))
+                Text(emoji).font(.emoji(12))
                 // The chip is the way to react; its count only once there is one.
                 if count > 0 {
                     Text("\(count)").font(.inter(11, .bold))

@@ -250,9 +250,9 @@ struct LiveFloatingChatOverlay: View {
             header
             if handsRaisedCount > 0 {
                 HStack(spacing: 5) {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .semibold))
+                    Image(systemName: "hand.raised.fill").font(.symbol(9, weight: .semibold))
                     Text("\(handsRaisedCount) hand\(handsRaisedCount == 1 ? "" : "s") raised")
-                        .font(.inter(10, .semibold))
+                        .font(.inter(11, .semibold))
                 }
                 .foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 9).padding(.vertical, 4)
@@ -280,16 +280,16 @@ struct LiveFloatingChatOverlay: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.symbol(10, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.4))
-            Text("LIVE CHAT").font(.inter(9, .bold)).kerning(1).foregroundStyle(.white.opacity(0.6))
+            Text("LIVE CHAT").font(.inter(11, .bold)).kerning(1).foregroundStyle(.white.opacity(0.6))
             Spacer(minLength: 0)
             Button {
                 Haptics.tap()
                 collapsed = true
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.symbol(10, weight: .bold))
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 22, height: 22)
                     .background(Color.white.opacity(0.14), in: Circle())
@@ -311,7 +311,7 @@ struct LiveFloatingChatOverlay: View {
             ZStack {
                 Circle().fill(.ultraThinMaterial)
                 Circle().stroke(Color.white.opacity(0.2), lineWidth: 1)
-                Image(systemName: "message.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(Nuru.gold)
+                Image(systemName: "message.fill").font(.symbol(17, weight: .semibold)).foregroundStyle(Nuru.gold)
             }
         }
         .environment(\.colorScheme, .dark)
@@ -359,7 +359,7 @@ struct LiveFloatingChatOverlay: View {
 
     private func bubble(_ m: LiveChatMessage) -> some View {
         (Text(m.fullName + "  ").font(.inter(12, .bold)).foregroundStyle(Nuru.gold)
-         + Text(m.body).font(.inter(12.5)).foregroundStyle(.white))
+         + Text(m.body).font(.inter(13)).foregroundStyle(.white))
         .fixedSize(horizontal: false, vertical: true)
         .lineLimit(4)
         // Optimistic bubble, not yet confirmed by the server — dimmed just

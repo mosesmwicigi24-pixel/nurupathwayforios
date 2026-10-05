@@ -25,7 +25,7 @@ struct ScoreDetailView: View {
                     componentsCard(b).gentleEntrance(delay: 0.05)
                     if !b.detail.isEmpty { detailCard(b).gentleEntrance(delay: 0.1) }
                     Text("Scores are formative, never a leaderboard — they decay gently when you lapse and grow as you do.")
-                        .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                        .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x74808F))
                         .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 } else if failed {
                     errorCard
@@ -76,7 +76,7 @@ struct ScoreDetailView: View {
         VStack(spacing: Nuru.S.sm) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(b.score)")
-                    .font(.fraunces(52, .semibold)).kerning(-1)
+                    .font(.fraunces(28, .semibold)).kerning(-1)
                     .foregroundStyle(Nuru.navy)
                     .contentTransition(.numericText())
                 Text("/ 100").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x74808F))
@@ -167,7 +167,7 @@ struct ScoreDetailView: View {
     }
 
     private func sectionHeading(_ text: String) -> some View {
-        Text(text).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
+        Text(text).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
     }
 
     // MARK: Loading / error

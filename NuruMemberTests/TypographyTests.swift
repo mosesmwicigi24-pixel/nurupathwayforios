@@ -7,8 +7,9 @@
 // 2. The scale holds: a scan of every Swift file in the app fails on a text
 //    size off the scale and on a system font used for text. Icons, emoji and
 //    the home-screen widgets may use the system face, but each site is listed
-//    below with its reason. The scan began as a ratchet (the count may only
-//    fall) and ends at zero.
+//    below with its reason. The scan began as a ratchet (545 sizes off the
+//    scale and 144 system-font text sites at d55d767; the count could only
+//    fall) and now holds at zero.
 // 3. What renders is what's asked for: a token-styled `Text` and the same
 //    string in the named face render to identical pixels.
 import XCTest
@@ -22,15 +23,14 @@ final class TypographyTests: XCTestCase {
     /// 15 · reading body 16 · card title 18 · 22 · screen title 26–28.
     static let scale: Set<CGFloat> = [11, 12, 13, 14, 15, 16, 18, 22, 26, 28]
 
-    // MARK: - The ratchet (§8.3): these may only fall
+    // MARK: - The ratchet (§8.3): it began at today's count and only fell
 
     /// Text sizes set in code that are off the scale (or computed where the
-    /// scan can't prove they land on it). Measured at d55d767: 545; falling
-    /// as each area moves onto the scale.
-    static let offScaleCeiling = 179
+    /// scan can't prove they land on it). d55d767: 545 → zero in Cycle 4.
+    static let offScaleCeiling = 0
     /// System-font sites not listed as an icon, emoji or widget — a system
-    /// face used for text. Measured at d55d767: 144.
-    static let systemTextCeiling = 137
+    /// face used for text. d55d767: 144 → zero in Cycle 4.
+    static let systemTextCeiling = 0
 
     // MARK: - 1. The faces resolve
 
@@ -97,9 +97,31 @@ final class TypographyTests: XCTestCase {
             "\(unlisted.count) system-font sites aren't listed as an icon, emoji or widget (ceiling \(Self.systemTextCeiling)) — text is Inter or Fraunces:\n\(list)")
         XCTAssertTrue(report.staleListings.isEmpty,
             "listed system-font sites no longer in the code — remove them from TypeScan.listed:\n\(report.staleListings.joined(separator: "\n"))")
+        // Icons and emoji may use the system face — each one listed, and each
+        // on what it says it is.
+        XCTAssertEqual(report.symbolsByFile, TypeScan.listedSymbols,
+                       "`.symbol(` sites changed — list them in TypeScan.listedSymbols (an SF Symbol only where Lucide has no glyph)")
+        XCTAssertEqual(report.emojiByFile, TypeScan.listedEmoji,
+                       "`.emoji(` sites changed — list them in TypeScan.listedEmoji")
+        XCTAssertTrue(report.misplaced.isEmpty,
+                      "a symbol size on something that isn't an SF Symbol, or an emoji size on words:\n\(report.misplaced.map(\.description).joined(separator: "\n"))")
         if unlisted.count < Self.systemTextCeiling {
             print("TypographyTests: \(unlisted.count) system-font text sites — lower systemTextCeiling from \(Self.systemTextCeiling)")
         }
+    }
+
+    /// Nothing under 11 pt, even when a label gives way: `.minimumScaleFactor(x)`
+    /// times the size of the font set just before it stays at 11 or more.
+    func testNothingShrinksUnderEleven() throws {
+        let report = try TypeScan.report()
+        XCTAssertGreaterThan(report.shrinkSites, 10, "the scan must see the app's shrinking labels")
+        XCTAssertTrue(report.shrinksUnder11.isEmpty,
+            "these can shrink under 11 pt — wrap to a second line instead, or shrink only the big type:\n\(report.shrinksUnder11.joined(separator: "\n"))")
+        // The arithmetic, on fixtures.
+        XCTAssertEqual(TypeScan.smallestSize(in: "Text(a).font(.inter(compact ? 12 : 14, .bold))"), 12)
+        XCTAssertEqual(TypeScan.smallestSize(in: "Text(a).font(.nCardKicker).kerning(1.4)"), 11)
+        XCTAssertEqual(TypeScan.smallestSize(in: "Text(a).font(.fraunces(pal.fs(16)))"), 16)
+        XCTAssertNil(TypeScan.smallestSize(in: "Text(a).lineLimit(1)"))
     }
 
     /// The scan's own arithmetic, on fixtures — so a broken scanner can't pass by seeing nothing.
@@ -135,6 +157,16 @@ final class TypographyTests: XCTestCase {
         XCTAssertEqual(sized.last?.value, "16", "a file's own `let …: CGFloat = 16` is read in")
         XCTAssertEqual(sites.filter { !$0.kind.isSized }.map(\.kind),
                        [.system, .textStyle, .systemStyle, .uiSystem, .uiSystem])
+        // The listed system face, and the placement check that keeps it honest.
+        let marks = TypeScan.sites(file: "Marks.swift", text: """
+        Image(systemName: "star.fill").font(.symbol(12))
+        Text("🙏").font(.emoji(15))
+        Text(reaction.emoji).font(.emoji(15))
+        Text("Amen").font(.emoji(15))
+        """)
+        XCTAssertEqual(marks.map(\.kind), [.symbol, .emoji, .emoji, .emoji])
+        XCTAssertEqual(marks.dropFirst().map { TypeScan.isEmojiText($0.context.components(separatedBy: "\n").last ?? "") },
+                       [true, true, false], "words never wear the emoji size")
         XCTAssertEqual(sites.first?.line, 1)
         XCTAssertEqual(sites.first(where: { $0.arg == "30" })?.line, 11)
     }
@@ -177,6 +209,14 @@ final class TypographyTests: XCTestCase {
             ("title", .nTitle, "Fraunces-Medium", 22),
             ("screen title", .fraunces(26, .semibold), "Fraunces-SemiBold", 26),
             ("display", .nDisplay, "Fraunces-Medium", 28),
+            // The rest of the semantic tokens, so the scan's token table is proven.
+            ("heading", .nHeading, "Inter-Medium", 16),
+            ("label", .nLabel, "Inter-Medium", 12),
+            ("caption", .nCaption, "Inter-Medium", 12),
+            ("micro", .nMicro, "Inter-Medium", 11),
+            ("overline", .nOverline, "Inter-SemiBold", 11),
+            ("action", .nActionLabel, "Inter-Bold", 13),
+            ("card CTA", .nCardCTA, "Inter-SemiBold", 14),
         ]
         for (role, token, face, size) in roles {
             let named = try XCTUnwrap(UIFont(name: face, size: size), face)
@@ -247,6 +287,10 @@ enum TypeScan {
     enum Kind: String {
         case inter, fraunces, nuruDisplay, custom, uiFont, nuruUIFont
         case system, systemStyle, textStyle, uiSystem
+        /// The listed system face: an SF Symbol's size, an emoji's size.
+        case symbol, emoji
+        /// `.minimumScaleFactor(x)` — how far a label may give way.
+        case shrink
         var isSized: Bool { [.inter, .fraunces, .nuruDisplay, .custom, .uiFont, .nuruUIFont].contains(self) }
     }
 
@@ -258,6 +302,8 @@ enum TypeScan {
         let source: String
         /// The size with a file constant (`let baseSize: CGFloat = 16`) read in.
         var resolved: String? = nil
+        /// The four lines before the site and its own line up to the call.
+        var context: String = ""
         var value: String { resolved ?? arg }
         var description: String { "\(file):\(line)  \(kind.rawValue)(\(arg))  \(source)" }
     }
@@ -280,9 +326,79 @@ enum TypeScan {
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", "if let font = UIFont(name: face, size: size) { return font }", .typeHelper),
         ("Theme/NuruTheme.swift", "return UIFont.systemFont(ofSize: size)", .fallback),
+        ("Theme/NuruTheme.swift", ".system(size: size, weight: weight)", .icon),
+        ("Theme/NuruTheme.swift", "static func emoji(_ size: CGFloat) -> Font { .system(size: size) }", .emoji),
         ("Theme/LucideIcons.swift", ".custom(\"lucide\", fixedSize: size)", .icon),
         ("Features/Shared/Components.swift", ".font(.nuruDisplay(size * 0.56, weight: .semibold))", .logo),
         ("Features/Live/LiveStageCompositor.swift", ".font: Nuru.uiFont(\"Inter-Bold\", max(12, tileSize.height * 0.14)),", .video),
+    ]
+
+    /// Where an SF Symbol keeps the system face (`.symbol(size)`), per file.
+    /// The icon family is Lucide (§8.1 rule 7); these are the glyphs it lacks.
+    static let listedSymbols: [String: Int] = [
+        "Features/Attendance/ServiceCheckInView.swift": 1,
+        "Features/Chat/BroadcastViews.swift": 5,
+        "Features/Chat/ChatThreadView.swift": 3,
+        "Features/Chat/ChatView.swift": 7,
+        "Features/Chat/ChatVoice.swift": 1,
+        "Features/Chat/PastoralViews.swift": 2,
+        "Features/Community/DiscussionsView.swift": 2,
+        "Features/Community/SelahEditorView.swift": 1,
+        "Features/Departments/DepartmentDetailView.swift": 1,
+        "Features/Events/CheckInScannerView.swift": 1,
+        "Features/Give/GivingView.swift": 5,
+        "Features/Give/PartnerInviteSheet.swift": 1,
+        "Features/Give/PartnersView.swift": 2,
+        "Features/Grow/PlanSegmentView.swift": 2,
+        "Features/Grow/PrayerJournalView.swift": 1,
+        "Features/Grow/ReadingPlanCards.swift": 3,
+        "Features/Grow/ReadingPlansView.swift": 3,
+        "Features/Grow/ResourcesLibraryView.swift": 1,
+        "Features/Home/CellRosterView.swift": 1,
+        "Features/Home/HomeCards.swift": 4,
+        "Features/Home/HomeView.swift": 6,
+        "Features/Home/LiturgyRecorder.swift": 2,
+        "Features/Home/ShareToChatSheet.swift": 1,
+        "Features/Live/BroadcastSourceSheet.swift": 1,
+        "Features/Live/BroadcastStudioCard.swift": 1,
+        "Features/Live/GoLiveBroadcastView.swift": 4,
+        "Features/Live/GuestStageOverlay.swift": 4,
+        "Features/Live/LiveDiscoveryUI.swift": 1,
+        "Features/Live/LiveDockChrome.swift": 2,
+        "Features/Live/LiveFloatingChatOverlay.swift": 4,
+        "Features/Live/LiveReactionEffects.swift": 2,
+        "Features/Live/LiveStageView.swift": 2,
+        "Features/Live/LiveViewerPlayerView.swift": 2,
+        "Features/Live/NuruLiveTabView.swift": 1,
+        "Features/Pathway/ModuleView.swift": 2,
+        "Features/Pathway/PathwayView.swift": 2,
+        "Features/Pathway/VoiceNoteCard.swift": 3,
+        "Features/Radio/RadioMiniPlayer.swift": 1,
+        "Features/Radio/RadioPlayerView.swift": 8,
+        "Features/Shared/StateLanguage.swift": 1
+    ]
+
+    /// Where an emoji is sized (`.emoji(size)`), per file.
+    static let listedEmoji: [String: Int] = [
+        "Features/Chat/ChatThreadView.swift": 2,
+        "Features/Chat/ChatView.swift": 1,
+        "Features/Community/PrayerWallDetailView.swift": 1,
+        "Features/Community/PrayerWallView.swift": 2,
+        "Features/Discipleship/DisciplerDossierView.swift": 1,
+        "Features/Discipleship/DiscipleshipHubView.swift": 1,
+        "Features/Events/EventDetailView.swift": 1,
+        "Features/Home/HomeCards.swift": 1,
+        "Features/Home/HomeView.swift": 3,
+        "Features/Home/LiturgyCards.swift": 3,
+        "Features/Pathway/LevelDetailView.swift": 2,
+        "Features/Pathway/LevelExamView.swift": 3,
+        "Features/Pathway/ModuleView.swift": 1,
+        "Features/Pathway/PathwayView.swift": 4,
+        "Features/Pathway/QuizView.swift": 3,
+        "Features/Profile/GiftsView.swift": 1,
+        "Features/Radio/RadioPlayerView.swift": 2,
+        "Features/Shared/CelebrationCenter.swift": 1,
+        "Features/Shell/LocationInvite.swift": 1
     ]
 
     struct Report {
@@ -290,6 +406,11 @@ enum TypeScan {
         var offScale: [Site] = []
         var systemText: [Site] = []
         var staleListings: [String] = []
+        var symbolsByFile: [String: Int] = [:]
+        var emojiByFile: [String: Int] = [:]
+        var misplaced: [Site] = []
+        var shrinkSites = 0
+        var shrinksUnder11: [String] = []
     }
 
     // MARK: Files
@@ -341,6 +462,37 @@ enum TypeScan {
         }
         for (rel, text) in try files() {
             for s in sites(file: rel, text: text) {
+                if s.kind == .shrink {
+                    report.shrinkSites += 1
+                    let factor = smallest(s.arg)          // a ternary's smaller factor
+                    let size = smallestSize(in: s.context)
+                    if let factor, let size {
+                        if size * factor < 11 - 0.001 {
+                            report.shrinksUnder11.append("\(s.file):\(s.line)  \(size) pt × \(factor) = \(String(format: "%.1f", size * factor)) pt  \(s.source)")
+                        }
+                    } else {
+                        report.shrinksUnder11.append("\(s.file):\(s.line)  can't tell what shrinks (factor \(s.arg)) — set the font beside it  \(s.source)")
+                    }
+                    continue
+                }
+                if s.kind == .symbol {
+                    report.symbolsByFile[s.file, default: 0] += 1
+                    if !(s.context.contains("Image(systemName") || s.context.contains("systemImage:")) { report.misplaced.append(s) }
+                    continue
+                }
+                if s.kind == .emoji {
+                    report.emojiByFile[s.file, default: 0] += 1
+                    if !isEmojiText(s.context) { report.misplaced.append(s) }
+                    // An emoji in a line of words takes the type scale's step
+                    // (as Android draws it); only a picture-sized one (over 28)
+                    // stands outside it.
+                    if let v = Double(s.arg.trimmingCharacters(in: .whitespaces)) {
+                        if v <= 28, !TypographyTests.scale.contains(CGFloat(v)) { report.offScale.append(s) }
+                    } else if onScale(s.arg) != true {
+                        report.offScale.append(s)
+                    }
+                    continue
+                }
                 if s.kind.isSized {
                     report.sizedCalls += 1
                     if onScale(s.value) == true { continue }
@@ -354,6 +506,55 @@ enum TypeScan {
         }
         report.staleListings = remaining.filter { !$0.used }.map { "\($0.file): \($0.snippet) (\($0.why.rawValue))" }
         return report
+    }
+
+    /// The semantic tokens' sizes (NuruTheme.swift) — each pinned to its face
+    /// and size, pixel for pixel, by testTokenStyledTextRendersInTheNamedFace.
+    static let tokenSizes: [String: CGFloat] = [
+        "nDisplay": 28, "nTitle": 22, "nHeading": 16, "nBody": 14, "nBodyLg": 16,
+        "nLabel": 12, "nCaption": 12, "nMicro": 11, "nOverline": 11,
+        "nCardKicker": 11, "nCardTitle": 18, "nRowTitle": 15, "nCardBody": 13,
+        "nCardMeta": 11, "nChipLabel": 12, "nActionLabel": 13, "nCardCTA": 14,
+    ]
+
+    /// The smallest size the LAST font set in this code can draw: a literal,
+    /// a ternary's smaller step, a reader's `pal.fs(base)`, a token. Nil when
+    /// no font is set here.
+    static func smallestSize(in code: String) -> CGFloat? {
+        let ns = code as NSString
+        let all = NSRange(location: 0, length: ns.length)
+        guard let fontRE = try? NSRegularExpression(pattern: #"(?<![A-Za-z0-9_])(?:inter|fraunces|nuruDisplay)\(|\.(n[A-Z][A-Za-z]+)\b"#),
+              let last = fontRE.matches(in: code, range: all).last else { return nil }
+        if last.range(at: 1).location != NSNotFound {
+            return tokenSizes[ns.substring(with: last.range(at: 1))]
+        }
+        return smallest(firstArgument(ns, from: last.range.location + last.range.length))
+    }
+
+    static func smallest(_ raw: String) -> CGFloat? {
+        let a = raw.trimmingCharacters(in: .whitespaces)
+        if let v = Double(a) { return CGFloat(v) }
+        if let (yes, no) = ternary(a) {
+            guard let y = smallest(yes), let n = smallest(no) else { return nil }
+            return min(y, n)
+        }
+        if a.hasPrefix("NuruType.snap(") { return 11 }
+        if let r = a.range(of: ".fs("), a.hasSuffix(")") {
+            return smallest(String(a[r.upperBound..<a.index(before: a.endIndex)]))
+        }
+        return nil
+    }
+
+    /// The statement draws an emoji: a `Text` of a literal with no letters or
+    /// digits ("🙏", "✍️"), or of an expression that names an emoji.
+    static func isEmojiText(_ context: String) -> Bool {
+        guard let r = context.range(of: "Text(", options: .backwards) else { return false }
+        let inner = String(context[r.upperBound...].prefix(60))
+        if inner.hasPrefix("\"") {
+            let literal = inner.dropFirst().prefix { $0 != "\"" }
+            return !literal.isEmpty && !literal.contains { $0.isASCII && ($0.isLetter || $0.isNumber) }
+        }
+        return inner.prefix { $0 != ")" }.lowercased().contains("emoji")
     }
 
     // MARK: Faces
@@ -435,6 +636,9 @@ enum TypeScan {
             (.systemStyle, re(#"\.system\(\s*\.(?:\#(textStyles))\b"#)),
             (.textStyle, re(#"(?:\.font\(\s*|(?<![A-Za-z0-9_])Font)\.(?:\#(textStyles))\b"#)),
             (.uiSystem, re(#"\.(?:systemFont|boldSystemFont|italicSystemFont|monospacedSystemFont|monospacedDigitSystemFont)\(ofSize:|UIFont\.preferredFont\("#)),
+            (.symbol, re(#"(?<![A-Za-z0-9_])\.symbol\("#)),
+            (.emoji, re(#"(?<![A-Za-z0-9_])\.emoji\("#)),
+            (.shrink, re(#"\.minimumScaleFactor\("#)),
         ]
     }()
 
@@ -481,11 +685,16 @@ enum TypeScan {
                     arg = secondArgument(ns, from: after)
                 case .systemStyle, .textStyle, .uiSystem:
                     arg = ns.substring(with: m.range)
+                case .symbol, .emoji, .shrink:
+                    arg = firstArgument(ns, from: after)
                 }
                 let line = lineOf(m.range.location)
                 let src = line - 1 < lines.count ? lines[line - 1].trimmingCharacters(in: .whitespaces) : ""
+                // The statement up to the call: four lines back, never past it.
+                let from = starts[max(0, line - 5)]
+                let ctx = (text as NSString).substring(with: NSRange(location: from, length: m.range.location - from))
                 out.append((m.range.location, Site(kind: kind, file: file, line: line, arg: arg, source: src,
-                                                   resolved: kind.isSized ? resolve(arg) : nil)))
+                                                   resolved: kind.isSized ? resolve(arg) : nil, context: ctx)))
             }
         }
         return out.sorted { $0.0 < $1.0 }.map(\.1)

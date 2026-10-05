@@ -936,7 +936,7 @@ struct PartnersView: View {
         } label: {
             Text(text)
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
-                .lineLimit(1).minimumScaleFactor(0.85)
+                .lineLimit(1).minimumScaleFactor(0.92)
                 .padding(.horizontal, 12).frame(height: 32)
                 .background(Nuru.goldChipBg, in: Capsule())
         }
@@ -1412,7 +1412,7 @@ private struct TroubleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             Text(trouble.paused ? "Your giving is paused — nothing is owed." : "One gift didn't go through — nothing is owed.")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
@@ -1990,7 +1990,7 @@ struct PledgeDetailView: View {
     private func autoScheduleNotice(_ note: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Your pledge is made — automatic collection isn't set up.")

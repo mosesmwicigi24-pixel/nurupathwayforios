@@ -495,7 +495,7 @@ private struct PasswordChangeSheet: View {
             Icon(.checkCircle2, size: 40, color: Nuru.success)
                 .padding(.top, Nuru.S.sm)
             Text("Your password has been changed.")
-                .font(.fraunces(19, .medium)).foregroundStyle(Nuru.navy)
+                .font(.fraunces(18, .medium)).foregroundStyle(Nuru.navy)
                 .multilineTextAlignment(.center)
             Text("Use your new password next time you sign in.")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))

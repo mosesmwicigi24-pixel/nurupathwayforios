@@ -252,7 +252,7 @@ struct PrayerJournalView: View {
                                     HStack(spacing: 5) {
                                         Icon(.plus, size: 13, color: .white)
                                         Text("Add Prayer").font(.nActionLabel).foregroundStyle(.white)
-                                            .lineLimit(1).minimumScaleFactor(0.8)
+                                            .lineLimit(1).minimumScaleFactor(0.85)
                                     }
                                     .padding(.horizontal, 14).padding(.vertical, 12)
                                     .frame(maxWidth: forcedTab == nil ? nil : .infinity)
@@ -353,7 +353,7 @@ struct PrayerJournalView: View {
                 Text(ZeroCounts.journalHeader(active: vm.active.count, answered: vm.answered.count) ?? "")
                     .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button { Haptics.tap(); editing = PrayerDraft() } label: {
                     Icon(.plus, size: 18, color: Nuru.navy)
@@ -619,7 +619,7 @@ private struct JournalCard: View {
                     Button(role: .destructive) { remove() } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.symbol(17, weight: .semibold))
                         .foregroundStyle(Color(hex: 0x74808F))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
@@ -732,7 +732,7 @@ private struct JournalCard: View {
                 Button { Haptics.tap(); share() } label: {
                     HStack(spacing: 6) {
                         Icon(.share2, size: 14, color: Nuru.navyDeep)
-                        Text("Share to Corporate").font(.inter(12, .bold)).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(Nuru.navyDeep)
+                        Text("Share to Corporate").font(.inter(12, .bold)).lineLimit(1).minimumScaleFactor(0.92).foregroundStyle(Nuru.navyDeep)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)

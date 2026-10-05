@@ -310,11 +310,14 @@ struct PartnersStatementView: View {
     @ViewBuilder private func keptAndGiven(_ t: HeroTiles) -> some View {
         if let k = t.kept {
             heroTile("KEPT", a11y: "\(k.kept) of \(k.due) commitments kept\(k.late > 0 ? ", \(k.late) late" : "")") {
+                // Only the big number gives way (26 × 0.6 = 15.6); the words
+                // beside it keep their size — nothing under 11 pt.
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(k.kept)").font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                     Text("of \(k.due)").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1).fixedSize()
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
                 // "9 of 10 · 1 late" — the late ones are kept, and said.
                 tileCaption(k.late > 0 ? "commitments · \(k.late) late" : "commitments")
             }
@@ -324,9 +327,10 @@ struct PartnersStatementView: View {
             heroTile("GIVEN", a11y: "Given \(money(g, t.givenCurrency))\(rest) toward pledges") {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
                     Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1).fixedSize()
                     Text(Self.compactAmount(g)).font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
                 tileCaption(t.givenRest.map { "toward pledges · \($0)" } ?? "toward pledges")
             }
         }
@@ -359,7 +363,7 @@ struct PartnersStatementView: View {
                 .frame(height: 5)
                 .padding(.top, 6)
                 Text(ofLine).font(.inter(11, .semibold)).foregroundStyle(.white)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
                 tileCaption("toward carrying one disciple through a level")
             }
@@ -370,7 +374,7 @@ struct PartnersStatementView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.inter(11, .semibold)).kerning(0.8)
                 .foregroundStyle(.white.opacity(0.6))
-                .lineLimit(1).minimumScaleFactor(0.65)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 2)
             content()
         }
@@ -645,7 +649,7 @@ struct PartnersStatementView: View {
                     Text("Remaining this year").font(.inter(11)).foregroundStyle(Nuru.ink400)
                     Text(remaining)
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .lineLimit(1).fixedSize()
                 }
             }
             if pledges.isEmpty {

@@ -91,7 +91,7 @@ struct PrayerWallDetailView: View {
                 Icon(.arrowLeft, size: 18, color: .white)
                     .frame(width: 40, height: 40).background(Color.white.opacity(0.10), in: Circle())
             }
-            Text("Prayer").font(.fraunces(20, .semibold)).foregroundStyle(.white)
+            Text("Prayer").font(.fraunces(22, .semibold)).foregroundStyle(.white)
             Spacer()
         }
         .padding(.horizontal, Nuru.S.lg).padding(.top, 54).padding(.bottom, Nuru.S.lg)
@@ -136,12 +136,12 @@ struct PrayerWallDetailView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             // Reaction bar
             HStack(spacing: Nuru.S.sm) {
-                ForEach(quickReactions, id: \.self) { e in
-                    let r = post.reactions.first { $0.emoji == e }
+                ForEach(quickReactions, id: \.self) { emoji in
+                    let r = post.reactions.first { $0.emoji == emoji }
                     let mine = r?.mine ?? false
-                    Button { Haptics.love(); Task { await vm.react(e) } } label: {
+                    Button { Haptics.love(); Task { await vm.react(emoji) } } label: {
                         HStack(spacing: 4) {
-                            Text(e).font(.system(size: 15))
+                            Text(emoji).font(.emoji(15))
                             if let r, r.count > 0 {
                                 Text("\(r.count)").font(.nMicro).foregroundStyle(mine ? Nuru.navyDeep : Nuru.ink600)
                                     .contentTransition(.numericText(value: Double(r.count)))

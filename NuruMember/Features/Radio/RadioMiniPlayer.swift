@@ -135,7 +135,7 @@ struct RadioMiniPlayer: View {
                 center.togglePlay()
             } label: {
                 Image(systemName: center.playing ? "pause.fill" : "play.fill")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.symbol(12, weight: .bold))
                     .foregroundStyle(Nuru.gold)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: center.playing ? 0 : 1)

@@ -135,7 +135,7 @@ struct GiftsAssessmentView: View {
                 Color.clear.frame(width: 40, height: 40)
             }
             Text("Spiritual gifts")
-                .font(.fraunces(24, .semibold))
+                .font(.fraunces(26, .semibold))
                 .foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -200,7 +200,7 @@ struct GiftsAssessmentView: View {
                     VStack(alignment: .leading, spacing: Nuru.S.base) {
                         SegmentedProgress(step: index, total: total)
                         Text(q.prompt)
-                            .font(.fraunces(20, .medium))
+                            .font(.fraunces(18, .medium))
                             .foregroundStyle(Nuru.navy)
                             .lineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
@@ -362,7 +362,7 @@ private struct ResultsPane: View {
                         .frame(width: 56, height: 56)
                         .background(Nuru.gold.opacity(0.13), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     Text("YOUR TOP GIFTS")
-                        .font(.inter(10, .bold)).tracking(1.8)
+                        .font(.inter(11, .bold)).tracking(1.8)
                         .foregroundStyle(Nuru.goldLo)
                         .padding(.top, Nuru.S.sm)
                     Text("Based on \(answered) reflections")
@@ -382,7 +382,7 @@ private struct ResultsPane: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("WHERE TO SERVE")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Nuru.goldLo)
                 ForEach(gifts.suggestedTracks.prefix(3)) { t in
                     HStack(spacing: Nuru.S.sm) {

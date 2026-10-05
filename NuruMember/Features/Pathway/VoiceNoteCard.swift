@@ -87,7 +87,7 @@ struct VoiceNoteCard: View {
                     ZStack {
                         Circle().fill(Nuru.gold).frame(width: 40, height: 40)
                         Image(systemName: player.playing ? "pause.fill" : "play.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.symbol(14, weight: .bold))
                             .foregroundStyle(Nuru.navy)
                             .offset(x: player.playing ? 0 : 1)
                     }
@@ -360,7 +360,7 @@ struct VoiceRecordSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: model.previewing ? "pause.fill" : "play.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.symbol(12, weight: .bold))
                             Text("Listen back").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -438,7 +438,7 @@ struct VoiceRecordSheet: View {
                         Icon(icon, size: 28, color: .white)
                     } else if let sfSymbol {
                         Image(systemName: sfSymbol)
-                            .font(.system(size: 24, weight: .bold)).foregroundStyle(.white)
+                            .font(.symbol(24, weight: .bold)).foregroundStyle(.white)
                     }
                 }
                 .shadow(color: tint.opacity(0.35), radius: 10, y: 4)

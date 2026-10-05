@@ -101,7 +101,7 @@ struct SelahView: View {
                     VStack(spacing: Nuru.S.base) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pause. Reflect. Write.")
-                                .font(.fraunces(21, .medium)).foregroundStyle(Nuru.navy)
+                                .font(.fraunces(22, .medium)).foregroundStyle(Nuru.navy)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .gentleEntrance()

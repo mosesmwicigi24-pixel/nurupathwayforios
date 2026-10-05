@@ -92,7 +92,7 @@ struct ReaderOrnament: View {
     var body: some View {
         HStack(spacing: 12) {
             Rectangle().fill(pal.border).frame(height: 1)
-            Text("✝").font(.system(size: 12, weight: .medium)).foregroundStyle(pal.gold)
+            Icon(.cross, size: 14, color: pal.gold)   // one icon family (§8.1 rule 7)
             Rectangle().fill(pal.border).frame(height: 1)
         }
         .padding(.vertical, 2)

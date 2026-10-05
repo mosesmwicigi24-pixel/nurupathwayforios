@@ -401,7 +401,7 @@ struct ReactionBurstLayer: View {
         let scale = p.scale * (0.6 + 0.4 * min(1, t / 0.18))    // small → full
 
         Text(p.emoji)
-            .font(.system(size: 30))
+            .font(.emoji(30))
             .scaleEffect(scale)
             .rotationEffect(.degrees(p.rotation * t))
             .opacity(opacity)
@@ -427,7 +427,7 @@ struct LiveReactionCounter: View {
                 .foregroundStyle(.white)
                 .contentTransition(.numericText(value: Double(total)))
             Text("reactions")
-                .font(.inter(10, .semibold)).kerning(0.6)
+                .font(.inter(11, .semibold)).kerning(0.6)
                 .foregroundStyle(.white.opacity(0.5))
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -616,8 +616,8 @@ struct RadioPlayerView: View {
     private func offAirError(_ message: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 40)).foregroundStyle(RadioUX.gold.opacity(0.7))
-            Text("Couldn't tune in").font(.fraunces(20, .semibold)).foregroundStyle(.white)
+                .font(.symbol(40)).foregroundStyle(RadioUX.gold.opacity(0.7))
+            Text("Couldn't tune in").font(.fraunces(18, .semibold)).foregroundStyle(.white)
             Text(message).font(.inter(12)).foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center).padding(.horizontal, 48)
             Button {
@@ -637,11 +637,11 @@ struct RadioPlayerView: View {
     private var titles: some View {
         VStack(spacing: 0) {
             Text(kickerText)
-                .font(.inter(9, .bold)).kerning(2.0)
+                .font(.inter(11, .bold)).kerning(2.0)
                 .foregroundStyle(RadioUX.goldLight)
                 .padding(.top, 24)
             Text(titleText)
-                .font(.fraunces(24, .semibold)).kerning(-0.48)
+                .font(.fraunces(26, .semibold)).kerning(-0.48)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
@@ -857,7 +857,7 @@ private struct GlassSquareButton: View {
                         Icon(lucide, size: iconSize, color: .white)
                     } else if let sfSymbol {
                         Image(systemName: sfSymbol)
-                            .font(.system(size: iconSize - 2, weight: .semibold))
+                            .font(.symbol(iconSize - 2, weight: .semibold))
                             .foregroundStyle(.white)
                     }
                 }
@@ -939,7 +939,7 @@ private struct LiveCenterpiece: View {
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
                                 .overlay {
                                     Image(systemName: "dot.radiowaves.left.and.right")
-                                        .font(.system(size: 44)).foregroundStyle(RadioUX.gold.opacity(0.8))
+                                        .font(.symbol(44)).foregroundStyle(RadioUX.gold.opacity(0.8))
                                 }
                         }
                     }
@@ -952,7 +952,7 @@ private struct LiveCenterpiece: View {
 
             if !live {
                 Text("OFF AIR")
-                    .font(.inter(10, .bold)).kerning(2.2)
+                    .font(.inter(11, .bold)).kerning(2.2)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12).padding(.vertical, 4)
                     .background(RadioUX.navyDeep.opacity(0.7), in: Capsule())
@@ -1002,13 +1002,13 @@ private struct LiveSweepLine: View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 Circle().fill(RadioUX.redDeep).frame(width: 6, height: 6)
-                Text("LIVE").font(.inter(10, .bold)).kerning(1.4)
+                Text("LIVE").font(.inter(11, .bold)).kerning(1.4)
                     .foregroundStyle(RadioUX.redSoft)
             }
             waveBar
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 Text(fmtElapsed(tunedAt.map { ctx.date.timeIntervalSince($0) } ?? 0))
-                    .font(.inter(10)).monospacedDigit()
+                    .font(.inter(11)).monospacedDigit()
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
@@ -1099,7 +1099,7 @@ private struct RecordingProgressLine: View {
                 Spacer()
                 Text(fmtClock(center.duration))
             }
-            .font(.inter(10)).monospacedDigit()
+            .font(.inter(11)).monospacedDigit()
             .foregroundStyle(.white.opacity(0.55))
         }
         .accessibilityElement(children: .combine)
@@ -1125,7 +1125,7 @@ private struct LiveTransportRow: View {
                 center.toggleMute()
             } content: {
                 Image(systemName: center.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.symbol(18, weight: .semibold))
             }
             .accessibilityLabel(center.muted ? "Unmute" : "Mute")
 
@@ -1166,7 +1166,7 @@ private struct LiveTransportRow: View {
                     .frame(width: 78, height: 78)
                     .shadow(color: RadioUX.gold.opacity(0.8), radius: 22, y: 12)
                 Image(systemName: spinning ? "pause.fill" : "play.fill")
-                    .font(.system(size: 26))
+                    .font(.symbol(26))
                     .foregroundStyle(Nuru.navy)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: spinning ? 0 : 2)
@@ -1246,7 +1246,7 @@ private struct RemindMeCTA: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "bell.and.waves.left.and.right")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.symbol(15, weight: .semibold))
                 Text(notified ? "We'll notify you 🔔" : "Remind me when we're live")
                     .font(.inter(14, notified ? .semibold : .bold))
             }
@@ -1326,7 +1326,7 @@ private struct StatChip: View {
         HStack(spacing: 6) {
             Icon(lucide, size: 12, color: RadioUX.goldLight)
             Text(value).font(.inter(11, .bold)).foregroundStyle(.white)
-            Text(label).font(.inter(9, .semibold)).kerning(0.9)
+            Text(label).font(.inter(11, .semibold)).kerning(0.9)
                 .foregroundStyle(.white.opacity(0.45))
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -1377,7 +1377,7 @@ private struct LiveTabView: View {
                 Icon(.handHeart, size: 20, color: .white)
             } action: { fire("amen", emoji: "🙏") }
             ReactionButton(tint: RadioUX.indigoSoft) {
-                Text("🙌").font(.system(size: 19))
+                Text("🙌").font(.emoji(18))
             } action: { fire("fire", emoji: "🙌") }
         }
         .frame(maxWidth: .infinity)
@@ -1515,7 +1515,7 @@ private struct LiveChatRow: View {
 
     private var initialsText: some View {
         Text(radioInitials(mine ? "Me" : displayName))
-            .font(.inter(9, .bold)).foregroundStyle(.white)
+            .font(.inter(11, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -1598,12 +1598,12 @@ private struct RecordingRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(program.category.uppercased())
-                        .font(.inter(8, .bold)).kerning(0.8)
+                        .font(.inter(11, .bold)).kerning(0.8)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(RadioUX.gold.opacity(0.2), in: Capsule())
                     if let date = radioDayLabel(program.scheduledAt) {
-                        Text(date).font(.inter(10)).foregroundStyle(.white.opacity(0.45))
+                        Text(date).font(.inter(11)).foregroundStyle(.white.opacity(0.45))
                     }
                 }
                 Text(program.title)
@@ -1614,12 +1614,12 @@ private struct RecordingRow: View {
                         RadioMiniWave(playing: playing, count: 12, height: 12,
                                       color: RadioUX.goldLight)
                         Text("\(fmtClock(center.currentTime)) / \(fmtClock(center.duration))")
-                            .font(.inter(9)).monospacedDigit()
+                            .font(.inter(11)).monospacedDigit()
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     .padding(.top, 4)
                 } else if let sub = subtitle {
-                    Text(sub).font(.inter(10)).foregroundStyle(.white.opacity(0.55))
+                    Text(sub).font(.inter(11)).foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                 }
             }
@@ -1660,7 +1660,7 @@ private struct RecordingRow: View {
                 ZStack {
                     RadioUX.navyDeep.opacity(0.4)
                     Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.symbol(13, weight: .bold))
                         .foregroundStyle(Nuru.navy)
                         .contentTransition(.symbolEffect(.replace))
                         .offset(x: playing ? 0 : 1)
@@ -1677,7 +1677,7 @@ private struct RecordingRow: View {
 
     private var coverGlyph: some View {
         Image(systemName: "dot.radiowaves.left.and.right")
-            .font(.system(size: 18)).foregroundStyle(RadioUX.gold.opacity(0.8))
+            .font(.symbol(18)).foregroundStyle(RadioUX.gold.opacity(0.8))
     }
 
     private var downloadButton: some View {
@@ -1764,7 +1764,7 @@ private struct ScheduleTabView: View {
                         .lineLimit(1)
                     Text([program.speaker, program.category].compactMap { $0 }
                         .filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.inter(10)).foregroundStyle(.white.opacity(0.5))
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.5))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -1783,7 +1783,7 @@ private struct ScheduleTabView: View {
                     .font(.inter(13, .bold)).kerning(-0.26)
                     .foregroundStyle(.white)
                 Text(radioTimeParts(program.scheduledAt)?.1 ?? "")
-                    .font(.inter(8, .bold))
+                    .font(.inter(11, .bold))
                     .foregroundStyle(.white.opacity(0.45))
             }
             .frame(width: 48)
@@ -1794,20 +1794,20 @@ private struct ScheduleTabView: View {
             case .live:
                 HStack(spacing: 4) {
                     Circle().fill(.white).frame(width: 4, height: 4)
-                    Text("LIVE").font(.inter(8, .bold)).kerning(0.8)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(0.8)
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(RadioUX.redDeep, in: Capsule())
             case .next:
-                Text("NEXT").font(.inter(8, .bold)).kerning(0.8)
+                Text("NEXT").font(.inter(11, .bold)).kerning(0.8)
                     .foregroundStyle(RadioUX.goldLight)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(RadioUX.gold.opacity(0.2), in: Capsule())
             case .upcoming:
                 Icon(.clock, size: 13, color: .white.opacity(0.35))
             case .done:
-                Text("Aired").font(.inter(9, .bold))
+                Text("Aired").font(.inter(11, .bold))
                     .foregroundStyle(.white.opacity(0.35))
             }
         }

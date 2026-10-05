@@ -205,7 +205,7 @@ struct NuruStateView: View {
         Group {
             switch cause {
             case .offline?:
-                Image(systemName: "wifi.slash").font(.system(size: size - 3, weight: .semibold))
+                Image(systemName: "wifi.slash").font(.symbol(size - 3, weight: .semibold))
                     .foregroundStyle(Nuru.ink600)
             case .sessionEnded?: Icon(.lockKeyhole, size: size, color: Nuru.goldLo)
             case .notFound?: Icon(.search, size: size, color: Nuru.ink600)

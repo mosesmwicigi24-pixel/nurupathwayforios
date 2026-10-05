@@ -218,7 +218,7 @@ struct DepartmentDetailView: View {
                             Label(r.isRequested ? "Withdraw request" : "Leave department", systemImage: "rectangle.portrait.and.arrow.right")
                         }
                     } label: {
-                        Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                        Image(systemName: "ellipsis").font(.symbol(16, weight: .bold)).foregroundStyle(Nuru.navy)
                             .frame(width: 40, height: 40)
                             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -602,7 +602,7 @@ struct DepartmentDetailView: View {
                                 .multilineTextAlignment(.center).lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
                             if m.isLeader {
-                                Text("Leader").font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Nuru.goldLo)
+                                Text("Leader").font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.goldLo)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .top)
@@ -684,7 +684,7 @@ private struct DepartmentPostComposer: View {
                 }
                 .background(Nuru.inputBg, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("IMAGE LINK (OPTIONAL)").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                    Text("IMAGE LINK (OPTIONAL)").font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                     NuruField(placeholder: "https://…", text: $imageUrl, keyboard: .URL)
                     if !urlOk {
                         Text("That doesn't look like a web link.").font(.nCaption).foregroundStyle(Nuru.danger)
@@ -788,7 +788,7 @@ private struct DepartmentNeedForm: View {
 
     private func labelled<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+            Text(label).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
             content()
         }
     }

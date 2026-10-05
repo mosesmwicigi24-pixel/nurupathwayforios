@@ -114,7 +114,7 @@ struct CommunityView: View {
                 Text(d.label).font(.inter(12, .semibold))
                     .foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 if count > 0 {
-                    Text(count > 9 ? "9+" : "\(count)").font(.inter(10, .bold))
+                    Text(count > 9 ? "9+" : "\(count)").font(.inter(11, .bold))
                         .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .frame(minWidth: 18)

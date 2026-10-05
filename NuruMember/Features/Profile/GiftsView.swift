@@ -89,7 +89,7 @@ struct GiftsView: View {
     private func personaCard(_ p: GiftPersona) -> some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(spacing: Nuru.S.sm) {
-                Text(p.emoji ?? "✨").font(.system(size: 24))
+                Text(p.emoji ?? "✨").font(.emoji(22))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(p.title).font(.nHeading).foregroundStyle(Nuru.ink)
                     Text(p.personaName).font(.nCaption).foregroundStyle(Nuru.gold)

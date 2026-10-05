@@ -126,7 +126,7 @@ struct CheckInScannerView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: camera.torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.symbol(15, weight: .semibold))
                             .foregroundStyle(camera.torchOn ? Nuru.navy : .white)
                         Text(camera.torchOn ? "Torch on" : "Torch")
                             .font(.inter(13, .semibold))

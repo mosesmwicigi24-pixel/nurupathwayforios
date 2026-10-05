@@ -168,8 +168,8 @@ struct NuruAssistantView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text("Nuru").font(.fraunces(20, .semibold)).kerning(-0.2).foregroundStyle(.white)
-                    Text("AI").font(.inter(7, .bold)).kerning(0.98).foregroundStyle(NUR.navy)
+                    Text("Nuru").font(.fraunces(18, .semibold)).kerning(-0.2).foregroundStyle(.white)
+                    Text("AI").font(.inter(11, .bold)).kerning(0.98).foregroundStyle(NUR.navy)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(NUR.sendG, in: Capsule())
                 }
@@ -205,7 +205,7 @@ struct NuruAssistantView: View {
             Circle().fill(NUR.green).frame(width: 6, height: 6)
                 .shadow(color: NUR.green.opacity(0.9), radius: 3)
             Text(NUR.taglines[taglineIndex])
-                .font(.inter(10)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
+                .font(.inter(11)).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
                 .id(taglineIndex)
                 .transition(.asymmetric(
                     insertion: .move(edge: .bottom).combined(with: .opacity),
@@ -225,7 +225,7 @@ struct NuruAssistantView: View {
                     Haptics.tap()
                     Task { await vm.suggest(s.label) }
                 } label: {
-                    Text(s.label).font(.inter(10, .semibold)).foregroundStyle(NUR.navy)
+                    Text(s.label).font(.inter(11, .semibold)).foregroundStyle(NUR.navy)
                         .padding(.horizontal, 12).padding(.vertical, 7)
                         .background(Color.white, in: Capsule())
                         .overlay(Capsule().stroke(s.color.opacity(0.33), lineWidth: 1))
@@ -256,7 +256,7 @@ struct NuruAssistantView: View {
                     )
                     .shadow(color: m.mine ? Color(hex: 0x0B1F33).opacity(0.25) : NUR.purple.opacity(0.12), radius: 8, y: 5)
                 Text(m.mine ? "You" : "Nuru")
-                    .font(.inter(8)).foregroundStyle(NUR.hint)
+                    .font(.inter(11)).foregroundStyle(NUR.hint)
             }
             if m.mine { meAvatar } else { Spacer(minLength: 48) }
         }
@@ -269,7 +269,7 @@ struct NuruAssistantView: View {
     }
     private var meAvatar: some View {
         Circle().fill(NUR.ink).frame(width: 28, height: 28)
-            .overlay(Text(myInitials).font(.inter(8, .bold)).foregroundStyle(.white))
+            .overlay(Text(myInitials).font(.inter(11, .bold)).foregroundStyle(.white))
             .overlay(Circle().stroke(Color.white, lineWidth: 2))
     }
     private var myInitials: String {

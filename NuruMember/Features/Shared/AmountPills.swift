@@ -47,7 +47,7 @@ struct NuruAmountPills: View {
         } label: {
             Text(label(v))
                 .font(.inter(13, .semibold)).foregroundStyle(on ? Nuru.white : Nuru.navy)
-                .lineLimit(1).minimumScaleFactor(fill ? 0.75 : 1)
+                .lineLimit(1).minimumScaleFactor(fill ? 0.85 : 1)   // 13 × 0.85 ≥ 11 (§8.1 rule 3)
                 .padding(.horizontal, fill ? 6 : 14)
                 .frame(maxWidth: fill ? .infinity : nil)
                 .frame(height: 36)

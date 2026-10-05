@@ -35,7 +35,7 @@ struct BroadcastMiniPlayer: View {
                     dot
                     VStack(alignment: .leading, spacing: 1) {
                         Text(statusLabel)
-                            .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(statusColor)
+                            .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(statusColor)
                         if let startedAt = controller.startedAt {
                             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                                 Text(formatDuration(ctx.date.timeIntervalSince(startedAt)))

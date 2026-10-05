@@ -435,7 +435,7 @@ struct LevelDetailView: View {
                 ZStack {
                     Circle().fill(Nuru.goldTint).frame(width: 36, height: 36)
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                    Text("🌿").font(.system(size: 16))
+                    Text("🌿").font(.emoji(16))
                 }
             }
             .frame(width: 36)
@@ -474,7 +474,7 @@ struct LevelDetailView: View {
                     Circle().fill(Nuru.goldTint).frame(width: 28, height: 28)
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
                     if let emoji = e.emoji, !emoji.isEmpty {
-                        Text(emoji).font(.system(size: 12))
+                        Text(emoji).font(.emoji(12))
                     } else {
                         Icon(.sparkles, size: 12, color: Nuru.gold)
                     }

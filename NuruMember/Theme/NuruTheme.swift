@@ -260,6 +260,19 @@ extension Nuru {
     }
 }
 
+extension Font {
+    /// An SF Symbol's size — for `Image(systemName:)` only, never words. The
+    /// icon family is Lucide (`Icon`); a symbol stays only where the bundled
+    /// Lucide has no glyph for it (a filled mark, a system glyph). Every site
+    /// is listed in TypographyTests (EXPERIENCE.md §8.3).
+    static func symbol(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+    /// An emoji's size — Apple Color Emoji draws it whatever the face asked
+    /// for; never words. Every site is listed in TypographyTests.
+    static func emoji(_ size: CGFloat) -> Font { .system(size: size) }
+}
+
 extension View {
     /// Text with no font of its own reads as the body (Inter 14), never the
     /// system face — set once at the app's root (EXPERIENCE.md §8.3).

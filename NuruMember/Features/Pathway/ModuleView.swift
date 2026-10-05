@@ -1686,7 +1686,7 @@ private struct MLSquareLabel: View {
 private struct MLSlowDownNudge: View {
     var body: some View {
         HStack(spacing: 10) {
-            Text("🕊️").font(.system(size: 20))
+            Text("🕊️").font(.emoji(22))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Slow down — take in the Word")
                     .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
@@ -1718,7 +1718,7 @@ private struct MLImmerseButton: View {
             Image(systemName: expanded
                   ? "arrow.down.right.and.arrow.up.left"
                   : "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.symbol(15, weight: .semibold))
                 .foregroundStyle(floating ? .white : ML.navy)
                 .frame(width: 40, height: 40)
                 .background {
@@ -1843,7 +1843,7 @@ private struct MLAudioCard: View {
             Circle().fill(ML.goldGradient).frame(width: 44, height: 44)
             // No Lucide "pause" glyph — SF Symbols, as MLImmerseButton already does.
             Image(systemName: playing ? "pause.fill" : "play.fill")
-                .font(.system(size: 16, weight: .bold))
+                .font(.symbol(16, weight: .bold))
                 .foregroundStyle(ML.navy)
                 .offset(x: playing ? 0 : 1)
         }

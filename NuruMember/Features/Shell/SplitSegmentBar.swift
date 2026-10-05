@@ -38,7 +38,7 @@ struct SplitSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccessCo
             Text(seg.label.uppercased())
                 .font(.inter(13, .semibold)).kerning(1.2)
                 .foregroundStyle(on ? Self.selectedText : Self.idleText)
-                .lineLimit(1).minimumScaleFactor(0.8)
+                .lineLimit(1).minimumScaleFactor(0.85)
                 .frame(maxWidth: .infinity).frame(height: 36)
                 .background(on ? Nuru.navy : Color.clear, in: Capsule())
                 .contentShape(Capsule())

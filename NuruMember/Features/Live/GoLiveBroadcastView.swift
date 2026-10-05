@@ -192,9 +192,9 @@ struct GoLiveBroadcastView: View {
     private func failedView(_ message: String) -> some View {
         VStack(spacing: 18) {
             Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                .font(.system(size: 36)).foregroundStyle(Nuru.gold.opacity(0.85))
+                .font(.symbol(36)).foregroundStyle(Nuru.gold.opacity(0.85))
             VStack(spacing: 4) {
-                Text("Connection lost").font(.fraunces(19, .semibold)).foregroundStyle(.white)
+                Text("Connection lost").font(.fraunces(18, .semibold)).foregroundStyle(.white)
                 Text(message).font(.inter(12)).foregroundStyle(.white.opacity(0.6))
                     .multilineTextAlignment(.center).padding(.horizontal, 32)
             }
@@ -278,7 +278,7 @@ struct GoLiveBroadcastView: View {
                         } else {
                             Icon(.trash2, size: 12, color: Color(hex: 0xDC2626).opacity(0.85))
                         }
-                        Text("Delete recording").font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0xDC2626).opacity(0.85))
+                        Text("Delete recording").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626).opacity(0.85))
                     }
                 }
                 .buttonStyle(.plain)
@@ -325,7 +325,7 @@ struct GoLiveBroadcastView: View {
                 Icon(controller.isVideo ? .camera : .mic, size: 28, color: Nuru.gold)
             }
             Text(controller.isVideo ? "Camera access needed" : "Microphone access needed")
-                .font(.fraunces(21, .medium)).foregroundStyle(.white)
+                .font(.fraunces(22, .medium)).foregroundStyle(.white)
             Text("Access was turned off before this broadcast could start. Turn it on in Settings and go live again.")
                 .font(.inter(13)).foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center).padding(.horizontal, 32)
@@ -375,7 +375,7 @@ struct GoLiveBroadcastView: View {
             minimizeButton
             HStack(spacing: 4) {
                 PulsingBroadcastDot()
-                Text("LIVE").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(.white)
+                Text("LIVE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(.white)
             }
             .padding(.horizontal, 7).padding(.vertical, 3)
             .background(Color(hex: 0xDC2626), in: Capsule())
@@ -423,7 +423,7 @@ struct GoLiveBroadcastView: View {
             showSourceSheet = true
         } label: {
             Image(systemName: "rectangle.on.rectangle")
-                .font(.system(size: 14, weight: .semibold))
+                .font(.symbol(14, weight: .semibold))
                 .foregroundStyle(controller.videoSource == .camera ? .white : Nuru.navy)
                 .frame(width: 44, height: 44)
                 .background(controller.videoSource == .camera ? Color.black.opacity(0.4) : Nuru.gold, in: Circle())
@@ -436,7 +436,7 @@ struct GoLiveBroadcastView: View {
         HStack(spacing: 6) {
             Icon(.mic, size: 10, color: Nuru.gold)
             Text("Audio live — camera paused in background")
-                .font(.inter(10, .semibold)).foregroundStyle(.white)
+                .font(.inter(11, .semibold)).foregroundStyle(.white)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Color.black.opacity(0.55), in: Capsule())
@@ -514,14 +514,14 @@ struct GoLiveBroadcastView: View {
         } label: {
             ZStack(alignment: .topTrailing) {
                 Image(systemName: "hand.raised.fill")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(.symbol(17, weight: .semibold))
                     .foregroundStyle(.white)
                     .frame(width: 48, height: 48)
                     .background(Color.white.opacity(0.14), in: Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
                 if count > 0 {
                     Text("\(min(count, 99))")
-                        .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                        .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, count > 9 ? 5 : 0)
                         .frame(minWidth: 18, minHeight: 18)
                         .background(Nuru.gold, in: Circle())
@@ -589,9 +589,9 @@ private struct ScreenShareActiveView: View {
                     Circle().fill(Nuru.gold.opacity(0.14)).frame(width: 108, height: 108)
                     Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1.5).frame(width: 108, height: 108)
                     Image(systemName: "rectangle.on.rectangle")
-                        .font(.system(size: 32, weight: .medium)).foregroundStyle(Nuru.gold)
+                        .font(.symbol(32, weight: .medium)).foregroundStyle(Nuru.gold)
                 }
-                Text("Sharing this screen").font(.fraunces(19, .semibold)).foregroundStyle(.white)
+                Text("Sharing this screen").font(.fraunces(18, .semibold)).foregroundStyle(.white)
                 Text("Minimize (the ⌄ up top) and browse Nuru — viewers see whatever you show them, and your mic stays live the whole time.")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.7))
                     .multilineTextAlignment(.center).padding(.horizontal, 40)
@@ -625,7 +625,7 @@ private struct LiveBroadcastAudioBackdrop: View {
                     Icon(.mic, size: 42, color: Nuru.gold)
                 }
                 LiveBroadcastWaveform()
-                Text("BROADCASTING AUDIO").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold.opacity(0.85))
+                Text("BROADCASTING AUDIO").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold.opacity(0.85))
                 Text(title).font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     .multilineTextAlignment(.center).padding(.horizontal, 40)
             }

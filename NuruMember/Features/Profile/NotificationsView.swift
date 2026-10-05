@@ -177,7 +177,7 @@ struct NotificationsView: View {
                         HStack(spacing: 3) {
                             Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
                             Text("\(rewardUnread) \(rewardUnread == 1 ? "gift" : "gifts")")
-                                .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                                .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         }
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(Nuru.gold.opacity(0.12), in: Capsule())
@@ -289,7 +289,7 @@ struct NotificationsView: View {
                 if reward && unread {
                     HStack(spacing: 4) {
                         Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
-                        Text("Tap to open your gift").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        Text("Tap to open your gift").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Nuru.gold.opacity(0.10), in: Capsule())

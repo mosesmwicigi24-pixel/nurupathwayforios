@@ -198,7 +198,7 @@ struct HomeLiturgyCard: View {
         // Just the hour (owner's trim, 2026-08-25): no season word, no brand
         // wordmark — the card speaks for itself. Voice controls keep their seat.
         HStack(spacing: 7) {
-            Text(partEmoji(lit.part)).font(.system(size: 15))
+            Text(partEmoji(lit.part)).font(.emoji(15))
             Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : partLabel(lit.part))
                 .font(.inter(11, .bold)).kerning(1.6)
                 .foregroundStyle(onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
@@ -337,7 +337,7 @@ struct CelebrationsRail: View {
                     // double-padded it 20pt deeper than its neighbours (owner
                     // screenshot, 2026-08-25: "these cards are not aligned").
                     HStack(spacing: 6) {
-                        Text("🎉").font(.system(size: 13))
+                        Text("🎉").font(.emoji(13))
                         Text("CELEBRATE THE FAMILY")
                             .font(.inter(11, .bold)).kerning(1.6)
                             .foregroundStyle(Nuru.muted)
@@ -414,7 +414,7 @@ private struct MomentCard: View {
         let mine = moment.myBlessing == kind
         return Button { onBless(kind) } label: {
             HStack(spacing: 4) {
-                Text(emoji).font(.system(size: 12))
+                Text(emoji).font(.emoji(12))
                 if count > 0 {
                     Text("\(count)").font(.inter(11, .bold))
                         .foregroundStyle(mine ? Nuru.navy : Nuru.muted)

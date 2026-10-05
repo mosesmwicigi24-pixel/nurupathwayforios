@@ -90,7 +90,7 @@ struct ShareToChatSheet: View {
     private func sendErrorBanner(_ message: String) -> some View {
         HStack(spacing: Nuru.S.sm) {
             Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 14)).foregroundStyle(Nuru.danger)
+                .font(.symbol(14)).foregroundStyle(Nuru.danger)
             Text(message).font(.nCaption).foregroundStyle(Nuru.ink)
             Spacer(minLength: 0)
         }

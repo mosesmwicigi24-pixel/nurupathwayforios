@@ -49,7 +49,7 @@ struct BroadcastSection: View {
                     Icon(.lockKeyhole, size: 30, color: Nuru.goldLight)
                 }
                 Text("The Broadcast is sealed")
-                    .font(.fraunces(20, .semibold)).kerning(-0.4).foregroundStyle(.white)
+                    .font(.fraunces(18, .semibold)).kerning(-0.4).foregroundStyle(.white)
                 Text("What members write back is between you and them. Confirm it's you, and it opens for 15 minutes.")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineSpacing(4)
                     .multilineTextAlignment(.center)
@@ -62,7 +62,7 @@ struct BroadcastSection: View {
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: BroadcastLock.biometryName == "Touch ID" ? "touchid" : "faceid")
-                                .font(.system(size: 17, weight: .semibold)).foregroundStyle(Nuru.navy)
+                                .font(.symbol(17, weight: .semibold)).foregroundStyle(Nuru.navy)
                             Text("Unlock with \(BroadcastLock.biometryName)")
                                 .font(.nCardCTA).foregroundStyle(Nuru.navy)
                         }
@@ -257,7 +257,7 @@ struct BroadcastDetailView: View {
                     .font(.nCardMeta).foregroundStyle(.white.opacity(0.6))
             }
             Text((detail?.body).flatMap { $0.isEmpty ? nil : $0 } ?? broadcast.body)
-                .font(.fraunces(17)).foregroundStyle(.white).lineSpacing(5)
+                .font(.fraunces(16)).foregroundStyle(.white).lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -294,8 +294,8 @@ struct BroadcastDetailView: View {
     private func tick(one: Bool, _ label: String) -> some View {
         HStack(spacing: 5) {
             HStack(spacing: -4) {
-                Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-                if !one { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
+                Image(systemName: "checkmark").font(.symbol(10, weight: .bold))
+                if !one { Image(systemName: "checkmark").font(.symbol(10, weight: .bold)) }
             }
             .foregroundStyle(Color(hex: 0x3DA8E0))
             Text(label).font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
@@ -315,8 +315,8 @@ struct BroadcastDetailView: View {
                     // "Delivered" and lights up blue once they've actually seen it.
                     HStack(spacing: 5) {
                         HStack(spacing: -4) {
-                            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
-                            if r.seen { Image(systemName: "checkmark").font(.system(size: 10, weight: .bold)) }
+                            Image(systemName: "checkmark").font(.symbol(10, weight: .bold))
+                            if r.seen { Image(systemName: "checkmark").font(.symbol(10, weight: .bold)) }
                         }
                         .foregroundStyle(Color(hex: 0x3DA8E0))
                         Text(r.seen ? "Seen" : "Delivered")
@@ -398,7 +398,7 @@ private struct ResponseRow: View {
                     .lineLimit(3).multilineTextAlignment(.leading)
                 if response.fromThem > 1 {
                     Text("\(response.fromThem) messages in your conversation")
-                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }
             }
             Icon(.chevronRight, size: 14, color: Nuru.ink600.opacity(0.5))

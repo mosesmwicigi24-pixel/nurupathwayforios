@@ -760,12 +760,12 @@ struct HomeView: View {
                 // The kicker carries a tiny sky: sunrise, sun, sunset or moon
                 // matching the hour — the same clock that tints the gradient.
                 HStack(spacing: 6) {
-                    Image(systemName: skyGlyph).font(.system(size: 11, weight: .semibold))
+                    Image(systemName: skyGlyph).font(.symbol(11, weight: .semibold))
                         .foregroundStyle(Nuru.gold)
                     // The kicker role (§8.1 rule 3) — at the old 2.4 tracking
                     // Sunday's "THE LORD'S DAY" kicker was cut short.
                     Text(todayKicker()).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // Church check-in. First in the row because it is the most
@@ -810,7 +810,7 @@ struct HomeView: View {
                             Circle().stroke(Color(hex: 0xDC2626).opacity(0.35), lineWidth: 1)
                             HomeLiveHeaderRing()
                             Image(systemName: "waveform")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.symbol(13, weight: .semibold))
                                 .foregroundStyle(Color(hex: 0xDC2626))
                         }
                         .frame(width: 40, height: 40)
@@ -828,7 +828,7 @@ struct HomeView: View {
                         // it rather than minting a second stream on top.
                         if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
                     } label: {
-                        Image(systemName: "video.fill").font(.system(size: 16))
+                        Image(systemName: "video.fill").font(.symbol(16))
                             .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
                             .background(Nuru.gold, in: Circle())
                             .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
@@ -939,7 +939,7 @@ struct HomeView: View {
     /// A tiny ▲/▼ badge — points earned or lost vs the previous 28 days.
     private func trendBadge(_ t: ScoreTrend) -> some View {
         HStack(spacing: 0.5) {
-            Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.system(size: 7, weight: .black))
+            Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.symbol(7, weight: .black))
             Text("\(abs(t.delta))").font(.inter(11, .bold)).contentTransition(.numericText())
         }
         .foregroundStyle(.white)
@@ -1359,7 +1359,7 @@ struct HomeView: View {
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {
-                            Text("❤️").font(.system(size: 15))
+                            Text("❤️").font(.emoji(15))
                             Text("\(love)").font(.inter(11, .bold)).foregroundStyle(liked ? Nuru.danger : Nuru.ink600)
                                 .contentTransition(.numericText())
                         }
@@ -1368,12 +1368,12 @@ struct HomeView: View {
                         .overlay(Capsule().stroke(liked ? Nuru.danger.opacity(0.35) : Nuru.border, lineWidth: 1))
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: love)
                     }.buttonStyle(.pressable)
-                    ForEach(videoReactionEmojis, id: \.self) { e in
-                        let count = v.reactions?.first { $0.emoji == e }?.count ?? 0
-                        let mine = v.reactions?.first { $0.emoji == e }?.mine ?? false
-                        Button { Haptics.love(); Task { await vm.toggleVideoReaction(e) } } label: {
+                    ForEach(videoReactionEmojis, id: \.self) { emoji in
+                        let count = v.reactions?.first { $0.emoji == emoji }?.count ?? 0
+                        let mine = v.reactions?.first { $0.emoji == emoji }?.mine ?? false
+                        Button { Haptics.love(); Task { await vm.toggleVideoReaction(emoji) } } label: {
                             HStack(spacing: 4) {
-                                Text(e).font(.system(size: 15))
+                                Text(emoji).font(.emoji(15))
                                 if count > 0 { Text("\(count)").font(.inter(11, .bold)).foregroundStyle(Nuru.ink600) }
                             }
                             .frame(minWidth: 34, minHeight: 34)
@@ -1538,12 +1538,12 @@ struct HomeView: View {
             }
             // One row (Figma): reactions left, Save + Share pushed right.
             HStack(spacing: 5) {
-                ForEach(verseReactionEmojis, id: \.self) { e in
-                    let count = vm.reactions?.counts[e] ?? 0
-                    let mine = vm.reactions?.mine == e
-                    Button { Haptics.love(); Task { await vm.reactVerse(e) } } label: {
+                ForEach(verseReactionEmojis, id: \.self) { emoji in
+                    let count = vm.reactions?.counts[emoji] ?? 0
+                    let mine = vm.reactions?.mine == emoji
+                    Button { Haptics.love(); Task { await vm.reactVerse(emoji) } } label: {
                         HStack(spacing: 3) {
-                            Text(e).font(.system(size: 14))
+                            Text(emoji).font(.emoji(14))
                             if count > 0 {
                                 Text("\(count)").font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
                                     .contentTransition(.numericText())
@@ -1968,7 +1968,7 @@ struct HomeView: View {
                     if let t = s.trend {
                         HStack(spacing: 4) {
                             Image(systemName: t.isDown ? "arrow.down.right" : t.isUp ? "arrow.up.right" : "minus")
-                                .font(.system(size: 10, weight: .bold))
+                                .font(.symbol(10, weight: .bold))
                                 .foregroundStyle(t.isDown ? Color(hex: 0xDC6B26) : t.isUp ? Color(hex: 0x16A34A) : HomeFig.metaGray)
                             Text(trendCaption(t)).font(.nCardBody).foregroundStyle(HomeFig.metaGray)
                         }
@@ -2020,7 +2020,7 @@ struct HomeView: View {
             // A whisper of movement vs the previous 28 days, next to the score.
             if let d = delta, d != 0 {
                 HStack(spacing: 1) {
-                    Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.system(size: 8, weight: .bold))
+                    Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.symbol(8, weight: .bold))
                     Text("\(abs(d))").font(.inter(11, .bold))
                 }
                 .foregroundStyle(d < 0 ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A))

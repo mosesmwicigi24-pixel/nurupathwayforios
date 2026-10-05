@@ -36,12 +36,12 @@ struct PrivateThreadCard: View {
                 Text(kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
                 if muted {
                     Image(systemName: "bell.slash.fill")
-                        .font(.system(size: 10))
+                        .font(.symbol(10))
                         .foregroundStyle(Color(hex: 0x9AA3AF))
                 }
                 Spacer(minLength: 0)
                 if unread > 0 {
-                    Text("\(unread) new").font(.inter(10, .bold)).foregroundStyle(.white)
+                    Text("\(unread) new").font(.inter(11, .bold)).foregroundStyle(.white)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Nuru.goldGradient, in: Capsule())
                 }
@@ -75,7 +75,7 @@ struct PrivateThreadCard: View {
                     } else {
                         HStack(spacing: 7) {
                             if locked {
-                                Image(systemName: "faceid").font(.system(size: 15, weight: .semibold)).foregroundStyle(.white)
+                                Image(systemName: "faceid").font(.symbol(15, weight: .semibold)).foregroundStyle(.white)
                             } else {
                                 Icon(.messageCircle, size: 14, color: .white)
                             }
@@ -185,9 +185,9 @@ struct PastoralInboxSection: View {
         VStack(spacing: 12) {
             Icon(.lockKeyhole, size: 24, color: Nuru.goldLight)
             Text("The inbox is sealed")
-                .font(.fraunces(17, .semibold)).kerning(-0.3).foregroundStyle(.white)
+                .font(.fraunces(18, .semibold)).kerning(-0.3).foregroundStyle(.white)
             Text("What members bring to their pastor stays between them. Confirm it's you to open it for 15 minutes.")
-                .font(.inter(11.5)).foregroundStyle(.white.opacity(0.72)).lineSpacing(3)
+                .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineSpacing(3)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 12)
             Button {
@@ -249,7 +249,7 @@ private struct PastoralInboxRowView: View {
                 Text(row.memberName)
                     .font(.inter(12, .semibold)).kerning(-0.12).foregroundStyle(Nuru.navy).lineLimit(1)
                 Text(row.lastBody ?? "No messages yet")
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
             }
             Spacer(minLength: 4)
             Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))

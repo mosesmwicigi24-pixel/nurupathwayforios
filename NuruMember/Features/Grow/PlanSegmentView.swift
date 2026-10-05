@@ -148,7 +148,7 @@ struct PlanSegmentView: View {
                 Spacer(minLength: 8)
                 Text("DAY \(ref.dayNumber) · \(ref.planTitle.uppercased())")
                     .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 // Text size: Small → Regular → Large → Small, one tap each.
                 Button {
@@ -731,7 +731,7 @@ struct TalkItOverView: View {
                 Spacer(minLength: 8)
                 Text("DAY \(route.dayNumber) · \(route.planTitle.uppercased())")
                     .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Color.clear.frame(width: 36, height: 36)
             }
@@ -855,7 +855,7 @@ struct TalkItOverView: View {
                     if aiBusy { ProgressView().tint(PL.goldDeep) }
                     else {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.symbol(15, weight: .semibold))
                             .foregroundStyle(PL.goldDeep)
                     }
                 }
@@ -977,7 +977,7 @@ private struct TalkPostRow: View {
                 Button(action: onLike) {
                     HStack(spacing: 5) {
                         Image(systemName: post.liked ? "heart.fill" : "heart")
-                            .font(.system(size: 13))
+                            .font(.symbol(13))
                             .foregroundStyle(post.liked ? PL.gold : PL.ink3)
                         if post.likeCount > 0 {
                             Text("\(post.likeCount)").font(.inter(11, .semibold))

@@ -420,7 +420,7 @@ struct CellRosterView: View {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.7)
                 } else {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .bold)).foregroundStyle(Nuru.navy)
+                        .font(.symbol(15, weight: .bold)).foregroundStyle(Nuru.navy)
                 }
             }
             .frame(width: 34, height: 34)

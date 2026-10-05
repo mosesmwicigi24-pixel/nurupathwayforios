@@ -515,7 +515,7 @@ private struct PathwayAwaitingBanner: View {
             ZStack {
                 Circle().fill(PW.gold.opacity(0.16))
                     .overlay(Circle().stroke(PW.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.system(size: 22))
+                Text("🌿").font(.emoji(22))
             }
             .frame(width: 48, height: 48)
             VStack(alignment: .leading, spacing: 3) {
@@ -1035,7 +1035,7 @@ private struct PWAwaitingRow: View {
                     .fill(PW.gold.opacity(0.16))
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(PW.gold.opacity(0.4), lineWidth: 1))
                     .frame(width: 32, height: 32)
-                Text("🌿").font(.system(size: 15))
+                Text("🌿").font(.emoji(15))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text("Level \(levelNumber) complete")
@@ -1093,7 +1093,7 @@ private struct PathwayMilestones: View {
     private func nextRewardCard(_ r: PWReward) -> some View {
         Button { Haptics.tap(); openResume() } label: {
             HStack(spacing: 12) {
-                Text(r.emoji).font(.system(size: 22))
+                Text(r.emoji).font(.emoji(22))
                     .frame(width: 48, height: 48)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
@@ -1121,14 +1121,14 @@ private struct PWRewardBadge: View {
     let earned: Bool
     var body: some View {
         VStack(spacing: 6) {
-            Text(emoji).font(.system(size: 20)).frame(width: 44, height: 44)
+            Text(emoji).font(.emoji(22)).frame(width: 44, height: 44)
                 .background(earned ? Color.white : PW.mutedBg, in: Circle())
                 .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
                 .grayscale(earned ? 0 : 1).opacity(earned ? 1 : 0.7)
             Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
             if earned {
                 HStack(spacing: 1) {
-                    ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 8)).foregroundStyle(PW.gold) }
+                    ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.symbol(8)).foregroundStyle(PW.gold) }
                 }
             } else {
                 Icon(.lock, size: 9, color: PW.ink3)
@@ -1235,7 +1235,7 @@ private struct PathwaySummitCard: View {
 
     private var statusChip: some View {
         HStack(spacing: 4) {
-            if reached { Image(systemName: "star.fill").font(.system(size: 10)) } else { Icon(.lock, size: 10, color: .white) }
+            if reached { Image(systemName: "star.fill").font(.symbol(10)) } else { Icon(.lock, size: 10, color: .white) }
             Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(11, .bold)).kerning(1)
         }
         .foregroundStyle(reached ? PW.navy : .white)

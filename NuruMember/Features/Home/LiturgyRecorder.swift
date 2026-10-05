@@ -238,7 +238,7 @@ struct LiturgyRecordSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: model.previewing ? "pause.fill" : "play.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.symbol(12, weight: .bold))
                             Text("Listen back").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -310,7 +310,7 @@ struct LiturgyRecordSheet: View {
                 ZStack {
                     Circle().fill(tint).frame(width: 74, height: 74)
                     Image(systemName: sfSymbol)
-                        .font(.system(size: 24, weight: .bold)).foregroundStyle(.white)
+                        .font(.symbol(24, weight: .bold)).foregroundStyle(.white)
                 }
                 .shadow(color: tint.opacity(0.35), radius: 10, y: 4)
                 Text(label).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)

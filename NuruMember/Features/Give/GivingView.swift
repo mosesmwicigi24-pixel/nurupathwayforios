@@ -834,7 +834,7 @@ struct GivingView: View {
                             .contentTransition(.numericText(value: Double(giftMinor)))
                     }
                     Text(amountSubtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if inDollars {
                         Text("PayPal gifts are in US dollars")
                             .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x0070BA))
@@ -1374,12 +1374,16 @@ struct GivingView: View {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.8)
                     Text("Processing…")
                 } else if pledgeId != nil {
+                    // A long pledge name takes a second line before the label
+                        // would shrink under 11 pt (14 × 0.8 = 11.2).
                     Text("Pay \(totalLabel) toward \(pledgeTitle ?? "your pledge")")
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .font(.inter(14, .bold)).multilineTextAlignment(.center)
+                        .lineLimit(2).minimumScaleFactor(0.8)
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if needId != nil {
                     Text("Give \(totalLabel) to \(needTitle ?? "this need")")
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .font(.inter(14, .bold)).multilineTextAlignment(.center)
+                        .lineLimit(2).minimumScaleFactor(0.8)
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if recurring {
                     Icon(.repeat, size: 14, color: Nuru.navy)
@@ -2098,7 +2102,7 @@ private struct GiveKeypadSheet: View {
                     Group {
                         if k == "del" {
                             Image(systemName: "delete.left")
-                                .font(.system(size: 19)).foregroundStyle(Color(hex: 0x5B6472))
+                                .font(.symbol(19)).foregroundStyle(Color(hex: 0x5B6472))
                         } else {
                             Text(k).font(.inter(18, .semibold)).foregroundStyle(Nuru.navy)
                         }
@@ -2474,7 +2478,7 @@ private struct ScheduleDetailSheet: View {
     private func failureBox(_ f: GiftFailure) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text(f.reason).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
@@ -2710,7 +2714,7 @@ private struct ScheduleDetailSheet: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: draft.useProfileNumber ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
+                        .font(.symbol(16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
                     Text("Use my profile number (\(profile))")
                         .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                 }
@@ -2769,7 +2773,7 @@ private struct ScheduleDetailSheet: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: on ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 17)).foregroundStyle(on ? Nuru.gold : Nuru.ink300)
+                    .font(.symbol(17)).foregroundStyle(on ? Nuru.gold : Nuru.ink300)
                 Text(title).font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Spacer()
             }
@@ -3228,7 +3232,7 @@ private struct ScheduledStage: View {
                 // Today's prompt could not go out — the schedule still stands.
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.symbol(13, weight: .semibold))
                         .foregroundStyle(Nuru.urgentText)
                     Text(note).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
                         .fixedSize(horizontal: false, vertical: true)

@@ -102,7 +102,7 @@ struct FloatingReactionsOverlay: View {
             if reduceMotion {
                 if queue.reduceMotionTotal > 0 {
                     HStack(spacing: 5) {
-                        Image(systemName: "heart.fill").font(.system(size: 11)).foregroundStyle(Color(hex: 0xE0245E))
+                        Image(systemName: "heart.fill").font(.symbol(11)).foregroundStyle(Color(hex: 0xE0245E))
                         Text("\(queue.reduceMotionTotal)").font(.inter(11, .semibold)).foregroundStyle(.white)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 6)
@@ -127,7 +127,7 @@ private struct LiveReactionParticleView: View {
 
     var body: some View {
         Image(systemName: particle.kind.systemImage)
-            .font(.system(size: 22))
+            .font(.symbol(22))
             .foregroundStyle(particle.kind.tint)
             .shadow(color: .black.opacity(0.3), radius: 3)
             .offset(x: particle.xJitter, y: -rise)

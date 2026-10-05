@@ -708,7 +708,7 @@ private struct NuruTabBar: View {
                             if t == .you, chatBadge.count > 0 { badgeDot(chatBadge.count) }
                         }
                         Text(t.label).font(.inter(11, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
-                            .lineLimit(1).minimumScaleFactor(0.85)
+                            .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)

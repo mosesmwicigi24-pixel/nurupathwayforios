@@ -158,9 +158,9 @@ struct DiscipleshipHubView: View {
         HStack(spacing: Nuru.S.base) {
             Avatar(url: d.avatarUrl, name: d.fullName, size: 56)
             VStack(alignment: .leading, spacing: 3) {
-                Text(d.fullName).font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(d.fullName).font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 Text(d.roleLabel.uppercased())
-                    .font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Nuru.gold)
                 if let cell = d.cellName {
                     Text(cell).font(.nCardMeta).foregroundStyle(Nuru.muted)
                 }
@@ -254,12 +254,12 @@ struct DiscipleshipHubView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("WHERE YOU ARE")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 HStack(alignment: .firstTextBaseline, spacing: Nuru.S.sm) {
                     Text("Level \(p.currentLevel)")
-                        .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
                     Text(p.levelTitle)
                         .font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(1)
                     Spacer(minLength: 0)
@@ -302,7 +302,7 @@ struct DiscipleshipHubView: View {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.16))
                     .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.system(size: 20))
+                Text("🌿").font(.emoji(22))
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 2) {
@@ -326,13 +326,13 @@ struct DiscipleshipHubView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("YOUR GROWTH")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 if let overall = s.overall {
                     HStack(alignment: .lastTextBaseline, spacing: 6) {
                         Text("\(overall)")
-                            .font(.fraunces(34, .semibold)).foregroundStyle(Self.scoreColor(overall))
+                            .font(.fraunces(28, .semibold)).foregroundStyle(Self.scoreColor(overall))
                         Text("overall")
                             .font(.nCardBody).foregroundStyle(Nuru.muted)
                         Spacer(minLength: 0)
@@ -363,7 +363,7 @@ struct DiscipleshipHubView: View {
         return HStack(spacing: Nuru.S.sm) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label.uppercased())
-                    .font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Nuru.faint)
+                    .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.faint)
                 Text("\(value)")
                     .font(.inter(18, .bold)).foregroundStyle(color)
             }
@@ -381,7 +381,7 @@ struct DiscipleshipHubView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("YOUR REFLECTIONS")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(reflections.enumerated()), id: \.element.id) { i, r in
@@ -436,7 +436,7 @@ struct DiscipleshipHubView: View {
             }
         }()
         return Text(label)
-            .font(.inter(10, .bold)).foregroundStyle(color)
+            .font(.inter(11, .bold)).foregroundStyle(color)
             .padding(.horizontal, 9).padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
@@ -449,7 +449,7 @@ struct DiscipleshipHubView: View {
         return Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("MEETING NOTES")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 // Next meeting inset row.
@@ -502,7 +502,7 @@ struct DiscipleshipHubView: View {
                     .font(.inter(12, .semibold)).foregroundStyle(Nuru.ink)
                 Spacer(minLength: Nuru.S.sm)
                 if let met = Self.shortDate(note.metAt) {
-                    Text(met).font(.inter(10)).foregroundStyle(Nuru.faint)
+                    Text(met).font(.inter(11)).foregroundStyle(Nuru.faint)
                 }
             }
             Text(note.body)
@@ -584,7 +584,7 @@ struct DiscipleshipHubView: View {
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("You'll be paired with a discipler soon")
-                    .font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("When your leader walks you into a discipleship relationship, your meetings, notes, and feedback will live here.")
                     .font(.nCardBody).foregroundStyle(Nuru.muted)

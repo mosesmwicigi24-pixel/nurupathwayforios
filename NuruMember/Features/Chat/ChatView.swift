@@ -534,7 +534,7 @@ struct ChatView: View {
                     HStack(spacing: 6) {
                         Text("Quick help from Nuru")
                             .font(.nRowTitle).kerning(-0.16).foregroundStyle(.white)
-                        Text("AI").font(.inter(8, .heavy)).kerning(1.1).foregroundStyle(Nuru.navy)
+                        Text("AI").font(.inter(11, .heavy)).kerning(1.1).foregroundStyle(Nuru.navy)
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Nuru.goldGlow, in: Capsule())
                     }
@@ -577,7 +577,7 @@ struct ChatView: View {
                 Text(vm.verse?.text ?? "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”")
                     .font(.fraunces(13).italic()).foregroundStyle(Nuru.navy).lineSpacing(4)
                 Text(vm.verse?.reference ?? "Galatians 6:2")
-                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
             }
             Spacer(minLength: 0)
         }
@@ -664,7 +664,7 @@ struct ChatView: View {
                 // Unread only. All read → no number at all; the quiet chip IS the
                 // "nothing waiting" signal.
                 if count > 0 {
-                    Text("\(count)").font(.inter(10, .bold))
+                    Text("\(count)").font(.inter(11, .bold))
                         .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .frame(minWidth: 18)
@@ -1015,7 +1015,7 @@ struct ChatView: View {
                             .shadow(color: Nuru.gold.opacity(0.5), radius: 5, y: 2)
                             .offset(x: 2, y: 2)
                     }
-                    Text("Your note").font(.inter(10, .medium)).foregroundStyle(Color(hex: 0x6A7686))
+                    Text("Your note").font(.inter(11, .medium)).foregroundStyle(Color(hex: 0x6A7686))
                 }
                 .frame(width: 60)
                 ForEach(vm.dms) { c in
@@ -1026,7 +1026,7 @@ struct ChatView: View {
                                 .background(Circle().fill(Nuru.paper))
                                 .padding(2.5)
                                 .background(storyRing, in: Circle())
-                            Text(firstWord(c.title)).font(.inter(10, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
+                            Text(firstWord(c.title)).font(.inter(11, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                         }
                         .frame(width: 60)
                     }.buttonStyle(.pressable)
@@ -1083,7 +1083,7 @@ struct ChatView: View {
                         Icon(.users, size: 19, color: Nuru.gold)
                     } action: { segment = .space }
                     composeAction("Browse spaces", "Find & join a community space", divider: true) {
-                        Image(systemName: "safari").font(.system(size: 18)).foregroundStyle(Nuru.gold)
+                        Image(systemName: "safari").font(.symbol(18)).foregroundStyle(Nuru.gold)
                     } action: { segment = .space }
                 }
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -1184,7 +1184,7 @@ private struct DoubleCheck: View {
 private struct UnreadBadge: View {
     let count: Int
     var body: some View {
-        Text("\(count)").font(.inter(9, .bold)).foregroundStyle(.white)
+        Text("\(count)").font(.inter(11, .bold)).foregroundStyle(.white)
             .padding(.horizontal, 5)
             .frame(minWidth: 17, minHeight: 17)
             .background(storyRing, in: Capsule())
@@ -1233,7 +1233,7 @@ private struct MemberStack: View {
                 circle(i).zIndex(Double(i))
             }
             Text(count > 999 ? String(format: "%.1fk", Double(count) / 1000) : "\(count)")
-                .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 7)
                 .frame(height: 20)
                 .background(Color.white, in: Capsule())
@@ -1263,7 +1263,7 @@ private struct MemberStack: View {
 
     private var initial: some View {
         Text(String((title ?? "#").trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
-            .font(.inter(8, .bold)).foregroundStyle(.white)
+            .font(.inter(11, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -1278,13 +1278,13 @@ private struct RowPreview: View {
                 Icon(.mic, size: 11, color: Nuru.gold)
                 // Android parity: surface the note's length in the preview.
                 Text(c.lastDuration.map { String(format: "Voice message · %d:%02d", $0 / 60, $0 % 60) } ?? "Voice message")
-                    .font(.inter(10)).foregroundStyle(bodyColor)
+                    .font(.inter(11)).foregroundStyle(bodyColor)
             } else if c.lastType == "image" {
                 Icon(.image, size: 11, color: Nuru.gold)
-                Text("Photo").font(.inter(10)).foregroundStyle(bodyColor)
+                Text("Photo").font(.inter(11)).foregroundStyle(bodyColor)
             } else {
                 (authorText + Text(c.lastBody ?? "No messages yet"))
-                    .font(.inter(10)).foregroundStyle(bodyColor)
+                    .font(.inter(11)).foregroundStyle(bodyColor)
             }
         }
         .lineLimit(1)
@@ -1343,7 +1343,7 @@ private struct SpaceRow: View {
     private var activePill: some View {
         HStack(spacing: 5) {
             Circle().fill(Color(hex: 0x16A34A)).frame(width: 6, height: 6)
-            Text("Active").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+            Text("Active").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(Color(hex: 0x16A34A, alpha: 0.09), in: Capsule())
@@ -1398,7 +1398,7 @@ private struct ConversationRow: View {
 private struct MutedGlyph: View {
     var body: some View {
         Image(systemName: "bell.slash.fill")
-            .font(.system(size: 10))
+            .font(.symbol(10))
             .foregroundStyle(Color(hex: 0x9AA3AF))
     }
 }
@@ -1468,7 +1468,7 @@ private struct PersonRow: View {
                 .background(Nuru.gold.opacity(0.10), in: Circle())
         case .notConnected:
             HStack(spacing: 4) {
-                Image(systemName: "person.badge.plus").font(.system(size: 10, weight: .bold))
+                Image(systemName: "person.badge.plus").font(.symbol(10, weight: .bold))
                 Text("Connect").font(.inter(11, .bold))
             }
             .foregroundStyle(.white)
@@ -1476,20 +1476,20 @@ private struct PersonRow: View {
             .background(storyRing, in: Capsule())
         case .requestSent:
             HStack(spacing: 4) {
-                Text("Request sent").font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
-                Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Color(hex: 0xCBD5E1))
+                Text("Request sent").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
+                Image(systemName: "xmark.circle.fill").font(.symbol(14)).foregroundStyle(Color(hex: 0xCBD5E1))
             }
             .padding(.horizontal, 10).frame(height: 28)
             .background(Nuru.surface, in: Capsule())
         case .requestReceived:
             HStack(spacing: 4) {
-                Image(systemName: "hand.wave.fill").font(.system(size: 10)).foregroundStyle(Nuru.gold)
-                Text("Wants to connect").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                Image(systemName: "hand.wave.fill").font(.symbol(10)).foregroundStyle(Nuru.gold)
+                Text("Wants to connect").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 10).frame(height: 28)
             .background(Nuru.gold.opacity(0.14), in: Capsule())
         case .blocked:
-            Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Color(hex: 0x9AA3AF))
+            Image(systemName: "hand.raised.fill").font(.symbol(13)).foregroundStyle(Color(hex: 0x9AA3AF))
                 .frame(width: 32, height: 32)
         }
     }
@@ -1507,7 +1507,7 @@ private struct PersonRow: View {
     @ViewBuilder private var levelChip: some View {
         if let lvl = person.level, lvl > 0 {
             Text("L\(lvl)")
-                .font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 4.5).padding(.vertical, 1.5)
                 .background(
                     LinearGradient(colors: [Nuru.goldHi, Nuru.goldLo],
@@ -1522,20 +1522,24 @@ private struct PersonRow: View {
     /// Up to 3 overlapping badge medallions + a "+N" mini chip for the rest.
     @ViewBuilder private var badgeMedallions: some View {
         if let count = person.badgeCount, count > 0 {
-            let icons = Array((person.badgeIcons ?? []).prefix(3))
+            let emojis = Array((person.badgeIcons ?? []).prefix(3))
             HStack(spacing: -4) {
-                ForEach(icons.indices, id: \.self) { i in
-                    Text(icons[i]).font(.system(size: 10)).lineLimit(1)
+                ForEach(emojis.indices, id: \.self) { i in
+                    Text(emojis[i]).font(.emoji(11)).lineLimit(1)
                         .frame(width: 16, height: 16)
                         .background(Circle().fill(.white))
                         .overlay(Circle().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
                 }
-                if count > icons.count {
-                    Text("+\(count - icons.count)")
-                        .font(.inter(7, .semibold)).foregroundStyle(Color(hex: 0xA8761A))
-                        .frame(width: 16, height: 16)
-                        .background(Circle().fill(Nuru.goldTint))
-                        .overlay(Circle().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
+                if count > emojis.count {
+                    // At the 11 pt floor "+12" is wider than the medallions, so
+                    // the chip grows into a capsule rather than cutting it.
+                    Text("+\(count - emojis.count)")
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0xA8761A))
+                        .fixedSize()
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Capsule().fill(Nuru.goldTint))
+                        .overlay(Capsule().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
                 }
             }
             .fixedSize()
@@ -1654,7 +1658,7 @@ private struct DiscoverSpaceRow: View {
             Spacer(minLength: 4)
             if pending {
                 HStack(spacing: 4) {
-                    Image(systemName: "hourglass").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Image(systemName: "hourglass").font(.symbol(10, weight: .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     Text("Requested").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 .padding(.horizontal, 12)

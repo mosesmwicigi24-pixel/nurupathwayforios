@@ -117,7 +117,7 @@ struct PrayerWallView: View {
                 Spacer()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("PRAY FOR ONE ANOTHER").font(.inter(11, .medium)).kerning(1.8).foregroundStyle(Nuru.gold)
-                    Text("Carry one another").font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                    Text("Carry one another").font(.fraunces(26, .semibold)).foregroundStyle(.white)
                     Text("“Carry each other’s burdens, and in this way you will fulfill the law of Christ.” — Galatians 6:2")
                         .font(.nCaption).foregroundStyle(Nuru.onNavyDim).lineLimit(2).padding(.top, 4)
                 }
@@ -149,7 +149,7 @@ struct PrayerWallView: View {
 
     private var emptyState: some View {
         VStack(spacing: Nuru.S.sm) {
-            Text("🙏").font(.system(size: 32))
+            Text("🙏").font(.emoji(32))
             Text("No requests yet").font(.nCardTitle).foregroundStyle(Nuru.ink)
             Text("Be the first to share a prayer for the family to stand with you.")
                 .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
@@ -221,7 +221,7 @@ private struct PrayerCardView: View {
             HStack(spacing: Nuru.S.base) {
                 Button { Haptics.love(); pray() } label: {
                     HStack(spacing: 6) {
-                        Text("🙏").font(.system(size: 15))
+                        Text("🙏").font(.emoji(15))
                         Text(post.prayCount > 0 ? "\(post.prayCount) praying" : "Pray")
                             .font(.inter(12, .bold)).foregroundStyle(post.iPrayed ? Nuru.navyDeep : Nuru.ink600)
                             .contentTransition(.numericText(value: Double(post.prayCount)))

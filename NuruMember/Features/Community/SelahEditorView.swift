@@ -50,7 +50,7 @@ struct SelahEditorView: View {
         VStack(spacing: 0) {
             header
             TextField("Untitled", text: $draft.title)
-                .font(.fraunces(20, .medium)).foregroundStyle(Nuru.navy)
+                .font(.fraunces(22, .medium)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.md)
 
@@ -209,7 +209,7 @@ struct SelahEditorView: View {
 
     private func toolbarIcon(system: String, active: Bool = false) -> some View {
         Image(systemName: system)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.symbol(15, weight: .semibold))
             .foregroundStyle(active ? Color.white : Nuru.navy)
             .frame(width: 34, height: 34)
             .background(active ? Nuru.navy : Nuru.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

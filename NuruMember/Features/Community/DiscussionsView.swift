@@ -159,7 +159,7 @@ struct DiscussionsView: View {
                 Spacer()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("YOUR CELL'S BOARD").font(.inter(11, .medium)).kerning(1.8).foregroundStyle(Nuru.gold)
-                    Text("Cohort Discussions").font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                    Text("Cohort Discussions").font(.fraunces(26, .semibold)).foregroundStyle(.white)
                     Text("“Let us consider how we may spur one another on toward love and good deeds.” — Hebrews 10:24")
                         .font(.nCaption).foregroundStyle(Nuru.onNavyDim).lineLimit(2).padding(.top, 4)
                 }
@@ -268,7 +268,7 @@ private struct ThreadCardView: View {
 
     private var pinnedChip: some View {
         HStack(spacing: 4) {
-            Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Nuru.gold)
+            Image(systemName: "pin.fill").font(.symbol(9)).foregroundStyle(Nuru.gold)
             Text("Pinned").font(.nMicro).foregroundStyle(Nuru.ink600)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -461,7 +461,7 @@ struct DiscussionThreadView: View {
                 Icon(.arrowLeft, size: 18, color: .white)
                     .frame(width: 40, height: 40).background(Color.white.opacity(0.10), in: Circle())
             }
-            Text("Discussion").font(.fraunces(20, .semibold)).foregroundStyle(.white)
+            Text("Discussion").font(.fraunces(22, .semibold)).foregroundStyle(.white)
             Spacer()
         }
         .padding(.horizontal, Nuru.S.lg).padding(.top, 54).padding(.bottom, Nuru.S.lg)
@@ -498,7 +498,7 @@ struct DiscussionThreadView: View {
                 Spacer(minLength: 0)
                 if d.isPinned {
                     HStack(spacing: 4) {
-                        Image(systemName: "pin.fill").font(.system(size: 9)).foregroundStyle(Nuru.gold)
+                        Image(systemName: "pin.fill").font(.symbol(9)).foregroundStyle(Nuru.gold)
                         Text("Pinned").font(.nMicro).foregroundStyle(Nuru.ink600)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 4)

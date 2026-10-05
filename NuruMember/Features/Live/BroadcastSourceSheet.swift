@@ -16,7 +16,7 @@ struct BroadcastSourceSheet: View {
             Capsule().fill(Color.white.opacity(0.22)).frame(width: 36, height: 4)
                 .padding(.top, 10).padding(.bottom, 16)
             Text("Broadcast source")
-                .font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                .font(.fraunces(18, .semibold)).foregroundStyle(.white)
                 .padding(.bottom, 16)
             VStack(spacing: 10) {
                 sourceRow(
@@ -68,7 +68,7 @@ struct BroadcastSourceSheet: View {
         Button(action: action) {
             HStack(spacing: 12) {
                 Image(systemName: icon)
-                    .font(.system(size: 16, weight: .semibold))
+                    .font(.symbol(16, weight: .semibold))
                     .foregroundStyle(selected ? Nuru.navy : .white)
                     .frame(width: 40, height: 40)
                     .background(selected ? Nuru.gold : Color.white.opacity(0.1), in: Circle())

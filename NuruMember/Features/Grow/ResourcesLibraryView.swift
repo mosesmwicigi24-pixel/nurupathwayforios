@@ -225,7 +225,7 @@ struct ResourcesLibraryView: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: m.sf).font(.system(size: 18)).foregroundStyle(m.color)
+                Image(systemName: m.sf).font(.symbol(18)).foregroundStyle(m.color)
                     .frame(width: 48, height: 48)
                     .background(m.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {

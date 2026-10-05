@@ -105,7 +105,7 @@ struct PartnerInviteSheet: View {
     private func matchNote(_ m: PartnerInvite.Match) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "sparkles")
-                .font(.system(size: 13)).foregroundStyle(Nuru.goldLo)
+                .font(.symbol(13)).foregroundStyle(Nuru.goldLo)
                 .padding(.top, 2)
             // The pledger is NAMED. An unnamed match is the kind of claim this
             // whole design exists to prevent.

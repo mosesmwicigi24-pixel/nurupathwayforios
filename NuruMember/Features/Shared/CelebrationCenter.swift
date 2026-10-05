@@ -109,7 +109,7 @@ struct CelebrationHost: View {
 
     private func card(_ moment: CelebrationCenter.Moment) -> some View {
         VStack(spacing: 0) {
-            Text("🎉").font(.system(size: 44))
+            Text("🎉").font(.emoji(44))
             Text(moment.title)
                 .font(.fraunces(22, .semibold))
                 .foregroundStyle(Nuru.navy)

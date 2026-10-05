@@ -571,7 +571,7 @@ struct ChatThreadView: View {
         VStack(spacing: 0) {
             if let actionError {
                 Text(actionError)
-                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16).padding(.vertical, 7)
                     .background(Nuru.danger.opacity(0.08))
@@ -724,12 +724,12 @@ private struct ThreadHeader: View {
 
     private var titles: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy).lineLimit(1)
+            Text(title).font(.fraunces(18, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy).lineLimit(1)
             if isSpace {
                 Text(subtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C)).lineLimit(1)
             } else {
                 HStack(spacing: 4) {
-                    Text("🕊️").font(.system(size: 10))
+                    Text("🕊️").font(.emoji(11))
                     Text(subtitle).font(.fraunces(12, .medium)).italic()
                         .foregroundStyle(Color(hex: 0x9A7A2A))
                     LinearGradient(colors: [Color(hex: 0x9A7A2A).opacity(0.5), .clear],
@@ -771,7 +771,7 @@ private struct ThreadHeader: View {
                 if connectionBusy {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.7)
                 } else {
-                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                    Image(systemName: "ellipsis").font(.symbol(16, weight: .bold)).foregroundStyle(Nuru.navy)
                 }
             }
             .frame(width: 38, height: 38)
@@ -810,7 +810,7 @@ private struct ThreadHeader: View {
                 Label("Privacy info", systemImage: "info.circle")
             }
         } label: {
-            Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+            Image(systemName: "ellipsis").font(.symbol(16, weight: .bold)).foregroundStyle(Nuru.navy)
                 .frame(width: 38, height: 38)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -850,7 +850,7 @@ private struct PastoralLockedGate: View {
                 Icon(.lockKeyhole, size: 30, color: Nuru.goldChipText)
             }
             Text("This conversation is locked")
-                .font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
+                .font(.fraunces(18, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
             Text("Unlock with \(PastoralLock.biometryName) to open your pastoral conversation on this device.")
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(4)
                 .multilineTextAlignment(.center)
@@ -865,7 +865,7 @@ private struct PastoralLockedGate: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: PastoralLock.biometryName == "Touch ID" ? "touchid" : "faceid")
-                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                        .font(.symbol(16, weight: .semibold)).foregroundStyle(.white)
                     Text("Unlock").font(.nCardCTA).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 26).frame(height: 46)
@@ -1007,7 +1007,7 @@ private struct DaySeparator: View {
             LinearGradient(colors: [.clear, Aurora.hairline], startPoint: .leading, endPoint: .trailing)
                 .frame(height: 1)
             Text(label.uppercased())
-                .font(.inter(10, .bold)).tracking(2.2)
+                .font(.inter(11, .bold)).tracking(2.2)
                 .foregroundStyle(Aurora.dayGold)
                 .fixedSize()
             LinearGradient(colors: [Aurora.hairline, .clear], startPoint: .leading, endPoint: .trailing)
@@ -1021,7 +1021,7 @@ private struct DaySeparator: View {
 private struct ConfidencePill: View {
     var body: some View {
         Text("🕊️ Held in confidence — speak life here")
-            .font(.inter(9, .semibold))
+            .font(.inter(11, .semibold))
             .foregroundStyle(Aurora.confidence)
             .padding(.horizontal, Nuru.S.md)
             .padding(.vertical, 4)
@@ -1036,7 +1036,7 @@ private struct EmptyThread: View {
         VStack(spacing: 6) {
             Icon(.sparkles, size: 18, color: Aurora.gold)
             Text("No messages yet — say hello")
-                .font(.inter(10)).foregroundStyle(Aurora.meta)
+                .font(.inter(11)).foregroundStyle(Aurora.meta)
         }
         .padding(.horizontal, Nuru.S.base)
         .padding(.vertical, Nuru.S.screen)
@@ -1134,7 +1134,7 @@ private struct SenderThumb: View {
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 28, height: 28)
                     .overlay(Text(Avatar.initials(m.authorName))
-                        .font(.inter(9, .bold)).foregroundStyle(.white))
+                        .font(.inter(11, .bold)).foregroundStyle(.white))
             }
         }
         .overlay(Circle().stroke(.white, lineWidth: 2))
@@ -1190,7 +1190,7 @@ private struct AuroraBubble: View {
     private var authorLine: some View {
         HStack(spacing: 6) {
             Circle().fill(accent).frame(width: 6, height: 6)
-            Text(m.authorName).font(.inter(11.5, .bold)).foregroundStyle(accent)
+            Text(m.authorName).font(.inter(12, .bold)).foregroundStyle(accent)
         }
     }
 
@@ -1325,7 +1325,7 @@ private struct ReadingInviteBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             cover
-            Text("READ WITH A FRIEND").font(.inter(9, .bold)).kerning(1.6)
+            Text("READ WITH A FRIEND").font(.inter(11, .bold)).kerning(1.6)
                 .foregroundStyle(m.mine ? Color(hex: 0xE8CA6C) : Aurora.goldDeep)
             Text(invite.planTitle).font(.fraunces(15, .semibold))
                 .foregroundStyle(m.mine ? Color.white : Aurora.textDark)
@@ -1477,10 +1477,10 @@ private struct BubbleFooter: View {
     private var meta: some View {
         HStack(spacing: 4) {
             if m.isEdited {
-                Text("edited").font(.inter(9)).italic()
+                Text("edited").font(.inter(11)).italic()
                     .foregroundStyle(dark ? Color.white.opacity(0.55) : Aurora.meta)
             }
-            Text(timeShort(m.createdAt)).font(.inter(10))
+            Text(timeShort(m.createdAt)).font(.inter(11))
                 .foregroundStyle(dark ? Color.white.opacity(0.6) : Aurora.meta)
             if m.mine { ReadTicksView(read: (m.readCount ?? 0) > 0, dark: dark) }
         }
@@ -1498,8 +1498,8 @@ private struct ReactionChip: View {
             onTap()
         } label: {
             HStack(spacing: 2) {
-                Text(r.emoji).font(.system(size: 11))
-                Text("\(r.count)").font(.inter(9.5, .bold))
+                Text(r.emoji).font(.emoji(11))
+                Text("\(r.count)").font(.inter(11, .bold))
                     .foregroundStyle(dark ? Color.white : Aurora.navy)
             }
             .padding(.horizontal, 6)
@@ -1522,7 +1522,7 @@ private struct ReadTicksView: View {
     /// spec — no gold, no gray states.
     var body: some View {
         Text(read ? "✓✓" : "✓")
-            .font(.inter(9.5, .semibold))
+            .font(.inter(11, .semibold))
             .kerning(-1)
             .foregroundStyle(Color(hex: 0x2F80ED))
             .opacity(dark ? 1 : 0.95)
@@ -1581,7 +1581,7 @@ private struct QuickReplyRow: View {
     private func chip(_ reply: String) -> some View {
         Button { onSend(reply) } label: {
             Text(reply)
-                .font(.inter(12.5, .medium))
+                .font(.inter(13, .medium))
                 .foregroundStyle(Aurora.navy)
                 .padding(.horizontal, 14)
                 .padding(.vertical, Nuru.S.sm)
@@ -1621,7 +1621,7 @@ private struct ComposerBar: View {
         VStack(spacing: 0) {
             if micHint {
                 Text("Allow microphone in Settings to send voice messages.")
-                    .font(.inter(11.5)).foregroundStyle(Aurora.meta)
+                    .font(.inter(12)).foregroundStyle(Aurora.meta)
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 8)
                     .transition(.opacity)
@@ -1743,7 +1743,7 @@ private struct ComposerBar: View {
     private var myAvatar: some View {
         Circle().fill(Aurora.inkBubble)
             .frame(width: 36, height: 36)
-            .overlay(Text(Avatar.initials(myName)).font(.inter(10, .bold)).foregroundStyle(.white))
+            .overlay(Text(Avatar.initials(myName)).font(.inter(11, .bold)).foregroundStyle(.white))
             .overlay(Circle().stroke(.white, lineWidth: 2))
             .shadow(color: Aurora.shadowInk.opacity(0.30), radius: 5, x: 0, y: 4)
             .padding(.bottom, 2)

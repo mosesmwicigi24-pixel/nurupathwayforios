@@ -32,7 +32,7 @@ struct LocationInviteSheet: View {
             Spacer(minLength: 26)
             ZStack {
                 Circle().fill(Color(hex: 0xE8CA6C).opacity(0.16)).frame(width: 96, height: 96)
-                Text("📍").font(.system(size: 42))
+                Text("📍").font(.emoji(42))
             }
             Text("Be found by your church family")
                 .font(.fraunces(22, .medium)).foregroundStyle(.white)

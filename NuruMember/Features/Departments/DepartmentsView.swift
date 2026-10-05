@@ -276,7 +276,7 @@ struct DepartmentPhoto: View {
                 .blur(radius: 30).offset(x: height * 0.6, y: -height * 0.4)
             HStack(spacing: 10) {
                 Icon(.heartHandshake, size: 26, color: .white.opacity(0.9))
-                Text(Avatar.initials(name)).font(.fraunces(30, .semibold)).foregroundStyle(.white)
+                Text(Avatar.initials(name)).font(.fraunces(28, .semibold)).foregroundStyle(.white)
             }
         }
     }

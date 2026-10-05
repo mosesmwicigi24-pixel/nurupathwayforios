@@ -147,7 +147,7 @@ struct MentorView: View {
         HStack(spacing: Nuru.S.base) {
             Avatar(url: m.avatarUrl, name: m.fullName, size: 56)
             VStack(alignment: .leading, spacing: 3) {
-                Text(m.fullName).font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(m.fullName).font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 if let cell = m.cellName {
                     Text(cell).font(.nCaption).foregroundStyle(Nuru.muted)
                 }
@@ -170,7 +170,7 @@ struct MentorView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("NEXT MEETING")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 HStack(spacing: Nuru.S.md) {
@@ -267,7 +267,7 @@ struct MentorView: View {
         return Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("CONVERSATION HISTORY")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 if notes.isEmpty {
                     Text("Your discipler's meeting notes will appear here after your first session.")
@@ -293,7 +293,7 @@ struct MentorView: View {
                     .font(.inter(12, .semibold)).foregroundStyle(Nuru.ink)
                 Spacer(minLength: Nuru.S.sm)
                 if let met = note.metAt.flatMap(Self.shortDate) {
-                    Text(met).font(.inter(10, .regular)).foregroundStyle(Nuru.faint)
+                    Text(met).font(.inter(11, .regular)).foregroundStyle(Nuru.faint)
                 }
             }
             Text(note.note)
@@ -316,7 +316,7 @@ struct MentorView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("YOUR CELL")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 Text(m.cellName ?? "")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
@@ -397,7 +397,7 @@ struct MentorView: View {
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("No discipler yet")
-                    .font(.inter(17, .bold))
+                    .font(.inter(18, .bold))
                     .foregroundStyle(Nuru.ink)
                 Text("When your leader pairs you with a discipler, you'll see your meetings and notes here.")
                     .font(.nCaption)

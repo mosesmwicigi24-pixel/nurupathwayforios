@@ -64,12 +64,12 @@ struct PrayerRoomView: View {
                 Text("MY PRAYER ROOM")
                     .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Color.clear.frame(width: 40, height: 40) // balances the back button
             }
             Text("My Prayer Room")
-                .font(.fraunces(24, .semibold))
+                .font(.fraunces(26, .semibold))
                 .foregroundStyle(Nuru.navy)
             segmentedControl
         }
@@ -116,7 +116,7 @@ struct PrayerRoomView: View {
             Text(label)
                 .font(.nChipLabel)
                 .foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
-                .lineLimit(1).minimumScaleFactor(0.85)
+                .lineLimit(1).minimumScaleFactor(0.92)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(

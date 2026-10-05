@@ -177,7 +177,7 @@ struct PLStreakStrip: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(StreakWords.title(shown))
                         .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
-                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .lineLimit(1).minimumScaleFactor(0.8)
                     Text(StreakWords.line(shown, todayDone: todayDone, today: today))
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
                         .fixedSize(horizontal: false, vertical: true)
@@ -240,7 +240,7 @@ struct PLFlame: View {
     @State private var up = false
     var body: some View {
         Image(systemName: "flame.fill")
-            .font(.system(size: 18))
+            .font(.symbol(18))
             .foregroundStyle(PL.gold)
             .scaleEffect(up ? 1.14 : 1)
             .onAppear {
@@ -298,7 +298,7 @@ struct PLContinueRow: View {
                 Circle().fill(PL.gold.opacity(0.10))
                 PLPulseRing()
                 Image(systemName: "play.fill")
-                    .font(.system(size: 13)).foregroundStyle(PL.gold).offset(x: 1)
+                    .font(.symbol(13)).foregroundStyle(PL.gold).offset(x: 1)
             }
             .frame(width: 36, height: 36)
         }
@@ -415,7 +415,7 @@ struct PLFinishEarnCard: View {
                     .stroke(PL.gold.opacity(0.33), lineWidth: 1)
                     .opacity(glow ? 0.8 : 0.3)
                 Image(systemName: "trophy")
-                    .font(.system(size: 20)).foregroundStyle(PL.goldLight)
+                    .font(.symbol(20)).foregroundStyle(PL.goldLight)
             }
             .frame(width: 48, height: 48)
             .onAppear {

@@ -177,9 +177,9 @@ private struct LiveChatBubble: View {
             if !mine { Avatar(url: message.avatarUrl, name: message.fullName, size: 26) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
                 if !mine {
-                    Text(message.fullName).font(.inter(10, .semibold)).foregroundStyle(Nuru.ink600)
+                    Text(message.fullName).font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
                 }
-                Text(message.body).font(.inter(13.5)).foregroundStyle(Nuru.ink)
+                Text(message.body).font(.inter(14)).foregroundStyle(Nuru.ink)
                     .multilineTextAlignment(.leading)
                     .padding(.horizontal, 12).padding(.vertical, 8)
                     .background(mine ? Nuru.myBubble : Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

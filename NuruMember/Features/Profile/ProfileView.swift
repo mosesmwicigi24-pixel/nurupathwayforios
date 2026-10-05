@@ -285,9 +285,9 @@ struct ProfileView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SHEPHERD THE FLOCK")
-                        .font(.inter(9, .bold)).kerning(1.2).foregroundStyle(Nuru.goldHi)
+                        .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldHi)
                     Text("Your disciples")
-                        .font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     Text("Roster, journeys & pending reflections")
                         .font(.inter(11)).foregroundStyle(Nuru.onNavyDim)
                 }
@@ -388,14 +388,13 @@ struct ProfileView: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 HStack(spacing: 3) {
-                    Text("MEMBER ID").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                    Text("MEMBER ID").font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                     Icon(.lock, size: 9, color: Color(hex: 0x74808F))
                 }
                 Text(memberIdLabel)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
+                    .font(.inter(11, .medium).monospacedDigit())
                     .foregroundStyle(Nuru.navy)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
             Spacer(minLength: 0)
@@ -403,7 +402,7 @@ struct ProfileView: View {
             // copies. "PERMANENT" becomes "COPIED" for a beat — the label is
             // the confirmation, so the layout never shifts.
             Text(justCopied ? "COPIED" : "PERMANENT")
-                .font(.inter(9, .semibold)).kerning(0.9)
+                .font(.inter(11, .semibold)).kerning(0.9)
                 .foregroundStyle(justCopied ? Color(hex: 0xA8861C) : Color(hex: 0x74808F))
                 .animation(.easeOut(duration: 0.18), value: justCopied)
         }
@@ -451,7 +450,7 @@ struct ProfileView: View {
         HStack(spacing: Nuru.S.md) {
             fieldIconTile(.languages)
             VStack(alignment: .leading, spacing: 3) {
-                Text("LANGUAGES SPOKEN").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                Text("LANGUAGES SPOKEN").font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                 HStack(spacing: 4) { langChip(localeLanguageName, isDefault: true) }
             }
             Spacer(minLength: 0)
@@ -521,7 +520,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(d.name).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                                 Text(d.isLeaderRole ? "LEADER" : "SERVING")
-                                    .font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                                    .font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                             }
                             Spacer(minLength: 0)
                             Icon(.chevronRight, size: 14, color: Nuru.ink300)
@@ -731,7 +730,7 @@ struct ProfileView: View {
         HStack(spacing: Nuru.S.md) {
             fieldIconTile(icon)
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                Text(label).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                 Text(value).font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
             }
             Spacer(minLength: 0)
@@ -928,7 +927,7 @@ private struct BadgeMedallion: View {
                 Icon(badge.style.icon, size: 20, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
             }
             Text(badge.name)
-                .font(.inter(9, badge.earned ? .semibold : .medium))
+                .font(.inter(11, badge.earned ? .semibold : .medium))
                 .foregroundStyle(badge.earned ? Nuru.navy : Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
                 .lineLimit(2)
@@ -960,20 +959,20 @@ private struct BadgeDetailSheet: View {
                         HStack(spacing: 4) {
                             Icon(.check, size: 11, color: Color(hex: 0x16A34A))
                             Text("Earned" + ((badge.awardedAt.flatMap { $0.isEmpty ? nil : formatISODay($0) }).map { " \($0)" } ?? ""))
-                                .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x16A34A))
+                                .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x16A34A))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Color(hex: 0x16A34A).opacity(0.09), in: Capsule())
                     } else {
                         HStack(spacing: 4) {
                             Icon(.lock, size: 10, color: Color(hex: 0x74808F))
-                            Text("Locked").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x74808F))
+                            Text("Locked").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x74808F))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Color(hex: 0xF3F4F6), in: Capsule())
                     }
                     Text(badge.category.capitalized)
-                        .font(.inter(10, .bold)).foregroundStyle(badge.style.color)
+                        .font(.inter(11, .bold)).foregroundStyle(badge.style.color)
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(badge.style.color.opacity(0.10), in: Capsule())
                 }
@@ -1017,7 +1016,7 @@ private struct BadgeGallerySheet: View {
                     }
                 }
                 Text("Locked badges unlock as you grow. Keep going.")
-                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                    .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x74808F))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             }
         }
@@ -1147,14 +1146,14 @@ private struct CertificateCardView: View {
                 HStack(spacing: 8) {
                     Icon(.fingerprint, size: 13, color: Color(hex: 0x74808F))
                     Text(cert.verificationCode)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.inter(12, .semibold).monospacedDigit())
                         .kerning(0.5).foregroundStyle(Nuru.navy)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     HStack(spacing: 4) {
                         Icon(copied ? .check : .copy, size: 11, color: copied ? Color(hex: 0x16A34A) : Nuru.gold)
                         Text(copied ? "Copied" : "Copy")
-                            .font(.inter(10, .bold)).foregroundStyle(copied ? Color(hex: 0x16A34A) : Nuru.gold)
+                            .font(.inter(11, .bold)).foregroundStyle(copied ? Color(hex: 0x16A34A) : Nuru.gold)
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)
@@ -1167,7 +1166,7 @@ private struct CertificateCardView: View {
                 Button { Haptics.tap(); onVerify() } label: {
                     HStack(spacing: 4) {
                         Icon(.shieldCheck, size: 13, color: Color(hex: 0x8A6D18))
-                        Text("Signed · Verify").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
+                        Text("Signed · Verify").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
                     }
                     .frame(maxWidth: .infinity).frame(height: 36)
                     .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1185,7 +1184,7 @@ private struct CertificateCardView: View {
                         if downloading {
                             HStack(spacing: 5) {
                                 ProgressView().tint(Nuru.navy).scaleEffect(0.7)
-                                Text("Downloading…").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                                Text("Downloading…").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                             }
                             .frame(maxWidth: .infinity).frame(height: 36)
                             .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1201,7 +1200,7 @@ private struct CertificateCardView: View {
 
             if let downloadError {
                 Text(downloadError)
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0xDC2626))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0xDC2626))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             }
         }
@@ -1213,7 +1212,7 @@ private struct CertificateCardView: View {
     private func downloadLabel(icon: Lucide, text: String) -> some View {
         HStack(spacing: 4) {
             Icon(icon, size: 13, color: Nuru.navy)
-            Text(text).font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+            Text(text).font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity).frame(height: 36)
         .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1310,7 +1309,7 @@ private struct VerifyCertificateSheet: View {
                     HStack(spacing: 4) {
                         Icon(.lock, size: 11, color: Color(hex: 0x74808F))
                         Text("Anyone can confirm this at pathway.nuruplace.org/v1/verify/\(cert.verificationCode)")
-                            .font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
+                            .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                     }
                 }
             } else if failed {
@@ -1339,7 +1338,7 @@ private struct VerifyCertificateSheet: View {
             Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
             Spacer(minLength: Nuru.S.md)
             Text(value)
-                .font(mono ? .system(size: 12, weight: .semibold, design: .monospaced) : .inter(12, .semibold))
+                .font(mono ? .inter(12, .semibold).monospacedDigit() : .inter(12, .semibold))
                 .foregroundStyle(Nuru.navy)
                 .lineLimit(1)
         }
@@ -1474,7 +1473,7 @@ struct PSheetShell<Content: View>: View {
                 .frame(maxWidth: .infinity)
                 .padding(.top, 10)
             HStack {
-                Text(title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
+                Text(title).font(.fraunces(18, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 Spacer()
                 Button { dismiss() } label: {
                     ZStack {
