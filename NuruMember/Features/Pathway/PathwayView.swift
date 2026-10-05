@@ -58,7 +58,9 @@ private enum PW {
     static let navyDeep   = Color(hex: 0x081C36)
     static let surface    = Color(hex: 0xFBF8F1)
     static let border     = Color(hex: 0x0A2540, alpha: 0.08)
-    static let badgeEmoji = ["🪨", "🕊️", "🌿", "🔥", "📖", "👑", "⭐", "🏅"]
+    /// Each level's milestone mark — Lucide, never colour emoji art (§8.1
+    /// rule 7; the walk's rock, dove, sprig and flame).
+    static let badgeGlyph: [Lucide] = [.landmark, .leaf, .heart, .flame, .bookOpen, .award, .sparkles, .badgeCheck]
 }
 
 // Small helpers shared by the PathwayHub subviews (mirror the Figma functions).
@@ -76,7 +78,7 @@ func levelShortName(_ level: PathwayLevel) -> String {
 }
 
 /// The reward the member is working toward — the first not-yet-complete level.
-struct PWReward { let name: String; let emoji: String; let remaining: Int; let pct: Int }
+struct PWReward { let name: String; let glyph: Lucide; let remaining: Int; let pct: Int }
 
 private func nextReward(_ s: PathwaySummary) -> PWReward? {
     guard let idx = s.levels.firstIndex(where: { !$0.walked }) else { return nil }
@@ -84,7 +86,7 @@ private func nextReward(_ s: PathwaySummary) -> PWReward? {
     // Lessons — the exam is a step of its own, never "a module" (§8.2 #4).
     let remaining = max(l.lessonCount - l.lessonsDone, 0)
     let pct = l.lessonCount > 0 ? min(100, Int((Double(l.lessonsDone) / Double(l.lessonCount) * 100).rounded())) : 0
-    return PWReward(name: levelShortName(l), emoji: PW.badgeEmoji[idx % PW.badgeEmoji.count], remaining: remaining, pct: pct)
+    return PWReward(name: levelShortName(l), glyph: PW.badgeGlyph[idx % PW.badgeGlyph.count], remaining: remaining, pct: pct)
 }
 
 @MainActor
@@ -1074,7 +1076,7 @@ private struct PathwayMilestones: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWRewardBadge(name: levelShortName(lvl), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.walked)
+                        PWRewardBadge(name: levelShortName(lvl), glyph: PW.badgeGlyph[i % PW.badgeGlyph.count], earned: lvl.walked)
                     }
                 }.padding(.horizontal, 2)
             }
@@ -1084,7 +1086,7 @@ private struct PathwayMilestones: View {
     private func nextRewardCard(_ r: PWReward) -> some View {
         Button { Haptics.tap(); openResume() } label: {
             HStack(spacing: 12) {
-                Text(r.emoji).font(.emoji(22))
+                Icon(r.glyph, size: 22, color: Nuru.navy)
                     .frame(width: 48, height: 48)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
@@ -1108,14 +1110,15 @@ private struct PathwayMilestones: View {
 
 private struct PWRewardBadge: View {
     let name: String
-    let emoji: String
+    let glyph: Lucide
     let earned: Bool
     var body: some View {
         VStack(spacing: 6) {
-            Text(emoji).font(.emoji(22)).frame(width: 44, height: 44)
-                .background(earned ? Color.white : PW.mutedBg, in: Circle())
+            // Lucide on a gold-tint tile (§8.1 rule 7); quiet until earned.
+            Icon(glyph, size: 22, color: earned ? Nuru.navy : PW.ink3).frame(width: 44, height: 44)
+                .background(earned ? Color(hex: Nuru.tileTint) : PW.mutedBg, in: Circle())
                 .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
-                .grayscale(earned ? 0 : 1).opacity(earned ? 1 : 0.7)
+                .opacity(earned ? 1 : 0.7)
             Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
             if earned {
                 HStack(spacing: 1) {

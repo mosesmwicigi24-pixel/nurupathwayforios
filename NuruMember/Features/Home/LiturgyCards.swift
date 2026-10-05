@@ -32,12 +32,14 @@ struct HomeLiturgyCard: View {
         }
     }
 
-    private func partEmoji(_ p: String) -> String {
+    /// The hour's glyph — Lucide on a gold-tint tile, never a colour emoji
+    /// (§8.1 rule 7; the walk's 🌆): the sun by day, the first star at
+    /// evening, the moon at night.
+    private func partGlyph(_ p: String) -> Lucide {
         switch p {
-        case "morning": return "🌅"
-        case "midday": return "☀️"
-        case "evening": return "🌆"
-        default: return "🌙"
+        case "morning", "midday": return .sun
+        case "evening": return .sparkle
+        default: return .moon
         }
     }
 
@@ -198,7 +200,9 @@ struct HomeLiturgyCard: View {
         // Just the hour (owner's trim, 2026-08-25): no season word, no brand
         // wordmark — the card speaks for itself. Voice controls keep their seat.
         HStack(spacing: 7) {
-            Text(partEmoji(lit.part)).font(.emoji(15))
+            Icon(partGlyph(lit.part), size: 14, color: Nuru.navy)
+                .frame(width: 24, height: 24)
+                .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : partLabel(lit.part))
                 .font(.inter(11, .bold)).kerning(1.6)
                 .foregroundStyle(onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
