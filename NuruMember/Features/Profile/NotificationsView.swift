@@ -172,9 +172,10 @@ struct NotificationsView: View {
                     .frame(width: 40, height: 40).background(Nuru.mutedBg, in: Circle())
             }
             VStack(alignment: .leading, spacing: 0) {
-                Text("Notifications").font(.nHeading).foregroundStyle(Nuru.ink)
+                // The header as on Android (§8.2 #10): the serif title, one line.
+                Text("Notifications").font(.nCardTitle).foregroundStyle(Nuru.ink)
                 HStack(spacing: 6) {
-                    Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up ✨").font(.nMicro).foregroundStyle(Nuru.faint)
+                    Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up ✨").font(.nCaption).foregroundStyle(Nuru.ink600)
                         .contentTransition(.numericText(value: Double(vm.unread)))
                         .animation(.easeInOut(duration: 0.25), value: vm.unread)
                     if rewardUnread > 0 {
@@ -212,7 +213,10 @@ struct NotificationsView: View {
             }
         }
         .animation(.easeInOut(duration: 0.25), value: vm.unread == 0)
-        .padding(.horizontal, Nuru.S.base).padding(.top, 54).padding(.bottom, Nuru.S.md)
+        // The bar already starts under the status bar (this page keeps the
+        // safe area) — the old 54pt top padding counted it a second time and
+        // left an empty white band above the header (§8.2 #10).
+        .padding(.horizontal, Nuru.S.base).padding(.top, Nuru.S.base).padding(.bottom, Nuru.S.md)
         .background(Nuru.white)
         .overlay(Rectangle().fill(Nuru.border).frame(height: 1), alignment: .bottom)
     }
