@@ -410,6 +410,11 @@ struct HomeView: View {
     /// Poster frames cut from videos the server gave no thumbnail for.
     @StateObject private var posters = VideoPosterCache.shared
     @State private var posterTick: UInt8 = 0
+    /// The featured video's own shape, measured and remembered across
+    /// launches (owner, 2026-10-06: the featured video takes its own shape).
+    @StateObject private var shapes = VideoShapeStore.shared
+    /// Each featured video's thumbnail shape, once its picture has loaded.
+    @State private var thumbShapes: [String: CGFloat] = [:]
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     /// The partner invitation. Whether it may be shown is decided entirely by
@@ -1359,6 +1364,7 @@ struct HomeView: View {
     private func welcomeVideoCard(_ v: WelcomeVideo) -> some View {
         let love = v.loveCount ?? (v.reactions?.first { $0.emoji == "❤️" }?.count ?? 0)
         let liked = v.liked ?? false
+        let shape = videoShape(v)
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: Nuru.S.sm) {
                 BrandMark(size: 28)
@@ -1369,13 +1375,16 @@ struct HomeView: View {
             }
             .padding(Nuru.S.base)
 
-            // Plays inline, pinned to the card's inset 16:9 box — never opens Safari.
+            // Plays inline — never opens Safari — in a frame of the video's
+            // own shape, across the card's content width: a portrait video
+            // gets a tall frame, a landscape one a wide frame, and the picture
+            // fills it, so the player draws no bars (owner, 2026-10-06).
             Group {
                 if playingVideo {
-                    InlineVideoPlayer(video: v, onReady: {
+                    InlineVideoPlayer(video: v, fill: VideoShape.learnsShape(source: v.videoSource), onReady: {
                         withAnimation(.easeOut(duration: 0.25)) { videoReady = true }
                     })
-                        .aspectRatio(16.0/9.0, contentMode: .fit)
+                        .aspectRatio(shape, contentMode: .fit)
                         .frame(maxWidth: .infinity)
                         .background(Color.black)
                         // Buffering cue INSIDE the card — the black box never sits silent.
@@ -1390,12 +1399,21 @@ struct HomeView: View {
                             }
                         }
                 } else {
-                    Button { Haptics.tap(); playingVideo = true } label: { videoThumb(v) }
+                    Button { Haptics.tap(); playingVideo = true } label: { videoThumb(v, shape: shape) }
                         .buttonStyle(.pressableSubtle)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal, Nuru.S.base)
+            .animation(.easeOut(duration: 0.25), value: shape)
+            // The video's own size, read from its file once a session, and
+            // remembered so the next first paint is already right.
+            .task(id: v.mediaAssetId) { await learnVideoShape(v) }
+            #if targetEnvironment(simulator) && DEBUG
+            // Scripted visual verification: NURU_UITEST_PLAY=1 starts the
+            // video, so a headless screenshot sees it play in its frame.
+            .onAppear { if ProcessInfo.processInfo.environment["NURU_UITEST_PLAY"] == "1" { playingVideo = true } }
+            #endif
 
             VStack(alignment: .leading, spacing: 0) {
                 // Caption + fallback sub-line, never the same words twice: when the
@@ -1471,7 +1489,7 @@ struct HomeView: View {
         .nuruShadow()
     }
 
-    private func videoThumb(_ v: WelcomeVideo) -> some View {
+    private func videoThumb(_ v: WelcomeVideo, shape: CGFloat) -> some View {
         ZStack {
             Rectangle().fill(Color(hex: 0xD6DADE))
             // No server thumbnail (uploaded videos carry none — no ffmpeg on the
@@ -1489,6 +1507,8 @@ struct HomeView: View {
                     .task(id: play) {
                         await posters.load(play)
                         withAnimation(.easeOut(duration: 0.25)) { posterTick &+= 1 }
+                        // The poster is the thumbnail here: its pixel size is a shape.
+                        noteThumbnail(posters.poster(for: play)?.size, for: v)
                     }
             }
             if let s = v.thumbnailUrl, let u = URL(string: s) {
@@ -1498,7 +1518,11 @@ struct HomeView: View {
                 Color.clear
                     .overlay {
                         CachedAsyncImage(url: u) { phase in
-                            if let img = phase.image { img.resizable().scaledToFill().opacity(0.95) }
+                            if let img = phase.image {
+                                img.resizable().scaledToFill().opacity(0.95)
+                                    // Its pixel size, once loaded, is a shape.
+                                    .onAppear { noteThumbnail(NuruImageCache.shared.image(for: u)?.size, for: v) }
+                            }
                             else { Rectangle().fill(Color(hex: 0xD6DADE)) }
                         }
                     }
@@ -1526,9 +1550,29 @@ struct HomeView: View {
                 }
             }
         }
-        .aspectRatio(16.0/9.0, contentMode: .fill)
+        // The video's own shape (owner, 2026-10-06), not a fixed 16:9.
+        .aspectRatio(shape, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .clipped()
+    }
+
+    /// The featured video's frame, width ÷ height (owner, 2026-10-06: the
+    /// featured video takes its own shape). See VideoShape for the order.
+    private func videoShape(_ v: WelcomeVideo) -> CGFloat {
+        guard VideoShape.learnsShape(source: v.videoSource) else { return VideoShape.standard }
+        return VideoShape.resolve(video: shapes.ratio(for: v.mediaAssetId), thumbnail: thumbShapes[v.mediaAssetId])
+    }
+
+    /// A thumbnail's picture has loaded: its pixel size is the next best shape.
+    private func noteThumbnail(_ size: CGSize?, for v: WelcomeVideo) {
+        guard let size, let r = VideoShape.ratio(size), thumbShapes[v.mediaAssetId] != r else { return }
+        thumbShapes[v.mediaAssetId] = r
+    }
+
+    /// Read the video's own size (its track through its turn) and remember it.
+    private func learnVideoShape(_ v: WelcomeVideo) async {
+        guard VideoShape.learnsShape(source: v.videoSource), let play = v.playUrl else { return }
+        await shapes.measure(play, id: v.mediaAssetId)
     }
 
     // MARK: 4 — Verse for today

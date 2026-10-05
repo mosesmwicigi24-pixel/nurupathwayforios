@@ -458,4 +458,59 @@ final class ExperienceCycle5Tests: XCTestCase {
             XCTAssertFalse(PathwayTrail.cardCountLine(l).hasPrefix("0/"), "no zero count")
         }
     }
+
+    // MARK: Owner, 2026-10-06 — the featured video takes its own shape
+
+    func testTheFeaturedVideoTakesItsOwnShape() throws {
+        // Portrait gets a tall frame, landscape a wide one: width ÷ height.
+        XCTAssertEqual(try XCTUnwrap(VideoShape.ratio(CGSize(width: 1080, height: 1920))), 1080.0 / 1920.0, accuracy: 0.0001)
+        XCTAssertEqual(try XCTUnwrap(VideoShape.ratio(CGSize(width: 1920, height: 1080))), 1920.0 / 1080.0, accuracy: 0.0001)
+        // A portrait clip stored landscape with a 90° turn is portrait: the
+        // stored size through the track's transform, as absolute values —
+        // a pure turn, and the turn-and-shift an iPhone writes.
+        for t in [CGAffineTransform(rotationAngle: .pi / 2), CGAffineTransform(a: 0, b: 1, c: -1, d: 0, tx: 1080, ty: 0),
+                  CGAffineTransform(rotationAngle: -.pi / 2)] {
+            let seen = VideoShape.displaySize(natural: CGSize(width: 1920, height: 1080), transform: t)
+            XCTAssertEqual(seen.width, 1080, accuracy: 0.5)
+            XCTAssertEqual(seen.height, 1920, accuracy: 0.5)
+        }
+        XCTAssertEqual(VideoShape.displaySize(natural: CGSize(width: 1920, height: 1080), transform: .identity),
+                       CGSize(width: 1920, height: 1080))
+        // Clamped to 9:20 … 21:9; nothing for a size with no area.
+        XCTAssertEqual(VideoShape.ratio(CGSize(width: 100, height: 1000)), 9.0 / 20.0)
+        XCTAssertEqual(VideoShape.ratio(CGSize(width: 4000, height: 1000)), 21.0 / 9.0)
+        XCTAssertNil(VideoShape.ratio(.zero))
+        XCTAssertNil(VideoShape.ratio(CGSize(width: 1920, height: 0)))
+        // Before anything is known, 16:9; the video's own shape (remembered
+        // or measured) beats its thumbnail's.
+        XCTAssertEqual(VideoShape.resolve(video: nil, thumbnail: nil), 16.0 / 9.0)
+        XCTAssertEqual(VideoShape.resolve(video: nil, thumbnail: 0.5625), 0.5625)
+        XCTAssertEqual(VideoShape.resolve(video: 0.5625, thumbnail: 16.0 / 9.0), 0.5625)
+        // An embed's player keeps its own 16:9; a file's shape is read.
+        for s in ["youtube", "vimeo", "YouTube"] { XCTAssertFalse(VideoShape.learnsShape(source: s), s) }
+        for s in ["direct", "cloudinary", "private"] { XCTAssertTrue(VideoShape.learnsShape(source: s), s) }
+        // Home's player fills its frame (no bars); every other host fits.
+        let u = try XCTUnwrap(URL(string: "https://example.com/v.mp4"))
+        XCTAssertTrue(InlineVideoPlayer.html(for: u, fill: true).contains("object-fit:cover"))
+        XCTAssertTrue(InlineVideoPlayer.html(for: u).contains("object-fit:contain"))
+    }
+
+    @MainActor
+    func testAMeasuredShapeIsRememberedForTheNextFirstPaint() throws {
+        let suite = "nuru.tests.videoShape.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let store = VideoShapeStore(defaults: defaults)
+        XCTAssertNil(store.ratio(for: "m1"), "nothing remembered yet: the card starts at 16:9")
+        store.remember(1080.0 / 1920.0, for: "m1")
+        XCTAssertEqual(try XCTUnwrap(store.ratio(for: "m1")), 0.5625, accuracy: 0.0001)
+        // The next launch: a fresh store over the same defaults has it at once.
+        let next = VideoShapeStore(defaults: defaults)
+        XCTAssertEqual(try XCTUnwrap(next.ratio(for: "m1")), 0.5625, accuracy: 0.0001)
+        XCTAssertNil(next.ratio(for: "m2"), "remembered per media asset")
+        next.remember(10, for: "m3")
+        XCTAssertEqual(next.ratio(for: "m3"), 21.0 / 9.0, "remembered clamped")
+        next.remember(.nan, for: "m4")
+        XCTAssertNil(next.ratio(for: "m4"), "nothing nonsensical is kept")
+    }
 }
