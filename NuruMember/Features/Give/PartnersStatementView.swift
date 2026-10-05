@@ -180,10 +180,10 @@ struct PartnersStatementView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("PARTNERS STATEMENT · \(String(vm.statementYear))")
-                .font(.inter(10, .bold)).kerning(1.8)
+                .font(.inter(11, .bold)).kerning(1.8)
                 .foregroundStyle(Color(hex: 0xE6CA68))
             Text(thankYouLine)
-                .font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                .font(.fraunces(26, .semibold)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
             if let line = standingText {
@@ -323,7 +323,7 @@ struct PartnersStatementView: View {
             let rest = t.givenRest.map { " \($0)" } ?? ""
             heroTile("GIVEN", a11y: "Given \(money(g, t.givenCurrency))\(rest) toward pledges") {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.75))
+                    Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.75))
                     Text(Self.compactAmount(g)).font(.fraunces(26, .semibold)).foregroundStyle(.white)
                 }
                 .lineLimit(1).minimumScaleFactor(0.6)
@@ -368,7 +368,7 @@ struct PartnersStatementView: View {
 
     private func heroTile<V: View>(_ label: String, a11y: String, @ViewBuilder content: () -> V) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.inter(9, .semibold)).kerning(0.8)
+            Text(label).font(.inter(11, .semibold)).kerning(0.8)
                 .foregroundStyle(.white.opacity(0.6))
                 .lineLimit(1).minimumScaleFactor(0.65)
                 .padding(.bottom, 2)
@@ -382,7 +382,7 @@ struct PartnersStatementView: View {
     }
 
     private func tileCaption(_ s: String) -> some View {
-        Text(s).font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+        Text(s).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -524,7 +524,7 @@ struct PartnersStatementView: View {
                     Spacer()
                     Text(short.last ?? "Dec")
                 }
-                .font(.inter(9, .medium)).foregroundStyle(Nuru.ink400)
+                .font(.inter(11, .medium)).foregroundStyle(Nuru.ink400)
                 .accessibilityHidden(true)
                 if let line = faithfulnessLine(strip, faithfulness, year: year) {
                     Text(line)
@@ -686,8 +686,8 @@ struct PartnersStatementView: View {
 
     private func seasonCard(_ sentence: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("SINCE YOU BEGAN").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.gold)
-            Text(sentence).font(.fraunces(17, .medium)).foregroundStyle(.white)
+            Text("SINCE YOU BEGAN").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.gold)
+            Text(sentence).font(.fraunces(18, .medium)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -716,7 +716,7 @@ struct PartnersStatementView: View {
                     if !pending.isEmpty {
                         HStack(alignment: .firstTextBaseline) {
                             Text("PROCESSING")
-                                .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.urgentText)
+                                .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Nuru.urgentText)
                             Spacer()
                             Text("not yet counted").font(.inter(11)).foregroundStyle(Nuru.ink400)
                         }
@@ -733,7 +733,7 @@ struct PartnersStatementView: View {
                     ForEach(Array(groups.enumerated()), id: \.element.key) { gi, g in
                         HStack(alignment: .firstTextBaseline) {
                             Text(g.label.uppercased())
-                                .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
+                                .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
                             Spacer()
                             Text(g.subtotal)
                                 .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
@@ -757,7 +757,7 @@ struct PartnersStatementView: View {
                     Divider().overlay(Nuru.navy.opacity(0.35)).padding(.top, 12)
                     HStack(alignment: .firstTextBaseline) {
                         Text("TOTAL PAID \(String(s.year))")
-                            .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
+                            .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
                         Spacer()
                         Text(listTotal)
                             .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
@@ -937,7 +937,7 @@ private struct StatementPledgeRow: View {
                 // the server sends it for need pledges only.
                 if let pct = pledge.churchProgressPercent {
                     Text("Church raised \(Int(min(100, max(0, pct)).rounded(.down)))%")
-                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldLo)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                         .lineLimit(1)
                 }
             }
@@ -974,7 +974,7 @@ private struct StatementPledgeRow: View {
                 return (Nuru.successBg, Nuru.successText, "On track")
             }
         }()
-        return Text(text).font(.inter(10, .bold)).foregroundStyle(fg)
+        return Text(text).font(.inter(11, .bold)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 3).background(bg, in: Capsule())
     }
 }
@@ -1114,7 +1114,7 @@ struct PendingPledgePaymentRow: View {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
                 HStack(spacing: 6) {
                     Text(chipText)
-                        .font(.inter(10, .bold)).foregroundStyle(Nuru.urgentText)
+                        .font(.inter(11, .bold)).foregroundStyle(Nuru.urgentText)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Nuru.urgentBg, in: Capsule())
                     if giveParseDate(payment.at) != nil {

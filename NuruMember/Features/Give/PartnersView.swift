@@ -823,7 +823,7 @@ struct PartnersView: View {
         VStack(alignment: .leading, spacing: 10) {
             eyebrow("JOIN THE PARTNERS PROGRAMME")
             Text("Become a partner")
-                .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             Text("Joining costs nothing today. A pledge can come later.")
                 .font(.inter(13)).foregroundStyle(Nuru.ink600)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1217,7 +1217,7 @@ struct PartnersView: View {
 
 /// ONE-word eyebrow: `.inter(9, .semibold)`, kerning 1.6, goldLo.
 func eyebrow(_ s: String) -> some View {
-    Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
+    Text(s).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
 }
 
 /// The Partners card: white, border stroke, radius 16, 16pt padding.
@@ -1238,7 +1238,7 @@ extension View {
 /// amount per currency — the same currency on the same line in every column.
 func partnerSummaryColumn(_ label: String, _ values: [String], _ tint: Color) -> some View {
     VStack(alignment: .leading, spacing: 3) {
-        Text(label.uppercased()).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
+        Text(label.uppercased()).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
         ForEach(Array(values.enumerated()), id: \.offset) { _, value in
             Text(value).font(.inter(16, .semibold)).foregroundStyle(tint)
                 .lineLimit(1).minimumScaleFactor(0.7)
@@ -1521,7 +1521,7 @@ private struct PledgeCard: View {
             default: return (Nuru.successBg, Nuru.successText, "On track")
             }
         }()
-        return Text(text).font(.inter(10, .bold)).foregroundStyle(fg)
+        return Text(text).font(.inter(11, .bold)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 3).background(bg, in: Capsule())
     }
 }
@@ -1652,7 +1652,7 @@ struct PledgeDetailView: View {
                         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
                     } else if let d = detail {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("PAYMENTS").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                            Text("PAYMENTS").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                             if d.payments.isEmpty {
                                 Text("No payments yet — the first one will appear here the moment it settles.")
                                     .font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
@@ -1866,7 +1866,7 @@ struct PledgeDetailView: View {
         if let claims, !claims.isEmpty {
             let today = PledgeMath.today()
             VStack(alignment: .leading, spacing: 0) {
-                Text("PAID ANOTHER WAY").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                Text("PAID ANOTHER WAY").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                     .padding(.bottom, 4)
                 ForEach(claims) { claim in
                     PledgeClaimRow(claim: claim, today: today)

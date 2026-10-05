@@ -27,7 +27,7 @@ final class TypographyTests: XCTestCase {
     /// Text sizes set in code that are off the scale (or computed where the
     /// scan can't prove they land on it). Measured at d55d767: 545; falling
     /// as each area moves onto the scale.
-    static let offScaleCeiling = 365
+    static let offScaleCeiling = 179
     /// System-font sites not listed as an icon, emoji or widget — a system
     /// face used for text. Measured at d55d767: 144.
     static let systemTextCeiling = 137

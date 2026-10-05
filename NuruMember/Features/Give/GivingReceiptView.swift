@@ -128,7 +128,7 @@ struct GivingReceiptView: View {
             }
             .buttonStyle(.pressable)
             .accessibilityLabel("Back")
-            Text("Receipt").font(.fraunces(20, .semibold)).foregroundStyle(Nuru.navy)
+            Text("Receipt").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
             Spacer()
             // Same action as the primary "Share receipt" button below.
             if let d = vm.detail {
@@ -215,7 +215,7 @@ struct GivingReceiptView: View {
             .padding(.bottom, 2)
 
             Text(look.eyebrow)
-                .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(look.eyebrowColor)
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(look.eyebrowColor)
 
             if look.thanks, let first = firstName(d) {
                 Text("Thank you, \(first).")
@@ -226,7 +226,7 @@ struct GivingReceiptView: View {
             let parts = amountParts(d.amountMinor, d.currency)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(parts.symbol).font(.inter(15, .semibold)).foregroundStyle(Color(hex: 0x74808F))
-                Text(parts.number).font(.fraunces(40, .semibold)).kerning(-0.8).foregroundStyle(Nuru.navy)
+                Text(parts.number).font(.fraunces(28, .semibold)).kerning(-0.8).foregroundStyle(Nuru.navy)
             }
             .padding(.top, 2)
 

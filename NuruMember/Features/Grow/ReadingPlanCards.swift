@@ -61,7 +61,7 @@ struct PLCover: View {
 struct PLDaysBadge: View {
     let days: Int
     var body: some View {
-        Text("\(days) DAYS").font(.inter(8, .bold)).kerning(0.96).foregroundStyle(PL.navy)
+        Text("\(days) DAYS").font(.inter(11, .bold)).kerning(0.96).foregroundStyle(PL.navy)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(Color.white.opacity(0.9), in: Capsule())
             .padding(8)
@@ -201,7 +201,7 @@ struct PLStreakStrip: View {
                 HStack(spacing: 4) {
                     Icon(.gift, size: 12, color: PL.catText)
                     Text(toReward == 0 ? "Reward ready!" : "\(toReward) day\(toReward == 1 ? "" : "s") to a badge")
-                        .font(.inter(10, .bold)).foregroundStyle(PL.catText)
+                        .font(.inter(11, .bold)).foregroundStyle(PL.catText)
                 }
             }
             .padding(.top, 12)
@@ -216,7 +216,7 @@ struct PLStreakStrip: View {
         let done = isDone(i)
         let today = i == todayIdx
         return VStack(spacing: 4) {
-            Text(Self.week[i]).font(.inter(8, .bold)).foregroundStyle(PL.ink3)
+            Text(Self.week[i]).font(.inter(11, .bold)).foregroundStyle(PL.ink3)
             ZStack {
                 if done {
                     Circle().fill(PL.gold)
@@ -290,7 +290,7 @@ struct PLContinueRow: View {
                         }
                     }
                     .frame(height: 6)
-                    Text("Day \(day)/\(total)").font(.inter(9, .semibold)).foregroundStyle(PL.ink2)
+                    Text("Day \(day)/\(total)").font(.inter(11, .semibold)).foregroundStyle(PL.ink2)
                 }
                 .padding(.top, 8)
             }
@@ -327,7 +327,7 @@ struct PLPlanCard: View {
                         Text(plan.title).font(.fraunces(13, .semibold)).foregroundStyle(.white)
                             .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                         if let c = plan.category, !c.isEmpty {
-                            Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
+                            Text(c.uppercased()).font(.inter(11, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
                                 .lineLimit(1)
                         }
                     }
@@ -380,11 +380,11 @@ struct PLPlanTile: View {
                     Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy)
                         .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     if plan.enrolled, plan.completedAt == nil {
-                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(9, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep).lineLimit(1)
+                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(11, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep).lineLimit(1)
                     } else if plan.completedAt != nil {
-                        Text("COMPLETED").font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep).lineLimit(1)
+                        Text("COMPLETED").font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep).lineLimit(1)
                     } else if let c = plan.category, !c.isEmpty {
-                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.catText)
+                        Text(c.uppercased()).font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.catText)
                             .lineLimit(1)
                     }
                 }
@@ -423,7 +423,7 @@ struct PLFinishEarnCard: View {
                 withAnimation(.easeInOut(duration: 1.2).repeatForever()) { glow = true }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("FINISH & EARN").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(PL.goldLight)
+                Text("FINISH & EARN").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(PL.goldLight)
                 Text("The “\(category ?? "Finisher")” badge")
                     .font(.inter(13, .bold)).kerning(-0.13).foregroundStyle(.white)
                     .lineLimit(2).truncationMode(.tail)
@@ -466,7 +466,7 @@ struct PLDetailDayRow: View {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .stroke(done ? PL.gold.opacity(0.55) : PL.border, lineWidth: 1)
                     VStack(spacing: -2) {
-                        Text("DAY").font(.inter(8, .bold)).kerning(0.9).foregroundStyle(done ? PL.goldDeep : PL.gold)
+                        Text("DAY").font(.inter(11, .bold)).kerning(0.9).foregroundStyle(done ? PL.goldDeep : PL.gold)
                         Text("\(day.dayNumber)").font(.fraunces(22, .medium)).foregroundStyle(PL.navy)
                     }
                 }
@@ -490,7 +490,7 @@ struct PLDetailDayRow: View {
             Spacer(minLength: 0)
             if isNext {
                 // "1 part left" once the day is begun, "Start" before (§7.4 #2).
-                Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(9, .bold)).foregroundStyle(PL.navy)
+                Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(11, .bold)).foregroundStyle(PL.navy)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(PL.gold, in: Capsule())
             } else if syncing {
@@ -575,7 +575,7 @@ struct PLPlanPromo: View {
                 .overlay(alignment: .topLeading) {
                     HStack(spacing: 4) {
                         Icon(.sparkles, size: 9, color: PL.navy)
-                        Text(kicker).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                        Text(kicker).font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(PL.gold, in: Capsule())
@@ -583,10 +583,10 @@ struct PLPlanPromo: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(plan.title)
-                        .font(.fraunces(19, .medium)).kerning(-0.3).foregroundStyle(PL.navy)
+                        .font(.fraunces(18, .medium)).kerning(-0.3).foregroundStyle(PL.navy)
                         .fixedSize(horizontal: false, vertical: true)
                     if let s = plan.subtitle, !s.isEmpty {
-                        Text(s).font(.inter(11.5, .semibold)).foregroundStyle(PL.gold)
+                        Text(s).font(.inter(12, .semibold)).foregroundStyle(PL.gold)
                     }
                     if let h = blurb {
                         Text(h)
@@ -607,7 +607,7 @@ struct PLPlanPromo: View {
                     HStack(spacing: 4) {
                         Icon(.clock, size: 11, color: PL.ink3)
                         Text("\(plan.dayCount) days · a few minutes a day")
-                            .font(.inter(10.5)).foregroundStyle(PL.ink3)
+                            .font(.inter(11)).foregroundStyle(PL.ink3)
                     }
                     .padding(.top, 2)
                 }

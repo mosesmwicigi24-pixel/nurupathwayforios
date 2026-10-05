@@ -112,7 +112,7 @@ struct ResourcesLibraryView: View {
                 Spacer()
                 Color.clear.frame(width: 40, height: 40)
             }
-            Text("Resources").font(.fraunces(24, .medium)).kerning(-0.72).foregroundStyle(RES.navy).padding(.top, 12)
+            Text("Resources").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(RES.navy).padding(.top, 12)
         }
         .padding(.horizontal, 20).padding(.top, 56).padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)

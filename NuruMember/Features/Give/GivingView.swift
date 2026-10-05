@@ -800,7 +800,7 @@ struct GivingView: View {
                 Text(f.label).font(.inter(13, .semibold)).kerning(-0.13).foregroundStyle(Nuru.navy)
                     .lineLimit(1).minimumScaleFactor(0.85)
                     .padding(.top, 8)
-                Text(f.tagline).font(.inter(10)).foregroundStyle(Color(hex: 0x5B6472))
+                Text(f.tagline).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
                     .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
@@ -823,13 +823,13 @@ struct GivingView: View {
                 showKeypad = true
             } label: {
                 VStack(spacing: 4) {
-                    Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                    Text("AMOUNT").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         // PayPal takes dollars (Giving Cycle 2): the field says
                         // so, and shows cents.
                         Text(inDollars ? "US$" : "KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
                         Text(inDollars ? GiveMoney.number(usdCents) : amount.formatted(.number.grouping(.automatic)))
-                            .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
+                            .font(.fraunces(28, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
                             .lineLimit(1).minimumScaleFactor(0.6)
                             .contentTransition(.numericText(value: Double(giftMinor)))
                     }
@@ -1035,7 +1035,7 @@ struct GivingView: View {
                     Spacer(minLength: Nuru.S.sm)
                     if let badge {
                         Text(badge)
-                            .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.goldChipText)
+                            .font(.inter(11, .bold)).kerning(0.5).foregroundStyle(Nuru.goldChipText)
                             .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(Nuru.goldChipBg, in: Capsule())
                     }
@@ -1157,7 +1157,7 @@ struct GivingView: View {
                 .lineLimit(1).truncationMode(.tail)
                 .padding(.top, 1)
             if let line = ScheduleCopy.pledgeLine(s) {
-                Text(line).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                Text(line).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
@@ -1171,7 +1171,7 @@ struct GivingView: View {
             // server's own words.
             if let f = s.lastFailure, !f.reason.isEmpty {
                 Text(f.reason)
-                    .font(.inter(10, .semibold)).foregroundStyle(Nuru.urgentText)
+                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.urgentText)
                     .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 5)
             }
@@ -1959,7 +1959,7 @@ struct GivingView: View {
     // MARK: Helpers
 
     private func overline(_ s: String) -> some View {
-        Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+        Text(s).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
     }
 }
 
@@ -1995,7 +1995,7 @@ private struct GiveKeypadSheet: View {
             VStack(spacing: Nuru.S.base) {
                 HStack {
                     Text("CUSTOM AMOUNT · \(fundLabel.uppercased())")
-                        .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                        .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     Spacer()
                     Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
                 }
@@ -2004,7 +2004,7 @@ private struct GiveKeypadSheet: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(inDollars ? "US$" : "KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
                     Text(inDollars ? (value.isEmpty ? "0" : value) : (minor / 100).formatted(.number.grouping(.automatic)))
-                        .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
+                        .font(.fraunces(28, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
                 }
                 .frame(maxWidth: .infinity)
                 if inDollars {
@@ -2052,7 +2052,7 @@ private struct GiveKeypadSheet: View {
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("NAME YOUR GIFT (OPTIONAL)")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
 
             FlowWrap(spacing: 6) {
                 ForEach(giftNamePresets, id: \.self) { p in
@@ -2083,7 +2083,7 @@ private struct GiveKeypadSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
 
             Text("Shows on the church's M-Pesa statement — like a Paybill account name.")
-                .font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
         }
         .padding(.top, 2)
     }
@@ -2172,7 +2172,7 @@ private struct MobileMoneySheet: View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
                 Text(isMpesa ? "M-PESA NUMBER" : "AIRTEL MONEY NUMBER")
-                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                    .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                 Spacer()
                 Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
             }
@@ -2420,7 +2420,7 @@ private struct ScheduleDetailSheet: View {
                 Icon(.repeat, size: 19, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(money(current.amountMinor, current.currency)).font(.inter(17, .bold)).foregroundStyle(Nuru.navy)
+                Text(money(current.amountMinor, current.currency)).font(.inter(18, .bold)).foregroundStyle(Nuru.navy)
                 Text("\(dayLine) · \(current.fund.capitalized)")
                     .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 // Giving Cycle 5: a gift that collects a pledge asks only what
@@ -2595,7 +2595,7 @@ private struct ScheduleDetailSheet: View {
     private var changeForm: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("CHANGE THIS GIFT")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
 
             if followsMonthlyPledge, let pledge = current.pledge {
                 // Its amount and day are the pledge's (Giving Cycle 5).
@@ -2727,7 +2727,7 @@ private struct ScheduleDetailSheet: View {
     private var pauseForm: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("PAUSE THIS GIFT")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
             Text("Nothing is prompted while it's paused, and nothing is owed.")
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .fixedSize(horizontal: false, vertical: true)
@@ -3163,7 +3163,7 @@ private struct SuccessStage: View {
             }
             .gentleEntrance()
             Text("Thank you for your generosity")
-                .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
+                .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.lg).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.08)
@@ -3216,7 +3216,7 @@ private struct ScheduledStage: View {
             }
             .gentleEntrance()
             Text("Schedule created")
-                .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
+                .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.lg)
                 .gentleEntrance(delay: 0.08)
             Text("\(amountLabel) to \(fundLabel) every \(cadenceWord).")
@@ -3286,7 +3286,7 @@ private struct FailedStage: View {
                 Icon(.x, size: 26, color: Color(hex: 0xDC2626))
             }
             Text("That didn't go through")
-                .font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
+                .font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
             if let giftLine {
                 Text(giftLine)

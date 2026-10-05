@@ -232,7 +232,7 @@ private struct ReflectionCard: View {
                     if saved {
                         HStack(spacing: 4) {
                             Icon(.check, size: 10, color: Nuru.gold)
-                            Text("Submitted").font(.inter(10, .bold)).foregroundStyle(Nuru.gold)
+                            Text("Submitted").font(.inter(11, .bold)).foregroundStyle(Nuru.gold)
                         }
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
@@ -341,7 +341,7 @@ private struct FooterActions: View {
     private func column(icon: Lucide, label: String, color: Color) -> some View {
         VStack(spacing: 2) {
             Icon(icon, size: 16, color: color)
-            Text(label).font(.inter(10, .medium)).foregroundStyle(color)
+            Text(label).font(.inter(11, .medium)).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(Rectangle())

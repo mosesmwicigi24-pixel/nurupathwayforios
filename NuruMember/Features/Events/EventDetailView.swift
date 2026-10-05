@@ -447,7 +447,7 @@ private struct EvdHero: View {
             VStack(alignment: .leading, spacing: 8) {
                 pills
                 Text(title)
-                    .font(.fraunces(24, .semibold))
+                    .font(.fraunces(26, .semibold))
                     .kerning(-0.72)                       // -0.03em
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
@@ -461,7 +461,7 @@ private struct EvdHero: View {
         HStack(spacing: 6) {
             if let c = category {
                 Text(c.uppercased())
-                    .font(.inter(10, .bold)).kerning(1.4)
+                    .font(.inter(11, .bold)).kerning(1.4)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Ev.categoryColor(c).opacity(0.9), in: Capsule())
@@ -469,13 +469,13 @@ private struct EvdHero: View {
             if isLive {
                 HStack(spacing: 4) {
                     EvdPulseDot(size: 4)
-                    Text("LIVE").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(EvD.going, in: Capsule())
             } else if isCompleted {
                 Text("COMPLETED")
-                    .font(.inter(10, .bold)).kerning(1.4)
+                    .font(.inter(11, .bold)).kerning(1.4)
                     .foregroundStyle(.white.opacity(0.8))
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Color.white.opacity(0.2), in: Capsule())
@@ -607,7 +607,7 @@ private struct EvdMetaTile: View {
                 .overlay(Icon(icon, size: 15, color: accent))
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(.inter(9, .bold)).kerning(1.3)
+                    .font(.inter(11, .bold)).kerning(1.3)
                     .foregroundStyle(EvD.tertiary)
                 Text(value)
                     .font(.inter(11, .semibold))
@@ -697,7 +697,7 @@ private struct EvdRosterCard: View {
                     VStack(spacing: 6) {
                         EvdRosterAvatar(attendee: a)
                         Text(firstName(a.fullName))
-                            .font(.inter(10, .semibold)).foregroundStyle(EvD.body)
+                            .font(.inter(11, .semibold)).foregroundStyle(EvD.body)
                             .lineLimit(1)
                     }
                     .frame(width: 52)
@@ -715,7 +715,7 @@ private struct EvdRosterCard: View {
                 .frame(width: 46, height: 46)
                 .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.12), lineWidth: 1))
                 .overlay(Text("+\(extra)").font(.inter(12, .bold)).foregroundStyle(EvD.ink))
-            Text("more").font(.inter(10, .semibold)).foregroundStyle(EvD.tertiary)
+            Text("more").font(.inter(11, .semibold)).foregroundStyle(EvD.tertiary)
         }
         .frame(width: 52)
     }
@@ -866,7 +866,7 @@ private struct EvdBuzzCard: View {
                 HStack(spacing: 6) {
                     EvdPulseDot(size: 6)
                     Text("Buzzing · \(vm.posts.count)")
-                        .font(.inter(10, .bold)).foregroundStyle(.white)
+                        .font(.inter(11, .bold)).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 10).padding(.vertical, 4)
                 .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
@@ -1049,7 +1049,7 @@ private struct EvdBuzzPostRow: View {
                 .font(.inter(12, .bold)).foregroundStyle(EvD.ink).lineLimit(1)
             if post.rsvpStatus == "going" {
                 Text("GOING")
-                    .font(.inter(8, .bold)).kerning(1)
+                    .font(.inter(11, .bold)).kerning(1)
                     .foregroundStyle(EvD.goingText)
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(EvD.going.opacity(0.12), in: Capsule())
@@ -1087,7 +1087,7 @@ private struct EvdBuzzPostRow: View {
                 Text(emoji).font(.system(size: 12))
                 // The chip is the way to react; its count only once there is one.
                 if count > 0 {
-                    Text("\(count)").font(.inter(10, .bold))
+                    Text("\(count)").font(.inter(11, .bold))
                         .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
                         .contentTransition(.numericText())
                 }
@@ -1134,7 +1134,7 @@ private struct EvdBuzzAvatar: View {
     }
 
     private var initials: some View {
-        Text(Avatar.initials(name)).font(.inter(10, .bold)).foregroundStyle(.white)
+        Text(Avatar.initials(name)).font(.inter(11, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -1168,7 +1168,7 @@ private struct EvdCheckInNotice: View {
         HStack(spacing: 8) {
             Icon(.lock, size: 14, color: EvD.gold)
             Text("Check-in opens when the event is live")
-                .font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0x6A7686))
+                .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x6A7686))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)

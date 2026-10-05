@@ -249,7 +249,7 @@ struct PledgeClaimSheet: View {
     }
 
     private func label(_ s: String) -> some View {
-        Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+        Text(s).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
     }
 
     private func send() {

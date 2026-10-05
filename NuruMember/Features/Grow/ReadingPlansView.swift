@@ -370,7 +370,7 @@ struct ReadingPlansView: View {
             }
             .frame(width: 48, height: 48)
             VStack(alignment: .leading, spacing: 3) {
-                Text("CONTINUE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                 Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white).lineLimit(1)
                 Text("Day \(day) of \(p.dayCount) · pick up where you left off")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
@@ -410,7 +410,7 @@ struct ReadingPlansView: View {
                     .background(PL.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Daily reminder").font(.inter(14, .semibold)).foregroundStyle(PL.navy)
-                    Text("A gentle nudge to keep your rhythm").font(.inter(11.5)).foregroundStyle(PL.ink3)
+                    Text("A gentle nudge to keep your rhythm").font(.inter(12)).foregroundStyle(PL.ink3)
                 }
                 Spacer(minLength: 8)
                 // Only the member's own tap asks (the day reader shares the setting).
@@ -474,7 +474,7 @@ struct ReadingPlansView: View {
     private var planOfDayBadge: some View {
         HStack(spacing: 4) {
             Icon(.sparkles, size: 9, color: PL.navy)
-            Text("PLAN OF THE DAY").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+            Text("PLAN OF THE DAY").font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(PL.gold, in: Capsule())
@@ -560,7 +560,7 @@ struct ReadingPlansView: View {
                 overline(category == "all" ? "Results" : category)
                 Spacer(minLength: 0)
                 if !filtered.isEmpty {   // no zero counts (§7.4 #9)
-                    Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(10, .semibold)).foregroundStyle(PL.ink3)
+                    Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(11, .semibold)).foregroundStyle(PL.ink3)
                 }
             }
             if filtered.isEmpty {
@@ -613,7 +613,7 @@ struct ReadingPlansView: View {
     }
 
     private func overline(_ text: String) -> some View {
-        Text(text.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PL.goldDeep)
+        Text(text.uppercased()).font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PL.goldDeep)
     }
 }
 
@@ -835,7 +835,7 @@ struct PlanDetailView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 if let c = d.category, !c.isEmpty {
-                    Text(c.uppercased()).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                    Text(c.uppercased()).font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
                         .lineLimit(1)
                         .padding(.horizontal, 10).padding(.vertical, 4).background(PL.gold, in: Capsule())
                 }
@@ -920,7 +920,7 @@ struct PlanDetailView: View {
                 Spacer(minLength: 0)
                 if done > 0 {
                     Text("\(Int((Double(done) / Double(max(d.days.count, 1)) * 100).rounded()))% done")
-                        .font(.inter(10, .bold)).foregroundStyle(PL.catText)
+                        .font(.inter(11, .bold)).foregroundStyle(PL.catText)
                 }
             }
             VStack(spacing: 6) {
@@ -1418,7 +1418,7 @@ struct PlanDayView: View {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(pal.gold)
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             } else if isNext {
-                Text("Next").font(.inter(10, .bold)).foregroundStyle(PL.navy)
+                Text("Next").font(.inter(11, .bold)).foregroundStyle(PL.navy)
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(pal.gold, in: Capsule())
             } else {
@@ -1523,7 +1523,7 @@ struct PlanDayView: View {
                 .buttonStyle(.pressable)
                 Spacer()
                 if let pt = ref.planTitle, !pt.isEmpty {
-                    Text(pt.uppercased()).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
+                    Text(pt.uppercased()).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(PL.gold)
                         .lineLimit(1).minimumScaleFactor(0.7)
                 }
                 Spacer()
@@ -1543,16 +1543,16 @@ struct PlanDayView: View {
             // whatever the read-state, beside the day's title + reference.
             HStack(alignment: .center, spacing: 14) {
                 VStack(spacing: -4) {
-                    Text("DAY").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    Text("DAY").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     Text("\(ref.day.dayNumber)")
-                        .font(.fraunces(40, .medium)).kerning(-1.2).foregroundStyle(.white)
+                        .font(.fraunces(28, .medium)).kerning(-1.2).foregroundStyle(.white)
                         .monospacedDigit()
                 }
                 .frame(minWidth: 52)
                 Rectangle().fill(PL.gold.opacity(0.5)).frame(width: 1, height: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(ref.day.title ?? "Reading & reflection")
-                        .font(.fraunces(21, .medium)).kerning(-0.6).foregroundStyle(.white)
+                        .font(.fraunces(22, .medium)).kerning(-0.6).foregroundStyle(.white)
                         .lineLimit(2).minimumScaleFactor(0.85)
                     Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                 }
@@ -2167,7 +2167,7 @@ struct PlanKeepsakeView: View {
                 .scaleEffect(seal ? 1 : 0.6).opacity(seal ? 1 : 0)
                 .padding(.bottom, 24)
                 Text("PLAN COMPLETE").font(.inter(12, .bold)).kerning(2.4).foregroundStyle(PL.goldDeep)
-                Text(planTitle).font(.fraunces(30, .medium)).kerning(-0.9).foregroundStyle(PL.navy)
+                Text(planTitle).font(.fraunces(28, .medium)).kerning(-0.9).foregroundStyle(PL.navy)
                     .multilineTextAlignment(.center).padding(.horizontal, 32).padding(.top, 8)
                 Text("\(days) days walking with God").font(.inter(14, .medium)).foregroundStyle(PL.ink2).padding(.top, 6)
                 Text("“Well done, good and faithful servant.”\nMatthew 25:23")

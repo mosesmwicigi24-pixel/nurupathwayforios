@@ -369,7 +369,7 @@ struct ScriptureRefCard: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ScripturePassageText(text: p.text, reference: reference, version: p.version)
                             Text(passageCaption(p).uppercased())
-                                .font(.inter(10.5, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
+                                .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
                     }
                     .padding(.horizontal, 14).padding(.bottom, 14)
@@ -437,7 +437,7 @@ struct ScripturePassageSheet: View {
                     .frame(width: 36, height: 36)
                     .background(PL.gold.opacity(0.14), in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("SCRIPTURE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+                    Text("SCRIPTURE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
                     Text(reference).font(.fraunces(pal.fs(18), .medium)).kerning(-0.4).foregroundStyle(pal.ink)
                 }
                 Spacer(minLength: 8)
@@ -459,7 +459,7 @@ struct ScripturePassageSheet: View {
                         }
                         if !p.version.isEmpty {
                             Text(p.version.uppercased())
-                                .font(.inter(10.5, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
+                                .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
                     } else if loader.failed {
                         Text("Couldn't load this passage — check your connection and try again.")

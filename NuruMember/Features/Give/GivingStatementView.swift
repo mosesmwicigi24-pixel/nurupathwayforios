@@ -323,7 +323,7 @@ struct GivingStatementView: View {
                 circleButton(.arrowLeft) { dismiss() }
                 Spacer()
                 Text("GIVING STATEMENT")
-                    .font(.inter(10, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
                 Spacer()
                 circleButton(.download, busy: downloading) {
                     Haptics.action()
@@ -343,7 +343,7 @@ struct GivingStatementView: View {
                     let gifts = GiveMoney.headline(f.gifts)
                     Text("Gifts").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
                     Text(gifts.main)
-                        .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
+                        .font(.fraunces(28, .semibold)).kerning(-1).foregroundStyle(.white)
                         .lineLimit(1).minimumScaleFactor(0.6)
                     if let rest = gifts.rest {
                         Text(rest).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
@@ -356,7 +356,7 @@ struct GivingStatementView: View {
                     let total = GiveMoney.headline(f.total)
                     Text("Total given").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
                     Text(total.main)
-                        .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
+                        .font(.fraunces(28, .semibold)).kerning(-1).foregroundStyle(.white)
                         .lineLimit(1).minimumScaleFactor(0.6)
                     if let rest = total.rest {
                         Text(rest).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
@@ -444,7 +444,7 @@ struct GivingStatementView: View {
     private var fundTotalsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("BY FUND")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                 .padding(.bottom, 4)
             let totals = vm.fundTotals(of: listed)
             if totals.isEmpty {
@@ -536,7 +536,7 @@ struct GivingStatementView: View {
                 // statement lists only these). Absent on older servers.
                 if let tag = pledgeTag(g) {
                     Text(tag)
-                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Nuru.goldChipBg, in: Capsule())
                         .lineLimit(1)
@@ -607,7 +607,7 @@ struct GivingStatementView: View {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("PARTNER PLEDGES")
-                            .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                            .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                         // Y and N count the same (settled) rows; a row still
                         // processing or failed is listed inside, and said here.
                         // Y is per currency (Giving Cycle 2).

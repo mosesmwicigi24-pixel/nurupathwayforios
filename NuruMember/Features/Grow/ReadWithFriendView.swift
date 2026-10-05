@@ -96,7 +96,7 @@ struct ReadWithFriendHubView: View {
             }
             .buttonStyle(.pressable)
             VStack(alignment: .leading, spacing: 2) {
-                Text("READ WITH A FRIEND").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(PL.catText)
+                Text("READ WITH A FRIEND").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.catText)
                 Text("Your shared plans").font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
             }
             Spacer(minLength: 0)
@@ -417,8 +417,8 @@ struct ReadingGroupDetailView: View {
             .frame(height: 140).frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text("READING TOGETHER").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(PL.goldDeep)
-                Text(g.plan.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
+                Text("READING TOGETHER").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(PL.goldDeep)
+                Text(g.plan.title).font(.fraunces(18, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
                 Text(ZeroCounts.count(g.members.filter(\.isActive).count, "reading together", "reading together")
                         .map { "\(g.plan.dayCount)-day plan · \($0)" } ?? "\(g.plan.dayCount)-day plan")
                     .font(.inter(12)).foregroundStyle(PL.ink3)
@@ -788,7 +788,7 @@ struct ReadingInvitePreviewView: View {
                     VStack(spacing: 6) {
                         Text("\(p.inviter.fullName.split(separator: " ").first.map(String.init) ?? p.inviter.fullName) invited you to read")
                             .font(.inter(13, .semibold)).foregroundStyle(PL.ink2)
-                        Text(p.plan.title).font(.fraunces(24, .medium)).kerning(-0.5)
+                        Text(p.plan.title).font(.fraunces(26, .medium)).kerning(-0.5)
                             .foregroundStyle(PL.navy).multilineTextAlignment(.center)
                         HStack(spacing: 16) {
                             metaChip(.clock, "\(p.plan.dayCount) days")

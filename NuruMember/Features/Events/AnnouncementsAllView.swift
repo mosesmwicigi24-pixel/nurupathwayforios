@@ -62,7 +62,7 @@ struct AnnouncementsAllView: View {
                     .lineLimit(2).multilineTextAlignment(.leading)
                 if let at = a.sentAt {
                     Text(String(at.prefix(10)))
-                        .font(.inter(10.5, .semibold)).foregroundStyle(Nuru.ink600.opacity(0.7))
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600.opacity(0.7))
                 }
             }
             Spacer(minLength: 0)

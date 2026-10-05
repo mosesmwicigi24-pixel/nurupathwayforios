@@ -200,7 +200,7 @@ private struct SavedVerseCard: View {
                     .foregroundStyle(Nuru.gold)
                 Spacer()
                 Text(verse.version)
-                    .font(.inter(10, .semibold))
+                    .font(.inter(11, .semibold))
                     .foregroundStyle(Nuru.muted)
                     .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
                     .background(Nuru.surface, in: Capsule())
@@ -332,7 +332,7 @@ private struct VersePracticeSheet: View {
             }
             .frame(height: 8)
             Text("\(matchPct)% match")
-                .font(.inter(10, .regular))
+                .font(.inter(11, .regular))
                 .foregroundStyle(Nuru.muted)
                 .contentTransition(.numericText())
                 .animation(.default, value: matchPct)

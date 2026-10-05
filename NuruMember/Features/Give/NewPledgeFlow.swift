@@ -254,7 +254,7 @@ struct NewPledgeFlow: View {
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("NEW PLEDGE").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
-                Text("A promise, in your words").font(.fraunces(24, .semibold)).foregroundStyle(Nuru.navy)
+                Text("A promise, in your words").font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -378,11 +378,11 @@ struct NewPledgeFlow: View {
     private var amountStep: some View {
         VStack(alignment: .leading, spacing: Nuru.S.base) {
             VStack(spacing: 4) {
-                Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                Text("AMOUNT").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
                     Text(amount.formatted(.number.grouping(.automatic)))
-                        .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
+                        .font(.fraunces(28, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
                         .contentTransition(.numericText(value: Double(amount)))
                 }
                 Text(monthly ? "each month" : "in total").font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
@@ -485,7 +485,7 @@ struct NewPledgeFlow: View {
     }
 
     private func eyebrow(_ text: String) -> some View {
-        Text(text).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+        Text(text).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
     }
 
     /// One option as a full-width card. A tap selects it (and folds the
@@ -657,7 +657,7 @@ struct NewPledgeFlow: View {
                         .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 }
                 .accessibilityElement(children: .combine)
-                Text("BY").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                Text("BY").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                 HStack(spacing: 8) {
                     ForEach(autoRails) { rail in
                         methodChip(rail.key, railName(rail.key), bg: rail.key == "airtel" ? 0xDC2626 : 0x16A34A)
@@ -933,7 +933,7 @@ struct EditPledgeSheet: View {
                 .padding(.top, Nuru.S.lg)
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("NAME").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                    Text("NAME").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                     HStack(spacing: 8) {
                         Icon(.penLine, size: 13, color: Nuru.gold)
                         TextField("Name this pledge", text: $name)
@@ -959,11 +959,11 @@ struct EditPledgeSheet: View {
                 }
 
                 VStack(spacing: 4) {
-                    Text(pledge.isMonthly ? "EACH MONTH" : "TOTAL").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                    Text(pledge.isMonthly ? "EACH MONTH" : "TOTAL").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         Text(MoneyEntry.prefix(currency)).font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
                         Text(MoneyEntry.display(amountMinor, currency: currency))
-                            .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
+                            .font(.fraunces(28, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
                             .contentTransition(.numericText(value: Double(amountMinor)))
                     }
                 }
@@ -1000,7 +1000,7 @@ struct EditPledgeSheet: View {
                 }
 
                 if pledge.isMonthly {
-                    Text("DUE DAY").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                    Text("DUE DAY").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                     LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: 7), spacing: 6) {
                         ForEach(1...28, id: \.self) { d in
                             let on = dueDay == d

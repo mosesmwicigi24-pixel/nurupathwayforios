@@ -364,7 +364,7 @@ struct PrayerJournalView: View {
                 .accessibilityLabel("New prayer")
             }
             Text("Prayer journal")
-                .font(.fraunces(24, .semibold))
+                .font(.fraunces(26, .semibold))
                 .foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -415,12 +415,12 @@ private struct PrayerPulseCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: Nuru.S.sm) {
                         Text("THIS WEEK")
-                            .font(.inter(10, .bold)).tracking(2.2)
+                            .font(.inter(11, .bold)).tracking(2.2)
                             .foregroundStyle(gold)
                         if streak > 0 { streakChip }
                     }
                     Text("Your prayer rhythm")
-                        .font(.fraunces(21, .medium))
+                        .font(.fraunces(22, .medium))
                         .foregroundStyle(.white)
                 }
                 Spacer(minLength: 0)
@@ -434,11 +434,11 @@ private struct PrayerPulseCard: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
                     Text("Journaled \(daysThisWeek) of 7 days")
-                        .font(.inter(10, .semibold))
+                        .font(.inter(11, .semibold))
                         .foregroundStyle(Color.white.opacity(0.7))
                     Spacer(minLength: Nuru.S.sm)
                     Text(daysThisWeek >= 7 ? "A full week 🙌" : "\(7 - daysThisWeek) to a full week 🙌")
-                        .font(.inter(10, .semibold))
+                        .font(.inter(11, .semibold))
                         .foregroundStyle(gold)
                 }
                 GeometryReader { geo in
@@ -474,7 +474,7 @@ private struct PrayerPulseCard: View {
     private var streakChip: some View {
         HStack(spacing: 4) {
             Icon(.flame, size: 9, color: gold)
-            Text("\(streak)-day streak").font(.inter(9, .bold)).foregroundStyle(gold)
+            Text("\(streak)-day streak").font(.inter(11, .bold)).foregroundStyle(gold)
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(Color.white.opacity(0.10), in: Capsule())
@@ -488,7 +488,7 @@ private struct StatTile: View {
     var body: some View {
         VStack(spacing: 2) {
             Text("\(value)").font(.fraunces(18, .medium)).foregroundStyle(Color(hex: 0xC9A227))
-            Text(label).font(.inter(9, .medium)).foregroundStyle(Color.white.opacity(0.65))
+            Text(label).font(.inter(11, .medium)).foregroundStyle(Color.white.opacity(0.65))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Nuru.S.sm)
@@ -527,7 +527,7 @@ private struct PrayerTabs: View {
                     .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                 if count > 0 {   // no zero counts (§7.4 #9)
                     Text("\(count)")
-                        .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                        .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, 6)
                         .frame(minWidth: 18, minHeight: 16)
                         .background(on ? Color(hex: 0xC9A227) : Nuru.surface, in: Capsule())
@@ -669,9 +669,9 @@ private struct JournalCard: View {
                 .overlay(Icon(.check, size: 13, color: .white))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Answered prayer 🎉")
-                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 Text(answeredSub)
-                    .font(.inter(9, .medium)).foregroundStyle(Color(hex: 0x16A34A))
+                    .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0x16A34A))
                 if let note = entry.answeredNote, !note.isEmpty {
                     Text(note)
                         .font(.nCardMeta).foregroundStyle(Color(hex: 0x166534))
@@ -753,7 +753,7 @@ private struct RowAction: View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 6) {
                 Icon(icon, size: 15, color: Color(hex: 0x59667C))
-                Text(label).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
+                Text(label).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity, minHeight: 44) // proper thumb-sized target
             .contentShape(Rectangle())

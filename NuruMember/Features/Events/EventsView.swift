@@ -475,7 +475,7 @@ struct EventsView: View {
     private var livePulseChip: some View {
         HStack(spacing: 5) {
             Circle().fill(Color(hex: 0x22C55E)).frame(width: 6, height: 6)
-            Text("\(vm.liveCount) live now").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+            Text("\(vm.liveCount) live now").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Color(hex: 0xDCFCE7), in: Capsule())
@@ -484,7 +484,7 @@ struct EventsView: View {
     private func pulseChip(_ text: String, icon: Lucide) -> some View {
         HStack(spacing: 5) {
             Icon(icon, size: 11, color: Nuru.gold)
-            Text(text).font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x59667C))
+            Text(text).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x59667C))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Color.white, in: Capsule())
@@ -502,7 +502,7 @@ struct EventsView: View {
                     Haptics.selection()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectToday() }
                 } label: {
-                    Text("TODAY").font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                    Text("TODAY").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
                         .padding(.vertical, 6).padding(.leading, 12)   // invisible tap-target growth
                         .contentShape(Rectangle())
                 }
@@ -529,7 +529,7 @@ struct EventsView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectDay(d.date) }
         } label: {
             VStack(spacing: 3) {
-                Text(d.letter).font(.inter(9, .semibold)).kerning(0.8)
+                Text(d.letter).font(.inter(11, .semibold)).kerning(0.8)
                     .foregroundStyle(on ? Color.white.opacity(0.65) : Color(hex: 0x74808F))
                 Text("\(d.day)").font(.fraunces(16, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                 Circle().fill(d.hasEvents ? Nuru.gold : .clear).frame(width: 4, height: 4)
@@ -593,7 +593,7 @@ struct EventsView: View {
                     Icon(.calendarDays, size: 22, color: Nuru.navy)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("CALENDAR").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                    Text("CALENDAR").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
                     Text("All events & calendar").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
                     Text("See the whole month at a glance · \(vm.upcomingCount) upcoming")
                         .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
@@ -628,7 +628,7 @@ struct EventsView: View {
                     Icon(.qrCode, size: 22, color: Nuru.navy)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("CHURCH ATTENDANCE").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                    Text("CHURCH ATTENDANCE").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
                     Text("Check in to a service").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
                     Text("Scan the QR at church · see your streak")
                         .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
@@ -672,7 +672,7 @@ struct EventsView: View {
                 Text(s.rawValue).font(.inter(11, .semibold)).foregroundStyle(on ? .white : Nuru.ink600)
                 // No zero counts (§7.4 #9): the quiet pill IS "nothing here".
                 if vm.count(s) > 0 {
-                    Text("\(vm.count(s))").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                    Text("\(vm.count(s))").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(on ? Nuru.gold : Nuru.surface, in: Capsule())
                 }
@@ -922,7 +922,7 @@ private struct LiveHeroCard: View {
                 HStack(spacing: 8) {
                     livePill
                     Text((occ.category ?? "Gathering").uppercased())
-                        .font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                        .font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
                 }
                 .padding(Nuru.S.base)
             }
@@ -936,7 +936,7 @@ private struct LiveHeroCard: View {
 
     private var content: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(occ.title).font(.fraunces(21, .semibold)).foregroundStyle(.white).lineLimit(2)
+            Text(occ.title).font(.fraunces(22, .semibold)).foregroundStyle(.white).lineLimit(2)
             HStack(spacing: Nuru.S.base) {
                 heroMeta(.clock, Ev.timeRange(occ.startAt, occ.endAt))
                 if let loc = occ.location, !loc.isEmpty { heroMeta(.mapPin, loc) }
@@ -955,7 +955,7 @@ private struct LiveHeroCard: View {
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 Icon(.qrCode, size: 14, color: Nuru.navy)
-                Text("CHECK IN").font(.inter(10, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                Text("CHECK IN").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 14).padding(.vertical, 10)
             .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -965,7 +965,7 @@ private struct LiveHeroCard: View {
     private var livePill: some View {
         HStack(spacing: 5) {
             Circle().fill(.white).frame(width: 5, height: 5)
-            Text("LIVE NOW").font(.inter(9, .bold)).kerning(1).foregroundStyle(.white)
+            Text("LIVE NOW").font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Color(hex: 0x16A34A), in: Capsule())
@@ -1008,7 +1008,7 @@ private struct SeriesRailRow: View {
                 HStack(spacing: 6) {
                     Text(series.title).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                     if series.following && series.newCount > 0 {
-                        Text("\(series.newCount) new").font(.inter(8, .bold))
+                        Text("\(series.newCount) new").font(.inter(11, .bold))
                             .foregroundStyle(Color(hex: 0x8A6D18))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Nuru.gold.opacity(0.15), in: Capsule())
@@ -1102,7 +1102,7 @@ private struct AnnouncementRow: View {
             Spacer(minLength: Nuru.S.sm)
             VStack(alignment: .trailing, spacing: 5) {
                 if let sent = announcement.sentAt {
-                    Text(timeAgo(sent)).font(.inter(9)).foregroundStyle(Nuru.faint)
+                    Text(timeAgo(sent)).font(.inter(11)).foregroundStyle(Nuru.faint)
                 }
                 if !announcement.opened {
                     Circle().fill(Nuru.gold).frame(width: 6, height: 6)
@@ -1181,8 +1181,8 @@ private struct EvCardCover: View {
     private var dateChip: some View {
         VStack(spacing: 0) {
             Text(Ev.weekday(occ.startAt, "EEE").uppercased())
-                .font(.inter(8, .bold)).kerning(0.8).foregroundStyle(accent)
-            Text(Ev.weekday(occ.startAt, "d")).font(.fraunces(17, .semibold)).foregroundStyle(Nuru.navy)
+                .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(accent)
+            Text(Ev.weekday(occ.startAt, "d")).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
         }
         .frame(width: 48, height: 48)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -1192,18 +1192,18 @@ private struct EvCardCover: View {
         if live {
             HStack(spacing: 4) {
                 Circle().fill(.white).frame(width: 5, height: 5)
-                Text("LIVE").font(.inter(8, .bold)).kerning(1).foregroundStyle(.white)
+                Text("LIVE").font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(Color(hex: 0x16A34A), in: Capsule())
         } else if occ.rescheduled == true {
             // Wire truth: a moved occurrence arrives with rescheduled=true and the
             // NEW start/end applied — the pill is the member's only cue it changed.
-            Text("RESCHEDULED").font(.inter(8, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+            Text("RESCHEDULED").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Nuru.goldGradient, in: Capsule())
         } else if occ.going >= 120 {
-            Text("🔥 Filling fast").font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+            Text("🔥 Filling fast").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Nuru.goldGradient, in: Capsule())
         }
@@ -1214,7 +1214,7 @@ private struct EvCardCover: View {
             let urgent = label == "Today" || label == "Tomorrow"
             HStack(spacing: 4) {
                 Icon(.clock, size: 10, color: urgent ? Nuru.navy : Nuru.goldLight)
-                Text(label).font(.inter(8, .bold)).foregroundStyle(urgent ? Nuru.navy : .white)
+                Text(label).font(.inter(11, .bold)).foregroundStyle(urgent ? Nuru.navy : .white)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(urgent ? AnyShapeStyle(Nuru.goldGradient) : AnyShapeStyle(Color(hex: 0x0B1F33, alpha: 0.5)),
@@ -1224,7 +1224,7 @@ private struct EvCardCover: View {
 
     @ViewBuilder private var categoryTag: some View {
         if let c = occ.category, !c.isEmpty {
-            Text(c.uppercased()).font(.inter(8, .bold)).kerning(1).foregroundStyle(.white)
+            Text(c.uppercased()).font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(accent.opacity(0.9), in: Capsule())
         }
@@ -1288,7 +1288,7 @@ private struct EvCardFooter: View {
                         .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
                 }
                 if list.count == 3 && occ.going > 3 {
-                    Text("+\(occ.going - 3)").font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                    Text("+\(occ.going - 3)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .frame(width: 24, height: 24)
                         .background(Nuru.surface, in: Circle())
                         .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
@@ -1319,18 +1319,18 @@ private struct EvCardFooter: View {
         case "going":
             HStack(spacing: 4) {
                 Icon(.check, size: 11, color: Nuru.navy)
-                Text("GOING").font(.inter(9, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                Text("GOING").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Nuru.goldGradient, in: Capsule())
         case "maybe":
-            Text("MAYBE").font(.inter(9, .bold)).kerning(1).foregroundStyle(Color(hex: 0x92400E))
+            Text("MAYBE").font(.inter(11, .bold)).kerning(1).foregroundStyle(Color(hex: 0x92400E))
                 .padding(.horizontal, 12).padding(.vertical, 7)
                 .background(Color(hex: 0xFEF3C7), in: Capsule())
         default:
             HStack(spacing: 4) {
                 Icon(.plus, size: 11, color: Nuru.navy)
-                Text("RSVP").font(.inter(9, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                Text("RSVP").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Nuru.white, in: Capsule())
@@ -1358,13 +1358,13 @@ private struct EvSubHeader: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
-                Text(eyebrow.uppercased()).font(.inter(9, .bold)).kerning(1.5)
+                Text(eyebrow.uppercased()).font(.inter(11, .bold)).kerning(1.5)
                     .foregroundStyle(Color(hex: 0x9A7A2A))
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Color.white, in: Capsule())
                     .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
             }
-            Text(title).font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy).padding(.top, Nuru.S.base)
+            Text(title).font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy).padding(.top, Nuru.S.base)
             if let subtitle {
                 Text(subtitle).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 6)
             }
@@ -1409,7 +1409,7 @@ private struct AnnouncementsListPage: View {
                 .cardSurfaceEv()
                 .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.base)
                 Text("Tap an announcement to read it in full.")
-                    .font(.inter(9)).italic().foregroundStyle(Nuru.faint)
+                    .font(.inter(11)).italic().foregroundStyle(Nuru.faint)
                     .padding(.top, Nuru.S.md).padding(.bottom, Nuru.tabBarSpace)
             }
         }
@@ -1442,7 +1442,7 @@ private struct SeriesListPage: View {
                     tabs
                     if shown.isEmpty { emptyCard } else { rows }
                     Text("Following a series surfaces its events and sends you reminders.")
-                        .font(.inter(9)).italic().foregroundStyle(Nuru.faint)
+                        .font(.inter(11)).italic().foregroundStyle(Nuru.faint)
                 }
                 .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.base)
                 .padding(.bottom, Nuru.tabBarSpace)
@@ -1475,7 +1475,7 @@ private struct SeriesListPage: View {
             HStack(spacing: 6) {
                 Text(label).font(.inter(11, .semibold)).foregroundStyle(on ? .white : Nuru.ink600)
                 if count > 0 {   // no zero counts (§7.4 #9)
-                    Text("\(count)").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                    Text("\(count)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(on ? Nuru.gold : Nuru.surface, in: Capsule())
                 }
@@ -1547,7 +1547,7 @@ private struct SeriesListRow: View {
                 HStack(spacing: 6) {
                     Text(series.title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
                     if series.following && series.newCount > 0 {
-                        Text("\(series.newCount) new").font(.inter(8, .bold))
+                        Text("\(series.newCount) new").font(.inter(11, .bold))
                             .foregroundStyle(Color(hex: 0x8A6D18))
                             .padding(.horizontal, 6).padding(.vertical, 2)
                             .background(Nuru.gold.opacity(0.15), in: Capsule())
@@ -1557,7 +1557,7 @@ private struct SeriesListRow: View {
                 if let next = series.nextAt {
                     HStack(spacing: 4) {
                         Icon(.calendarDays, size: 10, color: Nuru.faint)
-                        Text("Next \(Ev.weekday(next, "EEE, MMM d"))").font(.inter(9)).foregroundStyle(Nuru.faint)
+                        Text("Next \(Ev.weekday(next, "EEE, MMM d"))").font(.inter(11)).foregroundStyle(Nuru.faint)
                     }
                 }
             }

@@ -93,7 +93,7 @@ struct MemoryVerseView: View {
                             }
                             if !vm.libraryVerses.isEmpty {
                                 Text("YOUR VERSE LIBRARY")
-                                    .font(.inter(10, .semibold)).tracking(1.8)
+                                    .font(.inter(11, .semibold)).tracking(1.8)
                                     .foregroundStyle(Nuru.muted)
                                     .padding(.horizontal, Nuru.S.xs)
                                     .padding(.top, Nuru.S.sm)
@@ -237,10 +237,10 @@ private struct ScoreRing: View {
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
                 Text("\(score)")
-                    .font(.fraunces(24, .semibold))
+                    .font(.fraunces(22, .semibold))
                     .foregroundStyle(Nuru.ink)
                 Text("/100")
-                    .font(.inter(10, .medium))
+                    .font(.inter(11, .medium))
                     .foregroundStyle(Nuru.muted)
             }
         }
@@ -321,7 +321,7 @@ private struct CurrentVerseCard: View {
                         .foregroundStyle(Nuru.muted)
                 }
                 Text("\u{201C}\(verse.verseText)\u{201D}")
-                    .font(.fraunces(20, .medium))
+                    .font(.fraunces(18, .medium))
                     .foregroundStyle(Nuru.navy)
                     .nuruLineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
@@ -394,7 +394,7 @@ private struct LibraryVerseRow: View {
 
     private func chipView(_ label: String, bg: Color, fg: Color) -> some View {
         Text(label)
-            .font(.inter(10, .semibold))
+            .font(.inter(11, .semibold))
             .foregroundStyle(fg)
             .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
             .background(bg, in: Capsule())
@@ -466,7 +466,7 @@ private struct PracticeSheet: View {
                     }
                     .frame(height: 8)
                     Text("\(matchPct)% match")
-                        .font(.inter(10, .regular))
+                        .font(.inter(11, .regular))
                         .foregroundStyle(Nuru.muted)
                         .contentTransition(.numericText())
                         .animation(.default, value: matchPct)

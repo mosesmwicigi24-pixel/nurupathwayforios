@@ -147,7 +147,7 @@ struct PlanSegmentView: View {
                 .buttonStyle(.pressable)
                 Spacer(minLength: 8)
                 Text("DAY \(ref.dayNumber) · \(ref.planTitle.uppercased())")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
                 // Text size: Small → Regular → Large → Small, one tap each.
@@ -181,7 +181,7 @@ struct PlanSegmentView: View {
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(partName).font(.fraunces(24, .medium)).kerning(-0.7).foregroundStyle(.white)
+                    Text(partName).font(.fraunces(26, .medium)).kerning(-0.7).foregroundStyle(.white)
                     if let r = headerRef, !r.isEmpty {
                         Text(r).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                     }
@@ -281,7 +281,7 @@ struct PlanSegmentView: View {
             // a few scanty keynotes just below.
             DayVideoCard(seg: segment, portrait: true) { url in player = MediaItem(url: url) }
             if !segment.title.isEmpty {
-                Text(segment.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
+                Text(segment.title).font(.fraunces(18, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
             }
             if let c = segment.content, !c.isEmpty { keynotes(c) }
         }
@@ -455,13 +455,13 @@ private struct PartReflectionBox: View {
                 if justSaved {
                     HStack(spacing: 4) {
                         Icon(.check, size: 11, color: Color(hex: 0x16A34A))
-                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                        Text("Saved").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
             Text("What is God showing you today?")
-                .font(.fraunces(16.5, .regular)).italic().foregroundStyle(pal.ink)
+                .font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink)
                 .fixedSize(horizontal: false, vertical: true)
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
@@ -512,7 +512,7 @@ private struct PartReflectionBox: View {
             .opacity(trimmed.isEmpty ? 0.5 : 1)
             if let error {
                 Text(error)
-                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
@@ -730,7 +730,7 @@ struct TalkItOverView: View {
                 .buttonStyle(.pressable)
                 Spacer(minLength: 8)
                 Text("DAY \(route.dayNumber) · \(route.planTitle.uppercased())")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     .lineLimit(1).minimumScaleFactor(0.7)
                 Spacer(minLength: 8)
                 Color.clear.frame(width: 36, height: 36)
@@ -741,7 +741,7 @@ struct TalkItOverView: View {
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Talk it Over").font(.fraunces(24, .medium)).kerning(-0.7).foregroundStyle(.white)
+                    Text("Talk it Over").font(.fraunces(26, .medium)).kerning(-0.7).foregroundStyle(.white)
                     Text(posts.isEmpty ? "Be the first to respond" : "\(posts.count) response\(posts.count == 1 ? "" : "s")")
                         .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                 }
@@ -785,7 +785,7 @@ struct TalkItOverView: View {
                 .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
             ForEach(Array(promptLines.enumerated()), id: \.offset) { _, q in
                 Text(q)
-                    .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
+                    .font(.fraunces(16, .regular)).italic().foregroundStyle(PL.navy)
                     .nuruLineSpacing(5).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -969,7 +969,7 @@ private struct TalkPostRow: View {
                 HStack(spacing: 6) {
                     Text(post.name).font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(TalkTime.ago(post.createdAt)).font(.inter(10)).foregroundStyle(PL.ink3)
+                    Text(TalkTime.ago(post.createdAt)).font(.inter(11)).foregroundStyle(PL.ink3)
                 }
                 Text(post.body)
                     .font(.inter(13)).foregroundStyle(PL.bodyInk).lineSpacing(4)

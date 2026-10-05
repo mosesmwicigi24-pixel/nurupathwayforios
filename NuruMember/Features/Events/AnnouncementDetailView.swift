@@ -123,14 +123,14 @@ struct AnnouncementDetailView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
-                Text("ANNOUNCEMENT").font(.inter(9, .bold)).kerning(1.5)
+                Text("ANNOUNCEMENT").font(.inter(11, .bold)).kerning(1.5)
                     .foregroundStyle(Color(hex: 0x9A7A2A))
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Color.white, in: Capsule())
                     .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
             }
             Text(vm.detail?.title ?? "Announcement")
-                .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
+                .font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
             if let sent = vm.detail?.sentAt {
                 Text(whenString(sent)).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
