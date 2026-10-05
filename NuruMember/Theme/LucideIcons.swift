@@ -29,6 +29,9 @@ enum Lucide: String {
     case calendarClock = "\u{E304}"
     case mapPin = "\u{E111}"
     case megaphone = "\u{E235}"
+    /// Lucide `radio` — the broadcast mark (a dot between waves): a Live notice.
+    case radio = "\u{E142}"
+    case userPlus = "\u{E1A2}"
     case play = "\u{E13C}"
     case share2 = "\u{E156}"
     case badgeCheck = "\u{E241}"

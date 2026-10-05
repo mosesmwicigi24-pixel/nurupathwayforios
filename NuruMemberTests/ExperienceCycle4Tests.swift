@@ -239,6 +239,33 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(PlanPicks.resolve([], in: rows).isEmpty)
     }
 
+    // MARK: §8.2 #14 — one icon per notice family
+
+    func testEveryNoticeFamilyWearsItsOneIcon() {
+        let table: [(String, Lucide)] = [
+            ("badge_awarded", .badgeCheck), ("certificate_issued", .award),
+            ("level_completed", .trendingUp), ("level_ushered", .trendingUp),
+            ("reflection_returned", .messageSquareText),
+            ("serve_request_approved", .heartHandshake), ("department_need_open", .heartHandshake),
+            ("giving_receipt", .handHeart), ("pledge_due_soon", .handHeart), ("payment_failed", .handHeart),
+            ("event_reminder_24h", .calendarDays), ("event_cancelled", .calendarDays),
+            ("announcement", .megaphone),
+            ("live_stream_started", .radio), ("live_guest_invite", .radio),
+            ("chat_dm_message", .messageCircle), ("connection_request_received", .userPlus),
+            ("plan_group_invite_received", .bookMarked), ("plan_day_due", .bookMarked), ("reading_invite", .bookMarked),
+            ("module_completed", .bookOpen), ("quiz_passed", .bookOpen),
+            ("prayer_chain", .leaf), ("verse_review", .leaf),
+            ("sunday_letter", .mail), ("streak_milestone", .flame), ("cell_gathering", .users),
+            ("security_alert", .shield),
+            ("reengage", .bell), ("community_blessing", .bell), ("", .bell),
+        ]
+        for (template, icon) in table {
+            XCTAssertEqual(NoticeFamily.icon(template), icon, template)
+        }
+        XCTAssertNotEqual(NoticeFamily.icon("live_stream_started"), .settings, "a Live is never a gear")
+        XCTAssertEqual(NoticeFamily.icon("LIVE_STREAM_STARTED"), .radio, "case never matters")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

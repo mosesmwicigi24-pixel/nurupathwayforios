@@ -152,11 +152,6 @@ struct NotificationsView: View {
         if n.isUnread { Task { await vm.open(n) } }
     }
 
-    /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post / department_need_*.
-    static func isDepartmentTemplate(_ t: String) -> Bool {
-        t.hasPrefix("serve_request") || t.hasPrefix("department")
-    }
-
     /// Unread reward rows (badge / certificate / level) get the Figma "gift" cue.
     private var rewardUnread: Int {
         vm.rows.filter { $0.isUnread && Self.isReward($0.template) }.count
@@ -274,10 +269,13 @@ struct NotificationsView: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: Nuru.S.sm) {
+                    // A notice is a content row (§8.1 rule 3): the serif row
+                    // title — semibold while unread, regular once read (as
+                    // Android) — wrapping to two lines rather than cut (rule 9).
                     Text(titleFor(n))
-                        .font(.inter(14, unread ? .bold : .regular))
+                        .font(.fraunces(15, unread ? .semibold : .regular))
                         .foregroundStyle(unread ? Nuru.ink : Nuru.ink600)
-                        .lineLimit(1)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                     Text(ago(n.sentAt ?? n.scheduledFor))
                         .font(.nMicro)
@@ -341,24 +339,14 @@ struct NotificationsView: View {
 
     // MARK: template mapping (port of metaFor/titleFor/bodyFor)
 
-    // Figma CATEGORY_TONE — info / success / warning / security. Reward templates
-    // (badge/certificate/level) override the tile with the gold gradient above.
+    // One icon per notice family (NoticeFamily, §8.2 #14), each on a gold-tint
+    // tile (§8.1 rule 7). The tiles used to be blue, green, amber and slate —
+    // hues the grammar keeps for state (rule 1) — and a Live notice, or any
+    // family the table didn't know, fell to the settings gear. Reward
+    // templates (badge/certificate/level) keep the gold-gradient ceremony tile.
     struct Meta { let icon: Lucide; let bg, fg: Color }
     fileprivate func metaFor(_ t: String) -> Meta {
-        if t.hasPrefix("reflection") { return Meta(icon: .messageSquareText, bg: Color(hex: 0xFEF3C7), fg: Color(hex: 0xD97706)) }   // warning
-        if t.hasPrefix("level") { return Meta(icon: .trendingUp, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }               // success
-        if t.hasPrefix("certificate") { return Meta(icon: .award, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }              // success
-        if t.hasPrefix("badge") { return Meta(icon: .badgeCheck, bg: Color(hex: 0xDCFCE7), fg: Color(hex: 0x16A34A)) }               // success
-        if t.hasPrefix("event") { return Meta(icon: .calendarDays, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }             // info
-        if t.hasPrefix("announcement") { return Meta(icon: .megaphone, bg: Color(hex: 0xE0F2FE), fg: Color(hex: 0x0EA5E9)) }         // info
-        if Self.isDepartmentTemplate(t) { return Meta(icon: .heartHandshake, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C)) } // departments (§4)
-        // Giving and Partners notices wear the Give tab's hand-and-heart — they
-        // fell through to the security gear (Giving Cycle 10, found comparing
-        // the inbox on both apps).
-        if t.hasPrefix("giving") || t.hasPrefix("pledge") || t.hasPrefix("payment") {
-            return Meta(icon: .handHeart, bg: Color(hex: 0xFFF4DA), fg: Color(hex: 0xA8861C))
-        }
-        return Meta(icon: .settings, bg: Color(hex: 0xE2E8F0), fg: Color(hex: 0x475569))                                             // security/system
+        Meta(icon: NoticeFamily.icon(t), bg: Nuru.goldChipBg, fg: Nuru.goldChipText)
     }
 
     private let titles: [String: String] = [
@@ -405,6 +393,37 @@ private extension String {
     func capitalizingFirst() -> String { isEmpty ? self : prefix(1).uppercased() + dropFirst() }
 }
 
+// MARK: - One icon per notice family (EXPERIENCE.md §8.2 #14)
+
+/// A notice's icon says what it is about (§8.1 rule 7) — one Lucide glyph per
+/// family of templates, the same table on both apps. Tried in order; the
+/// first family that holds is the icon. Pure, so the tests pin it.
+enum NoticeFamily {
+    static func icon(_ template: String) -> Lucide {
+        let t = template.lowercased()
+        func any(_ prefixes: String...) -> Bool { prefixes.contains { t.hasPrefix($0) } }
+        if any("badge") { return .badgeCheck }
+        if any("certificate") { return .award }
+        if any("level") { return .trendingUp }
+        if any("reflection") { return .messageSquareText }
+        if any("serve_request", "department") { return .heartHandshake }
+        if any("giving", "pledge", "payment") { return .handHeart }
+        if any("event") { return .calendarDays }
+        if any("announcement") { return .megaphone }
+        if any("live") { return .radio }                 // a Live: the broadcast mark, never a gear
+        if any("chat") { return .messageCircle }
+        if any("connection") { return .userPlus }
+        if any("plan", "reading") { return .bookMarked }
+        if any("module", "quiz", "exam") { return .bookOpen }
+        if any("prayer", "verse", "devotional") { return .leaf }
+        if any("sunday_letter") { return .mail }
+        if any("streak") { return .flame }
+        if any("cell") { return .users }
+        if any("security", "login", "password", "system") { return .shield }
+        return .bell
+    }
+}
+
 // MARK: - The notice itself (a notice with no in-app destination)
 // EXPERIENCE.md §7.1 rule 1: a notice with nowhere to go shows only itself —
 // its title, its full words, when — and Dismiss. It used to greet the member
@@ -437,7 +456,7 @@ private struct NotificationDetailSheet: View {
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(title).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
+                            Text(title).font(.nRowTitle).foregroundStyle(Nuru.ink)
                                 .fixedSize(horizontal: false, vertical: true)
                             Spacer(minLength: 0)
                             Text(when).font(.nMicro).foregroundStyle(Nuru.faint)
