@@ -547,4 +547,20 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(vm.verse.ref, "John 8:12", "never the level's theme")
         XCTAssertEqual(vm.verse.text, LevelPageVerse.text)
     }
+
+    // MARK: Cycle 4 walk — one lesson time, the server's
+
+    func testALessonHasOneTimeTheServers() throws {
+        XCTAssertEqual(LessonTime.label(22), "22 min", "the trail's words for the server's estimated_minutes")
+        XCTAssertNil(LessonTime.label(nil), "no estimate from the server: no time, never one worked out from the words")
+        XCTAssertNil(LessonTime.label(0))
+        // The lesson's detail carries the same figure the trail shows.
+        let d = try decode(ModuleDetail.self, ["module_id": "m9", "level_number": 1, "module_sequence_number": 9,
+                                               "title": "Relationships & Community", "lesson_content": "word " + String(repeating: "word ", count: 2600),
+                                               "estimated_minutes": 22, "evaluation_kind": "quiz", "quiz_pass_mark": 70,
+                                               "current_version": 1, "locked": false])
+        XCTAssertEqual(LessonTime.label(d.estimatedMinutes), "22 min", "2,600 words would have read as ≈ 13 min")
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Pathway/ModuleView.swift"), encoding: .utf8)
+        XCTAssertFalse(src.contains("min read"), "no second, word-counted time")
+    }
 }

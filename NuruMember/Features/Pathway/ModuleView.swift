@@ -790,7 +790,7 @@ struct ModuleView: View {
                     MLHeader(levelNumber: d.levelNumber,
                              moduleNumber: d.moduleSequenceNumber,
                              title: d.title,
-                             readMinutes: mlReadMinutes(pages),
+                             minutes: d.estimatedMinutes,
                              sectionCount: pages.count,
                              sectionTitles: sectionTitles,
                              currentSection: pageIndex,
@@ -1408,7 +1408,8 @@ private struct MLHeader: View {
     let levelNumber: Int
     let moduleNumber: Int
     let title: String
-    let readMinutes: Int
+    /// The server's `estimated_minutes` — the figure the level's trail shows.
+    let minutes: Int?
     let sectionCount: Int
     let sectionTitles: [String]
     let currentSection: Int
@@ -1477,11 +1478,12 @@ private struct MLHeader: View {
         .shadow(color: Color(hex: 0x0A1628).opacity(0.12), radius: 10, y: 6)
     }
 
-    /// ≈ min read · N sections · Watch · Listen. The read + section pills always
-    /// show; Watch/Listen appear only for media that's actually present.
+    /// N min · N sections · Watch · Listen. The time is the server's estimate,
+    /// as on the trail, and shows only when the server sends one; the sections
+    /// always show; Watch/Listen appear only for media that's actually present.
     private var metaRow: some View {
         HStack(spacing: 10) {
-            MLMetaPill(icon: .clock, label: "≈ \(readMinutes) min read")
+            if let time = LessonTime.label(minutes) { MLMetaPill(icon: .clock, label: time) }
             MLMetaPill(icon: .bookOpen,
                        label: "\(sectionCount) section\(sectionCount == 1 ? "" : "s")")
             if let watch = media.watch { MLMetaPill(icon: watch.icon, label: watch.label) }
@@ -2303,9 +2305,14 @@ private func mlPages(_ d: ModuleDetail) -> [String] {
 
 /// ≈ read time from the REAL word count of what's actually rendered, at a
 /// standard 200 wpm — a computation, never an invented number.
-private func mlReadMinutes(_ pages: [String]) -> Int {
-    let words = pages.joined(separator: " ").split(whereSeparator: \.isWhitespace).count
-    return max(1, Int((Double(words) / 200.0).rounded()))
+/// One time for a lesson (the Cycle 4 walk): the server's `estimated_minutes`,
+/// in the trail's words ("22 min"). The lesson used to count its own words at
+/// 200 a minute ("≈ 13 min") beside a trail that said 22.
+enum LessonTime {
+    static func label(_ minutes: Int?) -> String? {
+        guard let minutes, minutes > 0 else { return nil }
+        return "\(minutes) min"
+    }
 }
 
 /// A media duration in whole minutes for a "Xm" pill suffix — REAL data only:
