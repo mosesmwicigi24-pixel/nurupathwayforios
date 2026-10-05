@@ -149,11 +149,12 @@ struct PrayerWallView: View {
                     if !on { Haptics.selection() }
                     Task { await vm.setSort(key) }
                 } label: {
+                    // Selected navy, unselected white with a hairline (§8.1 rule 6).
                     Text(label).font(.inter(12, .bold))
-                        .foregroundStyle(on ? Nuru.navyDeep : Nuru.ink600)
+                        .foregroundStyle(on ? .white : Nuru.ink600)
                         .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(on ? Nuru.goldChipBg : Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                 }
             }
         }

@@ -777,9 +777,12 @@ private struct EvdRsvpCard: View {
         VStack(alignment: .leading, spacing: 0) {
             EvdOverline("Will you be there?")
             HStack(spacing: 6) {
-                option("Going", "going", tint: EvD.going)
-                option("Maybe", "maybe", tint: EvD.maybe)
-                option("Can't", "declined", tint: EvD.declined)
+                // A chosen answer is a selected pill — navy (§8.1 rule 6; the
+                // walk's E17 found a green "Going"). The state reads in the line
+                // under it.
+                option("Going", "going", tint: Nuru.navy)
+                option("Maybe", "maybe", tint: Nuru.navy)
+                option("Can't", "declined", tint: Nuru.navy)
             }
             .padding(.top, 12)
             if mine == "going" {

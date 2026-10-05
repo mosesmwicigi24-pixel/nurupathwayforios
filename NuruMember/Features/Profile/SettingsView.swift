@@ -306,10 +306,12 @@ struct SettingsView: View {
                     } label: {
                         Text(opt.label)
                             .font(.inter(NuruType.snap(opt.preview), on ? .bold : .semibold))
-                            .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                            // Selected navy, unselected white with a hairline
+                            // (§8.1 rule 6; the walk's E17 found gold-tint selection).
+                            .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                             .frame(maxWidth: .infinity).frame(height: 48)
-                            .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                            .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
             }
@@ -327,13 +329,13 @@ struct SettingsView: View {
                         VStack(spacing: CGFloat(2 * opt.scale)) {
                             Text(opt.label)
                                 .font(.inter(12, on ? .bold : .semibold))
-                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                                .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                             Rectangle().fill(on ? Nuru.gold : Nuru.border).frame(width: 26, height: 1.5)
                             Rectangle().fill(on ? Nuru.gold : Nuru.border).frame(width: 26, height: 1.5)
                         }
                         .frame(maxWidth: .infinity).frame(height: 48)
-                        .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
             }

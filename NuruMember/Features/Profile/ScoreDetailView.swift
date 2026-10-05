@@ -55,14 +55,15 @@ struct ScoreDetailView: View {
                         if !on { Haptics.selection(); pillar = p }
                     } label: {
                         HStack(spacing: 5) {
-                            Icon(p.icon, size: 12, color: on ? Nuru.navy : Color(hex: 0x59667C))
+                            Icon(p.icon, size: 14, color: on ? .white : Color(hex: 0x59667C))
                             Text(p.displayName)
                                 .font(.inter(12, on ? .bold : .semibold))
-                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                                .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                         }
                         .padding(.horizontal, 12).frame(height: 36)
-                        .background(on ? Nuru.gold.opacity(0.16) : Nuru.surface, in: Capsule())
-                        .overlay(Capsule().stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        // Selected navy, unselected white with a hairline (§8.1 rule 6).
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                 }
