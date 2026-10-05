@@ -684,9 +684,12 @@ private struct ExamPassScreen: View {
                     .gentleEntrance(delay: 0.18)
                 // §1.9 (new): passing no longer auto-advances — the member now waits
                 // to be ushered by a discipler. The copy is a dignified handoff.
+                // Who opens the next level, in §3's one word — "your leader"
+                // (E2, Cycle 4 B1): a member with no discipler read "your
+                // discipler's blessing" as untrue.
                 Text(mentorReview
-                     ? "A true milestone. Some written answers went to your mentor to read — and your discipler will usher you onward. 🌿"
-                     : "A true milestone. Awaiting your discipler's blessing to continue to the next level. 🌿")
+                     ? "A true milestone. Your leader will read your written answers and open Level \(levelNumber + 1) — you'll get a notice. 🌿"
+                     : "A true milestone. Your leader will open Level \(levelNumber + 1) — you'll get a notice. 🌿")
                     .font(.inter(15)).foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)

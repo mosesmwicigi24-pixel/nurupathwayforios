@@ -51,15 +51,21 @@ struct NuruMemberApp: App {
                     // only when they turn on something that needs it (§7.2 #12).
                     LocalNotifier.shared.attach()
                     await LocalNotifier.shared.sync()
+                    // Whether a discipler is paired — every offer of one waits
+                    // for the server to name one (Cycle 4, B1).
+                    await DisciplerStore.shared.refresh()
                 } else {
-                    // Signed out: the next member starts with nobody's dot.
+                    // Signed out: the next member starts with nobody's dot,
+                    // and nobody's discipler.
                     InboxBadge.shared.reset()
+                    DisciplerStore.shared.reset()
                 }
             }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active, auth.isAuthenticated {
                     Task { await sync.flush() }
                     Task { await LocalNotifier.shared.sync() }
+                    Task { await DisciplerStore.shared.refresh() }
                 }
             }
         }

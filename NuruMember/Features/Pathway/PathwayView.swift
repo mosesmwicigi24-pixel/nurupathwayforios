@@ -155,6 +155,9 @@ struct PathwayView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = PathwayViewModel()
+    /// Whether a discipler is paired (GET /growth/mentor) — the Discipleship
+    /// Hub row shows only then (Cycle 4, B1).
+    @ObservedObject private var disciplers = DisciplerStore.shared
     @State private var path = NavigationPath()
     @State private var selectedLevelNumber: Int?
 
@@ -267,12 +270,11 @@ struct PathwayView: View {
                 })
 
             VStack(alignment: .leading, spacing: 24) {
-                // Awaiting your discipler — the level exam is passed; the member waits
-                // to be ushered (the next level stays LOCKED until awaitingReview
-                // clears server-side). Server-authoritative: purely reflects state.
-                if let a = vm.awaitingLevel {
-                    PathwayAwaitingBanner(level: a).gentleEntrance()
-                }
+                // Awaiting the usher (the exam passed; the next level stays LOCKED
+                // until awaitingReview clears server-side) is the hero's own story
+                // — "Level N+1 is next · Your leader will open Level N+1" (§3). A
+                // second card said it again as "Awaiting your discipler's
+                // blessing" (E2: one card, one word for who opens the level).
 
                 // Studying together, apart (Wave 2): who from your cell opened
                 // a lesson this week. Renders nothing when nobody has.
@@ -302,10 +304,12 @@ struct PathwayView: View {
                 }
 
                 // Discipleship Hub link — a warm door into the relationship home
-                // (discipler, feedback, meeting notes). Sits naturally beside the
-                // "awaiting your discipler's blessing" flow above.
-                PathwayDisciplershipRow { path.append(AppRoute.discipleshipHub) }
-                    .gentleEntrance(delay: 0.08)
+                // (discipler, feedback, meeting notes), only for a discipler the
+                // server names (Cycle 4, B1).
+                if disciplers.hasDiscipler {
+                    PathwayDisciplershipRow { path.append(AppRoute.discipleshipHub) }
+                        .gentleEntrance(delay: 0.08)
+                }
 
                 PathwayWalkRow { path.append(PathwayRoute.walk) }
                     .gentleEntrance(delay: 0.09)
@@ -499,44 +503,6 @@ private struct PWHeaderRing: View {
             if reduceMotion { shown = true }
             else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.1)) { shown = true } }
         }
-    }
-}
-
-// MARK: - PathwayHub · "awaiting your discipler" waiting state
-
-/// A dignified waiting card: the level exam is passed and the member is waiting to
-/// be ushered onward by a discipler. Purely reflects the server's awaitingReview
-/// flag; it never advances anything (§1.9). The next level stays locked meanwhile.
-private struct PathwayAwaitingBanner: View {
-    let level: PathwayLevel
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(PW.gold.opacity(0.16))
-                    .overlay(Circle().stroke(PW.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.emoji(22))
-            }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("AWAITING YOUR DISCIPLER")
-                    .font(.inter(11, .bold)).kerning(1.4).foregroundStyle(PW.goldLight)
-                Text("Level \(level.levelNumber) complete")
-                    .font(.inter(14, .bold)).foregroundStyle(.white)
-                Text("Awaiting your discipler's blessing to continue.")
-                    .font(.inter(11)).foregroundStyle(.white.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.gold.opacity(0.35), lineWidth: 1))
-        .shadow(color: PW.navyDeep.opacity(0.5), radius: 16, y: 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Level \(level.levelNumber) complete. Awaiting your discipler's blessing to continue.")
     }
 }
 
@@ -1040,7 +1006,7 @@ private struct PWAwaitingRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Level \(levelNumber) complete")
                     .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
-                Text("Awaiting your discipler's blessing to continue")
+                Text(UsherWords.line(passed: levelNumber))
                     .font(.inter(11, .semibold)).foregroundStyle(PW.goldDeep)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -1050,7 +1016,7 @@ private struct PWAwaitingRow: View {
         .background(PW.gold.opacity(0.08))
         .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Level \(levelNumber) complete. Awaiting your discipler's blessing to continue.")
+        .accessibilityLabel("Level \(levelNumber) complete. \(UsherWords.line(passed: levelNumber))")
     }
 }
 

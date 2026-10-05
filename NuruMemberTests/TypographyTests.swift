@@ -393,7 +393,7 @@ enum TypeScan {
         "Features/Pathway/LevelDetailView.swift": 2,
         "Features/Pathway/LevelExamView.swift": 3,
         "Features/Pathway/ModuleView.swift": 1,
-        "Features/Pathway/PathwayView.swift": 4,
+        "Features/Pathway/PathwayView.swift": 3,
         "Features/Pathway/QuizView.swift": 3,
         "Features/Profile/GiftsView.swift": 1,
         "Features/Radio/RadioPlayerView.swift": 2,

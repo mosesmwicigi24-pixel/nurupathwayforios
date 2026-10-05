@@ -299,6 +299,35 @@ final class ExperienceCycle4Tests: XCTestCase {
         if case let .paragraph(t)? = MLMarkdown.parse("one\ntwo").first { XCTAssertEqual(t, "one two") } else { XCTFail("lesson") }
     }
 
+    // MARK: Cycle 4 B1 — a discipler is offered only when the server names one
+
+    /// The walk found a discipler offered in five places to members with none
+    /// (Home, Pathway, the level page ×3, Community). Each asks the one store,
+    /// fed by GET /growth/mentor; "mentor": null — what Ada and build7 get from
+    /// the local API — offers nothing.
+    func testADisciplerIsOfferedOnlyWhenTheServerNamesOne() throws {
+        let none = try decode(MentorInfo.self, ["mentor": NSNull(), "next_meeting_at": NSNull(), "notes": []])
+        XCTAssertNil(none.mentor)
+        XCTAssertFalse(DisciplerStore.offers(none.mentor))
+        let paired = try decode(MentorInfo.self, ["mentor": ["mentor_user_id": "u1", "full_name": "Ann Wanjiru"], "notes": []])
+        XCTAssertEqual(paired.mentor?.fullName, "Ann Wanjiru")
+        XCTAssertTrue(DisciplerStore.offers(paired.mentor))
+    }
+
+    /// One word for who opens the next level (E2): §3's "your leader", the
+    /// same sentence on the hero, the level's fold, the level page and the
+    /// exam's pass screen — never "your discipler's blessing".
+    func testWhoOpensTheNextLevelIsSaidOneWay() throws {
+        XCTAssertEqual(UsherWords.line(passed: 1),
+                       "You passed the Level 1 exam. Your leader will open Level 2 — you'll get a notice.")
+        var row = level(1, "awaiting_review", done: 10, of: 10)
+        row["awaiting_review"] = true
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 1, row)))
+        XCTAssertEqual(j.stage, .awaitingUsher)
+        XCTAssertEqual(j.line, UsherWords.line(passed: 1), "the hero says the same sentence")
+        XCTAssertFalse(j.line.contains("discipler"))
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

@@ -346,6 +346,9 @@ struct ChatView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = ChatInboxViewModel()
+    /// Whether a discipler is paired (GET /growth/mentor) — the My Discipler
+    /// chip shows only then (Cycle 4, B1).
+    @ObservedObject private var disciplers = DisciplerStore.shared
     @State private var path = NavigationPath()
     @State private var segment: ChatSegment = .space
     @State private var query = ""
@@ -381,6 +384,10 @@ struct ChatView: View {
                 if composeOpen { composeSheet }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: composeOpen)
+            // A pairing that ends while its chip is open leaves for My Space.
+            .onChange(of: disciplers.hasDiscipler) { _, has in
+                if !has, segment == .discipler { segment = .space }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
@@ -611,7 +618,11 @@ struct ChatView: View {
                 // both are "things waiting on you in this tab".
                 segmentButton(.dm, "Chat", icon: .messageCircle,
                               vm.dms.reduce(0) { $0 + $1.unread } + vm.pendingIncomingCount)
-                segmentButton(.discipler, "My Discipler", icon: .users, vm.disciplerUnread)
+                // Only for a discipler the server names (Cycle 4, B1): with none it
+                // opened onto "A discipler has not yet been assigned to you."
+                if disciplers.hasDiscipler {
+                    segmentButton(.discipler, "My Discipler", icon: .users, vm.disciplerUnread)
+                }
                 segmentButton(.pastor, "My Pastor", icon: .heartHandshake, vm.pastoralUnread)
                 if isStaff { broadcastSegmentButton }
             }

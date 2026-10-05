@@ -364,6 +364,9 @@ struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = HomeViewModel()
+    /// Whether a discipler is paired (GET /growth/mentor) — the discipler row
+    /// shows only then (Cycle 4, B1).
+    @ObservedObject private var disciplers = DisciplerStore.shared
     // (RadioCenter is observed inside HomeOnAirCard / the RootView island pill —
     // observing it here re-rendered the whole feed on every playback tick.)
     @State private var path = NavigationPath()
@@ -2064,14 +2067,17 @@ struct HomeView: View {
                         }
                 }
             }
+            // Only for a discipler the server names (Cycle 4, B1): "Meet your
+            // discipler" opened onto "No discipler yet" for members with none.
+            if let mentor = disciplers.mentor {
             NavigationLink(value: AppRoute.mentor) {
                 HStack(spacing: Nuru.S.md) {
-                    Circle()
-                        .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 36, height: 36)
+                    Avatar(url: mentor.avatarUrl, name: mentor.fullName, size: 36)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
-                        Text("Meet your discipler").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        Text(mentor.fullName.isEmpty ? "Your discipler" : mentor.fullName)
+                            .font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
                     Icon(.chevronRight, size: 16, color: HomeFig.faintGray)
@@ -2080,6 +2086,7 @@ struct HomeView: View {
                 .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
             }.buttonStyle(.pressable)
+            }
         }
         .padding(Nuru.S.md)
         .cardSurface()

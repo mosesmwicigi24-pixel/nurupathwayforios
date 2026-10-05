@@ -39,9 +39,10 @@ final class LevelDetailViewModel: ObservableObject {
     @Published var totalLevels = 7
     @Published var loading = true
     @Published var error: String?
-    /// The member's paired discipler (GET /growth/mentor) — feeds the discipler
-    /// name/avatar into both the within-level reminder and the mid-level stats
-    /// card. Best-effort: nil renders a generic "your discipler" fallback.
+    /// The member's paired discipler (GET /growth/mentor). Every offer of a
+    /// discipler on this page — the card, the within-level reminder, the
+    /// mid-level stats card's message — shows only when the server names one
+    /// (Cycle 4, B1); nil shows none of them, never a generic "your discipler".
     @Published var mentor: MentorInfo.Mentor?
     /// This level's mastery (GET /me/levels/{n}/score) — the same server band
     /// ("Deeply rooted" / "Growing" / "Sprouting" / "Just beginning") shown at
@@ -72,7 +73,10 @@ final class LevelDetailViewModel: ObservableObject {
         else if level == nil { error = "Couldn't load this level." }
         // Best-effort: no encouragements (unauthored or failed fetch) renders nothing.
         encouragements = (await enc) ?? []
-        mentor = (await mentorInfo)?.mentor
+        if let info = await mentorInfo {
+            mentor = info.mentor
+            DisciplerStore.shared.record(info.mentor)
+        }
         levelScore = await score
         streak = (await ach)?.streak?.current ?? 0
         loading = false
@@ -182,7 +186,7 @@ struct LevelDetailView: View {
                 VStack(spacing: Nuru.S.base) {
                     statsStrip
                     verseCard
-                    disciplerCard
+                    if let mentor = vm.mentor { disciplerCard(mentor) }
                     trailHeader
                     if vm.loading && vm.modules.isEmpty {
                         trailSkeleton
@@ -359,30 +363,33 @@ struct LevelDetailView: View {
 
     // MARK: - Discipler card
 
-    private var disciplerCard: some View {
-        Card {
-            HStack(spacing: Nuru.S.md) {
-                ZStack {
-                    Circle().fill(Nuru.goldTint).frame(width: 44, height: 44)
-                    Icon(.handHeart, size: 20, color: Nuru.gold)
+    /// Only for a discipler the server names (Cycle 4, B1) — it said "A
+    /// discipler will walk with you · Tap to learn more · Chat" to members
+    /// with none, and tapping it did nothing. Now it names them and opens the
+    /// Discipleship Hub.
+    private func disciplerCard(_ mentor: MentorInfo.Mentor) -> some View {
+        NavigationLink(value: AppRoute.discipleshipHub) {
+            Card {
+                HStack(spacing: Nuru.S.md) {
+                    Avatar(url: mentor.avatarUrl, name: mentor.fullName, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("WALK IT WITH YOUR DISCIPLER")
+                            .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                        Text(mentor.fullName.isEmpty ? "Your discipler" : mentor.fullName)
+                            .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: Nuru.S.sm)
+                    HStack(spacing: 6) {
+                        Icon(.messageCircle, size: 14, color: .white)
+                        Text("Message").font(.inter(13, .bold)).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Nuru.navyDeep, in: Capsule())
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("WALK IT WITH YOUR DISCIPLER")
-                        .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
-                    Text("A discipler will walk with you")
-                        .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
-                    Text("Tap to learn more")
-                        .font(.nMicro).foregroundStyle(Nuru.muted)
-                }
-                Spacer(minLength: Nuru.S.sm)
-                HStack(spacing: 6) {
-                    Icon(.messageCircle, size: 14, color: .white)
-                    Text("Chat").font(.inter(13, .bold)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(Nuru.navyDeep, in: Capsule())
             }
         }
+        .buttonStyle(.pressable)
     }
 
     // MARK: - Trail header
@@ -443,13 +450,14 @@ struct LevelDetailView: View {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
                     Icon(.handHeart, size: 12, color: Nuru.goldChipText)
-                    Text("AWAITING YOUR DISCIPLER")
+                    Text("EXAM PASSED")
                         .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 }
                 Text("Level \(vm.levelNumber) complete")
                     .font(.nCardTitle).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("You've passed the exam. Awaiting your discipler's blessing to continue to the next level.")
+                // §3's words for who opens the next level (E2, B1).
+                Text(UsherWords.line(passed: vm.levelNumber))
                     .font(.nCardBody).foregroundStyle(Nuru.ink600)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -690,6 +698,8 @@ struct LevelDetailView: View {
     /// discipler's usher (that's the existing end-of-level element — this adds
     /// a WITHIN-level presence, it doesn't replace it).
     private func maybeShowDisciplerReminder() {
+        // Never for a discipler who doesn't exist (Cycle 4, B1).
+        guard vm.mentor != nil else { return }
         guard vm.completed >= 3, !vm.examAvailable, !vm.examSoon, !vm.awaitingReview else { return }
         guard DisciplerReminderPolicy.shouldShow(level: levelNumber) else { return }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.5, dampingFraction: 0.85)) {
@@ -974,21 +984,24 @@ private struct MidLevelStatsCard: View {
                 }
             }
 
-            Text("Walk the rest with your discipler\(mentorName.map { " — \($0) is right there with you" } ?? "").")
-                .font(.nCardBody).foregroundStyle(Color.white.opacity(0.7))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            // Only with a discipler the server names (Cycle 4, B1).
+            if let mentorName {
+                Text("Walk the rest with your discipler — \(mentorName.isEmpty ? "they're" : mentorName + " is") right there with you.")
+                    .font(.nCardBody).foregroundStyle(Color.white.opacity(0.7))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            NavigationLink(value: AppRoute.discipleshipHub) {
-                HStack(spacing: 6) {
-                    Icon(.messageCircle, size: 13, color: Nuru.navyDeep)
-                    Text("Message your discipler").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                NavigationLink(value: AppRoute.discipleshipHub) {
+                    HStack(spacing: 6) {
+                        Icon(.messageCircle, size: 14, color: Nuru.navyDeep)
+                        Text("Message your discipler").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Nuru.goldGradient, in: Capsule())
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Nuru.goldGradient, in: Capsule())
+                .buttonStyle(.pressable)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             }
-            .buttonStyle(.pressable)
-            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)

@@ -203,7 +203,7 @@ extension Journey {
             pill = "Exam passed"
             kicker = "Exam passed · Level \(n)"
             title = "Level \(nextLevel) is next"
-            line = "You passed the Level \(n) exam. Your leader will open Level \(nextLevel) — you'll get a notice."
+            line = UsherWords.line(passed: n, next: nextLevel)
             action = ("See Level \(n)", .level(n))
         case .finished:
             pill = "Commissioned"
@@ -217,5 +217,17 @@ extension Journey {
                        completedModules: x, totalModules: y, progress: progress,
                        pill: pill, kicker: kicker, title: title, line: line,
                        actionLabel: action?.label, destination: action?.to)
+    }
+}
+
+
+/// Who opens the next level, in §3's one word (EXPERIENCE.md E2, Cycle 4 B1):
+/// "your leader" — never "your discipler's blessing", which a member with no
+/// discipler read as untrue. The hero, the level's fold, the level page and
+/// the exam's pass screen all say it the same way.
+enum UsherWords {
+    static func line(passed n: Int, next: Int? = nil) -> String {
+        let next = next ?? n + 1
+        return "You passed the Level \(n) exam. Your leader will open Level \(next) — you'll get a notice."
     }
 }
