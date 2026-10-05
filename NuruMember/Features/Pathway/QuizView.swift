@@ -55,7 +55,7 @@ final class QuizViewModel: ObservableObject {
                 questions = fresh.questions
             }
         }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the quiz." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load the quiz.", error) }
         loading = false
         // Header title — best effort, never blocks the quiz itself.
         if moduleTitle == nil { moduleTitle = try? await MemberAPI.module(moduleId).title }
@@ -111,7 +111,7 @@ final class QuizViewModel: ObservableObject {
                                           title: "Congratulations",
                                           subtitle: "You've finished the test.")
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+            self.error = NuruStateCopy.failureLine("Couldn't submit. Please try again.", error)
             Haptics.error()
         }
     }

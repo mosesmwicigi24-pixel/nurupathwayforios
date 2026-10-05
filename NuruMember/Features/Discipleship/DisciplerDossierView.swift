@@ -26,7 +26,7 @@ final class DisciplerDossierViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { dossier = try await MemberAPI.disciple(userId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this disciple." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this disciple.", error) }
         loading = false
 
         // Resolve the DM thread if one exists, so the CTA deep-links instead of

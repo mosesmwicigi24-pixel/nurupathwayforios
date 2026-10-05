@@ -303,7 +303,7 @@ final class VoiceRecorderModel: NSObject, ObservableObject {
             try await MemberAPI.setVoiceNote(moduleId: moduleId, audioUrl: url, durationSec: max(1, seconds))
             return true
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't share the voice note."
+            self.error = NuruStateCopy.failureLine("Couldn't share the voice note.", error)
             phase = .recorded
             return false
         }

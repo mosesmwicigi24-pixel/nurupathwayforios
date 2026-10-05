@@ -16,7 +16,7 @@ final class DisciplerRosterViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { roster = try await MemberAPI.disciples() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your disciples." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your disciples.", error) }
         loading = false
     }
 }

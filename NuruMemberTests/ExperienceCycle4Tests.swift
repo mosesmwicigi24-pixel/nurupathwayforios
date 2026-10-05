@@ -841,6 +841,26 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(PrayerPulseWords.tiles(active: 2, week: 0, answered: 1).map(\.label), ["active", "answered"])
     }
 
+    // MARK: §4 / rule 8 — no raw server or exception text on screen
+
+    func testAFailureLineKeepsTheActionAndSaysWhyInTheOneLanguage() throws {
+        let offline = URLError(.notConnectedToInternet)
+        XCTAssertEqual(NuruStateCopy.failureLine("Couldn't save — please try again.", offline, deviceOnline: false),
+                       "Couldn't save. You're offline. Connect to the internet, then try again.")
+        XCTAssertEqual(NuruStateCopy.failureLine("Couldn't post. Try again.", APIError.decoding("keyNotFound(…)"), deviceOnline: true),
+                       "Couldn't post. Something went wrong on our side. It isn't you — please try again in a moment.",
+                       "never \"Couldn't read the server response. keyNotFound…\"")
+        XCTAssertEqual(NuruStateCopy.failureLine("Check your connection and try again.", offline, deviceOnline: false),
+                       "You're offline. Connect to the internet, then try again.")
+        // An on-screen fallback ("?? \"Couldn't …\"") marks a displayed message; the
+        // assistant's empty-fallback read only picks its own friendly words.
+        let shown = try NSRegularExpression(pattern: "as\\? APIError\\)\\?\\.errorDescription \\?\\? \"[^\"]")
+        let src = try TypeScan.files().filter {
+            shown.firstMatch(in: $0.text, range: NSRange($0.text.startIndex..., in: $0.text)) != nil
+        }.map(\.rel)
+        XCTAssertEqual(src, [], "every on-screen failure goes through §4's words")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

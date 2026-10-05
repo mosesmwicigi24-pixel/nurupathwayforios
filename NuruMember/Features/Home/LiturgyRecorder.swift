@@ -181,7 +181,7 @@ final class LiturgyRecorderModel: NSObject, ObservableObject {
             _ = try await MemberAPI.uploadLiturgyRecording(band: band.rawValue, m4a: data, durationSec: seconds)
             return true
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save the recording."
+            self.error = NuruStateCopy.failureLine("Couldn't save the recording.", error)
             phase = .recorded
             return false
         }
@@ -451,7 +451,7 @@ struct LiturgyRecordingsSheet: View {
             rows = LiturgyRecordingRows.build(from: statuses)
             loadError = nil
         } catch {
-            loadError = (error as? APIError)?.errorDescription ?? "Couldn't load your recordings."
+            loadError = NuruStateCopy.failureLine("Couldn't load your recordings.", error)
         }
         loaded = true
     }

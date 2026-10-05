@@ -183,7 +183,7 @@ final class AttendanceViewModel: ObservableObject {
             history = try await h
             openServices = try await o
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your attendance."
+            self.error = NuruStateCopy.failureLine("Couldn't load your attendance.", error)
         }
         // The profile is only a form prefill — a failure here must not block the
         // screen, and the server falls back to the profile server-side anyway.

@@ -107,7 +107,7 @@ struct SettingsView: View {
             Button("Turn off", role: .destructive) {
                 Task {
                     do { try await MemberAPI.disableMfa(code: mfaDisableCode); Haptics.success(); await auth.loadProfile() }
-                    catch { Haptics.error(); mfaError = (error as? APIError)?.errorDescription ?? "Couldn't turn off two-factor." }
+                    catch { Haptics.error(); mfaError = NuruStateCopy.failureLine("Couldn't turn off two-factor.", error) }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -563,7 +563,7 @@ private struct PasswordChangeSheet: View {
             succeeded = true
         } catch {
             Haptics.error()
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't change the password — check your current one."
+            self.error = NuruStateCopy.failureLine("Couldn't change the password — check your current one.", error)
         }
     }
 }
@@ -669,7 +669,7 @@ private struct AppLanguageSheet: View {
             onSaved()
             dismiss()
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
+            self.error = NuruStateCopy.failureLine("Couldn't save — please try again.", error)
         }
     }
 }

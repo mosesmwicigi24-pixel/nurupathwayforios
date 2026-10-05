@@ -18,7 +18,7 @@ final class MemoryVerseViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { verses = try await MemberAPI.memoryVerses() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your verses." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your verses.", error) }
         loading = false
     }
 

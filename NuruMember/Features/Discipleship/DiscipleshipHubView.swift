@@ -26,7 +26,7 @@ final class DiscipleshipHubViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { hub = try await MemberAPI.discipleship() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your discipleship." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your discipleship.", error) }
         loading = false
 
         // Read-only best-effort: if the DISCIPLER thread already exists, the

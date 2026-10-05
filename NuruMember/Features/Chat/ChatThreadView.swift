@@ -103,7 +103,7 @@ final class ChatThreadViewModel: ObservableObject {
         do {
             thread = try await MemberAPI.chatConversation(conversation.conversationId)
             try? await MemberAPI.markChatRead(conversation.conversationId)
-        } catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't open this chat." }
+        } catch { self.error = NuruStateCopy.failureLine("Couldn't open this chat.", error) }
         loading = false
     }
 

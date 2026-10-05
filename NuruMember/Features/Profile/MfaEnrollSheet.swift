@@ -59,7 +59,7 @@ final class MfaEnrollViewModel: ObservableObject {
             enrollment = e
             phase = .ready
         } catch {
-            enrollError = (error as? APIError)?.errorDescription ?? "Couldn't start two-factor setup."
+            enrollError = NuruStateCopy.failureLine("Couldn't start two-factor setup.", error)
             phase = .failed
         }
     }

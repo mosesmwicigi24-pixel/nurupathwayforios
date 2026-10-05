@@ -115,7 +115,7 @@ struct SelahDrawingSheet: View {
             dismiss()
         } catch {
             uploading = false
-            uploadError = (error as? APIError)?.errorDescription ?? "Couldn't save the drawing. Try again."
+            uploadError = NuruStateCopy.failureLine("Couldn't save the drawing. Try again.", error)
         }
     }
 }

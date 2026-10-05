@@ -103,6 +103,24 @@ extension NuruStateCopy {
     /// A message, comment or recording the server did not take (Cycle 4, the
     /// lost-input class): it stays where the member left it, and this line
     /// says so — "Couldn't send that.", why, and what is kept for a retry.
+    /// An action's own head, then why, in §4's words: "Couldn't save the
+    /// recording. You're offline. Connect to the internet, then try again."
+    /// It replaces APIError.errorDescription on screen, which passed decoding
+    /// and transport details and 5xx bodies straight to the member (rule 8).
+    /// A head that is not a "Couldn't …" clause gives way to the sentence.
+    static func failureLine(_ head: String, _ error: Error,
+                            deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String {
+        let why = failure(error, deviceOnline: deviceOnline).sentence
+        let trimmed = head.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("Couldn't") || trimmed.hasPrefix("We couldn't") else { return why }
+        var clause = trimmed
+        for sep in [" — ", ". ", " - "] {
+            if let r = clause.range(of: sep) { clause = String(clause[..<r.lowerBound]) }
+        }
+        while clause.hasSuffix(".") { clause.removeLast() }
+        return "\(clause). \(why)"
+    }
+
     /// A delete the server did not do: the thing is still there, and says so.
     static func deleteFailureLine(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String {
         "Couldn't delete that. " + failure(error, deviceOnline: deviceOnline).sentence + " It's still here."

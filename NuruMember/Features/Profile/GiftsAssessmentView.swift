@@ -43,7 +43,7 @@ final class GiftsAssessmentViewModel: ObservableObject {
             return
         }
         do { questionSet = try await MemberAPI.giftQuestions() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the assessment." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load the assessment.", error) }
         loading = false
     }
 
@@ -75,7 +75,7 @@ final class GiftsAssessmentViewModel: ObservableObject {
             Haptics.success()
         } catch {
             Haptics.error()
-            submitError = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+            submitError = NuruStateCopy.failureLine("Couldn't submit. Please try again.", error)
         }
     }
 

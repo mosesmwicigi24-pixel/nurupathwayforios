@@ -33,7 +33,7 @@ final class NotificationsViewModel: ObservableObject {
             rows = r.rows; unread = r.unread; locallyRead = []; loaded = true
             InboxBadge.shared.land(r.unread, ticket: ticket)   // every bell's dot (§7.2 #4)
         }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load notifications." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load notifications.", error) }
         loading = false
     }
     func markAll() async {

@@ -657,7 +657,7 @@ final class PlanDetailViewModel: ObservableObject {
                 awaitingUnlock = nil
             }
         }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this plan." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this plan.", error) }
         loading = false
     }
 
@@ -1086,7 +1086,7 @@ struct PlanDetailView: View {
             showInviteSent(InviteSentToast(name: inviteFirstName(friend.fullName), peerUserId: friend.userId))
         } catch {
             Haptics.error()
-            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+            inviteError = NuruStateCopy.failureLine("Check your connection and try again.", error)
         }
     }
 
@@ -1117,7 +1117,7 @@ struct PlanDetailView: View {
             presentSystemShareSheet([message])
         } catch {
             Haptics.error()
-            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+            inviteError = NuruStateCopy.failureLine("Check your connection and try again.", error)
         }
     }
 

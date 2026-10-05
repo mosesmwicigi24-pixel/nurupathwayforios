@@ -57,7 +57,7 @@ final class ModuleViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.module(moduleId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this lesson." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this lesson.", error) }
         loading = false
     }
 
@@ -72,7 +72,7 @@ final class ModuleViewModel: ObservableObject {
             completed = res.isCompleted || res.duplicate
             if completed { Haptics.success() }   // the moment the server confirms
         } catch {
-            completionError = (error as? APIError)?.errorDescription ?? "Couldn't save your progress. Please try again."
+            completionError = NuruStateCopy.failureLine("Couldn't save your progress. Please try again.", error)
             Haptics.error()
         }
     }
@@ -148,7 +148,7 @@ final class ModuleViewModel: ObservableObject {
             reflectDone = true
             Haptics.success()
         } catch {
-            reflectionError = (error as? APIError)?.errorDescription ?? "Couldn't save your reflection. Please try again."
+            reflectionError = NuruStateCopy.failureLine("Couldn't save your reflection. Please try again.", error)
             Haptics.error()
         }
     }

@@ -14,7 +14,7 @@ final class PrayerWallViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { posts = try await MemberAPI.prayerWall(sort: sort) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the prayer wall." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load the prayer wall.", error) }
         loading = false
     }
 
@@ -342,7 +342,7 @@ private struct PrayerComposeSheet: View {
                 confetti: false)
         } catch {
             Haptics.error()
-            err = (error as? APIError)?.errorDescription ?? "Couldn't post. Try again."; busy = false
+            err = NuruStateCopy.failureLine("Couldn't post. Try again.", error); busy = false
         }
     }
 }

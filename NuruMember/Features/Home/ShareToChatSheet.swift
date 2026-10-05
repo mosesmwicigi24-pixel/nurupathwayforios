@@ -146,7 +146,7 @@ struct ShareToChatSheet: View {
     private func load() async {
         loading = true; error = nil
         do { conversations = try await MemberAPI.chatInbox().conversations }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your chats." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your chats.", error) }
         loading = false
     }
 
@@ -164,7 +164,7 @@ struct ShareToChatSheet: View {
         } catch {
             Haptics.error()
             // Keep the conversation list on screen — only surface the failure.
-            sendError = (error as? APIError)?.errorDescription ?? "Couldn't send. Try again."
+            sendError = NuruStateCopy.failureLine("Couldn't send. Try again.", error)
         }
         sendingId = nil
     }

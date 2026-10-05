@@ -24,7 +24,7 @@ final class DevotionalViewModel: ObservableObject {
             let d = try await MemberAPI.devotional()
             devotional = d
             reflection = d.myReflection ?? ""
-        } catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load today's devotional." }
+        } catch { self.error = NuruStateCopy.failureLine("Couldn't load today's devotional.", error) }
         loading = false
     }
 

@@ -23,7 +23,7 @@ final class MentorViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { info = try await MemberAPI.mentor() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your mentorship." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your mentorship.", error) }
         loading = false
 
         if let mentor = info?.mentor,

@@ -32,7 +32,7 @@ final class DiscussionsViewModel: ObservableObject {
             threads = try await MemberAPI.discussionThreads()
             prunePending()
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your cell's board."
+            self.error = NuruStateCopy.failureLine("Couldn't load your cell's board.", error)
         }
         loading = false
     }
@@ -377,7 +377,7 @@ final class DiscussionThreadViewModel: ObservableObject {
             let landed = Set((detail?.comments ?? []).map { $0.commentId.lowercased() })
             pendingComments.removeAll { landed.contains($0.commentId.lowercased()) }
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't open this discussion."
+            self.error = NuruStateCopy.failureLine("Couldn't open this discussion.", error)
         }
         loading = false
     }

@@ -30,7 +30,7 @@ final class EventDetailViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.event(occurrence.occurrenceId); myRsvpOverride = nil }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this event." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this event.", error) }
         loading = false
     }
 

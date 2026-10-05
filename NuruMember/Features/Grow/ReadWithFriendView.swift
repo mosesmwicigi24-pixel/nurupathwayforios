@@ -42,7 +42,7 @@ final class ReadWithFriendHubViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { groups = try await MemberAPI.myReadingGroups() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your shared plans." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your shared plans.", error) }
         loading = false
     }
 }
@@ -227,7 +227,7 @@ final class ReadingGroupDetailViewModel: ObservableObject {
             group = try await MemberAPI.readingGroup(groupId)
             pendingInvites = (try? await MemberAPI.listReadingInvites(groupId: groupId))?.filter(\.isPending) ?? []
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this shared plan."
+            self.error = NuruStateCopy.failureLine("Couldn't load this shared plan.", error)
         }
         loading = false
     }
@@ -240,7 +240,7 @@ final class ReadingGroupDetailViewModel: ObservableObject {
             await load()
         } catch {
             Haptics.error()
-            toast = (error as? APIError)?.errorDescription ?? "Couldn't send that invite."
+            toast = NuruStateCopy.failureLine("Couldn't send that invite.", error)
         }
     }
 
@@ -256,26 +256,26 @@ final class ReadingGroupDetailViewModel: ObservableObject {
             presentSystemShareSheet([message])
         } catch {
             Haptics.error()
-            toast = (error as? APIError)?.errorDescription ?? "Couldn't create a share link."
+            toast = NuruStateCopy.failureLine("Couldn't create a share link.", error)
         }
     }
 
     func revoke(_ invite: ReadingInviteRow) async {
         do { try await MemberAPI.revokeReadingInvite(groupId: groupId, inviteId: invite.inviteId); await load() }
-        catch { toast = (error as? APIError)?.errorDescription ?? "Couldn't revoke that invite." }
+        catch { toast = NuruStateCopy.failureLine("Couldn't revoke that invite.", error) }
     }
 
     @discardableResult
     func leave() async -> Bool {
         busy = true; defer { busy = false }
         do { try await MemberAPI.leaveReadingGroup(groupId); return true }
-        catch { toast = (error as? APIError)?.errorDescription ?? "Couldn't leave — try again."; return false }
+        catch { toast = NuruStateCopy.failureLine("Couldn't leave — try again.", error); return false }
     }
 
     func archive() async {
         busy = true; defer { busy = false }
         do { try await MemberAPI.archiveReadingGroup(groupId); await load() }
-        catch { toast = (error as? APIError)?.errorDescription ?? "Couldn't end this shared plan." }
+        catch { toast = NuruStateCopy.failureLine("Couldn't end this shared plan.", error) }
     }
 }
 
@@ -703,20 +703,20 @@ final class ReadingInvitePreviewViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { preview = try await MemberAPI.readingInvitePreview(token) }
-        catch let err { error = (err as? APIError)?.errorDescription ?? "This invite link isn't available." }
+        catch let err { error = NuruStateCopy.failureLine("This invite link isn't available.", err) }
         loading = false
     }
 
     func accept() async {
         busy = true; defer { busy = false }
         do { result = try await MemberAPI.acceptReadingInvite(token); Haptics.success() }
-        catch let err { Haptics.error(); error = (err as? APIError)?.errorDescription ?? "Couldn't join — try again." }
+        catch let err { Haptics.error(); error = NuruStateCopy.failureLine("Couldn't join — try again.", err) }
     }
 
     func decline() async {
         busy = true; defer { busy = false }
         do { try await MemberAPI.declineReadingInvite(token); declined = true }
-        catch let err { error = (err as? APIError)?.errorDescription ?? "Couldn't decline — try again." }
+        catch let err { error = NuruStateCopy.failureLine("Couldn't decline — try again.", err) }
     }
 }
 

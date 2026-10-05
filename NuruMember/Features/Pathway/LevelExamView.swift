@@ -148,7 +148,7 @@ final class LevelExamViewModel: ObservableObject {
                 // answers stay in the draft for when it opens again.)
                 notEligible = words
             } else {
-                self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+                self.error = NuruStateCopy.failureLine("Couldn't submit. Please try again.", error)
                 Haptics.error()
             }
         }

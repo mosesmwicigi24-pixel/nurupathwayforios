@@ -31,7 +31,7 @@ import SwiftUI
         loading = detail == nil
         error = nil
         do { detail = try await MemberAPI.department(departmentId) }
-        catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this department." } }
+        catch { if detail == nil { self.error = NuruStateCopy.failureLine("We couldn't load this department.", error) } }
         loading = false
     }
 
@@ -84,7 +84,7 @@ import SwiftUI
             return true
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? failure
+            actionError = NuruStateCopy.failureLine(failure, error)
             return false
         }
     }

@@ -163,7 +163,7 @@ struct ProfileView: View {
             await auth.loadProfile()   // the header re-renders with the new avatar_url
         } catch {
             Haptics.error()
-            avatarError = (error as? APIError)?.errorDescription ?? "Couldn't upload your photo — please try again."
+            avatarError = NuruStateCopy.failureLine("Couldn't upload your photo — please try again.", error)
         }
     }
 
@@ -1223,7 +1223,7 @@ private struct CertificateCardView: View {
                 if case APIError.http(let status, _, _, _) = error, status == 404 {
                     downloadError = "The PDF isn't ready yet — check back soon."
                 } else {
-                    downloadError = (error as? APIError)?.errorDescription ?? "Couldn't download the certificate."
+                    downloadError = NuruStateCopy.failureLine("Couldn't download the certificate.", error)
                 }
             }
         }
@@ -1447,7 +1447,7 @@ private struct EditFieldSheet: View {
             dismiss()
         } catch {
             Haptics.error()
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
+            self.error = NuruStateCopy.failureLine("Couldn't save — please try again.", error)
         }
     }
 }

@@ -65,7 +65,7 @@ final class ResourcesViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { items = try await MemberAPI.resources() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load resources." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load resources.", error) }
         loading = false
     }
 }
