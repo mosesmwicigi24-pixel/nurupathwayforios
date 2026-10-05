@@ -288,7 +288,7 @@ final class ExperienceCycle3Tests: XCTestCase {
         XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: "featured", onNowOccurrenceId: nil).map(\.occurrenceId),
                        ["o2", "o4", "o5"], "the featured gathering has its own card below the carousel")
         XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: nil, onNowOccurrenceId: "o2").map(\.occurrenceId),
-                       ["o1", "o3", "o4"], "the gathering on now has the live-now card")
+                       ["o1", "o4", "o5"], "the gathering on now has the live-now card; one card per series (Cycle 4, E10)")
         XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: "", onNowOccurrenceId: nil).count, 3,
                        "no featured gathering: up to three, in the server's order")
     }

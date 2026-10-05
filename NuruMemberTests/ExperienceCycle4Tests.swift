@@ -459,6 +459,20 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertNotNil(ahead.nextStart(now: now, timeZone: nairobi))
     }
 
+    // MARK: Cycle 3 close walk E10 — the carousel shows a series once, at its next date
+
+    func testTheCarouselShowsASeriesOnceAtItsNextDate() throws {
+        func row(_ occ: String, _ series: String, _ at: String) throws -> HomeEventRow {
+            try decode(HomeEventRow.self, ["occurrence_id": occ, "series_id": series, "title": "Welcome to Ablaze",
+                                           "starts_at": at])
+        }
+        let rows = [try row("oct", "ablaze", "2026-10-25T12:30:00Z"), try row("nov", "ablaze", "2026-11-25T12:30:00Z"),
+                    try row("dec", "ablaze", "2026-12-25T12:30:00Z"), try row("svc", "sunday", "2026-10-11T06:00:00Z"),
+                    try row("solo", "", "2026-10-16T12:00:00Z")]
+        XCTAssertEqual(HomeFeatured.carouselEvents(rows, featuredSeriesId: nil, onNowOccurrenceId: nil).map(\.occurrenceId),
+                       ["oct", "svc", "solo"], "Ablaze once, at 25 Oct — never three times")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

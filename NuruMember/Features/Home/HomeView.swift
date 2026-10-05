@@ -1826,7 +1826,7 @@ struct HomeView: View {
             } label: {
                 featuredPageBody(kicker: "ANNOUNCEMENT", imageUrl: a.primaryImageUrl,
                                  title: a.title, body: a.body,
-                                 meta: a.sentAt.map(shortDate), cta: "Read more")
+                                 meta: a.sentAt.flatMap(NuruDates.parse).map { NuruDates.day($0) }, cta: "Read more")
             }
             .buttonStyle(.pressableSubtle)
         case .occurrence(let o):
@@ -1866,10 +1866,13 @@ struct HomeView: View {
                     .padding(10)
             }
             VStack(alignment: .leading, spacing: 0) {
+                // A title wraps to two lines (rule 9; the walk's "Experie…");
+                // the body yields its second line when the title needs it.
                 Text(title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
-                    .lineLimit(1)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    .layoutPriority(-1)
                 Spacer(minLength: 0)
                 HStack {
                     if let meta { Text(meta).font(.nCardMeta).foregroundStyle(HomeFig.faintGray) }
@@ -2190,13 +2193,13 @@ struct HomeView: View {
     }
 
     private func eventKicker(_ startAt: String) -> String {
-        guard let d = parseISO(startAt) else { return timeLine(startAt) }
+        guard let d = parseISO(startAt) else { return "" }
         let cal = Calendar.current
         let day: String
         if cal.isDateInToday(d) { day = "Today" }
         else if cal.isDateInTomorrow(d) { day = "Tomorrow" }
-        else { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; day = f.string(from: d) }
-        return "\(day) · \(timeLine(startAt))"
+        else { day = NuruDates.day(d) }
+        return "\(day) · \(NuruDates.time(d))"
     }
 
     // MARK: 16 — Encouragement ("one reflection away" / "beautifully done")
@@ -2277,14 +2280,6 @@ struct HomeView: View {
     /// Parse an ISO timestamp tolerantly.
     private func parseISO(_ iso: String) -> Date? {
         ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-    }
-    private func shortDate(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: d)
-    }
-    private func timeLine(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: d)
     }
 }
 
@@ -2372,11 +2367,17 @@ private struct HomeRingTrim: View {
 /// gathering happening now (the live-now card). Up to three, in the server's
 /// order. Pure — pinned by tests.
 enum HomeFeatured {
+    /// One card per series, at its next date (the walk's E10: "Welcome to
+    /// Ablaze" three times — 25 Oct, 25 Nov, 25 Dec; §7.2 #9, never twice on
+    /// one screen). Rows arrive soonest first, so the first of a series is its
+    /// next meeting. A row without a series stands for itself.
     static func carouselEvents(_ rows: [HomeEventRow], featuredSeriesId: String?,
                                onNowOccurrenceId: String?) -> [HomeEventRow] {
         let featured = featuredSeriesId.flatMap { $0.isEmpty ? nil : $0 }
+        var seen = Set<String>()
         return Array(rows.filter { row in
-            !(featured != nil && row.seriesId == featured) && row.occurrenceId != onNowOccurrenceId
+            guard !(featured != nil && row.seriesId == featured), row.occurrenceId != onNowOccurrenceId else { return false }
+            return seen.insert(row.seriesId.isEmpty ? "occ:" + row.occurrenceId : row.seriesId).inserted
         }.prefix(3))
     }
 }
