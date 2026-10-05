@@ -877,23 +877,13 @@ struct GivingView: View {
     /// US$ 5 … 100 while PayPal is chosen. Minor units either way.
     private var presetMinors: [Int] { inDollars ? UsdEntry.presetsCents : presets.map { $0 * 100 } }
 
+    /// One line of pills, as Android (§8.2 #7) — they wrapped "5,000" onto
+    /// a row of its own, pushing "Enter a custom amount" under the Give button.
     private var presetsRow: some View {
-        FlowWrap(spacing: 6, centered: true) {
-            ForEach(presetMinors, id: \.self) { v in
-                let on = giftMinor == v
-                Button {
-                    guard !on else { return }
-                    Haptics.selection()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        if inDollars { usdCents = v } else { amount = v / 100 }
-                    }
-                } label: {
-                    Text((v / 100).formatted(.number.grouping(.automatic)))
-                        .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
-                        .padding(.horizontal, 14).frame(height: 34)
-                        .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
-                        .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                }.buttonStyle(.pressable)
+        NuruAmountPills(amounts: presetMinors, selected: giftMinor,
+                        label: { ($0 / 100).formatted(.number.grouping(.automatic)) }) { v in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                if inDollars { usdCents = v } else { amount = v / 100 }
             }
         }
     }
@@ -2022,18 +2012,12 @@ private struct GiveKeypadSheet: View {
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x0070BA))
                 }
 
-                HStack(spacing: 6) {
-                    ForEach(presetMinors, id: \.self) { v in
-                        Button { value = inDollars ? UsdEntry.text(v) : String(v / 100) } label: {
-                            Text((v / 100).formatted(.number.grouping(.automatic)))
-                                .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-                                .padding(.horizontal, 11).frame(height: 32)
-                                .background(Nuru.surface, in: Capsule())
-                                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-                        }.buttonStyle(.plain)
-                    }
+                // The same pills as the form (§8.1 rule 6) — the typed amount,
+                // when it is one of them, is the chosen one.
+                NuruAmountPills(amounts: presetMinors, selected: minor,
+                                label: { ($0 / 100).formatted(.number.grouping(.automatic)) }) { v in
+                    value = inDollars ? UsdEntry.text(v) : String(v / 100)
                 }
-                .frame(maxWidth: .infinity)
 
                 keys
 
@@ -2077,10 +2061,11 @@ private struct GiveKeypadSheet: View {
                         Haptics.selection()
                         name = on ? "" : p
                     } label: {
+                        // Chips: chosen navy, the rest white with a hairline (§8.1 rule 6).
                         Text(p)
                             .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                             .padding(.horizontal, 11).frame(height: 32)
-                            .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
@@ -2661,7 +2646,7 @@ private struct ScheduleDetailSheet: View {
                         Text(String(ScheduleRhythm.weekdays[d].prefix(3)))
                             .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                             .padding(.horizontal, 12).frame(height: 34)
-                            .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
