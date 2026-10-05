@@ -471,6 +471,10 @@ struct HomeView: View {
         // inserts at the top, every other row must keep its identity — offset
         // keys made SwiftUI tear down and rebuild every card below it.
         var s: [(id: String, view: AnyView)] = []
+        // YOUR WEEK's rows, read first: "What needs you today" (above them)
+        // never repeats one (§9.1 rule 3).
+        let week = weekRows
+        let needs = vm.nudges.filter { !HomeWeek.repeats($0, in: week) }
         // Nuru Live — the church-scope LIVE banner sits at the very TOP of the
         // whole feed, above even the load-error strip: a live broadcast is the
         // most urgent thing on the screen. Hidden entirely when nothing church-
@@ -501,16 +505,17 @@ struct HomeView: View {
             s.append(("letter", AnyView(letterArrivalCard)))
         }
         // "What needs you today" — the server-ranked rail takes the priority
-        // slot. An empty (or failed) fetch falls back to the old single
-        // reflection strip so Home never loses its nudge (one place, one ask).
-        if !vm.nudges.isEmpty { s.append(("needsyou", AnyView(needsYouRail))) }
-        else if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }
+        // slot, less any nudge a YOUR WEEK row already asks (§9.1 rule 3: the
+        // row keeps it). An empty (or failed) fetch falls back to the old
+        // single reflection strip so Home never loses its nudge (one place,
+        // one ask); a rail whose every nudge is a row's shows nothing.
+        if !needs.isEmpty { s.append(("needsyou", AnyView(HomeNeedsYouRail(nudges: needs) { openNudge($0) }))) }
+        else if vm.nudges.isEmpty, reflectionDue { s.append(("priority", AnyView(priorityStrip))) }
         s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
         // 3 · YOUR WEEK — one row per pillar, each pointing to its home once.
         // It replaced the "For you today" hero, the continue-level card, the
         // reading-plan/journal minis, the plan banner, both cell cards and the
         // upcoming list: each told one of these five stories again.
-        let week = weekRows
         s.append(("week", AnyView(HomeWeekCard(rows: week) { openWeek($0) })))
         // 4 · The day: today's rhythm, then today's echo.
         s.append(("rhythm", AnyView(rhythmCard)))                                                   // Today's rhythm
@@ -1203,10 +1208,6 @@ struct HomeView: View {
     }
 
     // MARK: 1 — "What needs you today" (server-ranked nudges; replaces the strip)
-
-    private var needsYouRail: some View {
-        HomeNeedsYouRail(nudges: vm.nudges) { openNudge($0) }
-    }
 
     /// Routes a nudge to the surface that clears it. Content opens INSIDE the
     /// tab that owns it (the TabRouter contract): Pathway for a quiz or a level

@@ -76,6 +76,34 @@ enum HomeWeek {
         rows.first { $0.pillar == .giving }?.destination == .give
     }
 
+    /// "What needs you today" never repeats a YOUR WEEK row (EXPERIENCE.md
+    /// §9.1 rule 3): a server nudge that points where a row already points —
+    /// the exam the Pathway row offers, the plan day the Plans row opens, the
+    /// cell the Cell row opens, the test inside the module the Pathway row
+    /// continues — is the same ask twice on one page ("Take the Level 1
+    /// exam" over "Take the Level 1 exam"). The row keeps it; the rail drops
+    /// it. Reflection, the letter, invites and messages are no row's — they
+    /// stay. Android's YourWeek.repeats, the same rule.
+    static func repeats(_ n: HomeNudge, in week: [HomeWeekRow]) -> Bool {
+        let key = n.route.isEmpty ? n.kind : n.route
+        let p = n.params
+        switch key {
+        case "level_exam", "level_review":
+            guard let level = p?.levelNumber else { return false }
+            return week.contains { $0.destination == .journey(.exam(level)) }
+        case "plan", "plan_day_due":
+            guard let id = p?.planId, !id.isEmpty else { return false }
+            return week.contains { if case .planDay(let plan) = $0.destination { return plan.planId == id }; return false }
+        case "cell", "cell_gathering":
+            return week.contains { $0.destination == .cell }
+        case "quiz", "quiz_in_progress":
+            guard let id = p?.moduleId, !id.isEmpty else { return false }
+            return week.contains { $0.destination == .journey(.module(id)) }
+        default:
+            return false
+        }
+    }
+
     // MARK: Pathway — always
 
     /// The journey's next step (EXPERIENCE.md §3): its title, "Level N · " +

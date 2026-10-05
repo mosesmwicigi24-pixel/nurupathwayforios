@@ -56,6 +56,47 @@ final class ExperienceCycle5Tests: XCTestCase {
         }
     }
 
+    // MARK: §9.2 #2 — "What needs you today" never repeats a YOUR WEEK row
+
+    func nudge(_ kind: String, route: String = "", _ params: [String: Any] = [:]) throws -> HomeNudge {
+        try decode(HomeNudge.self, ["id": kind, "kind": kind, "title": kind, "body": "", "cta_label": "Open",
+                                    "route": route, "params": params, "accent": "gold", "priority": 50])
+    }
+
+    func plan(_ id: String, day: Int = 2, done: [Int] = [1], lastFinished: String? = nil) throws -> ReadingPlanRow {
+        var row: [String: Any] = ["plan_id": id, "title": "First Steps", "day_count": 7, "current_day": day,
+                                  "completed_days": done, "enrolled": true]
+        if let lastFinished { row["last_day_finished_at"] = lastFinished }
+        return try decode(ReadingPlanRow.self, row)
+    }
+
+    func testTheRailDropsANudgeAYourWeekRowAlreadyAsks() throws {
+        let examWeek = [HomeWeekRow(pillar: .pathway, title: "Take the Level 1 exam", line: "Level 1 · Exam ready",
+                                    destination: .journey(.exam(1)))]
+        // Ada: the server's exam nudge (route level_exam) over the row that offers it.
+        XCTAssertTrue(HomeWeek.repeats(try nudge("level_review", route: "level_exam", ["levelNumber": 1]), in: examWeek))
+        XCTAssertTrue(HomeWeek.repeats(try nudge("level_review", ["level_number": 1]), in: examWeek))
+        let learningWeek = [HomeWeekRow(pillar: .pathway, title: "Continue · Identity in Christ", line: "Level 1",
+                                        destination: .journey(.module("m6")))]
+        XCTAssertFalse(HomeWeek.repeats(try nudge("level_review", ["levelNumber": 1]), in: learningWeek))
+        XCTAssertTrue(HomeWeek.repeats(try nudge("quiz_in_progress", ["moduleId": "m6"]), in: learningWeek))
+        XCTAssertFalse(HomeWeek.repeats(try nudge("quiz_in_progress", ["moduleId": "m2"]), in: learningWeek))
+
+        let week = learningWeek + [
+            HomeWeekRow(pillar: .plans, title: "First Steps", line: "Day 2 of 7 · today's reading", destination: .planDay(try plan("p1"))),
+            HomeWeekRow(pillar: .cell, title: "Dev Cell A", line: "Next gathering Mon 5 Oct", destination: .cell)]
+        XCTAssertTrue(HomeWeek.repeats(try nudge("plan_day_due", ["planId": "p1"]), in: week))
+        XCTAssertFalse(HomeWeek.repeats(try nudge("plan_day_due", ["planId": "p9"]), in: week))
+        XCTAssertTrue(HomeWeek.repeats(try nudge("cell_gathering"), in: week))
+        // Reflection, the letter, invites and messages are no row's — they stay.
+        for k in ["reflection_due", "letter_unread", "reading_invite", "chat_unread"] {
+            XCTAssertFalse(HomeWeek.repeats(try nudge(k), in: week), k)
+        }
+        // No cell: the row asks to be connected; a gathering isn't its.
+        let noCell = [HomeWeekRow(pillar: .cell, title: "Ask to be connected", line: "", destination: .community)]
+        XCTAssertFalse(HomeWeek.repeats(try nudge("cell_gathering"), in: noCell))
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)
