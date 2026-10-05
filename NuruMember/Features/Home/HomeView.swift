@@ -732,6 +732,10 @@ struct HomeView: View {
         case "level": path.append(PathwayRoute.level(1))
         // The exam screen as the server answers it — its refusal, its way out.
         case "exam": path.append(PathwayRoute.exam(1))
+        // One announcement by id, as the server answers it — e.g. a removed
+        // one's state card (§7.4 #12): NURU_SCREEN=announcement:<uuid>.
+        case let s? where s.hasPrefix("announcement:"):
+            path.append(AppRoute.announcement(String(s.dropFirst("announcement:".count))))
         default: break
         }
         #endif
