@@ -43,7 +43,7 @@ struct PlanSegmentView: View {
     @AppStorage(ReaderTextScale.key) private var readerScale: Double = 1.0
     @State private var done = false
     @State private var saving = false
-    /// Why the server didn't record the part — under the button (§7.4 #2).
+    /// Why the server didn't record the part — above the button (§7.4 #2).
     @State private var saveError: String?
     /// This part's segments the server has recorded while the page is open:
     /// a retry finishes only the rest.
@@ -309,6 +309,20 @@ struct PlanSegmentView: View {
 
     private var cta: some View {
         VStack(spacing: 8) {
+            // Above the button (both apps): clear of the home indicator, read
+            // before the retry tap. On its own card: the reading scrolls under
+            // this bar, and the words must stay legible over it.
+            if let saveError {
+                Text(saveError)
+                    .font(.inter(12, .medium)).foregroundStyle(pal.danger)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(pal.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pal.danger.opacity(0.25), lineWidth: 1))
+                    .transition(.opacity)
+            }
             Button {
                 guard !saving else { return }
                 if done {
@@ -331,19 +345,6 @@ struct PlanSegmentView: View {
             }
             .buttonStyle(.pressable)
             .disabled(saving)
-            if let saveError {
-                // On its own card: the reading scrolls under this bar, and the
-                // words must stay legible over it.
-                Text(saveError)
-                    .font(.inter(12, .medium)).foregroundStyle(pal.danger)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 12).padding(.vertical, 8)
-                    .frame(maxWidth: .infinity)
-                    .background(pal.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pal.danger.opacity(0.25), lineWidth: 1))
-                    .transition(.opacity)
-            }
         }
         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 14)
         .background(
@@ -357,7 +358,7 @@ struct PlanSegmentView: View {
     /// before the server says so (§7.4 #2): each segment ticks the hub only
     /// on its own ack; the haptic and the way back come only once all have
     /// landed. A refusal or no answer keeps the member here, with §4's words
-    /// for why under the button, and the next tap finishes only the rest.
+    /// for why above the button, and the next tap finishes only the rest.
     private func finish() async {
         var lastAck: SegmentCompleteResult?
         for seg in group where !seg.completed && !acked.contains(seg.segmentId) {
@@ -576,7 +577,7 @@ struct TalkItOverView: View {
     @State private var talkSealed = false
     /// The gold button is waiting on the server (§7.4 #2).
     @State private var sealing = false
-    /// Why the server didn't record it — under the gold button.
+    /// Why the server didn't record it — above the gold button.
     @State private var sealError: String?
     @State private var aiBusy = false
     @FocusState private var composing: Bool
@@ -908,9 +909,17 @@ struct TalkItOverView: View {
     /// consistent gesture: read/respond, press gold, back at the hub, ticked.
     /// No success before the server says so (§7.4 #2, as Android): the button
     /// shows progress while it waits; on the ack, the haptic and back to the
-    /// day; on a refusal or no answer the member stays, told why under it.
+    /// day; on a refusal or no answer the member stays, told why above it.
     private var doneBar: some View {
         VStack(spacing: 8) {
+            // Above the button (both apps): read before the retry tap.
+            if let sealError {
+                Text(sealError)
+                    .font(.inter(12, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
             Button {
                 guard !sealing else { return }
                 if route.talkDone || talkSealed {
@@ -942,13 +951,6 @@ struct TalkItOverView: View {
             }
             .buttonStyle(.pressable)
             .disabled(sealing)
-            if let sealError {
-                Text(sealError)
-                    .font(.inter(12, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(.opacity)
-            }
         }
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
         .background(Color.white)

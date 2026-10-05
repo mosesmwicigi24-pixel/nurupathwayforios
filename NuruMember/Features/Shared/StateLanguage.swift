@@ -93,9 +93,9 @@ struct NuruStateCopy: Equatable {
 
 extension NuruStateCopy {
     /// A write the server did not record (EXPERIENCE.md §7.4 #2): the member
-    /// stays where they are, and the line under the button that tried says
+    /// stays where they are, and the line above the button that tried says
     /// so in §4's words — "Couldn't save that." and why. Never a success the
-    /// server didn't give. Android's words.
+    /// server didn't give. Android's words and place.
     static func saveFailureLine(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String {
         "Couldn't save that. " + failure(error, deviceOnline: deviceOnline).sentence
     }

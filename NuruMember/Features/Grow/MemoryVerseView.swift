@@ -478,7 +478,12 @@ private struct PracticeSheet: View {
 
                 // No success before the server says so (§7.4 #2): the sheet
                 // closes with its haptic only once the practice is recorded;
-                // otherwise it stays, with §4's words for why under the button.
+                // otherwise it stays, with §4's words for why above the button.
+                if let saveError {
+                    Text(saveError)
+                        .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 PButton(title: "Save practice", variant: .gold, busy: saving,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
                     guard !saving else { return }
@@ -496,11 +501,6 @@ private struct PracticeSheet: View {
                             dismiss()
                         }
                     }
-                }
-                if let saveError {
-                    Text(saveError)
-                        .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(Nuru.S.screen)
