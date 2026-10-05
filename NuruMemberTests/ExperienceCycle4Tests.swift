@@ -328,6 +328,30 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertFalse(j.line.contains("discipler"))
     }
 
+    // MARK: Cycle 3 close walk B2 — the trail's exam row is the exam step
+
+    /// Ada's Level 1: twenty lessons done, the exam row open. The trail drew
+    /// that row as "MODULE 21 · Level 1 Review · Start this module"; it is the
+    /// exam step now, and the one place the exam is offered — no gate card
+    /// beside it saying it twice — and never counted as a module.
+    @MainActor
+    func testTheTrailsExamRowIsTheExamStepAndTheOnlyOffer() throws {
+        let vm = LevelDetailViewModel(levelNumber: 1)
+        let trail = try adasTrail()
+        vm.modules = trail
+        vm.level = try decode(PathwayLevel.self, adasLevelOne)
+        vm.journey = Journey.derive(try summary(current: 1, adasLevelOne), trail: trail)
+        let exam = try XCTUnwrap(vm.modules.last)
+        XCTAssertTrue(exam.isExam)
+        XCTAssertFalse(exam.locked)
+        XCTAssertFalse(vm.examAvailable, "the row offers the exam; a gate beside it would offer it twice")
+        XCTAssertEqual(vm.completed, 20)
+        XCTAssertEqual(vm.moduleCount, 20, "the exam row is never counted as a module")
+        // Without an exam row (an older server), the gate is the trail's end.
+        vm.modules = Array(trail.dropLast())
+        XCTAssertTrue(vm.examAvailable)
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

@@ -123,11 +123,13 @@ final class LevelDetailViewModel: ObservableObject {
     var awaitingReview: Bool { level?.isAwaitingReview ?? false }
 
     /// The journey says this level's exam is the member's next step — surface
-    /// the exam gate, unless the trail carries its own exam row (which opens
-    /// it already). The old test (`level?.status != .completed`) read the
-    /// server's "every module done" as "level passed", so the gate never showed
-    /// once the last module was finished. The true eligibility answer stays
-    /// the server's (§1.9).
+    /// the exam gate at the trail's end, unless the trail carries its own exam
+    /// row: that row IS the exam step now (drawn "LEVEL N EXAM · … · Begin
+    /// the exam", never "MODULE 11 · Start this module" — the walk's B2), and
+    /// a gate beside it would say the exam twice. The old test
+    /// (`level?.status != .completed`) read the server's "every module done"
+    /// as "level passed", so the gate never showed once the last module was
+    /// finished. The true eligibility answer stays the server's (§1.9).
     var examAvailable: Bool { gateShows(at: .examReady) }
 
     /// Every module is done but the exam can't be taken yet (in review, or no
@@ -650,9 +652,14 @@ struct LevelDetailView: View {
                 Circle()
                     .fill(m.completed ? Nuru.gold : (m.locked ? Nuru.mutedBg : Nuru.goldTint))
                     .frame(width: 36, height: 36)
-                Text("\(m.moduleSequenceNumber)")
-                    .font(.inter(14, .bold))
-                    .foregroundStyle(m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+                if m.isExam {
+                    // The exam is its own step, never "module 11" (B2).
+                    Icon(.award, size: 18, color: m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+                } else {
+                    Text("\(m.moduleSequenceNumber)")
+                        .font(.inter(14, .bold))
+                        .foregroundStyle(m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+                }
             }
             if m.completed {
                 ZStack {
@@ -742,7 +749,9 @@ private struct ModuleTrailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(alignment: .firstTextBaseline) {
-                Text("MODULE \(module.moduleSequenceNumber)")
+                // The level's exam container is the exam step, as Pathway's
+                // trail draws it — never "MODULE 11 · Start this module" (B2).
+                Text(module.isExam ? "LEVEL \(module.levelNumber) EXAM" : "MODULE \(module.moduleSequenceNumber)")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
                 statusBadge
@@ -801,7 +810,7 @@ private struct ModuleTrailCard: View {
             if let mins = module.estimatedMinutes {
                 chip(.clock, "\(mins) min")
             }
-            if module.requiresQuiz {
+            if module.requiresQuiz && !module.isExam {
                 chip(.pencil, "Quiz")
             }
         }
@@ -820,16 +829,16 @@ private struct ModuleTrailCard: View {
     @ViewBuilder
     private var footerLine: some View {
         if module.completed {
-            Text("Completed — nicely done.")
+            Text(module.isExam ? "Exam passed." : "Completed — nicely done.")
                 .font(.nMicro).foregroundStyle(Nuru.successText)
         } else if module.locked {
-            Text("Unlocks when you finish the one before.")
+            Text(module.isExam ? "Opens when every module is done." : "Unlocks when you finish the one before.")
                 .font(.nMicro).foregroundStyle(Nuru.faint)
         } else if module.examOpensSoon {
             Text("Opens soon").font(.inter(12, .semibold)).foregroundStyle(Nuru.faint)
         } else {
             HStack(spacing: 4) {
-                Text("Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                Text(module.isExam ? "Begin the exam" : "Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
                 Icon(.chevronRight, size: 12, color: Nuru.gold)
             }
         }
