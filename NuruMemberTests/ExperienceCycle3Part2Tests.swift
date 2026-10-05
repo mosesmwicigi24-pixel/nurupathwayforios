@@ -223,4 +223,44 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertEqual(ChatInboxViewModel.headerLine(unread: 4), "4 new messages")
         XCTAssertNil(ChatInboxViewModel.headerLine(unread: nil), "no count before the inbox has answered")
     }
+
+    // MARK: §7.4 #16 — the cell page's attendance, with the server's meaning
+
+    private func cellSummary(attendance: [String: Any], turnout: Any = NSNull()) throws -> CellSummary.Cell {
+        let summary = try decode(CellSummary.self, ["cell": [
+            "cell_group_id": "dev-cell-a", "name": "Dev Cell A", "members": 5, "leader": NSNull(),
+            "attendance": attendance, "next": NSNull(), "turnout": turnout, "leader_view": NSNull()]])
+        return try XCTUnwrap(summary.cell)
+    }
+
+    func testAdasCellHasNotMetYet() throws {
+        // Ada's /me/cell-summary, verbatim from the local API (2026-10-05).
+        let cell = try cellSummary(attendance: ["attended": 0, "expected": 8, "you": NSNull()])
+        XCTAssertNil(cell.attendance.you)
+        XCTAssertEqual(CellAttendanceWords.lines(you: cell.attendance.you, turnout: cell.turnout),
+                       ["Your cell hasn't met yet"], "never \"0/8 · you, this month\" — the 8 is a scoring baseline")
+        XCTAssertFalse(CellAttendanceWords.hasMet(you: cell.attendance.you, turnout: cell.turnout))
+    }
+
+    func testAMetCellSaysYourPartAndTheCellsTurnout() throws {
+        let cell = try cellSummary(attendance: ["attended": 2, "expected": 8, "you": ["attended": 3, "meetings": 8]],
+                                   turnout: ["rate": 0.48, "meetings": 8, "trend": "up"])
+        XCTAssertEqual(cell.attendance.you?.attended, 3)
+        XCTAssertEqual(cell.attendance.you?.meetings, 8)
+        XCTAssertEqual(CellAttendanceWords.lines(you: cell.attendance.you, turnout: cell.turnout),
+                       ["You: 3 of the last 8 meetings", "The cell: 48% · last 8 meetings"])
+        XCTAssertTrue(CellAttendanceWords.hasMet(you: cell.attendance.you, turnout: cell.turnout))
+
+        // One meeting so far.
+        let first = try cellSummary(attendance: ["attended": 1, "expected": 8, "you": ["attended": 1, "meetings": 1]],
+                                    turnout: ["rate": 1.0, "meetings": 1, "trend": NSNull()])
+        XCTAssertEqual(CellAttendanceWords.lines(you: first.attendance.you, turnout: first.turnout),
+                       ["You: 1 of 1 meeting", "The cell: 100% · 1 meeting"])
+
+        // A server that predates `you`: the cell's line alone.
+        let older = try cellSummary(attendance: ["attended": 2, "expected": 8], turnout: ["rate": 0.48, "meetings": 8])
+        XCTAssertNil(older.attendance.you)
+        XCTAssertEqual(CellAttendanceWords.lines(you: older.attendance.you, turnout: older.turnout),
+                       ["The cell: 48% · last 8 meetings"])
+    }
 }

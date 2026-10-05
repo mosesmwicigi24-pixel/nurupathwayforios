@@ -83,7 +83,8 @@ struct CellInfoView: View {
                             if let n = vm.cell?.next { nextGatheringCard(n) }
                             if let lv = vm.cell?.leaderView, lv.count > 0 { shepherdsNoteCard(lv) }
                             membersCard
-                            statsGrid
+                            attendanceCard
+                            if vm.cell?.levelLabel != nil || vm.cell?.focus != nil { statsGrid }
                             watchReplaysButton
                             openCommunityButton
                         }
@@ -373,24 +374,41 @@ struct CellInfoView: View {
 
     private var statsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
-            attendanceTile
             if let l = vm.cell?.levelLabel { statTile(.award, "Level", l) }
             if let f = vm.cell?.focus { statTile(.target, "Focus", f) }
         }
     }
 
-    /// Honest attendance: cell-wide turnout over recent meetings when the
-    /// server has it; else the member's own month; else a dash.
-    @ViewBuilder private var attendanceTile: some View {
-        if let t = vm.cell?.turnout {
-            statTile(.percent, "Attendance", "\(Int((t.rate * 100).rounded()))%",
-                     caption: "last \(t.meetings) meeting\(t.meetings == 1 ? "" : "s")",
-                     trend: t.trend)
-        } else if let a = vm.cell?.attendance, a.expected > 0 {
-            statTile(.percent, "Attendance", "\(a.attended)/\(a.expected)", caption: "you, this month")
-        } else {
-            statTile(.percent, "Attendance", "—")
+    /// Attendance with the server's meaning (§7.4 #16), the same words as
+    /// Android: the member's part in the cell's real recent meetings ("You:
+    /// 3 of the last 8 meetings") and the cell's turnout over them ("The
+    /// cell: 48% · last 8 meetings") — or "Your cell hasn't met yet". The old
+    /// "0/8 · you, this month" set the member against a scoring baseline (8
+    /// expected check-ins) no weekly cell meets.
+    private var attendanceCard: some View {
+        let lines = CellAttendanceWords.lines(you: vm.cell?.attendance.you, turnout: vm.cell?.turnout)
+        let met = CellAttendanceWords.hasMet(you: vm.cell?.attendance.you, turnout: vm.cell?.turnout)
+        return HStack(alignment: .top, spacing: Nuru.S.sm) {
+            Icon(.percent, size: 15, color: Nuru.goldChipText)
+                .frame(width: 32, height: 32)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Attendance").font(.nMicro).foregroundStyle(Nuru.faint)
+                ForEach(lines, id: \.self) { line in
+                    Text(line).font(.inter(14, met ? .bold : .semibold))
+                        .foregroundStyle(met ? Nuru.ink : Nuru.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+            if let trend = vm.cell?.turnout?.trend, let (glyph, color) = Self.trendGlyph(trend) {
+                Icon(glyph, size: 13, color: color).padding(.top, 2)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.sm)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     private func statTile(_ icon: Lucide, _ label: String, _ value: String,
@@ -482,5 +500,35 @@ struct CellInfoView: View {
     private static func longDate(_ iso: String) -> String {
         guard let d = parse(iso) else { return iso }
         let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"; return f.string(from: d)
+    }
+}
+
+/// The cell page's attendance words (EXPERIENCE.md §7.4 #16) — both apps say
+/// these. `you` and `turnout` count the same real recent meetings
+/// (GET /me/cell-summary); `attendance.expected` is a scoring baseline and is
+/// never shown. Pure.
+enum CellAttendanceWords {
+    /// "You: 3 of the last 8 meetings" · "You: 1 of 1 meeting".
+    static func you(_ y: CellSummary.Cell.Attendance.You) -> String? {
+        guard y.meetings > 0 else { return nil }
+        let attended = min(max(0, y.attended), y.meetings)
+        return y.meetings == 1 ? "You: \(attended) of 1 meeting" : "You: \(attended) of the last \(y.meetings) meetings"
+    }
+
+    /// "The cell: 48% · last 8 meetings" · "The cell: 100% · 1 meeting".
+    static func cell(_ t: CellSummary.Cell.Turnout) -> String? {
+        guard t.meetings > 0 else { return nil }
+        let pct = min(max(0, Int((t.rate * 100).rounded())), 100)
+        return "The cell: \(pct)% · " + (t.meetings == 1 ? "1 meeting" : "last \(t.meetings) meetings")
+    }
+
+    static func hasMet(you: CellSummary.Cell.Attendance.You?, turnout: CellSummary.Cell.Turnout?) -> Bool {
+        (you.flatMap(Self.you) ?? turnout.flatMap(Self.cell)) != nil
+    }
+
+    /// The member's line, then the cell's — or "Your cell hasn't met yet".
+    static func lines(you: CellSummary.Cell.Attendance.You?, turnout: CellSummary.Cell.Turnout?) -> [String] {
+        let out = [you.flatMap(Self.you), turnout.flatMap(Self.cell)].compactMap { $0 }
+        return out.isEmpty ? ["Your cell hasn't met yet"] : out
     }
 }
