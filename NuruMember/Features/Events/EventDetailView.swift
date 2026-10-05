@@ -53,6 +53,8 @@ final class EventDetailViewModel: ObservableObject {
     /// A photo the member attached to the buzz composer, awaiting upload on Post.
     @Published var pendingImage: Data?
     @Published var posting = false
+    /// Why the last post didn't go up (§4) — the draft and photo are back.
+    @Published var postLine: String?
 
     func loadPosts() async {
         if let fresh = try? await MemberAPI.eventPosts(occurrence.occurrenceId) { posts = fresh }
@@ -66,6 +68,7 @@ final class EventDetailViewModel: ObservableObject {
         let image = pendingImage
         guard (!body.isEmpty || image != nil), !posting else { return }
         posting = true; defer { posting = false }
+        postLine = nil
         let pid = UUID().uuidString
         posts.insert(EventPost(
             postId: pid, authorUserId: "", authorName: "You", authorAvatar: nil,
@@ -85,6 +88,10 @@ final class EventDetailViewModel: ObservableObject {
             postDraft = body
             pendingImage = image
             Haptics.error()
+            // ...and say so, with what is kept (the Cycle 4 lost-input class).
+            postLine = NuruStateCopy.sendFailureLine(
+                error, kept: image == nil ? "Your words are kept — post again when you're ready."
+                                          : "Your words and photo are kept — post again when you're ready.")
         }
     }
 
@@ -847,6 +854,12 @@ private struct EvdBuzzCard: View {
                             }
                         }
                     }
+                }
+                // A post that didn't go up says why, above the composer that
+                // still holds it (§4; the Cycle 4 lost-input class).
+                if let line = vm.postLine {
+                    Text(line).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
                             onPost: { Task { await vm.submitPost() } },

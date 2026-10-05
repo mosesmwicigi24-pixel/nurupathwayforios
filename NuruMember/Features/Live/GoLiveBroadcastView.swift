@@ -47,6 +47,8 @@ struct GoLiveBroadcastView: View {
     @State private var confirmDeleteRecording = false
     @State private var deletingRecording = false
     @State private var recordingDeleted = false
+    /// Why "Delete forever" didn't delete (§4) — the recording stays in Replays.
+    @State private var deleteFailureLine: String?
 
     init(controller: BroadcastController) {
         self.controller = controller
@@ -283,6 +285,11 @@ struct GoLiveBroadcastView: View {
                 }
                 .buttonStyle(.plain)
                 .disabled(deletingRecording)
+                if let deleteFailureLine {
+                    Text(deleteFailureLine).font(.inter(12)).foregroundStyle(Color(hex: 0xFCA5A5))
+                        .multilineTextAlignment(.center).padding(.horizontal, 32)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -301,6 +308,7 @@ struct GoLiveBroadcastView: View {
     private func deleteRecording() async {
         guard !deletingRecording else { return }
         deletingRecording = true
+        deleteFailureLine = nil
         defer { deletingRecording = false }
         do {
             try await MemberAPI.deleteLiveRecording(streamId: controller.session.stream.streamId)
@@ -308,9 +316,9 @@ struct GoLiveBroadcastView: View {
             recordingDeleted = true
         } catch {
             Haptics.error()
-            // Best-effort: most likely the registrar hasn't attached a
-            // recording_url yet (NOT_FOUND) — nothing to steward in that
-            // case, and "Keep in Replays" (doing nothing) is already correct.
+            // The alert closed on the tap — say the recording is still there
+            // (most often the registrar hasn't attached a recording yet).
+            deleteFailureLine = NuruStateCopy.deleteFailureLine(error)
         }
     }
 

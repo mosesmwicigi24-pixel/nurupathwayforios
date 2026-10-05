@@ -38,6 +38,8 @@ struct NuruLiveTabView: View {
     @State private var playingRow: LiveMyRecordingRow?
     @State private var confirmDeleteId: String?
     @State private var deletingId: String?
+    /// Why a "Delete forever" didn't delete (§4) — the recording is still listed.
+    @State private var deleteFailureLine: String?
 
     var body: some View {
         Group {
@@ -57,6 +59,10 @@ struct NuruLiveTabView: View {
                 .id(row.recordingId)
         }
         // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Recording not deleted",
+               isPresented: Binding(get: { deleteFailureLine != nil }, set: { if !$0 { deleteFailureLine = nil } })) {
+            Button("OK") { deleteFailureLine = nil }
+        } message: { Text(deleteFailureLine ?? "") }
         .alert(
             "Delete this recording?",
             isPresented: Binding(get: { confirmDeleteId != nil }, set: { if !$0 { confirmDeleteId = nil } })
@@ -265,7 +271,9 @@ struct NuruLiveTabView: View {
             rows.removeAll { $0.recordingId == id }
             resolvedURLs.removeValue(forKey: id)
         } catch {
+            // The alert closed on the tap; the failure is said, not just felt.
             Haptics.error()
+            deleteFailureLine = NuruStateCopy.deleteFailureLine(error)
         }
         deletingId = nil
         confirmDeleteId = nil

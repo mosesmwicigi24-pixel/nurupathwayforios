@@ -1939,7 +1939,8 @@ struct BroadcastComposer: View {
             Haptics.tap()
             askingPassword = true
         } catch {
-            errorText = "Couldn’t send the broadcast — please try again."
+            // The draft and photo stay; the line says why (§4).
+            errorText = NuruStateCopy.sendFailureLine(error)
             Haptics.error()
         }
     }

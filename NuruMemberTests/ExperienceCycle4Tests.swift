@@ -652,6 +652,30 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(NuruStateCopy.saveFailureLine(URLError(.notConnectedToInternet), deviceOnline: false).hasPrefix("Couldn't save that. "))
     }
 
+    // MARK: Cycle 4 item 4 — nothing typed or recorded is lost to a failed send; failures are said
+
+    func testAFailedSendKeepsTheWordsAndSaysWhy() throws {
+        let offline = URLError(.notConnectedToInternet)
+        let send = NuruStateCopy.sendFailureLine(offline, deviceOnline: false)
+        XCTAssertTrue(send.hasPrefix("Couldn't send that. You're offline."))
+        XCTAssertTrue(send.hasSuffix("Your words are kept — send again when you're ready."))
+        XCTAssertTrue(NuruStateCopy.deleteFailureLine(offline, deviceOnline: false).hasSuffix("It's still here."))
+        func src(_ rel: String) throws -> String {
+            try String(contentsOf: TypeScan.appRoot.appendingPathComponent(rel), encoding: .utf8)
+        }
+        // The live chat composers no longer clear the words before the server has them.
+        XCTAssertFalse(try src("Features/Live/LiveChatSheet.swift").contains("guard let sent = try? await MemberAPI.sendLiveMessage"))
+        XCTAssertFalse(try src("Features/Live/LiveFloatingChatOverlay.swift").contains("guard let sent = try? await MemberAPI.sendLiveMessage"))
+        for (rel, line) in [("Features/Community/PrayerWallDetailView.swift", "commentLine = NuruStateCopy.sendFailureLine(error)"),
+                            ("Features/Community/PrayerWallDetailView.swift", "answeredLine = NuruStateCopy.saveFailureLine(error)"),
+                            ("Features/Events/EventDetailView.swift", "postLine = NuruStateCopy.sendFailureLine("),
+                            ("Features/Chat/ChatThreadView.swift", "voiceFailLine = NuruStateCopy.sendFailureLine("),
+                            ("Features/Live/NuruLiveTabView.swift", "deleteFailureLine = NuruStateCopy.deleteFailureLine(error)"),
+                            ("Features/Live/GoLiveBroadcastView.swift", "deleteFailureLine = NuruStateCopy.deleteFailureLine(error)")] {
+            XCTAssertTrue(try src(rel).contains(line), "\(rel): the failure is said in §4's words")
+        }
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

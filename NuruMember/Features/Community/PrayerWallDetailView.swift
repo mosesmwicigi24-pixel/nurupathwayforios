@@ -12,6 +12,10 @@ final class PrayerWallDetailViewModel: ObservableObject {
     @Published var error: String?
     @Published var draft = ""
     @Published var sending = false
+    /// Why the last comment didn't send / the answered mark didn't save, in
+    /// §4's words — the draft stays in the composer for a retry.
+    @Published var commentLine: String?
+    @Published var answeredLine: String?
 
     let postId: String
     init(postId: String) { self.postId = postId }
@@ -19,7 +23,7 @@ final class PrayerWallDetailViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.prayerWallGet(postId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't open this request." }
+        catch { self.error = NuruStateCopy.failure(error).sentence }   // §4, never raw server text
         loading = false
     }
 
@@ -29,8 +33,13 @@ final class PrayerWallDetailViewModel: ObservableObject {
         let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !body.isEmpty else { return }
         sending = true; defer { sending = false }
+        commentLine = nil
         do { try await MemberAPI.prayerWallComment(postId, body: body); draft = ""; await load() }
-        catch { Haptics.error() }   // draft is kept so the words aren't lost
+        catch {
+            // The draft is kept, and the member is told — never a silent shake.
+            Haptics.error()
+            commentLine = NuruStateCopy.sendFailureLine(error)
+        }
     }
 
     /// Mark (or unmark) answered — the celebration only on the server's word
@@ -38,11 +47,14 @@ final class PrayerWallDetailViewModel: ObservableObject {
     func toggleAnswered() async {
         guard let d = detail else { return }
         let marking = !d.post.isAnswered
+        answeredLine = nil
         do {
             try await MemberAPI.prayerWallAnswered(postId, answered: marking)
             if marking { Haptics.success() } else { Haptics.tap() }
         } catch {
+            // Felt AND said (§4), under the button that tried.
             Haptics.error()
+            answeredLine = NuruStateCopy.saveFailureLine(error)
         }
         await load()
     }
@@ -173,6 +185,11 @@ struct PrayerWallDetailView: View {
                 }
                 .buttonStyle(.pressable)
                 .padding(.top, Nuru.S.md)
+                if let line = vm.answeredLine {
+                    Text(line).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Nuru.S.xs)
+                }
             }
         }
         .padding(Nuru.S.base)
@@ -200,25 +217,32 @@ struct PrayerWallDetailView: View {
     }
 
     private func composer(_ d: PrayerWallDetail) -> some View {
-        HStack(alignment: .bottom, spacing: Nuru.S.sm) {
-            TextField("Write an encouragement…", text: $vm.draft, axis: .vertical)
-                .font(.inter(15)).lineLimit(1...5)
-                .padding(.horizontal, Nuru.S.base).padding(.vertical, 12)
-                .frame(minHeight: 44)
-                .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
-                .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
-            // ✨ Nuru drafting — reads the prayer request + latest comments and
-            // proposes an editable encouragement; "Use draft" only fills the field.
-            AiDraftButton(recentMessages: draftContext(d)) { vm.draft = $0 }
-                .padding(.bottom, 7)
-            Button { Haptics.action(); Task { await vm.comment() } } label: {
-                Icon(.send, size: 17, color: .white)
-                    .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
+        VStack(alignment: .leading, spacing: 6) {
+            if let line = vm.commentLine {
+                Text(line).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, Nuru.S.sm).padding(.top, Nuru.S.xs)
             }
-            .buttonStyle(.pressable)
-            .disabled(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-            .opacity(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
-            .animation(.easeInOut(duration: 0.2), value: vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            HStack(alignment: .bottom, spacing: Nuru.S.sm) {
+                TextField("Write an encouragement…", text: $vm.draft, axis: .vertical)
+                    .font(.inter(15)).lineLimit(1...5)
+                    .padding(.horizontal, Nuru.S.base).padding(.vertical, 12)
+                    .frame(minHeight: 44)
+                    .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
+                // ✨ Nuru drafting — reads the prayer request + latest comments and
+                // proposes an editable encouragement; "Use draft" only fills the field.
+                AiDraftButton(recentMessages: draftContext(d)) { vm.draft = $0 }
+                    .padding(.bottom, 7)
+                Button { Haptics.action(); Task { await vm.comment() } } label: {
+                    Icon(.send, size: 17, color: .white)
+                        .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
+                }
+                .buttonStyle(.pressable)
+                .disabled(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                .opacity(vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.5 : 1)
+                .animation(.easeInOut(duration: 0.2), value: vm.sending || vm.draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
         }
         .padding(Nuru.S.sm)
         .background(Nuru.white)
@@ -250,8 +274,7 @@ struct PrayerWallDetailView: View {
     }
 
     private func whenString(_ iso: String) -> String {
-        guard let date = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"
-        return f.string(from: date)
+        guard let date = NuruDates.parse(iso) else { return "" }
+        return NuruDates.dayTime(date)   // one date shape (§8.1 rule 8)
     }
 }

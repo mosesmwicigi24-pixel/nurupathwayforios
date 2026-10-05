@@ -16,6 +16,8 @@ struct LiveChatSheet: View {
     @State private var loading = true
     @State private var draft = ""
     @State private var sending = false
+    /// Why the last message didn't send (§4) — its words stay in the field.
+    @State private var sendLine: String?
     @State private var pollTask: Task<Void, Never>?
     @State private var cursor: String?
 
@@ -90,6 +92,18 @@ struct LiveChatSheet: View {
     // MARK: Composer
 
     private var composer: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let sendLine {
+                Text(sendLine).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            composerRow
+        }
+        .padding(.horizontal, Nuru.S.base).padding(.vertical, 10)
+        .background(Nuru.paper)
+    }
+
+    private var composerRow: some View {
         HStack(spacing: 10) {
             TextField("Say something…", text: $draft, axis: .vertical)
                 .font(.inter(14))
@@ -110,8 +124,6 @@ struct LiveChatSheet: View {
             .buttonStyle(.pressable)
             .disabled(!canSend || sending)
         }
-        .padding(.horizontal, Nuru.S.base).padding(.vertical, 10)
-        .background(Nuru.paper)
     }
 
     private var canSend: Bool {
@@ -155,8 +167,17 @@ struct LiveChatSheet: View {
         guard !text.isEmpty, !sending else { return }
         sending = true
         defer { sending = false }
-        draft = ""
-        guard let sent = try? await MemberAPI.sendLiveMessage(streamId: streamId, body: text) else { return }
+        sendLine = nil
+        // The words leave the field only once the server has them (the Cycle 4
+        // lost-input class: a failed send used to clear them for good).
+        let sent: LiveChatMessage
+        do { sent = try await MemberAPI.sendLiveMessage(streamId: streamId, body: text) }
+        catch {
+            Haptics.error()
+            sendLine = NuruStateCopy.sendFailureLine(error)
+            return
+        }
+        if draft.trimmingCharacters(in: .whitespacesAndNewlines) == text { draft = "" }
         if !messages.contains(where: { $0.messageId == sent.messageId }) {
             messages.append(sent)
             cursor = sent.sentAt

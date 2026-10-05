@@ -99,6 +99,19 @@ extension NuruStateCopy {
     static func saveFailureLine(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String {
         "Couldn't save that. " + failure(error, deviceOnline: deviceOnline).sentence
     }
+
+    /// A message, comment or recording the server did not take (Cycle 4, the
+    /// lost-input class): it stays where the member left it, and this line
+    /// says so — "Couldn't send that.", why, and what is kept for a retry.
+    /// A delete the server did not do: the thing is still there, and says so.
+    static func deleteFailureLine(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String {
+        "Couldn't delete that. " + failure(error, deviceOnline: deviceOnline).sentence + " It's still here."
+    }
+
+    static func sendFailureLine(_ error: Error, kept: String = "Your words are kept — send again when you're ready.",
+                                deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String {
+        "Couldn't send that. " + failure(error, deviceOnline: deviceOnline).sentence + " " + kept
+    }
 }
 
 /// What a screen shows in place of its content.

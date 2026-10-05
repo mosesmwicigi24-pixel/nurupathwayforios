@@ -1607,6 +1607,8 @@ private struct ComposerBar: View {
     @StateObject private var recorder = ChatVoiceRecorder()
     @State private var sendingVoice = false
     @State private var voiceSendFailed = false
+    /// Why the recording didn't send, in §4's words — the take is kept.
+    @State private var voiceFailLine: String?
     @State private var micHint = false
     @State private var micHintDismiss: Task<Void, Never>?
 
@@ -1619,6 +1621,14 @@ private struct ComposerBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if voiceSendFailed, let line = voiceFailLine {
+                Text(line)
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0xE0342C))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+            }
             if micHint {
                 Text("Allow microphone in Settings to send voice messages.")
                     .font(.inter(12)).foregroundStyle(Aurora.meta)
@@ -1666,6 +1676,7 @@ private struct ComposerBar: View {
                 Haptics.tap()
                 recorder.cancel()
                 voiceSendFailed = false
+                voiceFailLine = nil
             } label: {
                 Icon(.x, size: 17, color: Aurora.meta)
                     .frame(width: 36, height: 36)
@@ -1680,7 +1691,7 @@ private struct ComposerBar: View {
                     .frame(width: 10, height: 10)
             }
             if voiceSendFailed {
-                Text("Couldn't send — tap to retry")
+                Text("Not sent — tap send to retry")
                     .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xE0342C))
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -1719,9 +1730,11 @@ private struct ComposerBar: View {
         // that race and silently drop the message.
         guard let data = try? Data(contentsOf: file) else {
             voiceSendFailed = true
+            voiceFailLine = "Couldn't send that. The recording couldn't be read on this phone — record it again."
             return
         }
         voiceSendFailed = false
+        voiceFailLine = nil
         sendingVoice = true
         Task {
             defer { sendingVoice = false }
@@ -1733,9 +1746,11 @@ private struct ComposerBar: View {
                 onVoiceSent()
             } catch {
                 // Keep the take: the strip stays up with a retry until the
-                // member sends it or cancels it themselves.
-                Haptics.tap()
+                // member sends it or cancels it themselves — and says why.
+                Haptics.error()
                 voiceSendFailed = true
+                voiceFailLine = NuruStateCopy.sendFailureLine(
+                    error, kept: "Your recording is kept — tap send to try again.")
             }
         }
     }

@@ -42,6 +42,8 @@ final class LiveFloatingChatController: ObservableObject {
     /// it never LIES about being confirmed, just feels instant rather than
     /// waiting out a round trip.
     @Published private(set) var pendingMessageIds: Set<String> = []
+    /// Why the last message didn't send (§4) — its words are back in the field.
+    @Published private(set) var sendLine: String?
 
     /// Only the trailing window is ever RENDERED (owner spec: "last ~6
     /// messages") — the full session history is kept here regardless, so a
@@ -107,7 +109,20 @@ final class LiveFloatingChatController: ObservableObject {
         )
         pendingMessageIds.insert(pendingId)
         messages.append(optimistic)
-        guard let sent = try? await MemberAPI.sendLiveMessage(streamId: streamId, body: text) else { return }
+        sendLine = nil
+        let sent: LiveChatMessage
+        do { sent = try await MemberAPI.sendLiveMessage(streamId: streamId, body: text) }
+        catch {
+            // The words come back to the field and the half-sent bubble goes —
+            // never a faded bubble left forever, never words lost (the Cycle 4
+            // lost-input class). If it did land, the next poll shows it.
+            pendingMessageIds.remove(pendingId)
+            messages.removeAll { $0.messageId == pendingId }
+            if draft.isEmpty { draft = text }
+            sendLine = NuruStateCopy.sendFailureLine(error)
+            Haptics.error()
+            return
+        }
         pendingMessageIds.remove(pendingId)
         if let idx = messages.firstIndex(where: { $0.messageId == pendingId }) {
             messages[idx] = sent
@@ -370,6 +385,16 @@ struct LiveFloatingChatOverlay: View {
     // MARK: Composer — translucent input pill + send button
 
     private var composerPill: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let line = chat.sendLine {
+                Text(line).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0xFCA5A5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            composerRow
+        }
+    }
+
+    private var composerRow: some View {
         HStack(spacing: 8) {
             TextField("Say something…", text: $chat.draft)
                 .font(.inter(13)).foregroundStyle(.white)
