@@ -1639,7 +1639,7 @@ struct PledgeDetailView: View {
                         VStack(alignment: .leading, spacing: 4) {
                             // The name is the page's header; this card carries the promise.
                             Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
-                            Text("\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "") · \(money(p.progress.paidMinor, p.currency)) given in all")
+                            Text(PledgeWords.progressLine(p))
                                 .font(.nCaption).foregroundStyle(Nuru.ink600)
                             // A total pledge's pace (Giving Cycle 9), as the server sets it.
                             if let pace = PledgePace.line(p) {
@@ -2145,4 +2145,29 @@ enum PartnerStanding {
         p.pledges.contains { $0.status != "cancelled" } || p.kept > 0 || p.givenMinor > 0
     }
     static let notYet = "Your standing shows here after your first gift or pledge."
+}
+
+/// A pledge's progress line on its page. The Android walk's A7: a monthly
+/// pledge that begins on 5 Nov read "KSh 0 of 5,000 this month" in October —
+/// a month it was never due. Until its first day it says when it starts.
+/// Display only: the numbers are the server's, untouched.
+enum PledgeWords {
+    static func progressLine(_ p: Pledge, today: String = PledgeMath.today()) -> String {
+        let given = p.progress.paidMinor > 0 ? "\(money(p.progress.paidMinor, p.currency)) given in all" : nil
+        if p.isMonthly, let start = PledgeMath.start(p), start > today, let starts = startsLine(start) {
+            return [starts, given].compactMap { $0 }.joined(separator: " · ")
+        }
+        let toward = "\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "")"
+        return [toward, given].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// "Starts Thu 5 Nov" — the calendar day sent, never shifted (§8.1 rule 8).
+    static func startsLine(_ ymd: String) -> String? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = GiveCalendar.nairobi
+        f.dateFormat = "yyyy-MM-dd"
+        guard let d = f.date(from: ymd) else { return nil }
+        return "Starts \(NuruDates.day(d, timeZone: GiveCalendar.nairobi))"
+    }
 }

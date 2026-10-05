@@ -582,6 +582,21 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertFalse(PartnerStanding.notYet.contains("0"))
     }
 
+    // MARK: Android walk A7 — a pledge not yet begun says when it starts
+
+    func testAMonthlyPledgeNotYetBegunSaysWhenItStarts() throws {
+        // Ada's "Kenya trip", verbatim from the local API (2026-10-05).
+        let kenya: [String: Any] = ["pledge_id": "p1", "title": "Kenya trip", "shape": "monthly", "amount_minor": 500000,
+                                    "currency": "KES", "due_day": 5, "status": "active",
+                                    "starts_on": "2026-11-05", "created_at": "2026-10-05 10:08:32.861599+03",
+                                    "progress": ["paid_minor": 0, "period_paid_minor": 0, "next_due": "2026-11-05", "label": "on_track"]]
+        let p = try decode(Pledge.self, kenya)
+        XCTAssertEqual(PledgeWords.progressLine(p, today: "2026-10-05"), "Starts Thu 5 Nov",
+                       "never \"KSh 0 of KSh 5,000 this month\" in a month it was never due")
+        XCTAssertEqual(PledgeWords.progressLine(p, today: "2026-11-05"), "KSh 0 of KSh 5,000 this month",
+                       "from its first day, the month's progress — and no \"KSh 0 given in all\"")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))
