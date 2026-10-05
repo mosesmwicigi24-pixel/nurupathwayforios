@@ -206,7 +206,7 @@ private struct BroadcastRow: View {
 
     private func stat(_ icon: Lucide, _ n: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 11, color: Nuru.goldChipText)
+            Icon(icon, size: 14, color: Nuru.goldChipText)
             Text(n).font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
         }
     }

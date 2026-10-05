@@ -1009,7 +1009,7 @@ private struct EvdComposer: View {
         Circle().fill(.white)
             .frame(width: 36, height: 36)
             .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.08), lineWidth: 1))
-            .overlay(Icon(icon, size: 17, color: color))
+            .overlay(Icon(icon, size: 18, color: color))
     }
 
     /// The chat bar's send control: a round gold disc, spinner while posting.

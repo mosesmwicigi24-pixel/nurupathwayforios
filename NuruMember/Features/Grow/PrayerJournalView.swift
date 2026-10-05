@@ -757,7 +757,7 @@ private struct RowAction: View {
     var body: some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 6) {
-                Icon(icon, size: 15, color: Color(hex: 0x59667C))
+                Icon(icon, size: 14, color: Color(hex: 0x59667C))
                 Text(label).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity, minHeight: 44) // proper thumb-sized target

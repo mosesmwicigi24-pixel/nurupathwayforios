@@ -190,7 +190,7 @@ struct MfaEnrollSheet: View {
                         .font(.inter(12, .semibold).monospacedDigit())
                         .kerning(1.5).foregroundStyle(Nuru.navy)
                         .fixedSize(horizontal: false, vertical: true)
-                    Icon(copied ? .check : .copy, size: 12, color: copied ? Nuru.success : Nuru.faint)
+                    Icon(copied ? .check : .copy, size: 14, color: copied ? Nuru.success : Nuru.faint)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

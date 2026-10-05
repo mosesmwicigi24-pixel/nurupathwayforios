@@ -931,7 +931,7 @@ struct HomeLiveBannerCard: View {
                     HStack(spacing: 10) {
                         ZStack {
                             Circle().fill(HomeFig.gold.opacity(0.16)).frame(width: 44, height: 44)
-                            Icon(stream.isAudio ? .audioLines : .camera, size: 19, color: HomeFig.gold)
+                            Icon(stream.isAudio ? .audioLines : .camera, size: 18, color: HomeFig.gold)
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 5) {

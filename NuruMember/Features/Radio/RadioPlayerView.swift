@@ -1325,7 +1325,7 @@ private struct StatChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Icon(lucide, size: 12, color: RadioUX.goldLight)
+            Icon(lucide, size: 14, color: RadioUX.goldLight)
             Text(value).font(.inter(11, .bold)).foregroundStyle(.white)
             Text(label).font(.inter(11, .semibold)).kerning(0.9)
                 .foregroundStyle(.white.opacity(0.45))

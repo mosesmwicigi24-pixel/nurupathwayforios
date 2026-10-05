@@ -763,7 +763,7 @@ func sectionCard<C: View>(_ title: String, icon: Lucide,
     VStack(alignment: .leading, spacing: Nuru.S.sm) {
         HStack {
             HStack(spacing: 6) {
-                Icon(icon, size: 12, color: Color(hex: 0xA8861C))
+                Icon(icon, size: 14, color: Color(hex: 0xA8861C))
                 Text(title).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
             }
             Spacer()
@@ -910,7 +910,7 @@ private struct BadgeMedallion: View {
                     .overlay(Circle().stroke(badge.earned ? badge.style.color : Nuru.border,
                                              lineWidth: badge.earned ? 1.5 : 1))
                     .frame(width: 54, height: 54)
-                Icon(badge.style.icon, size: 20, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
+                Icon(badge.style.icon, size: 22, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
             }
             Text(badge.name)
                 .font(.inter(11, badge.earned ? .semibold : .medium))
@@ -1136,7 +1136,7 @@ private struct CertificateCardView: View {
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     HStack(spacing: 4) {
-                        Icon(copied ? .check : .copy, size: 11, color: copied ? Color(hex: 0x16A34A) : Nuru.gold)
+                        Icon(copied ? .check : .copy, size: 14, color: copied ? Color(hex: 0x16A34A) : Nuru.gold)
                         Text(copied ? "Copied" : "Copy")
                             .font(.inter(11, .bold)).foregroundStyle(copied ? Color(hex: 0x16A34A) : Nuru.gold)
                     }
@@ -1196,7 +1196,7 @@ private struct CertificateCardView: View {
 
     private func downloadLabel(icon: Lucide, text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 13, color: Nuru.navy)
+            Icon(icon, size: 14, color: Nuru.navy)
             Text(text).font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity).frame(height: 36)

@@ -452,7 +452,7 @@ private struct NotificationDetailSheet: View {
                                   ? AnyShapeStyle(LinearGradient(colors: [Nuru.gold, Color(hex: 0xB6862F)], startPoint: .topLeading, endPoint: .bottomTrailing))
                                   : AnyShapeStyle(meta.bg))
                             .frame(width: 44, height: 44)
-                        Icon(meta.icon, size: 19, color: reward ? Nuru.navy : meta.fg)
+                        Icon(meta.icon, size: 18, color: reward ? Nuru.navy : meta.fg)
                     }
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(alignment: .firstTextBaseline, spacing: 8) {

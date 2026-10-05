@@ -167,7 +167,7 @@ struct PlanSegmentView: View {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
                 } label: {
-                    Icon(readerNight ? .sun : .moon, size: 17, color: .white)
+                    Icon(readerNight ? .sun : .moon, size: 18, color: .white)
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
@@ -176,7 +176,7 @@ struct PlanSegmentView: View {
                 .accessibilityLabel(readerNight ? "Day mode" : "Night mode")
             }
             HStack(spacing: 12) {
-                Icon(partIcon, size: 16, color: PL.gold)
+                Icon(partIcon, size: 18, color: PL.gold)
                     .frame(width: 40, height: 40)
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))

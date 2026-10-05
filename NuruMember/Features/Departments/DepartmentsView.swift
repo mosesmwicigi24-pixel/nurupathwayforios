@@ -320,7 +320,7 @@ struct DeptChip: View {
     var fg: Color = Nuru.ink600
     var body: some View {
         HStack(spacing: 4) {
-            if let icon { Icon(icon, size: 10, color: fg) }
+            if let icon { Icon(icon, size: 14, color: fg) }
             Text(text).font(.inter(11, .semibold)).foregroundStyle(fg).lineLimit(1)
         }
         .padding(.horizontal, 9).padding(.vertical, 5)

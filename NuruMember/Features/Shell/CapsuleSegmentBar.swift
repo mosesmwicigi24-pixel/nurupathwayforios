@@ -54,7 +54,7 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
             onSelect(seg)
         } label: {
             HStack(spacing: 5) {
-                Icon(seg.icon, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C))
+                Icon(seg.icon, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C))
                 Text(seg.label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 // Unread only — a quiet chip (no number) IS "nothing waiting",
                 // matching Chat's own segment chips exactly.

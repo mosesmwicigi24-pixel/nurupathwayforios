@@ -678,7 +678,7 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
         } label: {
             HStack(spacing: 5) {
-                if let icon { Icon(icon, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C)) }
+                if let icon { Icon(icon, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C)) }
                 Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 // Unread only. All read → no number at all; the quiet chip IS the
                 // "nothing waiting" signal.
@@ -1151,7 +1151,7 @@ struct ChatView: View {
     private func sectionLabel(hash: Bool = false, icon: Lucide? = nil, _ text: String) -> some View {
         HStack(spacing: 6) {
             if hash { Text("#").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB08A1E)) }
-            else if let icon { Icon(icon, size: 12, color: Color(hex: 0xB08A1E)) }
+            else if let icon { Icon(icon, size: 14, color: Color(hex: 0xB08A1E)) }
             Text(text).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
         }
         .frame(maxWidth: .infinity, alignment: .leading)

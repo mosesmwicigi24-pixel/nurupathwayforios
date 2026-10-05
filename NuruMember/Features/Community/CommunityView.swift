@@ -126,7 +126,7 @@ struct CommunityView: View {
             }
         } label: {
             HStack(spacing: 5) {
-                Icon(d.icon, size: 11, color: selected ? Nuru.gold : Color(hex: 0x59667C))
+                Icon(d.icon, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C))
                 Text(d.label).font(.inter(12, .semibold))
                     .foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 if count > 0 {

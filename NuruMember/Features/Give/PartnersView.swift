@@ -1947,7 +1947,7 @@ struct PledgeDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             if busy { ProgressView().tint(Nuru.navy).scaleEffect(0.7) }
-                            else { Icon(paused ? .play : .pause, size: 12, color: Nuru.navy) }
+                            else { Icon(paused ? .play : .pause, size: 14, color: Nuru.navy) }
                             Text(paused ? "Resume" : "Pause").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -2038,7 +2038,7 @@ struct PledgeDetailView: View {
     private func smallAction(_ title: String, _ icon: Lucide, tint: Color = Nuru.ink600, action: @escaping () -> Void) -> some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 5) {
-                Icon(icon, size: 12, color: tint)
+                Icon(icon, size: 14, color: tint)
                 Text(title).font(.inter(12, .semibold)).foregroundStyle(tint)
             }
             .frame(maxWidth: .infinity).frame(height: 32)

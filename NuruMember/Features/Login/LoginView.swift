@@ -250,7 +250,7 @@ struct LoginView: View {
                 Haptics.tap()
                 showPw.toggle()
             } label: {
-                Icon(showPw ? .eyeOff : .eye, size: 17, color: Color.white.opacity(0.40))
+                Icon(showPw ? .eyeOff : .eye, size: 18, color: Color.white.opacity(0.40))
                     // Bigger invisible hit area — the visible glyph stays 17pt.
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
@@ -267,7 +267,7 @@ struct LoginView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Text(label).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.onNavyDim)
             HStack(spacing: Nuru.S.sm) {
-                Icon(icon, size: 17, color: focused ? Nuru.gold.opacity(0.85) : Color.white.opacity(0.40))
+                Icon(icon, size: 18, color: focused ? Nuru.gold.opacity(0.85) : Color.white.opacity(0.40))
                 content().frame(maxWidth: .infinity)
                 if let trailing { trailing }
             }

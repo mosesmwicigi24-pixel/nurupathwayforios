@@ -343,7 +343,7 @@ private struct FooterActions: View {
 
     private func column(icon: Lucide, label: String, color: Color) -> some View {
         VStack(spacing: 2) {
-            Icon(icon, size: 16, color: color)
+            Icon(icon, size: 18, color: color)
             Text(label).font(.inter(11, .medium)).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, minHeight: 44)

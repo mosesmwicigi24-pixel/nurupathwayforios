@@ -338,7 +338,7 @@ struct LevelDetailView: View {
 
     private func statChip(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 5) {
-            Icon(icon, size: 12, color: Nuru.goldLo)
+            Icon(icon, size: 14, color: Nuru.goldLo)
             Text(text).font(.inter(12, .medium)).foregroundStyle(Nuru.ink600)
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
@@ -822,7 +822,7 @@ private struct ModuleTrailCard: View {
 
     private func chip(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 5) {
-            Icon(icon, size: 11, color: Nuru.goldLo)
+            Icon(icon, size: 14, color: Nuru.goldLo)
             Text(text).font(.inter(12, .medium)).foregroundStyle(Nuru.ink600)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)

@@ -708,7 +708,7 @@ struct GivingView: View {
                     Haptics.selection()
                     withAnimation(.easeInOut(duration: 0.15)) { hideYearTotal.toggle() }
                 } label: {
-                    Icon(hideYearTotal ? .eyeOff : .eye, size: 15, color: Nuru.navy)
+                    Icon(hideYearTotal ? .eyeOff : .eye, size: 14, color: Nuru.navy)
                         .frame(width: 36, height: 36)
                         .background(Color.white, in: Circle())
                         .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
@@ -801,7 +801,7 @@ struct GivingView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: f.tint))
                         .frame(width: 36, height: 36)
-                    Icon(f.icon, size: 17, color: Color(hex: f.fg))
+                    Icon(f.icon, size: 18, color: Color(hex: f.fg))
                 }
                 Text(f.label).font(.inter(13, .semibold)).kerning(-0.13).foregroundStyle(Nuru.navy)
                     .lineLimit(1).minimumScaleFactor(0.85)
@@ -1219,7 +1219,7 @@ struct GivingView: View {
         let line = isPledge ? pledgeLine : needLine
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Icon(isPledge ? .heartHandshake : .target, size: 13, color: Nuru.gold)
+                Icon(isPledge ? .heartHandshake : .target, size: 14, color: Nuru.gold)
                 overline(isPledge ? "PAYING YOUR PLEDGE" : "GIVING TO A NEED")
             }
             Text(title)

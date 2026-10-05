@@ -414,7 +414,7 @@ struct GivingStatementView: View {
                 Circle().fill(Color.white.opacity(0.10)).frame(width: 40, height: 40)
                     .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 if busy { ProgressView().tint(.white).scaleEffect(0.8) }
-                else { Icon(icon, size: 17, color: .white) }
+                else { Icon(icon, size: 18, color: .white) }
             }
         }.buttonStyle(.pressable)
     }
@@ -490,7 +490,7 @@ struct GivingStatementView: View {
         return HStack(spacing: 10) {
             ZStack {
                 Circle().fill(Color(hex: meta.tint)).frame(width: 32, height: 32)
-                Icon(meta.icon, size: 15, color: Color(hex: meta.fg))
+                Icon(meta.icon, size: 14, color: Color(hex: meta.fg))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.fund.capitalized).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -624,7 +624,7 @@ struct GivingStatementView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
-                    Icon(pledgesOpen ? .chevronUp : .chevronDown, size: 16, color: Nuru.navy)
+                    Icon(pledgesOpen ? .chevronUp : .chevronDown, size: 18, color: Nuru.navy)
                 }
                 .contentShape(Rectangle())
             }

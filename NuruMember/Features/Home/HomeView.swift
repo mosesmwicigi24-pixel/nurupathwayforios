@@ -1674,7 +1674,7 @@ struct HomeView: View {
 
     private func pill(icon: Lucide, label: String, tint: Color) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 12, color: tint)
+            Icon(icon, size: 14, color: tint)
             Text(label).font(.inter(11, .semibold)).foregroundStyle(tint)
         }
         .lineLimit(1)
@@ -2002,7 +2002,7 @@ struct HomeView: View {
         return VStack(spacing: 4) {
             ZStack {
                 Circle().fill(done ? Nuru.successText : Nuru.white).frame(width: 24, height: 24)
-                Icon(done ? .check : .clock, size: 12, color: done ? Nuru.white : Nuru.goldLo)
+                Icon(done ? .check : .clock, size: 14, color: done ? Nuru.white : Nuru.goldLo)
             }
             Text(label).font(.inter(12, .semibold)).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText)
             Text(done ? "DONE" : "PENDING").font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
@@ -2185,7 +2185,7 @@ struct HomeView: View {
 
     private func growTileView(_ t: GrowTile) -> some View {
         HStack(spacing: 10) {
-            Icon(t.icon, size: 16, color: Color(hex: t.fg))
+            Icon(t.icon, size: 18, color: Color(hex: t.fg))
                 .frame(width: 36, height: 36)
                 .background(Color(hex: t.tint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             // Words wrap to two lines, never cut (§8.1 rule 9; the walk's E15:

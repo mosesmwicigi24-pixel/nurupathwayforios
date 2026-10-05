@@ -728,7 +728,8 @@ final class ExperienceCycle4Tests: XCTestCase {
     // MARK: §8.1 rule 7 — one icon family in 14 / 18 / 22, one bell
 
     func testIconsAreFourteenEighteenOrTwentyTwoAndTheBellIsOne() throws {
-        let sized = try NSRegularExpression(pattern: "Icon\\(\\.[a-zA-Z0-9]+, size: ([0-9]+(?:\\.[0-9]+)?)")
+        // Any glyph — a literal (.bell) or chosen by a value (done ? .check : .x).
+        let sized = try NSRegularExpression(pattern: "Icon\\([^)\\n]*?, size: ([0-9]+(?:\\.[0-9]+)?)")
         var offScale: [String] = []
         var display = 0
         var bellLooks = 0
@@ -741,7 +742,7 @@ final class ExperienceCycle4Tests: XCTestCase {
             if !rel.hasSuffix("NuruBell.swift") { bellLooks += text.components(separatedBy: "NuruBell(look:").count - 1 }
         }
         XCTAssertEqual(offScale, [], "§8.1 rule 7: icons at 14, 18 or 22")
-        XCTAssertLessThanOrEqual(display, 53, "display glyphs are listed, never grow")
+        XCTAssertLessThanOrEqual(display, 59, "display glyphs are listed, never grow")
         XCTAssertEqual(bellLooks, 0, "one bell on every tab: NuruBell() — the same size, tile and icon")
         XCTAssertEqual(NuruBell.Look.standard.size, 44)
         XCTAssertEqual(NuruBell.Look.standard.iconSize, 18)

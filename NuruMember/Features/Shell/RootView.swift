@@ -701,7 +701,7 @@ private struct NuruTabBar: View {
                 } label: {
                     VStack(spacing: 3) {
                         ZStack(alignment: .topTrailing) {
-                            Icon(t.icon, size: 21, color: focused ? Nuru.navy : Self.inactive)
+                            Icon(t.icon, size: 22, color: focused ? Nuru.navy : Self.inactive)
                                 // One subtle bounce on arrival: each selection change runs
                                 // the phase cycle once, and only the newly-focused icon
                                 // actually scales (others stay at 1).

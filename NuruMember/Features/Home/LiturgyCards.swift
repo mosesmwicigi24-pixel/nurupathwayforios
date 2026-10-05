@@ -310,7 +310,7 @@ struct HomeLiturgyCard: View {
             Haptics.tap()
             voice.toggle(spokenSource(for: lit))
         } label: {
-            Icon(listenIcon, size: 12, color: Color(hex: 0xF2DDA0))
+            Icon(listenIcon, size: 14, color: Color(hex: 0xF2DDA0))
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.3), in: Circle())
                 .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))

@@ -274,7 +274,7 @@ struct CellInfoView: View {
 
     private func rhythmRow(_ icon: Lucide, _ label: String, _ value: String, muted: Bool = false) -> some View {
         HStack(spacing: Nuru.S.md) {
-            Icon(icon, size: 16, color: Nuru.goldChipText)
+            Icon(icon, size: 18, color: Nuru.goldChipText)
                 .frame(width: 34, height: 34)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
@@ -413,7 +413,7 @@ struct CellInfoView: View {
             }
             Spacer(minLength: 0)
             if let trend = vm.cell?.turnout?.trend, let (glyph, color) = Self.trendGlyph(trend) {
-                Icon(glyph, size: 13, color: color).padding(.top, 2)
+                Icon(glyph, size: 14, color: color).padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -425,7 +425,7 @@ struct CellInfoView: View {
     private func statTile(_ icon: Lucide, _ label: String, _ value: String,
                           caption: String? = nil, trend: String? = nil) -> some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(icon, size: 15, color: Nuru.goldChipText)
+            Icon(icon, size: 14, color: Nuru.goldChipText)
                 .frame(width: 32, height: 32)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
@@ -433,7 +433,7 @@ struct CellInfoView: View {
                 HStack(spacing: 3) {
                     Text(value).font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
                     if let trend, let (glyph, color) = Self.trendGlyph(trend) {
-                        Icon(glyph, size: 12, color: color)
+                        Icon(glyph, size: 14, color: color)
                     }
                 }
                 if let caption {

@@ -896,14 +896,14 @@ struct PlanDetailView: View {
 
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 13, color: PL.goldLight)
+            Icon(icon, size: 14, color: PL.goldLight)
             Text(text).font(.inter(12)).foregroundStyle(.white.opacity(0.8))
         }
     }
 
     private func circleBtn(_ icon: Lucide, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: 20, color: tint)
+            Icon(icon, size: 22, color: tint)
                 .frame(width: 40, height: 40)
                 .background(Color.black.opacity(0.35), in: Circle())
         }
@@ -1418,13 +1418,15 @@ struct PlanDayView: View {
         let done = isDone(part)
         let isNext = part.id == nextPartId && !done
         return HStack(spacing: 12) {
-            Icon(part.icon, size: 16, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
+            Icon(part.icon, size: 18, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
                 .frame(width: 42, height: 42)
                 .background((done || isNext) ? pal.gold.opacity(0.15) : pal.inkDim.opacity(0.07), in: Circle())
                 .overlay(Circle().stroke(done ? pal.gold.opacity(0.5) : (isNext ? pal.gold.opacity(0.4) : pal.border), lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
                 Text(part.label).font(.inter(14, .semibold)).foregroundStyle(pal.ink)
-                Text(partSub(part)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim).lineLimit(1)
+                // Wraps, never cut (rule 9; the walk's 34: "Scripture & teac…").
+                Text(partSub(part)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             if done {
@@ -1544,7 +1546,7 @@ struct PlanDayView: View {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
                 } label: {
-                    Icon(readerNight ? .sun : .moon, size: 17, color: .white)
+                    Icon(readerNight ? .sun : .moon, size: 18, color: .white)
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
@@ -1643,7 +1645,7 @@ struct PlanDayView: View {
                 // refuses that too: 409 CONTENT_INCOMPLETE.)
                 partLink(next) {
                     HStack(spacing: 8) {
-                        Icon(next.icon, size: 16, color: PL.navy)
+                        Icon(next.icon, size: 18, color: PL.navy)
                         Text("Continue · \(next.label)").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                         Icon(.arrowRight, size: 14, color: PL.navy)
                     }

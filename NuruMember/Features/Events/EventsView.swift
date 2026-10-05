@@ -472,7 +472,7 @@ struct EventsView: View {
 
     private func pulseChip(_ text: String, icon: Lucide) -> some View {
         HStack(spacing: 5) {
-            Icon(icon, size: 11, color: Nuru.gold)
+            Icon(icon, size: 14, color: Nuru.gold)
             Text(text).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x59667C))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -560,7 +560,7 @@ struct EventsView: View {
 
     private func quietRow(_ icon: Lucide, _ title: String) -> some View {
         HStack(spacing: Nuru.S.md) {
-            Icon(icon, size: 16, color: Nuru.navy)
+            Icon(icon, size: 18, color: Nuru.navy)
                 .frame(width: 32, height: 32)
                 .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -851,7 +851,7 @@ struct EventsView: View {
     private func railHeader(icon: Lucide, title: String, nav: EventsNav) -> some View {
         HStack {
             HStack(spacing: 6) {
-                Icon(icon, size: 13, color: Color(hex: 0xA8861C))
+                Icon(icon, size: 14, color: Color(hex: 0xA8861C))
                 Text(title).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
             }
             Spacer()
@@ -969,7 +969,7 @@ private struct LiveHeroCard: View {
 
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 5) {
-            Icon(icon, size: 13, color: Nuru.goldLight)
+            Icon(icon, size: 14, color: Nuru.goldLight)
             Text(text).font(.nCardMeta).foregroundStyle(.white.opacity(0.8)).lineLimit(1)
         }
     }
@@ -990,7 +990,10 @@ private struct SeriesRailRow: View {
                 .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(series.title).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
+                    // Titles wrap to two lines (rule 9; the walk's 43: two
+                    // "Graduation & Commission…" rows that couldn't be told apart).
+                    Text(series.title).font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if series.following && series.newCount > 0 {
                         Text("\(series.newCount) new").font(.inter(11, .bold))
                             .foregroundStyle(Color(hex: 0x8A6D18))
@@ -1021,7 +1024,7 @@ private struct FollowButton: View {
             Task { await onToggle(); busy = false }
         } label: {
             HStack(spacing: 4) {
-                Icon(following ? .check : .plus, size: 12, color: following ? .white : Nuru.navy)
+                Icon(following ? .check : .plus, size: 14, color: following ? .white : Nuru.navy)
                 Text(following ? "Following" : "Follow")
                     .font(.inter(11, .semibold)).foregroundStyle(following ? .white : Nuru.navy)
             }
@@ -1240,7 +1243,7 @@ private struct EvCardBody: View {
 
     private func meta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 12, color: Nuru.ink600)
+            Icon(icon, size: 14, color: Nuru.ink600)
             Text(text).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
         }
     }

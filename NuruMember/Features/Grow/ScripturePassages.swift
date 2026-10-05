@@ -353,7 +353,7 @@ struct ScriptureRefCard: View {
                     if loader.loading {
                         ProgressView().tint(pal.goldDeep).scaleEffect(0.8)
                     } else {
-                        Icon(open ? .chevronUp : .chevronDown, size: 15, color: pal.inkDim)
+                        Icon(open ? .chevronUp : .chevronDown, size: 14, color: pal.inkDim)
                     }
                 }
                 .padding(14)

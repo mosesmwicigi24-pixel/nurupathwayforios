@@ -1356,7 +1356,7 @@ private struct MLPagerBar: View {
 
     private func arrow(_ icon: Lucide, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: 15, color: enabled ? ML.navy : ML.secondary.opacity(0.4))
+            Icon(icon, size: 14, color: enabled ? ML.navy : ML.secondary.opacity(0.4))
                 .frame(width: 34, height: 34)
                 .background(Color.white, in: Circle())
                 .overlay(Circle().stroke(ML.border, lineWidth: 1))
@@ -1575,7 +1575,7 @@ private struct MLSegment: View {
         Button(action: action) {
             HStack(spacing: 5) {
                 if done { Icon(.check, size: 14, color: ML.navy) }
-                else { Icon(icon, size: 12, color: ML.secondary) }
+                else { Icon(icon, size: 14, color: ML.secondary) }
                 Text(label).font(.inter(12, .bold))
             }
             .foregroundStyle(done ? ML.navy : ML.secondary)
@@ -1601,7 +1601,7 @@ private struct MLMediaButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Icon(icon, size: 12, color: active ? ML.navy : ML.secondary)
+                Icon(icon, size: 14, color: active ? ML.navy : ML.secondary)
                 Text(label).font(.inter(12, .bold))
             }
             .foregroundStyle(active ? ML.navy : ML.secondary)
@@ -1690,7 +1690,7 @@ private struct MLSquareButton: View {
 private struct MLSquareLabel: View {
     let icon: Lucide
     var body: some View {
-        Icon(icon, size: 17, color: ML.navy)
+        Icon(icon, size: 18, color: ML.navy)
             .frame(width: 40, height: 40)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1761,7 +1761,7 @@ private struct MLMetaPill: View {
     let label: String
     var body: some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 11, color: ML.secondary)
+            Icon(icon, size: 14, color: ML.secondary)
             Text(label).font(.inter(11))
         }
         .foregroundStyle(ML.secondary)
@@ -2271,7 +2271,7 @@ private struct MLStepChip: View {
                             .frame(width: 14, height: 14)
                             .animation(.easeOut(duration: 0.35), value: step.clamped)
                     }
-                    Icon(step.kind.icon, size: 8, color: inProgress ? ML.overline : ML.secondary)
+                    Icon(step.kind.icon, size: 14, color: inProgress ? ML.overline : ML.secondary)
                 }
             }
             .frame(width: 16, height: 16)

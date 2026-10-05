@@ -510,7 +510,7 @@ struct ReadingGroupDetailView: View {
 
     private func actionRow(_ icon: Lucide, _ label: String, tint: Color) -> some View {
         HStack(spacing: 10) {
-            Icon(icon, size: 16, color: tint)
+            Icon(icon, size: 18, color: tint)
             Text(label).font(.inter(13, .semibold)).foregroundStyle(tint)
             Spacer(minLength: 0)
         }
@@ -839,7 +839,7 @@ struct ReadingInvitePreviewView: View {
 
     private func metaChip(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 12, color: PL.goldDeep)
+            Icon(icon, size: 14, color: PL.goldDeep)
             Text(text).font(.inter(11, .semibold)).foregroundStyle(PL.ink2)
         }
     }

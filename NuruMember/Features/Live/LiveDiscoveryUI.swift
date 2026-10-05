@@ -91,7 +91,7 @@ struct LiveMiniPopup: View {
                     MutedPreviewSurface(player: p)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
-                    Icon(stream.isAudio ? .audioLines : .camera, size: 20, color: Nuru.gold)
+                    Icon(stream.isAudio ? .audioLines : .camera, size: 22, color: Nuru.gold)
                 }
             }
             .frame(width: 56, height: 56)

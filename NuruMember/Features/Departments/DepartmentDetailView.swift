@@ -359,7 +359,7 @@ struct DepartmentDetailView: View {
                     withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
                 } label: {
                     HStack(spacing: 5) {
-                        Icon(seg.icon, size: 12, color: on ? Nuru.gold : Color(hex: 0x59667C))
+                        Icon(seg.icon, size: 14, color: on ? Nuru.gold : Color(hex: 0x59667C))
                         Text(seg.rawValue).font(.inter(12, .semibold)).foregroundStyle(on ? Color.white : Color(hex: 0x59667C))
                     }
                     .frame(maxWidth: .infinity)
