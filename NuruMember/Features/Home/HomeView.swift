@@ -2291,12 +2291,10 @@ struct HomeView: View {
         return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Rest well"
     }
     private func todayKicker() -> String {
-        if isSunday {
-            let f = DateFormatter(); f.dateFormat = "MMM d"
-            return "SUNDAY · THE LORD'S DAY · \(f.string(from: Date()).uppercased())"
-        }
-        let f = DateFormatter(); f.dateFormat = "EEEE · MMM d"
-        return f.string(from: Date()).uppercased() + " · EAT"
+        // The one date shape (§8.1 rule 8), and no "EAT" — it is the phone's
+        // own day, wherever the member is.
+        if isSunday { return "THE LORD'S DAY · \(NuruDates.day(Date()).uppercased())" }
+        return NuruDates.day(Date()).uppercased()
     }
     /// The header breathes with the day — dawn rose-gold, plain daylight cream,
     /// a deeper golden hour, and a quieter dusk. Same palette family as the

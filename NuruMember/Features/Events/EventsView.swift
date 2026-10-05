@@ -47,7 +47,7 @@ enum Ev {
     }
     /// Short date label, e.g. "Jun 21".
     static func shortDate(_ iso: String) -> String {
-        let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: date(iso))
+        NuruDates.day(date(iso))
     }
 }
 
@@ -81,11 +81,7 @@ enum EventsHeader {
         guard let next = fromToday(events, now: now, timeZone: timeZone).first, let start = parse(next.startAt) else {
             return "Nothing planned this week"
         }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.timeZone = timeZone
-        f.dateFormat = "EEE d MMM"
-        return "Next: \(next.title) · \(f.string(from: start))"
+        return "Next: \(next.title) · \(NuruDates.day(start, timeZone: timeZone))"
     }
 
     private static func parse(_ iso: String) -> Date? {
@@ -260,8 +256,8 @@ final class EventsViewModel: ObservableObject {
         return EventsHeader.line(occurrences, now: Date())
     }
     var headerSubline: String {
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d"
-        return "Today · \(f.string(from: todayStart)) · East Africa Time"
+        // The one date shape; no zone name — it is the phone's own day.
+        return "Today · \(NuruDates.day(todayStart))"
     }
 
     func isSelected(_ d: Date) -> Bool { cal.isDate(d, inSameDayAs: selectedDay) }
@@ -309,8 +305,7 @@ final class EventsViewModel: ObservableObject {
         switch segment {
         case .today:
             if cal.isDate(selectedDay, inSameDayAs: todayStart) { return "Today's gatherings" }
-            let f = DateFormatter(); f.dateFormat = "MMM d"
-            return "Events on \(f.string(from: selectedDay))"
+            return "Events on \(NuruDates.day(selectedDay))"
         case .upcoming: return "Coming up"
         case .rsvps: return "Your RSVPs"
         }

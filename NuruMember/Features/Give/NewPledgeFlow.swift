@@ -828,8 +828,7 @@ struct NewPledgeFlow: View {
         return f.string(from: d)
     }
     private func longDate(_ d: Date) -> String {
-        let f = DateFormatter(); f.dateFormat = "d MMMM yyyy"
-        return f.string(from: d)
+        NuruDates.day(d)
     }
     private func ordinal(_ n: Int) -> String {
         let suffix: String

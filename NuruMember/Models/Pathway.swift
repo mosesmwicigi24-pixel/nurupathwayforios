@@ -314,9 +314,7 @@ struct ModuleDetail: Codable, Sendable {
             if date == nil { f.dateFormat = "yyyy-MM-dd HH:mm:ssxx"; date = f.date(from: completedAt) }
         }
         guard let date else { return nil }
-        let out = DateFormatter()
-        out.dateFormat = "d MMM yyyy · HH:mm"
-        return out.string(from: date)
+        return NuruDates.dayTime(date)   // "Mon 5 Oct · 10:16 AM" — the one shape
     }
 }
 

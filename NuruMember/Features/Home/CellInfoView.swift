@@ -511,7 +511,7 @@ struct CellInfoView: View {
     }
     private static func longDate(_ iso: String) -> String {
         guard let d = parse(iso) else { return iso }
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"; return f.string(from: d)
+        return NuruDates.dayTime(d)
     }
 }
 

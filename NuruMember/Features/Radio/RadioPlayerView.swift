@@ -1826,9 +1826,6 @@ private let radioTimeShortFormatter: DateFormatter = {
 private let radioAmPmFormatter: DateFormatter = {
     let f = DateFormatter(); f.dateFormat = "a"; return f
 }()
-private let radioDayFormatter: DateFormatter = {
-    let f = DateFormatter(); f.dateFormat = "MMM d"; return f
-}()
 private let radioDayTimeFormatter: DateFormatter = {
     let f = DateFormatter(); f.dateFormat = "EEE h:mm a"; return f
 }()
@@ -1859,7 +1856,7 @@ private func radioTimeParts(_ iso: String?) -> (String, String)? {
 
 /// Recording row date — "Jun 29".
 private func radioDayLabel(_ iso: String?) -> String? {
-    radioISODate(iso).map { radioDayFormatter.string(from: $0) }
+    radioISODate(iso).map { NuruDates.day($0) }
 }
 
 /// m:ss (the design's fmtClock — minutes uncapped, e.g. "72:40").

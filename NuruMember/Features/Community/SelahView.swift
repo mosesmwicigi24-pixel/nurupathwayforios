@@ -259,7 +259,6 @@ private func relativeThoughtLabel(_ iso: String) -> String {
     case 1: return "1 day ago"
     case ..<7: return "\(days) days ago"
     default:
-        let f = DateFormatter(); f.dateFormat = "MMM d"
-        return f.string(from: d)
+        return NuruDates.day(d)
     }
 }

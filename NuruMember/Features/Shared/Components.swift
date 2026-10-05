@@ -148,8 +148,7 @@ func timeAgo(_ iso: String) -> String {
     if mins < 1 { return "now" }        // "0m" read like a glitch
     if mins < 60 { return "\(mins)m" }
     if mins < 1440 { return "\(mins / 60)h" }
-    let f = DateFormatter(); f.dateFormat = "MMM d"
-    return f.string(from: date)
+    return NuruDates.day(date)
 }
 
 extension ISO8601DateFormatter {

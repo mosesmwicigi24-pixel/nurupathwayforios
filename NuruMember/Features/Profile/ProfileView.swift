@@ -805,12 +805,13 @@ func nuruLanguageName(_ locale: String?) -> String {
     }
 }
 
-/// "yyyy-MM-dd" (or ISO timestamp) → "18 Apr 1992"-style display date.
+/// "yyyy-MM-dd" (or ISO timestamp) → "Sat 18 Apr 1992": the one date shape,
+/// the calendar day sent — parsed and written in one zone, never shifted
+/// (§8.1 rule 8).
 func formatISODay(_ iso: String) -> String? {
-    let out = DateFormatter(); out.dateFormat = "d MMM yyyy"
     let dayF = DateFormatter(); dayF.dateFormat = "yyyy-MM-dd"
-    if let d = dayF.date(from: String(iso.prefix(10))) { return out.string(from: d) }
-    if let d = ISO8601DateFormatter().date(from: iso) { return out.string(from: d) }
+    if let d = dayF.date(from: String(iso.prefix(10))) { return NuruDates.day(d) }
+    if let d = ISO8601DateFormatter().date(from: iso) { return NuruDates.day(d) }
     return nil
 }
 

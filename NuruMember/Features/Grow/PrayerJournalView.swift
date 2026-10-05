@@ -198,10 +198,7 @@ private func relativeLabel(_ iso: String) -> String {
     }
 }
 
-private func shortDate(_ d: Date) -> String {
-    let f = DateFormatter(); f.dateFormat = "MMM d"
-    return f.string(from: d)
-}
+private func shortDate(_ d: Date) -> String { NuruDates.day(d) }
 
 // MARK: - Screen
 

@@ -29,9 +29,7 @@ struct LetterView: View {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         guard let d = f.date(from: letter.weekOf) else { return letter.weekOf }
-        let out = DateFormatter()
-        out.dateFormat = "d MMMM yyyy"
-        return out.string(from: d)
+        return NuruDates.day(d)   // the one date shape (§8.1 rule 8)
     }
 
     var body: some View {

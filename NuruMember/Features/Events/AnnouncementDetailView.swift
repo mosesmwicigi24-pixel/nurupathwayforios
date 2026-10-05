@@ -211,7 +211,7 @@ struct AnnouncementDetailView: View {
 
     private func whenString(_ iso: String) -> String {
         guard let d = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"; return f.string(from: d)
+        return NuruDates.day(d)
     }
 }
 

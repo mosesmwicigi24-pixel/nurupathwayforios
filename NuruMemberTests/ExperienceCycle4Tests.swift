@@ -805,6 +805,24 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(KeyVerseWords.caption(reference: "John 3:16", version: nil), "John 3:16")
     }
 
+    // MARK: §8.1 rule 8 / walk E16 — one date shape; the sweep holds
+
+    func testNoHandRolledDayFormatsRemain() throws {
+        // A day (a month name with a day number) is written by NuruDates only;
+        // a month heading ("October 2026", "Sep 2026") and times stay their own.
+        let fmt = try NSRegularExpression(pattern: "dateFormat = \"([^\"]*)\"")
+        var found: [String] = []
+        for (rel, text) in try TypeScan.files() where !rel.hasSuffix("NuruDates.swift") {
+            for m in fmt.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let r = Range(m.range(at: 1), in: text) else { continue }
+                let f = String(text[r])
+                if f.contains("MMM"), f.contains("d"), !f.hasPrefix("yyyy") { found.append("\(rel): \(f)") }
+            }
+            if text.contains("East Africa Time\"") || text.contains("\" · EAT\"") { found.append("\(rel): a hard-coded zone") }
+        }
+        XCTAssertEqual(found, [], "one date shape (E16): \"EEE d MMM\", the year only when it isn't this year")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

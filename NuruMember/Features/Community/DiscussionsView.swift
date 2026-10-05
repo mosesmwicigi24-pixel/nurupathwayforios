@@ -576,8 +576,7 @@ struct DiscussionThreadView: View {
 
     private func whenString(_ iso: String) -> String {
         guard let date = ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"
-        return f.string(from: date)
+        return NuruDates.dayTime(date)
     }
 }
 

@@ -130,22 +130,21 @@ func giveParseDate(_ iso: String) -> Date? {
     return f.date(from: String(iso.prefix(10)))
 }
 
+/// "Mon 5 Oct" — the one date shape (§8.1 rule 8), the year when not this year.
 func giveDateShort(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-    let f = DateFormatter(); f.dateFormat = "d MMM"
-    return f.string(from: d)
+    return NuruDates.day(d)
 }
 
+/// "Mon 5 Oct 2026" — a record kept, so always the year.
 func giveDateFull(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-    let f = DateFormatter(); f.dateFormat = "d MMM yyyy"
-    return f.string(from: d)
+    return NuruDates.day(d, withYear: true)
 }
 
 func giveTime(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return "" }
-    let f = DateFormatter(); f.dateFormat = "h:mm a"
-    return f.string(from: d)
+    return NuruDates.time(d)
 }
 
 // MARK: - View model

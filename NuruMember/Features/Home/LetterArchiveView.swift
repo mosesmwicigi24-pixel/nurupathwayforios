@@ -96,8 +96,7 @@ struct LetterArchiveView: View {
     private func weekLabel(_ raw: String) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         guard let d = f.date(from: raw) else { return raw }
-        let out = DateFormatter(); out.dateFormat = "d MMMM yyyy"
-        return "Week of \(out.string(from: d))"
+        return "Week of \(NuruDates.day(d))"   // the one date shape (§8.1 rule 8)
     }
 
     private func load() async {

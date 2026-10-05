@@ -616,7 +616,7 @@ struct DisciplerDossierView: View {
     }
     private static func shortDate(_ iso: String) -> String? {
         guard let d = parse(iso) else { return nil }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"; return f.string(from: d)
+        return NuruDates.day(d)
     }
 }
 

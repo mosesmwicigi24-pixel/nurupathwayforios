@@ -333,7 +333,7 @@ private func chatTime(_ iso: String?) -> String {
     if cal.isDateInToday(d) { f.dateFormat = "h:mm a" }
     else if cal.isDateInYesterday(d) { return "Yesterday" }
     else if let days = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: Date())).day, days < 7 { f.dateFormat = "EEE" }
-    else { f.dateFormat = "d MMM" }
+    else { return NuruDates.day(d) }
     return f.string(from: d)
 }
 

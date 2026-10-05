@@ -171,8 +171,7 @@ final class GivingStatementViewModel: ObservableObject {
     private func dayLabel(_ ymd: String) -> String {
         let inF = DateFormatter(); inF.dateFormat = "yyyy-MM-dd"
         guard let d = inF.date(from: ymd) else { return ymd }
-        let out = DateFormatter(); out.dateFormat = "EEE, d MMM yyyy"
-        return out.string(from: d)
+        return NuruDates.day(d)
     }
 }
 
