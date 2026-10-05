@@ -420,6 +420,20 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertFalse(IOSNoticeWords.bannersOn(d), "off means no banners")
     }
 
+    // MARK: Cycle 3 close walk B5 — Home refreshes in place
+
+    func testHomeRefreshesInPlaceWithinItsGuards() {
+        let now = Date()
+        let long = now.addingTimeInterval(-60)
+        XCTAssertTrue(HomeRefresh.should(loading: false, loaded: true, online: true, last: long, now: now))
+        XCTAssertTrue(HomeRefresh.should(loading: false, loaded: true, online: nil, last: long, now: now), "unknown network: try")
+        XCTAssertFalse(HomeRefresh.should(loading: false, loaded: false, online: true, last: long, now: now), "the first load is the load's, with its skeleton")
+        XCTAssertFalse(HomeRefresh.should(loading: true, loaded: true, online: true, last: long, now: now), "never on top of a load")
+        XCTAssertFalse(HomeRefresh.should(loading: false, loaded: true, online: false, last: long, now: now), "offline: keep what's shown")
+        XCTAssertFalse(HomeRefresh.should(loading: false, loaded: true, online: true, last: now.addingTimeInterval(-10), now: now),
+                       "at most every \(Int(HomeRefresh.minimumGap)) s")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

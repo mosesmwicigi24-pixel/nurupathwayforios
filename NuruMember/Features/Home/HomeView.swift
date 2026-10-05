@@ -93,8 +93,11 @@ final class HomeViewModel: ObservableObject {
     @Published var daySealed = false
     private var lastRhythmDone: Int?
 
-    func load() async {
-        loading = true; failure = nil
+    /// `quiet`: the refresh in place (the walk's B5) — no skeleton, no
+    /// `loading` flip, and a refresh that can't reach the server changes
+    /// nothing, so a dropped connection never blanks what the member sees.
+    func load(quiet: Bool = false) async {
+        if !quiet { loading = true; failure = nil }
         async let letter = try? MemberAPI.latestLetter()
         async let pathway = Self.attempt { try await MemberAPI.pathway() }
         async let ach = try? MemberAPI.achievements()
@@ -122,9 +125,11 @@ final class HomeViewModel: ObservableObject {
         async let standing = try? MemberAPI.partnership()
         async let gifts = try? MemberAPI.schedules()
 
+        let pathwayResult = await pathway
+        if quiet, case .failure = pathwayResult { return }
         self.letter = (await letter) ?? nil
-        switch await pathway {
-        case .success(let p): self.pathway = p
+        switch pathwayResult {
+        case .success(let p): self.pathway = p; failure = nil
         case .failure(let e): self.pathway = nil; failure = e
         }
         // The journey speaks as soon as the summary lands (the pill's words
@@ -179,9 +184,21 @@ final class HomeViewModel: ObservableObject {
         self.trail = await trail
         self.journey = Journey.derive(self.pathway, trail: self.trail)
 
-        loading = false
+        if !quiet { loading = false }
 
         celebrateMilestones(achievements)
+    }
+
+    private var lastQuietRefresh = Date.distantPast
+    /// Home stayed as first loaded for the whole session (the walk's B5: the
+    /// cell read "6 members" for over an hour while the server said 5). It
+    /// now refreshes in place when the tab reappears, when its stack returns
+    /// to the root, and on foreground — within HomeRefresh's guards.
+    func refreshQuietly() async {
+        guard HomeRefresh.should(loading: loading, loaded: pathway != nil,
+                                 online: SyncCoordinator.devicePathOnline, last: lastQuietRefresh) else { return }
+        lastQuietRefresh = Date()
+        await load(quiet: true)
     }
 
     /// A call's answer or its failure — the dashboard keeps WHY the pathway
@@ -363,6 +380,7 @@ private struct GrowTile { let label, sub: String; let icon: Lucide; let tint, fg
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.scenePhase) private var scenePhase
     @StateObject private var vm = HomeViewModel()
     /// Whether a discipler is paired (GET /growth/mentor) — the discipler row
     /// shows only then (Cycle 4, B1).
@@ -684,6 +702,18 @@ struct HomeView: View {
             if vm.pathway == nil { await vm.load() }
             liveDiscovery.ingest(vm.liveStreams)
             deepLinkForScreenshots()
+        }
+        // In place, never a skeleton (the walk's B5): when Home's tab comes
+        // back, when its stack returns to the root (a plan day finished, an
+        // RSVP, a passed exam), and on foreground while Home is shown.
+        .onChange(of: tabs.selected) { _, t in
+            if t == .home { Task { await vm.refreshQuietly() } }
+        }
+        .onChange(of: path.isEmpty) { _, atRoot in
+            if atRoot { Task { await vm.refreshQuietly() } }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, tabs.selected == .home { Task { await vm.refreshQuietly() } }
         }
         // Radio poll — re-check now-playing every 45s while Home is visible so the
         // ON AIR card appears/disappears as broadcasts start and end. The `.task`
@@ -2352,5 +2382,15 @@ enum HomeFeatured {
         return Array(rows.filter { row in
             !(featured != nil && row.seriesId == featured) && row.occurrenceId != onNowOccurrenceId
         }.prefix(3))
+    }
+}
+
+
+/// When Home refreshes in place (the walk's B5; §7.1 rule 5: a refresh
+/// updates in place). Pure, so the tests pin it.
+enum HomeRefresh {
+    static let minimumGap: TimeInterval = 30
+    static func should(loading: Bool, loaded: Bool, online: Bool?, last: Date, now: Date = Date()) -> Bool {
+        loaded && !loading && online != false && now.timeIntervalSince(last) >= minimumGap
     }
 }
