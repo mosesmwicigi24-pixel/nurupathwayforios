@@ -10,17 +10,26 @@ import SwiftUI
 final class AnnouncementDetailViewModel: ObservableObject {
     @Published var detail: AnnouncementDetail?
     @Published var loading = true
-    @Published var error: String?
+    /// Why it didn't load — spoken through §4's one state language (a 404 is
+    /// "This isn't here any more · Go back"), never the server's raw words.
+    @Published var failure: Error?
 
     let announcementId: String
     init(announcementId: String) { self.announcementId = announcementId }
 
+    /// Every way in — Home's card, the inbox, a tapped push — lands here, so
+    /// this is the one place an announcement is marked opened.
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         do { detail = try await MemberAPI.announcement(announcementId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this announcement." }
-        await MemberAPI.openAnnouncement(announcementId)
+        catch { failure = error }
         loading = false
+        guard detail != nil else { return }
+        // Reading it reads its notices too (the server marks them, §7.4 #11):
+        // the bells re-read the count now, so the dot clears on the way back
+        // — not at the next foreground.
+        await MemberAPI.openAnnouncement(announcementId)
+        await InboxBadge.shared.refresh()
     }
 }
 
@@ -53,8 +62,14 @@ struct AnnouncementDetailView: View {
                         if !images.isEmpty { gallery.gentleEntrance(delay: 0.15) }
                     } else if vm.loading {
                         loadingSkeleton
-                    } else {
-                        errorCard
+                    } else if let failure = vm.failure {
+                        // §4's one state card (§7.4 #12): a 404 reads "This
+                        // isn't here any more · It may have been moved or
+                        // removed." with Go back — never the raw "Announcement
+                        // not found" and a Try again that could not work.
+                        NuruStateView(state: .failed(.failure(failure)),
+                                      retry: { Task { await vm.load() } },
+                                      back: { dismiss() })
                     }
                 }
                 .padding(.horizontal, Nuru.S.screen)
@@ -80,7 +95,7 @@ struct AnnouncementDetailView: View {
         }
     }
 
-    // MARK: loading / error states
+    // MARK: loading state
 
     /// Shimmering placeholder in the shape of the announcement — an image
     /// block and a few body lines — so the page doesn't jump when it lands.
@@ -93,23 +108,6 @@ struct AnnouncementDetailView: View {
             RoundedRectangle(cornerRadius: 6).fill(Nuru.surface).frame(width: 180, height: 12).nuruShimmer()
         }
         .padding(.top, 2)
-    }
-
-    private var errorCard: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.xs) {
-            Text(vm.error ?? "Couldn't load this announcement.")
-                .font(.nBody).foregroundStyle(Nuru.muted)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-            .padding(.top, 4)
-        }
     }
 
     // MARK: cream sub-page header (make's CommunityPage chrome)

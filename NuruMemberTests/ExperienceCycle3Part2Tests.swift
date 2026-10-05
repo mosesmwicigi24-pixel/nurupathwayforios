@@ -198,4 +198,19 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertEqual(EventSeries.cadenceLine("weekly", nextAt: sunday), "Every \(Ev.weekday(sunday, "EEEE")) · \(time)")
         XCTAssertEqual(EventSeries.cadenceLine("once", nextAt: nil), "One-off")
     }
+
+    // MARK: §7.4 #12 — an announcement that isn't there speaks §4's words
+
+    func testAMissingAnnouncementIsTheStateCardWithGoBack() {
+        // The server's own answer for an announcement this member can't open.
+        let gone = APIError.http(status: 404, code: "NOT_FOUND", message: "Announcement not found")
+        let copy = NuruStateCopy.failure(gone, deviceOnline: true)
+        XCTAssertEqual(copy.title, "This isn't here any more", "never the raw \"Announcement not found\"")
+        XCTAssertEqual(copy.line, "It may have been moved or removed.")
+        XCTAssertEqual(copy.action, .goBack, "Go back — Try again could not work")
+        // A server error is ours, and retries.
+        let ours = NuruStateCopy.failure(APIError.http(status: 503, code: nil, message: "Bad gateway"), deviceOnline: true)
+        XCTAssertEqual(ours.title, "Something went wrong on our side")
+        XCTAssertEqual(ours.action, .retry)
+    }
 }
