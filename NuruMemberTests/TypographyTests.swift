@@ -375,7 +375,6 @@ enum TypeScan {
         "Features/Pathway/VoiceNoteCard.swift": 3,
         "Features/Radio/RadioMiniPlayer.swift": 1,
         "Features/Radio/RadioPlayerView.swift": 8,
-        "Features/Shared/StateLanguage.swift": 1
     ]
 
     /// Where an emoji is sized (`.emoji(size)`), per file.

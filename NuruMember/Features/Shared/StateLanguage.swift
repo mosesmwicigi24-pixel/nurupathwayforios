@@ -156,7 +156,7 @@ struct NuruStateView: View {
                 ProgressView().tint(Nuru.gold).frame(height: 44)
                     .accessibilityLabel("Loading")
             } else {
-                glyph(tile: 48, size: 20)
+                glyph(tile: 48, size: 22)
                 Text(title)
                     .font(.nCardTitle).foregroundStyle(Nuru.navy)
                     .fixedSize(horizontal: false, vertical: true)
@@ -181,14 +181,15 @@ struct NuruStateView: View {
         .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 20).padding(.vertical, 28)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        // A card's look (§8.1 rule 5): white, radius 24, hairline, one shadow.
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow()
     }
 
     private var strip: some View {
         HStack(spacing: 12) {
-            glyph(tile: 36, size: 15)
+            glyph(tile: 36, size: 18)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     .fixedSize(horizontal: false, vertical: true)
@@ -217,9 +218,7 @@ struct NuruStateView: View {
     @ViewBuilder private func glyph(tile: CGFloat, size: CGFloat) -> some View {
         Group {
             switch cause {
-            case .offline?:
-                Image(systemName: "wifi.slash").font(.symbol(size - 3, weight: .semibold))
-                    .foregroundStyle(Nuru.ink600)
+            case .offline?: Icon(.wifiOff, size: size, color: Nuru.ink600)   // Lucide, not an SF Symbol (rule 7)
             case .sessionEnded?: Icon(.lockKeyhole, size: size, color: Nuru.goldLo)
             case .notFound?: Icon(.search, size: size, color: Nuru.ink600)
             case .serverSide?, .refusal?: Icon(.circleHelp, size: size, color: Nuru.ink600)

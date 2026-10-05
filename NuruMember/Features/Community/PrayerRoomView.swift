@@ -73,16 +73,12 @@ struct PrayerRoomView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer(minLength: 0)
-                Text("MY PRAYER ROOM")
-                    .font(.inter(11, .bold)).tracking(1.8)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
                 Color.clear.frame(width: 40, height: 40) // balances the back button
             }
-            Text("My Prayer Room")
-                .font(.fraunces(26, .semibold))
-                .foregroundStyle(Nuru.navy)
+            // A pushed page: back · kicker · title (§8.1 rule 2) — the kicker
+            // names where it lives, not the title again (the walk's 82:
+            // "MY PRAYER ROOM · My Prayer Room").
+            NuruHeaderText(kicker: "Pray", title: "My Prayer Room")
             }
             segmentedControl
         }

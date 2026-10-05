@@ -14,6 +14,8 @@ enum Lucide: String {
     case user = "\u{E19F}"
     /// Lucide `armchair` — an empty seat: a role no one holds yet.
     case armchair = "\u{E2C0}"
+    /// Lucide `wifi-off` — the offline state card (one icon family, §8.1 rule 7).
+    case wifiOff = "\u{E1AF}"
     case bell = "\u{E059}"
     case chevronRight = "\u{E06F}"
     case chevronLeft = "\u{E06E}"
