@@ -419,7 +419,8 @@ struct ReadingGroupDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("READING TOGETHER").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(PL.goldDeep)
                 Text(g.plan.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
-                Text("\(g.plan.dayCount)-day plan · \(g.members.filter(\.isActive).count) reading together")
+                Text(ZeroCounts.count(g.members.filter(\.isActive).count, "reading together", "reading together")
+                        .map { "\(g.plan.dayCount)-day plan · \($0)" } ?? "\(g.plan.dayCount)-day plan")
                     .font(.inter(12)).foregroundStyle(PL.ink3)
             }
         }

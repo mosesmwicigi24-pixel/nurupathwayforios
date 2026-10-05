@@ -353,4 +353,31 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
             "days": [day(1, fresh), day(2, fresh, locked: true)]])
         XCTAssertNil(PlanDetailView.dayToOpen(gated))
     }
+
+    // MARK: Follow-up 4 — no zero counts (§7.4 #9)
+
+    func testSummariesSayOnlyCountsAboveZero() {
+        XCTAssertEqual(ZeroCounts.assistantLine(unread: 0, spaces: 0), "The AI assistant", "never \"0 updates across 0 spaces\"")
+        XCTAssertEqual(ZeroCounts.assistantLine(unread: 0, spaces: 3), "The AI assistant")
+        XCTAssertEqual(ZeroCounts.assistantLine(unread: 3, spaces: 2), "The AI assistant · 3 updates across 2 spaces")
+        XCTAssertEqual(ZeroCounts.assistantLine(unread: 1, spaces: 1), "The AI assistant · 1 update across 1 space")
+        XCTAssertEqual(ZeroCounts.assistantLine(unread: 2, spaces: 0), "The AI assistant · 2 updates")
+
+        XCTAssertNil(ZeroCounts.prayerLine(praying: 0, replies: 0), "no pill until someone prays or replies")
+        XCTAssertEqual(ZeroCounts.prayerLine(praying: 4, replies: 0), "4 praying")
+        XCTAssertEqual(ZeroCounts.prayerLine(praying: 0, replies: 1), "1 reply")
+        XCTAssertEqual(ZeroCounts.prayerLine(praying: 4, replies: 2), "4 praying · 2 replies")
+
+        XCTAssertNil(ZeroCounts.journalHeader(active: 0, answered: 0))
+        XCTAssertEqual(ZeroCounts.journalHeader(active: 3, answered: 0), "3 ACTIVE")
+        XCTAssertEqual(ZeroCounts.journalHeader(active: 0, answered: 2), "2 ANSWERED")
+        XCTAssertEqual(ZeroCounts.journalHeader(active: 3, answered: 1), "3 ACTIVE · 1 ANSWERED")
+
+        XCTAssertEqual(ZeroCounts.calendarHeader(upcoming: 0, month: "October 2026"), "October 2026")
+        XCTAssertEqual(ZeroCounts.calendarHeader(upcoming: 12, month: "October 2026"), "12 upcoming · October 2026")
+
+        XCTAssertEqual(ZeroCounts.liveSummary(duration: "4:12", peak: 0), "You were live for 4:12")
+        XCTAssertEqual(ZeroCounts.liveSummary(duration: "4:12", peak: 9), "You were live for 4:12 · peak 9 watching")
+        XCTAssertNil(ZeroCounts.count(0, "update", "updates"))
+    }
 }

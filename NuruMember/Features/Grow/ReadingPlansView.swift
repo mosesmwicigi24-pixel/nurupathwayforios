@@ -559,7 +559,9 @@ struct ReadingPlansView: View {
             HStack {
                 overline(category == "all" ? "Results" : category)
                 Spacer(minLength: 0)
-                Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(10, .semibold)).foregroundStyle(PL.ink3)
+                if !filtered.isEmpty {   // no zero counts (§7.4 #9)
+                    Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(10, .semibold)).foregroundStyle(PL.ink3)
+                }
             }
             if filtered.isEmpty {
                 VStack(spacing: 0) {

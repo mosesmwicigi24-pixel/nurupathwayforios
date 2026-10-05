@@ -1692,15 +1692,18 @@ struct HomeView: View {
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 6)
-            // Gold-tinted praying pill (Figma).
-            HStack(spacing: 5) {
-                Icon(.handHeart, size: 13, color: Nuru.goldChipText)
-                Text("\(post.prayCount) praying · \(post.commentCount ?? 0) replies")
-                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+            // Gold-tinted praying pill (Figma) — only once someone has prayed
+            // or replied: no zero counts (§7.4 #9).
+            if let counts = ZeroCounts.prayerLine(praying: post.prayCount, replies: post.commentCount ?? 0) {
+                HStack(spacing: 5) {
+                    Icon(.handHeart, size: 13, color: Nuru.goldChipText)
+                    Text(counts)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Nuru.gold.opacity(0.10), in: Capsule())
+                .padding(.top, Nuru.S.md)
             }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Nuru.gold.opacity(0.10), in: Capsule())
-            .padding(.top, Nuru.S.md)
             if inPager { Spacer(minLength: 0) }   // top-align short posts in the pager
         }
         .frame(maxWidth: .infinity, alignment: .leading)

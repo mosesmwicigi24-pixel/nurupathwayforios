@@ -539,7 +539,8 @@ struct ChatView: View {
                             .background(Nuru.goldGlow, in: Capsule())
                     }
                     // Whole, never cut (§8.1 rule 9).
-                    Text("The AI assistant · \(vm.totalUnread) updates across \(vm.spaces.count) spaces")
+                    // No zero counts (§7.4 #9): "0 updates across 0 spaces" said nothing.
+                    Text(ZeroCounts.assistantLine(unread: vm.totalUnread, spaces: vm.spaces.count))
                         .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
                         .fixedSize(horizontal: false, vertical: true)
                 }

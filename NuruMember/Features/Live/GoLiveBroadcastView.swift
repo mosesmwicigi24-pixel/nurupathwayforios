@@ -251,7 +251,7 @@ struct GoLiveBroadcastView: View {
                 Icon(recordingDeleted ? .trash2 : .checkCircle2, size: 36, color: Nuru.gold)
             }
             Text("You're offline now").font(.fraunces(22, .semibold)).foregroundStyle(.white)
-            Text("You were live for \(formatDuration(duration)) · peak \(controller.peakViewerCount) watching")
+            Text(ZeroCounts.liveSummary(duration: formatDuration(duration), peak: controller.peakViewerCount))
                 .font(.inter(13)).foregroundStyle(.white.opacity(0.7))
                 .multilineTextAlignment(.center).padding(.horizontal, 32)
             if recordingDeleted {

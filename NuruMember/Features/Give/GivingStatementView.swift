@@ -363,8 +363,10 @@ struct GivingStatementView: View {
                     }
                 }
                 let n = vm.settledCount(listed)
-                Text("\(n) gift\(n == 1 ? "" : "s") · \(periodLabel) · most recent first")
-                    .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
+                if n > 0 {   // no zero counts (§7.4 #9) — the page below says "No gifts …"
+                    Text("\(n) gift\(n == 1 ? "" : "s") · \(periodLabel) · most recent first")
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
+                }
             }
             .padding(.top, Nuru.S.base)
         }

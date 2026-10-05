@@ -189,7 +189,7 @@ struct CalendarView: View {
             Text("All events & calendar")
                 .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
-            Text("\(vm.upcomingCount) upcoming · \(vm.headerTitle)")
+            Text(ZeroCounts.calendarHeader(upcoming: vm.upcomingCount, month: vm.headerTitle))
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
                 .padding(.top, 6)
             RoundedRectangle(cornerRadius: 2)
@@ -344,7 +344,9 @@ struct CalendarView: View {
             Text(vm.listTitle).font(.inter(10, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
             Spacer(minLength: 0)
             let n = vm.listEvents.count
-            Text("\(n) \(n == 1 ? "event" : "events")").font(.inter(10, .semibold)).foregroundStyle(Nuru.faint)
+            if n > 0 {   // no zero counts (§7.4 #9)
+                Text("\(n) \(n == 1 ? "event" : "events")").font(.inter(10, .semibold)).foregroundStyle(Nuru.faint)
+            }
         }
         .padding(.horizontal, 4)
     }

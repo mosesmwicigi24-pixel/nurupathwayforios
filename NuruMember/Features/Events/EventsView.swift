@@ -670,9 +670,12 @@ struct EventsView: View {
         } label: {
             HStack(spacing: 6) {
                 Text(s.rawValue).font(.inter(11, .semibold)).foregroundStyle(on ? .white : Nuru.ink600)
-                Text("\(vm.count(s))").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(on ? Nuru.gold : Nuru.surface, in: Capsule())
+                // No zero counts (§7.4 #9): the quiet pill IS "nothing here".
+                if vm.count(s) > 0 {
+                    Text("\(vm.count(s))").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(on ? Nuru.gold : Nuru.surface, in: Capsule())
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)
@@ -946,7 +949,9 @@ private struct LiveHeroCard: View {
     private var footer: some View {
         HStack(spacing: Nuru.S.sm) {
             heroAvatars
-            Text("\(occ.going) worshipping").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
+            if occ.going > 0 {   // no zero counts (§7.4 #9)
+                Text("\(occ.going) worshipping").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
+            }
             Spacer(minLength: 0)
             HStack(spacing: 6) {
                 Icon(.qrCode, size: 14, color: Nuru.navy)
@@ -1469,9 +1474,11 @@ private struct SeriesListPage: View {
         Button(action: action) {
             HStack(spacing: 6) {
                 Text(label).font(.inter(11, .semibold)).foregroundStyle(on ? .white : Nuru.ink600)
-                Text("\(count)").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(on ? Nuru.gold : Nuru.surface, in: Capsule())
+                if count > 0 {   // no zero counts (§7.4 #9)
+                    Text("\(count)").font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(on ? Nuru.gold : Nuru.surface, in: Capsule())
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 8)

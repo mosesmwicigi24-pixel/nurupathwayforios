@@ -62,7 +62,7 @@ struct LiveHandsGuestsSheet: View {
 
     private var handsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("RAISED HANDS · \(hands.count)")
+            Text(hands.isEmpty ? "RAISED HANDS" : "RAISED HANDS · \(hands.count)")   // no zero counts (§7.4 #9)
                 .font(.nCardKicker).kerning(1.2).foregroundStyle(Nuru.goldLo)
             if hands.isEmpty {
                 Text("No hands raised right now.")

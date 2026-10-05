@@ -349,7 +349,8 @@ struct PrayerJournalView: View {
             HStack(alignment: .center, spacing: Nuru.S.sm) {
                 BackButton()
                 Spacer(minLength: 0)
-                Text("\(vm.active.count) ACTIVE · \(vm.answered.count) ANSWERED")
+                // No zero counts (§7.4 #9): only the counts above zero.
+                Text(ZeroCounts.journalHeader(active: vm.active.count, answered: vm.answered.count) ?? "")
                     .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0x9A7A2A))
                     .lineLimit(1).minimumScaleFactor(0.75)
@@ -524,11 +525,13 @@ private struct PrayerTabs: View {
                 Text(label)
                     .font(.inter(11, .bold))
                     .foregroundStyle(on ? .white : Color(hex: 0x59667C))
-                Text("\(count)")
-                    .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
-                    .padding(.horizontal, 6)
-                    .frame(minWidth: 18, minHeight: 16)
-                    .background(on ? Color(hex: 0xC9A227) : Nuru.surface, in: Capsule())
+                if count > 0 {   // no zero counts (§7.4 #9)
+                    Text("\(count)")
+                        .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 18, minHeight: 16)
+                        .background(on ? Color(hex: 0xC9A227) : Nuru.surface, in: Capsule())
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Nuru.S.sm)
