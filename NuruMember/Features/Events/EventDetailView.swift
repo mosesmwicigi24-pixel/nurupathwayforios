@@ -775,7 +775,9 @@ private struct EvdRsvpCard: View {
             if mine == "going" {
                 HStack(spacing: 6) {
                     Icon(.check, size: 13, color: EvD.goingText)
-                    Text("Saved · we'll remind you the day before.")
+                    // The day-before reminder is the server's — it lands in the
+                    // inbox; this phone has no remote push yet (B11).
+                    Text(IOSNoticeWords.rsvpSaved)
                         .font(.inter(11, .semibold)).foregroundStyle(EvD.goingText)
                 }
                 .padding(.top, 10)

@@ -2364,7 +2364,10 @@ private struct ScheduleDetailSheet: View {
                 switch mode {
                 case .view:
                     detailRows.padding(.top, Nuru.S.md)
-                    headsUpRow.padding(.top, Nuru.S.sm)
+                    // "Tell me before each prompt" is a push a few minutes before
+                    // M-Pesa asks for the PIN — this phone can't receive one yet,
+                    // and an inbox notice comes too late to help, so iOS doesn't
+                    // offer it (the walk's B11; §2: promise only what works).
                     actionButtons.padding(.top, Nuru.S.base)
                 case .change:
                     changeForm.padding(.top, Nuru.S.base)
@@ -2531,7 +2534,8 @@ private struct ScheduleDetailSheet: View {
     }
 
     /// "Tell me before each prompt" — a push a few minutes before M-Pesa asks
-    /// for the PIN, so the prompt is expected, not mistaken for a scam.
+    /// for the PIN, so the prompt is expected, not mistaken for a scam. Not
+    /// offered on iOS until it has remote push (B11); kept for that day.
     private var headsUpRow: some View {
         Toggle(isOn: Binding(get: { headsUp }, set: { on in headsUp = on; setHeadsUp(on) })) {
             VStack(alignment: .leading, spacing: 2) {

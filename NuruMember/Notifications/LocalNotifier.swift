@@ -57,6 +57,8 @@ final class LocalNotifier: NSObject, ObservableObject {
 
         try? await UNUserNotificationCenter.current().setBadgeCount(result.unread)
         guard !firstRun else { return }
+        // Settings' "Banners on this phone" (B11): off means none.
+        guard IOSNoticeWords.bannersOn() else { return }
 
         for n in fresh.prefix(5) {   // cap a burst; the rest are in the inbox
             let content = UNMutableNotificationContent()

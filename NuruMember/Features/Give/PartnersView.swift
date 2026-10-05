@@ -1973,7 +1973,10 @@ struct PledgeDetailView: View {
                                      set: { on in Task { await vm.setReminders(p, on); await load() } })) {
                     HStack(spacing: 8) {
                         Icon(.bell, size: 13, color: Nuru.gold)
-                        Text("Remind me before it's due").font(.inter(13)).foregroundStyle(Nuru.ink)
+                        // The server's reminder lands in the inbox; no remote push
+                        // on this phone yet (B11).
+                        Text(IOSNoticeWords.pledgeReminder).font(.inter(13)).foregroundStyle(Nuru.ink)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .tint(Nuru.gold)

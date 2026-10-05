@@ -407,6 +407,19 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(live.hasPrefix("Nuru Pathway · "), "the test host carries a version: \(live)")
     }
 
+    // MARK: Cycle 3 close walk B11 — notices iOS can deliver, and no others
+
+    func testNoticesPromiseOnlyWhatThisPhoneDelivers() throws {
+        XCTAssertFalse(IOSNoticeWords.rsvpSaved.contains("we'll remind you"), "no reminder iOS can't deliver")
+        XCTAssertTrue(IOSNoticeWords.rsvpSaved.contains("inbox"))
+        XCTAssertTrue(IOSNoticeWords.pledgeReminder.contains("inbox"))
+        XCTAssertFalse(IOSNoticeWords.bannersTitle.lowercased().contains("push"), "iOS has no remote push yet")
+        let d = try XCTUnwrap(UserDefaults(suiteName: "B11.\(UUID().uuidString)"))
+        XCTAssertTrue(IOSNoticeWords.bannersOn(d), "unset reads as on, as the switch shows it")
+        d.set(false, forKey: IOSNoticeWords.bannersKey)
+        XCTAssertFalse(IOSNoticeWords.bannersOn(d), "off means no banners")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

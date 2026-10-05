@@ -253,7 +253,9 @@ struct SettingsView: View {
 
     private var notifications: some View {
         sectionCard("NOTIFICATIONS", icon: .bell) {
-            toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", prefBinding($pushOn, isPush: true)); Divider()
+            // What iOS really does with it (B11): no remote push yet, so the
+            // switch turns this phone's banners for new notices on and off.
+            toggleRow(.bell, IOSNoticeWords.bannersTitle, IOSNoticeWords.bannersLine, prefBinding($pushOn, isPush: true)); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
             if prefSaveFailed {
