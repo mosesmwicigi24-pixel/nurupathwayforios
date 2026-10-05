@@ -219,7 +219,7 @@ final class ExperienceCycle2Tests: XCTestCase {
 
         let walking = HomeWeek.pathwayRow(try journey(current: 2, level(2, "active", done: 3, of: 10),
                                                       trail: [module("b", level: 2, seq: 4, "next")]), enrolledLevel: 2)
-        XCTAssertEqual(walking.title, "Module b")
+        XCTAssertEqual(walking.title, "Continue · Module b")
         XCTAssertEqual(walking.line, "Level 2 · 3 of 10 modules")
         XCTAssertEqual(walking.destination, .journey(.module("b")))
     }
@@ -234,7 +234,7 @@ final class ExperienceCycle2Tests: XCTestCase {
 
     func testThePathwayRowStandsWhenThePathwayDidNotLoad() {
         let r = HomeWeek.pathwayRow(nil, enrolledLevel: 1)
-        XCTAssertEqual(r.title, "Your pathway")
+        XCTAssertEqual(r.title, "Open your pathway")
         XCTAssertEqual(r.line, "Level 1", "the level alone")
         XCTAssertEqual(r.destination, .journey(nil), "the Pathway tab itself")
         XCTAssertEqual(HomeWeek.pathwayRow(nil, enrolledLevel: nil).line, "", "a member not yet placed: no level is invented")
@@ -245,7 +245,7 @@ final class ExperienceCycle2Tests: XCTestCase {
     func testThePlansRowIsThePlanBeingRead() throws {
         let rooted = try plan("rooted", "Rooted: 10 Days in the Psalms")
         let r = HomeWeek.plansRow([try plan("john", "Gospel of John", enrolled: false), rooted])
-        XCTAssertEqual(r.title, "Rooted: 10 Days in the Psalms")
+        XCTAssertEqual(r.title, "Start · Rooted: 10 Days in the Psalms")
         XCTAssertEqual(r.line, "Day 1 of 10 · today's reading")
         XCTAssertEqual(r.destination, .planDay(rooted), "that plan's day")
     }
@@ -260,7 +260,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         XCTAssertEqual(none.destination, .plans)
         let finished = try plan("fear", "Fear Not", completedAt: "2026-09-30T08:00:00Z")
         let reading = try plan("new", "New Grace", current: 4)
-        XCTAssertEqual(HomeWeek.plansRow([finished, reading]).title, "New Grace", "the first enrolled, UNFINISHED plan")
+        XCTAssertTrue(HomeWeek.plansRow([finished, reading]).title.hasSuffix("· New Grace"), "the first enrolled, UNFINISHED plan")
         XCTAssertEqual(HomeWeek.plansRow(nil), none, "the plans didn't load — the none form")
         XCTAssertEqual(HomeWeek.plansRow([]), none)
     }
@@ -278,8 +278,8 @@ final class ExperienceCycle2Tests: XCTestCase {
         let sooner = try homeEvent("occ-1", "Prayer breakfast", at: "2026-10-06T05:00:00.000Z")
         let youth = try homeEvent("occ-2", "Youth night", at: "2026-10-10T15:00:00.000Z", rsvp: "going")
         let r = eventsRow(home: [sooner, youth])
-        XCTAssertEqual(r.title, "Youth night", "what the member said yes to comes first")
-        XCTAssertEqual(r.line, "Sat 10 Oct · 6:00 PM · You're going")
+        XCTAssertEqual(r.title, "Going · Youth night", "what the member said yes to comes first")
+        XCTAssertEqual(r.line, "Sat 10 Oct · 6:00 PM")
         XCTAssertEqual(eventOf(r)?.occurrenceId, "occ-2")
     }
 
@@ -288,13 +288,13 @@ final class ExperienceCycle2Tests: XCTestCase {
         // RSVP says they're going — their answer has the last word.
         let service = try occurrence("occ-7", "Sunday service", at: "2026-10-11T06:00:00.000Z", end: "2026-10-11T08:30:00.000Z")
         let r = eventsRow(calendar: [service], home: [], rsvps: [try rsvp("occ-7", "Sunday service", at: "2026-10-11T06:00:00.000Z")])
-        XCTAssertEqual(r.title, "Sunday service")
-        XCTAssertEqual(r.line, "Sun 11 Oct · 9:00 AM · You're going")
+        XCTAssertEqual(r.title, "Going · Sunday service")
+        XCTAssertEqual(r.line, "Sun 11 Oct · 9:00 AM")
         XCTAssertEqual(eventOf(r)?.endAt, "2026-10-11T08:30:00.000Z", "the calendar's end rides along to the event page")
         // Known only to the RSVP list.
         let away = eventsRow(home: [], rsvps: [try rsvp("ev-9", "Leaders' retreat", at: "2026-10-08T07:30:00.000Z")])
-        XCTAssertEqual(away.title, "Leaders' retreat")
-        XCTAssertEqual(away.line, "Thu 8 Oct · 10:30 AM · You're going")
+        XCTAssertEqual(away.title, "Going · Leaders' retreat")
+        XCTAssertEqual(away.line, "Thu 8 Oct · 10:30 AM")
         XCTAssertEqual(eventOf(away)?.occurrenceId, "ev-9", "the RSVP's event id is the occurrence the page loads")
         // A calendar gathering nobody curated still counts.
         XCTAssertEqual(eventsRow(calendar: [try occurrence("occ-8", "Cell night", at: "2026-10-07T16:00:00.000Z")]).line,
@@ -305,37 +305,37 @@ final class ExperienceCycle2Tests: XCTestCase {
         let later = try homeEvent("occ-2", "Youth night", at: "2026-10-10T15:00:00.000Z")
         let sunday = try homeEvent("occ-1", "Sunday service", at: "2026-10-11T06:00:00.000Z")
         let r = eventsRow(home: [sunday, later], rsvps: [])
-        XCTAssertEqual(r.title, "Youth night")
+        XCTAssertEqual(r.title, "Join · Youth night")
         XCTAssertEqual(r.line, "Sat 10 Oct · 6:00 PM")
         XCTAssertEqual(eventOf(r)?.occurrenceId, "occ-2")
     }
 
     func testTheWeekIsTodayThroughTheSeventhDayAfter() throws {
         let lastDay = try homeEvent("occ-1", "Sunday service", at: "2026-10-11T17:00:00.000Z")   // Sun 11 Oct, 8 PM
-        XCTAssertEqual(eventsRow(home: [lastDay]).title, "Sunday service", "the seventh day after counts")
+        XCTAssertEqual(eventsRow(home: [lastDay]).title, "Join · Sunday service", "the seventh day after counts")
         let eighth = try homeEvent("occ-2", "Monday prayer", at: "2026-10-12T04:00:00.000Z")     // Mon 12 Oct, 7 AM
-        XCTAssertEqual(eventsRow(home: [eighth]).title, "No gatherings this week", "the eighth does not")
+        XCTAssertEqual(eventsRow(home: [eighth]).title, "See the church calendar", "the eighth does not")
         let earlier = try homeEvent("occ-0", "This morning", at: "2026-10-04T06:00:00.000Z", rsvp: "going")
-        XCTAssertEqual(eventsRow(home: [earlier]).title, "No gatherings this week", "one already begun is not upcoming")
+        XCTAssertEqual(eventsRow(home: [earlier]).title, "See the church calendar", "one already begun is not upcoming")
     }
 
     func testADeclinedGatheringOnlyWhenNothingElseIsOn() throws {
         let declined = try homeEvent("occ-1", "Prayer breakfast", at: "2026-10-06T05:00:00.000Z", rsvp: "declined")
         let maybe = try homeEvent("occ-2", "Youth night", at: "2026-10-10T15:00:00.000Z", rsvp: "maybe")
-        XCTAssertEqual(eventsRow(home: [declined, maybe]).title, "Youth night", "a maybe still stands; a no steps aside")
+        XCTAssertEqual(eventsRow(home: [declined, maybe]).title, "Join · Youth night", "a maybe still stands; a no steps aside")
         let alone = eventsRow(home: [declined])
-        XCTAssertEqual(alone.title, "Prayer breakfast", "the only gathering this week — said, even though declined")
+        XCTAssertEqual(alone.title, "Join · Prayer breakfast", "the only gathering this week — said, even though declined")
         XCTAssertEqual(alone.line, "Tue 6 Oct · 8:00 AM", "never \"You're going\"")
         // A no in the RSVP list outranks the curated row's silence.
         let saidNo = eventsRow(home: [try homeEvent("occ-1", "Prayer breakfast", at: "2026-10-06T05:00:00.000Z"), maybe],
                                rsvps: [try rsvp("occ-1", "Prayer breakfast", at: "2026-10-06T05:00:00.000Z", status: "declined")])
-        XCTAssertEqual(saidNo.title, "Youth night")
+        XCTAssertEqual(saidNo.title, "Join · Youth night")
     }
 
     func testNoGatheringIsAQuietRow() throws {
         let none = eventsRow()
-        XCTAssertEqual(none.title, "No gatherings this week")
-        XCTAssertEqual(none.line, "See the church calendar")
+        XCTAssertEqual(none.title, "See the church calendar")
+        XCTAssertEqual(none.line, "No gatherings this week")
         XCTAssertEqual(none.destination, .events)
         XCTAssertEqual(eventsRow(calendar: [], home: [], rsvps: []), none, "Ada today: nothing on the calendar")
         XCTAssertEqual(eventsRow(rsvps: [try rsvp("ev-1", "No date", at: nil)]), none, "an RSVP with no next occurrence")
@@ -351,7 +351,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let gifts = [try gift("s-tithe", nextRunAt: "2026-10-11T06:01:00.108Z", next: "100000", frequency: "weekly"),
                      try gift("s-kenya", pledge: "p-kenya")]
         let r = givingRow(p, gifts)
-        XCTAssertEqual(r.title, "Kenya trip")
+        XCTAssertEqual(r.title, "Giving · Kenya trip")
         XCTAssertEqual(r.line, "Collected on Mon 5 Oct")
         XCTAssertEqual(r.destination, .pledge("p-kenya"), "its pledge")
         XCTAssertFalse(HomeWeek.asksToGive([r]), "a member already giving isn't asked twice")
@@ -360,11 +360,11 @@ final class ExperienceCycle2Tests: XCTestCase {
     func testARecurringGiftCollectedThisWeek() throws {
         let empty = try standing()
         let weekly = givingRow(empty, [try gift("s-tithe", nextRunAt: "2026-10-11T06:01:00.108Z", frequency: "weekly")])
-        XCTAssertEqual(weekly.title, "Your weekly gift")
+        XCTAssertEqual(weekly.title, "Giving · Your weekly gift")
         XCTAssertEqual(weekly.line, "Collected on Sun 11 Oct", "the seventh day after counts")
         XCTAssertEqual(weekly.destination, .schedule("s-tithe"), "the gift's sheet")
         let monthly = givingRow(empty, [try gift("s-month", nextRunAt: "2026-10-07T06:00:00Z")])
-        XCTAssertEqual(monthly.title, "Your monthly gift")
+        XCTAssertEqual(monthly.title, "Giving · Your monthly gift")
         XCTAssertEqual(monthly.line, "Collected on Wed 7 Oct")
     }
 
@@ -383,7 +383,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let soon = try standing(pledges: [roofPledge],
                                 due: [dueJSON("p-roof", "Roof sheets for the new hall", dueOn: "2026-10-08", amount: 2_000_000)])
         let r = givingRow(soon, [])
-        XCTAssertEqual(r.title, "Roof sheets for the new hall")
+        XCTAssertEqual(r.title, "Pay · Roof sheets for the new hall")
         XCTAssertEqual(r.line, "KSh 20,000 due Thu 8 Oct")
         XCTAssertEqual(r.destination, .partners)
         XCTAssertFalse(HomeWeek.asksToGive([r]))
@@ -402,7 +402,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let behind = try standing(due: [dueJSON("p-camp", "Youth camp", dueOn: "2026-10-04", amount: 600_000,
                                                 overdueSince: "2026-09-01", overdueCount: 2)])
         XCTAssertEqual(givingRow(behind, []).line, "KSh 6,000 overdue since Tue 1 Sep")
-        XCTAssertEqual(givingRow(behind, []).title, "Youth camp")
+        XCTAssertEqual(givingRow(behind, []).title, "Pay · Youth camp")
         let counted = try standing(due: [dueJSON("p-camp", "Youth camp", dueOn: "2026-10-04", amount: 300_000, overdueCount: 1)])
         XCTAssertEqual(givingRow(counted, []).line, "KSh 3,000 overdue since Sun 4 Oct", "late by the server's count, dated by its row")
     }
@@ -412,7 +412,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         // so Home says what is owed — never "Collected on Mon 5 Oct".
         let late = try standing(pledges: [kenyaPledge], due: [dueJSON("p-kenya", "Kenya trip", dueOn: "2026-10-01", amount: 500_000)])
         let r = givingRow(late, [try gift("s-kenya", pledge: "p-kenya")])
-        XCTAssertEqual(r.title, "Kenya trip")
+        XCTAssertEqual(r.title, "Pay · Kenya trip")
         XCTAssertEqual(r.line, "KSh 5,000 overdue since Thu 1 Oct")
         XCTAssertEqual(r.destination, .partners)
         let paused = try standing(pledges: [kenyaPledge], due: [dueJSON("p-kenya", "Kenya trip", dueOn: "2026-10-05", amount: 500_000)])
@@ -435,7 +435,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let p = try standing(due: [dueJSON("p-roof", "Roof", dueOn: "2026-10-05", amount: 500_000)])
         let r = givingRow(p, [try gift("s-tithe", nextRunAt: "2026-10-09T06:00:00Z", frequency: "weekly"),
                               try gift("s-month", nextRunAt: "2026-10-06T06:00:00Z")])
-        XCTAssertEqual(r.title, "Your monthly gift")
+        XCTAssertEqual(r.title, "Giving · Your monthly gift")
         XCTAssertEqual(r.line, "Collected on Tue 6 Oct")
     }
 
@@ -451,7 +451,7 @@ final class ExperienceCycle2Tests: XCTestCase {
 
     func testTheCellRowIsTheMembersOwnCell() throws {
         let r = HomeWeek.cellRow(try cell(next: "2026-10-08T15:00:00.000Z"), timeZone: nairobi)
-        XCTAssertEqual(r.title, "Dev Cell A")
+        XCTAssertEqual(r.title, "Gather · Dev Cell A")
         XCTAssertEqual(r.line, "Next gathering Thu 8 Oct")
         XCTAssertEqual(r.destination, .cell)
     }
@@ -479,7 +479,7 @@ final class ExperienceCycle2Tests: XCTestCase {
                                  partnership: nil, schedules: nil, railsLine: "Tithe & offering", cell: nil,
                                  now: now, timeZone: nairobi)
         XCTAssertEqual(rows.map(\.pillar), [.pathway, .plans, .events, .giving, .cell])
-        XCTAssertEqual(rows.map(\.title), ["Your pathway", "Start a reading plan", "No gatherings this week", "Give", "Find your cell"],
+        XCTAssertEqual(rows.map(\.title), ["Open your pathway", "Start a reading plan", "See the church calendar", "Give", "Find your cell"],
                        "nothing loaded: every row in its none form — the card still stands")
         XCTAssertTrue(HomeWeek.asksToGive(rows))
     }

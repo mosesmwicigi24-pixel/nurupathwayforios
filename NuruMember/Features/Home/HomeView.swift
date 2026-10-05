@@ -474,7 +474,10 @@ struct HomeView: View {
         // YOUR WEEK's rows, read first: "What needs you today" (above them)
         // never repeats one (§9.1 rule 3).
         let week = weekRows
-        let needs = vm.nudges.filter { !HomeWeek.repeats($0, in: week) }
+        // A first day leads with the path's first step, not a side task
+        // (§9.1 rule 4): the reflection waits; a person waiting never does.
+        let firstDay = vm.journey?.isFirstDay == true
+        let needs = vm.nudges.filter { !HomeWeek.repeats($0, in: week) && !(firstDay && $0.kind == "reflection_due") }
         // Nuru Live — the church-scope LIVE banner sits at the very TOP of the
         // whole feed, above even the load-error strip: a live broadcast is the
         // most urgent thing on the screen. Hidden entirely when nothing church-
@@ -510,7 +513,7 @@ struct HomeView: View {
         // single reflection strip so Home never loses its nudge (one place,
         // one ask); a rail whose every nudge is a row's shows nothing.
         if !needs.isEmpty { s.append(("needsyou", AnyView(HomeNeedsYouRail(nudges: needs) { openNudge($0) }))) }
-        else if vm.nudges.isEmpty, reflectionDue { s.append(("priority", AnyView(priorityStrip))) }
+        else if vm.nudges.isEmpty, reflectionDue, !firstDay { s.append(("priority", AnyView(priorityStrip))) }
         s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
         // 3 · YOUR WEEK — one row per pillar, each pointing to its home once.
         // It replaced the "For you today" hero, the continue-level card, the

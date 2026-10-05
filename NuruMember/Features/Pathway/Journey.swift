@@ -67,9 +67,21 @@ struct Journey: Equatable {
     let line: String
     let actionLabel: String?
     let destination: Destination?
+    /// The level's place on the road, 1 for the first (the first day is
+    /// read from it).
+    var levelPosition: Int = 1
 
     /// The summit celebration fires here and nowhere else.
     var summitReached: Bool { stage == .finished }
+    /// A first day on the path: the first level, nothing done yet (Ben). It
+    /// leads with the path's first step — YOUR WEEK's "Start Level 1 · …" —
+    /// not a side task (EXPERIENCE.md §9.1 rule 4).
+    var isFirstDay: Bool { stage == .learning && levelPosition == 1 && completedModules == 0 && totalModules > 0 }
+    /// "3 of 10 modules" — or, with nothing done yet, what lies ahead ("10
+    /// modules"), never a zero count (§9.2 #4, §7.4 #9).
+    var modulesCount: String {
+        completedModules == 0 ? "\(totalModules) modules" : "\(completedModules) of \(totalModules) modules"
+    }
     /// Whole percent of the journey — 100 only at the summit: with the last
     /// exam still ahead the ring reads 99 at most.
     var progressPercent: Int {
@@ -85,7 +97,7 @@ struct Journey: Equatable {
     /// Home's "Your progress" line — the bold fact, then the rest.
     var progressLine: (bold: String, rest: String) {
         if stage == .learning, totalModules > 0 {
-            return ("\(completedModules) of \(totalModules) modules", " in Level \(levelNumber)")
+            return (modulesCount, " in Level \(levelNumber)")
         }
         return (title, "")
     }
@@ -175,10 +187,13 @@ extension Journey {
             line = "Its modules open soon — we'll let you know."
         case .learning:
             let verb = x == 0 ? "Start" : "Continue"
-            pill = "\(x) of \(y) modules"
+            // Nothing done yet: what lies ahead ("10 modules"), never "0 of
+            // 10" — a first day has no zero counts (§9.2 #4).
+            let count = x == 0 ? "\(y) modules" : "\(x) of \(y) modules"
+            pill = count
             kicker = "\(verb) · Level \(n)"
             title = next?.title ?? cur.title
-            line = "\(x) of \(y) modules in Level \(n)"
+            line = "\(count) in Level \(n)"
             // A module still behind its gate opens the level page (where the
             // member sees what stands before it) — the server would refuse it.
             if let next, next.status != .locked, !next.locked {
@@ -216,7 +231,7 @@ extension Journey {
         return Journey(stage: stage, levelNumber: n, levelTitle: cur.title,
                        completedModules: x, totalModules: y, progress: progress,
                        pill: pill, kicker: kicker, title: title, line: line,
-                       actionLabel: action?.label, destination: action?.to)
+                       actionLabel: action?.label, destination: action?.to, levelPosition: idx + 1)
     }
 }
 

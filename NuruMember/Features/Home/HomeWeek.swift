@@ -114,10 +114,21 @@ enum HomeWeek {
     /// pathway" and the member's level alone, when known.
     static func pathwayRow(_ j: Journey?, enrolledLevel: Int?) -> HomeWeekRow {
         guard let j else {
-            return HomeWeekRow(pillar: .pathway, title: "Your pathway", line: enrolledLevel.map { "Level \($0)" } ?? "",
+            return HomeWeekRow(pillar: .pathway, title: "Open your pathway", line: enrolledLevel.map { "Level \($0)" } ?? "",
                                destination: .journey(nil))
         }
-        return HomeWeekRow(pillar: .pathway, title: j.title, line: "Level \(j.levelNumber) · \(j.pill)",
+        // Each row says its verb (EXPERIENCE.md §9.1 rule 3): a lesson to read
+        // is "Continue · God's Plan for Humanity"; a level not yet begun is
+        // "Start Level 1 · God & His Nature" — a first day leads with the
+        // path's first step (rule 4). The other stages' titles are their own
+        // verbs or facts ("Take the Level 1 exam", "Level 2 is being prepared").
+        let title: String
+        if j.stage == .learning, j.destination != nil, j.totalModules > 0 {
+            title = j.completedModules == 0 ? "Start Level \(j.levelNumber) · \(j.title)" : "Continue · \(j.title)"
+        } else {
+            title = j.title
+        }
+        return HomeWeekRow(pillar: .pathway, title: title, line: "Level \(j.levelNumber) · \(j.pill)",
                            destination: .journey(j.destination))
     }
 
@@ -134,7 +145,10 @@ enum HomeWeek {
                                line: "A few minutes a day — with the whole family of God.", destination: .plans)
         }
         let read = PlanLines.readToday(p, sealedHere: sealedHere, now: now)
-        return HomeWeekRow(pillar: .plans, title: p.title, line: PlanLines.todayLine(p, readToday: read, now: now),
+        // Its verb (§9.1 rule 3): "Done today ·" once today's day is read,
+        // "Start ·" before the first day, "Continue ·" between.
+        let verb = read ? "Done today" : ((p.completedDays ?? []).isEmpty && PlanLines.day(p) == 1 ? "Start" : "Continue")
+        return HomeWeekRow(pillar: .plans, title: "\(verb) · \(p.title)", line: PlanLines.todayLine(p, readToday: read, now: now),
                            destination: .planDay(p))
     }
 
@@ -191,14 +205,17 @@ enum HomeWeek {
             return a.order < b.order
         }
         let week = inWeek.map { $0.gathering }
+        // Each row says its verb (§9.1 rule 3): "Going ·" a gathering the
+        // member said yes to, "Join ·" one they haven't answered, and "See the
+        // church calendar" in a quiet week.
         if let g = week.first(where: { $0.rsvp?.lowercased() == "going" }) {
-            return HomeWeekRow(pillar: .events, title: g.title, line: "\(when(g.start, timeZone)) · You're going",
+            return HomeWeekRow(pillar: .events, title: "Going · \(g.title)", line: when(g.start, timeZone),
                                destination: .event(g.occ))
         }
         if let g = week.first(where: { $0.rsvp?.lowercased() != "declined" }) ?? week.first {
-            return HomeWeekRow(pillar: .events, title: g.title, line: when(g.start, timeZone), destination: .event(g.occ))
+            return HomeWeekRow(pillar: .events, title: "Join · \(g.title)", line: when(g.start, timeZone), destination: .event(g.occ))
         }
-        return HomeWeekRow(pillar: .events, title: "No gatherings this week", line: "See the church calendar",
+        return HomeWeekRow(pillar: .events, title: "See the church calendar", line: "No gatherings this week",
                            destination: .events)
     }
 
@@ -247,12 +264,13 @@ enum HomeWeek {
             guard asks, !(pledgeId.map { owedIds.contains($0) } ?? false) else { continue }
             if soonest.map({ day < $0.day }) ?? true { soonest = (s, day, pledgeId) }
         }
+        // "Giving ·" — in motion, nothing to do (§9.1 rule 3).
         if let c = soonest, let line = ScheduleRhythm.collectedOn(c.day) {
             if let id = c.pledgeId {
                 let title = pledge(id)?.displayTitle ?? c.gift.pledge.flatMap { $0.title.isEmpty ? nil : $0.title } ?? "Your pledge"
-                return HomeWeekRow(pillar: .giving, title: title, line: line, destination: .pledge(id))
+                return HomeWeekRow(pillar: .giving, title: "Giving · \(title)", line: line, destination: .pledge(id))
             }
-            return HomeWeekRow(pillar: .giving, title: ScheduleRhythm.isWeekly(c.gift.frequency) ? "Your weekly gift" : "Your monthly gift",
+            return HomeWeekRow(pillar: .giving, title: "Giving · " + (ScheduleRhythm.isWeekly(c.gift.frequency) ? "Your weekly gift" : "Your monthly gift"),
                                line: line, destination: .schedule(c.gift.scheduleId))
         }
 
@@ -266,7 +284,7 @@ enum HomeWeek {
             } else {
                 line = "\(amount) due" + (dayLabel(d.dueOn).map { " \($0)" } ?? "")
             }
-            return HomeWeekRow(pillar: .giving, title: title, line: line, destination: .partners)
+            return HomeWeekRow(pillar: .giving, title: "Pay · \(title)", line: line, destination: .partners)
         }
         return give
     }
@@ -293,7 +311,7 @@ enum HomeWeek {
         }
         let line = c.next.flatMap { parse($0.startAt) }.map { "Next gathering \(format($0, "EEE d MMM", timeZone))" }
             ?? "Next gathering not set · \(c.members) \(c.members == 1 ? "member" : "members")"
-        return HomeWeekRow(pillar: .cell, title: c.name.isEmpty ? "Your cell" : c.name, line: line, destination: .cell)
+        return HomeWeekRow(pillar: .cell, title: "Gather · " + (c.name.isEmpty ? "Your cell" : c.name), line: line, destination: .cell)
     }
 
     // MARK: Helpers

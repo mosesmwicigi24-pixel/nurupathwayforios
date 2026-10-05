@@ -145,6 +145,72 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(HomeWeekChain.todayIndex(sunday, calendar: cal), 0)
     }
 
+    // MARK: §9.2 #4 — a first day leads with the path's first step; verbs on every row
+
+    func level(_ n: Int, _ status: String, done: Int = 0, of total: Int = 0, title: String? = nil,
+               theme: String? = nil, awaiting: Bool = false) -> [String: Any] {
+        ["level_number": n, "title": title ?? "Level \(n) title", "theme": theme ?? NSNull(), "description": NSNull(),
+         "total_modules": total, "completed_modules": done, "lessons_total": total, "lessons_completed": done,
+         "minutes": 0, "status": status, "awaiting_review": awaiting, "exam_published": true, "exam_available": true]
+    }
+
+    func summary(current: Int = 1, _ levels: [[String: Any]]) throws -> PathwaySummary {
+        try decode(PathwaySummary.self, ["current_level": current, "levels": levels])
+    }
+
+    /// Ben (new, nothing started): Level 1's ten lessons, the first open.
+    func bensJourney() throws -> Journey {
+        let s = try summary([level(1, "active", done: 0, of: 10, title: "Foundations of Faith"),
+                             level(2, "locked"), level(3, "locked")])
+        let trail = try decode([LevelModule].self, [module("m1", seq: 1, "next", title: "God & His Nature"),
+                                                    module("m2", seq: 2, "locked", title: "God's Plan for Humanity")])
+        return try XCTUnwrap(Journey.derive(s, trail: trail))
+    }
+
+    func testAFirstDayLeadsWithStartLevelOne() throws {
+        let ben = try bensJourney()
+        XCTAssertTrue(ben.isFirstDay)
+        let row = HomeWeek.pathwayRow(ben, enrolledLevel: 1)
+        XCTAssertEqual(row.title, "Start Level 1 · God & His Nature")
+        // No zero counts: what lies ahead.
+        XCTAssertEqual(row.line, "Level 1 · 10 modules")
+        XCTAssertEqual(ben.progressLine.bold, "10 modules")
+        XCTAssertEqual(PathwayTrail.headerLine(try summary([level(1, "active", done: 0, of: 10)]).levels.first,
+                                               position: 1, of: 6), "Level 1 of 6 · 10 modules")
+        XCTAssertEqual(ben.progressPercent, 0, "Pathway's ring stays hidden at 0")
+        // The second lesson continues; Level 2's first lesson is not a first day.
+        let cara = try XCTUnwrap(Journey.derive(try summary([level(1, "active", done: 2, of: 10)]),
+                                                trail: try decode([LevelModule].self, [module("m3", seq: 3, "next", title: "Salvation by Grace")])))
+        XCTAssertFalse(cara.isFirstDay)
+        XCTAssertEqual(HomeWeek.pathwayRow(cara, enrolledLevel: 1).title, "Continue · Salvation by Grace")
+        let levelTwo = try XCTUnwrap(Journey.derive(try summary(current: 2, [level(1, "completed", done: 10, of: 10), level(2, "active", done: 0, of: 8)]),
+                                                    trail: try decode([LevelModule].self, [module("n1", level: 2, seq: 1, "next", title: "Abiding")])))
+        XCTAssertFalse(levelTwo.isFirstDay)
+        XCTAssertEqual(HomeWeek.pathwayRow(levelTwo, enrolledLevel: 2).title, "Start Level 2 · Abiding")
+    }
+
+    func testEveryWeekRowSaysItsVerb() throws {
+        let begun = try plan("p1", day: 1, done: [])
+        XCTAssertEqual(HomeWeek.plansRow([begun], now: monday).title, "Start · First Steps")
+        let cara = try plan("p1", day: 2, done: [1], lastFinished: "2026-10-01T09:33:50.486Z")
+        XCTAssertEqual(HomeWeek.plansRow([cara], now: monday).title, "Continue · First Steps")
+        let ada = try plan("p1", day: 4, done: [1, 2, 3], lastFinished: "2026-10-05T08:45:28.123Z")
+        XCTAssertEqual(HomeWeek.plansRow([ada], now: monday).title, "Done today · First Steps")
+        XCTAssertEqual(HomeWeek.plansRow(nil).title, "Start a reading plan")
+        let quiet = HomeWeek.eventsRow(calendar: [], home: [], rsvps: [], now: monday, timeZone: TimeZone(identifier: "Africa/Nairobi")!)
+        XCTAssertEqual(quiet.title, "See the church calendar")
+        XCTAssertEqual(quiet.line, "No gatherings this week")
+    }
+
+    func testOnAFirstDayTheReflectionWaitsButAPersonNeverDoes() throws {
+        let ben = try bensJourney()
+        let week = [HomeWeek.pathwayRow(ben, enrolledLevel: 1)]
+        func held(_ n: HomeNudge) -> Bool { ben.isFirstDay && n.kind == "reflection_due" }
+        XCTAssertTrue(held(try nudge("reflection_due", route: "devotional")))
+        for k in ["chat_unread", "reading_invite", "letter_unread"] { XCTAssertFalse(held(try nudge(k)), k) }
+        XCTAssertFalse(HomeWeek.repeats(try nudge("reflection_due"), in: week), "held for the first day, not as a repeat")
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

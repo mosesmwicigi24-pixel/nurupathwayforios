@@ -375,6 +375,9 @@ private struct PathwayHubHeader: View {
                 NuruHeaderText(title: active?.title ?? "Your pathway",
                                line: PathwayTrail.headerLine(active, position: idx + 1, of: vm.levelCount))
                     .padding(.top, 12)
+                // The level's bar once a lesson is done — not an empty "0/10"
+                // on a first day (§9.2 #4; the line above says "10 modules").
+                if (active?.lessonsDone ?? 0) > 0 {
                 HStack(spacing: 8) {
                     PWBar(pct: activePct, height: 6,
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
@@ -384,6 +387,7 @@ private struct PathwayHubHeader: View {
                         .contentTransition(.numericText())
                         .animation(.default, value: active?.lessonsDone)
                 }.padding(.top, 16)
+                }
                 if remaining > 0 {
                     HStack(spacing: 6) {
                         Icon(.sparkles, size: 14, color: Color(hex: 0x9A7A2A))
@@ -410,7 +414,9 @@ private struct PathwayHubHeader: View {
                 // The one bell (§7.2 #4) — it was decorative here, opening
                 // nothing under a painted-on dot.
                 NuruBell()
-                PWHeaderRing(pct: journey?.progressPercent ?? 0)
+                // Shown once there is progress to show — never a "0%" ring on
+                // a first day (§9.2 #4).
+                if let pct = journey?.progressPercent, pct > 0 { PWHeaderRing(pct: pct) }
             }
         }
     }
@@ -708,7 +714,9 @@ enum PathwayTrail {
         let place = "Level \(position) of \(count)"
         guard let level else { return place }
         guard level.lessonCount > 0 else { return place + " · Modules open soon" }
-        return place + " · \(min(level.lessonsDone, level.lessonCount)) of \(level.lessonCount) modules"
+        // Nothing done yet: what lies ahead, never "0 of 10" (§9.2 #4).
+        let done = min(level.lessonsDone, level.lessonCount)
+        return place + (done == 0 ? " · \(level.lessonCount) modules" : " · \(done) of \(level.lessonCount) modules")
     }
 
     /// The folded row's words: "20 of 20 modules done · Show" — the level's

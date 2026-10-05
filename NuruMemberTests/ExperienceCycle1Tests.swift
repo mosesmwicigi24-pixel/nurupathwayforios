@@ -79,7 +79,9 @@ final class ExperienceCycle1Tests: XCTestCase {
         let s = try summary(current: 1, level(1, "active", done: 0, of: 20))
         let j = try XCTUnwrap(Journey.derive(s, trail: try trail([module("m1", level: 1, seq: 1, "next")])))
         XCTAssertEqual(j.stage, .learning)
-        XCTAssertEqual(j.pill, "0 of 20 modules")
+        // What lies ahead, never a zero count (§9.2 #4).
+        XCTAssertEqual(j.pill, "20 modules")
+        XCTAssertEqual(j.line, "20 modules in Level 1")
         XCTAssertEqual(j.kicker, "Start · Level 1")
         XCTAssertEqual(j.actionLabel, "Start")
         XCTAssertEqual(j.destination, .module("m1"))
