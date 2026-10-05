@@ -641,6 +641,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         }
     }
 
+    // MARK: Cycle 4 item 4 — Home's verse Save says why it failed
+
+    @MainActor
+    func testTheVerseSaveFailureIsSaidInWords() throws {
+        let vm = HomeViewModel()
+        XCTAssertNil(vm.verseSaveLine)
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Home/HomeView.swift"), encoding: .utf8)
+        XCTAssertTrue(src.contains("verseSaveLine = NuruStateCopy.saveFailureLine(error)"), "felt AND said, in §4's words")
+        XCTAssertTrue(NuruStateCopy.saveFailureLine(URLError(.notConnectedToInternet), deviceOnline: false).hasPrefix("Couldn't save that. "))
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

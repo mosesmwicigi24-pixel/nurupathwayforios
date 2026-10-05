@@ -38,6 +38,8 @@ final class HomeViewModel: ObservableObject {
     @Published var reactions: VerseReactions?
     @Published var verseSaved = false
     @Published var verseSaving = false
+    /// Why the verse didn't save, in words (§4; Cycle 4) — nil otherwise.
+    @Published var verseSaveLine: String?
 
     // Rich home cards
     @Published var welcomeVideo: WelcomeVideo?
@@ -285,13 +287,16 @@ final class HomeViewModel: ObservableObject {
     func saveVerse() async {
         guard !verseSaved, !verseSaving, let v = verse else { return }
         verseSaving = true
+        verseSaveLine = nil
         defer { verseSaving = false }
         do {
             try await MemberAPI.saveVerseQuick(reference: v.reference, version: v.version, text: v.text)
             verseSaved = true
             Haptics.success()
         } catch {
+            // Felt AND said (§4): "Couldn't save that." + why; "Save" stays to retry.
             Haptics.error()
+            verseSaveLine = NuruStateCopy.saveFailureLine(error)
         }
     }
 
@@ -1577,36 +1582,25 @@ struct HomeView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
                 .padding(.top, 8)
             }
-            // One row (Figma): reactions left, Save + Share pushed right.
-            HStack(spacing: 5) {
-                ForEach(verseReactionEmojis, id: \.self) { emoji in
-                    let count = vm.reactions?.counts[emoji] ?? 0
-                    let mine = vm.reactions?.mine == emoji
-                    Button { Haptics.love(); Task { await vm.reactVerse(emoji) } } label: {
-                        HStack(spacing: 3) {
-                            Text(emoji).font(.emoji(14))
-                            if count > 0 {
-                                Text("\(count)").font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
-                                    .contentTransition(.numericText())
-                            }
-                        }
-                        .padding(.horizontal, 7).padding(.vertical, 6)
-                        .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
-                        .contentShape(Capsule())   // whole chip is tappable, not just the glyph
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
-                    }.buttonStyle(.pressable)
+            // A save that failed says why, above the buttons (§4, §7.4 #2).
+            if let line = vm.verseSaveLine {
+                Text(line).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Nuru.S.md)
+            }
+            // One row (Figma): reactions left, Save + Share pushed right — or,
+            // when they don't fit, two rows, so no label is ever cut ("Shar/e",
+            // the walk's E15; §8.1 rule 9).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    verseReactionChips
+                    Spacer(minLength: 4)
+                    verseSaveShare
                 }
-                Spacer(minLength: 4)
-                Button {
-                    Task { await vm.saveVerse() }
-                } label: {
-                    pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
-                        .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
-                }.buttonStyle(.pressable)
-                Button { Haptics.tap(); shareVerseTapped() } label: {
-                    pill(icon: .share2, label: "Share", tint: HomeFig.navy)
-                }.buttonStyle(.pressable)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 5) { verseReactionChips }
+                    HStack(spacing: 8) { verseSaveShare }
+                }
             }
             .padding(.top, Nuru.S.md)
         }
@@ -1642,11 +1636,46 @@ struct HomeView: View {
         }
     }
 
+    @ViewBuilder private var verseReactionChips: some View {
+        ForEach(verseReactionEmojis, id: \.self) { emoji in
+            let count = vm.reactions?.counts[emoji] ?? 0
+            let mine = vm.reactions?.mine == emoji
+            Button { Haptics.love(); Task { await vm.reactVerse(emoji) } } label: {
+                HStack(spacing: 3) {
+                    Text(emoji).font(.emoji(14))
+                    if count > 0 {
+                        Text("\(count)").font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
+                            .contentTransition(.numericText())
+                    }
+                }
+                .padding(.horizontal, 7).padding(.vertical, 6)
+                .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
+                .contentShape(Capsule())   // whole chip is tappable, not just the glyph
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
+            }.buttonStyle(.pressable)
+        }
+    }
+
+    @ViewBuilder private var verseSaveShare: some View {
+        Button {
+            Task { await vm.saveVerse() }
+        } label: {
+            pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
+                .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
+        }.buttonStyle(.pressable)
+        Button { Haptics.tap(); shareVerseTapped() } label: {
+            pill(icon: .share2, label: "Share", tint: HomeFig.navy)
+        }.buttonStyle(.pressable)
+    }
+
     private func pill(icon: Lucide, label: String, tint: Color) -> some View {
         HStack(spacing: 4) {
             Icon(icon, size: 12, color: tint)
             Text(label).font(.inter(11, .semibold)).foregroundStyle(tint)
         }
+        .lineLimit(1)
+        .fixedSize()
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Nuru.white, in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
