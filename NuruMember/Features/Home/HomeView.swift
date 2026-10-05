@@ -2029,7 +2029,9 @@ struct HomeView: View {
                 Icon(done ? .check : .clock, size: 14, color: done ? Nuru.white : Nuru.goldLo)
             }
             Text(label).font(.inter(12, .semibold)).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText)
-            Text(done ? "DONE" : "PENDING").font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
+            // Plain words, not a status that reads like data (§8.1 rule 8):
+            // "Prayed", "Read", "Written" — "Not yet" until then. Android's.
+            Text(RhythmTileWords.status(kind, done: done)).font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.md)
         .background(done ? Nuru.successBg : Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -2505,6 +2507,22 @@ enum ChurchClock {
         case 11..<16: return .midday
         case 16..<21: return .evening
         default: return .night
+        }
+    }
+}
+
+/// Each rhythm tile in plain words (EXPERIENCE.md §8.1 rule 8, §8.2 #20): what
+/// the day holds — "Prayed", "Read", "Written" once it is done, "Not yet"
+/// until then; never "PENDING" / "DONE". Android's RhythmTileWords.
+enum RhythmTileWords {
+    static let notYet = "Not yet"
+    static func status(_ kind: String, done: Bool) -> String {
+        guard done else { return notYet }
+        switch kind {
+        case "prayer": return "Prayed"
+        case "word": return "Read"
+        case "reflection": return "Written"
+        default: return "Done"
         }
     }
 }

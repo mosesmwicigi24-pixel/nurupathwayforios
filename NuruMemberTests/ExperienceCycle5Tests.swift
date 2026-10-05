@@ -393,6 +393,20 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(ChurchClock.part(ISO8601DateFormatter().date(from: "2026-10-05T13:30:00Z")!), .evening)
     }
 
+    // MARK: Cycle 4 walk, §8.1 rule 8 — the rhythm tiles in plain words
+
+    func testTheRhythmTilesSpeakPlainly() {
+        XCTAssertEqual(RhythmTileWords.status("prayer", done: true), "Prayed")
+        XCTAssertEqual(RhythmTileWords.status("word", done: true), "Read")
+        XCTAssertEqual(RhythmTileWords.status("reflection", done: true), "Written")
+        for k in ["prayer", "word", "reflection"] {
+            XCTAssertEqual(RhythmTileWords.status(k, done: false), "Not yet")
+            for w in [RhythmTileWords.status(k, done: true), RhythmTileWords.status(k, done: false)] {
+                XCTAssertNotEqual(w, w.uppercased(), "never a capitalised status that reads like data")
+            }
+        }
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)
