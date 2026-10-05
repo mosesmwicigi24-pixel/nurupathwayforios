@@ -14,6 +14,7 @@ import SwiftUI
 
 struct YouTabView: View {
     @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.screenVisible) private var visible
     @ObservedObject private var chatBadge = ChatBadge.shared
     @State private var segment: YouSegment = .chat
     /// Lazily mounted (like RootView's `loaded`) — Profile/Settings don't pay
@@ -28,6 +29,7 @@ struct YouTabView: View {
                 ForEach(YouSegment.allCases, id: \.self) { seg in
                     if mounted.contains(seg) {
                         segmentContent(seg)
+                            .environment(\.screenVisible, visible && seg == segment)
                             .opacity(seg == segment ? 1 : 0)
                             .allowsHitTesting(seg == segment)
                             .accessibilityHidden(seg != segment)

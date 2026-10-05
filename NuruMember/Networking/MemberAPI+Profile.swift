@@ -9,11 +9,15 @@ import Foundation
 
 // MARK: - Models
 
-/// GET/PUT /me/notification-preferences — all three channels, always together.
+/// GET/PUT /me/notification-preferences — all three channels, always together,
+/// and whether pushes make a sound and buzz (`sound_enabled`, 2026-09-28 —
+/// optional in a PUT, where leaving it out keeps the stored value).
 struct NotificationPreferences: Codable, Sendable {
     var pushEnabled: Bool
     var emailEnabled: Bool
     var smsEnabled: Bool
+    /// Sound and vibration: off, pushes still arrive — quietly.
+    var soundEnabled: Bool = true
 }
 
 // Tolerant decoding lives in an extension so the synthesized memberwise init
@@ -24,6 +28,8 @@ extension NotificationPreferences {
         pushEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .pushEnabled)) ?? true
         emailEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .emailEnabled)) ?? true
         smsEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .smsEnabled)) ?? false
+        // A server that predates the switch sends no key: pushes sound.
+        soundEnabled = (try? c.decodeIfPresent(Bool.self, forKey: .soundEnabled)) ?? true
     }
 }
 
@@ -84,11 +90,12 @@ extension MemberAPI {
         try await APIClient.shared.get("me/notification-preferences", as: NotificationPreferences.self)
     }
 
-    /// PUT /me/notification-preferences — all three channels are required.
-    static func updateNotificationPreferences(push: Bool, email: Bool, sms: Bool) async throws {
+    /// PUT /me/notification-preferences — all three channels are required;
+    /// sound rides along with them, whichever toggle changed.
+    static func updateNotificationPreferences(push: Bool, email: Bool, sms: Bool, sound: Bool) async throws {
         _ = try await APIClient.shared.put(
             "me/notification-preferences",
-            body: NotificationPreferences(pushEnabled: push, emailEnabled: email, smsEnabled: sms),
+            body: NotificationPreferences(pushEnabled: push, emailEnabled: email, smsEnabled: sms, soundEnabled: sound),
             as: EmptyResponse.self)
     }
 

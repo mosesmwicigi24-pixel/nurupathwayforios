@@ -2,9 +2,10 @@
 // (which keeps the member's identity + spiritual journey). Pushed from the
 // Profile header's gear button. Sections: Security & Login (real password
 // change + TOTP 2FA), Notifications (server-backed GET/PUT /me/notification-
-// preferences with optimistic toggles), Display (global text size), Language
-// (PATCH /me locale), Privacy (location consent → /me/location), Help &
-// Privacy (FAQs + policy), then Sign out / Delete account and the app version.
+// preferences with optimistic toggles — the channels, and Sound and
+// vibration), Display (global text size), Language (PATCH /me locale),
+// Privacy (location consent → /me/location), Help & Privacy (FAQs + policy),
+// then Sign out / Delete account and the app version.
 // Reuses the shared sectionCard / icon-tile building blocks from ProfileView.
 import SwiftUI
 import UIKit
@@ -33,6 +34,9 @@ struct SettingsView: View {
     @AppStorage("nuru.notif.push") private var pushOn = true
     @AppStorage("nuru.notif.email") private var emailOn = true
     @AppStorage("nuru.notif.sms") private var smsOn = false
+    /// Sound and vibration on notifications (`sound_enabled`) — off, they
+    /// still arrive, quietly. LocalNotifier reads the same key offline.
+    @AppStorage(NuruPush.soundPrefKey) private var soundOn = true
     /// Approximate-location sharing consent (persisted); wired to /me/location.
     @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
     /// The location switch is waiting for the server; what its last try said.
@@ -169,6 +173,7 @@ struct SettingsView: View {
             pushOn = prefs.pushEnabled
             emailOn = prefs.emailEnabled
             smsOn = prefs.smsEnabled
+            soundOn = prefs.soundEnabled
         }
     }
 
@@ -182,7 +187,8 @@ struct SettingsView: View {
     }
 
     /// Optimistic toggle: flip the local (@AppStorage-cached) value immediately,
-    /// PUT all three channels, and roll back + error-haptic if the save fails.
+    /// PUT all three channels (and sound), and roll back + error-haptic if the
+    /// save fails.
     private func prefBinding(_ value: Binding<Bool>, isPush: Bool = false) -> Binding<Bool> {
         Binding(get: { value.wrappedValue }, set: { on in
             let old = value.wrappedValue
@@ -190,7 +196,7 @@ struct SettingsView: View {
             if isPush, on { requestPushPermission() }
             Task {
                 do {
-                    try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn)
+                    try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn, sound: soundOn)
                 } catch {
                     Haptics.error()
                     value.wrappedValue = old
@@ -259,6 +265,11 @@ struct SettingsView: View {
             // What iOS really does with it (B11): no remote push yet, so the
             // switch turns this phone's banners for new notices on and off.
             toggleRow(.bell, IOSNoticeWords.bannersTitle, IOSNoticeWords.bannersLine, prefBinding($pushOn, isPush: true)); Divider()
+            // Muting silences the sound and the buzz, never the notification
+            // itself; one conversation's mute lives in that chat's menu.
+            toggleRow(.volume2, "Sound and vibration",
+                      soundOn ? "A sound and a buzz when a message or notification arrives." : "Notifications arrive quietly.",
+                      prefBinding($soundOn)); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
             if prefSaveFailed {

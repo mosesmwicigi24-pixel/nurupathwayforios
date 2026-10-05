@@ -742,7 +742,9 @@ final class ExperienceCycle4Tests: XCTestCase {
             if !rel.hasSuffix("NuruBell.swift") { bellLooks += text.components(separatedBy: "NuruBell(look:").count - 1 }
         }
         XCTAssertEqual(offScale, [], "§8.1 rule 7: icons at 14, 18 or 22")
-        XCTAssertLessThanOrEqual(display, 59, "display glyphs are listed, never grow")
+        // 59 at Cycle 4's close, +1: the incoming Live invite's ring (notification
+        // sounds, merged 2026-10-05) — a full-screen ceremony's hero, like a call's.
+        XCTAssertLessThanOrEqual(display, 60, "display glyphs are listed, never grow")
         XCTAssertEqual(bellLooks, 0, "one bell on every tab: NuruBell() — the same size, tile and icon")
         XCTAssertEqual(NuruBell.Look.standard.size, 44)
         XCTAssertEqual(NuruBell.Look.standard.iconSize, 18)

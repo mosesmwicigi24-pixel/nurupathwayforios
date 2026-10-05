@@ -158,6 +158,22 @@ struct GiveWatch: Equatable {
 /// a redeemable invite token — the group itself is one tap away from the hub).
 enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case planDay(ReadingPlanRow); case readWithFriendHub }
 
+private struct ScreenVisibleKey: EnvironmentKey { static let defaultValue = true }
+
+extension EnvironmentValues {
+    /// False while a screen is mounted but hidden by a keep-alive container —
+    /// another tab (RootView), another You segment (YouTabView), another
+    /// Community door (CommunityView). They switch by opacity, so onAppear /
+    /// onDisappear never fire; a screen that must know whether the member can
+    /// SEE it reads this (ChatThreadView: the open conversation, whose
+    /// messages land as a light tap instead of a banner). Each container ANDs
+    /// its own choice into its parent's. (Give's segments: giveSegmentVisible.)
+    var screenVisible: Bool {
+        get { self[ScreenVisibleKey.self] }
+        set { self[ScreenVisibleKey.self] = newValue }
+    }
+}
+
 /// The selected primary tab, hoisted out of RootView so any screen can switch
 /// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
 @MainActor
@@ -340,6 +356,7 @@ struct RootView: View {
             ForEach(visibleTabs, id: \.self) { t in
                 if loaded.contains(t) {
                     tabView(t)
+                        .environment(\.screenVisible, t == tabs.selected)
                         .opacity(t == tabs.selected ? 1 : 0)
                         .allowsHitTesting(t == tabs.selected)
                         .accessibilityHidden(t != tabs.selected)
@@ -482,7 +499,18 @@ struct RootView: View {
         // Read with a Friend, the Live player ("This Live has ended" once
         // over). A notice with nowhere to go opens the in-app inbox.
         .onReceive(NotificationCenter.default.publisher(for: .nuruNotificationTap)) { note in
-            let route = NoticeRouter.route(NoticeTarget(userInfo: note.userInfo ?? [:]))
+            let info = note.userInfo ?? [:]
+            // A Live guest invite RINGS (2026-09-28). Tapped inside its 30 s,
+            // it opens the same ringing screen the foreground gets; after
+            // that, the router opens ITS stream — and says "This Live has
+            // ended" once it's over (§7.3), where the player's own invite
+            // card can still answer it.
+            if NoticeTarget(userInfo: info).template == "live_guest_invite",
+               let invite = IncomingLiveInvite(push: NuruPush(userInfo: info)),
+               IncomingLiveInviteCenter.shared.ring(invite) {
+                return
+            }
+            let route = NoticeRouter.route(NoticeTarget(userInfo: info))
             if !NoticeRouter.open(route, tabs: tabs) {
                 NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
             }
@@ -542,6 +570,11 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showLocationInvite) { LocationInviteSheet() }
+        #if DEBUG
+        // Scripted check of the ringing Live invite (NURU_RING) — a simulator
+        // gets no pushes. Compiled out of Release, modifier and all.
+        .task { await IncomingLiveInviteCenter.shared.debugRingIfRequested() }
+        #endif
         // The You tab's icon badge (and its Chat segment chip) must be right
         // even for a member who hasn't opened the You tab yet this session —
         // ChatInboxViewModel itself keeps it current once Chat has loaded, but

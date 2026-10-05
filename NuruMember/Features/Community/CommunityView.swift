@@ -44,6 +44,7 @@ enum CommunityDoor: Hashable, CaseIterable {
 struct CommunityView: View {
     var embeddedInYou: Bool = false
     @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.screenVisible) private var visible
     @ObservedObject private var chatBadge = ChatBadge.shared
     @State private var door: CommunityDoor = .talk
     /// Lazily mounted, like YouTabView's segments: the Prayer Room does not
@@ -57,6 +58,7 @@ struct CommunityView: View {
                 ForEach(CommunityDoor.allCases, id: \.self) { d in
                     if mounted.contains(d) {
                         content(d)
+                            .environment(\.screenVisible, visible && door == d)
                             .opacity(door == d ? 1 : 0)
                             .allowsHitTesting(door == d)
                     }

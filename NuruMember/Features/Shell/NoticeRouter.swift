@@ -41,14 +41,24 @@ extension NoticeTarget {
     }
 
     /// From a tapped banner's userInfo — absent keys and the empty strings
-    /// LocalNotifier writes for them read the same.
+    /// LocalNotifier writes for them read the same. The local notifications
+    /// LocalNotifier posts carry camelCase ids; a real push carries the
+    /// notification's own snake_case keys, its numbers as strings
+    /// (notification sounds, 2026-09-28) — both read the same here.
     init(userInfo info: [AnyHashable: Any]) {
-        func text(_ key: String) -> String? { (info[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
-        self.init(template: text("template") ?? "", announcementId: text("announcementId"),
-                  moduleId: text("moduleId"), levelNumber: (info["levelNumber"] as? Int).flatMap { $0 > 0 ? $0 : nil },
-                  inviteToken: text("inviteToken"), departmentId: text("departmentId"),
-                  transactionId: text("transactionId"), scheduleId: text("scheduleId"),
-                  pledgeId: text("pledgeId"), streamId: text("streamId"), title: text("title"))
+        func text(_ camel: String, _ snake: String? = nil) -> String? {
+            for key in [camel, snake].compactMap({ $0 }) {
+                if let s = info[key] as? String, !s.isEmpty { return s }
+            }
+            return nil
+        }
+        let level = (info["levelNumber"] as? Int) ?? (info["level_number"] as? Int)
+            ?? Int(text("levelNumber", "level_number") ?? "")
+        self.init(template: text("template") ?? "", announcementId: text("announcementId", "announcement_id"),
+                  moduleId: text("moduleId", "module_id"), levelNumber: level.flatMap { $0 > 0 ? $0 : nil },
+                  inviteToken: text("inviteToken", "invite_token"), departmentId: text("departmentId", "department_id"),
+                  transactionId: text("transactionId", "transaction_id"), scheduleId: text("scheduleId", "schedule_id"),
+                  pledgeId: text("pledgeId", "pledge_id"), streamId: text("streamId", "stream_id"), title: text("title"))
     }
 
     /// The routing keys a banner carries, so its tap can land on the exact

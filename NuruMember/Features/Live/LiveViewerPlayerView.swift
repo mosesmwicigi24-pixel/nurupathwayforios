@@ -402,6 +402,9 @@ struct LiveViewerPlayerView: View {
         .task { await controller.start(mediaPath: item.mediaPath) }
         .task {
             guard item.isLive else { return }
+            // The ringing invite (IncomingLiveInvite) needs to know a player
+            // is already on this stream: its Join then accepts here, in place.
+            IncomingLiveInviteCenter.shared.playerAppeared(item.id)
             pulseController.start()
         }
         .onDisappear {
@@ -410,6 +413,7 @@ struct LiveViewerPlayerView: View {
             guestBannerCollapseTask?.cancel()
             guestStageActive = false
             Task { await guestPublisher.stop() }
+            IncomingLiveInviteCenter.shared.playerDisappeared(item.id)
         }
         .onChange(of: pulseController.freshReactions) { _, fresh in
             guard !fresh.isEmpty else { return }
@@ -423,6 +427,12 @@ struct LiveViewerPlayerView: View {
         .onChange(of: pulseController.pulse?.guests) { _, guests in
             scheduleGuestBannerAutoCollapse(for: guests)
             syncGuestStage(guests)
+            acceptIfJoinedFromRing(guests)
+        }
+        // Join on a ring for THIS stream, while this player is already up:
+        // the guests haven't changed, so the request itself is the cue.
+        .onReceive(IncomingLiveInviteCenter.shared.$acceptRequest) { _ in
+            acceptIfJoinedFromRing(pulseController.pulse?.guests)
         }
         .onChange(of: guestStageActive) { _, active in
             controller.setSelfEchoMuted(active)
@@ -750,6 +760,19 @@ struct LiveViewerPlayerView: View {
         defer { respondingToInvite = false }
         try? await MemberAPI.respondToLiveGuestInvite(streamId: item.id, accept: accept)
         await pulseController.pollNow()
+    }
+
+    /// Join on the RINGING invite (IncomingLiveInvite) accepts here — the
+    /// card's own Accept, `respondToInvite(accept: true)` — once the pulse
+    /// has my row and it still reads `invited`. A lapsed invite leaves the
+    /// member simply watching.
+    private func acceptIfJoinedFromRing(_ guests: [LiveGuestRow]?) {
+        let rings = IncomingLiveInviteCenter.shared
+        guard item.isLive, rings.wantsAccept(item.id),
+              let guests, let myId = auth.profile?.userId else { return }
+        rings.clearAccept(item.id)
+        guard guests.first(where: { $0.userId == myId })?.status == "invited" else { return }
+        Task { await respondToInvite(accept: true) }
     }
 
     // MARK: ONE top row (owner redesign, 2026-08-01) — close ✕ · host avatar
