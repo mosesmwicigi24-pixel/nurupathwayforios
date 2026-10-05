@@ -2166,6 +2166,23 @@ struct HomeView: View {
                 .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
             }.buttonStyle(.pressable)
+            } else if disciplers.known {
+                // With none, it's said once, here (§9.2 #8) — nothing to tap,
+                // no door onto an empty page. Only once the server has
+                // answered: never a fact before it is true.
+                HStack(spacing: Nuru.S.md) {
+                    Icon(.heartHandshake, size: 18, color: Nuru.navy)
+                        .frame(width: 36, height: 36)
+                        .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text(DisciplerStore.noneLine)
+                        .font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(Nuru.S.md)
+                .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
+                .accessibilityElement(children: .combine)
             }
         }
         .padding(Nuru.S.md)

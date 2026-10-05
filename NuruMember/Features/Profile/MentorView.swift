@@ -396,10 +396,11 @@ struct MentorView: View {
                 Icon(.heartHandshake, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("No discipler yet")
-                    .font(.inter(18, .bold))
+                Text(DisciplerStore.noneLine)
+                    .font(.nCardTitle)
                     .foregroundStyle(Nuru.ink)
-                Text("When your leader pairs you with a discipler, you'll see your meetings and notes here.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Your meetings, notes and feedback will live here.")
                     .font(.nCaption)
                     .foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)

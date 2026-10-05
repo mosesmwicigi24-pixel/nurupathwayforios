@@ -20,6 +20,11 @@ final class DisciplerStore: ObservableObject {
 
     var hasDiscipler: Bool { mentor != nil }
 
+    /// With no discipler, it's said once (EXPERIENCE.md §9.2 #8) — Home's
+    /// Grow card, and the Mentor and Discipleship Hub pages a link can still
+    /// reach. Android's DISCIPLER_NONE, word for word.
+    nonisolated static let noneLine = "No discipler yet — your leader will pair you"
+
     /// Pure, so the rule is pinned by tests: an offer shows only for a
     /// discipler the server named.
     nonisolated static func offers(_ mentor: MentorInfo.Mentor?) -> Bool { mentor != nil }

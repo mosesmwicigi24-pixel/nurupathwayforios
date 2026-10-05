@@ -586,10 +586,10 @@ struct DiscipleshipHubView: View {
                 Icon(.heartHandshake, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("You'll be paired with a discipler soon")
-                    .font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
+                Text(DisciplerStore.noneLine)
+                    .font(.nCardTitle).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("When your leader walks you into a discipleship relationship, your meetings, notes, and feedback will live here.")
+                Text("You'll see them here, with your meeting notes.")
                     .font(.nCardBody).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -265,6 +265,17 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(LevelsMapWords.lockLine(levelNumber: 3, journey: j, preparing: true), "Level 3 is being prepared")
     }
 
+    // MARK: §9.2 #8 — with no discipler, it's said once
+
+    @MainActor
+    func testNoDisciplerIsSaidOnceInOneSentence() throws {
+        XCTAssertEqual(DisciplerStore.noneLine, "No discipler yet — your leader will pair you")
+        // Offers of a discipler (Pathway's row, the level page, Community's tab) wait for one the server names.
+        XCTAssertFalse(DisciplerStore.offers(nil))
+        let none = try decode(MentorInfo.self, ["mentor": NSNull(), "notes": []])
+        XCTAssertFalse(DisciplerStore.offers(none.mentor))
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)
