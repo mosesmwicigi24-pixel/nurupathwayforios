@@ -76,7 +76,7 @@ private struct ConsentGateCard: View {
                     Circle().fill(
                         Nuru.aiOrb)
                         .frame(width: 26, height: 26)
-                        .overlay(Icon(.sparkles, size: 13, color: .white))
+                        .overlay(Icon(.sparkles, size: 14, color: .white))
                     Text("NURU INTELLIGENCE").font(.inter(11, .bold)).tracking(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 Text("Turn on AI personalization to use the prayer assistant.")
@@ -117,7 +117,7 @@ private struct AssistComposerCard: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 8) {
-                    Icon(.handHeart, size: 16, color: Nuru.gold)
+                    Icon(.handHeart, size: 18, color: Nuru.gold)
                     Text("Draft a prayer").font(.nCardTitle).foregroundStyle(Nuru.navy)
                 }
                 Text("Jot a few seed points — Nuru drafts a short prayer in your own voice. You always edit it before you pray or keep it.")
@@ -134,7 +134,7 @@ private struct AssistComposerCard: View {
                         Task { await assist() }
                     } label: {
                         HStack(spacing: 6) {
-                            if busy { ProgressView().tint(.white) } else { Icon(.sparkles, size: 13, color: .white) }
+                            if busy { ProgressView().tint(.white) } else { Icon(.sparkles, size: 14, color: .white) }
                             Text(busy ? "Drafting…" : "Draft with Nuru").font(.inter(12, .bold)).foregroundStyle(.white)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -208,7 +208,7 @@ private struct GatherPointsCard: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 8) {
-                    Icon(.list, size: 16, color: Nuru.gold)
+                    Icon(.list, size: 18, color: Nuru.gold)
                     Text("Gather my prayer points").font(.nCardTitle).foregroundStyle(Nuru.navy)
                 }
                 Text("Nuru reads across your own Selah thoughts, private prayers, and things you've shared to the wall — and distills what to pray through today.")
@@ -217,7 +217,7 @@ private struct GatherPointsCard: View {
                     Task { await gather() }
                 } label: {
                     HStack(spacing: 6) {
-                        if busy { ProgressView().tint(Nuru.navy) } else { Icon(.list, size: 13, color: Nuru.navy) }
+                        if busy { ProgressView().tint(Nuru.navy) } else { Icon(.list, size: 14, color: Nuru.navy) }
                         Text(busy ? "Gathering…" : "Gather my prayer points")
                             .font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
                     }
@@ -300,7 +300,7 @@ private struct PrayerPointRow: View {
                 .font(.inter(13, .regular)).foregroundStyle(Nuru.navy).lineSpacing(3)
                 .onChange(of: editing) { _, newValue in onEdit(newValue) }
             Button { Haptics.tap(); onRemove() } label: {
-                Icon(.x, size: 11, color: Color(hex: 0x9CA3AF))
+                Icon(.x, size: 14, color: Color(hex: 0x9CA3AF))
             }
             .buttonStyle(.plain)
         }

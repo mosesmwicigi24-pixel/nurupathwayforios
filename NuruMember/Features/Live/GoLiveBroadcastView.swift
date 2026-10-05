@@ -278,7 +278,7 @@ struct GoLiveBroadcastView: View {
                         if deletingRecording {
                             ProgressView().tint(Color(hex: 0xDC2626).opacity(0.8)).scaleEffect(0.7)
                         } else {
-                            Icon(.trash2, size: 12, color: Color(hex: 0xDC2626).opacity(0.85))
+                            Icon(.trash2, size: 14, color: Color(hex: 0xDC2626).opacity(0.85))
                         }
                         Text("Delete recording").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626).opacity(0.85))
                     }
@@ -414,7 +414,7 @@ struct GoLiveBroadcastView: View {
             Haptics.tap()
             broadcast.minimize()
         } label: {
-            Icon(.chevronDown, size: 15, color: .white)
+            Icon(.chevronDown, size: 14, color: .white)
                 .frame(width: 44, height: 44)
                 .background(Color.black.opacity(0.4), in: Circle())
         }
@@ -442,7 +442,7 @@ struct GoLiveBroadcastView: View {
 
     private var cameraPausedPill: some View {
         HStack(spacing: 6) {
-            Icon(.mic, size: 10, color: Nuru.gold)
+            Icon(.mic, size: 14, color: Nuru.gold)
             Text("Audio live — camera paused in background")
                 .font(.inter(11, .semibold)).foregroundStyle(.white)
         }

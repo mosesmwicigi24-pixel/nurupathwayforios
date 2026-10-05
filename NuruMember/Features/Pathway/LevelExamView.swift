@@ -203,7 +203,7 @@ private struct ExamTopBack: View {
 
     var body: some View {
         Button { Haptics.tap(); action() } label: {
-            Icon(.arrowLeft, size: 17, color: onDark ? .white : EX.navy)
+            Icon(.arrowLeft, size: 18, color: onDark ? .white : EX.navy)
                 .frame(width: 40, height: 40)
                 .background(onDark ? Color.white.opacity(0.10) : Color(hex: 0x0A2540, alpha: 0.06), in: Circle())
                 .contentShape(Circle())
@@ -457,7 +457,7 @@ private struct ExamHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 Button { Haptics.tap(); onBack() } label: {
-                    Icon(.arrowLeft, size: 17, color: .white)
+                    Icon(.arrowLeft, size: 18, color: .white)
                         .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .contentShape(Circle())
@@ -465,7 +465,7 @@ private struct ExamHeader: View {
                 .buttonStyle(.pressable)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Icon(.award, size: 11, color: EX.gold)
+                        Icon(.award, size: 14, color: EX.gold)
                         Text("LEVEL \(levelNumber) EXAM")
                             .font(.inter(11, .semibold)).kerning(0.9)
                             .foregroundStyle(EX.goldLight.opacity(0.85))
@@ -537,7 +537,7 @@ private struct ExamOptionCard: View {
             ZStack {
                 if selected {
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(EX.navy)
-                    Icon(.check, size: 13, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 } else {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(EX.radioIdle, lineWidth: 2)

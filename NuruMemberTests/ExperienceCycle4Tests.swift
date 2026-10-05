@@ -725,6 +725,28 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(found, [], "§8.1 rule 1: paper, white, navy, gold — green, amber and red only for state")
     }
 
+    // MARK: §8.1 rule 7 — one icon family in 14 / 18 / 22, one bell
+
+    func testIconsAreFourteenEighteenOrTwentyTwoAndTheBellIsOne() throws {
+        let sized = try NSRegularExpression(pattern: "Icon\\(\\.[a-zA-Z0-9]+, size: ([0-9]+(?:\\.[0-9]+)?)")
+        var offScale: [String] = []
+        var display = 0
+        var bellLooks = 0
+        for (rel, text) in try TypeScan.files() {
+            for m in sized.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+                guard let r = Range(m.range(at: 1), in: text), let v = Double(text[r]) else { continue }
+                if v >= 24 { display += 1; continue }   // a display glyph (a hero, a state card), not an icon in a row
+                if ![14.0, 18.0, 22.0].contains(v) { offScale.append("\(rel): \(text[r])") }
+            }
+            if !rel.hasSuffix("NuruBell.swift") { bellLooks += text.components(separatedBy: "NuruBell(look:").count - 1 }
+        }
+        XCTAssertEqual(offScale, [], "§8.1 rule 7: icons at 14, 18 or 22")
+        XCTAssertLessThanOrEqual(display, 53, "display glyphs are listed, never grow")
+        XCTAssertEqual(bellLooks, 0, "one bell on every tab: NuruBell() — the same size, tile and icon")
+        XCTAssertEqual(NuruBell.Look.standard.size, 44)
+        XCTAssertEqual(NuruBell.Look.standard.iconSize, 18)
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

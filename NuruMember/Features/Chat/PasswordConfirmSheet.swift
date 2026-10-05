@@ -30,7 +30,7 @@ struct PasswordConfirmSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
                 HStack(alignment: .top, spacing: 14) {
-                    Icon(.lock, size: 20, color: Color(hex: 0xE6C068))
+                    Icon(.lock, size: 22, color: Color(hex: 0xE6C068))
                         .frame(width: 40, height: 40)
                         .background(Nuru.gold.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
@@ -55,7 +55,7 @@ struct PasswordConfirmSheet: View {
 
                 if let e = errorText {
                     HStack(spacing: 6) {
-                        Icon(.shield, size: 13, color: Color(hex: 0xB91C1C))
+                        Icon(.shield, size: 14, color: Color(hex: 0xB91C1C))
                         Text(e).font(.inter(12, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
                             .fixedSize(horizontal: false, vertical: true)
                     }

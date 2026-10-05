@@ -247,7 +247,7 @@ struct MentorView: View {
             if busy {
                 ProgressView().tint(Nuru.navy).scaleEffect(0.8)
             } else {
-                Icon(.messageCircle, size: 15, color: Nuru.navy)
+                Icon(.messageCircle, size: 14, color: Nuru.navy)
             }
             Text("Message").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
         }
@@ -302,7 +302,7 @@ struct MentorView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let next = note.nextMeetingAt.flatMap(Self.shortDate) {
                 HStack(spacing: 4) {
-                    Icon(.calendar, size: 11, color: Nuru.faint)
+                    Icon(.calendar, size: 14, color: Nuru.faint)
                     Text("Next: \(next)").font(.nMicro).foregroundStyle(Nuru.faint)
                 }
             }
@@ -322,7 +322,7 @@ struct MentorView: View {
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                 NavigationLink(value: AppRoute.cell) {
                     HStack(spacing: Nuru.S.sm) {
-                        Icon(.users, size: 15, color: Nuru.navy)
+                        Icon(.users, size: 14, color: Nuru.navy)
                         Text("Open community").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)

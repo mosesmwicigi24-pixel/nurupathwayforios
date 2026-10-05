@@ -229,7 +229,7 @@ struct DisciplerDossierView: View {
             if busy {
                 ProgressView().tint(Nuru.navy).scaleEffect(0.85)
             } else {
-                Icon(.messageCircle, size: 17, color: Nuru.navy)
+                Icon(.messageCircle, size: 18, color: Nuru.navy)
             }
             Text("Message \(Self.firstName(m.fullName))")
                 .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
@@ -298,7 +298,7 @@ struct DisciplerDossierView: View {
                     Spacer(minLength: 0)
                     if p.streakDays > 0 {
                         HStack(spacing: 4) {
-                            Icon(.flame, size: 13, color: Nuru.gold)
+                            Icon(.flame, size: 14, color: Nuru.gold)
                             Text("\(p.streakDays)-day")
                                 .font(.inter(11, .bold)).foregroundStyle(Nuru.goldLo)
                         }

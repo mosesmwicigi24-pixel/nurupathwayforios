@@ -274,7 +274,7 @@ struct SettingsView: View {
                         Text("Manage sounds & toggles in phone settings").font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                     }
                     Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+                    Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
@@ -406,7 +406,7 @@ struct SettingsView: View {
     private var actions: some View {
         HStack(spacing: Nuru.S.sm) {
             Button { Haptics.tap(); showSignOutConfirm = true } label: {
-                HStack(spacing: 6) { Icon(.logOut, size: 15, color: Nuru.navy); Text("Sign out").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
+                HStack(spacing: 6) { Icon(.logOut, size: 14, color: Nuru.navy); Text("Sign out").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -432,7 +432,7 @@ struct SettingsView: View {
                 Haptics.tap()
                 showDeleteInfo = true
             } label: {
-                HStack(spacing: 6) { Icon(.trash2, size: 15, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
+                HStack(spacing: 6) { Icon(.trash2, size: 14, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color(hex: 0xFEF2F2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(hex: 0xFECACA), lineWidth: 1))
@@ -457,7 +457,7 @@ struct SettingsView: View {
                 Text(sub).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
             }
             Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+            Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -640,7 +640,7 @@ private struct AppLanguageSheet: View {
                                     Text(o.note).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                                 }
                                 Spacer()
-                                if picked == o.code { Icon(.check, size: 16, color: Nuru.gold) }
+                                if picked == o.code { Icon(.check, size: 18, color: Nuru.gold) }
                             }
                             .padding(12)
                             .background(picked == o.code ? Nuru.gold.opacity(0.09) : Nuru.surface,
@@ -698,7 +698,7 @@ private struct HelpSupportSheet: View {
                                 Text(f.q).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: 0)
-                                Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+                                Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
                                     .rotationEffect(.degrees(open == i ? 90 : 0))
                             }
                             .padding(12)
@@ -718,13 +718,13 @@ private struct HelpSupportSheet: View {
                     .padding(.top, Nuru.S.md)
                 HStack(spacing: Nuru.S.sm) {
                     Button { openURL("mailto:support@nuru.app") } label: {
-                        HStack(spacing: 6) { Icon(.mail, size: 15, color: Nuru.navy); Text("Email us").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
+                        HStack(spacing: 6) { Icon(.mail, size: 14, color: Nuru.navy); Text("Email us").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
                             .frame(maxWidth: .infinity).frame(height: 46)
                             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                     Button { openURL("tel:+254700000000") } label: {
-                        HStack(spacing: 6) { Icon(.phone, size: 15, color: Nuru.navy); Text("Call us").font(.inter(13, .bold)).foregroundStyle(Nuru.navy) }
+                        HStack(spacing: 6) { Icon(.phone, size: 14, color: Nuru.navy); Text("Call us").font(.inter(13, .bold)).foregroundStyle(Nuru.navy) }
                             .frame(maxWidth: .infinity).frame(height: 46)
                             .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }.buttonStyle(.plain)

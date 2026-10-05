@@ -129,7 +129,7 @@ struct VoiceNoteLeaderRow: View {
             showRecorder = true
         } label: {
             HStack(spacing: 8) {
-                Icon(.mic, size: 13, color: Nuru.goldChipText)
+                Icon(.mic, size: 14, color: Nuru.goldChipText)
                 Text(existing == nil ? "Leave a word for your flock" : "Re-record your word")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.goldChipText)
             }
@@ -373,7 +373,7 @@ struct VoiceRecordSheet: View {
                         Haptics.tap(); model.redo()
                     } label: {
                         HStack(spacing: 6) {
-                            Icon(.mic, size: 12, color: Nuru.ink)
+                            Icon(.mic, size: 14, color: Nuru.ink)
                             Text("Redo").font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -478,7 +478,7 @@ struct CellPresenceLine: View {
             }
             if let line {
                 HStack(alignment: .top, spacing: 8) {
-                    Icon(.flame, size: 13, color: Nuru.goldChipText)
+                    Icon(.flame, size: 14, color: Nuru.goldChipText)
                         .padding(.top, 1)
                     Text(line)
                         .font(.inter(13)).foregroundStyle(Nuru.ink)

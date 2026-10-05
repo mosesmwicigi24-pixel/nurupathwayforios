@@ -498,13 +498,12 @@ struct ChatView: View {
     // they live (the You tab's badge and the Community chip, ChatBadge); a
     // connection request is also an inbox notice, so the inbox counts it.
     private var bellButton: some View {
-        NuruBell(look: .init(size: 44, circle: false, iconSize: 19, iconColor: Nuru.navy,
-                             fill: .white, stroke: Nuru.border))
+        NuruBell()
     }
 
     private var searchBar: some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.search, size: 16, color: Color(hex: 0x74808F))
+            Icon(.search, size: 18, color: Color(hex: 0x74808F))
             TextField("", text: $query, prompt: Text("Search spaces, people, messages").foregroundColor(Color(hex: 0x74808F)))
                 .font(.inter(14)).foregroundStyle(Nuru.navy)
                 .textInputAutocapitalization(.never)
@@ -585,7 +584,7 @@ struct ChatView: View {
 
     private var verseCard: some View {
         HStack(alignment: .top, spacing: Nuru.S.md) {
-            Icon(.quote, size: 15, color: Nuru.gold)
+            Icon(.quote, size: 14, color: Nuru.gold)
                 .frame(width: 32, height: 32)
                 .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
@@ -656,7 +655,7 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.15)) { segment = .broadcast }
         } label: {
             HStack(spacing: 5) {
-                Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C))
+                Icon(.megaphone, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C))
                 Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
             }
             .padding(.horizontal, 14)
@@ -1029,7 +1028,7 @@ struct ChatView: View {
                             Text(myInitials).font(.inter(14, .semibold)).foregroundStyle(.white)
                         }
                         .frame(width: 58, height: 58)
-                        ZStack { Circle().fill(storyRing); Icon(.plus, size: 13, color: .white) }
+                        ZStack { Circle().fill(storyRing); Icon(.plus, size: 14, color: .white) }
                             .frame(width: 24, height: 24)
                             .overlay(Circle().stroke(Nuru.paper, lineWidth: 3))
                             .shadow(color: Nuru.gold.opacity(0.5), radius: 5, y: 2)
@@ -1066,8 +1065,8 @@ struct ChatView: View {
         } label: {
             Icon(.pencil, size: 18, color: Nuru.navy)
                 .frame(width: 44, height: 44)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .background(Color.white, in: Circle())   // the bell's circle beside it
+                .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("Start something")
@@ -1138,7 +1137,7 @@ struct ChatView: View {
                     Text(sub).font(.nCardMeta).foregroundStyle(Color(hex: 0x9AA3AF))
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: Color(hex: 0xCBD5E1))
+                Icon(.chevronRight, size: 18, color: Color(hex: 0xCBD5E1))
             }
             .padding(Nuru.S.base)
             .overlay(alignment: .top) { if divider { Rectangle().fill(Nuru.border).frame(height: 1) } }
@@ -1198,8 +1197,8 @@ struct ChatView: View {
 private struct DoubleCheck: View {
     var body: some View {
         ZStack {
-            Icon(.check, size: 12, color: Color(hex: 0xBCC4CE)).offset(x: -3)
-            Icon(.check, size: 12, color: Color(hex: 0xBCC4CE)).offset(x: 3)
+            Icon(.check, size: 14, color: Color(hex: 0xBCC4CE)).offset(x: -3)
+            Icon(.check, size: 14, color: Color(hex: 0xBCC4CE)).offset(x: 3)
         }
         .frame(width: 20, height: 14)
     }
@@ -1300,12 +1299,12 @@ private struct RowPreview: View {
     var body: some View {
         HStack(spacing: 4) {
             if c.lastType == "voice" {
-                Icon(.mic, size: 11, color: Nuru.gold)
+                Icon(.mic, size: 14, color: Nuru.gold)
                 // Android parity: surface the note's length in the preview.
                 Text(c.lastDuration.map { String(format: "Voice message · %d:%02d", $0 / 60, $0 % 60) } ?? "Voice message")
                     .font(.inter(11)).foregroundStyle(bodyColor)
             } else if c.lastType == "image" {
-                Icon(.image, size: 11, color: Nuru.gold)
+                Icon(.image, size: 14, color: Nuru.gold)
                 Text("Photo").font(.inter(11)).foregroundStyle(bodyColor)
             } else {
                 (authorText + Text(c.lastBody ?? "No messages yet"))
@@ -1389,7 +1388,7 @@ private struct ConversationRow: View {
             if c.kind == "dm" {
                 SquircleAvatar(url: c.avatarUrl, name: c.title ?? "?", tint: tint)
             } else {
-                Icon(.users, size: 21, color: .white)
+                Icon(.users, size: 22, color: .white)
                     .frame(width: 52, height: 52)
                     .background(
                         LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1488,7 +1487,7 @@ private struct PersonRow: View {
     @ViewBuilder private var stateAffordance: some View {
         switch state {
         case .connected:
-            Icon(.messageCircle, size: 15, color: Nuru.gold)
+            Icon(.messageCircle, size: 14, color: Nuru.gold)
                 .frame(width: 32, height: 32)
                 .background(Nuru.gold.opacity(0.10), in: Circle())
         case .notConnected:
@@ -1576,7 +1575,7 @@ private struct PersonRow: View {
         if let certs = person.certCount, certs > 0 {
             ZStack {
                 Circle().fill(Nuru.goldTint).frame(width: 16, height: 16)
-                Icon(.award, size: 9, color: Nuru.gold)
+                Icon(.award, size: 14, color: Nuru.gold)
             }
             .fixedSize()
         }
@@ -1605,12 +1604,12 @@ private struct IncomingRequestRow: View {
             } else {
                 HStack(spacing: 8) {
                     Button(action: onDecline) {
-                        Icon(.x, size: 13, color: Color(hex: 0x59667C))
+                        Icon(.x, size: 14, color: Color(hex: 0x59667C))
                             .frame(width: 30, height: 30)
                             .background(Nuru.surface, in: Circle())
                     }.buttonStyle(.pressable)
                     Button(action: onAccept) {
-                        Icon(.check, size: 13, color: .white)
+                        Icon(.check, size: 14, color: .white)
                             .frame(width: 30, height: 30)
                             .background(storyRing, in: Circle())
                     }.buttonStyle(.pressable)
@@ -1696,7 +1695,7 @@ private struct DiscoverSpaceRow: View {
                             ProgressView().tint(.white).scaleEffect(0.7)
                         } else {
                             HStack(spacing: 4) {
-                                Icon(.plus, size: 11, color: .white)
+                                Icon(.plus, size: 14, color: .white)
                                 Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
                             }
                         }
@@ -1736,7 +1735,7 @@ struct BroadcastSentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Icon(.megaphone, size: 11, color: Nuru.goldChipText)
+                Icon(.megaphone, size: 14, color: Nuru.goldChipText)
                 Text("SENT TO EVERYONE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
                 Text(reach).font(.nCardMeta).foregroundStyle(Nuru.ink600)
@@ -1783,7 +1782,7 @@ struct BroadcastComposer: View {
         VStack(alignment: .leading, spacing: 14) {
             // Navy explainer card — sets expectations before the composer.
             HStack(alignment: .top, spacing: 14) {
-                Icon(.megaphone, size: 20, color: Color(hex: 0xE6C068))
+                Icon(.megaphone, size: 22, color: Color(hex: 0xE6C068))
                     .frame(width: 40, height: 40)
                     .background(Nuru.gold.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
@@ -1830,7 +1829,7 @@ struct BroadcastComposer: View {
                     .disabled(aiDrafting || sending)
                     // 🖼️ Attach a photo — uploaded straight to Cloudinary.
                     PhotosPicker(selection: $photoItem, matching: .images) {
-                        Icon(.image, size: 15, color: Color(hex: 0x9A7A2A))
+                        Icon(.image, size: 14, color: Color(hex: 0x9A7A2A))
                             .frame(width: 38, height: 38)
                             .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
@@ -1872,7 +1871,7 @@ struct BroadcastComposer: View {
                         ProgressView().tint(.white)
                     } else {
                         HStack(spacing: 6) {
-                            Icon(.send, size: 13, color: .white)
+                            Icon(.send, size: 14, color: .white)
                             Text("Send to everyone").font(.nCardCTA).foregroundStyle(.white)
                         }
                     }
@@ -2027,7 +2026,7 @@ private struct BroadcastAttachmentThumb: View {
                     Haptics.tap()
                     onRemove()
                 } label: {
-                    Icon(.x, size: 12, color: Color(hex: 0x64748B))
+                    Icon(.x, size: 14, color: Color(hex: 0x64748B))
                         .frame(width: 26, height: 26)
                         .background(Color(hex: 0x0B1F33, alpha: 0.06), in: Circle())
                         .frame(width: 44, height: 44)     // full-size hit target

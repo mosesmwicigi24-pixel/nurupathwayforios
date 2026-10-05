@@ -25,7 +25,7 @@ struct NuruCoachSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 8) {
-                        Icon(.sparkles, size: 15, color: Color(hex: 0xE8CA6C))
+                        Icon(.sparkles, size: 14, color: Color(hex: 0xE8CA6C))
                         Text("REVIEW WITH NURU").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xE8CA6C))
                         Spacer()
                     }

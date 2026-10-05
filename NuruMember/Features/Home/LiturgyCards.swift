@@ -220,7 +220,7 @@ struct HomeLiturgyCard: View {
             Haptics.tap()
             showRecordingsManager = true
         } label: {
-            Icon(.mic, size: 12, color: Color(hex: 0xF2DDA0))
+            Icon(.mic, size: 14, color: Color(hex: 0xF2DDA0))
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.3), in: Circle())
                 .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
@@ -264,7 +264,7 @@ struct HomeLiturgyCard: View {
                 voice.toggle(.recorded(url))
             } label: {
                 HStack(spacing: 6) {
-                    Icon(.volume2, size: 11, color: Color(hex: 0xF2DDA0))
+                    Icon(.volume2, size: 14, color: Color(hex: 0xF2DDA0))
                     Text("A word for this hour — Pastor Moses")
                         .font(.inter(11, .semibold))
                         .foregroundStyle(Color(hex: 0xF2DDA0))

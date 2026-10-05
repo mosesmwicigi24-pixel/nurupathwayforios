@@ -132,7 +132,7 @@ struct ShareToChatSheet: View {
                 if sendingId == c.conversationId {
                     ProgressView().tint(Nuru.gold)
                 } else {
-                    Icon(.send, size: 16, color: Nuru.gold)
+                    Icon(.send, size: 18, color: Nuru.gold)
                 }
             }
             .padding(Nuru.S.base)

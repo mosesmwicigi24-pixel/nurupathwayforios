@@ -32,7 +32,7 @@ struct PrivateThreadCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 6) {
-                Icon(.heartHandshake, size: 12, color: Color(hex: 0xB08A1E))
+                Icon(.heartHandshake, size: 14, color: Color(hex: 0xB08A1E))
                 Text(kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
                 if muted {
                     Image(systemName: "bell.slash.fill")
@@ -62,7 +62,7 @@ struct PrivateThreadCard: View {
             // The honest privacy line, said before the first tap — the same
             // words the thread itself repeats above the composer.
             HStack(spacing: 6) {
-                Icon(.lock, size: 11, color: Nuru.goldChipText)
+                Icon(.lock, size: 14, color: Nuru.goldChipText)
                 Text(privacyLine).font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
             }
@@ -116,7 +116,7 @@ struct PastoralInboxSection: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Icon(.heartHandshake, size: 12, color: Color(hex: 0xB08A1E))
+                Icon(.heartHandshake, size: 14, color: Color(hex: 0xB08A1E))
                 Text("TALK WITH YOUR PASTOR — INBOX").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
                 Spacer(minLength: 0)
             }

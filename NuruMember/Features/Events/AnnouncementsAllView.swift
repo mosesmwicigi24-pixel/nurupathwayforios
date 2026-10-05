@@ -51,7 +51,7 @@ struct AnnouncementsAllView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Nuru.goldChipBg).frame(width: 40, height: 40)
-                Icon(.megaphone, size: 17, color: Nuru.goldChipText)
+                Icon(.megaphone, size: 18, color: Nuru.goldChipText)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(a.title)

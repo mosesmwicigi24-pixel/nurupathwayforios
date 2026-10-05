@@ -196,7 +196,7 @@ private struct BroadcastRow: View {
                 stat(.messageCircle, "\(broadcast.repliedCount)")
                 Spacer(minLength: 0)
                 Text(relativeDay(broadcast.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.ink600)
-                Icon(.chevronRight, size: 13, color: Nuru.ink600.opacity(0.6))
+                Icon(.chevronRight, size: 14, color: Nuru.ink600.opacity(0.6))
             }
         }
         .padding(Nuru.S.md)
@@ -250,7 +250,7 @@ struct BroadcastDetailView: View {
     private var pinned: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 6) {
-                Icon(.megaphone, size: 12, color: Nuru.goldLight)
+                Icon(.megaphone, size: 14, color: Nuru.goldLight)
                 Text("TO EVERY MEMBER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldLight)
                 Spacer(minLength: 0)
                 Text(relativeDay((detail?.createdAt) ?? broadcast.createdAt))

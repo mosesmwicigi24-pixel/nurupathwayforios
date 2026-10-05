@@ -781,7 +781,7 @@ private struct EvdRsvpCard: View {
             .padding(.top, 12)
             if mine == "going" {
                 HStack(spacing: 6) {
-                    Icon(.check, size: 13, color: EvD.goingText)
+                    Icon(.check, size: 14, color: EvD.goingText)
                     // The day-before reminder is the server's — it lands in the
                     // inbox; this phone has no remote push yet (B11).
                     Text(IOSNoticeWords.rsvpSaved)
@@ -873,7 +873,7 @@ private struct EvdBuzzCard: View {
     private var header: some View {
         HStack {
             HStack(spacing: 6) {
-                Icon(.users, size: 12, color: EvD.overline)
+                Icon(.users, size: 14, color: EvD.overline)
                 EvdOverline("The wall")
             }
             Spacer(minLength: 0)
@@ -922,7 +922,7 @@ private struct EvdComposer: View {
                     Button {
                         Haptics.tap(); preview = nil; imageData = nil
                     } label: {
-                        Icon(.x, size: 13, color: .white)
+                        Icon(.x, size: 14, color: .white)
                             .frame(width: 28, height: 28)
                             .background(Color.black.opacity(0.55), in: Circle())
                     }
@@ -1015,7 +1015,7 @@ private struct EvdComposer: View {
         } label: {
             Group {
                 if posting { ProgressView().tint(EvD.ink).scaleEffect(0.8) }
-                else { Icon(.send, size: 16, color: EvD.ink) }
+                else { Icon(.send, size: 18, color: EvD.ink) }
             }
             .frame(width: 38, height: 38)
             .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
@@ -1162,7 +1162,7 @@ private struct EvdCheckInButton: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
-                Icon(.qrCode, size: 16, color: EvD.ink)
+                Icon(.qrCode, size: 18, color: EvD.ink)
                 Text("Check in").font(.inter(13, .bold)).foregroundStyle(EvD.ink)
             }
             .frame(maxWidth: .infinity)

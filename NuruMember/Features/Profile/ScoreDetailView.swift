@@ -82,7 +82,7 @@ struct ScoreDetailView: View {
                 Text("/ 100").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x74808F))
             }
             HStack(spacing: 4) {
-                Icon(.sparkles, size: 11, color: Color(hex: 0x8A6D18))
+                Icon(.sparkles, size: 14, color: Color(hex: 0x8A6D18))
                 Text(b.band).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
             }
             .padding(.horizontal, 12).padding(.vertical, 5)

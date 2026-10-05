@@ -250,7 +250,7 @@ private struct ThreadCardView: View {
                 Text(timeAgo(thread.createdAt)).font(.nCardMeta).foregroundStyle(Nuru.faint)
                 Spacer(minLength: 0)
                 if thread.isLocked {
-                    Icon(.lock, size: 13, color: Nuru.faint)
+                    Icon(.lock, size: 14, color: Nuru.faint)
                 }
                 HStack(spacing: 4) {
                     Icon(.messageCircle, size: 14, color: Nuru.faint)
@@ -549,7 +549,7 @@ struct DiscussionThreadView: View {
                                   authorName: auth.profile?.fullName ?? "You")
                 }
             } label: {
-                Icon(.send, size: 17, color: .white)
+                Icon(.send, size: 18, color: .white)
                     .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
             }
             .buttonStyle(.pressable)

@@ -384,7 +384,7 @@ private struct QuizHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 Button { Haptics.tap(); onBack() } label: {
-                    Icon(.arrowLeft, size: 17, color: .white)
+                    Icon(.arrowLeft, size: 18, color: .white)
                         .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .contentShape(Circle())
@@ -457,7 +457,7 @@ private struct QuizOptionCard: View {
             ZStack {
                 if selected {
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(QZ.navy)
-                    Icon(.check, size: 13, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 } else {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(QZ.radioIdle, lineWidth: 2)
@@ -716,7 +716,7 @@ private struct QuizFailScreen: View {
                     // what tripped this attempt, then straight back to the retry.
                     Button { Haptics.action(); showCoach = true } label: {
                         HStack(spacing: 8) {
-                            Icon(.sparkles, size: 17, color: QZ.navy)
+                            Icon(.sparkles, size: 18, color: QZ.navy)
                             Text("Review with Nuru")
                         }
                         .font(.inter(16, .bold)).foregroundStyle(QZ.navy)

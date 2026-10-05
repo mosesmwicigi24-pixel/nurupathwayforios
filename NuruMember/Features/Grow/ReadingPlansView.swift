@@ -315,13 +315,12 @@ struct ReadingPlansView: View {
     /// The one bell (EXPERIENCE.md §7.2 #4): its dot was painted on — now
     /// only while the inbox has something unread.
     private var bellButton: some View {
-        NuruBell(look: .init(size: 40, circle: false, iconSize: 18, iconColor: PL.navy,
-                             fill: .white, stroke: PL.border))
+        NuruBell()
     }
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            Icon(.search, size: 16, color: PL.ink3)
+            Icon(.search, size: 18, color: PL.ink3)
             ZStack(alignment: .leading) {
                 if query.isEmpty {
                     Text("Search plans, topics, books…").font(.inter(14)).foregroundStyle(PL.ink3)
@@ -332,7 +331,7 @@ struct ReadingPlansView: View {
             }
             if !query.isEmpty {
                 Button { Haptics.tap(); query = "" } label: {
-                    Icon(.x, size: 15, color: PL.ink3)
+                    Icon(.x, size: 14, color: PL.ink3)
                         // Grow the hit area without growing the field.
                         .contentShape(Rectangle().inset(by: -14))
                 }
@@ -415,7 +414,7 @@ struct ReadingPlansView: View {
     private var reminderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Icon(.bell, size: 16, color: PL.goldDeep)
+                Icon(.bell, size: 18, color: PL.goldDeep)
                     .frame(width: 38, height: 38)
                     .background(PL.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
@@ -469,7 +468,7 @@ struct ReadingPlansView: View {
                     Text(plan.title).font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(.white)
                         .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     HStack(spacing: 4) {
-                        Icon(.clock, size: 12, color: .white.opacity(0.8))
+                        Icon(.clock, size: 14, color: .white.opacity(0.8))
                         Text("\(plan.dayCount) days").font(.nCardMeta).foregroundStyle(.white.opacity(0.8))
                     }
                 }
@@ -483,7 +482,7 @@ struct ReadingPlansView: View {
 
     private var planOfDayBadge: some View {
         HStack(spacing: 4) {
-            Icon(.sparkles, size: 9, color: PL.navy)
+            Icon(.sparkles, size: 14, color: PL.navy)
             Text("PLAN OF THE DAY").font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -604,7 +603,7 @@ struct ReadingPlansView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
-                    Icon(.users, size: 19, color: PL.gold)
+                    Icon(.users, size: 18, color: PL.gold)
                 }.frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
@@ -612,7 +611,7 @@ struct ReadingPlansView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: PL.ink3)
+                Icon(.chevronRight, size: 18, color: PL.ink3)
             }
             .padding(16)
             .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -881,7 +880,7 @@ struct PlanDetailView: View {
                     Image(systemName: "heart.fill").font(.symbol(15)).foregroundStyle(PL.gold)
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else {
-                    Icon(.heart, size: 17, color: .white)
+                    Icon(.heart, size: 18, color: .white)
                 }
             }
             .frame(width: 44, height: 44)
@@ -977,7 +976,7 @@ struct PlanDetailView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Text("Show all \(d.days.count) days").font(.inter(12, .bold)).foregroundStyle(PL.goldDeep)
-                            Icon(.chevronDown, size: 13, color: PL.goldDeep)
+                            Icon(.chevronDown, size: 14, color: PL.goldDeep)
                         }
                         .frame(maxWidth: .infinity, minHeight: 40)
                         .contentShape(Rectangle())
@@ -1004,7 +1003,7 @@ struct PlanDetailView: View {
 
     private var nudge: some View {
         HStack(spacing: 8) {
-            Icon(.sparkles, size: 16, color: PL.gold)
+            Icon(.sparkles, size: 18, color: PL.gold)
             Text("Consistency over intensity — a few faithful minutes a day.")
                 .font(.fraunces(12)).italic().foregroundStyle(PL.navy)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1047,7 +1046,7 @@ struct PlanDetailView: View {
                 showInvitePicker = true   // friends first; the open link is inside
             } label: {
                 HStack(spacing: 6) {
-                    if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 15, color: PL.navy) }
+                    if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 14, color: PL.navy) }
                     Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
                 }
                 .frame(minHeight: 48).padding(.horizontal, 16)
@@ -1144,7 +1143,7 @@ struct PlanDetailView: View {
     private func ctaLabel(_ text: String) -> some View {
         HStack(spacing: 8) {
             if vm.busy { ProgressView().tint(PL.navy) }
-            else { Icon(.bookOpen, size: 16, color: PL.navy) }
+            else { Icon(.bookOpen, size: 18, color: PL.navy) }
             Text(text).font(.inter(14, .bold)).foregroundStyle(PL.navy)
         }
         .frame(maxWidth: .infinity, minHeight: 48)
@@ -1629,7 +1628,7 @@ struct PlanDayView: View {
                 Button { Haptics.tap(); dismiss() } label: {
                     HStack(spacing: 8) {
                         Text("Continue the plan").font(.inter(14, .bold)).foregroundStyle(PL.navy)
-                        Icon(.arrowRight, size: 15, color: PL.navy)
+                        Icon(.arrowRight, size: 14, color: PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1646,7 +1645,7 @@ struct PlanDayView: View {
                     HStack(spacing: 8) {
                         Icon(next.icon, size: 16, color: PL.navy)
                         Text("Continue · \(next.label)").font(.inter(14, .bold)).foregroundStyle(PL.navy)
-                        Icon(.arrowRight, size: 15, color: PL.navy)
+                        Icon(.arrowRight, size: 14, color: PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1675,7 +1674,7 @@ struct PlanDayView: View {
                 } label: {
                     HStack(spacing: 8) {
                         if vm.busy { ProgressView().tint(PL.navy) }
-                        else { Icon(.check, size: 16, color: PL.navy) }
+                        else { Icon(.check, size: 18, color: PL.navy) }
                         Text("Seal the day").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -2053,7 +2052,7 @@ struct DayTalk: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
-                    Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
+                    Icon(.messageCircle, size: 14, color: pal.goldDeep).padding(.top, 3)
                     Text(q).font(.fraunces(pal.fs(16), .regular)).italic().foregroundStyle(pal.ink).nuruLineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -2098,7 +2097,7 @@ struct DayGoDeeper: View {
     @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(spacing: 10) {
-            Icon(.bookOpen, size: 15, color: pal.goldDeep)
+            Icon(.bookOpen, size: 14, color: pal.goldDeep)
             Text(refs).font(.inter(13, .medium)).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -2112,7 +2111,7 @@ struct DayEncouragement: View {
     @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Icon(.handHeart, size: 16, color: pal.gold)
+            Icon(.handHeart, size: 18, color: pal.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
                 .font(.nCardBody).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
         }
@@ -2142,7 +2141,7 @@ struct DayVideoCard: View {
             } label: {
                 ZStack {
                     Circle().fill(PL.gold).frame(width: 58, height: 58)
-                    Icon(.play, size: 20, color: PL.navy).offset(x: 1)
+                    Icon(.play, size: 22, color: PL.navy).offset(x: 1)
                 }
             }.buttonStyle(.pressable)
         }
@@ -2192,7 +2191,7 @@ struct PlanKeepsakeView: View {
                     if let shareImage {
                         ShareLink(item: shareImage, preview: SharePreview("I completed \(planTitle)", image: shareImage)) {
                             HStack(spacing: 8) {
-                                Icon(.share2, size: 15, color: .white)
+                                Icon(.share2, size: 14, color: .white)
                                 Text("Share my finish").font(.inter(15, .bold)).foregroundStyle(.white)
                             }
                             .frame(maxWidth: .infinity, minHeight: 52)

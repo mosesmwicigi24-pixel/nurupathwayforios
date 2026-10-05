@@ -128,7 +128,7 @@ struct SelahEditorView: View {
                         Button {
                             Haptics.tap(); draft.drawingUrls.remove(at: idx)
                         } label: {
-                            Icon(.x, size: 10, color: .white)
+                            Icon(.x, size: 14, color: .white)
                                 .frame(width: 18, height: 18)
                                 .background(Color.black.opacity(0.55), in: Circle())
                         }

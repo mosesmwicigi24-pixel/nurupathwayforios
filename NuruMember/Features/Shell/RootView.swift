@@ -603,7 +603,7 @@ private struct SyncStatusBanner: View {
         ZStack(alignment: .top) {
             if let message {
                 HStack(spacing: 6) {
-                    Icon(.clock, size: 12, color: Nuru.onNavy)
+                    Icon(.clock, size: 14, color: Nuru.onNavy)
                     Text(message).font(.inter(12, .semibold)).foregroundStyle(Nuru.onNavy)
                 }
                 .padding(.horizontal, Nuru.S.base)

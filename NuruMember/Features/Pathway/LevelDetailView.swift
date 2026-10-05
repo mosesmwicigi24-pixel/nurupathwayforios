@@ -351,7 +351,7 @@ struct LevelDetailView: View {
     private var verseCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(spacing: 6) {
-                Icon(.quote, size: 13, color: Nuru.goldChipText)
+                Icon(.quote, size: 14, color: Nuru.goldChipText)
                 Text("WALK IN THE LIGHT")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
             }
@@ -455,7 +455,7 @@ struct LevelDetailView: View {
 
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
-                    Icon(.handHeart, size: 12, color: Nuru.goldChipText)
+                    Icon(.handHeart, size: 14, color: Nuru.goldChipText)
                     Text("EXAM PASSED")
                         .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 }
@@ -490,7 +490,7 @@ struct LevelDetailView: View {
                     if let emoji = e.emoji, !emoji.isEmpty {
                         Text(emoji).font(.emoji(12))
                     } else {
-                        Icon(.sparkles, size: 12, color: Nuru.gold)
+                        Icon(.sparkles, size: 14, color: Nuru.gold)
                     }
                 }
                 .padding(.top, 4)
@@ -519,7 +519,7 @@ struct LevelDetailView: View {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(Nuru.gold).frame(width: 28, height: 28)
-                    Icon(.trendingUp, size: 13, color: .white)
+                    Icon(.trendingUp, size: 14, color: .white)
                 }
                 if !isLast {
                     Rectangle().fill(Nuru.gold.opacity(0.35)).frame(width: 2).frame(maxHeight: .infinity)
@@ -544,7 +544,7 @@ struct LevelDetailView: View {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(Nuru.gold).frame(width: 36, height: 36)
-                    Icon(.award, size: 16, color: .white)
+                    Icon(.award, size: 18, color: .white)
                 }
             }
             .frame(width: 36)
@@ -668,14 +668,14 @@ struct LevelDetailView: View {
             if m.completed {
                 ZStack {
                     Circle().fill(Nuru.navy).frame(width: 15, height: 15)
-                    Icon(.check, size: 8, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 }
                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
                 .offset(x: 4, y: -3)
             } else if m.locked {
                 ZStack {
                     Circle().fill(Nuru.mutedBg).frame(width: 15, height: 15)
-                    Icon(.lock, size: 8, color: Nuru.faint)
+                    Icon(.lock, size: 14, color: Nuru.faint)
                 }
                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
                 .offset(x: 4, y: -3)
@@ -843,7 +843,7 @@ private struct ModuleTrailCard: View {
         } else {
             HStack(spacing: 4) {
                 Text(module.isExam ? "Begin the exam" : "Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
-                Icon(.chevronRight, size: 12, color: Nuru.gold)
+                Icon(.chevronRight, size: 14, color: Nuru.gold)
             }
         }
     }
@@ -888,7 +888,7 @@ private struct EncouragementTrailCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             HStack(spacing: 6) {
-                Icon(.sparkles, size: 11, color: Nuru.goldChipText)
+                Icon(.sparkles, size: 14, color: Nuru.goldChipText)
                 Text(kicker)
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
             }
@@ -929,7 +929,7 @@ private struct ExamGateCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(spacing: 6) {
-                Icon(.award, size: 12, color: Nuru.goldGlow)
+                Icon(.award, size: 14, color: Nuru.goldGlow)
                 Text("THE LEVEL GATE")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
             }
@@ -943,7 +943,7 @@ private struct ExamGateCard: View {
             if let actionLabel {
                 HStack(spacing: 6) {
                     Text(actionLabel).font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
-                    Icon(.arrowRight, size: 13, color: Nuru.navyDeep)
+                    Icon(.arrowRight, size: 14, color: Nuru.navyDeep)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 10)
                 .background(Nuru.goldGradient, in: Capsule())
@@ -980,7 +980,7 @@ private struct MidLevelStatsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack(spacing: 6) {
-                Icon(.trendingUp, size: 12, color: Nuru.goldGlow)
+                Icon(.trendingUp, size: 14, color: Nuru.goldGlow)
                 Text("YOUR JOURNEY SO FAR")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
             }
@@ -1116,7 +1116,7 @@ private struct DisciplerReminderCard: View {
                 HStack {
                     NavigationLink(value: AppRoute.discipleshipHub) {
                         HStack(spacing: 6) {
-                            Icon(.messageCircle, size: 13, color: .white)
+                            Icon(.messageCircle, size: 14, color: .white)
                             Text("Message").font(.inter(13, .bold)).foregroundStyle(.white)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 9)
@@ -1132,7 +1132,7 @@ private struct DisciplerReminderCard: View {
                 Haptics.tap()
                 onDismiss()
             } label: {
-                Icon(.x, size: 13, color: Nuru.faint)
+                Icon(.x, size: 14, color: Nuru.faint)
                     .frame(width: 26, height: 26)
                     .background(Nuru.mutedBg, in: Circle())
             }

@@ -148,7 +148,7 @@ struct GoLiveSetupSheet: View {
             Spacer(minLength: 0)
             Button { Haptics.tap(); dismiss() } label: {
                 Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                    .overlay(Icon(.x, size: 15, color: Nuru.navy))
+                    .overlay(Icon(.x, size: 14, color: Nuru.navy))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close")
@@ -225,10 +225,10 @@ struct GoLiveSetupSheet: View {
                     } label: {
                         let isSelected = selectedCellId == cell.id
                         HStack(spacing: 8) {
-                            Icon(.users, size: 13, color: Nuru.goldChipText)
+                            Icon(.users, size: 14, color: Nuru.goldChipText)
                             Text(cell.name).font(.inter(13, isSelected ? .bold : .semibold)).foregroundStyle(Nuru.navy)
                             Spacer(minLength: 0)
-                            if isSelected { Icon(.checkCircle2, size: 15, color: Nuru.gold) }
+                            if isSelected { Icon(.checkCircle2, size: 14, color: Nuru.gold) }
                         }
                         .padding(.horizontal, Nuru.S.md).padding(.vertical, 10)
                         .background(isSelected ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -299,7 +299,7 @@ struct GoLiveSetupSheet: View {
         } label: {
             HStack(spacing: 8) {
                 if starting { ProgressView().tint(Nuru.navy) }
-                else { Icon(.play, size: 15, color: Nuru.navy) }
+                else { Icon(.play, size: 14, color: Nuru.navy) }
                 Text(starting ? "Starting…" : "Go live").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
             }
             .frame(maxWidth: .infinity).frame(height: 50)

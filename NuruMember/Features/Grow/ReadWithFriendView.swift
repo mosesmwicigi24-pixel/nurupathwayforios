@@ -159,7 +159,7 @@ struct ReadingGroupCard: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: PL.ink3)
+                Icon(.chevronRight, size: 14, color: PL.ink3)
             }
             if !others.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -582,7 +582,7 @@ struct FriendPickerSheet: View {
                         if let onShareAnotherWay, query.isEmpty {
                             Button { Haptics.tap(); onShareAnotherWay(); dismiss() } label: {
                                 HStack(spacing: 12) {
-                                    Icon(.share2, size: 15, color: PL.ink2)
+                                    Icon(.share2, size: 14, color: PL.ink2)
                                         .frame(width: 36, height: 36)
                                         .background(PL.surface, in: Circle())
                                     VStack(alignment: .leading, spacing: 1) {
@@ -625,7 +625,7 @@ struct FriendPickerSheet: View {
             if let onShareAnotherWay {
                 Button { Haptics.tap(); onShareAnotherWay(); dismiss() } label: {
                     HStack(spacing: 8) {
-                        Icon(.share2, size: 15, color: PL.navy)
+                        Icon(.share2, size: 14, color: PL.navy)
                         Text("Share another way").font(.inter(13, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 46)
@@ -656,7 +656,7 @@ struct InviteSentToastView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Icon(.check, size: 13, color: PL.goldLight)
+            Icon(.check, size: 14, color: PL.goldLight)
             Text("Sent to \(toast.name) in chat").font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
             Button { Haptics.tap(); onOpenChat() } label: {
                 Text("Open chat").font(.inter(11, .bold)).foregroundStyle(PL.navy)
@@ -816,7 +816,7 @@ struct ReadingInvitePreviewView: View {
                     Haptics.action(); Task { await vm.accept() }
                 } label: {
                     HStack(spacing: 8) {
-                        if vm.busy { ProgressView().tint(PL.navy) } else { Icon(.bookOpen, size: 16, color: PL.navy) }
+                        if vm.busy { ProgressView().tint(PL.navy) } else { Icon(.bookOpen, size: 18, color: PL.navy) }
                         Text("Join & start reading").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)

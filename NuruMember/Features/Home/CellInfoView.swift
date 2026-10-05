@@ -127,13 +127,13 @@ struct CellInfoView: View {
             if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
         } label: {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.megaphone, size: 15, color: Nuru.navy)
+                Icon(.megaphone, size: 14, color: Nuru.navy)
                     .frame(width: 32, height: 32)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text(broadcast.controller != nil ? "You're live — tap to return" : "Go live to your cell")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: Nuru.navy.opacity(0.6))
+                Icon(.chevronRight, size: 14, color: Nuru.navy.opacity(0.6))
             }
         }
         .buttonStyle(.pressable)
@@ -155,12 +155,12 @@ struct CellInfoView: View {
     private var watchReplaysButton: some View {
         Button { Haptics.tap(); openReplays = true } label: {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.calendarClock, size: 15, color: Nuru.goldChipText)
+                Icon(.calendarClock, size: 14, color: Nuru.goldChipText)
                     .frame(width: 32, height: 32)
                     .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text("Watch replays").font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: Nuru.faint)
+                Icon(.chevronRight, size: 14, color: Nuru.faint)
             }
         }
         .buttonStyle(.pressable)
@@ -281,7 +281,7 @@ struct CellInfoView: View {
         HStack(spacing: Nuru.S.md) {
             ZStack {
                 RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.goldTint).frame(width: 44, height: 44)
-                Icon(.calendarClock, size: 20, color: Nuru.gold)
+                Icon(.calendarClock, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("NEXT GATHERING").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
@@ -302,7 +302,7 @@ struct CellInfoView: View {
         HStack(spacing: Nuru.S.md) {
             ZStack {
                 RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.white).frame(width: 44, height: 44)
-                Icon(.handHeart, size: 20, color: Nuru.gold)
+                Icon(.handHeart, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("SHEPHERD'S NOTE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
@@ -344,7 +344,7 @@ struct CellInfoView: View {
         let overflow = (roster?.count ?? 0) - faces.count
         return HStack(spacing: Nuru.S.sm) {
             if faces.isEmpty {
-                Icon(.users, size: 15, color: Nuru.goldChipText)
+                Icon(.users, size: 14, color: Nuru.goldChipText)
                     .frame(width: 32, height: 32)
                     .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
@@ -364,7 +364,7 @@ struct CellInfoView: View {
             Text(total > 0 ? "\(total) members" : "Members")
                 .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
             Spacer(minLength: 0)
-            Icon(.chevronRight, size: 15, color: Nuru.faint)
+            Icon(.chevronRight, size: 14, color: Nuru.faint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Nuru.S.sm)
@@ -389,7 +389,7 @@ struct CellInfoView: View {
         let lines = CellAttendanceWords.lines(you: vm.cell?.attendance.you, turnout: vm.cell?.turnout)
         let met = CellAttendanceWords.hasMet(you: vm.cell?.attendance.you, turnout: vm.cell?.turnout)
         return HStack(alignment: .top, spacing: Nuru.S.sm) {
-            Icon(.percent, size: 15, color: Nuru.goldChipText)
+            Icon(.percent, size: 14, color: Nuru.goldChipText)
                 .frame(width: 32, height: 32)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {

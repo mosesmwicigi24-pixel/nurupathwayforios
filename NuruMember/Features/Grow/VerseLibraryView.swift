@@ -221,7 +221,7 @@ private struct SavedVerseCard: View {
                 if hasText {
                     Button(action: practice) {
                         HStack(spacing: 6) {
-                            Icon(.penLine, size: 13, color: Nuru.navy)
+                            Icon(.penLine, size: 14, color: Nuru.navy)
                             Text("Practice")
                                 .font(.inter(12, .bold))
                                 .foregroundStyle(Nuru.navy)
@@ -271,7 +271,7 @@ private struct VersePracticeSheet: View {
                         .foregroundStyle(Nuru.navy)
                     Spacer()
                     Button { dismiss() } label: {
-                        Icon(.x, size: 15, color: Nuru.navy)
+                        Icon(.x, size: 14, color: Nuru.navy)
                             .frame(width: 32, height: 32)
                             .background(Nuru.surface, in: Circle())
                     }

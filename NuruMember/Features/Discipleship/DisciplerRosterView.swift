@@ -118,7 +118,7 @@ struct DisciplerRosterView: View {
                         .font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
                         .lineLimit(1)
                     Spacer(minLength: Nuru.S.sm)
-                    Icon(.chevronRight, size: 15, color: Nuru.ink300)
+                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
                 }
                 Text(row.cellName.map { "Level \(row.currentLevel) · \($0)" } ?? "Level \(row.currentLevel)")
                     .font(.nCardMeta).foregroundStyle(Nuru.muted)
@@ -166,7 +166,7 @@ struct DisciplerRosterView: View {
     /// Gold "Usher · L{n}" — a level advancement is waiting on THIS leader.
     private func usherPill(_ level: Int) -> some View {
         HStack(spacing: 3) {
-            Icon(.sparkles, size: 9, color: Color(hex: 0x8A6D18))
+            Icon(.sparkles, size: 14, color: Color(hex: 0x8A6D18))
             Text("Usher · L\(level)")
                 .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
         }

@@ -346,7 +346,7 @@ struct ScriptureRefCard: View {
                 if open { Task { await loader.load(reference) } }
             } label: {
                 HStack(spacing: 10) {
-                    Icon(.bookOpen, size: 15, color: pal.goldDeep)
+                    Icon(.bookOpen, size: 14, color: pal.goldDeep)
                     Text(reference).font(.inter(pal.fs(14), .semibold)).foregroundStyle(pal.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
@@ -433,7 +433,7 @@ struct ScripturePassageSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Icon(.bookOpen, size: 16, color: PL.gold)
+                Icon(.bookOpen, size: 18, color: PL.gold)
                     .frame(width: 36, height: 36)
                     .background(PL.gold.opacity(0.14), in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
@@ -442,7 +442,7 @@ struct ScripturePassageSheet: View {
                 }
                 Spacer(minLength: 8)
                 Button { dismiss() } label: {
-                    Icon(.x, size: 16, color: pal.ink)
+                    Icon(.x, size: 18, color: pal.ink)
                         .frame(width: 34, height: 34)
                         .background(pal.ink.opacity(0.06), in: Circle())
                 }

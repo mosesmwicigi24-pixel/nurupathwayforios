@@ -204,7 +204,7 @@ struct DepartmentCard: View {
                         Text(leader).font(.nLabel).foregroundStyle(Nuru.ink).lineLimit(1)
                         Text("·").font(.nCaption).foregroundStyle(Nuru.ink300)
                     }
-                    Icon(.users, size: 12, color: Nuru.ink400)
+                    Icon(.users, size: 14, color: Nuru.ink400)
                     Text(row.memberCount == 1 ? "1 serving" : "\(row.memberCount) serving")
                         .font(.nCaption).foregroundStyle(Nuru.ink600)
                 }
@@ -221,7 +221,7 @@ struct DepartmentCard: View {
 
                 if let post = row.latestPost, !post.isEmpty {
                     HStack(alignment: .top, spacing: 8) {
-                        Icon(.quote, size: 12, color: Nuru.gold)
+                        Icon(.quote, size: 14, color: Nuru.gold)
                             .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(post).font(.nCardBody).foregroundStyle(Nuru.ink).lineLimit(2)

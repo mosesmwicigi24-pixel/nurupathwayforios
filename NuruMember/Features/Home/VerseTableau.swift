@@ -70,7 +70,7 @@ struct VerseTableauHeader: View {
             }
             .overlay(alignment: .topLeading) {
                 HStack(spacing: 6) {
-                    Icon(.bookOpen, size: 13, color: Color(hex: 0xF2DDA0))
+                    Icon(.bookOpen, size: 14, color: Color(hex: 0xF2DDA0))
                     Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4)
                         .foregroundStyle(Color(hex: 0xF2DDA0))
                     Spacer(minLength: 0)

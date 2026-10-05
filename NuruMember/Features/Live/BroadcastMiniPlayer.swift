@@ -59,7 +59,7 @@ struct BroadcastMiniPlayer: View {
                 Haptics.action()
                 confirmEnd = true
             } label: {
-                Icon(.x, size: 12, color: .white.opacity(0.85))
+                Icon(.x, size: 14, color: .white.opacity(0.85))
                     .frame(width: 26, height: 26)
                     .background(Color.white.opacity(0.14), in: Circle())
             }

@@ -388,7 +388,7 @@ private struct PathwayHubHeader: View {
                 }.padding(.top, 16)
                 if remaining > 0 {
                     HStack(spacing: 6) {
-                        Icon(.sparkles, size: 11, color: Color(hex: 0x9A7A2A))
+                        Icon(.sparkles, size: 14, color: Color(hex: 0x9A7A2A))
                         Text(remaining == 1 ? "Just 1 module left to level up 🎉" : "Only \(remaining) modules to complete this level")
                             .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }.padding(.top, 8)
@@ -408,7 +408,7 @@ private struct PathwayHubHeader: View {
                 Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                 if vm.streak > 0 {
                     HStack(spacing: 4) {
-                        Icon(.flame, size: 9, color: Color(hex: 0x9A7A2A))
+                        Icon(.flame, size: 14, color: Color(hex: 0x9A7A2A))
                         Text("\(vm.streak)-day streak").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
@@ -420,8 +420,7 @@ private struct PathwayHubHeader: View {
             HStack(spacing: 8) {
                 // The one bell (§7.2 #4) — it was decorative here, opening
                 // nothing under a painted-on dot.
-                NuruBell(look: .init(size: 36, circle: true, iconSize: 17, iconColor: PW.navy,
-                                     fill: .white, stroke: PW.border))
+                NuruBell()
                 PWHeaderRing(pct: journey?.progressPercent ?? 0)
             }
         }
@@ -447,7 +446,7 @@ private struct PathwayHubHeader: View {
                     if let label = journey?.actionLabel {
                         HStack(spacing: 4) {
                             Text(label).font(.inter(11, .bold))
-                            Icon(.chevronRight, size: 12, color: PW.navy)
+                            Icon(.chevronRight, size: 14, color: PW.navy)
                         }
                         .foregroundStyle(PW.navy)
                         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -523,7 +522,7 @@ private struct PathwayDisciplershipRow: View {
                         .fill(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)],
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
-                    Icon(.heartHandshake, size: 20, color: PW.navy)
+                    Icon(.heartHandshake, size: 22, color: PW.navy)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WALK WITH YOUR DISCIPLER").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
@@ -553,7 +552,7 @@ private struct PathwayWalkRow: View {
                         .fill(LinearGradient(colors: [PW.navy, Color(hex: 0x1B3A5C)],
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
-                    Icon(.flag, size: 20, color: PW.gold)
+                    Icon(.flag, size: 22, color: PW.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("EVERY STEP, REMEMBERED").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
@@ -675,14 +674,14 @@ private struct PWJourneyNode: View {
                     if done {
                         ZStack {
                             Circle().fill(PW.navy).frame(width: 16, height: 16)
-                            Icon(.check, size: 9, color: .white)
+                            Icon(.check, size: 14, color: .white)
                         }
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
                         .offset(x: 3, y: -2)
                     } else if !active {
                         ZStack {
                             Circle().fill(PW.goldTint).frame(width: 16, height: 16)
-                            Icon(.lock, size: 9, color: PW.goldDeep)
+                            Icon(.lock, size: 14, color: PW.goldDeep)
                         }
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
                         .offset(x: 3, y: -2)
@@ -901,7 +900,7 @@ private struct PWModuleRow: View {
                               : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
                               : AnyShapeStyle(PW.mutedBg))
                         .frame(width: 32, height: 32)
-                    if isExam { Icon(.award, size: 15, color: done || active ? PW.goldDeep : PW.goldDeep) }
+                    if isExam { Icon(.award, size: 14, color: done || active ? PW.goldDeep : PW.goldDeep) }
                     else {
                         Text("\(module.moduleSequenceNumber)")
                             .font(.inter(13, .bold))
@@ -911,14 +910,14 @@ private struct PWModuleRow: View {
                 if done {
                     ZStack {
                         Circle().fill(PW.navy).frame(width: 13, height: 13)
-                        Icon(.check, size: 7, color: .white)
+                        Icon(.check, size: 14, color: .white)
                     }
                     .overlay(Circle().stroke(.white, lineWidth: 1.2))
                     .offset(x: 4, y: -3)
                 } else if !active && !done && !opensSoon {
                     ZStack {
                         Circle().fill(PW.mutedBg).frame(width: 13, height: 13)
-                        Icon(.lock, size: 7, color: PW.ink3)
+                        Icon(.lock, size: 14, color: PW.ink3)
                     }
                     .overlay(Circle().stroke(.white, lineWidth: 1.2))
                     .offset(x: 4, y: -3)
@@ -1074,7 +1073,7 @@ private struct PathwayMilestones: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+                Icon(.chevronRight, size: 18, color: .white.opacity(0.5))
             }
             .padding(14)
             .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -1100,7 +1099,7 @@ private struct PWRewardBadge: View {
                     ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.symbol(8)).foregroundStyle(PW.gold) }
                 }
             } else {
-                Icon(.lock, size: 9, color: PW.ink3)
+                Icon(.lock, size: 14, color: PW.ink3)
             }
         }
         .frame(width: 84).padding(.vertical, 12)
@@ -1204,7 +1203,7 @@ private struct PathwaySummitCard: View {
 
     private var statusChip: some View {
         HStack(spacing: 4) {
-            if reached { Image(systemName: "star.fill").font(.symbol(10)) } else { Icon(.lock, size: 10, color: .white) }
+            if reached { Image(systemName: "star.fill").font(.symbol(10)) } else { Icon(.lock, size: 14, color: .white) }
             Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(11, .bold)).kerning(1)
         }
         .foregroundStyle(reached ? PW.navy : .white)
@@ -1312,7 +1311,7 @@ struct LevelsMapView: View {
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
                     Button { Haptics.tap(); dismiss() } label: {
-                        Icon(.chevronLeft, size: 20, color: PW.navy).frame(width: 36, height: 36)
+                        Icon(.chevronLeft, size: 22, color: PW.navy).frame(width: 36, height: 36)
                             .background(Color.white, in: Circle())
                             .overlay(Circle().stroke(PW.border, lineWidth: 1))
                             .contentShape(Circle())
@@ -1357,7 +1356,7 @@ struct LevelsMapView: View {
             Spacer(minLength: 0)
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white).shadow(color: PW.navy.opacity(0.05), radius: 6, y: 2)
-                Icon(.map, size: 19, color: PW.navy)
+                Icon(.map, size: 18, color: PW.navy)
             }.frame(width: 40, height: 40)
         }
     }
@@ -1439,7 +1438,7 @@ private struct PWContinueCard: View {
                 HStack(spacing: 16) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PW.navy.opacity(0.06))
-                        Icon(.bookOpen, size: 20, color: PW.navy)
+                        Icon(.bookOpen, size: 22, color: PW.navy)
                     }
                     .frame(width: 44, height: 44)
 
@@ -1499,9 +1498,9 @@ private struct PWLevelCard: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(isActive ? PW.navy : isCompleted ? PW.goldTint : PW.mutedBg)
                     if isCompleted {
-                        Icon(.check, size: 19, color: PW.goldDeep)
+                        Icon(.check, size: 18, color: PW.goldDeep)
                     } else if isLocked {
-                        Icon(.lock, size: 17, color: PW.ink3)
+                        Icon(.lock, size: 18, color: PW.ink3)
                     } else {
                         CrossMark(size: 18, color: PW.gold)   // Figma's lucide `Cross`
                     }
@@ -1522,7 +1521,7 @@ private struct PWLevelCard: View {
                     }
                     if isLocked {
                         HStack(spacing: 6) {
-                            Icon(.lock, size: 12, color: PW.ink3)
+                            Icon(.lock, size: 14, color: PW.ink3)
                             Text(lockLine).font(.nCardMeta).foregroundStyle(PW.ink3)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -1531,7 +1530,7 @@ private struct PWLevelCard: View {
                         VStack(spacing: 8) {
                             HStack {
                                 HStack(spacing: 4) {
-                                    Icon(.bookOpen, size: 12, color: PW.ink2)
+                                    Icon(.bookOpen, size: 14, color: PW.ink2)
                                     Text("\(min(level.lessonsDone, level.lessonCount))/\(level.lessonCount) modules").font(.nCardMeta).foregroundStyle(PW.ink2)
                                 }
                                 Spacer(minLength: 0)
@@ -1544,7 +1543,7 @@ private struct PWLevelCard: View {
                 }
 
                 if !isLocked {
-                    Icon(.chevronRight, size: 17, color: PW.chevron).padding(.top, 8)
+                    Icon(.chevronRight, size: 18, color: PW.chevron).padding(.top, 8)
                 }
             }
             .padding(16)

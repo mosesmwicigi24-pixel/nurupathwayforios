@@ -215,7 +215,7 @@ struct LoginView: View {
                             .background(remember ? Nuru.gold : .clear, in: RoundedRectangle(cornerRadius: 6))
                             .frame(width: 20, height: 20)
                         if remember {
-                            Icon(.check, size: 11, color: Nuru.navy)
+                            Icon(.check, size: 14, color: Nuru.navy)
                                 .transition(.scale.combined(with: .opacity))
                         }
                     }

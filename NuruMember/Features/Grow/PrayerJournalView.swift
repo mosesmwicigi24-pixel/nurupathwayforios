@@ -250,7 +250,7 @@ struct PrayerJournalView: View {
                                 }
                                 Button { Haptics.tap(); editing = PrayerDraft() } label: {
                                     HStack(spacing: 5) {
-                                        Icon(.plus, size: 13, color: .white)
+                                        Icon(.plus, size: 14, color: .white)
                                         Text("Add Prayer").font(.nActionLabel).foregroundStyle(.white)
                                             .lineLimit(1).minimumScaleFactor(0.85)
                                     }
@@ -473,7 +473,7 @@ private struct PrayerPulseCard: View {
 
     private var streakChip: some View {
         HStack(spacing: 4) {
-            Icon(.flame, size: 9, color: gold)
+            Icon(.flame, size: 14, color: gold)
             Text("\(streak)-day streak").font(.inter(11, .bold)).foregroundStyle(gold)
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
@@ -551,7 +551,7 @@ private struct EmptyPrayers: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Nuru.surface)
                     .frame(width: 48, height: 48)
-                    .overlay(Icon(.handHeart, size: 20, color: Nuru.gold))
+                    .overlay(Icon(.handHeart, size: 22, color: Nuru.gold))
                 Text(tab == .active ? "No active prayers yet" : "No answered prayers yet")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Bring your requests before Him.")
@@ -667,7 +667,7 @@ private struct JournalCard: View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
             Circle().fill(Color(hex: 0x16A34A))
                 .frame(width: 28, height: 28)
-                .overlay(Icon(.check, size: 13, color: .white))
+                .overlay(Icon(.check, size: 14, color: .white))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Answered prayer 🎉")
                     .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
@@ -701,7 +701,7 @@ private struct JournalCard: View {
             toggle()
         } label: {
             HStack(spacing: 6) {
-                Icon(.checkCircle2, size: 13, color: Color(hex: 0x7A5A14))
+                Icon(.checkCircle2, size: 14, color: Color(hex: 0x7A5A14))
                 Text("Mark answered").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
             }
             .frame(maxWidth: .infinity)
@@ -719,7 +719,7 @@ private struct JournalCard: View {
         Group {
             if shared {
                 HStack(spacing: 6) {
-                    Icon(.handHeart, size: 15, color: Color(hex: 0x16A34A))
+                    Icon(.handHeart, size: 14, color: Color(hex: 0x16A34A))
                     Text("On the wall 🙏").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 }
                 .frame(maxWidth: .infinity)
@@ -797,7 +797,7 @@ private struct PrayerComposerSheet: View {
                 Button { dismiss() } label: {
                     Circle().fill(Nuru.surface)
                         .frame(width: 32, height: 32)
-                        .overlay(Icon(.x, size: 15, color: Nuru.navy))
+                        .overlay(Icon(.x, size: 14, color: Nuru.navy))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")

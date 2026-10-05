@@ -15,8 +15,7 @@ struct GiveSwitchRow: View {
     var body: some View {
         HStack(spacing: 10) {
             SplitSegmentBar(selection: selection, onSelect: onSelect)
-            NuruBell(look: .init(size: 44, circle: true, iconSize: 18, iconColor: Nuru.navy,
-                                 fill: .white, stroke: Nuru.border))
+            NuruBell()
         }
     }
 }

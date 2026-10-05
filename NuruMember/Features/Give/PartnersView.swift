@@ -1175,7 +1175,7 @@ struct PartnersView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("Partners statement and PDF").font(.inter(13, .semibold))
-                    Icon(.arrowRight, size: 12, color: Nuru.gold)
+                    Icon(.arrowRight, size: 14, color: Nuru.gold)
                 }
                 .foregroundStyle(Nuru.gold)
                 .frame(maxWidth: .infinity)
@@ -1644,7 +1644,7 @@ struct PledgeDetailView: View {
                             // A total pledge's pace (Giving Cycle 9), as the server sets it.
                             if let pace = PledgePace.line(p) {
                                 HStack(alignment: .top, spacing: 6) {
-                                    Icon(.calendarClock, size: 12, color: Nuru.gold).padding(.top, 2)
+                                    Icon(.calendarClock, size: 14, color: Nuru.gold).padding(.top, 2)
                                     Text(pace).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -1796,11 +1796,11 @@ struct PledgeDetailView: View {
                 tabs.openGive(link: .schedule(scheduleId: scheduleId))
             } label: {
                 HStack(spacing: 8) {
-                    Icon(.repeat, size: 13, color: Nuru.gold)
+                    Icon(.repeat, size: 14, color: Nuru.gold)
                     Text(line).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    Icon(.chevronRight, size: 13, color: Nuru.ink300)
+                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
                 }
                 .contentShape(Rectangle())
             }
@@ -1929,7 +1929,7 @@ struct PledgeDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             Text(early ? "Pay early" : "Pay now").font(.inter(13, early ? .semibold : .bold))
-                            Icon(.arrowRight, size: 12, color: Nuru.navy)
+                            Icon(.arrowRight, size: 14, color: Nuru.navy)
                         }
                         .foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 40)
@@ -1972,11 +1972,11 @@ struct PledgeDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Button { Haptics.tap(); claiming = p } label: {
                         HStack(spacing: 6) {
-                            Icon(.check, size: 12, color: sync.isOnline ? Nuru.navy : Nuru.ink300)
+                            Icon(.check, size: 14, color: sync.isOnline ? Nuru.navy : Nuru.ink300)
                             Text("I paid another way").font(.inter(12, .semibold))
                                 .foregroundStyle(sync.isOnline ? Nuru.navy : Nuru.ink300)
                             Spacer(minLength: 0)
-                            Icon(.chevronRight, size: 12, color: Nuru.ink300)
+                            Icon(.chevronRight, size: 14, color: Nuru.ink300)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1991,7 +1991,7 @@ struct PledgeDetailView: View {
                 Toggle(isOn: Binding(get: { p.remindersEnabled },
                                      set: { on in Task { await vm.setReminders(p, on); await load() } })) {
                     HStack(spacing: 8) {
-                        Icon(.bell, size: 13, color: Nuru.gold)
+                        Icon(.bell, size: 14, color: Nuru.gold)
                         // The server's reminder lands in the inbox; no remote push
                         // on this phone yet (B11).
                         Text(IOSNoticeWords.pledgeReminder).font(.inter(13)).foregroundStyle(Nuru.ink)
@@ -2025,7 +2025,7 @@ struct PledgeDetailView: View {
             }
             Spacer(minLength: 8)
             Button { Haptics.tap(); vm.pledgeNotices[pledgeId] = nil } label: {
-                Icon(.x, size: 12, color: Nuru.ink400).frame(width: 28, height: 28)
+                Icon(.x, size: 14, color: Nuru.ink400).frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")

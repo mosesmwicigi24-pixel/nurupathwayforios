@@ -25,7 +25,7 @@ struct HomeEchoCard: View {
             if let e = echo {
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 8) {
-                        Icon(.sparkles, size: 13, color: Nuru.goldChipText)
+                        Icon(.sparkles, size: 14, color: Nuru.goldChipText)
                         Text(kicker)
                             .font(.inter(11, .bold)).kerning(1.6)
                             .foregroundStyle(Nuru.goldChipText)

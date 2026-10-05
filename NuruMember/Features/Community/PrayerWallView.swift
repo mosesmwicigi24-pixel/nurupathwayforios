@@ -260,7 +260,7 @@ private struct PrayerCardView: View {
 
     private var answeredChip: some View {
         HStack(spacing: 4) {
-            Icon(.checkCircle2, size: 11, color: Nuru.successText)
+            Icon(.checkCircle2, size: 14, color: Nuru.successText)
             Text("Answered").font(.nMicro).foregroundStyle(Nuru.successText)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -269,7 +269,7 @@ private struct PrayerCardView: View {
 
     private var voiceTag: some View {
         HStack(spacing: 6) {
-            Icon(.audioLines, size: 13, color: Nuru.gold)
+            Icon(.audioLines, size: 14, color: Nuru.gold)
             Text("Voice prayer").font(.nCaption).foregroundStyle(Nuru.muted)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)

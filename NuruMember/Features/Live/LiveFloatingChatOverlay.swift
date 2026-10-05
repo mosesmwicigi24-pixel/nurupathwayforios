@@ -408,7 +408,7 @@ struct LiveFloatingChatOverlay: View {
                 Haptics.tap()
                 Task { await chat.send() }
             } label: {
-                Icon(.send, size: 13, color: .white)
+                Icon(.send, size: 14, color: .white)
                     .frame(width: 32, height: 32)
                     .background(canSend ? Nuru.gold : Color.white.opacity(0.16), in: Circle())
             }

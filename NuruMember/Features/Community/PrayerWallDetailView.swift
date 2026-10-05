@@ -235,7 +235,7 @@ struct PrayerWallDetailView: View {
                 AiDraftButton(recentMessages: draftContext(d)) { vm.draft = $0 }
                     .padding(.bottom, 7)
                 Button { Haptics.action(); Task { await vm.comment() } } label: {
-                    Icon(.send, size: 17, color: .white)
+                    Icon(.send, size: 18, color: .white)
                         .frame(width: 44, height: 44).background(Nuru.navyDeep, in: Circle())
                 }
                 .buttonStyle(.pressable)
@@ -266,7 +266,7 @@ struct PrayerWallDetailView: View {
 
     private var answeredChip: some View {
         HStack(spacing: 4) {
-            Icon(.checkCircle2, size: 12, color: Nuru.successText)
+            Icon(.checkCircle2, size: 14, color: Nuru.successText)
             Text("Answered").font(.nMicro).foregroundStyle(Nuru.successText)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)

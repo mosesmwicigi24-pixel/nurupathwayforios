@@ -109,7 +109,7 @@ struct CheckInScannerView: View {
             } label: {
                 ZStack {
                     Circle().fill(Color.white.opacity(0.12)).frame(width: 36, height: 36)
-                    Icon(.x, size: 17, color: .white)
+                    Icon(.x, size: 18, color: .white)
                 }
             }
             .buttonStyle(.pressable)
@@ -231,7 +231,7 @@ struct CheckInScannerView: View {
                 } label: {
                     ZStack {
                         Circle().fill(Color.white.opacity(0.12)).frame(width: 36, height: 36)
-                        Icon(.x, size: 17, color: .white)
+                        Icon(.x, size: 18, color: .white)
                     }
                 }
                 .buttonStyle(.pressable)

@@ -39,7 +39,7 @@ struct LiveChatSheet: View {
                         Haptics.tap()
                         dismiss()
                     } label: {
-                        Icon(.x, size: 15, color: Nuru.ink600)
+                        Icon(.x, size: 14, color: Nuru.ink600)
                             .frame(width: 30, height: 30)
                             .background(Nuru.white, in: Circle())
                     }
@@ -117,7 +117,7 @@ struct LiveChatSheet: View {
                 Haptics.tap()
                 Task { await send() }
             } label: {
-                Icon(.send, size: 15, color: .white)
+                Icon(.send, size: 14, color: .white)
                     .frame(width: 38, height: 38)
                     .background(canSend ? Nuru.gold : Nuru.gold.opacity(0.4), in: Circle())
             }

@@ -237,7 +237,7 @@ struct NewPledgeFlow: View {
                     ZStack {
                         Circle().fill(Color.white).frame(width: 40, height: 40)
                             .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
-                        Icon(.x, size: 16, color: Nuru.navy)
+                        Icon(.x, size: 18, color: Nuru.navy)
                     }
                 }
                 .buttonStyle(.plain)
@@ -399,7 +399,7 @@ struct NewPledgeFlow: View {
             }
 
             HStack(spacing: 8) {
-                Icon(.pencil, size: 13, color: Nuru.gold)
+                Icon(.pencil, size: 14, color: Nuru.gold)
                 TextField("Or enter your own amount", text: $customAmount)
                     .keyboardType(.numberPad)
                     .font(.inter(14))
@@ -560,7 +560,7 @@ struct NewPledgeFlow: View {
             ZStack {
                 if on {
                     Circle().fill(Nuru.gold).frame(width: 22, height: 22)
-                    Icon(.check, size: 12, color: Nuru.navy)
+                    Icon(.check, size: 14, color: Nuru.navy)
                 } else {
                     Circle().stroke(Nuru.border, lineWidth: 1.5).frame(width: 22, height: 22)
                 }
@@ -573,7 +573,7 @@ struct NewPledgeFlow: View {
     private var customNameField: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Icon(.penLine, size: 13, color: Nuru.gold)
+                Icon(.penLine, size: 14, color: Nuru.gold)
                 TextField("e.g. School fees for Grace", text: $customName)
                     .font(.inter(14))
                     .focused($nameFocused)
@@ -706,7 +706,7 @@ struct NewPledgeFlow: View {
             }
             if !isMember {
                 HStack(spacing: 8) {
-                    Icon(.heartHandshake, size: 13, color: Nuru.gold)
+                    Icon(.heartHandshake, size: 14, color: Nuru.gold)
                     Text("Creating this also joins you to the Partners programme.")
                         .font(.nCaption).foregroundStyle(Nuru.goldChipText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -927,7 +927,7 @@ struct EditPledgeSheet: View {
                     Button { dismiss() } label: {
                         ZStack {
                             Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                            Icon(.x, size: 15, color: Nuru.navy)
+                            Icon(.x, size: 14, color: Nuru.navy)
                         }
                     }.buttonStyle(.plain)
                 }
@@ -936,7 +936,7 @@ struct EditPledgeSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("NAME").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                     HStack(spacing: 8) {
-                        Icon(.penLine, size: 13, color: Nuru.gold)
+                        Icon(.penLine, size: 14, color: Nuru.gold)
                         TextField("Name this pledge", text: $name)
                             .font(.inter(14))
                             .focused($nameFocused)
@@ -978,7 +978,7 @@ struct EditPledgeSheet: View {
                 }
 
                 HStack(spacing: 8) {
-                    Icon(.pencil, size: 13, color: Nuru.gold)
+                    Icon(.pencil, size: 14, color: Nuru.gold)
                     TextField(MoneyEntry.wholeUnits(currency) ? "Or enter your own amount" : "Or enter your own amount, e.g. 20.00",
                               text: $customAmount)
                         .keyboardType(MoneyEntry.wholeUnits(currency) ? .numberPad : .decimalPad)

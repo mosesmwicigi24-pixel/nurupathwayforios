@@ -47,7 +47,7 @@ struct BroadcastStudioCard: View {
                     Haptics.tap(); onMyBroadcasts()
                 } label: {
                     HStack(spacing: 10) {
-                        Icon(.playCircle, size: 16, color: Nuru.gold)
+                        Icon(.playCircle, size: 18, color: Nuru.gold)
                         Text("My Broadcasts").font(.inter(13, .semibold)).foregroundStyle(.white)
                         Spacer(minLength: 0)
                         Icon(.chevronRight, size: 14, color: .white.opacity(0.6))
@@ -91,7 +91,7 @@ struct BroadcastStudioCard: View {
                 Text(live ? "You're live — tap to return" : "Go Live")
                     .font(.inter(15, .bold)).foregroundStyle(live ? .white : Nuru.navy)
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: live ? .white.opacity(0.7) : Nuru.navy.opacity(0.55))
+                Icon(.chevronRight, size: 14, color: live ? .white.opacity(0.7) : Nuru.navy.opacity(0.55))
             }
             .padding(.horizontal, 14)
             .frame(height: 60)

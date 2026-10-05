@@ -76,7 +76,7 @@ struct LetterArchiveView: View {
             ZStack {
                 Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.9))
                     .frame(width: 40, height: 40)
-                Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
+                Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(lt.title).font(.fraunces(15, .semibold)).foregroundStyle(.white).lineLimit(1)

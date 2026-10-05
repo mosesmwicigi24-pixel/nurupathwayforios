@@ -60,7 +60,7 @@ struct LetterView: View {
                     Button {
                         Haptics.tap(); dismiss()
                     } label: {
-                        Icon(.x, size: 15, color: .white)
+                        Icon(.x, size: 14, color: .white)
                             .frame(width: 34, height: 34)
                             .background(Color.white.opacity(0.16), in: Circle())
                     }
@@ -170,7 +170,7 @@ struct LetterView: View {
     /// serif voice, and a book glyph — never a bare inline reference.
     private func scriptureCard(_ ref: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Icon(.bookOpen, size: 16, color: Color(hex: 0xA8861C))
+            Icon(.bookOpen, size: 18, color: Color(hex: 0xA8861C))
             VStack(alignment: .leading, spacing: 2) {
                 Text("SCRIPTURE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
                 Text(ref).font(.fraunces(16, .semibold)).foregroundStyle(Color(hex: 0x5B4712))
@@ -230,7 +230,7 @@ struct LetterView: View {
                     .font(.inter(14, .bold))
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 8)
-                Icon(.arrowRight, size: 15, color: .white)
+                Icon(.arrowRight, size: 14, color: .white)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 18).padding(.vertical, 16)
@@ -283,7 +283,7 @@ struct LetterView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text("Past letters").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x8A6B1F))
-                    Icon(.chevronRight, size: 12, color: Color(hex: 0x8A6B1F))
+                    Icon(.chevronRight, size: 14, color: Color(hex: 0x8A6B1F))
                 }
             }
         }

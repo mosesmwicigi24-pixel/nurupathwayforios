@@ -153,7 +153,7 @@ struct PledgeClaimSheet: View {
                     Button { dismiss() } label: {
                         ZStack {
                             Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                            Icon(.x, size: 15, color: Nuru.navy)
+                            Icon(.x, size: 14, color: Nuru.navy)
                         }
                     }
                     .buttonStyle(.plain)
@@ -200,7 +200,7 @@ struct PledgeClaimSheet: View {
                 VStack(alignment: .leading, spacing: 8) {
                     label("A NOTE FOR THE OFFICE · OPTIONAL")
                     HStack(alignment: .top, spacing: 8) {
-                        Icon(.penLine, size: 13, color: Nuru.gold).padding(.top, 3)
+                        Icon(.penLine, size: 14, color: Nuru.gold).padding(.top, 3)
                         TextField("e.g. Cash at the 9am service", text: $note, axis: .vertical)
                             .font(.inter(14))
                             .lineLimit(2...5)

@@ -200,7 +200,7 @@ struct PLStreakStrip: View {
                 }
                 .frame(height: 8)
                 HStack(spacing: 4) {
-                    Icon(.gift, size: 12, color: PL.catText)
+                    Icon(.gift, size: 14, color: PL.catText)
                     Text(toReward == 0 ? "Reward ready!" : "\(toReward) day\(toReward == 1 ? "" : "s") to a badge")
                         .font(.inter(11, .bold)).foregroundStyle(PL.catText)
                 }
@@ -221,7 +221,7 @@ struct PLStreakStrip: View {
             ZStack {
                 if done {
                     Circle().fill(PL.gold)
-                    Icon(.check, size: 11, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 } else if today {
                     Circle().fill(Color.white)
                     Circle().stroke(PL.gold, lineWidth: 1.5)
@@ -359,7 +359,7 @@ struct PLPlanTile: View {
                     .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
                     .overlay(alignment: .topTrailing) {
                         if plan.completedAt != nil {
-                            Icon(.check, size: 11, color: .white)
+                            Icon(.check, size: 14, color: .white)
                                 .frame(width: 22, height: 22).background(PL.gold, in: Circle())
                                 .padding(6)
                         }
@@ -473,7 +473,7 @@ struct PLDetailDayRow: View {
                 }
                 .frame(width: 52, height: 52)
                 if done {
-                    Icon(.check, size: 9, color: .white)
+                    Icon(.check, size: 14, color: .white)
                         .frame(width: 17, height: 17)
                         .background(PL.gold, in: Circle())
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
@@ -500,9 +500,9 @@ struct PLDetailDayRow: View {
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(PL.gold, in: Capsule())
             } else if syncing {
-                Icon(.clock, size: 13, color: PL.goldDeep)
+                Icon(.clock, size: 14, color: PL.goldDeep)
             } else if locked {
-                Icon(.lock, size: 13, color: PL.chev)
+                Icon(.lock, size: 14, color: PL.chev)
             } else {
                 Icon(.chevronRight, size: 14, color: PL.chev)
             }
@@ -583,7 +583,7 @@ struct PLPlanPromo: View {
                 }
                 .overlay(alignment: .topLeading) {
                     HStack(spacing: 4) {
-                        Icon(.sparkles, size: 9, color: PL.navy)
+                        Icon(.sparkles, size: 14, color: PL.navy)
                         Text(kicker).font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 4)
@@ -613,7 +613,7 @@ struct PLPlanPromo: View {
                     }
                     .padding(.top, 6)
                     HStack(spacing: 4) {
-                        Icon(.clock, size: 11, color: PL.ink3)
+                        Icon(.clock, size: 14, color: PL.ink3)
                         Text("\(plan.dayCount) days · a few minutes a day")
                             .font(.inter(11)).foregroundStyle(PL.ink3)
                     }

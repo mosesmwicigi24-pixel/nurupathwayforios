@@ -87,7 +87,7 @@ struct HomeLiveNowCard: View {
                 metaRow.padding(.top, 4)
                 Button { Haptics.tap(); onOpen() } label: {
                     HStack(spacing: 8) {
-                        if isLive { Icon(.play, size: 15, color: HomeFig.navy) }
+                        if isLive { Icon(.play, size: 14, color: HomeFig.navy) }
                         else { Image(systemName: "bell.badge.fill").font(.symbol(14)).foregroundStyle(HomeFig.navy) }
                         Text(isLive ? "Watch live" : "Set reminder")
                             .font(.nCardCTA).foregroundStyle(HomeFig.navy)
@@ -161,7 +161,7 @@ struct HomeLiveNowCard: View {
                 Circle().fill(.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
                 Text("LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(.white)
             } else {
-                Icon(.clock, size: 11, color: HomeFig.navy)
+                Icon(.clock, size: 14, color: HomeFig.navy)
                 Text("STARTS IN \(startsInMin ?? 0)M").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(HomeFig.navy)
             }
         }
@@ -195,7 +195,7 @@ struct HomeLiveNowCard: View {
                 Text(location).font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
             if let m = startsInMin {
-                Icon(.clock, size: 11, color: .white.opacity(0.7)).padding(.leading, location == nil ? 0 : 6)
+                Icon(.clock, size: 14, color: .white.opacity(0.7)).padding(.leading, location == nil ? 0 : 6)
                 Text("Starts in \(m) min").font(.nCardMeta).foregroundStyle(.white.opacity(0.7))
             }
         }
@@ -213,7 +213,7 @@ struct HomePriorityStrip: View {
     var body: some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 12) {
-                Icon(.messageSquareText, size: 16, color: HomeFig.gold)
+                Icon(.messageSquareText, size: 18, color: HomeFig.gold)
                     .frame(width: 36, height: 36)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
@@ -454,7 +454,7 @@ struct HomeResumeHero: View {
             }
             HStack(spacing: 6) {
                 Text(ctaLabel).font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                Icon(.chevronRight, size: 15, color: HomeFig.navy)
+                Icon(.chevronRight, size: 14, color: HomeFig.navy)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -488,7 +488,7 @@ struct HomeWeekChain: View {
                     ZStack {
                         if isDone {
                             Circle().fill(HomeFig.gold)
-                            Icon(.check, size: 12, color: .white)
+                            Icon(.check, size: 14, color: .white)
                         } else if isToday {
                             Circle().fill(Color.white)
                             Circle().stroke(HomeFig.gold, lineWidth: 1.5)
@@ -644,7 +644,7 @@ struct HomeEncouragementCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Icon(.sparkles, size: 16, color: HomeFig.gold)
+            Icon(.sparkles, size: 18, color: HomeFig.gold)
                 .frame(width: 32, height: 32)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Text(line)
@@ -778,9 +778,9 @@ struct HomeGiveCard: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 6)
                     HStack(spacing: 8) {
-                        Icon(.handHeart, size: 16, color: HomeFig.navy)
+                        Icon(.handHeart, size: 18, color: HomeFig.navy)
                         Text("Give now").font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                        Icon(.chevronRight, size: 16, color: HomeFig.navy)
+                        Icon(.chevronRight, size: 18, color: HomeFig.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep],
@@ -836,7 +836,7 @@ struct HomeOnAirCard: View {
                         HStack(spacing: 8) {
                             if let n = program.peakListeners, n > 0 {
                                 HStack(spacing: 4) {
-                                    Icon(.users, size: 11, color: HomeFig.goldSoft)
+                                    Icon(.users, size: 14, color: HomeFig.goldSoft)
                                     Text("\(n) listening").font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                                 }
                             } else {
@@ -943,7 +943,7 @@ struct HomeLiveBannerCard: View {
                             Text(stream.title).font(.inter(15, .bold)).foregroundStyle(.white).lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+                        Icon(.chevronRight, size: 18, color: .white.opacity(0.5))
                     }
                     Text(metaLine)
                         .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
@@ -955,7 +955,7 @@ struct HomeLiveBannerCard: View {
             HStack(spacing: 10) {
                 Button { Haptics.tap(); onWatch() } label: {
                     HStack(spacing: 6) {
-                        Icon(.play, size: 12, color: HomeFig.navy)
+                        Icon(.play, size: 14, color: HomeFig.navy)
                         Text("Watch live").font(.inter(12, .bold)).foregroundStyle(HomeFig.navy)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 9)

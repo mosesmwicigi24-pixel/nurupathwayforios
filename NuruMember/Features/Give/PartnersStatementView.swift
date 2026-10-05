@@ -845,7 +845,7 @@ struct PartnersStatementView: View {
             NavigationLink(value: PartnersRoute.statement) {
                 HStack(spacing: 6) {
                     Text("Giving statement").font(.inter(14, .semibold))
-                    Icon(.arrowRight, size: 12, color: Nuru.navy)
+                    Icon(.arrowRight, size: 14, color: Nuru.navy)
                 }
                 .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 48)

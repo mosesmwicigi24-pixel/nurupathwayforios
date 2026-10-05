@@ -68,10 +68,18 @@ struct NuruBell: View {
         var iconColor: Color
         var fill: Color
         var stroke: Color
+
+        static let standard = Look(size: 44, circle: true, iconSize: 18, iconColor: Nuru.navy,
+                                   fill: .white, stroke: Nuru.border)
     }
 
     let look: Look
     @ObservedObject private var badge = InboxBadge.shared
+
+    /// The one bell (§8.1 rules 2, 7): the same size, tile and icon on every
+    /// tab — 44 pt circle, the icon in navy at 18. Tabs drew it at 36–44,
+    /// circle or tile, gold or navy.
+    init() { self.look = .standard }
 
     init(look: Look) { self.look = look }
 

@@ -135,7 +135,7 @@ struct GivingReceiptView: View {
                 Button { share(d) } label: {
                     Group {
                         if downloading { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
-                        else { Icon(.share, size: 16, color: Nuru.navy) }
+                        else { Icon(.share, size: 18, color: Nuru.navy) }
                     }
                     .frame(width: 40, height: 40)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -368,7 +368,7 @@ struct GivingReceiptView: View {
                         valueText(value, mono: mono)
                         if copiedKey == copy.key {
                             HStack(spacing: 3) {
-                                Icon(.check, size: 12, color: Color(hex: 0x16A34A))
+                                Icon(.check, size: 14, color: Color(hex: 0x16A34A))
                                 Text("Copied").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x16A34A))
                             }
                             .transition(.opacity)
@@ -462,7 +462,7 @@ struct GivingReceiptView: View {
                             ProgressView().tint(.white).scaleEffect(0.85)
                             Text("Preparing…").font(.inter(14, .semibold)).foregroundStyle(.white)
                         } else {
-                            Icon(.share, size: 16, color: .white)
+                            Icon(.share, size: 18, color: .white)
                             Text("Share receipt").font(.inter(14, .semibold)).foregroundStyle(.white)
                         }
                     }
@@ -474,7 +474,7 @@ struct GivingReceiptView: View {
 
                 NavigationLink(value: ReceiptRoute.statement) {
                     HStack(spacing: 8) {
-                        Icon(.fileText, size: 16, color: Nuru.navy)
+                        Icon(.fileText, size: 18, color: Nuru.navy)
                         Text("View statement").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)

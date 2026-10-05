@@ -422,7 +422,7 @@ struct LiveReactionCounter: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Icon(.heart, size: 13, color: RadioUX.redSoft)
+            Icon(.heart, size: 14, color: RadioUX.redSoft)
             Text(abbreviate(total))
                 .font(.inter(15, .bold)).monospacedDigit()
                 .foregroundStyle(.white)
@@ -1136,7 +1136,7 @@ private struct LiveTransportRow: View {
                 Haptics.tap()
                 showSleep = true
             } content: {
-                Icon(.moon, size: 20, color: center.sleepAt != nil ? RadioUX.goldLight : .white)
+                Icon(.moon, size: 22, color: center.sleepAt != nil ? RadioUX.goldLight : .white)
             }
             .accessibilityLabel("Sleep timer")
             .confirmationDialog("Sleep timer", isPresented: $showSleep, titleVisibility: .visible) {
@@ -1372,10 +1372,10 @@ private struct LiveTabView: View {
     private var reactionRow: some View {
         HStack(spacing: 12) {
             ReactionButton(tint: RadioUX.redDeep) {
-                Icon(.heart, size: 20, color: .white)
+                Icon(.heart, size: 22, color: .white)
             } action: { fire("heart", emoji: "❤️") }
             ReactionButton(tint: RadioUX.gold) {
-                Icon(.handHeart, size: 20, color: .white)
+                Icon(.handHeart, size: 22, color: .white)
             } action: { fire("amen", emoji: "🙏") }
             ReactionButton(tint: RadioUX.indigoSoft) {
                 Text("🙌").font(.emoji(18))
@@ -1687,7 +1687,7 @@ private struct RecordingRow: View {
                 if downloading {
                     ProgressView().tint(.white).scaleEffect(0.7)
                 } else {
-                    Icon(.download, size: 15, color: .white)
+                    Icon(.download, size: 14, color: .white)
                 }
             }
             .frame(width: 36, height: 36)
@@ -1806,7 +1806,7 @@ private struct ScheduleTabView: View {
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(RadioUX.gold.opacity(0.2), in: Capsule())
             case .upcoming:
-                Icon(.clock, size: 13, color: .white.opacity(0.35))
+                Icon(.clock, size: 14, color: .white.opacity(0.35))
             case .done:
                 Text("Aired").font(.inter(11, .bold))
                     .foregroundStyle(.white.opacity(0.35))

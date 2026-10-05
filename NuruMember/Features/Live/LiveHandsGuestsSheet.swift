@@ -48,7 +48,7 @@ struct LiveHandsGuestsSheet: View {
                         Haptics.tap()
                         dismiss()
                     } label: {
-                        Icon(.x, size: 15, color: Nuru.ink600)
+                        Icon(.x, size: 14, color: Nuru.ink600)
                             .frame(width: 30, height: 30)
                             .background(Nuru.white, in: Circle())
                     }

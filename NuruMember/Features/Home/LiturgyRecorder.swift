@@ -251,7 +251,7 @@ struct LiturgyRecordSheet: View {
                         Haptics.tap(); model.redo()
                     } label: {
                         HStack(spacing: 6) {
-                            Icon(.mic, size: 12, color: Nuru.ink)
+                            Icon(.mic, size: 14, color: Nuru.ink)
                             Text("Redo").font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -411,14 +411,14 @@ struct LiturgyRecordingsSheet: View {
                     Button {
                         Haptics.tap(); deleteTarget = row.band
                     } label: {
-                        Icon(.trash2, size: 15, color: .red.opacity(0.75))
+                        Icon(.trash2, size: 14, color: .red.opacity(0.75))
                     }
                     .buttonStyle(.pressable)
                 }
                 Button {
                     Haptics.tap(); recordTarget = row.band
                 } label: {
-                    Icon(.mic, size: 15, color: Nuru.goldChipText)
+                    Icon(.mic, size: 14, color: Nuru.goldChipText)
                         .frame(width: 30, height: 30)
                         .background(Nuru.verseBg, in: Circle())
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))

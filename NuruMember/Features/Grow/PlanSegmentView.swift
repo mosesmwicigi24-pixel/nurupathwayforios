@@ -334,7 +334,7 @@ struct PlanSegmentView: View {
             } label: {
                 HStack(spacing: 8) {
                     if saving { ProgressView().tint(PL.navy) }
-                    else { Icon(.check, size: 15, color: PL.navy) }
+                    else { Icon(.check, size: 14, color: PL.navy) }
                     Text(done ? "Done" : finishLabel)
                         .font(.inter(14, .bold)).foregroundStyle(PL.navy)
                 }
@@ -413,7 +413,7 @@ struct PlanSegmentView: View {
                 Spacer(minLength: 0)
                 Button { openURL(url) } label: {
                     HStack(spacing: 8) {
-                        Icon(.play, size: 16, color: PL.navy)
+                        Icon(.play, size: 18, color: PL.navy)
                         Text("Start playing").font(.inter(16, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity).frame(height: 52)
@@ -454,7 +454,7 @@ private struct PartReflectionBox: View {
                 Spacer(minLength: 0)
                 if justSaved {
                     HStack(spacing: 4) {
-                        Icon(.check, size: 11, color: Color(hex: 0x16A34A))
+                        Icon(.check, size: 14, color: Color(hex: 0x16A34A))
                         Text("Saved").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
@@ -497,8 +497,8 @@ private struct PartReflectionBox: View {
             } label: {
                 HStack(spacing: 6) {
                     if saving { ProgressView().tint(pal.goldDeep) }
-                    else if justSaved { Icon(.check, size: 13, color: pal.goldDeep) }
-                    else { Icon(.pencil, size: 13, color: pal.goldDeep) }
+                    else if justSaved { Icon(.check, size: 14, color: pal.goldDeep) }
+                    else { Icon(.pencil, size: 14, color: pal.goldDeep) }
                     Text(justSaved ? "Saved" : (saved == nil ? "Save reflection" : "Update"))
                         .font(.inter(12, .bold)).foregroundStyle(pal.goldDeep)
                 }
@@ -736,7 +736,7 @@ struct TalkItOverView: View {
                 Color.clear.frame(width: 36, height: 36)
             }
             HStack(spacing: 12) {
-                Icon(.users, size: 16, color: PL.gold)
+                Icon(.users, size: 18, color: PL.gold)
                     .frame(width: 40, height: 40)
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
@@ -868,7 +868,7 @@ struct TalkItOverView: View {
             Button { send() } label: {
                 Group {
                     if posting { ProgressView().tint(PL.navy) }
-                    else { Icon(.send, size: 16, color: PL.navy) }
+                    else { Icon(.send, size: 18, color: PL.navy) }
                 }
                 .frame(width: 42, height: 42)
                 .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -954,7 +954,7 @@ struct TalkItOverView: View {
             } label: {
                 HStack(spacing: 8) {
                     if sealing { ProgressView().tint(PL.navy) }
-                    else { Icon(.check, size: 15, color: PL.navy) }
+                    else { Icon(.check, size: 14, color: PL.navy) }
                     Text("I've talked it over").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                 }
                 .frame(maxWidth: .infinity, minHeight: 52)

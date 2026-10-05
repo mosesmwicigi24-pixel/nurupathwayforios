@@ -61,8 +61,7 @@ struct PrayerRoomView: View {
                 HStack(alignment: .top) {
                     NuruHeaderText(kicker: "Pray", title: "My Prayer Room")
                     Spacer(minLength: 0)
-                    NuruBell(look: .init(size: 44, circle: false, iconSize: 18, iconColor: Nuru.navy,
-                                         fill: .white, stroke: Nuru.border))
+                    NuruBell()
                 }
             } else {
             HStack(alignment: .center, spacing: Nuru.S.sm) {

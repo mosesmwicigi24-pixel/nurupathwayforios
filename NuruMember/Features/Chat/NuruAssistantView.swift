@@ -157,13 +157,13 @@ struct NuruAssistantView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button { dismiss() } label: {
-                Icon(.chevronLeft, size: 23, color: .white)
+                Icon(.chevronLeft, size: 22, color: .white)
                     .frame(width: 40, height: 40)
                     .contentShape(Rectangle())
             }.buttonStyle(.pressable)
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NUR.orb).frame(width: 44, height: 44)
-                    .overlay(Icon(.sparkles, size: 19, color: .white))
+                    .overlay(Icon(.sparkles, size: 18, color: .white))
                     .shadow(color: NUR.purple.opacity(0.7), radius: 8, y: 4)
                 Circle().fill(NUR.green).frame(width: 12, height: 12)
                     .overlay(Circle().stroke(Color(hex: 0x0A1628), lineWidth: 2)).offset(x: 3, y: -3)
@@ -179,7 +179,7 @@ struct NuruAssistantView: View {
             }
             Spacer(minLength: 0)
             Button { dismiss() } label: {
-                Icon(.x, size: 16, color: .white).frame(width: 36, height: 36)
+                Icon(.x, size: 18, color: .white).frame(width: 36, height: 36)
                     .background(Color.white.opacity(0.10), in: Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                     .frame(width: 44, height: 44)     // full-size hit target
@@ -266,7 +266,7 @@ struct NuruAssistantView: View {
 
     private var orbAvatar: some View {
         Circle().fill(NUR.orb).frame(width: 28, height: 28)
-            .overlay(Icon(.sparkles, size: 12, color: .white))
+            .overlay(Icon(.sparkles, size: 14, color: .white))
             .overlay(Circle().stroke(Color.white, lineWidth: 2))
     }
     private var meAvatar: some View {
@@ -310,7 +310,7 @@ struct NuruAssistantView: View {
                 Haptics.action()
                 Task { await vm.send() }
             } label: {
-                Icon(.send, size: 17, color: .white)
+                Icon(.send, size: 18, color: .white)
                     .frame(width: 44, height: 44).background(NUR.sendG, in: Circle())
                     .shadow(color: NUR.purple.opacity(0.5), radius: 8, y: 4)
             }

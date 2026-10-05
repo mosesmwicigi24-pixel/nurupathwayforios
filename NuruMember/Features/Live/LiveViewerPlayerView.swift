@@ -697,7 +697,7 @@ struct LiveViewerPlayerView: View {
             guestBannerCollapsed = false
         } label: {
             HStack(spacing: 6) {
-                Icon(.handHeart, size: 12, color: Nuru.navy)
+                Icon(.handHeart, size: 14, color: Nuru.navy)
                 Text("Invited on stage")
                     .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
             }
@@ -792,7 +792,7 @@ struct LiveViewerPlayerView: View {
             // 44pt — owner's tap-target floor, honored for every control on
             // this screen, top row included (the old close ✕ was 38pt).
             Button { Haptics.tap(); dismiss() } label: {
-                Icon(.x, size: 15, color: .white)
+                Icon(.x, size: 14, color: .white)
                     .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.18), in: Circle())
             }

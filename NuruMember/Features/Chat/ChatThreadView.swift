@@ -582,7 +582,7 @@ struct ChatThreadView: View {
             // admin, no leader, nobody else can open it.
             if let label = vm.privacyLabel {
                 HStack(spacing: 6) {
-                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Icon(.lock, size: 14, color: Nuru.goldChipText)
                     Text(label)
                         .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
@@ -591,7 +591,7 @@ struct ChatThreadView: View {
                 .background(Nuru.goldChipBg)
             } else if vm.isPastorMail || vm.context == .pastoral {
                 HStack(spacing: 6) {
-                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Icon(.lock, size: 14, color: Nuru.goldChipText)
                     Text("Only \(vm.title) sees your reply")
                         .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
@@ -818,7 +818,7 @@ private struct ThreadHeader: View {
 
     private func topicStrip(_ topic: String) -> some View {
         HStack(spacing: 6) {
-            Icon(.flag, size: 13, color: Color(hex: 0x59667C))
+            Icon(.flag, size: 14, color: Color(hex: 0x59667C))
             Text(topic).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineLimit(1)
             Spacer()
         }
@@ -961,7 +961,7 @@ private struct JumpToLatestButton: View {
 
     var body: some View {
         Button(action: action) {
-            Icon(.chevronDown, size: 16, color: Aurora.navy)
+            Icon(.chevronDown, size: 18, color: Aurora.navy)
                 .frame(width: 40, height: 40)
                 .background(Color.white, in: Circle())
                 .overlay(Circle().stroke(Aurora.border, lineWidth: 1))
@@ -1676,7 +1676,7 @@ private struct ComposerBar: View {
                 voiceSendFailed = false
                 voiceFailLine = nil
             } label: {
-                Icon(.x, size: 17, color: Aurora.meta)
+                Icon(.x, size: 18, color: Aurora.meta)
                     .frame(width: 36, height: 36)
                     .background(Nuru.paper, in: Circle())
             }
@@ -1764,7 +1764,7 @@ private struct ComposerBar: View {
 
     private var inputPill: some View {
         HStack(alignment: .bottom, spacing: Nuru.S.sm) {
-            Icon(.plus, size: 19, color: Aurora.meta).padding(.bottom, 9)
+            Icon(.plus, size: 18, color: Aurora.meta).padding(.bottom, 9)
             TextField("Message", text: $draft, axis: .vertical)
                 .font(.inter(12))
                 .foregroundStyle(Aurora.navy)
@@ -1776,7 +1776,7 @@ private struct ComposerBar: View {
                 draft = text
             }
             .padding(.bottom, 5)
-            Icon(.smile, size: 19, color: Aurora.meta).padding(.bottom, 9)
+            Icon(.smile, size: 18, color: Aurora.meta).padding(.bottom, 9)
         }
         .padding(.horizontal, Nuru.S.md)
         .background(Nuru.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))

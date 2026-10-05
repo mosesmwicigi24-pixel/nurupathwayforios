@@ -129,7 +129,7 @@ struct ResourcesLibraryView: View {
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Icon(.search, size: 15, color: RES.hint)
+            Icon(.search, size: 14, color: RES.hint)
             TextField("", text: $query, prompt: Text("Search books, audio, sermons…").foregroundColor(RES.hint))
                 .font(.inter(13)).foregroundStyle(RES.navy)
             if !query.isEmpty {

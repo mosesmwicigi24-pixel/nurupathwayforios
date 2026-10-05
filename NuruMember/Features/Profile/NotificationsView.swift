@@ -163,7 +163,7 @@ struct NotificationsView: View {
     private var topBar: some View {
         HStack(spacing: Nuru.S.md) {
             Button { dismiss() } label: {
-                Icon(.chevronLeft, size: 20, color: Nuru.navy)
+                Icon(.chevronLeft, size: 22, color: Nuru.navy)
                     .frame(width: 40, height: 40).background(Nuru.mutedBg, in: Circle())
             }
             VStack(alignment: .leading, spacing: 0) {
@@ -175,7 +175,7 @@ struct NotificationsView: View {
                         .animation(.easeInOut(duration: 0.25), value: vm.unread)
                     if rewardUnread > 0 {
                         HStack(spacing: 3) {
-                            Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
+                            Icon(.gift, size: 14, color: Color(hex: 0x9A7A2A))
                             Text("\(rewardUnread) \(rewardUnread == 1 ? "gift" : "gifts")")
                                 .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         }
@@ -193,8 +193,8 @@ struct NotificationsView: View {
                     HStack(spacing: 4) {
                         // Figma's CheckCheck (double tick) — composed from two check glyphs.
                         ZStack {
-                            Icon(.check, size: 13, color: Nuru.goldHi).offset(x: -3)
-                            Icon(.check, size: 13, color: Nuru.goldHi).offset(x: 3)
+                            Icon(.check, size: 14, color: Nuru.goldHi).offset(x: -3)
+                            Icon(.check, size: 14, color: Nuru.goldHi).offset(x: 3)
                         }
                         .frame(width: 18)
                         Text("Mark all read")
@@ -236,8 +236,8 @@ struct NotificationsView: View {
                 Circle().fill(Self.lumGreen).frame(width: 7, height: 7)
                     .shadow(color: Self.lumGreen.opacity(0.8), radius: 3)
                 ZStack {
-                    Icon(.check, size: 12, color: Self.lumGreen).offset(x: -2.5)
-                    Icon(.check, size: 12, color: Self.lumGreen).offset(x: 2.5)
+                    Icon(.check, size: 14, color: Self.lumGreen).offset(x: -2.5)
+                    Icon(.check, size: 14, color: Self.lumGreen).offset(x: 2.5)
                 }
                 .frame(width: 17)
             }
@@ -260,7 +260,7 @@ struct NotificationsView: View {
                     Icon(meta.icon, size: 18, color: reward ? Nuru.navy : meta.fg)
                 }
                 if reward {
-                    Icon(.sparkles, size: 9, color: Nuru.gold)
+                    Icon(.sparkles, size: 14, color: Nuru.gold)
                         .frame(width: 16, height: 16)
                         .background(Color.white, in: Circle())
                         .shadow(color: .black.opacity(0.3), radius: 3, y: 1)
@@ -288,7 +288,7 @@ struct NotificationsView: View {
                 }
                 if reward && unread {
                     HStack(spacing: 4) {
-                        Icon(.gift, size: 10, color: Color(hex: 0x9A7A2A))
+                        Icon(.gift, size: 14, color: Color(hex: 0x9A7A2A))
                         Text("Tap to open your gift").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)

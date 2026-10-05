@@ -820,18 +820,18 @@ struct HomeView: View {
                     Haptics.tap()
                     showServiceScanner = true
                 } label: {
-                    Icon(.qrCode, size: 18, color: Color(hex: 0xA8861C))
-                        .frame(width: 40, height: 40)
-                        .background(Color(hex: 0xFFF4DA), in: Circle())
-                        .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+                    // The bell's look and size beside it (§8.1 rule 7).
+                    Icon(.qrCode, size: 18, color: Nuru.navy)
+                        .frame(width: 44, height: 44)
+                        .background(Nuru.white, in: Circle())
+                        .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .accessibilityLabel("Scan to check in")
                 .padding(.trailing, 8)
                 // The one bell (§7.2 #4): the inbox, and a gold dot only while
                 // something in it is unread (it used to carry a count here).
-                NuruBell(look: .init(size: 40, circle: true, iconSize: 18, iconColor: Color(hex: 0xA8861C),
-                                     fill: Color(hex: 0xFFF4DA), stroke: Nuru.gold.opacity(0.35)))
+                NuruBell()
                 // Radio used to sit here. It moved out so the resting header is
                 // three buttons (scan · bell · ring) rather than five — it is
                 // still reachable from the On Air card below, the Community hub
@@ -1034,7 +1034,7 @@ struct HomeView: View {
                         .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
-                    Icon(.mail, size: 19, color: Color(hex: 0x1E2A1F))
+                    Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
@@ -1075,7 +1075,7 @@ struct HomeView: View {
                 ZStack {
                     Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.85))
                         .frame(width: 38, height: 38)
-                    Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
+                    Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
@@ -1434,7 +1434,7 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                     Button { Haptics.tap(); sharePayload = SharePayload(text: videoShareText(v)) } label: {
                         HStack(spacing: 5) {
-                            Icon(.share2, size: 13, color: Nuru.ink600)
+                            Icon(.share2, size: 14, color: Nuru.ink600)
                             Text("Share").font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -1528,7 +1528,7 @@ struct HomeView: View {
             } else {
                 // No art (offline first paint / older backend): the classic cream reading.
                 HStack(spacing: 6) {
-                    Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
+                    Icon(.bookOpen, size: 14, color: Nuru.goldChipText)
                     Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
                     Text((vm.verse?.version ?? "WEB").uppercased())
@@ -1575,7 +1575,7 @@ struct HomeView: View {
                 // prayers and reactions, so it reads as a personal choosing,
                 // not an algorithm's footnote.
                 HStack(spacing: 6) {
-                    Icon(.sparkles, size: 12, color: Nuru.goldChipText)
+                    Icon(.sparkles, size: 14, color: Nuru.goldChipText)
                     Text("Chosen for your season — \(reason)")
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -1690,7 +1690,7 @@ struct HomeView: View {
     private func sectionLink(_ label: String) -> some View {
         HStack(spacing: 3) {
             Text(label).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
-            Icon(.chevronRight, size: 11, color: Nuru.goldChipText)
+            Icon(.chevronRight, size: 14, color: Nuru.goldChipText)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Nuru.goldChipBg, in: Capsule())
@@ -1769,7 +1769,7 @@ struct HomeView: View {
             // or replied: no zero counts (§7.4 #9).
             if let counts = ZeroCounts.prayerLine(praying: post.prayCount, replies: post.commentCount ?? 0) {
                 HStack(spacing: 5) {
-                    Icon(.handHeart, size: 13, color: Nuru.goldChipText)
+                    Icon(.handHeart, size: 14, color: Nuru.goldChipText)
                     Text(counts)
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }
@@ -1915,7 +1915,7 @@ struct HomeView: View {
                     Spacer()
                     HStack(spacing: 3) {
                         Text(cta).font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
-                        Icon(.chevronRight, size: 13, color: Nuru.gold)
+                        Icon(.chevronRight, size: 14, color: Nuru.gold)
                     }
                 }
             }
@@ -1941,7 +1941,7 @@ struct HomeView: View {
                     .font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
                 Spacer()
                 HStack(spacing: 4) {
-                    Icon(.flame, size: 12, color: Nuru.goldChipText)
+                    Icon(.flame, size: 14, color: Nuru.goldChipText)
                     Text(displayStreak > 0 ? "\(displayStreak)-day streak" : "Start today")
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                         .contentTransition(.numericText())
@@ -2071,7 +2071,7 @@ struct HomeView: View {
                 // Level 2", "Take the Level 1 exam") — never "0 modules left".
                 let line = j.progressLine
                 HStack(spacing: Nuru.S.sm) {
-                    Icon(.target, size: 16, color: Nuru.goldChipText)
+                    Icon(.target, size: 18, color: Nuru.goldChipText)
                         .frame(width: 30, height: 30)
                         .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     (Text(line.bold).font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
@@ -2156,7 +2156,7 @@ struct HomeView: View {
                             .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: HomeFig.faintGray)
+                    Icon(.chevronRight, size: 18, color: HomeFig.faintGray)
                 }
                 .padding(Nuru.S.md)
                 .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

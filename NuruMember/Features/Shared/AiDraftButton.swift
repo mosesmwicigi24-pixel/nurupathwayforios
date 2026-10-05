@@ -36,7 +36,7 @@ struct AiDraftButton: View {
                 if busy {
                     ProgressView().tint(.white).scaleEffect(0.55)
                 } else {
-                    Icon(.sparkles, size: 15, color: .white)
+                    Icon(.sparkles, size: 14, color: .white)
                 }
             }
             .frame(width: 30, height: 30)
@@ -55,7 +55,7 @@ struct AiDraftButton: View {
             HStack(spacing: 8) {
                 Circle().fill(orb)
                     .frame(width: 22, height: 22)
-                    .overlay(Icon(.sparkles, size: 12, color: .white))
+                    .overlay(Icon(.sparkles, size: 14, color: .white))
                 Text("NURU SUGGESTS")
                     .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
             }

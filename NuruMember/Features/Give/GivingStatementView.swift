@@ -307,7 +307,7 @@ struct GivingStatementView: View {
         VStack(spacing: Nuru.S.sm) {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.1)).frame(width: 48, height: 48)
-                Icon(.handHeart, size: 20, color: Nuru.gold)
+                Icon(.handHeart, size: 22, color: Nuru.gold)
             }
             Text("No gifts yet").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
             Text("When you give, your full record and receipts live here.")
@@ -666,7 +666,7 @@ struct GivingStatementView: View {
     private var partnersStatementLabel: some View {
         HStack(spacing: 4) {
             Text("Partners statement").font(.inter(13, .semibold))
-            Icon(.arrowRight, size: 12, color: Nuru.gold)
+            Icon(.arrowRight, size: 14, color: Nuru.gold)
         }
         .foregroundStyle(Nuru.gold)
         .frame(maxWidth: .infinity)

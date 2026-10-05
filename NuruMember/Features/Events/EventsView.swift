@@ -439,8 +439,7 @@ struct EventsView: View {
                 Spacer()
                 // The one bell (§7.2 #4): the dot only while the inbox has
                 // something unread (it was painted on).
-                NuruBell(look: .init(size: 44, circle: false, iconSize: 19, iconColor: Nuru.navy,
-                                     fill: .white, stroke: Nuru.border))
+                NuruBell()
             }
             // The counts only when there is something to count — a quiet
             // week's header line already says it.
@@ -570,7 +569,7 @@ struct EventsView: View {
                 .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
             Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+            Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
         }
         .padding(.horizontal, Nuru.S.base).padding(.vertical, 12)
         .contentShape(Rectangle())
@@ -681,7 +680,7 @@ struct EventsView: View {
 
     private var searchBar: some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.search, size: 15, color: Color(hex: 0x74808F))
+            Icon(.search, size: 14, color: Color(hex: 0x74808F))
             TextField("Search events by name or place", text: $vm.search)
                 .font(.inter(13))
                 .foregroundStyle(Nuru.navy)
@@ -692,7 +691,7 @@ struct EventsView: View {
                     Haptics.tap()
                     vm.search = ""
                 } label: {
-                    Icon(.x, size: 15, color: Color(hex: 0x74808F))
+                    Icon(.x, size: 14, color: Color(hex: 0x74808F))
                         .frame(width: 28, height: 28)          // comfortable tap target
                         .contentShape(Rectangle())
                 }
@@ -740,7 +739,7 @@ struct EventsView: View {
                 NavigationLink(value: EventsNav.calendar) {
                     HStack(spacing: 3) {
                         Text("All & calendar").font(.inter(11, .semibold)).foregroundStyle(Nuru.navy)
-                        Icon(.chevronRight, size: 12, color: Nuru.navy)
+                        Icon(.chevronRight, size: 14, color: Nuru.navy)
                     }
                 }
                 .buttonStyle(.plain)
@@ -796,13 +795,13 @@ struct EventsView: View {
         VStack(spacing: Nuru.S.sm) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.surface).frame(width: 48, height: 48)
-                Icon(.calendarDays, size: 20, color: Nuru.gold)
+                Icon(.calendarDays, size: 22, color: Nuru.gold)
             }
             Text(vm.emptyTitle).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
             Text(vm.emptyCaption).font(.nCardMeta).foregroundStyle(Nuru.faint).multilineTextAlignment(.center)
             NavigationLink(value: EventsNav.calendar) {
                 HStack(spacing: 6) {
-                    Icon(.calendarDays, size: 13, color: .white)
+                    Icon(.calendarDays, size: 14, color: .white)
                     Text("View calendar").font(.inter(11, .semibold)).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 16).padding(.vertical, 8)
@@ -1087,7 +1086,7 @@ private struct AnnouncementRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 5) {
                     Text(announcement.title).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
-                    Icon(.badgeCheck, size: 12, color: Nuru.gold)
+                    Icon(.badgeCheck, size: 14, color: Nuru.gold)
                 }
                 Text(announcement.body).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
             }
@@ -1110,10 +1109,10 @@ private struct AnnouncementRow: View {
             if let url = announcement.primaryImageUrl.flatMap(URL.init) {
                 CachedAsyncImage(url: url) { p in
                     if let img = p.image { img.resizable().scaledToFill() }
-                    else { Icon(.megaphone, size: 15, color: Nuru.gold) }
+                    else { Icon(.megaphone, size: 14, color: Nuru.gold) }
                 }
             } else {
-                Icon(.megaphone, size: 15, color: Nuru.gold)
+                Icon(.megaphone, size: 14, color: Nuru.gold)
             }
         }
         .frame(width: 36, height: 36)
@@ -1205,7 +1204,7 @@ private struct EvCardCover: View {
         if !live, let label = Ev.dayCountdown(occ.startAt) {
             let urgent = label == "Today" || label == "Tomorrow"
             HStack(spacing: 4) {
-                Icon(.clock, size: 10, color: urgent ? Nuru.navy : Nuru.goldLight)
+                Icon(.clock, size: 14, color: urgent ? Nuru.navy : Nuru.goldLight)
                 Text(label).font(.inter(11, .bold)).foregroundStyle(urgent ? Nuru.navy : .white)
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
@@ -1287,7 +1286,7 @@ private struct EvCardFooter: View {
                 }
             }
         } else {
-            Icon(.users, size: 13, color: Nuru.ink600)
+            Icon(.users, size: 14, color: Nuru.ink600)
         }
     }
 
@@ -1310,7 +1309,7 @@ private struct EvCardFooter: View {
         switch rsvpStatus {
         case "going":
             HStack(spacing: 4) {
-                Icon(.check, size: 11, color: Nuru.navy)
+                Icon(.check, size: 14, color: Nuru.navy)
                 Text("GOING").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -1321,7 +1320,7 @@ private struct EvCardFooter: View {
                 .background(Color(hex: 0xFEF3C7), in: Capsule())
         default:
             HStack(spacing: 4) {
-                Icon(.plus, size: 11, color: Nuru.navy)
+                Icon(.plus, size: 14, color: Nuru.navy)
                 Text("RSVP").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
@@ -1489,7 +1488,7 @@ private struct SeriesListPage: View {
         VStack(spacing: Nuru.S.sm) {
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.surface).frame(width: 48, height: 48)
-                Icon(.sparkles, size: 20, color: Nuru.gold)
+                Icon(.sparkles, size: 22, color: Nuru.gold)
             }
             Text(discover ? "You follow every series — amen!" : "You're not following any series yet")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
@@ -1548,7 +1547,7 @@ private struct SeriesListRow: View {
                 Text(series.cadenceLine).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
                 if let next = series.nextAt {
                     HStack(spacing: 4) {
-                        Icon(.calendarDays, size: 10, color: Nuru.faint)
+                        Icon(.calendarDays, size: 14, color: Nuru.faint)
                         Text("Next \(Ev.weekday(next, "EEE, MMM d"))").font(.inter(11)).foregroundStyle(Nuru.faint)
                     }
                 }

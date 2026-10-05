@@ -274,7 +274,7 @@ struct DepartmentDetailView: View {
                         Spacer(minLength: 8)
                     }
                     HStack(spacing: 4) {
-                        Icon(.users, size: 12, color: Nuru.ink400)
+                        Icon(.users, size: 14, color: Nuru.ink400)
                         Text(r.memberCount == 1 ? "1 serving" : "\(r.memberCount) serving")
                             .font(.nCaption).foregroundStyle(Nuru.ink600)
                     }
@@ -301,7 +301,7 @@ struct DepartmentDetailView: View {
         if r.isActiveMember {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Icon(.circleCheckBig, size: 15, color: Nuru.success)
+                    Icon(.circleCheckBig, size: 14, color: Nuru.success)
                     Text(isLeader ? "You lead this team." : "You serve here.")
                         .font(.inter(13, .semibold)).foregroundStyle(Nuru.successText)
                 }
@@ -316,7 +316,7 @@ struct DepartmentDetailView: View {
             .background(Nuru.successBg.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         } else if r.isRequested {
             HStack(spacing: 8) {
-                Icon(.clock, size: 15, color: Nuru.urgentText)
+                Icon(.clock, size: 14, color: Nuru.urgentText)
                 Text("Requested — waiting for the leader")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.urgentText)
             }
@@ -387,7 +387,7 @@ struct DepartmentDetailView: View {
             if d.isLeader {
                 Button { Haptics.tap(); showComposer = true } label: {
                     HStack(spacing: 6) {
-                        Icon(.penLine, size: 13, color: Nuru.navy)
+                        Icon(.penLine, size: 14, color: Nuru.navy)
                         Text("Write a post").font(.inter(13, .bold))
                     }
                     .foregroundStyle(Nuru.navy)
@@ -457,7 +457,7 @@ struct DepartmentDetailView: View {
             if d.isLeader {
                 Button { Haptics.tap(); showNeedForm = true } label: {
                     HStack(spacing: 6) {
-                        Icon(.plus, size: 13, color: Nuru.navy)
+                        Icon(.plus, size: 14, color: Nuru.navy)
                         Text("Submit a need").font(.inter(13, .bold))
                     }
                     .foregroundStyle(Nuru.navy)
@@ -524,7 +524,7 @@ struct DepartmentDetailView: View {
 
             HStack(spacing: 6) {
                 if let dl = n.deadline, !dl.isEmpty {
-                    Icon(.calendar, size: 11, color: Nuru.ink400)
+                    Icon(.calendar, size: 14, color: Nuru.ink400)
                     Text("by \(formatISODay(dl) ?? String(dl.prefix(10)))").font(.nCaption).foregroundStyle(Nuru.ink600)
                 }
                 if let who = n.submittedName, !who.isEmpty, n.isPending {
@@ -547,7 +547,7 @@ struct DepartmentDetailView: View {
                                                      currency: n.currency))
                 } label: {
                     HStack(spacing: 6) {
-                        Icon(.handHeart, size: 13, color: Nuru.navy)
+                        Icon(.handHeart, size: 14, color: Nuru.navy)
                         Text("Give to this need").font(.inter(13, .bold))
                     }
                     .foregroundStyle(Nuru.navy)
@@ -592,7 +592,7 @@ struct DepartmentDetailView: View {
                                 if m.isLeader {
                                     ZStack {
                                         Circle().fill(Nuru.gold).frame(width: 18, height: 18)
-                                        Icon(.badgeCheck, size: 10, color: .white)
+                                        Icon(.badgeCheck, size: 14, color: .white)
                                     }
                                     .overlay(Circle().stroke(.white, lineWidth: 1.5))
                                     .offset(x: 2, y: 2)

@@ -222,7 +222,7 @@ struct ProfileView: View {
                             }
                         ZStack {
                             Circle().fill(Nuru.gold).frame(width: 28, height: 28)
-                            Icon(.pencil, size: 11, color: Nuru.navy)
+                            Icon(.pencil, size: 14, color: Nuru.navy)
                         }
                         .overlay(Circle().stroke(Color.white, lineWidth: 2))
                         .offset(x: 3, y: 3)
@@ -246,7 +246,7 @@ struct ProfileView: View {
                     // noticed they were stuck.
                     if let level = auth.me?.enrollment?.currentLevel {
                         HStack(spacing: 4) {
-                            Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
+                            Icon(.award, size: 14, color: Color(hex: 0x9A7A2A))
                             Text("Level \(level)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -289,7 +289,7 @@ struct ProfileView: View {
                         .fill(Nuru.gold.opacity(0.18))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
                         .frame(width: 44, height: 44)
-                    Icon(.users, size: 19, color: Nuru.gold)
+                    Icon(.users, size: 18, color: Nuru.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SHEPHERD THE FLOCK")
@@ -300,7 +300,7 @@ struct ProfileView: View {
                         .font(.inter(11)).foregroundStyle(Nuru.onNavyDim)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: Nuru.onNavyFaint)
+                Icon(.chevronRight, size: 18, color: Nuru.onNavyFaint)
             }
             .padding(Nuru.S.base)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -477,7 +477,7 @@ struct ProfileView: View {
             // Quiet mode — for those who'd rather walk without a visible streak.
             Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.sm)
             HStack(spacing: 10) {
-                Icon(.moon, size: 15, color: Nuru.gold)
+                Icon(.moon, size: 14, color: Nuru.gold)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Quiet mode").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text("Hide my streak — just walk with God").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
@@ -615,7 +615,7 @@ struct ProfileView: View {
                                 }
                                 .frame(height: 5)
                             }
-                            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+                            Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
                         }
                         .padding(.vertical, 8)
                         .contentShape(Rectangle())
@@ -730,7 +730,7 @@ struct ProfileView: View {
         HStack(spacing: 4) {
             Text(text).font(.inter(11, isDefault ? .semibold : .medium))
                 .foregroundStyle(isDefault ? Color(hex: 0x8A6D18) : Nuru.navy)
-            if isDefault { Icon(.check, size: 10, color: Color(hex: 0x8A6D18)) }
+            if isDefault { Icon(.check, size: 14, color: Color(hex: 0x8A6D18)) }
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(isDefault ? Nuru.gold.opacity(0.12) : Nuru.surface, in: Capsule())
@@ -942,7 +942,7 @@ private struct BadgeDetailSheet: View {
                 HStack(spacing: 6) {
                     if badge.earned {
                         HStack(spacing: 4) {
-                            Icon(.check, size: 11, color: Color(hex: 0x16A34A))
+                            Icon(.check, size: 14, color: Color(hex: 0x16A34A))
                             Text("Earned" + ((badge.awardedAt.flatMap { $0.isEmpty ? nil : formatISODay($0) }).map { " \($0)" } ?? ""))
                                 .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x16A34A))
                         }
@@ -950,7 +950,7 @@ private struct BadgeDetailSheet: View {
                         .background(Color(hex: 0x16A34A).opacity(0.09), in: Capsule())
                     } else {
                         HStack(spacing: 4) {
-                            Icon(.lock, size: 10, color: Color(hex: 0x74808F))
+                            Icon(.lock, size: 14, color: Color(hex: 0x74808F))
                             Text("Locked").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x74808F))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 3)
@@ -1103,7 +1103,7 @@ private struct CertificateCardView: View {
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
                         .frame(width: 44, height: 44)
-                    Icon(.award, size: 20, color: Nuru.gold)
+                    Icon(.award, size: 22, color: Nuru.gold)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(cert.title).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
@@ -1128,7 +1128,7 @@ private struct CertificateCardView: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Icon(.fingerprint, size: 13, color: Color(hex: 0x74808F))
+                    Icon(.fingerprint, size: 14, color: Color(hex: 0x74808F))
                     Text(cert.verificationCode)
                         .font(.inter(12, .semibold).monospacedDigit())
                         .kerning(0.5).foregroundStyle(Nuru.navy)
@@ -1149,7 +1149,7 @@ private struct CertificateCardView: View {
                 // Trust chip → live verification against the public endpoint.
                 Button { Haptics.tap(); onVerify() } label: {
                     HStack(spacing: 4) {
-                        Icon(.shieldCheck, size: 13, color: Color(hex: 0x8A6D18))
+                        Icon(.shieldCheck, size: 14, color: Color(hex: 0x8A6D18))
                         Text("Signed · Verify").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
                     }
                     .frame(maxWidth: .infinity).frame(height: 36)
@@ -1291,7 +1291,7 @@ private struct VerifyCertificateSheet: View {
                     }
 
                     HStack(spacing: 4) {
-                        Icon(.lock, size: 11, color: Color(hex: 0x74808F))
+                        Icon(.lock, size: 14, color: Color(hex: 0x74808F))
                         Text("Anyone can confirm this at pathway.nuruplace.org/v1/verify/\(cert.verificationCode)")
                             .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                     }
@@ -1363,7 +1363,7 @@ private struct EditFieldSheet: View {
                                 HStack {
                                     Text(opt.label).font(.inter(14, .medium)).foregroundStyle(Nuru.navy)
                                     Spacer()
-                                    if selected == opt.value { Icon(.check, size: 16, color: Nuru.gold) }
+                                    if selected == opt.value { Icon(.check, size: 18, color: Nuru.gold) }
                                 }
                                 .padding(12)
                                 .background(selected == opt.value ? Nuru.gold.opacity(0.09) : Nuru.surface,
@@ -1486,7 +1486,7 @@ struct PSheetShell<Content: View>: View {
                 Button { dismiss() } label: {
                     ZStack {
                         Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                        Icon(.x, size: 16, color: Nuru.navy)
+                        Icon(.x, size: 18, color: Nuru.navy)
                     }
                 }.buttonStyle(.plain)
             }

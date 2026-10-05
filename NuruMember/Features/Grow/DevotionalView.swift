@@ -160,7 +160,7 @@ private struct VerseCard: View {
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
-                    Icon(.quote, size: 12, color: Nuru.gold)
+                    Icon(.quote, size: 14, color: Nuru.gold)
                     Text(reference.uppercased())
                         .font(.nCardKicker).kerning(1.4)
                         .foregroundStyle(Color(hex: 0xA8861C))
@@ -231,7 +231,7 @@ private struct ReflectionCard: View {
                     Spacer()
                     if saved {
                         HStack(spacing: 4) {
-                            Icon(.check, size: 10, color: Nuru.gold)
+                            Icon(.check, size: 14, color: Nuru.gold)
                             Text("Submitted").font(.inter(11, .bold)).foregroundStyle(Nuru.gold)
                         }
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
@@ -366,7 +366,7 @@ private struct FooterActions: View {
 private struct EncouragementStrip: View {
     var body: some View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
-            Icon(.handHeart, size: 16, color: Nuru.gold)
+            Icon(.handHeart, size: 18, color: Nuru.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
                 .font(.nCardBody)
                 .foregroundStyle(Nuru.navy)

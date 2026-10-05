@@ -756,7 +756,7 @@ struct GivingView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold)
                         .frame(width: 36, height: 36)
-                    Icon(.repeat, size: 16, color: Nuru.navy)
+                    Icon(.repeat, size: 18, color: Nuru.navy)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -868,7 +868,7 @@ struct GivingView: View {
                 showKeypad = true
             } label: {
                 HStack(spacing: 6) {
-                    Icon(.pencil, size: 13, color: Nuru.gold)
+                    Icon(.pencil, size: 14, color: Nuru.gold)
                     Text("Enter a custom amount").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
                 }
                 .frame(maxWidth: .infinity).frame(height: 38)
@@ -932,7 +932,7 @@ struct GivingView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold)
                     .frame(width: 36, height: 36)
-                Icon(.repeat, size: 16, color: Nuru.navy)
+                Icon(.repeat, size: 18, color: Nuru.navy)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(totalLabel) every \(cadenceWord)")
@@ -971,7 +971,7 @@ struct GivingView: View {
                     ZStack {
                         RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold.opacity(0.14))
                             .frame(width: 36, height: 36)
-                        Icon(.repeat, size: 15, color: Nuru.gold)
+                        Icon(.repeat, size: 14, color: Nuru.gold)
                     }
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Your rhythm").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -1008,7 +1008,7 @@ struct GivingView: View {
                 // Order is a choice only between two or more.
                 if rails.count > 1 {
                     HStack(spacing: 4) {
-                        Icon(.gripVertical, size: 11, color: Color(hex: 0x74808F))
+                        Icon(.gripVertical, size: 14, color: Color(hex: 0x74808F))
                         Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                     }
                 }
@@ -1060,7 +1060,7 @@ struct GivingView: View {
                     if on {
                         ZStack {
                             Circle().fill(Nuru.gold).frame(width: 24, height: 24)
-                            Icon(.check, size: 13, color: Nuru.navy)
+                            Icon(.check, size: 14, color: Nuru.navy)
                         }
                     }
                 }
@@ -1159,7 +1159,7 @@ struct GivingView: View {
         let paused = s.status.lowercased() == "paused"
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 5) {
-                Icon(.repeat, size: 12, color: Nuru.gold)
+                Icon(.repeat, size: 14, color: Nuru.gold)
                 Text(s.frequency == "weekly" ? "WEEKLY" : "MONTHLY")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
                 if paused {
@@ -1232,7 +1232,7 @@ struct GivingView: View {
                     .padding(.top, 3)
             }
             HStack(spacing: 6) {
-                Icon(.shieldCheck, size: 12, color: Color(hex: 0x74808F))
+                Icon(.shieldCheck, size: 14, color: Color(hex: 0x74808F))
                 Text(routedLine).font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             .padding(.top, 10)
@@ -1307,7 +1307,7 @@ struct GivingView: View {
                 NavigationLink(value: GiveRoute.statement) {
                     HStack(spacing: 3) {
                         Text("View statement").font(.inter(12, .semibold))
-                        Icon(.arrowRight, size: 11, color: Nuru.gold)
+                        Icon(.arrowRight, size: 14, color: Nuru.gold)
                     }.foregroundStyle(Nuru.gold)
                 }
             }
@@ -1373,7 +1373,7 @@ struct GivingView: View {
 
     private var secureNote: some View {
         HStack(spacing: 6) {
-            Icon(.shieldCheck, size: 13, color: Color(hex: 0x74808F))
+            Icon(.shieldCheck, size: 14, color: Color(hex: 0x74808F))
             // Only rails that can take money here (it used to promise cards).
             Text(vm.methods.secureNote())
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
@@ -2089,7 +2089,7 @@ private struct GiveKeypadSheet: View {
             }
 
             HStack(spacing: Nuru.S.sm) {
-                Icon(.pencil, size: 15, color: Color(hex: 0x74808F))
+                Icon(.pencil, size: 14, color: Color(hex: 0x74808F))
                 TextField("e.g. \u{201C}For Mom\u{2019}s healing\u{201D}", text: $name)
                     .focused($nameFocused)
                     .font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
@@ -2202,7 +2202,7 @@ private struct MobileMoneySheet: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: Nuru.S.sm) {
-                    Icon(.smartphone, size: 17, color: tint)
+                    Icon(.smartphone, size: 18, color: tint)
                     TextField("07XX XXX XXX", text: $phone)
                         .keyboardType(.phonePad)
                         .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
@@ -2227,7 +2227,7 @@ private struct MobileMoneySheet: View {
             if let onFile = numberOnFile {
                 Button { phone = KenyanPhone.display(onFile) } label: {
                     HStack(spacing: 5) {
-                        Icon(.repeat, size: 12, color: Nuru.goldLo)
+                        Icon(.repeat, size: 14, color: Nuru.goldLo)
                         Text("Use my number (\(KenyanPhone.display(onFile)))")
                             .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
                     }
@@ -2253,7 +2253,7 @@ private struct MobileMoneySheet: View {
             .opacity(number == nil ? 0.4 : 1)
 
             HStack(spacing: 5) {
-                Icon(.lock, size: 12, color: Color(hex: 0x74808F))
+                Icon(.lock, size: 14, color: Color(hex: 0x74808F))
                 Text(cadenceWord == nil ? "Number used only for this transaction prompt"
                                         : "Number used only for this gift's prompts")
                     .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
@@ -2424,7 +2424,7 @@ private struct ScheduleDetailSheet: View {
             Button { onClose() } label: {
                 ZStack {
                     Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                    Icon(.x, size: 15, color: Nuru.navy)
+                    Icon(.x, size: 14, color: Nuru.navy)
                 }
             }.buttonStyle(.plain)
             .accessibilityLabel("Close")
@@ -2437,7 +2437,7 @@ private struct ScheduleDetailSheet: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Nuru.gold.opacity(0.1)).frame(width: 44, height: 44)
-                Icon(.repeat, size: 19, color: Nuru.gold)
+                Icon(.repeat, size: 18, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(money(current.amountMinor, current.currency)).font(.inter(18, .bold)).foregroundStyle(Nuru.navy)
@@ -3109,7 +3109,7 @@ private struct StkStage: View {
             }
             if let phone {
                 HStack(spacing: 6) {
-                    Icon(.smartphone, size: 13, color: Nuru.gold)
+                    Icon(.smartphone, size: 14, color: Nuru.gold)
                     Text("Prompt sent to \(KenyanPhone.display(phone))").font(.inter(11)).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
@@ -3265,7 +3265,7 @@ private struct ScheduledStage: View {
             }
             if nextChargeLabel != nil {
                 HStack(spacing: 6) {
-                    Icon(.repeat, size: 12, color: Nuru.goldLo)
+                    Icon(.repeat, size: 14, color: Nuru.goldLo)
                     Text("Change, pause or cancel it anytime")
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x8A6D18))
                 }

@@ -424,7 +424,7 @@ private struct PracticeSheet: View {
                         .foregroundStyle(Nuru.navy)
                     Spacer()
                     Button { dismiss() } label: {
-                        Icon(.x, size: 15, color: Nuru.navy)
+                        Icon(.x, size: 14, color: Nuru.navy)
                             .frame(width: 32, height: 32)
                             .background(Nuru.surface, in: Circle())
                     }

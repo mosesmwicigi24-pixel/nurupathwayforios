@@ -387,7 +387,7 @@ private struct ResultsPane: View {
                     .foregroundStyle(Nuru.goldLo)
                 ForEach(gifts.suggestedTracks.prefix(3)) { t in
                     HStack(spacing: Nuru.S.sm) {
-                        Icon(.check, size: 13, color: Nuru.navy)
+                        Icon(.check, size: 14, color: Nuru.navy)
                             .frame(width: 28, height: 28)
                             .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         Text(t.title)

@@ -1005,7 +1005,7 @@ struct ModuleView: View {
                                 showRevisitDialog = true
                             } label: {
                                 HStack(spacing: 6) {
-                                    Icon(.bookOpen, size: 12, color: ML.secondary)
+                                    Icon(.bookOpen, size: 14, color: ML.secondary)
                                     Text("Revisit this module")
                                         .font(.inter(13, .semibold)).foregroundStyle(ML.secondary)
                                 }
@@ -1282,7 +1282,7 @@ private struct MLResumeNote: View {
     let text: String
     var body: some View {
         HStack(spacing: 6) {
-            Icon(.sparkles, size: 12, color: ML.gold)
+            Icon(.sparkles, size: 14, color: ML.gold)
             Text(text).font(.inter(12, .medium)).foregroundStyle(ML.navy)
         }
         .padding(.horizontal, 14)
@@ -1515,7 +1515,7 @@ private struct MLHeader: View {
 
     private func finishedRibbon(_ f: MLFinishedSummary) -> some View {
         HStack(spacing: 8) {
-            Icon(.check, size: 12, color: ML.navy)
+            Icon(.check, size: 14, color: ML.navy)
             Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ML.navy)
             if let s = f.score {
                 Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
@@ -1563,7 +1563,7 @@ private struct MLSegment: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if done { Icon(.check, size: 11, color: ML.navy) }
+                if done { Icon(.check, size: 14, color: ML.navy) }
                 else { Icon(icon, size: 12, color: ML.secondary) }
                 Text(label).font(.inter(12, .bold))
             }
@@ -1875,7 +1875,7 @@ private struct MLScriptureCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Icon(.quote, size: 12, color: ML.gold)
+                Icon(.quote, size: 14, color: ML.gold)
                 Text("KEY VERSE")
                     .font(.inter(11, .bold)).kerning(1.8)
                     .foregroundStyle(ML.kicker)
@@ -1949,7 +1949,7 @@ private struct MLReflectionFolded: View {
                 Text("YOUR REFLECTION").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
                 Spacer()
                 HStack(spacing: 3) {
-                    Icon(.check, size: 10, color: Color(hex: 0x15803D))
+                    Icon(.check, size: 14, color: Color(hex: 0x15803D))
                     Text("Saved").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 }
             }
@@ -1986,7 +1986,7 @@ private struct MLReflectionCard: View {
                 Spacer(minLength: 0)
                 if done {
                     HStack(spacing: 4) {
-                        Icon(.check, size: 10, color: ML.navy)
+                        Icon(.check, size: 14, color: ML.navy)
                         Text("Saved").font(.inter(11, .bold)).foregroundStyle(ML.navy)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
@@ -2137,7 +2137,7 @@ private struct MLBottomGate: View {
     private var cta: some View {
         if !complete {
             HStack(spacing: 8) {
-                Icon(.lock, size: 13, color: ML.secondary)
+                Icon(.lock, size: 14, color: ML.secondary)
                 Text(lockReason)
                     .font(.inter(14, .bold))
             }
@@ -2158,7 +2158,7 @@ private struct MLBottomGate: View {
                     else {
                         HStack(spacing: 8) {
                             Text("Start the quiz").font(.inter(14, .bold))
-                            Icon(.arrowRight, size: 15, color: ML.navy)
+                            Icon(.arrowRight, size: 14, color: ML.navy)
                         }
                     }
                 }
@@ -2200,7 +2200,7 @@ private struct MLStepChip: View {
         HStack(spacing: 5) {
             ZStack {
                 if step.done {
-                    Icon(.check, size: 10, color: ML.navy)
+                    Icon(.check, size: 14, color: ML.navy)
                 } else {
                     // A partial ring that fills to the live fraction while in progress.
                     Circle().stroke(ML.track, lineWidth: 1.5).frame(width: 14, height: 14)
