@@ -74,6 +74,10 @@ final class AuthStore: ObservableObject {
         // next account on this phone must not inherit the previous member's
         // remembered thread ids, mute/archive flags, or an open lock window.
         PastoralLock.shared.reset()
+        // …nor the previous member's sealed plan day on the streak card.
+        // (Here, not on isAuthenticated == false: that is also the launch
+        // state before the session is restored.)
+        PlanDayLog.forget()
         me = nil
         isAuthenticated = false
     }

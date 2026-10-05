@@ -320,13 +320,9 @@ struct PlanSegmentView: View {
                 // computed in the same transaction as the write. Broadcasting
                 // it lets the day hub skip the explicit "Seal the day" tap and
                 // the plan overview tell a genuine lock apart from a
-                // completion still landing through the sync path.
-                if let ack = lastAck, ack.dayComplete {
-                    NotificationCenter.default.post(
-                        name: .nuruPlanDayUnlocked,
-                        object: PlanDayUnlockAck(planId: ref.planId, dayNumber: ack.dayNumber,
-                                                  nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
-                }
+                // completion still landing through the sync path. (It also
+                // notes the sealed day for the Plans streak card, §7.4 #4.)
+                if let ack = lastAck { PlanDayUnlockAck.announce(ack, planId: ref.planId) }
                 done = true; saving = false
                 Haptics.success()
                 dismiss()
@@ -848,12 +844,7 @@ struct TalkItOverView: View {
                     NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
                     // Talk it Over can be the LAST part of a day too — same
                     // authoritative-ack broadcast as the segment reader's CTA.
-                    if let ack, ack.dayComplete {
-                        NotificationCenter.default.post(
-                            name: .nuruPlanDayUnlocked,
-                            object: PlanDayUnlockAck(planId: route.planId, dayNumber: ack.dayNumber,
-                                                      nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
-                    }
+                    if let ack { PlanDayUnlockAck.announce(ack, planId: route.planId) }
                 }
             }
             Haptics.success()

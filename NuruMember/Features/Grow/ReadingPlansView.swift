@@ -86,25 +86,47 @@ final class ReadingPlansViewModel: ObservableObject {
     /// simply means the page falls back to the locally-edited promos.
     @Published var promos: [PlanPromo] = []
     @Published var streak = 0
-    @Published var todayWordDone = false
+    /// The streak card's today (§7.4 #4): ticked only once the server has
+    /// sealed a plan day today (PlanDayLog) — reading one part used to tick
+    /// it beside "0-day streak".
+    @Published var todaySealed = false
+    /// "Today: 2 of 3 parts" while the day being read is under way.
+    @Published var todayLine: String?
     @Published var loading = true
     /// Why the catalogue didn't load — spoken through the one state language
     /// (NuruStateCopy), never as the server's raw text.
     @Published var failure: Error?
+    /// A part or a day was finished since the last load — the list refreshes
+    /// in place when the member comes back to it.
+    var stale = false
 
     func load() async {
-        loading = true; failure = nil
+        loading = true; failure = nil; stale = false
         async let ach = try? MemberAPI.achievements()
-        async let rhythm = try? MemberAPI.rhythmToday()
         // Best-effort and in parallel: a promo failure (offline, older server)
         // must leave today's page exactly as it was.
         async let promoList = try? MemberAPI.planPromos()
         do { plans = try await MemberAPI.plans() }
         catch { failure = error }
         streak = (await ach)?.streak?.current ?? 0
-        todayWordDone = (await rhythm)?.word ?? false
         promos = (await promoList) ?? []
+        await loadToday()
         loading = false
+    }
+
+    /// Today's day of the plan being read — its parts as the plan's own page
+    /// counts them (PlanDayParts). Best-effort: no plan, a failed read or a
+    /// day not begun leaves the card's invitation.
+    private func loadToday() async {
+        todaySealed = PlanDayLog.sealedToday()
+        guard let active = ReadingPlanRow.active(in: plans),
+              let d = try? await MemberAPI.plan(active.planId),
+              let day = d.continueDay, day.completed != true, !day.locked else {
+            todayLine = nil
+            return
+        }
+        let p = PlanDayParts.progress(day.segments ?? [])
+        todayLine = PlanDayParts.todayLine(done: p.done, total: p.total)
     }
 }
 
@@ -187,7 +209,12 @@ struct ReadingPlansView: View {
             listBody
             #endif
         }
-        .task { if vm.plans.isEmpty { await vm.load() }; reschedule() }
+        // Back from a plan after finishing a part or a day: the streak card,
+        // the header's day and the continue card refresh in place (§7.1
+        // rule 5 — content stays, no skeleton).
+        .task { if vm.plans.isEmpty || vm.stale { await vm.load() }; reschedule() }
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanPartDone)) { _ in vm.stale = true }
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanDayUnlocked)) { _ in vm.stale = true }
         // Root of the Plans tab — the bottom bar belongs here (hidden inside a plan).
         .onAppear { tabs.chromeHidden = false }
     }
@@ -204,7 +231,7 @@ struct ReadingPlansView: View {
                         .padding(.horizontal, 20).padding(.top, 20)
                 } else {
                     VStack(alignment: .leading, spacing: 24) {
-                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
+                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todaySealed, today: vm.todayLine) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, !continueReading.isEmpty { reminderCard }
                         // The day's invitation, given room to actually invite:
@@ -1079,7 +1106,7 @@ final class PlanDayViewModel: ObservableObject {
     func completeSegment(_ id: String) async {
         if let res = try? await MemberAPI.completePlanSegment(id) {
             completedSegments.insert(id)
-            if res.dayCompleted { dayCompleted = true }
+            if res.dayCompleted { dayCompleted = true; PlanDayLog.noteSealed() }
         }
     }
 
@@ -1096,6 +1123,7 @@ final class PlanDayViewModel: ObservableObject {
             let planDone = try await MemberAPI.completePlanDay(planId, dayNumber: dayNumber)
             dayCompleted = true
             planCompleted = planDone
+            PlanDayLog.noteSealed()   // the server sealed it: the streak card's tick (§7.4 #4)
             return true
         } catch {
             completeError = "Couldn't save today — check your connection and try again."

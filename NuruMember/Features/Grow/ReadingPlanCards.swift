@@ -114,27 +114,49 @@ enum StreakWords {
     static func line(_ count: Int) -> String {
         count > 0 ? "Read today to keep it alive 🔥" : "Read today to start your streak 🔥"
     }
+
+    /// The count beside the week (§7.4 #4). The server recomputes the streak
+    /// overnight, so a day sealed today may not be in it yet — but a sealed
+    /// day IS a day of the streak: a tick never sits beside "0-day streak".
+    static func count(_ server: Int, todayDone: Bool) -> Int {
+        todayDone ? max(server, 1) : max(0, server)
+    }
+
+    /// The line under the title: done once today's day is sealed; today's
+    /// progress while it is under way ("Today: 2 of 3 parts"); else the
+    /// invitation.
+    static func line(_ count: Int, todayDone: Bool, today: String?) -> String {
+        if todayDone { return "Today's reading is done 🔥" }
+        if let today, !today.isEmpty { return today }
+        return line(count)
+    }
 }
 
 // MARK: - streak strip (cue + reward loop)
-// Real data: `count` = GET /me/achievements streak.current; `todayDone` =
-// GET /me/rhythm/today `word`. The 7-day badge goal is a client-side constant
-// (the design's mock STREAK.goal) — week dots are derived from the streak.
+// Real data: `count` = GET /me/achievements streak.current; `todayDone` = a
+// plan day the server sealed today (PlanDayLog, §7.4 #4 — it was the rhythm's
+// `word`, so reading one part ticked today beside "0-day streak"); `today` =
+// the day under way, "Today: 2 of 3 parts" (PlanDayParts). The 7-day badge
+// goal is a client-side constant (the design's mock STREAK.goal) — week dots
+// are derived from the streak.
 
 struct PLStreakStrip: View {
     let count: Int
     let todayDone: Bool
+    var today: String? = nil
 
     private static let week = ["S", "M", "T", "W", "T", "F", "S"]
     private static let goal = 7
     private var todayIdx: Int { Calendar.current.component(.weekday, from: Date()) - 1 }
-    private var toReward: Int { max(Self.goal - count, 0) }
-    private var pct: Double { min(Double(count) / Double(Self.goal), 1) }
+    /// The streak as shown — never 0 beside today's tick.
+    private var shown: Int { StreakWords.count(count, todayDone: todayDone) }
+    private var toReward: Int { max(Self.goal - shown, 0) }
+    private var pct: Double { min(Double(shown) / Double(Self.goal), 1) }
 
     private func isDone(_ i: Int) -> Bool {
         if i == todayIdx { return todayDone }
         guard i < todayIdx else { return false }
-        let back = max(todayDone ? count - 1 : count, 0)
+        let back = max(todayDone ? shown - 1 : shown, 0)
         return todayIdx - i <= back
     }
 
@@ -152,10 +174,10 @@ struct PLStreakStrip: View {
                 // keeps one line (easing its size before it would break as
                 // "0-day / streak"); the line under it wraps.
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(StreakWords.title(count))
+                    Text(StreakWords.title(shown))
                         .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
                         .lineLimit(1).minimumScaleFactor(0.7)
-                    Text(StreakWords.line(count))
+                    Text(StreakWords.line(shown, todayDone: todayDone, today: today))
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
                         .fixedSize(horizontal: false, vertical: true)
                 }

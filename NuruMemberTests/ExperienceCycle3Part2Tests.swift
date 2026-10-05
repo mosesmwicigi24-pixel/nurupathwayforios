@@ -91,4 +91,47 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertEqual(PlanDayParts.planButton(try detail([day(1, sealed, completed: true), day(2, sealed, completed: true)])),
                        "Read again")
     }
+
+    // MARK: §7.4 #4 — the streak card: today is ticked only once a day is sealed
+
+    func testTodaysLineCountsTheDayUnderWay() throws {
+        let p = PlanDayParts.progress(try segments(adasDayOne()))
+        XCTAssertEqual(PlanDayParts.todayLine(done: p.done, total: p.total), "Today: 2 of 3 parts", "Ada, before Talk it Over")
+        XCTAssertNil(PlanDayParts.todayLine(done: 0, total: 3), "a day not begun keeps the invitation")
+        XCTAssertNil(PlanDayParts.todayLine(done: 3, total: 3), "a sealed day is the tick, not a count")
+    }
+
+    func testATickNeverSitsBesideAZeroDayStreak() {
+        XCTAssertEqual(StreakWords.count(0, todayDone: true), 1, "a day sealed today is a day of the streak")
+        XCTAssertEqual(StreakWords.count(4, todayDone: true), 4)
+        XCTAssertEqual(StreakWords.count(0, todayDone: false), 0)
+        XCTAssertEqual(StreakWords.count(-2, todayDone: false), 0)
+        XCTAssertEqual(StreakWords.title(StreakWords.count(0, todayDone: true)), "1-day streak")
+
+        XCTAssertEqual(StreakWords.line(0, todayDone: false, today: "Today: 2 of 3 parts"), "Today: 2 of 3 parts",
+                       "Ada before Talk it Over: no tick, the day's progress")
+        XCTAssertEqual(StreakWords.line(1, todayDone: true, today: nil), "Today's reading is done 🔥")
+        XCTAssertEqual(StreakWords.line(1, todayDone: true, today: "Today: 1 of 3 parts"), "Today's reading is done 🔥",
+                       "a sealed day outranks the next day's progress")
+        XCTAssertEqual(StreakWords.line(0, todayDone: false, today: nil), "Read today to start your streak 🔥")
+        XCTAssertEqual(StreakWords.line(3, todayDone: false, today: nil), "Read today to keep it alive 🔥")
+    }
+
+    func testTheSealedDayIsTheNairobiDayAndForgottenAtSignOut() throws {
+        let suite = "nuru.tests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let iso = ISO8601DateFormatter()
+        let morning = try XCTUnwrap(iso.date(from: "2026-10-05T05:00:00Z"))   // 08:00 in Nairobi
+        let lateEvening = try XCTUnwrap(iso.date(from: "2026-10-05T20:59:59Z")) // 23:59:59 in Nairobi
+        let nextDay = try XCTUnwrap(iso.date(from: "2026-10-05T21:00:00Z"))    // midnight in Nairobi
+
+        XCTAssertFalse(PlanDayLog.sealedToday(now: morning, in: defaults), "nothing sealed yet")
+        PlanDayLog.noteSealed(now: morning, in: defaults)
+        XCTAssertTrue(PlanDayLog.sealedToday(now: morning, in: defaults))
+        XCTAssertTrue(PlanDayLog.sealedToday(now: lateEvening, in: defaults), "the same Nairobi day")
+        XCTAssertFalse(PlanDayLog.sealedToday(now: nextDay, in: defaults), "the day turns at Nairobi's midnight")
+        PlanDayLog.forget(in: defaults)
+        XCTAssertFalse(PlanDayLog.sealedToday(now: morning, in: defaults), "signed out: the next member starts clean")
+    }
 }

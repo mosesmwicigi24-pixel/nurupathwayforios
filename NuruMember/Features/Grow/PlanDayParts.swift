@@ -76,6 +76,14 @@ enum PlanDayParts {
         return left == 1 ? "1 part left" : "\(left) parts left"
     }
 
+    /// The Plans streak card's line while today's day is under way (§7.4 #4):
+    /// "Today: 2 of 3 parts". Nil before the first part (the card keeps its
+    /// invitation) and once the day is done.
+    static func todayLine(done: Int, total: Int) -> String? {
+        guard done > 0, done < total else { return nil }
+        return "Today: \(done) of \(total) parts"
+    }
+
     /// The plan page's gold button (§7.4 #2): "Begin Day 1" until anything of
     /// the plan is done — a day, or any part of one; then "Continue · Day N",
     /// the day the member is on; "Read again" once every day is done.
@@ -84,5 +92,42 @@ enum PlanDayParts {
         if !d.days.isEmpty && finished >= d.days.count { return "Read again" }
         let begun = finished > 0 || d.days.contains { ($0.segments ?? []).contains(where: \.completed) }
         return begun ? "Continue · Day \(d.continueDay?.dayNumber ?? 1)" : "Begin Day 1"
+    }
+}
+
+/// The Nairobi day on which this phone last saw the server seal a plan day
+/// (§7.4 #4) — the Plans streak card ticks today only then. Written only
+/// from the server's own answer (the last part's `day_complete`, or the
+/// day's complete-day 200), never from a guess, and forgotten at sign-out so
+/// the next member starts clean. A day sealed on another phone is not
+/// ticked here: the card under-claims, it never ticks a day that wasn't.
+enum PlanDayLog {
+    static let key = "nuru.plans.daySealedOn"
+
+    static func noteSealed(now: Date = Date(), in defaults: UserDefaults = .standard) {
+        defaults.set(PlanPicks.nairobiDay(now), forKey: key)
+    }
+
+    static func sealedToday(now: Date = Date(), in defaults: UserDefaults = .standard) -> Bool {
+        guard defaults.object(forKey: key) != nil else { return false }
+        return defaults.integer(forKey: key) == PlanPicks.nairobiDay(now)
+    }
+
+    static func forget(in defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key) }
+}
+
+extension PlanDayUnlockAck {
+    /// The server sealed a day — the LAST part's ack says so, computed in the
+    /// same transaction as the write. Tell the day hub and the plan page, and
+    /// note the day for the streak card. Every part that can end a day (a
+    /// part's "Finished", Talk it Over's post or its gold button) ends here.
+    @MainActor
+    static func announce(_ ack: SegmentCompleteResult, planId: String?) {
+        guard ack.dayComplete else { return }
+        PlanDayLog.noteSealed()
+        NotificationCenter.default.post(
+            name: .nuruPlanDayUnlocked,
+            object: PlanDayUnlockAck(planId: planId, dayNumber: ack.dayNumber,
+                                     nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
     }
 }
