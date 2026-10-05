@@ -249,9 +249,10 @@ struct PrayerJournalView: View {
                                     PrayerTabs(tab: $tab, activeCount: vm.active.count, answeredCount: vm.answered.count)
                                 }
                                 Button { Haptics.tap(); editing = PrayerDraft() } label: {
+                                    // Navy on gold (§8.1 rule 4).
                                     HStack(spacing: 5) {
-                                        Icon(.plus, size: 14, color: .white)
-                                        Text("Add Prayer").font(.nActionLabel).foregroundStyle(.white)
+                                        Icon(.plus, size: 14, color: Nuru.navy)
+                                        Text("Add Prayer").font(.nActionLabel).foregroundStyle(Nuru.navy)
                                             .lineLimit(1).minimumScaleFactor(0.85)
                                     }
                                     .padding(.horizontal, 14).padding(.vertical, 12)

@@ -359,7 +359,7 @@ struct PLPlanTile: View {
                     .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
                     .overlay(alignment: .topTrailing) {
                         if plan.completedAt != nil {
-                            Icon(.check, size: 14, color: .white)
+                            Icon(.check, size: 14, color: PL.navy)
                                 .frame(width: 22, height: 22).background(PL.gold, in: Circle())
                                 .padding(6)
                         }
@@ -473,7 +473,7 @@ struct PLDetailDayRow: View {
                 }
                 .frame(width: 52, height: 52)
                 if done {
-                    Icon(.check, size: 14, color: .white)
+                    Icon(.check, size: 14, color: PL.navy)
                         .frame(width: 17, height: 17)
                         .background(PL.gold, in: Circle())
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))

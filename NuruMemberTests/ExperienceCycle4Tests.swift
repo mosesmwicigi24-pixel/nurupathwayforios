@@ -747,6 +747,16 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(NuruBell.Look.standard.iconSize, 18)
     }
 
+    // MARK: §8.1 rule 4 — the primary is gold fill with navy text
+
+    func testThePrimaryButtonIsGoldWithNavyText() throws {
+        XCTAssertEqual(PButton(title: "Go", action: {}).variant, .gold, "the shared button's default is the one primary")
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Shared/Components.swift"), encoding: .utf8)
+        XCTAssertTrue(src.contains(".foregroundStyle(Nuru.navy)\n            .background(variant == .gold"), "navy text on gold")
+        let journal = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Grow/PrayerJournalView.swift"), encoding: .utf8)
+        XCTAssertTrue(journal.contains("Text(\"Add Prayer\").font(.nActionLabel).foregroundStyle(Nuru.navy)"))
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

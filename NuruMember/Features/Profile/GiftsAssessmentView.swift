@@ -184,7 +184,7 @@ struct GiftsAssessmentView: View {
             Spacer()
             Text(vm.error ?? "Couldn't load the assessment.")
                 .font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-            PButton(title: "Try again", variant: .navy) { Task { await vm.load() } }
+            PButton(title: "Try again", variant: .secondary) { Task { await vm.load() } }
                 .frame(maxWidth: 200)
             Spacer()
         }

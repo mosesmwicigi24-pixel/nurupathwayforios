@@ -130,7 +130,7 @@ struct GiftsView: View {
                 .font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
             NavigationLink(value: GrowDestination.giftsAssessment) {
                 Text("Discover how God wired you")
-                    .font(.inter(16, .semibold)).foregroundStyle(.white)
+                    .font(.inter(16, .semibold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
                     .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
             }

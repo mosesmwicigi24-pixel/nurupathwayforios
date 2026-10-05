@@ -70,12 +70,15 @@ struct Card<Content: View>: View {
     }
 }
 
-enum PButtonVariant { case navy, gold }
+/// §8.1 rule 4: the one primary — gold fill, navy text, radius 14; a
+/// secondary — white, a hairline, navy text. (The shared button drew white
+/// text on gold, and a navy primary.)
+enum PButtonVariant { case gold, secondary }
 
-/// Primary action button (navy or gold), full-width, with a busy state.
+/// The shared action button, full-width, with a busy state.
 struct PButton: View {
     var title: String
-    var variant: PButtonVariant = .navy
+    var variant: PButtonVariant = .gold
     var busy: Bool = false
     var disabled: Bool = false
     var action: () -> Void
@@ -85,13 +88,15 @@ struct PButton: View {
             ZStack {
                 // Both branches live in a fixed-height ZStack, so the swap to a
                 // spinner never moves the layout — it just crossfades in place.
-                if busy { ProgressView().tint(.white).transition(.opacity) }
+                if busy { ProgressView().tint(Nuru.navy).transition(.opacity) }
                 else { Text(title).font(.inter(16, .semibold)).transition(.opacity) }
             }
             .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
-            .foregroundStyle(.white)
-            .background(variant == .gold ? Nuru.goldGradient : Nuru.primaryButton,
+            .foregroundStyle(Nuru.navy)
+            .background(variant == .gold ? AnyShapeStyle(Nuru.goldGradient) : AnyShapeStyle(Nuru.white),
                         in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous)
+                .stroke(variant == .gold ? Color.clear : Nuru.border, lineWidth: 1))
             .opacity(disabled || busy ? 0.6 : 1)
             .animation(.easeOut(duration: 0.18), value: busy)
         }

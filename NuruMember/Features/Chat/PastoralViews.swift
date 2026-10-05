@@ -41,7 +41,7 @@ struct PrivateThreadCard: View {
                 }
                 Spacer(minLength: 0)
                 if unread > 0 {
-                    Text("\(unread) new").font(.inter(11, .bold)).foregroundStyle(.white)
+                    Text("\(unread) new").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Nuru.goldGradient, in: Capsule())
                 }
@@ -77,9 +77,9 @@ struct PrivateThreadCard: View {
                             if locked {
                                 Image(systemName: "faceid").font(.symbol(15, weight: .semibold)).foregroundStyle(.white)
                             } else {
-                                Icon(.messageCircle, size: 14, color: .white)
+                                Icon(.messageCircle, size: 14, color: Nuru.navy)
                             }
-                            Text(locked ? "Unlock & open" : cta).font(.nCardCTA).foregroundStyle(.white)
+                            Text(locked ? "Unlock & open" : cta).font(.nCardCTA).foregroundStyle(Nuru.navy)
                         }
                     }
                 }
