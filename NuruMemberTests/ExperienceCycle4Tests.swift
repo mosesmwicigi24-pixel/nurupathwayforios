@@ -164,6 +164,16 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(PathwayTrail.headerLine(nil, position: 1, of: 6), "Level 1 of 6")
     }
 
+    // MARK: §8.2 #2 — one icon per pillar (both apps draw these)
+
+    func testEachWeekPillarWearsItsOneIcon() {
+        XCTAssertEqual(HomeWeekCard.icon(.pathway), .bookOpen)
+        XCTAssertEqual(HomeWeekCard.icon(.plans), .bookMarked)
+        XCTAssertEqual(HomeWeekCard.icon(.events), .calendar)
+        XCTAssertEqual(HomeWeekCard.icon(.giving), .handHeart)
+        XCTAssertEqual(HomeWeekCard.icon(.cell), .users)
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

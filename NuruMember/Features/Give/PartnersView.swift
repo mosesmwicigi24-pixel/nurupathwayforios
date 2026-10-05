@@ -875,7 +875,7 @@ struct PartnersView: View {
                 Text(partial
                      ? "\(money(item.uncoveredMinor, item.currency)) left · \(when.text)"
                      : "\(money(item.amountMinor, item.currency)) · \(when.text)")
-                    .font(.inter(15, .semibold))
+                    .font(.nRowTitle)   // a content row (§8.1 rule 3)
                     .foregroundStyle(when.overdue ? Nuru.goldChipText : Nuru.ink)
                 Text(partial
                      ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
@@ -1452,7 +1452,10 @@ private struct PledgeCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     // The pledge's NAME leads (pledge names contract); the
                     // promise itself sits under it.
-                    Text(pledge.displayTitle).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                    // A pledge is a content row (§8.1 rule 3); its name wraps
+                    // to two lines rather than being cut (rule 9).
+                    Text(pledge.displayTitle).font(.nRowTitle).foregroundStyle(Nuru.ink)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 }
                 Spacer(minLength: 8)

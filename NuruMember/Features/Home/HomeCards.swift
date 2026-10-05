@@ -695,11 +695,16 @@ struct HomeWeekCard: View {
 
     private func rowView(_ row: HomeWeekRow) -> some View {
         HStack(spacing: 12) {
-            Icon(Self.icon(row.pillar), size: 16, color: Nuru.goldChipText)
+            // Row icons sit on gold-tint tiles at the 18pt size (§8.1 rule 7).
+            Icon(Self.icon(row.pillar), size: 18, color: Nuru.goldChipText)
                 .frame(width: 36, height: 36)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(row.title).font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
+                // A week row names a THING — the content row title (§8.1
+                // rule 3: Fraunces 15 semibold, as Android), wrapping to two
+                // lines rather than cut (rule 9).
+                Text(row.title).font(.nRowTitle).foregroundStyle(HomeFig.navy)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 if !row.line.isEmpty {
                     Text(row.line).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -714,8 +719,11 @@ struct HomeWeekCard: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    /// Each pillar wears its tab's own glyph (the cell, Community's people).
-    private static func icon(_ p: HomeWeekRow.Pillar) -> Lucide {
+    /// Each pillar wears its tab's own glyph (the cell, Community's people) —
+    /// the one icon per pillar both apps draw (EXPERIENCE.md §8.2 #2):
+    /// Pathway book-open · Plans book-marked · Events calendar · Giving
+    /// hand-heart · Cell users.
+    static func icon(_ p: HomeWeekRow.Pillar) -> Lucide {
         switch p {
         case .pathway: return .bookOpen
         case .plans: return .bookMarked
