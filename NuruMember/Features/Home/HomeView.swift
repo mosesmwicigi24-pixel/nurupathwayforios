@@ -18,6 +18,10 @@ final class HomeViewModel: ObservableObject {
     @Published var streak = 0
     @Published var greetingLine = "Grace for today's step."
     @Published var rhythm = RhythmToday(prayer: false, word: false, reflection: false)
+    /// The rhythm has answered at least once. Until then nothing about today's
+    /// prayer, Word or reflection is said — a failed read used to show three
+    /// "not yet" tiles and "Reflection due today" (§9.4: no fake facts).
+    @Published var rhythmLoaded = false
     @Published var scores: ScoresSummary?
     /// GET /me/home/nudges — "What needs you today". Empty (or a failed
     /// fetch) hands the slot back to the old single reflection strip, so Home
@@ -151,7 +155,7 @@ final class HomeViewModel: ObservableObject {
         if let n = await unread { InboxBadge.shared.land(n, ticket: unreadTicket) }
         if let g = await greet, !g.isEmpty { greetingLine = g }
         self.nudges = await nudges ?? []
-        if let r = await rhythm { self.rhythm = r }
+        if let r = await rhythm { self.rhythm = r; rhythmLoaded = true }
         // Day sealed — only a WITNESSED completion counts (a count this session
         // below 3 rising to 3). All-done on the very first load stays quiet.
         if let prev = lastRhythmDone, prev < 3, self.rhythm.doneCount == 3 { daySealed = true }
@@ -504,7 +508,9 @@ struct HomeView: View {
         // featured video → the Sunday Letter → reflection due → the liturgy.
         // Unchanged by Cycle 2 — the live-gathering card keeps its old slot
         // after the video, and only while a service is on or about to start.
-        s.append(("verse", AnyView(verseCard)))                                                    // Verse of the day (leads the feed)
+        // Verse of the day (leads the feed) — once it loaded: a stand-in verse
+        // under "VERSE FOR TODAY" was not today's verse (§9.4).
+        if vm.verse != nil { s.append(("verse", AnyView(verseCard))) }
         if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // Featured video (start here)
         if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // Live now
         if let lt = vm.letter, lt.isUnread {
@@ -528,7 +534,7 @@ struct HomeView: View {
         // upcoming list: each told one of these five stories again.
         s.append(("week", AnyView(HomeWeekCard(rows: week) { openWeek($0) })))
         // 4 · The day: today's rhythm, then today's echo.
-        s.append(("rhythm", AnyView(rhythmCard)))                                                   // Today's rhythm
+        if vm.rhythmLoaded { s.append(("rhythm", AnyView(rhythmCard))) }                          // Today's rhythm — once it is known
         s.append(("echo", AnyView(HomeEchoCard())))                                               // Today's echo — the app remembers you (Wave 1)
         s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
         // 5 · The family. (The disciplers carousel left with Cycle 2: the
@@ -1196,7 +1202,7 @@ struct HomeView: View {
         // kind='reflection'). It has nothing to do with the next module, so
         // the old `nextAction != nil` guard was noise — but never show the
         // strip before the rhythm has actually loaded.
-        !vm.loading && !vm.rhythm.reflection
+        !vm.loading && vm.rhythmLoaded && !vm.rhythm.reflection
     }
 
     private var priorityStrip: some View {

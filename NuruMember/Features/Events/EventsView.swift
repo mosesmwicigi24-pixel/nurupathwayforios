@@ -586,7 +586,12 @@ struct EventsView: View {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("CALENDAR").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                     Text("All events & calendar").font(.nRowTitle).foregroundStyle(Nuru.navy)
-                    Text("See the whole month at a glance · \(vm.upcomingCount) upcoming")
+                    // The count once the calendar answered, and never a zero
+                    // (§9.4, §7.4 #9): "0 upcoming" showed while it loaded and
+                    // when it failed.
+                    Text(!vm.loading && vm.failure == nil && vm.upcomingCount > 0
+                         ? "See the whole month at a glance · \(vm.upcomingCount) upcoming"
+                         : "See the whole month at a glance")
                         .font(.nCardMeta).foregroundStyle(Nuru.ink600)
                 }
                 Spacer(minLength: 0)

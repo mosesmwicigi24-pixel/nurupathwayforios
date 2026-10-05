@@ -50,7 +50,7 @@ final class SyncCoordinator: ObservableObject {
         guard !started else { return }
         started = true
         monitor.pathUpdateHandler = { [weak self] path in
-            let online = path.status == .satisfied
+            let online = path.status == .satisfied && !UITestHooks.offline
             Self.devicePath.withLock { $0 = online }
             Task { @MainActor in
                 guard let self else { return }

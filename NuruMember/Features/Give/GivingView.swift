@@ -192,6 +192,16 @@ final class GivingViewModel: ObservableObject {
     /// A pledge's shape when this year's statement named it; nil = unknown.
     func pledgeShape(_ id: String) -> String? { pledgeShapes[id] }
 
+    /// Why the giving history never loaded — the strip at the top says it in
+    /// §4's words (§9.4); nil once anything has.
+    @Published var loadFailure: Error?
+    /// The year's total is known — from the server's statement or the
+    /// history. Until then the year pill says nothing: "KSh 0 given this
+    /// year" was a fact nobody had read (§9.4).
+    var yearKnown: Bool {
+        appliedHistorySeq > 0 || serverTotalsYear == GiveCalendar.currentYear()
+    }
+
     func load() async {
         loading = true
         loadSeq += 1
@@ -205,7 +215,14 @@ final class GivingViewModel: ObservableObject {
         async let t = MemberAPI.givingStatements(year: year)
         // A failed refetch keeps what is on screen (stale-while-revalidate)
         // rather than blanking the year pill and Recent giving.
-        if let v = try? await h, seq > appliedHistorySeq { appliedHistorySeq = seq; history = v }
+        do {
+            let v = try await h
+            if seq > appliedHistorySeq { appliedHistorySeq = seq; history = v; loadFailure = nil }
+        } catch {
+            // Said only while nothing was ever shown — a failed refetch keeps
+            // what is on screen.
+            if appliedHistorySeq == 0 { loadFailure = error }
+        }
         if let v = try? await s, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
         // Methods too: a failed call keeps the last answer (M-Pesa alone if
         // there never was one); an answer with no rails in it is no answer.
@@ -475,6 +492,12 @@ struct GivingView: View {
                 Nuru.paper.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Nuru.S.md) {
+                        // Give's reads didn't come (offline, our side): say so
+                        // first, in §4's words — the form below still stands.
+                        if let f = vm.loadFailure, !vm.yearKnown {
+                            NuruStateView(state: .failed(NuruStateCopy.failure(f)),
+                                          retry: { Task { await vm.load() } }, compact: true)
+                        }
                         // What is already in motion leads (EXPERIENCE.md §9.1
                         // rule 6, §9.2 #6): the recurring gifts — running or
                         // paused — come first, each told once; a one-time gift
@@ -698,6 +721,7 @@ struct GivingView: View {
             // names the tab, so no eyebrow repeats it.
             NuruHeaderText(title: "Sow into the Kingdom", line: "Generosity is worship — a quiet, joyful act.")
 
+            if vm.yearKnown {
             HStack(spacing: 10) {
                 // The year pill opens the statement — the same page "View
                 // statement" reaches further down.
@@ -729,6 +753,7 @@ struct GivingView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, 12)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)

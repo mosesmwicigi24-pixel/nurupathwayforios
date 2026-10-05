@@ -17,6 +17,8 @@ final class ChatInboxViewModel: ObservableObject {
     @Published var people: [ChatPerson] = []
     @Published var loading = true
     @Published var error: String?
+    /// Why the inbox didn't load — said in the one state language (§4).
+    @Published var loadFailure: Error?
     @Published var busyPersonId: String?    // person whose DM is being created
     @Published var joiningSpaceId: String?  // discover space being followed
 
@@ -96,14 +98,15 @@ final class ChatInboxViewModel: ObservableObject {
 
     func load() async {
         loading = true; error = nil
-        async let inboxReq = try? MemberAPI.chatInbox()
+        async let inboxReq = MemberAPI.chatInbox()
         async let peopleReq = try? MemberAPI.chatPeople()
         async let connectionsReq = try? MemberAPI.listConnections()
         async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
         async let discipleshipReq = try? MemberAPI.discipleship()
 
-        if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
+        do { inbox = try await inboxReq; loadFailure = nil }
+        catch { self.error = "Couldn't load your chats."; loadFailure = error }
         if let p = await peopleReq { people = p }
         if let c = await connectionsReq { connections = c }
         if let inc = await incomingReq { incomingRequests = inc }
@@ -761,28 +764,13 @@ struct ChatView: View {
         .nuruShimmer()
     }
 
-    // Inbox failed to load — warm copy + a real retry, not a dead-end line.
+    // Inbox failed to load — what really happened, in the one state language
+    // (§4: offline, our side, an ended session), with a real retry. It said
+    // "Couldn't load your chats." whatever the cause.
     private var loadFailedCard: some View {
-        VStack(spacing: Nuru.S.md) {
-            Icon(.messageCircle, size: 22, color: Color(hex: 0x74808F))
-            Text(vm.error ?? "Couldn't load your chats.")
-                .font(.nCardBody).foregroundStyle(Color(hex: 0x74808F))
-                .multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                // A compact action is a navy pill (§8.1 rule 4).
-                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, Nuru.S.lg).padding(.vertical, 9)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
+        NuruStateView(state: .failed(vm.loadFailure.map { NuruStateCopy.failure($0) } ?? .serverSide),
+                      retry: { Task { await vm.load() } })
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 32).padding(.horizontal, Nuru.S.base)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     private func matches(_ c: ChatConversation) -> Bool {

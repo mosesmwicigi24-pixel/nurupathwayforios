@@ -10,6 +10,20 @@
 // share ONE refresh — the first 401 spends the token, the rest await it.
 import Foundation
 
+/// Scripted visual verification only (a DEBUG build on the simulator):
+/// NURU_UITEST_OFFLINE=1 makes the phone read as having no network, so every
+/// tab's offline state can be captured (EXPERIENCE.md §9.4). Always false in
+/// a release build and on a device.
+enum UITestHooks {
+    static let offline: Bool = {
+        #if DEBUG && targetEnvironment(simulator)
+        return ProcessInfo.processInfo.environment["NURU_UITEST_OFFLINE"] == "1"
+        #else
+        return false
+        #endif
+    }()
+}
+
 enum APIError: LocalizedError {
     case http(status: Int, code: String?, message: String, details: ErrorDetails? = nil)
     case decoding(String)
@@ -289,6 +303,10 @@ actor APIClient {
         let keepCopy = Self.keepsLastGoodCopy(method, trimmed)
         var data: Data, response: URLResponse
         do {
+            // Scripted state captures (EXPERIENCE.md §9.4): a debug simulator
+            // run with NURU_UITEST_OFFLINE=1 fails every call the way a phone
+            // with no network does — through the same path below.
+            if UITestHooks.offline { throw URLError(.notConnectedToInternet) }
             (data, response) = try await Self.session.data(for: req)
         } catch let urlErr as URLError {
             // The wire failed. For a read we keep copies of, the last good copy

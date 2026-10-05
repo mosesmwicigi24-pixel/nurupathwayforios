@@ -629,12 +629,18 @@ private struct SyncStatusBanner: View {
         return nil
     }
 
+    /// The message on screen. It announces a change, then steps aside after
+    /// a few seconds (EXPERIENCE.md §9.4): pinned, it sat on every tab's
+    /// title ("Sow into the Kingdom" hidden behind it — §8.1 rule 9). Each
+    /// screen keeps saying it is offline in its own state card or strip.
+    @State private var shown: String?
+
     var body: some View {
         // The animation/transition pair lives OUTSIDE the `if let` — attached to
         // the conditional content itself they never ran, so the pill used to pop
         // in/out instead of sliding.
         ZStack(alignment: .top) {
-            if let message {
+            if let message = shown {
                 HStack(spacing: 6) {
                     Icon(.clock, size: 14, color: Nuru.onNavy)
                     Text(message).font(.inter(12, .semibold)).foregroundStyle(Nuru.onNavy)
@@ -647,7 +653,14 @@ private struct SyncStatusBanner: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: message)
+        .animation(.easeInOut(duration: 0.25), value: shown)
+        .task(id: message) {
+            shown = message
+            guard message != nil else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if !Task.isCancelled { shown = nil }
+        }
+        .allowsHitTesting(false)
     }
 }
 
