@@ -53,8 +53,10 @@ enum MLMarkdown {
 
     /// Parse a Markdown lesson body into ordered blocks. Blank lines separate
     /// blocks; runs of like items (bullets, numbered, quote lines, table rows)
-    /// are coalesced into one block.
-    static func parse(_ raw: String) -> [MLBlock] {
+    /// are coalesced into one block. `hardBreaks`: a single line break inside
+    /// a paragraph is kept as written (an announcement's "Yours in Service,⏎
+    /// Discipleship Dept."), where a lesson's is markdown's soft wrap.
+    static func parse(_ raw: String, hardBreaks: Bool = false) -> [MLBlock] {
         let lines = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -65,7 +67,7 @@ enum MLMarkdown {
         var i = 0
 
         func flushParagraph() {
-            let joined = paragraph.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            let joined = paragraph.joined(separator: hardBreaks ? "\n" : " ").trimmingCharacters(in: .whitespaces)
             if !joined.isEmpty { blocks.append(.paragraph(joined)) }
             paragraph.removeAll()
         }
@@ -293,7 +295,7 @@ enum MLMarkdown {
 struct MLMarkdownView: View {
     let blocks: [MLBlock]
 
-    init(_ content: String) { self.blocks = MLMarkdown.parse(content) }
+    init(_ content: String, hardBreaks: Bool = false) { self.blocks = MLMarkdown.parse(content, hardBreaks: hardBreaks) }
     init(blocks: [MLBlock]) { self.blocks = blocks }
 
     var body: some View {

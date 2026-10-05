@@ -277,6 +277,28 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(copy.action, .goBack, "never Try again — it would only be refused again")
     }
 
+    // MARK: Cycle 4 visual notes — an announcement's body is markdown
+
+    /// It rendered raw through a plain `Text` ("**great people**"). Now the
+    /// lesson's renderer draws it — and keeps the author's line breaks, where a
+    /// lesson keeps markdown's soft wrap.
+    func testAnAnnouncementsBodyIsMarkdownWithItsLineBreaksKept() {
+        let body = "Greetings **great people**.\n\n## This week\n- Bring a friend\n- Bring a Bible\n\nYours in Service,\nDiscipleship Dept."
+        let blocks = MLMarkdown.parse(body, hardBreaks: true)
+        XCTAssertEqual(blocks.count, 4)
+        guard blocks.count == 4 else { return }
+        if case let .paragraph(t) = blocks[0] { XCTAssertEqual(t, "Greetings **great people**.") } else { XCTFail("paragraph") }
+        if case let .heading(level, t) = blocks[1] { XCTAssertEqual(level, 2); XCTAssertEqual(t, "This week") } else { XCTFail("heading") }
+        if case let .bullet(items) = blocks[2] { XCTAssertEqual(items, ["Bring a friend", "Bring a Bible"]) } else { XCTFail("list") }
+        if case let .paragraph(t) = blocks[3] {
+            XCTAssertEqual(t, "Yours in Service,\nDiscipleship Dept.", "the sign-off keeps its two lines")
+        } else { XCTFail("sign-off") }
+        // The emphasis is drawn, never shown as asterisks.
+        XCTAssertEqual(String(MLMarkdown.inline("Greetings **great people**.").characters), "Greetings great people.")
+        // A lesson's single line break is still markdown's soft wrap.
+        if case let .paragraph(t)? = MLMarkdown.parse("one\ntwo").first { XCTAssertEqual(t, "one two") } else { XCTFail("lesson") }
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

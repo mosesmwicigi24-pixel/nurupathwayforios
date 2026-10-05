@@ -21,6 +21,18 @@ final class AnnouncementDetailViewModel: ObservableObject {
     /// this is the one place an announcement is marked opened.
     func load() async {
         loading = true; failure = nil
+        #if DEBUG
+        // Screenshot fixture (NURU_SCREEN=announcement:debug-markdown): a body
+        // that exercises the markdown renderer, without writing an announcement
+        // that anyone receives. Debug builds only.
+        if announcementId == "debug-markdown" {
+            let json = #"{"announcement_id":"debug-markdown","title":"Graduation is calling","sent_at":"2026-10-05T07:08:50.175Z","images":[],"opened":true,"body":"Greetings **great people**. As we finish Level 1 together, there are *three things* to bring to the graduation service:\n\n## Before Sunday\n- Your facilitation fee, by cash or M-Pesa\n- A friend who has watched you grow\n- Your Bible\n\n> Let us not grow weary of doing good.\n\nYours in Service,\nDiscipleship Dept."}"#
+            let d = JSONDecoder(); d.keyDecodingStrategy = .convertFromSnakeCase
+            detail = try? d.decode(AnnouncementDetail.self, from: Data(json.utf8))
+            loading = false
+            return
+        }
+        #endif
         do { detail = try await MemberAPI.announcement(announcementId) }
         catch { failure = error }
         loading = false
@@ -55,8 +67,11 @@ struct AnnouncementDetailView: View {
                         if let url = d.primaryImageUrl.flatMap(URL.init) {
                             heroImage(url).gentleEntrance()
                         }
-                        Text(d.body).font(.nBodyLg).foregroundStyle(Nuru.ink)
-                            .fixedSize(horizontal: false, vertical: true)
+                        // The body is markdown — it rendered raw ("**Bring a
+                        // friend**") through a plain Text. The lesson's renderer
+                        // draws it in the one 16 pt reading body, keeping the
+                        // author's line breaks (a sign-off stays two lines).
+                        MLMarkdownView(d.body, hardBreaks: true)
                             .gentleEntrance(delay: 0.05)
                         if let v = d.videoUrl.flatMap(URL.init) { videoTile(v).gentleEntrance(delay: 0.1) }
                         if !images.isEmpty { gallery.gentleEntrance(delay: 0.15) }
