@@ -983,16 +983,20 @@ private struct SeriesRailRow: View {
 
     var body: some View {
         HStack(spacing: Nuru.S.md) {
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(hex: Nuru.tileTint))
+            // A series is a repeating gathering (the server lists only those,
+            // §9.2 #11): its tile says so — it was drawn empty (the Cycle 4
+            // walk's 42; §8.1 rule 7, an icon on a gold-tint tile).
+            Icon(.repeat, size: 18, color: Nuru.navy)
+                .frame(width: 36, height: 36)
+                .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
-                .frame(width: 36, height: 36)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     // Titles wrap to two lines (rule 9; the walk's 43: two
                     // "Graduation & Commission…" rows that couldn't be told apart).
-                    Text(series.title).font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
+                    // A series is a thing: the content row title (§8.1 rule 3).
+                    Text(series.title).font(.nRowTitle).foregroundStyle(Nuru.navy)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if series.following && series.newCount > 0 {
                         Text("\(series.newCount) new").font(.inter(11, .bold))
