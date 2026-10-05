@@ -66,14 +66,16 @@ final class GivingStatementViewModel: ObservableObject {
     /// row whose timestamp cannot be read trails rather than sorting on its
     /// raw string.
     func records(in year: Int) -> [GivingRecord] {
+        // The year by created_at (the statements' rule); the order, the day
+        // and the time by the one time a gift shows (GiftTime, the walk's B7).
         history.filter { GiveCalendar.year(of: $0.createdAt) == year }
-            .map { ($0, giveParseDate($0.createdAt)) }
+            .map { ($0, giveParseDate($0.shownAt)) }
             .sorted { a, b in
                 switch (a.1, b.1) {
-                case let (x?, y?): return x != y ? x > y : a.0.createdAt > b.0.createdAt
+                case let (x?, y?): return x != y ? x > y : a.0.shownAt > b.0.shownAt
                 case (.some, .none): return true
                 case (.none, .some): return false
-                case (.none, .none): return a.0.createdAt > b.0.createdAt
+                case (.none, .none): return a.0.shownAt > b.0.shownAt
                 }
             }
             .map(\.0)
@@ -132,7 +134,7 @@ final class GivingStatementViewModel: ObservableObject {
         var map: [String: [GivingRecord]] = [:]
         for r in records {
             let key: String
-            if let d = giveParseDate(r.createdAt) {
+            if let d = giveParseDate(r.shownAt) {
                 let c = cal.dateComponents([.year, .month, .day], from: d)
                 key = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
             } else {
@@ -529,7 +531,7 @@ struct GivingStatementView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(g.fund.capitalized)
                     .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
+                Text("\(giveTime(g.shownAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 // A pledge payment says so — the complete record still tells
                 // the member which gifts counted toward a pledge (the partners

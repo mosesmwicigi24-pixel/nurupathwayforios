@@ -1292,3 +1292,23 @@ struct PartnerInvite: Codable, Sendable {
         var id: Int { amountMinor }
     }
 }
+
+/// The one time a gift shows (the Cycle 3 walk's B7): the statement said
+/// "Tithe · 11:58 AM" (created_at) while the receipt said 11:59 AM
+/// (settled_at), for the same KSh 200. A settled gift shows when it settled;
+/// any other shows when it was given. Which church year a gift counts in is
+/// not this — that stays created_at, the statements' own year rule.
+enum GiftTime {
+    static func shown(settledAt: String?, createdAt: String) -> String {
+        if let s = settledAt, !s.isEmpty { return s }
+        return createdAt
+    }
+}
+
+extension GivingRecord {
+    var shownAt: String { GiftTime.shown(settledAt: settledAt, createdAt: createdAt) }
+}
+
+extension GivingDetail {
+    var shownAt: String { GiftTime.shown(settledAt: settledAt, createdAt: createdAt) }
+}

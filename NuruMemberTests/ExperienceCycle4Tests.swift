@@ -473,6 +473,29 @@ final class ExperienceCycle4Tests: XCTestCase {
                        ["oct", "svc", "solo"], "Ablaze once, at 25 Oct — never three times")
     }
 
+    // MARK: Cycle 3 close walk B7 — one gift, one time
+
+    @MainActor
+    func testAGiftShowsOneTimeOnTheStatementAndTheReceipt() throws {
+        let gift: [String: Any] = ["transaction_id": "t1", "amount_minor": 20000, "currency": "KES", "status": "settled",
+                                   "fund": "tithe", "created_at": "2026-10-05T08:58:00.000Z", "settled_at": "2026-10-05T08:59:00.000Z"]
+        let record = try decode(GivingRecord.self, gift)
+        let detail = try decode(GivingDetail.self, gift)
+        XCTAssertEqual(record.shownAt, "2026-10-05T08:59:00.000Z", "a settled gift shows when it settled")
+        XCTAssertEqual(record.shownAt, detail.shownAt, "the statement and the receipt say the same time")
+        var pending = gift; pending["status"] = "pending"; pending["settled_at"] = NSNull()
+        XCTAssertEqual(try decode(GivingRecord.self, pending).shownAt, "2026-10-05T08:58:00.000Z", "not settled: when it was given")
+
+        // Which year a gift counts in stays created_at (the statements' rule):
+        // given 23:59:50 on 31 Dec (EAT), settled ten seconds into 1 Jan.
+        var lateNight = gift; lateNight["transaction_id"] = "t2"
+        lateNight["created_at"] = "2025-12-31T20:59:50.000Z"; lateNight["settled_at"] = "2025-12-31T21:00:10.000Z"
+        let vm = GivingStatementViewModel()
+        vm.history = [record, try decode(GivingRecord.self, lateNight)]
+        XCTAssertEqual(vm.records(in: 2025).map(\.transactionId), ["t2"])
+        XCTAssertEqual(vm.records(in: 2026).map(\.transactionId), ["t1"])
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

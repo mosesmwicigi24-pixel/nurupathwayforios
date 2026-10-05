@@ -241,7 +241,7 @@ struct GivingReceiptView: View {
                 Text("\u{201C}\(name)\u{201D}").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
             }
 
-            Text(whenLine(d.settledAt ?? d.createdAt))
+            Text(whenLine(d.shownAt))
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x8B95A5))
 
             // A status chip ONLY when the gift is not (yet) received — the
@@ -346,7 +346,7 @@ struct GivingReceiptView: View {
                 row(refLabel, ref, mono: true, copy: (key: "ref", text: ref))
             }
             hairline
-            row("Date", whenFull(d.settledAt ?? d.createdAt))
+            row("Date", whenFull(d.shownAt))
             hairline
             row(idLabel, String(d.transactionId.prefix(8)) + "…", mono: true, copy: (key: "txid", text: d.transactionId))
         }
@@ -532,7 +532,7 @@ struct GivingReceiptView: View {
     private func shareText(_ d: GivingDetail) -> String {
         var method = methodLabel(d)
         if let ref = d.receiptCode ?? d.providerRef, !ref.isEmpty { method += " \(ref)" }
-        return "\(money(d.amountMinor, d.currency)) \(destinationPhrase(d)) · \(method) · \(giveDateFull(d.settledAt ?? d.createdAt))"
+        return "\(money(d.amountMinor, d.currency)) \(destinationPhrase(d)) · \(method) · \(giveDateFull(d.shownAt))"
     }
 
     // MARK: Verse footer — the Give page's verse card
@@ -616,17 +616,16 @@ struct GivingReceiptView: View {
     }
 
     /// "Thu 25 Sep 2026 · 8:11 PM"
+    /// "Fri 25 Sep · 8:11 PM" (the year when it isn't this year).
     private func whenLine(_ iso: String) -> String {
         guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-        let f = DateFormatter(); f.dateFormat = "EEE d MMM yyyy · h:mm a"
-        return f.string(from: d)
+        return NuruDates.dayTime(d)
     }
 
-    /// "25 September 2026 · 8:11 PM"
+    /// "Fri 25 Sep 2026 · 8:11 PM" — a record kept, so always the year.
     private func whenFull(_ iso: String) -> String {
         guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-        let f = DateFormatter(); f.dateFormat = "d MMMM yyyy · h:mm a"
-        return f.string(from: d)
+        return NuruDates.dayTime(d, withYear: true)
     }
 }
 

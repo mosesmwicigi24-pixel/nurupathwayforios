@@ -1322,7 +1322,7 @@ struct GivingView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
                     .lineLimit(1)
-                Text("\(giveDateShort(g.createdAt)) · \(givingMethodName(g.method))")
+                Text("\(giveDateShort(g.shownAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
             }
             Spacer()

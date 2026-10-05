@@ -12,9 +12,10 @@ enum NuruDates {
         ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
     }
 
-    /// "Sun 11 Oct"; "Fri 1 Jan 2027" when the year isn't this year.
-    static func day(_ date: Date, now: Date = Date(), timeZone: TimeZone = .current) -> String {
-        format(date, sameYear(date, now, timeZone) ? "EEE d MMM" : "EEE d MMM yyyy", timeZone)
+    /// "Sun 11 Oct"; "Fri 1 Jan 2027" when the year isn't this year — or
+    /// always, `withYear`, for a record kept (a receipt's date).
+    static func day(_ date: Date, now: Date = Date(), timeZone: TimeZone = .current, withYear: Bool = false) -> String {
+        format(date, !withYear && sameYear(date, now, timeZone) ? "EEE d MMM" : "EEE d MMM yyyy", timeZone)
     }
 
     /// "9:00 AM".
@@ -23,8 +24,8 @@ enum NuruDates {
     }
 
     /// "Sun 11 Oct · 9:00 AM".
-    static func dayTime(_ date: Date, now: Date = Date(), timeZone: TimeZone = .current) -> String {
-        "\(day(date, now: now, timeZone: timeZone)) · \(time(date, timeZone: timeZone))"
+    static func dayTime(_ date: Date, now: Date = Date(), timeZone: TimeZone = .current, withYear: Bool = false) -> String {
+        "\(day(date, now: now, timeZone: timeZone, withYear: withYear)) · \(time(date, timeZone: timeZone))"
     }
 
     /// "October 2026" — a month heading, not a day.
