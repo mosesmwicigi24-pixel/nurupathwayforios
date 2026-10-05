@@ -796,7 +796,10 @@ private struct PathwaySelectedModules: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(level.title.uppercased()).font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).lineLimit(1)
+                    // Whole, never cut (§8.1 rule 9): "FOUNDATIONS OF GRACE &
+                    // KINGDOM PERSPECT…" wraps to a second line instead.
+                    Text(level.title.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(PW.goldDeep)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text("\(min(level.lessonsDone, level.lessonCount)) of \(level.lessonCount) done").font(.inter(11)).foregroundStyle(PW.ink2)
                 }
                 Spacer()
@@ -946,7 +949,10 @@ private struct PWModuleRow: View {
                 // A module is a thing: the content row title, Fraunces 15 — the
                 // same face the level page gives it (§8.1 rule 3).
                 Text(ExamWords.rowTitle(module)).font(.nRowTitle)
-                    .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
+                    .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy)
+                    // Titles wrap to two lines, never cut (§8.1 rule 9):
+                    // "Christian Living & Character (First Ste…".
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text(caption)
                     .font(.inter(11, (active || isExam) ? .bold : .medium))
                     .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
@@ -1344,6 +1350,8 @@ struct LevelsMapView: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Your pathway is unfolding.")
                             .font(.fraunces(28, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
+                            // Whole beside the ring (§8.1 rule 9): it read "Your pathway is un…".
+                            .fixedSize(horizontal: false, vertical: true)
                         Text("A calm view of your discipleship journey, saved progress, and what opens next.")
                             .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
                             .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
