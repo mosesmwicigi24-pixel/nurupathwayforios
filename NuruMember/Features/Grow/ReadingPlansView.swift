@@ -108,9 +108,11 @@ final class ReadingPlansViewModel: ObservableObject {
         async let promoList = try? MemberAPI.planPromos()
         do { plans = try await MemberAPI.plans() }
         catch { failure = error }
+        // Today's day needs the plan being read — read it while the
+        // achievements and promos are still on their way.
+        await loadToday()
         streak = (await ach)?.streak?.current ?? 0
         promos = (await promoList) ?? []
-        await loadToday()
         loading = false
     }
 
