@@ -23,6 +23,40 @@ struct BrandMark: View {
     }
 }
 
+/// One header per tab (EXPERIENCE.md §8.1 rules 2–3) — its words in the
+/// type roles both apps share: the gold kicker in caps (Inter 11 bold,
+/// tracking 1.4), the Fraunces screen title (26, wrapping to two lines, never
+/// cut), and one Inter line of what matters now. Each tab keeps its own band,
+/// switch and bell around it; this is only the words, so every tab reads alike.
+struct NuruHeaderText: View {
+    var kicker: String? = nil
+    let title: String
+    var line: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if let kicker, !kicker.isEmpty {
+                Text(kicker.uppercased())
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                    .padding(.bottom, 6)
+            }
+            Text(title)
+                .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(Nuru.navy)
+                .lineLimit(2).minimumScaleFactor(0.85)
+                .fixedSize(horizontal: false, vertical: true)
+            if let line, !line.isEmpty {
+                Text(line)
+                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
 /// A white card that floats on one soft shadow.
 struct Card<Content: View>: View {
     var padding: CGFloat = Nuru.S.base

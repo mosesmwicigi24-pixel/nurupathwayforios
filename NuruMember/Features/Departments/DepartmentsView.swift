@@ -97,15 +97,9 @@ struct DepartmentsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("DEPARTMENTS")
-                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Color(hex: 0x9A7A2A))
-            Text("Where to serve")
-                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-                .padding(.top, 4)
-            Text("The teams that carry this church — what they do, what they need, and where you'd fit.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 4)
-                .fixedSize(horizontal: false, vertical: true)
+            // The one header's words (§8.1 rules 2–3).
+            NuruHeaderText(kicker: "Departments", title: "Where to serve",
+                           line: "The teams that carry this church — what they do, what they need, and where you'd fit.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)

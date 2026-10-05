@@ -795,11 +795,9 @@ struct PartnersView: View {
                 GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
-            Text("Walk with the church")
-                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-            Text("Decide in advance. The church can plan.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 4)
+            // The one header's words (§8.1 rules 2–3); the switch above
+            // names the tab, so no eyebrow repeats it.
+            NuruHeaderText(title: "Walk with the church", line: "Decide in advance. The church can plan.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)

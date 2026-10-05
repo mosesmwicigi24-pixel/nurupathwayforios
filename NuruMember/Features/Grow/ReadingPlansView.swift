@@ -251,15 +251,11 @@ struct ReadingPlansView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.catText)
-                    Text("Grow in the Word").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(PL.navy)
-                        .padding(.top, 4)
-                    // One line of what matters now (§6.2): the plan being read —
-                    // the same plan and day Home's week names — else the tagline.
-                    Text(ReadingPlanRow.activeLine(in: vm.plans) ?? "A little every day — with the whole family of God.")
-                        .font(.inter(12)).foregroundStyle(PL.ink2).padding(.top, 4)
-                }
+                // One line of what matters now (§6.2): the plan being read —
+                // the same plan and day Home's week names — else the tagline.
+                // The one header's words (§8.1 rules 2–3).
+                NuruHeaderText(kicker: "Plans", title: "Grow in the Word",
+                               line: ReadingPlanRow.activeLine(in: vm.plans) ?? "A little every day — with the whole family of God.")
                 Spacer(minLength: 8)
                 bellButton
             }

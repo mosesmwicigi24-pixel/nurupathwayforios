@@ -149,6 +149,21 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(j.pill, "20 of 21 modules")
     }
 
+    // MARK: §8.2 #1 — one header: Pathway's one line
+
+    func testPathwaysHeaderLineSaysWhereTheLevelStands() throws {
+        let ada = try decode(PathwayLevel.self, adasLevelOne)
+        XCTAssertEqual(PathwayTrail.headerLine(ada, position: 1, of: 6), "Level 1 of 6 · 20 of 20 modules")
+        let walking = try decode(PathwayLevel.self, level(2, "active", done: 3, of: 11, lessons: (3, 10)))
+        XCTAssertEqual(PathwayTrail.headerLine(walking, position: 2, of: 6), "Level 2 of 6 · 3 of 10 modules")
+        let older = try decode(PathwayLevel.self, level(2, "active", done: 3, of: 10))
+        XCTAssertEqual(PathwayTrail.headerLine(older, position: 2, of: 6), "Level 2 of 6 · 3 of 10 modules")
+        let unpublished = try decode(PathwayLevel.self, level(2, "active"))
+        XCTAssertEqual(PathwayTrail.headerLine(unpublished, position: 2, of: 6), "Level 2 of 6 · Modules open soon",
+                       "never \"0 of 0 modules\"")
+        XCTAssertEqual(PathwayTrail.headerLine(nil, position: 1, of: 6), "Level 1 of 6")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

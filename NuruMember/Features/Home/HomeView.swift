@@ -746,7 +746,9 @@ struct HomeView: View {
                 HStack(spacing: 6) {
                     Image(systemName: skyGlyph).font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(Nuru.gold)
-                    Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.42).foregroundStyle(Color(hex: 0x9A7A2A))
+                    // The kicker role (§8.1 rule 3) — at the old 2.4 tracking
+                    // Sunday's "THE LORD'S DAY" kicker was cut short.
+                    Text(todayKicker()).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                         .lineLimit(1).minimumScaleFactor(0.85)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)

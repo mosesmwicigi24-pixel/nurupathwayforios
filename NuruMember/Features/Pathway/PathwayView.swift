@@ -62,22 +62,11 @@ private enum PW {
 }
 
 // Small helpers shared by the PathwayHub subviews (mirror the Figma functions).
-private func pwGreeting() -> String {
-    let h = Calendar.current.component(.hour, from: Date())
-    if h < 12 { return "Good morning" }
-    if h < 17 { return "Good afternoon" }
-    return "Good evening"
-}
+// (The greeting left Pathway with Cycle 4 — it belongs to Home alone, §8.1.)
 private func pwShortName(_ t: String) -> String {
     let w = t.split(separator: " ").first.map(String.init) ?? ""
     guard let f = w.first else { return "" }
     return String(f).uppercased() + w.dropFirst().lowercased()
-}
-private func pwSubtitle(_ l: PathwayLevel?) -> String {
-    guard let l else { return "" }
-    if let t = l.theme, !t.isEmpty { return t }
-    if let d = l.description, !d.isEmpty { return d }
-    return PW.subtitle[l.levelNumber] ?? ""
 }
 
 /// The reward the member is working toward — the first not-yet-complete level.
@@ -271,7 +260,7 @@ struct PathwayView: View {
         let journey = vm.journey
         return VStack(spacing: 0) {
             PathwayHubHeader(
-                vm: vm, firstName: firstName, active: active, journey: journey,
+                vm: vm, active: active, journey: journey,
                 open: { d in
                     if case .module(let id) = d { openModuleId(id) } else { path.append(d.route) }
                 })
@@ -350,7 +339,6 @@ struct PathwayView: View {
 
 private struct PathwayHubHeader: View {
     @ObservedObject var vm: PathwayViewModel
-    let firstName: String
     let active: PathwayLevel?
     /// The member's journey — the hero card's next step and the ring (§3).
     let journey: Journey?
@@ -376,12 +364,12 @@ private struct PathwayHubHeader: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 topBar
-                Text("\(pwGreeting()), \(firstName) · Level \(idx + 1) of \(vm.levelCount)")
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 16)
-                Text(active?.title ?? "Your pathway")
-                    .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(PW.navy)
-                    .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
-                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 4)
+                // One header (EXPERIENCE.md §8.1 rule 2): PATHWAY (the top
+                // bar's kicker) · the level · one line of where it stands. The
+                // greeting belongs to Home alone.
+                NuruHeaderText(title: active?.title ?? "Your pathway",
+                               line: PathwayTrail.headerLine(active, position: idx + 1, of: vm.levelCount))
+                    .padding(.top, 12)
                 HStack(spacing: 8) {
                     PWBar(pct: activePct, height: 6,
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
@@ -410,7 +398,7 @@ private struct PathwayHubHeader: View {
     private var topBar: some View {
         HStack {
             HStack(spacing: 8) {
-                Text("YOUR PATHWAY").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0x9A7A2A))
+                Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                 if vm.streak > 0 {
                     HStack(spacing: 4) {
                         Icon(.flame, size: 9, color: Color(hex: 0x9A7A2A))
@@ -753,6 +741,17 @@ enum PathwayTrail {
     static func folds(_ journey: Journey?, levelNumber: Int, modules: [LevelModule]) -> Bool {
         guard let j = journey else { return false }
         return j.stage != .learning && j.levelNumber == levelNumber && !modules.isEmpty
+    }
+
+    /// The Pathway header's one line (§8.1 rule 2, §8.2 #1): "Level 1 of 6 ·
+    /// 20 of 20 modules" — where the level sits on the road, then its lessons
+    /// (the exam is its own step, §8.2 #4). A level with nothing published yet
+    /// says so in the journey's words rather than "0 of 0 modules".
+    static func headerLine(_ level: PathwayLevel?, position: Int, of count: Int) -> String {
+        let place = "Level \(position) of \(count)"
+        guard let level else { return place }
+        guard level.lessonCount > 0 else { return place + " · Modules open soon" }
+        return place + " · \(min(level.lessonsDone, level.lessonCount)) of \(level.lessonCount) modules"
     }
 
     /// The folded row's words: "20 of 20 modules done · Show" — the level's

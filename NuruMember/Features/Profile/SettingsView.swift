@@ -134,7 +134,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("PREFERENCES")
                     .font(.nCardKicker).kerning(1.4)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
+                    .foregroundStyle(Nuru.eyebrow)
                 Text("Settings")
                     .font(.fraunces(26, .semibold))
                     .foregroundStyle(Nuru.navy)

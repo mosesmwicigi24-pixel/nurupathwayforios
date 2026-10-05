@@ -176,7 +176,7 @@ struct ProfileView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("ACCOUNT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A))
+                Text("ACCOUNT").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                 Spacer()
                 // Inside the You tab the segment bar's Settings is the one way
                 // in (§6.2) — a second gear here was a second door to it.

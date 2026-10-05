@@ -32,6 +32,9 @@ enum Nuru {
     static let goldTint   = Color(hex: 0xFFF4C7)
     static let goldChipBg   = Color(hex: 0xFFF4DA)
     static let goldChipText = Color(hex: 0x7A5A14)
+    /// Gold kicker text on light — every header's eyebrow and card kicker
+    /// (EXPERIENCE.md §8.1 rule 3). Android's `Nuru.eyebrow`, the same value.
+    static let eyebrow      = Color(hex: 0x9A7A2A)
     static let priorityBg   = Color(hex: 0xFFFAEC)   // selected-tile tint (giving funds)
 
     // MARK: Ink (text)

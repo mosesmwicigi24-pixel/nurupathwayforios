@@ -415,11 +415,8 @@ struct EventsView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("EVENTS").font(.inter(11, .bold)).kerning(2).foregroundStyle(Color(hex: 0x9A7A2A))
-                    Text("Gathered together").font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
-                    Text(vm.headerLine).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                }
+                // The one header's words (§8.1 rules 2–3).
+                NuruHeaderText(kicker: "Events", title: "Gathered together", line: vm.headerLine)
                 Spacer()
                 // The one bell (§7.2 #4): the dot only while the inbox has
                 // something unread (it was painted on).

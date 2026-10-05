@@ -1,5 +1,5 @@
 // Chat — "Nuru Connect" inbox, the native port of the Figma ChatTab. A cream
-// header (time-based greeting overline, serif title, bell → notifications), a
+// header (COMMUNITY kicker, serif title, bell → notifications — §8.1 rule 2), a
 // white search bar, the "Quick help from Nuru" AI launcher (gradient ring, orb,
 // live dot), the italic "Verse for today" ribbon, and a capsule segment control
 // (#My Space · DM · My Groups with counts). Each segment renders one grouped
@@ -437,19 +437,10 @@ struct ChatView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Icon(.sparkle, size: 12, color: Color(hex: 0x9A7A2A))
-                        Text("\(greeting.uppercased()) · \(firstName.uppercased())")
-                            .font(.inter(11, .semibold)).kerning(2.4).foregroundStyle(Color(hex: 0x9A7A2A))
-                    }
-                    Text("Nuru Connect")
-                        .font(.fraunces(30, .semibold)).kerning(-0.6).foregroundStyle(Nuru.navy)
-                        .padding(.top, Nuru.S.md)
-                    Text(vm.totalUnread > 0 ? "\(vm.totalUnread) unread · \(vm.spaces.count) spaces" : "You’re all caught up")
-                        .font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
-                        .padding(.top, 6)
-                }
+                // One header (EXPERIENCE.md §8.1 rule 2): the kicker names the
+                // tab — the greeting belongs to Home alone.
+                NuruHeaderText(kicker: "Community", title: "Nuru Connect",
+                               line: vm.totalUnread > 0 ? "\(vm.totalUnread) unread · \(vm.spaces.count) spaces" : "You’re all caught up")
                 Spacer(minLength: 0)
                 bellButton
             }
@@ -1158,16 +1149,11 @@ struct ChatView: View {
 
     // MARK: Derived
 
-    private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
     private var myInitials: String {
         let parts = (auth.profile?.fullName ?? "").split(separator: " ")
         guard let f = parts.first?.first else { return "ME" }
         if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
         return String(f).uppercased()
-    }
-    private var greeting: String {
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
     }
     private func firstWord(_ s: String?) -> String { (s ?? "—").split(separator: " ").first.map(String.init) ?? "—" }
 }
