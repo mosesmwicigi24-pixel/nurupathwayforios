@@ -439,8 +439,9 @@ private struct EvdHero: View {
         VStack(alignment: .leading, spacing: 0) {
             // top chrome — back (left) + share (right)
             HStack {
-                Button(action: onBack) { EvdCircleGlyph(icon: .chevronLeft, size: 20) }
+                Button(action: onBack) { EvdCircleGlyph(icon: .arrowLeft, size: 18) }
                     .buttonStyle(.pressable)
+                    .accessibilityLabel("Back")
                 Spacer()
                 ShareLink(item: shareText) { EvdCircleGlyph(icon: .share2, size: 17) }
                     .buttonStyle(.pressable)

@@ -89,12 +89,13 @@ struct ReadWithFriendHubView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button { Haptics.tap(); dismiss() } label: {
-                Icon(.chevronLeft, size: 18, color: PL.navy)
+                Icon(.arrowLeft, size: 18, color: PL.navy)
                     .frame(width: 40, height: 40)
                     .background(Color.white, in: Circle())
                     .overlay(Circle().stroke(PL.border, lineWidth: 1))
             }
             .buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             VStack(alignment: .leading, spacing: 2) {
                 Text("READ WITH A FRIEND").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.catText)
                 Text("Your shared plans").font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
@@ -391,12 +392,13 @@ struct ReadingGroupDetailView: View {
     private var headerBar: some View {
         HStack {
             Button { Haptics.tap(); dismiss() } label: {
-                Icon(.chevronLeft, size: 18, color: PL.navy)
+                Icon(.arrowLeft, size: 18, color: PL.navy)
                     .frame(width: 40, height: 40)
                     .background(Color.white, in: Circle())
                     .overlay(Circle().stroke(PL.border, lineWidth: 1))
             }
             .buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             Spacer(minLength: 0)
         }
         .padding(.top, 24)

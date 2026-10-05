@@ -870,7 +870,9 @@ struct PlanDetailView: View {
         .clipped()
         .overlay(alignment: .topLeading) {
             HStack {
-                circleBtn(.chevronLeft, tint: .white) { dismiss() }
+                // The "←" every pushed page wears (the Cycle 4 walk saw "‹" here).
+                circleBtn(.arrowLeft, size: 18, tint: .white) { dismiss() }
+                    .accessibilityLabel("Back")
                 Spacer()
                 saveButton
             }
@@ -909,9 +911,9 @@ struct PlanDetailView: View {
         }
     }
 
-    private func circleBtn(_ icon: Lucide, tint: Color, action: @escaping () -> Void) -> some View {
+    private func circleBtn(_ icon: Lucide, size: CGFloat = 22, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: 22, color: tint)
+            Icon(icon, size: size, color: tint)
                 .frame(width: 40, height: 40)
                 .background(Color.black.opacity(0.35), in: Circle())
         }
@@ -1549,12 +1551,13 @@ struct PlanDayView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Button { dismiss() } label: {
-                    Icon(.chevronLeft, size: 18, color: .white)
-                        .frame(width: 36, height: 36)
+                    Icon(.arrowLeft, size: 18, color: .white)
+                        .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
+                .accessibilityLabel("Back")
                 Spacer()
                 if let pt = ref.planTitle, !pt.isEmpty {
                     Text(pt.uppercased()).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(PL.gold)

@@ -163,9 +163,10 @@ struct NotificationsView: View {
     private var topBar: some View {
         HStack(spacing: Nuru.S.md) {
             Button { dismiss() } label: {
-                Icon(.chevronLeft, size: 22, color: Nuru.navy)
+                Icon(.arrowLeft, size: 18, color: Nuru.navy)
                     .frame(width: 40, height: 40).background(Nuru.mutedBg, in: Circle())
             }
+            .accessibilityLabel("Back")
             VStack(alignment: .leading, spacing: 0) {
                 // The header as on Android (§8.2 #10): the serif title, one line.
                 Text("Notifications").font(.nCardTitle).foregroundStyle(Nuru.ink)

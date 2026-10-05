@@ -551,7 +551,7 @@ struct RadioPlayerView: View {
 
     private var header: some View {
         HStack {
-            GlassSquareButton(sfSymbol: nil, lucide: .chevronLeft) {
+            GlassSquareButton(sfSymbol: nil, lucide: .arrowLeft, iconSize: 18) {
                 Haptics.tap()
                 dismiss()
             }

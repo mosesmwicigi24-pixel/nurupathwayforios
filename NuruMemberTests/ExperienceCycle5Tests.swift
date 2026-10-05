@@ -416,4 +416,23 @@ final class ExperienceCycle5Tests: XCTestCase {
         // An older server: absent, so the door says the count alone.
         XCTAssertNil(try decode(AssembledExam.self, ["level_number": 1, "question_count": 3, "questions": []]).passMark)
     }
+
+    // MARK: Cycle 4 walk — every back control is the "←" arrow
+
+    /// Map view's back was a "‹" while every other pushed page wore "←" — and
+    /// so were ten more, from a plan's pages to the inbox. A chevron left now
+    /// only steps a pager, each listed here by its line.
+    func testEveryBackControlIsTheArrow() throws {
+        let pagers: Set<String> = [
+            "Features/Pathway/ModuleView.swift: arrow(.chevronLeft, enabled: current > 0) { onSelect(current - 1) }",
+            "Features/Events/CalendarView.swift: navButton(.chevronLeft) { stepMonth(-1) }",
+        ]
+        var found: Set<String> = []
+        for (rel, text) in try TypeScan.files() where rel != "Theme/LucideIcons.swift" {
+            for line in text.split(separator: "\n", omittingEmptySubsequences: false) where line.contains(".chevronLeft") {
+                found.insert("\(rel): \(line.trimmingCharacters(in: .whitespaces))")
+            }
+        }
+        XCTAssertEqual(found, pagers, "a back control wears Lucide's arrow-left, like every pushed page; a chevron only steps a pager")
+    }
 }

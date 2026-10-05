@@ -1334,12 +1334,15 @@ struct LevelsMapView: View {
             Circle().fill(PW.gold.opacity(0.14)).frame(width: 288, height: 288).blur(radius: 48).offset(x: 80, y: -96)
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
+                    // The "←" every pushed page wears (the Cycle 4 walk: Map
+                    // view's "‹" was the odd one out).
                     Button { Haptics.tap(); dismiss() } label: {
-                        Icon(.chevronLeft, size: 22, color: PW.navy).frame(width: 36, height: 36)
+                        Icon(.arrowLeft, size: 18, color: PW.navy).frame(width: 40, height: 40)
                             .background(Color.white, in: Circle())
                             .overlay(Circle().stroke(PW.border, lineWidth: 1))
                             .contentShape(Circle())
                     }.buttonStyle(.pressable)
+                    .accessibilityLabel("Back")
                     Spacer()
                 }
                 // A pushed page's kicker names the page (§8.1 rule 2) — the

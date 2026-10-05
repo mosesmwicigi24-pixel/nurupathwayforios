@@ -1347,12 +1347,13 @@ private struct EvSubHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Button { dismiss() } label: {
-                    Icon(.chevronLeft, size: 18, color: Nuru.navy)
+                    Icon(.arrowLeft, size: 18, color: Nuru.navy)
                         .frame(width: 40, height: 40)
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Back")
                 Spacer()
                 Text(eyebrow.uppercased()).font(.inter(11, .bold)).kerning(1.5)
                     .foregroundStyle(Color(hex: 0x9A7A2A))

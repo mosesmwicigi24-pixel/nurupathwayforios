@@ -157,10 +157,11 @@ struct NuruAssistantView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button { dismiss() } label: {
-                Icon(.chevronLeft, size: 22, color: .white)
+                Icon(.arrowLeft, size: 18, color: .white)
                     .frame(width: 40, height: 40)
                     .contentShape(Rectangle())
             }.buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             ZStack(alignment: .topTrailing) {
                 RoundedRectangle(cornerRadius: 14, style: .continuous).fill(NUR.orb).frame(width: 44, height: 44)
                     .overlay(Icon(.sparkles, size: 18, color: .white))
