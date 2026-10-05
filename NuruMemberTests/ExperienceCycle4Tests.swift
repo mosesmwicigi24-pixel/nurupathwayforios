@@ -363,6 +363,32 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(ModuleRowWords.openAction(progress: 40), "Resume")
     }
 
+    // MARK: Android walk A4 / iOS E18 — one way to name a few people
+
+    func testOneJoinerForAFewNames() {
+        XCTAssertNil(NameList.join([], others: 0))
+        XCTAssertEqual(NameList.join(["Ada"], others: 0), "Ada")
+        XCTAssertEqual(NameList.join(["Ada", "Ben"], others: 0), "Ada and Ben")
+        XCTAssertEqual(NameList.join(["Ada", "Ben", "Cara"], others: 0), "Ada, Ben and Cara")
+        XCTAssertEqual(NameList.join(["Dee", "Cara", "Builder"], others: 2), "Dee, Cara, Builder and 2 others",
+                       "never \"Dee, Cara and Builder and 2 others\"")
+        XCTAssertEqual(NameList.join(["Eli"], others: 1), "Eli and 1 other")
+        XCTAssertEqual(NameList.join(["Dee", "Cara", "Builder"], others: 2, stable: true), "Builder, Cara, Dee and 2 others",
+                       "a stable order, so the line doesn't reshuffle on every load")
+    }
+
+    // MARK: Android walk A2 — "before you" only when it's true
+
+    func testFootprintsSayBeforeYouOnlyWhileTheModuleIsYetToDo() throws {
+        let r = try decode(FootprintsRes.self, ["count": 3, "scope": "cell",
+                                                "footprints": [["first_name": "Eli", "completed_at": "2026-10-04T08:00:00Z"],
+                                                               ["first_name": "Dee", "completed_at": "2026-10-03T08:00:00Z"]]])
+        XCTAssertEqual(FootprintsStrip.line(r, mineDone: false), "Eli, Dee and 1 other walked here before you.")
+        XCTAssertEqual(FootprintsStrip.line(r, mineDone: true), "Eli, Dee and 1 other walked here too.",
+                       "a member who finished first never reads that Eli walked it before them")
+        XCTAssertNil(FootprintsStrip.line(try decode(FootprintsRes.self, ["count": 0, "scope": "cell", "footprints": []]), mineDone: false))
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

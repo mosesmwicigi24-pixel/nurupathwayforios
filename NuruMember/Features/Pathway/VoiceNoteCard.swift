@@ -459,13 +459,12 @@ struct CellPresenceLine: View {
     private var line: String? {
         guard let p = presence, p.count > 0 else { return nil }
         let who = p.scope == "cell" ? "your cell" : "your congregation"
-        let others = p.count - p.names.count
-        var names = p.names.joined(separator: ", ")
-        if p.names.count > 1, let last = p.names.last {
-            names = p.names.dropLast().joined(separator: ", ") + " and " + last
-        }
+        let others = max(0, p.count - p.names.count)
+        // One joiner, in a stable order (it read "Dee, Cara and Builder and 2
+        // others", and reshuffled on every load).
+        guard let names = NameList.join(p.names, others: others, stable: true) else { return nil }
         if others > 0 {
-            return "\(names) and \(others) other\(others == 1 ? "" : "s") from \(who) opened a lesson this week."
+            return "\(names) from \(who) opened a lesson this week."
         }
         return p.count == 1
             ? "\(names) from \(who) opened a lesson this week. You're not walking alone."

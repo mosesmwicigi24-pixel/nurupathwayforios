@@ -939,7 +939,7 @@ struct ModuleView: View {
             if isFirstPage {
                 // Footprints (Wave 3): cell-mates who already walked this
                 // module — quiet proof nobody reads alone. Absent when fresh.
-                FootprintsStrip(moduleId: d.moduleId)
+                FootprintsStrip(moduleId: d.moduleId, mineDone: d.completed == true)
                     .padding(.bottom, 12)
                 if let vn = d.voiceNote {
                     VoiceNoteCard(note: vn)

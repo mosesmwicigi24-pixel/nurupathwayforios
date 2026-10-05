@@ -154,23 +154,20 @@ private struct WalkNode: View {
 /// who already completed this module. Renders nothing when the trail is fresh.
 struct FootprintsStrip: View {
     let moduleId: String
+    /// The member finished this module already — then "before you" may be
+    /// untrue (Android's walk: "Eli walked here before you" when Eli finished
+    /// after Ada), so the line says "too".
+    var mineDone: Bool = false
     @State private var res: FootprintsRes?
 
-    private var line: String? {
-        guard let r = res, r.count > 0 else { return nil }
+    private var line: String? { Self.line(res, mineDone: mineDone) }
+
+    /// Pure, so the tests pin the words.
+    static func line(_ r: FootprintsRes?, mineDone: Bool) -> String? {
+        guard let r, r.count > 0 else { return nil }
         let names = r.footprints.map(\.firstName)
-        let others = r.count - names.count
-        let shown: String
-        switch names.count {
-        case 0: return nil
-        case 1: shown = names[0]
-        case 2: shown = "\(names[0]) and \(names[1])"
-        default: shown = names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
-        }
-        if others > 0 {
-            return "\(shown) and \(others) other\(others == 1 ? "" : "s") walked here before you."
-        }
-        return "\(shown) walked here before you."
+        guard !names.isEmpty, let shown = NameList.join(names, others: max(0, r.count - names.count)) else { return nil }
+        return mineDone ? "\(shown) walked here too." : "\(shown) walked here before you."
     }
 
     var body: some View {
