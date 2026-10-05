@@ -221,6 +221,55 @@ extension Journey {
 }
 
 
+/// The exam's one name, everywhere on the journey (EXPERIENCE.md §9.1 rule
+/// 1): "the Level N exam" — never "review", never "module". The server
+/// titles the exam container "Level 1 Review", so a row that shows the
+/// container shows this name instead. And its front door (§9.1 rule 2):
+/// what it is, what it asks and what happens after, before question 1 —
+/// never "Question 1 of 91" cold. Android's ExamWords, word for word.
+enum ExamWords {
+    /// "Level 1 exam" — the name a row, a header or a kicker gives it.
+    static func name(_ levelNumber: Int) -> String { "Level \(levelNumber) exam" }
+
+    /// What a row shows for a module: the exam's one name, else its own title.
+    static func rowTitle(_ m: LevelModule) -> String { m.isExam ? name(m.levelNumber) : m.title }
+
+    /// "91 questions · pass mark 80%" — the count and the mark the server
+    /// sent; without a mark (an older server), the count alone.
+    static func facts(questionCount: Int, passMark: Int?) -> String {
+        var parts = ["\(questionCount) \(questionCount == 1 ? "question" : "questions")"]
+        if let p = passMark, (1...100).contains(p) { parts.append("pass mark \(p)%") }
+        return parts.joined(separator: " · ")
+    }
+
+    struct Door: Equatable {
+        let title: String
+        let facts: String
+        /// What to know: the answers are kept; what a pass does.
+        let lines: [String]
+        let begin: String
+    }
+
+    /// The front door for Level N's exam. What happens after is §3's own
+    /// line for an open exam — never a leader's promise the church may not
+    /// keep yet (§9.1 rule 7).
+    static func frontDoor(levelNumber n: Int, questionCount: Int, passMark: Int?, isLastLevel: Bool = false) -> Door {
+        Door(title: "The \(name(n))",
+             facts: facts(questionCount: questionCount, passMark: passMark),
+             lines: ["Your answers are kept if you leave — you pick up at the question you were on.",
+                     isLastLevel ? "A pass opens the way to being sent." : "A pass opens the way to Level \(n + 1)."],
+             begin: "Begin")
+    }
+
+    /// The exam's verdict, in its own name — it read "Level 1 Complete".
+    static func passedTitle(_ levelNumber: Int) -> String { "You passed the \(name(levelNumber))" }
+
+    /// A missed pass mark, kindly, with what to do next.
+    static func failLine(_ levelNumber: Int, passMark: Int) -> String {
+        "You need \(passMark)% to pass the \(name(levelNumber)). Look back over Level \(levelNumber)'s lessons — then try again."
+    }
+}
+
 /// Who opens the next level, in §3's one word (EXPERIENCE.md E2, Cycle 4 B1):
 /// "your leader" — never "your discipler's blessing", which a member with no
 /// discipler read as untrue. The hero, the level's fold, the level page and

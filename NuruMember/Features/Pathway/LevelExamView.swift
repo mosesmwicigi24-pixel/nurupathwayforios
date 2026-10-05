@@ -20,6 +20,9 @@ import SwiftUI
 final class LevelExamViewModel: ObservableObject {
     @Published var exam: AssembledExam?
     @Published var levelTitle: String?
+    /// The pathway, read best-effort beside the exam — what a pass opens
+    /// (the front door, the pass screen). Nil when it didn't come.
+    @Published var summary: PathwaySummary?
     @Published var loading = true
     /// The server refused the exam — its own words (GATE_LOCKED /
     /// UNPROCESSABLE, any refusal in §4's sense), shown with Go back only.
@@ -74,9 +77,11 @@ final class LevelExamViewModel: ObservableObject {
         }
         catch { classify(error) }
         loading = false
-        // Header title — best effort, never blocks the exam itself.
-        if levelTitle == nil {
-            levelTitle = (try? await MemberAPI.pathway())?.levels.first { $0.levelNumber == levelNumber }?.title
+        // Header title and what a pass opens — best effort, never blocks
+        // the exam itself.
+        if summary == nil, let s = try? await MemberAPI.pathway() {
+            summary = s
+            levelTitle = s.levels.first { $0.levelNumber == levelNumber }?.title
         }
     }
 
@@ -117,6 +122,16 @@ final class LevelExamViewModel: ObservableObject {
         default:
             return !(text[q.questionId] ?? "").isEmpty
         }
+    }
+
+    /// The exam's front door (EXPERIENCE.md §9.1 rule 2), from what the
+    /// server sent: its count, its pass mark, and what a pass opens.
+    var door: ExamWords.Door? {
+        guard let exam else { return nil }
+        let last = summary.map { s in s.levels.map(\.levelNumber).max() == levelNumber } ?? false
+        return ExamWords.frontDoor(levelNumber: levelNumber,
+                                   questionCount: exam.questionCount > 0 ? exam.questionCount : questions.count,
+                                   passMark: exam.passMark, isLastLevel: last)
     }
 
     func submit() async {
@@ -170,7 +185,7 @@ private enum EX {
     static let navyDeep    = Color(hex: 0x060F1C)   // pass-screen canvas
     static let gold        = Color(hex: 0xC9A227)
     static let goldLight   = Color(hex: 0xE6C068)
-    static let bg          = Color(hex: 0xF7F9FC)   // question canvas
+    static let bg          = Nuru.paper              // the page is paper (§8.1 rule 1), not cool blue-white
     static let ink         = Color(hex: 0x0B0B0C)
     static let kicker      = Color(hex: 0xB0B5BF)   // "QUESTION n OF m"
     static let copy        = Color(hex: 0x5B6472)   // result body copy
@@ -224,6 +239,9 @@ struct LevelExamView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var idx = 0   // current question
+    /// Past the front door. A member coming back to answers already given
+    /// (a draft) goes straight to their question.
+    @State private var begun = false
 
     init(levelNumber: Int, onPassContinue: (() -> Void)? = nil) {
         self.levelNumber = levelNumber
@@ -244,7 +262,13 @@ struct LevelExamView: View {
             } else if let reason = vm.notEligible {
                 notEligible(reason)
             } else if let exam = vm.exam, !vm.questions.isEmpty {
-                flow(exam)
+                if begun || vm.resumedAt != nil || vm.door == nil {
+                    flow(exam)
+                } else if let door = vm.door {
+                    ExamFrontDoor(door: door, levelTitle: vm.levelTitle,
+                                  onBegin: { withAnimation(.easeInOut(duration: 0.25)) { begun = true } },
+                                  onBack: { dismiss() })
+                }
             } else {
                 loadFailed
             }
@@ -275,8 +299,8 @@ struct LevelExamView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("QUESTION \(safeIdx + 1) OF \(count)")
-                        .font(.inter(12, .semibold)).kerning(1)
-                        .foregroundStyle(EX.kicker)
+                        .font(.nCardKicker).kerning(1.4)
+                        .foregroundStyle(Nuru.eyebrow)
                     Text(q.questionText)
                         .font(.inter(18, .bold)).kerning(-0.3)
                         .foregroundStyle(EX.ink)
@@ -442,6 +466,79 @@ struct LevelExamView: View {
     }
 }
 
+// MARK: - The front door (EXPERIENCE.md §9.1 rule 2)
+
+/// Before question 1: what the exam is, what it asks, what happens after —
+/// "The Level 1 exam · 91 questions · pass mark 80% · your answers are kept
+/// if you leave · a pass opens the way to Level 2 · Begin". A pushed page in
+/// the grammar (§8.1): paper, back · kicker · title, a white card, one gold
+/// primary above the tab bar.
+private struct ExamFrontDoor: View {
+    let door: ExamWords.Door
+    let levelTitle: String?
+    let onBegin: () -> Void
+    let onBack: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let levelTitle, !levelTitle.isEmpty {
+                        Text(levelTitle.uppercased())
+                            .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(door.title)
+                        .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 6)
+                    Text(door.facts)
+                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(door.lines.enumerated()), id: \.offset) { i, line in
+                            HStack(alignment: .top, spacing: 12) {
+                                Icon(i == 0 ? .bookmark : .flag, size: 18, color: Nuru.navy)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                Text(line)
+                                    .font(.nBody).foregroundStyle(Nuru.ink600)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.top, 8)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+                    .padding(Nuru.S.base)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .nuruShadow()
+                    .padding(.top, Nuru.S.lg)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Nuru.S.screen)
+                .padding(.top, ExamLayout.backTop + 56)
+                .padding(.bottom, Nuru.S.lg)
+            }
+            Button { Haptics.action(); onBegin() } label: {
+                Text(door.begin)
+                    .font(.inter(16, .bold)).foregroundStyle(EX.navy)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .padding(.horizontal, Nuru.S.lg)
+            .padding(.top, Nuru.S.base)
+            .padding(.bottom, ExamLayout.bottomClearance)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onBack) }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 // MARK: - Navy header (back · gold seal · overline · title · continuous progress)
 // The exam spans the level's whole pool (often 15–30 questions), so the quiz's
 // per-question pills would overflow — a single gold bar carries the progress.
@@ -466,13 +563,14 @@ private struct ExamHeader: View {
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Icon(.award, size: 14, color: EX.gold)
-                        Text("LEVEL \(levelNumber) EXAM")
-                            .font(.inter(11, .semibold)).kerning(0.9)
+                        Text(ExamWords.name(levelNumber).uppercased())
+                            .font(.nCardKicker).kerning(1.4)
                             .foregroundStyle(EX.goldLight.opacity(0.85))
                     }
+                    // A title (§8.1 rule 3) that wraps rather than cut (rule 9).
                     Text(title ?? "Level \(levelNumber)")
-                        .font(.inter(16, .semibold)).foregroundStyle(.white)
-                        .lineLimit(1)
+                        .font(.fraunces(22, .semibold)).foregroundStyle(.white)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
@@ -635,7 +733,7 @@ private struct ExamResultScreen: View {
                            mentorReview: result.requiresManualReview,
                            onContinue: onPassContinue)
         } else if result.requiresManualReview {
-            ExamReviewScreen(onDone: onDone)
+            ExamReviewScreen(levelNumber: levelNumber, onDone: onDone)
         } else {
             ExamFailScreen(levelNumber: levelNumber,
                            score: result.scoreAchieved,
@@ -678,8 +776,9 @@ private struct ExamPassScreen: View {
                     .font(.inter(28, .bold)).foregroundStyle(EX.gold)
                     .padding(.top, 4)
                     .gentleEntrance(delay: 0.1)
-                Text("Level \(levelNumber) Complete")
+                Text(ExamWords.passedTitle(levelNumber))
                     .font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.center).padding(.horizontal, Nuru.S.lg)
                     .padding(.top, 6)
                     .gentleEntrance(delay: 0.18)
                 // §1.9 (new): passing no longer auto-advances — the member now waits
@@ -850,7 +949,7 @@ private struct ExamFailScreen: View {
                 Text("Not yet — and that's okay")
                     .font(.inter(22, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 6)
-                Text("You need \(passMark)% to pass the Level \(levelNumber) exam. It draws from the whole level, so revisit the modules and come back when you're ready — you can retake it.")
+                Text(ExamWords.failLine(levelNumber, passMark: passMark))
                     .font(.inter(16)).foregroundStyle(EX.copy)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
@@ -858,20 +957,22 @@ private struct ExamFailScreen: View {
                     .padding(.horizontal, 36)
                 Spacer()
                 VStack(spacing: 10) {
+                    // One primary (§8.1 rule 4): back to the level's lessons,
+                    // then the exam again — Android's words.
                     Button { Haptics.tap(); onReview() } label: {
-                        Text("Review Modules")
-                            .font(.inter(16, .semibold)).foregroundStyle(.white)
+                        Text("Back to Level \(levelNumber)")
+                            .font(.inter(16, .bold)).foregroundStyle(EX.navy)
                             .frame(maxWidth: .infinity, minHeight: 56)
-                            .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .buttonStyle(.pressable)
                     Button { Haptics.action(); onRetry() } label: {
-                        Text("Retry Exam")
+                        Text("Try the exam again")
                             .font(.inter(16, .semibold)).foregroundStyle(EX.navy)
                             .frame(maxWidth: .infinity, minHeight: 56)
-                            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color(hex: 0x0A2540, alpha: 0.15), lineWidth: 1.5))
+                                .stroke(Nuru.border, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                 }
@@ -886,6 +987,7 @@ private struct ExamFailScreen: View {
 
 /// Manual review — written answers went to a mentor; no instant pass/fail.
 private struct ExamReviewScreen: View {
+    let levelNumber: Int
     let onDone: () -> Void
 
     var body: some View {
@@ -907,10 +1009,10 @@ private struct ExamReviewScreen: View {
                     .padding(.horizontal, 36)
                 Spacer()
                 Button { Haptics.tap(); onDone() } label: {
-                    Text("Back to Level")
-                        .font(.inter(16, .semibold)).foregroundStyle(.white)
+                    Text("Back to Level \(levelNumber)")
+                        .font(.inter(16, .bold)).foregroundStyle(EX.navy)
                         .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)

@@ -866,11 +866,13 @@ private struct PWModuleRow: View {
     /// Caption under the title — the exam row speaks in exam language ("locked
     /// until you finish the modules", "ready — tap to begin", "passed").
     private var caption: String {
+        // The exam's row is titled "Level N exam" (ExamWords, §9.1 rule 1) —
+        // its line doesn't name it again. Android's words.
         if isExam {
-            return done ? "Level exam · passed"
-                 : opensSoon ? "Level exam · opens soon"
-                 : active ? "Level exam · ready — tap to begin"
-                 : lockHint ? "Finish every module to unlock the exam" : "Level exam · locked"
+            return done ? "Passed"
+                 : opensSoon ? "Opens soon"
+                 : active ? "Ready — tap to begin"
+                 : "Finish every module to unlock it"
         }
         return done ? "Completed"
              : active ? ModuleRowWords.openCaption(progress: module.progress)
@@ -926,7 +928,7 @@ private struct PWModuleRow: View {
             VStack(alignment: .leading, spacing: 1) {
                 // Locked titles stay legible ink (only the caption goes faint) —
                 // #8B95A5-on-white washed the whole card out on device.
-                Text(module.title).font(.inter(13, (active || isExam) ? .bold : .medium))
+                Text(ExamWords.rowTitle(module)).font(.inter(13, (active || isExam) ? .bold : .medium))
                     .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
                 Text(caption)
                     .font(.inter(11, (active || isExam) ? .bold : .medium))

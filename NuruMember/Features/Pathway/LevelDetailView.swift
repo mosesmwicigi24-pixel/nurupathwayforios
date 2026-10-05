@@ -755,12 +755,13 @@ private struct ModuleTrailCard: View {
             HStack(alignment: .firstTextBaseline) {
                 // The level's exam container is the exam step, as Pathway's
                 // trail draws it — never "MODULE 11 · Start this module" (B2).
-                Text(module.isExam ? "LEVEL \(module.levelNumber) EXAM" : "MODULE \(module.moduleSequenceNumber)")
+                Text(module.isExam ? "EXAM" : "MODULE \(module.moduleSequenceNumber)")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
                 statusBadge
             }
-            Text(module.title)
+            // The exam's one name (§9.1 rule 1) — the server titles it "Level 1 Review".
+            Text(ExamWords.rowTitle(module))
                 .font(.nCardTitle).foregroundStyle(Nuru.ink)
                 .fixedSize(horizontal: false, vertical: true)
             if let summary = module.summary, !summary.isEmpty {
@@ -833,16 +834,18 @@ private struct ModuleTrailCard: View {
     @ViewBuilder
     private var footerLine: some View {
         if module.completed {
-            Text(module.isExam ? "Exam passed." : "Completed — nicely done.")
+            Text(module.isExam ? "Passed." : "Completed — nicely done.")
                 .font(.nMicro).foregroundStyle(Nuru.successText)
         } else if module.locked {
-            Text(module.isExam ? "Opens when every module is done." : "Unlocks when you finish the one before.")
+            Text(module.isExam ? "Unlocks when you finish every module." : "Unlocks when you finish the one before.")
                 .font(.nMicro).foregroundStyle(Nuru.faint)
         } else if module.examOpensSoon {
-            Text("Opens soon").font(.inter(12, .semibold)).foregroundStyle(Nuru.faint)
+            Text("Opens soon.").font(.inter(12, .semibold)).foregroundStyle(Nuru.faint)
+        } else if module.isExam {
+            Text("Ready — tap to begin.").font(.inter(12, .semibold)).foregroundStyle(Nuru.eyebrow)
         } else {
             HStack(spacing: 4) {
-                Text(module.isExam ? "Begin the exam" : "Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                Text("Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
                 Icon(.chevronRight, size: 14, color: Nuru.gold)
             }
         }
