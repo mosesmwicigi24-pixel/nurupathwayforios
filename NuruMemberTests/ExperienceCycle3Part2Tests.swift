@@ -278,4 +278,46 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertEqual(AnnouncementGallery.photos(images: [cover], gallery: nil, cover: nil), [cover],
                        "no hero: the strip shows the photo")
     }
+
+    // MARK: Follow-up 1 — the tick on every phone (§7.4 #4)
+
+    private func plansRow(_ id: String, enrolled: Bool = true, finishedAt: Any? = nil) throws -> ReadingPlanRow {
+        var row: [String: Any] = ["plan_id": id, "title": "Plan \(id)", "day_count": 7, "enrolled": enrolled,
+                                  "completed_at": NSNull()]
+        if let finishedAt { row["last_day_finished_at"] = finishedAt }
+        return try decode(ReadingPlanRow.self, row)
+    }
+
+    func testADayFinishedOnAnyPhoneTicksTodayOnTheNairobiCalendar() throws {
+        let iso = ISO8601DateFormatter()
+        let morningOf5th = try XCTUnwrap(iso.date(from: "2026-10-05T05:00:00Z"))   // 08:00 on 5 Oct in Nairobi
+        // 2026-10-04T21:10Z is 00:10 on 5 Oct in Nairobi — today on the 5th.
+        XCTAssertTrue(StreakToday.done(plans: [try plansRow("a", finishedAt: "2026-10-04T21:10:00Z")],
+                                       sealedHere: false, now: morningOf5th))
+        // 2026-10-04T20:50Z is 23:50 on 4 Oct in Nairobi — not today.
+        XCTAssertFalse(StreakToday.done(plans: [try plansRow("a", finishedAt: "2026-10-04T20:50:00Z")],
+                                        sealedHere: false, now: morningOf5th))
+        // The same two stamps late on the 4th in Nairobi: the other way round.
+        let lateOn4th = try XCTUnwrap(iso.date(from: "2026-10-04T20:55:00Z"))       // 23:55 on 4 Oct in Nairobi
+        XCTAssertTrue(StreakToday.done(plans: [try plansRow("a", finishedAt: "2026-10-04T20:50:00Z")],
+                                       sealedHere: false, now: lateOn4th))
+        XCTAssertFalse(StreakToday.done(plans: [try plansRow("a", finishedAt: "2026-10-04T21:10:00Z")],
+                                        sealedHere: false, now: lateOn4th))
+        // The server's own shape carries fractional seconds (Ada, local API).
+        XCTAssertTrue(StreakToday.done(plans: [try plansRow("a", finishedAt: "2026-10-05T04:45:28.123Z")],
+                                       sealedHere: false, now: morningOf5th))
+        // Any one plan is enough; a plan not begun, a null, an older server's
+        // missing field and a garbled stamp never tick.
+        XCTAssertTrue(StreakToday.done(plans: [try plansRow("x", finishedAt: NSNull()),
+                                               try plansRow("y", finishedAt: "2026-10-05T04:45:28.123Z")],
+                                       sealedHere: false, now: morningOf5th))
+        XCTAssertFalse(StreakToday.done(plans: [try plansRow("n", enrolled: false, finishedAt: "2026-10-05T04:45:28Z")],
+                                        sealedHere: false, now: morningOf5th))
+        XCTAssertNil(try plansRow("old").lastDayFinishedAt, "absent from an older server: nil")
+        XCTAssertFalse(StreakToday.done(plans: [try plansRow("old")], sealedHere: false, now: morningOf5th))
+        XCTAssertFalse(StreakToday.done(plans: [try plansRow("g", finishedAt: "yesterday")], sealedHere: false, now: morningOf5th))
+        // This phone's own note ticks it before the next fetch.
+        XCTAssertTrue(StreakToday.done(plans: [], sealedHere: true, now: morningOf5th))
+        XCTAssertEqual(try plansRow("a", finishedAt: "2026-10-04T21:10:00Z").lastDayFinishedAt, "2026-10-04T21:10:00Z")
+    }
 }

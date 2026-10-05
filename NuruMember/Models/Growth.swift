@@ -74,6 +74,11 @@ struct ReadingPlanRow: Codable, Sendable, Identifiable, Hashable {
     let completedDays: [Int]?
     let enrolled: Bool
     let completedAt: String?
+    /// When the member last finished a day of this plan, on ANY phone — the
+    /// moment the last part of a fully-read day was read (ISO-8601, or nil).
+    /// The Plans streak card ticks today from it (EXPERIENCE.md §7.4 #4).
+    /// Absent from an older server: nil.
+    let lastDayFinishedAt: String?
 
     var id: String { planId }
     init(from d: Decoder) throws {
@@ -90,6 +95,7 @@ struct ReadingPlanRow: Codable, Sendable, Identifiable, Hashable {
         completedDays = try? c.decodeIfPresent([Int].self, forKey: .completedDays)
         enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
         completedAt = try? c.decodeIfPresent(String.self, forKey: .completedAt)
+        lastDayFinishedAt = try? c.decodeIfPresent(String.self, forKey: .lastDayFinishedAt)
     }
 }
 

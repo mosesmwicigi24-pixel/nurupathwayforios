@@ -86,9 +86,10 @@ final class ReadingPlansViewModel: ObservableObject {
     /// simply means the page falls back to the locally-edited promos.
     @Published var promos: [PlanPromo] = []
     @Published var streak = 0
-    /// The streak card's today (§7.4 #4): ticked only once the server has
-    /// sealed a plan day today (PlanDayLog) — reading one part used to tick
-    /// it beside "0-day streak".
+    /// The streak card's today (§7.4 #4): ticked only once a plan day was
+    /// finished today — on this phone (PlanDayLog) or on any phone (the
+    /// plans' `last_day_finished_at`). Reading one part used to tick it
+    /// beside "0-day streak".
     @Published var todaySealed = false
     /// "Today: 2 of 3 parts" while the day being read is under way.
     @Published var todayLine: String?
@@ -120,7 +121,7 @@ final class ReadingPlansViewModel: ObservableObject {
     /// counts them (PlanDayParts). Best-effort: no plan, a failed read or a
     /// day not begun leaves the card's invitation.
     private func loadToday() async {
-        todaySealed = PlanDayLog.sealedToday()
+        todaySealed = StreakToday.done(plans: plans, sealedHere: PlanDayLog.sealedToday())
         guard let active = ReadingPlanRow.active(in: plans),
               let d = try? await MemberAPI.plan(active.planId),
               let day = d.continueDay, day.completed != true, !day.locked else {

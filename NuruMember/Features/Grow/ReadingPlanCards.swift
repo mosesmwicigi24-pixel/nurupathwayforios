@@ -134,8 +134,9 @@ enum StreakWords {
 
 // MARK: - streak strip (cue + reward loop)
 // Real data: `count` = GET /me/achievements streak.current; `todayDone` = a
-// plan day the server sealed today (PlanDayLog, §7.4 #4 — it was the rhythm's
-// `word`, so reading one part ticked today beside "0-day streak"); `today` =
+// plan day finished today, on this phone or any other (StreakToday, §7.4 #4 —
+// it was the rhythm's `word`, so reading one part ticked today beside "0-day
+// streak"); `today` =
 // the day under way, "Today: 2 of 3 parts" (PlanDayParts). The 7-day badge
 // goal is a client-side constant (the design's mock STREAK.goal) — week dots
 // are derived from the streak.

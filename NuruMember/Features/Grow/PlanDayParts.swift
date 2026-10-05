@@ -95,6 +95,31 @@ enum PlanDayParts {
     }
 }
 
+/// The Plans streak card's "today" (EXPERIENCE.md §7.4 #4): a day finished
+/// today on THIS phone (PlanDayLog — the instant tick, before the next
+/// fetch), or on ANY phone — an enrolled plan whose `last_day_finished_at`
+/// falls on today's Nairobi day. Pure; the tests pin the Nairobi midnight.
+enum StreakToday {
+    static func done(plans: [ReadingPlanRow], sealedHere: Bool, now: Date = Date()) -> Bool {
+        sealedHere || finishedToday(plans, now: now)
+    }
+
+    /// Any enrolled plan's last finished day is today, on the church's
+    /// (Nairobi) calendar — the same day the server's streak counts.
+    static func finishedToday(_ plans: [ReadingPlanRow], now: Date = Date()) -> Bool {
+        let today = PlanPicks.nairobiDay(now)
+        return plans.contains { p in
+            guard p.enrolled, let at = p.lastDayFinishedAt.flatMap(date) else { return false }
+            return PlanPicks.nairobiDay(at) == today
+        }
+    }
+
+    /// The server's ISO-8601 stamp, with or without fractional seconds.
+    static func date(_ iso: String) -> Date? {
+        ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
+    }
+}
+
 /// The Nairobi day on which this phone last saw the server seal a plan day
 /// (§7.4 #4) — the Plans streak card ticks today only then. Written only
 /// from the server's own answer (the last part's `day_complete`, or the
