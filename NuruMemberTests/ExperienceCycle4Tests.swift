@@ -396,6 +396,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(TalkWords.back(day: 4), "Back to Day 4")
     }
 
+    // MARK: Cycle 3 close walk B12 — the real version and build
+
+    func testSettingsSaysTheInstalledVersionAndBuild() {
+        XCTAssertEqual(AppVersion.line(["CFBundleShortVersionString": "1.1", "CFBundleVersion": "130"]), "Nuru Pathway · 1.1 (130)")
+        XCTAssertEqual(AppVersion.line(["CFBundleShortVersionString": "1.1"]), "Nuru Pathway · 1.1")
+        XCTAssertEqual(AppVersion.line([:]), "Nuru Pathway")
+        let live = AppVersion.line()
+        XCTAssertFalse(live.contains("v1.0"))
+        XCTAssertTrue(live.hasPrefix("Nuru Pathway · "), "the test host carries a version: \(live)")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

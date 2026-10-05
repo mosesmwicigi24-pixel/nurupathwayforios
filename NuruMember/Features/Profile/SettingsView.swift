@@ -71,7 +71,9 @@ struct SettingsView: View {
                         privacy
                         helpPrivacy
                         actions
-                        Text("Nuru Pathway · v1.0").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+                        // The installed build, as the bundle says it (the walk's B12: a
+                        // hard-coded "v1.0" beside build 1.1 (130)).
+                        Text(AppVersion.line()).font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                             .padding(.top, Nuru.S.xs)
                     }
                     .padding(.horizontal, Nuru.S.screen)
@@ -749,6 +751,21 @@ private struct PrivacyPolicySheet: View {
                     .font(.nCardMeta).italic().foregroundStyle(Color(hex: 0x74808F))
                 GoldSheetButton(title: "Got it") { dismiss() }
             }
+        }
+    }
+}
+
+
+/// "Nuru Pathway · 1.1 (130)" — the version and build of what's installed,
+/// read from the bundle (Cycle 3 close walk B12).
+enum AppVersion {
+    static func line(_ info: [String: Any]? = Bundle.main.infoDictionary) -> String {
+        let version = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+        switch (version, build) {
+        case let (v?, b?) where !v.isEmpty && !b.isEmpty: return "Nuru Pathway · \(v) (\(b))"
+        case let (v?, _) where !v.isEmpty: return "Nuru Pathway · \(v)"
+        default: return "Nuru Pathway"
         }
     }
 }
