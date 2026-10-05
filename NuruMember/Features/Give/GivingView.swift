@@ -2152,6 +2152,9 @@ private struct MobileMoneySheet: View {
     /// "Start with a gift now" (Giving Cycle 4) — on by default: the first
     /// prompt goes out now, while the member is holding the phone.
     @State private var giveNow = true
+    /// What the sheet says, measured — the sheet is exactly that tall
+    /// (EXPERIENCE.md §8.2 #11). A fixed 430pt left its lower half empty.
+    @State private var contentHeight: CGFloat = 360
 
     private var isMpesa: Bool { methodKey != "airtel" }
     private var railName: String { isMpesa ? "M-Pesa" : "Airtel Money" }
@@ -2205,10 +2208,10 @@ private struct MobileMoneySheet: View {
             }
 
             if let onFile = numberOnFile {
-                Button { phone = onFile } label: {
+                Button { phone = KenyanPhone.display(onFile) } label: {
                     HStack(spacing: 5) {
                         Icon(.repeat, size: 12, color: Nuru.goldLo)
-                        Text("Use my number (\(onFile))")
+                        Text("Use my number (\(KenyanPhone.display(onFile)))")
                             .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
                     }
                 }.buttonStyle(.plain)
@@ -2239,11 +2242,21 @@ private struct MobileMoneySheet: View {
                     .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             .frame(maxWidth: .infinity, alignment: .center)
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
-        .presentationDetents([.height(frequency == nil ? 430 : 530)])
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { contentHeight = g.size.height }
+                .onChange(of: g.size.height) { _, h in contentHeight = h }
+        })
+        .frame(maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.height(contentHeight)])
         .presentationDragIndicator(.visible)
+        // One phone format (§8.1 rule 8, Cycle 1): the field reads the number
+        // as a Kenyan reads it — "0700 000 000", never "+254700000000". The
+        // prompt still goes out as E.164 (normalized on the way out).
+        .onAppear { if let n = KenyanPhone.normalize(phone) { phone = KenyanPhone.display(n) } }
     }
 
     /// "Start with a gift now" (Giving Cycle 4): on — "KSh 1,000 now, then
