@@ -69,4 +69,22 @@ enum PlanPicks {
 
     /// In "Continue reading": enrolled and not finished.
     static func isBeingRead(_ plan: ReadingPlanRow) -> Bool { plan.enrolled && plan.completedAt == nil }
+
+    /// The plans with a card of their own on the tab — the ones being read
+    /// ("Continue reading"), and the promoted ones: the server's promos, or,
+    /// with none, the plan of the day and the mid-page pick. The browse grid
+    /// leaves them out, so each plan is on the tab once (EXPERIENCE.md §9.6
+    /// #1: the grid repeated every one of them), and every plan is still on
+    /// it (owner, 2026-08-26: "make sure all plans are not hidden").
+    static func withOwnCard(_ plans: [ReadingPlanRow], promos: [Resolved],
+                            planOfDay: ReadingPlanRow?, midPromo: ReadingPlanRow?) -> Set<String> {
+        var ids = Set(plans.filter(isBeingRead).map(\.planId))
+        if promos.isEmpty {
+            if let p = planOfDay { ids.insert(p.planId) }
+            if let p = midPromo { ids.insert(p.planId) }
+        } else {
+            ids.formUnion(promos.map(\.plan.planId))
+        }
+        return ids
+    }
 }

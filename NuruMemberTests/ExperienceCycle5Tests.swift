@@ -715,4 +715,49 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertNil(LessonOnward.after(moduleId: "m10", levelNumber: 1, in: try trail([m9, m10])))
         XCTAssertNil(LessonOnward.after(moduleId: "gone", levelNumber: 1, in: ada), "a lesson not in its level's list")
     }
+
+    // MARK: §9.6 #1 — a card that repeats another card goes
+
+    func testEachPlanIsOnThePlansTabOnce() throws {
+        func row(_ id: String, enrolled: Bool = false, done: Bool = false, days: Int = 10) -> [String: Any] {
+            ["plan_id": id, "title": "Plan \(id)", "day_count": days, "enrolled": enrolled,
+             "completed_at": done ? "2026-10-01T09:00:00Z" : NSNull(), "description": "Words for \(id)"]
+        }
+        let plans = try decode([ReadingPlanRow].self, [row("first-steps", enrolled: true, days: 7), row("who-am-i"),
+                                                        row("origin"), row("fear-not"), row("done", enrolled: true, done: true)])
+        let promos = try decode([PlanPromo].self, [["slot": "hero", "plan_id": "who-am-i", "kicker": "WORTH YOUR WEEK"],
+                                                   ["slot": "library", "plan_id": "origin", "kicker": "FROM THE LIBRARY"]])
+        let resolved = PlanPicks.resolve(promos, in: plans)
+        // Being read, or promoted: a card of its own — so not again in the grid.
+        XCTAssertEqual(PlanPicks.withOwnCard(plans, promos: resolved, planOfDay: nil, midPromo: nil),
+                       ["first-steps", "who-am-i", "origin"])
+        // No promos from the server: the plan of the day and the mid-page pick.
+        let pod = PlanPicks.planOfDay(plans)
+        let mid = PlanPicks.midPromo(plans, planOfDayId: pod?.planId, day: 20731)
+        let own = PlanPicks.withOwnCard(plans, promos: [], planOfDay: pod, midPromo: mid)
+        XCTAssertTrue(own.contains("first-steps"))
+        XCTAssertTrue(own.contains(try XCTUnwrap(pod).planId))
+        XCTAssertTrue(own.contains(try XCTUnwrap(mid).planId))
+        // A finished plan has no card above: it stays in the grid.
+        XCTAssertFalse(own.contains("done"))
+        // Home's progress card no longer repeats YOUR WEEK's next step.
+        let home = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Home/HomeView.swift"), encoding: .utf8)
+        XCTAssertFalse(home.contains("let line = j.progressLine"), "Home points to the Pathway once — YOUR WEEK's row")
+    }
+
+    func testProfilesMilestonesTellTheJourneysOneStory() throws {
+        // Ada: every lesson done, the exam ready — Profile said "in progress · Keep going".
+        let ada = try XCTUnwrap(Journey.derive(try summary([level(1, "completed", done: 10, of: 10)])))
+        let words = try XCTUnwrap(ProfileMilestoneWords.current(level: 1, journey: ada))
+        XCTAssertEqual(words.label, "Level 1 · Exam ready")
+        XCTAssertEqual(words.meta, "Take the Level 1 exam")
+        // Walking: the journey's count, never "in progress".
+        let walking = try XCTUnwrap(Journey.derive(try summary([level(1, "active", done: 3, of: 10)])))
+        XCTAssertEqual(ProfileMilestoneWords.current(level: 1, journey: walking)?.label, "Level 1 · 3 of 10 modules")
+        // Not known yet, or another level: no row on a guess.
+        XCTAssertNil(ProfileMilestoneWords.current(level: 1, journey: nil))
+        XCTAssertNil(ProfileMilestoneWords.current(level: 2, journey: ada))
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Profile/ProfileView.swift"), encoding: .utf8)
+        XCTAssertFalse(src.contains("in progress\", meta: \"Keep going\""))
+    }
 }

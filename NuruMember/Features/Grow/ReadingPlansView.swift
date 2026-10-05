@@ -189,13 +189,17 @@ struct ReadingPlansView: View {
     /// the section that describes the commitment it asks for.
     private var collections: [(id: String, label: String, plans: [ReadingPlanRow])] {
         var out: [(String, String, [ReadingPlanRow])] = []
-        let short = vm.plans.filter { $0.dayCount <= 7 }
+        // A plan with a card of its own above (being read, or promoted) isn't
+        // repeated in the grid (§9.6 #1) — it is still on the tab, once.
+        let own = PlanPicks.withOwnCard(vm.plans, promos: resolvedPromos, planOfDay: planOfDay, midPromo: midPromoPlan)
+        let browse = vm.plans.filter { !own.contains($0.planId) }
+        let short = browse.filter { $0.dayCount <= 7 }
         if !short.isEmpty { out.append(("short", "Short reads · 7 days or less", short)) }
         // Mid-length (8–13 days) — most study plans are 10-day, so without this
         // bucket they'd fall between "short" and "long" and never appear in browse.
-        let mid = vm.plans.filter { (8...13).contains($0.dayCount) }
+        let mid = browse.filter { (8...13).contains($0.dayCount) }
         if !mid.isEmpty { out.append(("mid", "Mid-length journeys · about 10 days", mid)) }
-        let long = vm.plans.filter { $0.dayCount >= 14 }
+        let long = browse.filter { $0.dayCount >= 14 }
         if !long.isEmpty { out.append(("long", "Longer journeys · 2 weeks and up", long)) }
         return out
     }
@@ -566,6 +570,15 @@ struct ReadingPlansView: View {
                     if i == collections.count - 1 {
                         ForEach(leftoverPromos) { rp in promoCard(rp) }
                     }
+                }
+            }
+            // Every plan already has a card of its own, so the grid is empty:
+            // the promos still show — a plan is never hidden.
+            if collections.isEmpty {
+                if resolvedPromos.isEmpty {
+                    if let promo = midPromoPlan { PLPlanPromo(plan: promo, kicker: "WORTH YOUR WEEK") }
+                } else {
+                    ForEach(trailingPromos) { rp in promoCard(rp) }
                 }
             }
         }

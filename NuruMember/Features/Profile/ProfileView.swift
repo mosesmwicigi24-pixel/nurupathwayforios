@@ -46,6 +46,8 @@ struct ProfileView: View {
     @State private var badges: [PBadgeItem] = []
     @State private var certs: [PCert] = []
     @State private var scores: ScoresSummary?
+    /// The member's journey (§3) — the milestones speak its words.
+    @State private var journey: Journey?
     /// Departments the member actively serves in (GET /me/departments, §4).
     @State private var serving: [DepartmentRow] = []
     @State private var aiOptOut = false
@@ -126,6 +128,7 @@ struct ProfileView: View {
         async let certificates = try? await APIClient.shared.get("certificates", as: Envelope<PCert>.self).data
         async let scoresSummary = try? await MemberAPI.scores()
         async let myDepartments = try? await MemberAPI.myDepartments()
+        async let pathway = try? await MemberAPI.pathway()
 
         let cat = await catalogue ?? []
         let earned = await mine?.badges ?? []
@@ -143,6 +146,7 @@ struct ProfileView: View {
         certs = await certificates ?? []
         scores = await scoresSummary
         serving = (await myDepartments ?? []).filter(\.isActiveMember)
+        journey = Journey.derive(await pathway)
     }
 
     // MARK: Avatar upload (PhotosPicker → ~512px JPEG → POST /me/avatar)
@@ -658,7 +662,9 @@ struct ProfileView: View {
             for l in 1..<level {
                 rows.append(PMilestone(id: "lvl\(l)", label: "Level \(l) completed", meta: "Completed", status: .done))
             }
-            rows.append(PMilestone(id: "lvl\(level)", label: "Level \(level) · in progress", meta: "Keep going", status: .active))
+            if let words = ProfileMilestoneWords.current(level: level, journey: journey) {
+                rows.append(PMilestone(id: "lvl\(level)", label: words.label, meta: words.meta, status: .active))
+            }
         } else {
             rows.append(PMilestone(id: "lvl-pending", label: "Your pathway",
                                    meta: "Starting soon — your leader is setting you up",
@@ -1011,6 +1017,18 @@ private struct BadgeGallerySheet: View {
 }
 
 // MARK: - Milestones
+
+/// The member's own level on Profile's milestones, in the journey's words
+/// (§3) — the same pill Home and Pathway show ("Exam ready", "3 of 10
+/// modules"). It said "Level 1 · in progress · Keep going" beside every
+/// other screen's "Exam ready" (the Cycle 3 and Cycle 4 walks). Until the
+/// journey is known the row waits: no second story on a guess.
+enum ProfileMilestoneWords {
+    static func current(level: Int, journey: Journey?) -> (label: String, meta: String)? {
+        guard let j = journey, j.levelNumber == level else { return nil }
+        return ("Level \(level) · \(j.pill)", j.title)
+    }
+}
 
 private struct PMilestone: Identifiable {
     enum Status { case done, active, future }

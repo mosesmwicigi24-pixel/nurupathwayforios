@@ -2142,24 +2142,10 @@ struct HomeView: View {
                 scoreBar("Attendance", s.attendance.score, Nuru.gold, delta: s.trend?.domains?["attendance"])
             }
             .padding(.top, Nuru.S.base)
-            if let j = vm.journey {
-                // The journey's next step in one line ("3 of 10 modules in
-                // Level 2", "Take the Level 1 exam") — never "0 modules left".
-                let line = j.progressLine
-                HStack(spacing: Nuru.S.sm) {
-                    Icon(.target, size: 18, color: Nuru.goldChipText)
-                        .frame(width: 30, height: 30)
-                        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    // The next step is a thing: the content row title, Fraunces
-                    // 15 (§8.1 rule 3), the rest of the line in body type.
-                    (Text(line.bold).font(.nRowTitle).foregroundStyle(Nuru.ink)
-                     + Text(line.rest).font(.nCardBody).foregroundStyle(Nuru.muted))
-                    Spacer(minLength: 0)
-                }
-                .padding(Nuru.S.sm)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.top, Nuru.S.md)
-            }
+            // (The journey's next step was repeated here — "Take the Level 1
+            // exam" under YOUR WEEK's own "Take the Level 1 exam". Home points
+            // to each pillar once, §6; YOUR WEEK's Pathway row holds it, and
+            // "View pathway" is this card's way there. §9.6 #1.)
         }
         .padding(Nuru.S.base)
         .cardSurface()
