@@ -1465,8 +1465,10 @@ private struct PersonRow: View {
                         badgeMedallions
                         certSeal
                     }
-                    Text(subtitle)
-                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 4)
                 if busy {
@@ -1521,8 +1523,8 @@ private struct PersonRow: View {
         }
     }
 
-    private var subtitle: String {
-        PersonWords.subtitle(role: person.role, level: person.level, congregation: person.congregation)
+    private var subtitle: String? {
+        PersonWords.subtitle(role: person.role, congregation: person.congregation)
     }
 
     // MARK: Achievement flair — public aggregates only; every piece disappears
@@ -2072,17 +2074,24 @@ private struct SquircleAvatar: View {
 }
 
 /// A person's line in the people list (§8.1 rule 8): never a raw role
-/// ("Student · …" read like data). A member reads by where they walk
-/// ("Level 2"); the church's staff by what they are to a member.
+/// ("Student · …" read like data). A member's line is their congregation,
+/// or nothing — never the word "Member" (Android's round 2 settled it; the
+/// level is already on the avatar's badge). The church's staff read as
+/// what they are to a member, with the congregation when there is one.
 enum PersonWords {
-    static func subtitle(role: String?, level: Int?, congregation: String?) -> String {
-        let who: String
+    static func subtitle(role: String?, congregation: String?) -> String? {
+        let c = congregation.flatMap { $0.isEmpty ? nil : $0 }
+        let who: String?
         switch (role ?? "").lowercased() {
         case "instructor": who = "Teacher"
         case "admin", "superadmin": who = "Church staff"
-        default: who = level.map { "Level \($0)" } ?? "Member"
+        default: who = nil
         }
-        guard let c = congregation, !c.isEmpty else { return who }
-        return "\(who) · \(c)"
+        switch (who, c) {
+        case let (w?, c?): return "\(w) · \(c)"
+        case let (w?, nil): return w
+        case let (nil, c?): return c
+        default: return nil
+        }
     }
 }

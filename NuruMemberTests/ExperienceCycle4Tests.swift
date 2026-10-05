@@ -773,13 +773,10 @@ final class ExperienceCycle4Tests: XCTestCase {
     // MARK: §8.1 rule 8 — the people list never shows a raw role
 
     func testThePeopleListNeverShowsARawRole() {
-        XCTAssertEqual(PersonWords.subtitle(role: "Student", level: 2, congregation: nil), "Level 2", "never \"Student\"")
-        XCTAssertEqual(PersonWords.subtitle(role: "Student", level: nil, congregation: "Nuru Place"), "Member · Nuru Place")
-        XCTAssertEqual(PersonWords.subtitle(role: "Instructor", level: 1, congregation: nil), "Teacher")
-        XCTAssertEqual(PersonWords.subtitle(role: "SuperAdmin", level: 1, congregation: nil), "Church staff")
-        for role in ["Student", "Instructor", "Admin", "SuperAdmin"] {
-            XCTAssertFalse(PersonWords.subtitle(role: role, level: 1, congregation: nil).contains(role) && role != "Admin")
-        }
+        XCTAssertNil(PersonWords.subtitle(role: "Student", congregation: nil), "no context: nothing — never \"Member\"")
+        XCTAssertEqual(PersonWords.subtitle(role: "Student", congregation: "Nuru Place"), "Nuru Place")
+        XCTAssertEqual(PersonWords.subtitle(role: "Instructor", congregation: nil), "Teacher")
+        XCTAssertEqual(PersonWords.subtitle(role: "SuperAdmin", congregation: "Nuru Place"), "Church staff · Nuru Place")
     }
 
     // MARK: Walk E18 — the cell page's empty leader seat; no raw role
