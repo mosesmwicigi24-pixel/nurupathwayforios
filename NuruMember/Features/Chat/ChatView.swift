@@ -15,7 +15,6 @@ import UniformTypeIdentifiers
 final class ChatInboxViewModel: ObservableObject {
     @Published var inbox: ChatInbox?
     @Published var people: [ChatPerson] = []
-    @Published var verse: (text: String, reference: String, version: String)?
     @Published var loading = true
     @Published var error: String?
     @Published var busyPersonId: String?    // person whose DM is being created
@@ -99,7 +98,6 @@ final class ChatInboxViewModel: ObservableObject {
         loading = true; error = nil
         async let inboxReq = try? MemberAPI.chatInbox()
         async let peopleReq = try? MemberAPI.chatPeople()
-        async let verseReq = try? MemberAPI.homeVerse()
         async let connectionsReq = try? MemberAPI.listConnections()
         async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
@@ -107,10 +105,6 @@ final class ChatInboxViewModel: ObservableObject {
 
         if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
         if let p = await peopleReq { people = p }
-        if let v = await verseReq {
-            if let t = v.text, !t.isEmpty { verse = (t, v.reference, v.version) }
-            else { verse = (defaultVerseText, v.reference, v.version) }
-        }
         if let c = await connectionsReq { connections = c }
         if let inc = await incomingReq { incomingRequests = inc }
         if let out = await outgoingReq { outgoingRequests = out }
@@ -303,8 +297,6 @@ final class ChatInboxViewModel: ObservableObject {
             }
         } catch { /* offline etc. — the button simply stays */ }
     }
-
-    private let defaultVerseText = "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”"
 }
 
 // C3b four-tab restructure: My Space (spaces + the cell/group rooms, merged —
@@ -367,7 +359,11 @@ struct ChatView: View {
                             // cards there so "Send to all" stays above the fold.
                             if segment != .broadcast {
                                 aiCard
-                                if query.isEmpty { verseCard }
+                                // Pray is a door inside Community (§9.2 #13),
+                                // where Home's verse was repeated: the verse is
+                                // Home's alone, and the Talk | Pray switch above
+                                // is gone — the chips below are the one switcher.
+                                if query.isEmpty { prayerRoomRow }
                             }
                             segmentControl
                             segmentBody
@@ -401,6 +397,16 @@ struct ChatView: View {
             // The bell's inbox, and the announcement a row of it opens.
             .inboxDestinations()
             .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
+            // The Prayer Room's own page — the same one Home's "My Prayer
+            // Room" tile opens (one way to each thing) — and a prayer in it.
+            .navigationDestination(for: CommunityRoute.self) { r in
+                switch r {
+                case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)
+                case .prayer(let id): PrayerWallDetailView(postId: id)
+                case .discussions: DiscussionsView()
+                case .discussion(let id): DiscussionThreadView(threadId: id)
+                }
+            }
         }
         // Coming back from a thread refreshes the inbox, so a conversation just
         // opened stops counting: the thread marked itself read on the server the
@@ -580,28 +586,32 @@ struct ChatView: View {
         .buttonStyle(.pressableSubtle)
     }
 
-    // MARK: Verse for today (gold ribbon, italic serif verse)
+    // MARK: My Prayer Room (EXPERIENCE.md §9.2 #13) — a door, not a switch
 
-    private var verseCard: some View {
-        HStack(alignment: .top, spacing: Nuru.S.md) {
-            Icon(.quote, size: 14, color: Nuru.gold)
-                .frame(width: 32, height: 32)
-                .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
-                Text(vm.verse?.text ?? "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”")
-                    .font(.fraunces(13).italic()).foregroundStyle(Nuru.navy).lineSpacing(4)
-                Text(vm.verse?.reference ?? "Galatians 6:2")
-                    .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+    /// "My Prayer Room · Pray with the family" — Community's prayer, one tap
+    /// from its talk, with its own page and tabs. It was a Talk | Pray switch
+    /// stacked on You's segment bar and the inbox's chips (three switchers),
+    /// and the verse card here repeated Home's verse of the day.
+    private var prayerRoomRow: some View {
+        NavigationLink(value: CommunityRoute.prayerWall) {
+            HStack(spacing: Nuru.S.md) {
+                Icon(.handHeart, size: 18, color: Nuru.navy)
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("My Prayer Room").font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    Text("Pray with the family").font(.nCardMeta).foregroundStyle(Nuru.ink600)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens My Prayer Room")
     }
 
     // MARK: Segmented control (capsule pills, navy gradient active)
