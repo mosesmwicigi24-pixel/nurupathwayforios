@@ -185,6 +185,60 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(StreakWords.title(-1), "0-day streak", "never a negative day")
     }
 
+    // MARK: §8.2 #6 — the featured plan: one rule over the same inputs
+
+    private func plan(_ id: String, enrolled: Bool = false, description: String? = "Words.") -> [String: Any] {
+        ["plan_id": id, "title": "Plan \(id)", "description": description ?? NSNull(), "day_count": 10, "enrolled": enrolled]
+    }
+    private func plans(_ rows: [[String: Any]]) throws -> [ReadingPlanRow] { try decode([ReadingPlanRow].self, rows) }
+
+    func testTheDayNumberIsTheNairobiCalendarDay() throws {
+        let iso = ISO8601DateFormatter()
+        // 2026-10-05 is day 20731 from 1970-01-01.
+        XCTAssertEqual(PlanPicks.nairobiDay(try XCTUnwrap(iso.date(from: "2026-10-05T05:00:00Z"))), 20731)
+        // Nairobi's midnight is 21:00 UTC the evening before — the day turns
+        // there, not at 03:00 (the UTC day still said the 4th until then).
+        XCTAssertEqual(PlanPicks.nairobiDay(try XCTUnwrap(iso.date(from: "2026-10-04T20:59:59Z"))), 20730)
+        XCTAssertEqual(PlanPicks.nairobiDay(try XCTUnwrap(iso.date(from: "2026-10-04T21:00:00Z"))), 20731)
+        XCTAssertEqual(PlanPicks.nairobiDay(try XCTUnwrap(iso.date(from: "2026-10-05T20:59:59Z"))), 20731)
+    }
+
+    func testThePlanOfTheDayIsTheFirstNotStartedInTheServersOrder() throws {
+        let rows = try plans([plan("c", enrolled: true), plan("b"), plan("a")])
+        XCTAssertEqual(PlanPicks.planOfDay(rows)?.planId, "b", "the server's order — never re-sorted")
+        XCTAssertEqual(PlanPicks.planOfDay(try plans([plan("x", enrolled: true)]))?.planId, "x")
+        XCTAssertNil(PlanPicks.planOfDay([]))
+    }
+
+    func testTheMidPromoTurnsEveryOtherNairobiDay() throws {
+        // Pool: not started, not the plan of the day, with words — p2, p3, p5.
+        let rows = try plans([plan("p1"), plan("p2"), plan("p3"), plan("p4", enrolled: true),
+                              plan("p5"), plan("p6", description: nil)])
+        let pod = PlanPicks.planOfDay(rows)?.planId
+        XCTAssertEqual(pod, "p1")
+        // 20731 / 2 = 10365; 10365 % 3 = 0 → p2. 20732 / 2 = 10366 → 1 → p3.
+        XCTAssertEqual(PlanPicks.midPromo(rows, planOfDayId: pod, day: 20731)?.planId, "p2")
+        XCTAssertEqual(PlanPicks.midPromo(rows, planOfDayId: pod, day: 20730)?.planId, "p2", "two days per pick")
+        XCTAssertEqual(PlanPicks.midPromo(rows, planOfDayId: pod, day: 20732)?.planId, "p3")
+        XCTAssertEqual(PlanPicks.midPromo(rows, planOfDayId: pod, day: 20734)?.planId, "p5")
+        XCTAssertNil(PlanPicks.midPromo(try plans([plan("only")]), planOfDayId: "only", day: 20731))
+    }
+
+    func testTheServersPromosLeadInItsOrderOnceEach() throws {
+        let rows = try plans([plan("a"), plan("b"), plan("c")])
+        let promos = try decode([PlanPromo].self, [
+            ["plan_id": "gone", "slot": "fresh", "kicker": "WORTH YOUR WEEK"],
+            ["plan_id": "c", "slot": "fresh", "kicker": "FROM THE LIBRARY", "reason": "A few minutes a day is all it asks."],
+            ["plan_id": "a", "slot": "fresh", "kicker": "  "],
+            ["plan_id": "c", "slot": "cell", "kicker": "YOUR CELL IS READING"],
+        ])
+        let resolved = PlanPicks.resolve(promos, in: rows)
+        XCTAssertEqual(resolved.map(\.plan.planId), ["c", "a"], "unknown plans dropped, a plan never twice, the server's order kept")
+        XCTAssertEqual(resolved.first?.kicker, "FROM THE LIBRARY", "the hero is the server's first")
+        XCTAssertEqual(resolved.last?.kicker, "FOR YOU", "a blank kicker reads as Android's")
+        XCTAssertTrue(PlanPicks.resolve([], in: rows).isEmpty)
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

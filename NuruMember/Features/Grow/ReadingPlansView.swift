@@ -130,7 +130,8 @@ struct ReadingPlansView: View {
         }
     }
     private var continueReading: [ReadingPlanRow] { vm.plans.filter { $0.enrolled && $0.completedAt == nil } }
-    private var planOfDay: ReadingPlanRow? { vm.plans.first { !$0.enrolled } ?? vm.plans.first }
+    /// The picks follow PlanPicks — one rule, both apps (§8.2 #6).
+    private var planOfDay: ReadingPlanRow? { PlanPicks.planOfDay(vm.plans) }
     private var categories: [String] {
         var seen = Set<String>(); var out: [String] = []
         for p in vm.plans { if let c = p.category, !c.isEmpty, !seen.contains(c) { seen.insert(c); out.append(c) } }
@@ -157,19 +158,10 @@ struct ReadingPlansView: View {
 
     /// A server promo paired with the plan row it names. Unresolvable promos (a
     /// plan the catalogue didn't return) are dropped rather than rendered blank.
-    private struct ResolvedPromo: Identifiable {
-        let promo: PlanPromo
-        let plan: ReadingPlanRow
-        var id: String { promo.slot + "\u{00B7}" + promo.planId }
-        var kicker: String { promo.kicker.isEmpty ? "WORTH YOUR WEEK" : promo.kicker }
-    }
+    private typealias ResolvedPromo = PlanPicks.Resolved
 
     /// The personalized promos, most-personal-first, that we can actually show.
-    private var resolvedPromos: [ResolvedPromo] {
-        guard !vm.promos.isEmpty else { return [] }
-        let byId = Dictionary(vm.plans.map { ($0.planId, $0) }, uniquingKeysWith: { a, _ in a })
-        return vm.promos.compactMap { p in byId[p.planId].map { ResolvedPromo(promo: p, plan: $0) } }
-    }
+    private var resolvedPromos: [ResolvedPromo] { PlanPicks.resolve(vm.promos, in: vm.plans) }
     /// Everything after the hero promo — woven into the browse sections below.
     private var trailingPromos: [ResolvedPromo] { Array(resolvedPromos.dropFirst()) }
 
@@ -180,12 +172,9 @@ struct ReadingPlansView: View {
 
     /// A second plan to promote further down the page — never the one already
     /// featured at the top, and never one already being read. Rotates with the
-    /// day like the plan of the day, so browsing feels edited, not random.
+    /// church's (Nairobi) day, so browsing feels edited, not random.
     private var midPromoPlan: ReadingPlanRow? {
-        let pool = vm.plans.filter { !$0.enrolled && $0.planId != planOfDay?.planId && ($0.description?.isEmpty == false) }
-        guard !pool.isEmpty else { return nil }
-        let day = Int(Date().timeIntervalSince1970 / 86_400)
-        return pool[(day / 2) % pool.count]
+        PlanPicks.midPromo(vm.plans, planOfDayId: planOfDay?.planId, day: PlanPicks.nairobiDay())
     }
 
     var body: some View {
