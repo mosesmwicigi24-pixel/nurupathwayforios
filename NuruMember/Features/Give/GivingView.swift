@@ -475,10 +475,22 @@ struct GivingView: View {
                 Nuru.paper.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: Nuru.S.md) {
+                        // What is already in motion leads (EXPERIENCE.md §9.1
+                        // rule 6, §9.2 #6): the recurring gifts — running or
+                        // paused — come first, each told once; a one-time gift
+                        // is the choice below. A weekly tithe used to sit under
+                        // the fold twice ("Your rhythm" and a RECURRING GIFTS
+                        // rail) beneath a pre-filled one-time tithe. A pledge
+                        // payment still leads with its own card. Android's
+                        // 8cfa45d, row for row.
+                        if !payMode && !vm.listedSchedules.isEmpty {
+                            overline("RECURRING GIFTS")
+                            ForEach(vm.listedSchedules) { recurringGiftRow($0) }
+                            overline("GIVE ONCE").padding(.top, Nuru.S.sm)
+                        }
                         if !payMode, let g = vm.lastGift { repeatCard(g) }
                         if payMode { payModeCard.transition(.opacity) } else { fundsSection }
                         amountCard
-                        if !payMode { rhythmRow }
                         if !payMode && recurringAllowed { frequencyRow }
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
@@ -487,7 +499,6 @@ struct GivingView: View {
                         // The fee table is M-Pesa's, in shillings — nothing to
                         // cover on a dollar rail.
                         if !inDollars { coverFeeRow }
-                        if !vm.listedSchedules.isEmpty { schedulesSection }
                         recentSection
                         scriptureStrip
                         secureNote
@@ -954,46 +965,55 @@ struct GivingView: View {
         ScheduleRhythm.cadence(frequency: freq, day: ScheduleRhythm.setupDay(frequency: freq, now: Date()))
     }
 
-    // MARK: Your rhythm (PARTNERS_PROGRAMME §3a, Giving Cycle 4)
+    // MARK: Recurring gifts (EXPERIENCE.md §9.2 #6) — leading the tab
 
-    /// One row under the amount when a recurring gift is running: "Your
-    /// rhythm · KSh 500 every Sunday · next Sun 5 Oct" (the soonest one) —
-    /// a tap opens its sheet.
-    @ViewBuilder
-    private var rhythmRow: some View {
-        if let s = ScheduleRhythm.soonestActive(vm.listedSchedules), let text = ScheduleRhythm.rowText(for: s) {
-            Button {
-                Haptics.tap()
-                scheduleDetail = s
-            } label: {
-                HStack(spacing: Nuru.S.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold.opacity(0.14))
-                            .frame(width: 36, height: 36)
-                        Icon(.repeat, size: 14, color: Nuru.gold)
+    /// One recurring gift, full width (§9.1 rule 6): its rhythm and when it
+    /// next prompts ("KSh 1,000 every Monday · next Mon 12 Oct"), its fund and
+    /// the pledge it collects, what the next prompt really asks, a pause or a
+    /// failing prompt in words; a tap opens its sheet (change, pause, resume,
+    /// cancel). It was told twice — "Your rhythm" under the amount and a
+    /// half-width card in a rail below the fold.
+    private func recurringGiftRow(_ s: GivingSchedule) -> some View {
+        let paused = s.status.lowercased() == "paused"
+        let fund = funds.first { $0.code == s.fund }?.label ?? s.fund.capitalized
+        let title = paused
+            ? "\(money(s.amountMinor, s.currency)) \(ScheduleRhythm.isWeekly(s.frequency) ? "weekly" : "monthly") · Paused"
+            : (ScheduleRhythm.rowText(for: s) ?? "\(money(s.amountMinor, s.currency)) \(ScheduleRhythm.isWeekly(s.frequency) ? "weekly" : "monthly")")
+        return Button {
+            Haptics.tap()
+            scheduleDetail = s
+        } label: {
+            HStack(spacing: Nuru.S.md) {
+                Icon(.repeat, size: 18, color: Nuru.navy)
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(paused ? "\(fund) · \(PauseCopy.cardLine(for: s))" : fund)
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                        .fixedSize(horizontal: false, vertical: true)
+                    // The pledge it collects, and what the next prompt really asks.
+                    ForEach([ScheduleCopy.pledgeLine(s), ScheduleCopy.nextLine(s)].compactMap { $0 }, id: \.self) { line in
+                        Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Your rhythm").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                        Text(text).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
-                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        // A gift that collects a pledge says so, and what the
-                        // next prompt really asks (Giving Cycle 5).
-                        ForEach([ScheduleCopy.pledgeLine(s), ScheduleCopy.nextLine(s)].compactMap { $0 }, id: \.self) { line in
-                            Text(line).font(.nCardMeta).foregroundStyle(Color(hex: 0x9A7A2A))
-                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        }
+                    // Why its last prompt failed, while it still fails — the server's words.
+                    if let f = s.lastFailure, !f.reason.isEmpty {
+                        Text(f.reason).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: Nuru.S.sm)
-                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                Spacer(minLength: Nuru.S.sm)
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
-            .buttonStyle(.pressable)
-            .accessibilityHint("Opens your recurring gift")
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens your recurring gift")
     }
 
     // MARK: Pay methods
@@ -1128,77 +1148,6 @@ struct GivingView: View {
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .onChange(of: coverFee) { _, _ in Haptics.tap() }
-    }
-
-    // MARK: Active schedules (horizontal scroll, tap to manage)
-
-    /// Active schedules, then paused ones (labelled) — never a cancelled one
-    /// (GiveSchedules.listed; the server returns every schedule ever made).
-    /// Titled RECURRING GIFTS, as on Android and the office's pages: it lists
-    /// paused gifts too, so "active" was not true of all of them.
-    private var schedulesSection: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            overline("RECURRING GIFTS")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
-                    ForEach(vm.listedSchedules) { s in
-                        Button {
-                            Haptics.tap()
-                            scheduleDetail = s
-                        } label: { scheduleCard(s) }
-                            .buttonStyle(.pressable)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-        }
-    }
-
-    private func scheduleCard(_ s: GivingSchedule) -> some View {
-        let paused = s.status.lowercased() == "paused"
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Icon(.repeat, size: 14, color: Nuru.gold)
-                Text(s.frequency == "weekly" ? "WEEKLY" : "MONTHLY")
-                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
-                if paused {
-                    Spacer(minLength: 4)
-                    Text("Paused").font(.nMicro).foregroundStyle(Nuru.ink600)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Nuru.mutedBg, in: Capsule())
-                }
-            }
-            Text(money(s.amountMinor, s.currency))
-                .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .padding(.top, 5)
-            Text(s.fund.capitalized).font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
-                .lineLimit(1).truncationMode(.tail)
-                .padding(.top, 1)
-            if let line = ScheduleCopy.pledgeLine(s) {
-                Text(line).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
-            }
-            // A paused schedule charges nothing — its old next date is not a
-            // promise; one paused until a date says when it comes back.
-            Text(paused ? PauseCopy.cardLine(for: s) : "Next \(giveDateShort(s.nextRunAt))")
-                .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
-                .lineLimit(1)
-                .padding(.top, 5)
-            // Why the last charge failed, while it is still failing — the
-            // server's own words.
-            if let f = s.lastFailure, !f.reason.isEmpty {
-                Text(f.reason)
-                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.urgentText)
-                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 5)
-            }
-        }
-        .frame(width: 150, alignment: .leading)
-        .padding(12)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     // MARK: Recent giving
