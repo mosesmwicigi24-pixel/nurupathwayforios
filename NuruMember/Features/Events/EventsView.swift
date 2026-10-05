@@ -219,9 +219,9 @@ final class EventsViewModel: ObservableObject {
         occurrences.filter { Ev.isLive($0.startAt, $0.endAt) }.count
     }
 
-    /// The week strip: today and the next six days — the same seven days
-    /// "N this week" counts (the walk's E21: the strip began two days back and
-    /// ran fourteen days, so its week and the header's never agreed).
+    /// The week strip: today through the seventh day after — the same eight
+    /// days "N this week" counts (the walk's E21: the strip began two days
+    /// back and ran fourteen, so its week and the header's never agreed).
     var week: [WeekDay] {
         let letters = DateFormatter()
         letters.dateFormat = "EEEEE"
@@ -498,7 +498,7 @@ struct EventsView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
-            // Seven days fill the card — no scrolling to find this week.
+            // The eight days fill the card — no scrolling to find this week.
             HStack(spacing: 4) {
                 ForEach(vm.week) { d in dayPill(d) }
             }
@@ -1557,8 +1557,9 @@ extension View {
     }
 }
 
-/// The one "week" on Events (the walk's E21): the strip and the header's
-/// "N this week" both mean today and the next six days.
+/// The one "week" on Events (the walk's E21; §6's "this week"): today
+/// through the seventh day after — eight days, as Home's week counts on
+/// both apps. The strip and the header's "N this week" use the same days.
 enum EventsWeek {
-    static let days = 7
+    static let days = 8
 }

@@ -764,6 +764,7 @@ final class ExperienceCycle4Tests: XCTestCase {
         let vm = EventsViewModel()
         let week = vm.week
         XCTAssertEqual(week.count, EventsWeek.days)
+        XCTAssertEqual(EventsWeek.days, 8, "today through the seventh day after (§6), as Home's week counts")
         XCTAssertTrue(week.first?.isToday == true, "today first — never two days back")
         let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Events/EventsView.swift"), encoding: .utf8)
         XCTAssertTrue(src.contains("value: EventsWeek.days, to: todayStart"), "the count uses the same window")
