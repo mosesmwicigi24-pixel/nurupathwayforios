@@ -76,7 +76,22 @@ struct CommunityView: View {
     @ViewBuilder private func content(_ d: CommunityDoor) -> some View {
         switch d {
         case .talk: ChatView(embeddedInYou: embeddedInYou)
-        case .pray: PrayerRoomView()
+        // The Pray door is a root with its own stack: its prayer rows push a
+        // prayer, and its bell the inbox. Mounted bare, its back button did
+        // nothing and a tapped prayer opened nothing.
+        case .pray:
+            NavigationStack {
+                PrayerRoomView(asDoor: true)
+                    .navigationDestination(for: CommunityRoute.self) { r in
+                        switch r {
+                        case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)
+                        case .prayer(let id): PrayerWallDetailView(postId: id)
+                        case .discussions: DiscussionsView()
+                        case .discussion(let id): DiscussionThreadView(threadId: id)
+                        }
+                    }
+                    .inboxDestinations()
+            }
         }
     }
 

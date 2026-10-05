@@ -5,7 +5,7 @@
 // (#My Space · DM · My Groups with counts). Each segment renders one grouped
 // white card of rows: spaces (# avatar, author preview, member dots, Active
 // pill), DMs (stories row, real-or-initials avatars, unread badges, read ticks)
-// and groups. A gold pen FAB opens the "Start something" compose sheet.
+// and groups. The pen beside the bell opens the "Start something" compose sheet.
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -313,7 +313,7 @@ final class ChatInboxViewModel: ObservableObject {
 // Broadcast appended, unchanged.
 private enum ChatSegment: Int, CaseIterable { case space, dm, discipler, pastor, broadcast }
 
-// Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
+// Figma STORY_RING — the warm gold gradient used for rings and badges.
 private let storyRing = LinearGradient(
     colors: [Color(hex: 0xE6C068), Color(hex: 0xC89B3C), Color(hex: 0xB07D2E)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -378,7 +378,6 @@ struct ChatView: View {
                 .ignoresSafeArea(edges: .top)
                 .background(Nuru.paper.ignoresSafeArea())
                 .scrollDismissesKeyboard(.interactively)
-                if segment != .broadcast { fab }   // the DM-compose FAB would sit on the Send button
                 if composeOpen { composeSheet }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: composeOpen)
@@ -458,7 +457,14 @@ struct ChatView: View {
                 NuruHeaderText(kicker: "Community", title: "Nuru Connect",
                                line: ChatInboxViewModel.headerLine(unread: vm.inbox == nil ? nil : vm.totalUnread))
                 Spacer(minLength: 0)
-                bellButton
+                // Compose lives in the header, beside the bell (the bell stays
+                // rightmost, §8.1 rule 2): as a floating button it always sat on
+                // something — the empty state's words, a row's time and unread
+                // chip — and a floating button never hides content (rule 9).
+                HStack(spacing: Nuru.S.sm) {
+                    if segment != .broadcast { composeButton }
+                    bellButton
+                }
             }
             searchBar.padding(.top, Nuru.S.lg)
         }
@@ -1036,22 +1042,21 @@ struct ChatView: View {
         }
     }
 
-    // MARK: FAB + compose sheet
+    // MARK: Compose + compose sheet
 
-    private var fab: some View {
+    /// "Start something" — the bell's tile, with the pen (§8.1 rule 7: 18).
+    private var composeButton: some View {
         Button {
             Haptics.tap()
             composeOpen = true
         } label: {
-            Icon(.pencil, size: 22, color: .white)
-                .frame(width: 56, height: 56)
-                .background(storyRing, in: Circle())
-                .shadow(color: Nuru.gold.opacity(0.55), radius: 12, y: 8)
-                .shadow(color: Color(hex: 0x0B1F33, alpha: 0.25), radius: 5, y: 3)
+            Icon(.pencil, size: 18, color: Nuru.navy)
+                .frame(width: 44, height: 44)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
-        .padding(.trailing, Nuru.S.screen)
-        .padding(.bottom, Nuru.tabBarSpace - 18)
+        .accessibilityLabel("Start something")
     }
 
     // Figma ComposeSheet — dark scrim, "Start something", three segment shortcuts.
@@ -1062,36 +1067,42 @@ struct ChatView: View {
             Color(hex: 0x0B1F33, alpha: 0.45)
                 .ignoresSafeArea()
                 .onTapGesture { composeOpen = false }
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                // The title rides in the card: over the scrim it floated on
+                // whatever lay behind it and read poorly.
                 HStack {
-                    Text("Start something").font(.nCardTitle).foregroundStyle(.white)
+                    Text("Start something").font(.nCardTitle).foregroundStyle(Nuru.navy)
                     Spacer(minLength: 0)
                     Button { composeOpen = false } label: {
-                        Icon(.x, size: 16, color: .white)
+                        Icon(.x, size: 14, color: Nuru.navy)
                             .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.15), in: Circle())
+                            .background(Nuru.mutedBg, in: Circle())
                             .frame(width: 44, height: 44)     // full-size hit target
                             .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                 }
-                .padding(.horizontal, 8)
+                .padding(.leading, Nuru.S.base).padding(.trailing, Nuru.S.xs).padding(.top, Nuru.S.xs)
                 VStack(spacing: 0) {
-                    composeAction("New direct message", "Message a person 1:1", divider: false) {
-                        Icon(.pencil, size: 19, color: Nuru.gold)
+                    composeAction("New direct message", "Message a person 1:1", divider: true) {
+                        Icon(.pencil, size: 18, color: Nuru.gold)
                     } action: { segment = .dm }
                     composeAction("New group", "Your cell & group rooms live in My Space", divider: true) {
-                        Icon(.users, size: 19, color: Nuru.gold)
+                        Icon(.users, size: 18, color: Nuru.gold)
                     } action: { segment = .space }
                     composeAction("Browse spaces", "Find & join a community space", divider: true) {
-                        Image(systemName: "safari").font(.symbol(18)).foregroundStyle(Nuru.gold)
+                        Icon(.compass, size: 18, color: Nuru.gold)
                     } action: { segment = .space }
                 }
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .nuruShadow()
             }
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
             .padding(.horizontal, Nuru.S.md)
-            .padding(.bottom, Nuru.S.md)
+            // Above the tab bar — its last action ("Browse spaces") sat under it
+            // (§7.1 rule 3: the last button never sits under the tab bar).
+            .padding(.bottom, Nuru.tabBarSpace)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .zIndex(2)

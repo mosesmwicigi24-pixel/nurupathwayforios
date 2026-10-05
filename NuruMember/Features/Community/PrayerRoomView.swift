@@ -24,9 +24,13 @@ enum PrayerRoomTab: Hashable {
 struct PrayerRoomView: View {
     @State private var tab: PrayerRoomTab
     @Environment(\.dismiss) private var dismiss
+    /// Community's "Pray" door: the room is a root there, not a pushed page —
+    /// no back (the door row is the way out), and the bell at the right.
+    let asDoor: Bool
 
-    init(initialTab: PrayerRoomTab = .privatePrayer) {
+    init(initialTab: PrayerRoomTab = .privatePrayer, asDoor: Bool = false) {
         _tab = State(initialValue: initialTab)
+        self.asDoor = asDoor
     }
 
     var body: some View {
@@ -52,6 +56,15 @@ struct PrayerRoomView: View {
     // control anchored underneath.
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
+            if asDoor {
+                // One header (§8.1 rule 2): kicker · title · the bell.
+                HStack(alignment: .top) {
+                    NuruHeaderText(kicker: "Pray", title: "My Prayer Room")
+                    Spacer(minLength: 0)
+                    NuruBell(look: .init(size: 44, circle: false, iconSize: 18, iconColor: Nuru.navy,
+                                         fill: .white, stroke: Nuru.border))
+                }
+            } else {
             HStack(alignment: .center, spacing: Nuru.S.sm) {
                 Button { dismiss() } label: {
                     Icon(.arrowLeft, size: 18, color: Nuru.navy)
@@ -71,11 +84,13 @@ struct PrayerRoomView: View {
             Text("My Prayer Room")
                 .font(.fraunces(26, .semibold))
                 .foregroundStyle(Nuru.navy)
+            }
             segmentedControl
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        // Under Community's door row there's no status bar to clear.
+        .padding(.top, asDoor ? Nuru.S.base : 60)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)

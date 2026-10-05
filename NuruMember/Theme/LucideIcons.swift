@@ -122,6 +122,8 @@ enum Lucide: String {
     // bundled Resources/Fonts/lucide.ttf cmap with fontTools.
     /// Lucide `cross` — the Latin cross that marks a reading.
     case cross = "\u{E1E5}"
+    /// Lucide `compass` — browse (was SF "safari").
+    case compass = "\u{E09B}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).

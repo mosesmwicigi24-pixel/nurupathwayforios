@@ -33,7 +33,7 @@ struct PrayerWallView: View {
     /// True when hosted as the "Corporate Prayer" tab of PrayerRoomView, which
     /// supplies its own back button + title + segmented control — so this
     /// view drops its own hero (and the "+" compose button living inside it)
-    /// in favor of a floating one.
+    /// for a gentle prompt at the top of the list.
     var embedded: Bool = false
     @StateObject private var vm = PrayerWallViewModel()
     @Environment(\.dismiss) private var dismiss
@@ -44,6 +44,7 @@ struct PrayerWallView: View {
             VStack(spacing: 0) {
                 if !embedded { hero }
                 VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                    if embedded { sharePrompt }
                     sortRow
                     if vm.loading && vm.posts.isEmpty {
                         ForEach(0..<3, id: \.self) { i in
@@ -77,21 +78,32 @@ struct PrayerWallView: View {
         .sheet(isPresented: $composing) {
             PrayerComposeSheet { await vm.load() }
         }
-        // Embedded (My Prayer Room) has no hero to carry the "+" compose
-        // action, so it floats one instead — same compose sheet.
-        .overlay(alignment: .bottomTrailing) {
-            if embedded {
-                Button { Haptics.tap(); composing = true } label: {
-                    Icon(.plus, size: 20, color: Nuru.navyDeep)
-                        .frame(width: 52, height: 52)
-                        .background(Nuru.gold, in: Circle())
-                        .shadow(color: Nuru.gold.opacity(0.4), radius: 10, x: 0, y: 6)
+    }
+
+    /// Embedded (My Prayer Room) has no hero to carry "+", so the list opens
+    /// with a gentle prompt on gold tint (§8.1 rule 5) — it floated over the
+    /// cards instead, and sat under the tab bar on a home-button phone and
+    /// under the LIVE bar on every phone (rule 9: a floating button never
+    /// hides anything, nor is it hidden).
+    private var sharePrompt: some View {
+        Button { Haptics.tap(); composing = true } label: {
+            HStack(spacing: Nuru.S.md) {
+                Icon(.plus, size: 18, color: Nuru.navy)
+                    .frame(width: 36, height: 36)
+                    .background(Nuru.white, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Share a prayer").font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    Text("Let the church carry it with you.").font(.nCardMeta).foregroundStyle(Nuru.ink600)
                 }
-                .buttonStyle(.pressable)
-                .padding(Nuru.S.lg)
-                .accessibilityLabel("Share a prayer")
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 14, color: Nuru.ink400)
             }
+            .padding(Nuru.S.md)
+            .background(Nuru.goldTint.opacity(0.55), in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
         }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Share a prayer")
     }
 
     // Full-bleed hero: brand gradient (image removed by design), controls + title overlaid.

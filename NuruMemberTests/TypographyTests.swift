@@ -339,7 +339,7 @@ enum TypeScan {
         "Features/Attendance/ServiceCheckInView.swift": 1,
         "Features/Chat/BroadcastViews.swift": 5,
         "Features/Chat/ChatThreadView.swift": 3,
-        "Features/Chat/ChatView.swift": 7,
+        "Features/Chat/ChatView.swift": 6,
         "Features/Chat/ChatVoice.swift": 1,
         "Features/Chat/PastoralViews.swift": 2,
         "Features/Community/DiscussionsView.swift": 2,
