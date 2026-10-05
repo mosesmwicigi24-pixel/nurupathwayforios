@@ -10,9 +10,9 @@
 // server's verdict — never grades locally, never reveals answers. Attempts are
 // idempotent on a stable client_mutation_id (§2.1/§3.6); "Retry Exam" mints a
 // fresh id. If the server refuses the exam (GATE_LOCKED — modules remaining
-// or a locked level; UNPROCESSABLE — no questions yet) its own words are the
-// screen, with Go back — never Try again, which would only be refused again
-// (EXPERIENCE.md §7.2 #1). Every state has a back at the top, and every
+// or a locked level; UNPROCESSABLE — no questions yet) its own words fill §4's
+// one state card, with Go back — never Try again, which would only be refused
+// again (EXPERIENCE.md §7.2 #1, §8.2 #16). Every state has a back at the top, and every
 // bottom button sits clear of the tab bar (§7.1 rule 3).
 import SwiftUI
 
@@ -52,6 +52,13 @@ final class LevelExamViewModel: ObservableObject {
 
     func load() async {
         loading = true; error = nil; notEligible = nil; loadFailure = nil
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted visual verification: NURU_UITEST_EXAM_REFUSAL=<the server's
+        // words> shows the refusal without changing what the server holds.
+        if let words = ProcessInfo.processInfo.environment["NURU_UITEST_EXAM_REFUSAL"], !words.isEmpty {
+            notEligible = words; loading = false; return
+        }
+        #endif
         do {
             let fresh = try await MemberAPI.levelExam(levelNumber)
             exam = fresh
@@ -235,7 +242,7 @@ struct LevelExamView: View {
             } else if vm.loading && vm.exam == nil {
                 examSkeleton
             } else if let reason = vm.notEligible {
-                ExamNotEligibleScreen(reason: reason) { dismiss() }
+                notEligible(reason)
             } else if let exam = vm.exam, !vm.questions.isEmpty {
                 flow(exam)
             } else {
@@ -336,6 +343,24 @@ struct LevelExamView: View {
         .accessibilityLabel("Loading the exam")
         // A slow first load is never a trap: the way back is there from the start.
         .overlay(alignment: .topLeading) { ExamTopBack(onDark: true) { dismiss() } }
+    }
+
+    /// The server refused the exam — its own words (§4: "Your Level 1 exam
+    /// isn't ready yet — we'll let you know when it opens.", "Finish every
+    /// module in this level before the exam") in the one state card, as
+    /// Android (EXPERIENCE.md §8.2 #16; it was a screen of its own), with one
+    /// way out, Go back — never Try again, which would only be refused again —
+    /// and the way back at the top.
+    private func notEligible(_ reason: String) -> some View {
+        NuruStateView(state: .failed(Self.refusalCopy(reason)), back: { dismiss() })
+            .padding(.horizontal, Nuru.S.screen)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) { ExamTopBack { dismiss() } }
+    }
+
+    /// A refusal's card: the server's words, Go back. Pure — pinned by tests.
+    static func refusalCopy(_ reason: String) -> NuruStateCopy {
+        NuruStateCopy(cause: .refusal, title: reason, line: nil, action: .goBack)
     }
 
     /// The exam didn't come for a reason that isn't a refusal — offline, our
@@ -591,48 +616,6 @@ private struct ExamCTABar: View {
                 .overlay(Rectangle().fill(EX.ctaHairline).frame(height: 1), alignment: .top)
                 .ignoresSafeArea(edges: .bottom)
         )
-    }
-}
-
-// MARK: - Not eligible (the server refused the exam — its words, and Go back)
-
-/// A refusal is the server's own words (§4) — "Your Level 1 exam isn't
-/// ready yet — we'll let you know when it opens.", "Finish every module in
-/// this level before the exam" — and one way out, Go back. Never Try again
-/// (it would only be refused again), and no "finish every module" line of
-/// our own: the old one stood under "no questions yet" for a member who had
-/// finished every module (EXPERIENCE.md §7.2 #1).
-private struct ExamNotEligibleScreen: View {
-    let reason: String
-    let onBack: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
-                .frame(width: 100, height: 100)
-                .overlay(Icon(.lock, size: 36, color: EX.copy))
-            Text(reason)
-                .font(.inter(20, .bold)).foregroundStyle(EX.ink)
-                .multilineTextAlignment(.center)
-                .lineSpacing(4)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 24)
-                .padding(.horizontal, 36)
-            Spacer()
-            Button { Haptics.tap(); onBack() } label: {
-                Text("Go back")
-                    .font(.inter(16, .semibold)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.pressable)
-            .padding(.horizontal, Nuru.S.lg)
-            .padding(.bottom, ExamLayout.bottomClearance)
-        }
-        .frame(maxWidth: .infinity)
-        .overlay(alignment: .topLeading) { ExamTopBack(action: onBack) }
-        .gentleEntrance()
     }
 }
 

@@ -266,6 +266,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(NoticeFamily.icon("LIVE_STREAM_STARTED"), .radio, "case never matters")
     }
 
+    // MARK: §8.2 #16 — the exam's refusal is §4's one state card
+
+    func testTheExamsRefusalIsTheStateCardWithGoBack() {
+        let words = "Your Level 1 exam isn't ready yet — we'll let you know when it opens."
+        let copy = LevelExamView.refusalCopy(words)
+        XCTAssertEqual(copy.cause, .refusal)
+        XCTAssertEqual(copy.title, words, "the server's own words, as it wrote them")
+        XCTAssertNil(copy.line)
+        XCTAssertEqual(copy.action, .goBack, "never Try again — it would only be refused again")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)
