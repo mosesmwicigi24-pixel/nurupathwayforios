@@ -381,10 +381,11 @@ struct CellRosterView: View {
         }
     }
 
-    /// "5 of 8" over the gatherings this cell actually held; "—" before it has
-    /// met at all (the shepherd note above says why).
+    /// "5 of 8" over the gatherings this cell actually held; "Not yet" before
+    /// it has met at all (the shepherd note above says why) — words, not a
+    /// dash that looks like missing data (§8.1 rule 8).
     private func attendanceLabel(_ m: CellRosterMember) -> String {
-        guard let a = m.attendance, a.of > 0 else { return "—" }
+        guard let a = m.attendance, a.of > 0 else { return "Not yet" }
         return "\(a.present) of \(a.of)"
     }
 

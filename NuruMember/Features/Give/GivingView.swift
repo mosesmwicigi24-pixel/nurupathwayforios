@@ -2523,7 +2523,7 @@ private struct ScheduleDetailSheet: View {
             if paused {
                 row("Next prompt", "None while paused")
             } else {
-                row("Next prompt", giveParseDate(current.nextRunAt).map { ScheduleRhythm.format($0, "EEE d MMM yyyy") } ?? "—")
+                row("Next prompt", giveParseDate(current.nextRunAt).map { ScheduleRhythm.format($0, "EEE d MMM yyyy") } ?? "Not set")
             }
             Divider().overlay(Nuru.border)
             row("Method", givingMethodName(current.method))

@@ -159,7 +159,7 @@ struct DiscussionsView: View {
                 Spacer()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("YOUR CELL'S BOARD").font(.inter(11, .medium)).kerning(1.8).foregroundStyle(Nuru.gold)
-                    Text("Cohort Discussions").font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                    Text("Cell Discussions").font(.fraunces(26, .semibold)).foregroundStyle(.white)
                     Text("“Let us consider how we may spur one another on toward love and good deeds.” — Hebrews 10:24")
                         .font(.nCaption).foregroundStyle(Nuru.onNavyDim).lineLimit(2).padding(.top, 4)
                 }

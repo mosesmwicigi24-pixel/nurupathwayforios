@@ -231,7 +231,7 @@ struct ProfileView: View {
                 .buttonStyle(.pressable)
                 .disabled(avatarUploading)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(p?.fullName ?? "—").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
+                    Text(p?.fullName ?? "").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
                         .lineLimit(1).minimumScaleFactor(0.8)
                     if let email = p?.email {
                         Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
@@ -354,7 +354,7 @@ struct ProfileView: View {
 
     private func displayValue(for f: PField) -> String {
         switch f.id {
-        case "name": return p?.fullName ?? "—"
+        case "name": return p?.fullName ?? "Not set"   // an empty value reads "Not set" (§8.1 rule 8)
         case "email": return p?.email ?? "Not set"
         // Read the Kenyan way ("0700 000 000"), the same as Give shows it; the
         // edit sheet and the wire keep E.164.
@@ -365,7 +365,7 @@ struct ProfileView: View {
             return g.replacingOccurrences(of: "_", with: " ").capitalized
         case "country": return countryLabel
         case "city": return p?.city ?? "Not set"
-        default: return "—"
+        default: return "Not set"
         }
     }
 
@@ -1285,9 +1285,9 @@ private struct VerifyCertificateSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(color.opacity(0.25), lineWidth: 1))
 
                     VStack(spacing: 0) {
-                        verifyRow("Recipient", r.recipientName ?? "—"); Divider()
+                        verifyRow("Recipient", r.recipientName ?? "Not set"); Divider()
                         verifyRow("Certificate", cert.title); Divider()
-                        verifyRow("Issued", r.issuedAt.flatMap(formatISODay) ?? formatISODay(cert.issuedAt) ?? "—"); Divider()
+                        verifyRow("Issued", r.issuedAt.flatMap(formatISODay) ?? formatISODay(cert.issuedAt) ?? "Not set"); Divider()
                         verifyRow("Verification code", r.verificationCode, mono: true)
                     }
 
