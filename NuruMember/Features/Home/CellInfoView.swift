@@ -219,11 +219,22 @@ struct CellInfoView: View {
 
     private var leaderCard: some View {
         HStack(spacing: Nuru.S.base) {
-            Avatar(url: vm.cell?.leader?.avatarUrl, name: leaderName ?? vm.name, size: 56)
+            if let name = leaderName {
+                Avatar(url: vm.cell?.leader?.avatarUrl, name: name, size: 56)
+            } else {
+                // An empty seat, not a person (the walk's E18: the cell's own
+                // initials "DC" sat in a person's avatar beside "Not assigned yet").
+                Icon(.armchair, size: 22, color: Nuru.ink400)
+                    .frame(width: 56, height: 56)
+                    .background(Nuru.surface, in: Circle())
+                    .overlay(Circle().stroke(Nuru.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text("CELL LEADER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Text(leaderName ?? "Not assigned yet").font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
-                if let r = leaderRole { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
+                // Never a raw role (§8.1 rule 8).
+                if let r = CellLeaderWords.role(leaderRole) { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
             }
             Spacer(minLength: 0)
         }
@@ -454,11 +465,12 @@ struct CellInfoView: View {
         NavigationLink(value: CommunityRoute.discussions) {
             HStack {
                 Spacer()
-                Text("Open community ›").font(.nCardCTA).foregroundStyle(Nuru.white)
+                // The page's one primary: gold, navy text (§8.1 rule 4).
+                Text("Open community ›").font(.nCardCTA).foregroundStyle(Nuru.navy)
                 Spacer()
             }
             .frame(maxWidth: .infinity, minHeight: 48)
-            .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.pressable)
         .padding(.top, Nuru.S.xs)
@@ -530,5 +542,18 @@ enum CellAttendanceWords {
     static func lines(you: CellSummary.Cell.Attendance.You?, turnout: CellSummary.Cell.Turnout?) -> [String] {
         let out = [you.flatMap(Self.you), turnout.flatMap(Self.cell)].compactMap { $0 }
         return out.isEmpty ? ["Your cell hasn't met yet"] : out
+    }
+}
+
+/// A cell leader's role in a member's words (§8.1 rule 8) — nil for a plain
+/// member's role, which says nothing the kicker doesn't.
+enum CellLeaderWords {
+    static func role(_ raw: String?) -> String? {
+        switch (raw ?? "").lowercased() {
+        case "instructor": return "Teacher"
+        case "admin", "superadmin": return "Church staff"
+        case "", "student", "member": return nil
+        default: return raw
+        }
     }
 }

@@ -781,6 +781,16 @@ final class ExperienceCycle4Tests: XCTestCase {
         }
     }
 
+    // MARK: Walk E18 — the cell page's empty leader seat; no raw role
+
+    func testTheCellLeaderSlotSaysNoRawRole() {
+        XCTAssertNil(CellLeaderWords.role("Student"))
+        XCTAssertNil(CellLeaderWords.role(nil))
+        XCTAssertEqual(CellLeaderWords.role("Instructor"), "Teacher")
+        XCTAssertEqual(CellLeaderWords.role("SuperAdmin"), "Church staff")
+        XCTAssertEqual(Lucide.armchair.rawValue, "\u{E2C0}", "the empty seat, from the bundled Lucide font")
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

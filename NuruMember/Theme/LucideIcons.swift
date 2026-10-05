@@ -12,6 +12,8 @@ enum Lucide: String {
     case messageCircle = "\u{E116}"
     case handHeart = "\u{E5B9}"
     case user = "\u{E19F}"
+    /// Lucide `armchair` — an empty seat: a role no one holds yet.
+    case armchair = "\u{E2C0}"
     case bell = "\u{E059}"
     case chevronRight = "\u{E06F}"
     case chevronLeft = "\u{E06E}"
