@@ -255,13 +255,15 @@ struct GivingStatementView: View {
                     } else if vm.history.isEmpty {
                         emptyState
                     } else {
-                        fundTotalsCard.gentleEntrance()
+                        if !listed.isEmpty { fundTotalsCard.gentleEntrance() }
                         historyList
                         if hasPledgeRows { partnerPledgesCard }
-                        Text("Tap a gift to open its receipt.")
-                            .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 2)
+                        if !listed.isEmpty {
+                            Text("Tap a gift to open its receipt.")
+                                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 2)
+                        }
                     }
                 }
                 .padding(Nuru.S.screen)
@@ -338,7 +340,12 @@ struct GivingStatementView: View {
                 // number, any other currency rides under it ("+ US$ 20.00") —
                 // never one sum. The server's statement when it has answered.
                 let f = figures
-                if hasPledgeMoney {
+                if listed.isEmpty && !hasPledgeMoney {
+                    // Nothing in the period: no "Total given KSh 0" — the page
+                    // says "No gifts …" once, below (§7.4 #9; the walk's E14
+                    // found KSh 0 said four ways).
+                    EmptyView()
+                } else if hasPledgeMoney {
                     // Gifts X is the big number; the pledges and the grand
                     // total sit under it, so X + Y = Total is on screen.
                     let gifts = GiveMoney.headline(f.gifts)

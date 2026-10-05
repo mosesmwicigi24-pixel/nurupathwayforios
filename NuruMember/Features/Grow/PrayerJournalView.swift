@@ -429,15 +429,19 @@ private struct PrayerPulseCard: View {
             }
 
             // Weekly goal bar — days journaled out of 7, honest to created-at data.
+            // No zero counts and no celebration at zero (§7.4 #9; the walk's E14:
+            // "Journaled 0 of 7 days · 7 to a full week 🙌").
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("Journaled \(daysThisWeek) of 7 days")
+                    Text(PrayerPulseWords.journaled(daysThisWeek))
                         .font(.inter(11, .semibold))
                         .foregroundStyle(Color.white.opacity(0.7))
                     Spacer(minLength: Nuru.S.sm)
-                    Text(daysThisWeek >= 7 ? "A full week 🙌" : "\(7 - daysThisWeek) to a full week 🙌")
-                        .font(.inter(11, .semibold))
-                        .foregroundStyle(gold)
+                    if let toGo = PrayerPulseWords.toFullWeek(daysThisWeek) {
+                        Text(toGo)
+                            .font(.inter(11, .semibold))
+                            .foregroundStyle(gold)
+                    }
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -451,10 +455,12 @@ private struct PrayerPulseCard: View {
                 .frame(height: 6)
             }
 
-            HStack(spacing: Nuru.S.sm) {
-                StatTile(value: activeCount, label: "active")
-                StatTile(value: weekCount, label: "this week")
-                StatTile(value: answeredCount, label: "answered")
+            // Only the counts above zero; none at all when every one is zero.
+            let tiles = PrayerPulseWords.tiles(active: activeCount, week: weekCount, answered: answeredCount)
+            if !tiles.isEmpty {
+                HStack(spacing: Nuru.S.sm) {
+                    ForEach(tiles, id: \.label) { t in StatTile(value: t.value, label: t.label) }
+                }
             }
         }
         .padding(Nuru.S.base)
@@ -841,5 +847,22 @@ private struct PrayerComposerSheet: View {
         .background(Color.white)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+/// The prayer rhythm card's words without zero counts (§7.4 #9; the walk's
+/// E14). Pure, so the tests pin it.
+enum PrayerPulseWords {
+    static func journaled(_ days: Int) -> String {
+        days <= 0 ? "A prayer a day fills this week" : "Journaled \(days) of 7 days"
+    }
+    /// "4 to a full week" — nothing at zero (it was "7 to a full week 🙌").
+    static func toFullWeek(_ days: Int) -> String? {
+        if days >= 7 { return "A full week 🙌" }
+        return days > 0 ? "\(7 - days) to a full week" : nil
+    }
+    static func tiles(active: Int, week: Int, answered: Int) -> [(value: Int, label: String)] {
+        [(active, "active"), (week, "this week"), (answered, "answered")].filter { $0.0 > 0 }
+            .map { (value: $0.0, label: $0.1) }
     }
 }

@@ -823,6 +823,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(found, [], "one date shape (E16): \"EEE d MMM\", the year only when it isn't this year")
     }
 
+    // MARK: Walk E14 — no zero counts left
+
+    func testThePrayerRhythmCardSaysNoZeroCounts() {
+        XCTAssertEqual(PrayerPulseWords.journaled(0), "A prayer a day fills this week", "never \"Journaled 0 of 7 days\"")
+        XCTAssertNil(PrayerPulseWords.toFullWeek(0), "no \"7 to a full week 🙌\" at zero")
+        XCTAssertEqual(PrayerPulseWords.toFullWeek(3), "4 to a full week")
+        XCTAssertEqual(PrayerPulseWords.toFullWeek(7), "A full week 🙌")
+        XCTAssertTrue(PrayerPulseWords.tiles(active: 0, week: 0, answered: 0).isEmpty, "no \"0 active · 0 this week · 0 answered\"")
+        XCTAssertEqual(PrayerPulseWords.tiles(active: 2, week: 0, answered: 1).map(\.label), ["active", "answered"])
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

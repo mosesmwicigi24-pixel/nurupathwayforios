@@ -1045,7 +1045,9 @@ private struct PathwayMilestones: View {
             HStack {
                 Text("MILESTONES").font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
                 Spacer()
-                Text("\(earned) earned").font(.inter(11, .semibold)).foregroundStyle(PW.ink3)
+                if earned > 0 {   // no "0 earned" (§7.4 #9; the walk's E14)
+                    Text("\(earned) earned").font(.inter(11, .semibold)).foregroundStyle(PW.ink3)
+                }
             }.padding(.horizontal, 4)
             if let r = reward, r.remaining > 0 { nextRewardCard(r) }
             ScrollView(.horizontal, showsIndicators: false) {
