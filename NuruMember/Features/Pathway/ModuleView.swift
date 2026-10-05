@@ -844,6 +844,12 @@ struct ModuleView: View {
                     }
                     .transition(.opacity)
                 }
+                // A finished module has no gate below, so the tab bar sat on
+                // its last lines — "Revisit this module" half under it (the
+                // Cycle 3 walk's B8; §7.1 rule 3). The gate's own clearance.
+                if !chromeHidden && d.isFinished {
+                    Color.clear.frame(height: Nuru.tabBarSpace - 24)
+                }
             }
             // The lesson is on screen: start the reading clock and arm the
             // slide into immersive reading (a scroll gets there sooner).
