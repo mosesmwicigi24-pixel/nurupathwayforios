@@ -372,6 +372,27 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertTrue(HomeWeek.dueIsSoon(try due(dueOn: ""), today: today), "an undated row stays DUE")
     }
 
+    // MARK: §9.3 #3 — the time of day agrees
+
+    func testTheGreetingKeepsTheLiturgysClock() {
+        // Never "Good afternoon" over EVENING, nor "Good morning" over NIGHT.
+        for h in 0..<24 {
+            let part = ChurchClock.part(hour: h)
+            let greeting = HomeHeaderWords.timeGreeting(hour: h, sunday: false)
+            switch part {
+            case .evening: XCTAssertEqual(greeting, "Good evening", "\(h):00")
+            case .night: XCTAssertEqual(greeting, "Rest well", "\(h):00")
+            case .morning: XCTAssertEqual(greeting, "Good morning", "\(h):00")
+            case .midday: XCTAssertTrue(["Good morning", "Good afternoon"].contains(greeting), "\(h):00")
+            }
+        }
+        XCTAssertEqual(HomeHeaderWords.timeGreeting(hour: 16, sunday: false), "Good evening", "Ben at 16:32")
+        XCTAssertEqual(HomeHeaderWords.timeGreeting(hour: 1, sunday: false), "Rest well", "after midnight")
+        XCTAssertEqual(HomeHeaderWords.timeGreeting(hour: 16, sunday: true), "Happy Lord's Day")
+        // The church's clock: 13:30 UTC is 16:30 in Nairobi.
+        XCTAssertEqual(ChurchClock.part(ISO8601DateFormatter().date(from: "2026-10-05T13:30:00Z")!), .evening)
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

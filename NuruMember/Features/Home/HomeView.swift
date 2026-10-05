@@ -956,11 +956,15 @@ struct HomeView: View {
         .shadow(color: Color(hex: 0x0A2540).opacity(0.07), radius: 10, y: 5)
     }
 
-    /// The sky in the kicker — mirrors headerPalette's hour bands.
+    /// The sky in the kicker — the liturgy card's part of the day, on the
+    /// church's clock (§9.3 rule 3), as the greeting and the header's light.
     private var skyGlyph: String {
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 5 ? "moon.stars.fill" : h < 9 ? "sunrise.fill" : h < 16 ? "sun.max.fill"
-             : h < 19 ? "sunset.fill" : "moon.stars.fill"
+        switch ChurchClock.part() {
+        case .morning: return "sunrise.fill"
+        case .midday: return "sun.max.fill"
+        case .evening: return "sunset.fill"
+        case .night: return "moon.stars.fill"
+        }
     }
 
     /// The member's overall GROWTH score (0–100) — the weighted average of the
@@ -2320,10 +2324,12 @@ struct HomeView: View {
     }
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
     private var isSunday: Bool { Calendar.current.component(.weekday, from: Date()) == 1 }
+    /// On the church's clock — the one the liturgy card keeps — so the two
+    /// say the same part of the day (§9.3 rule 3): Ben read "Good afternoon"
+    /// over an "EVENING" card at 16:32, and "Good morning" over "NIGHT" after
+    /// midnight. Android's HomeGreeting, the same bands.
     private var greeting: String {
-        if isSunday { return "Happy Lord's Day" }
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Rest well"
+        HomeHeaderWords.timeGreeting(hour: ChurchClock.hour(), sunday: ChurchClock.isSunday())
     }
     private func todayKicker() -> String {
         // The one date shape (§8.1 rule 8), and no "EAT" — it is the phone's
@@ -2334,14 +2340,15 @@ struct HomeView: View {
     /// The header breathes with the day — dawn rose-gold, plain daylight cream,
     /// a deeper golden hour, and a quieter dusk. Same palette family as the
     /// Figma header, just tilted by the hour; Sundays glow a touch warmer.
+    /// The header's light by the same part of the day (§9.3 rule 3).
     private var headerPalette: (top: Color, bottom: Color, glow: Double) {
-        let h = Calendar.current.component(.hour, from: Date())
-        let base: (UInt32, UInt32, Double) =
-            h < 5  ? (0xEFEDEA, 0xE5E0D6, 0.16) :   // deep night — quiet
-            h < 9  ? (0xF9F1E7, 0xF3E3CC, 0.34) :   // dawn — rose-gold
-            h < 16 ? (0xF6F4EF, 0xEFE8DA, 0.27) :   // daylight — the Figma cream
-            h < 19 ? (0xF7EFDD, 0xEEDFC2, 0.40) :   // golden hour
-                     (0xF1EEE8, 0xE7E1D4, 0.20)     // dusk
+        let base: (UInt32, UInt32, Double)
+        switch ChurchClock.part() {
+        case .morning: base = (0xF9F1E7, 0xF3E3CC, 0.34)   // dawn — rose-gold
+        case .midday:  base = (0xF6F4EF, 0xEFE8DA, 0.27)   // daylight — the Figma cream
+        case .evening: base = (0xF7EFDD, 0xEEDFC2, 0.40)   // golden hour
+        case .night:   base = (0xF1EEE8, 0xE7E1D4, 0.20)   // dusk into night — quiet
+        }
         return (Color(hex: base.0), Color(hex: base.1), base.2 + (isSunday ? 0.08 : 0))
     }
     private func durationLabel(_ sec: Int) -> String {
@@ -2467,7 +2474,47 @@ enum HomeRefresh {
 /// shown while loading is a fact made up). No name until the profile names
 /// the member — "Good evening." not "Good evening, Friend." — and no growth
 /// ring until a score has come back above zero.
+/// The church's clock (Nairobi) — the one the liturgy card is chosen by
+/// (the server's partOf): morning from 4, midday from 11, evening from 16,
+/// night from 21 until 4. Home's greeting, its sky and its light read it, so
+/// the greeting, the liturgy card and the header say the same part of the
+/// day (EXPERIENCE.md §9.3 rule 3).
+enum ChurchClock {
+    enum Part: Equatable { case morning, midday, evening, night }
+
+    private static var calendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = GiveCalendar.nairobi
+        return cal
+    }
+    static func hour(_ now: Date = Date()) -> Int { calendar.component(.hour, from: now) }
+    static func isSunday(_ now: Date = Date()) -> Bool { calendar.component(.weekday, from: now) == 1 }
+    static func part(_ now: Date = Date()) -> Part { part(hour: hour(now)) }
+    static func part(hour h: Int) -> Part {
+        switch h {
+        case 4..<11: return .morning
+        case 11..<16: return .midday
+        case 16..<21: return .evening
+        default: return .night
+        }
+    }
+}
+
 enum HomeHeaderWords {
+    /// "Happy Lord's Day" on a Sunday; otherwise by the church's hour, in the
+    /// liturgy's bands: "Good afternoon" ends at 16, when the card turns to
+    /// EVENING; "Rest well" from 21 until 4, when it is NIGHT.
+    static func timeGreeting(hour h: Int, sunday: Bool) -> String {
+        if sunday { return "Happy Lord's Day" }
+        switch h {
+        case 0..<4: return "Rest well"
+        case 4..<12: return "Good morning"
+        case 12..<16: return "Good afternoon"
+        case 16..<21: return "Good evening"
+        default: return "Rest well"
+        }
+    }
+
     static func greeting(_ greeting: String, fullName: String?) -> String {
         guard let first = fullName?.split(separator: " ").first, !first.isEmpty else { return "\(greeting)." }
         return "\(greeting), \(first)."
