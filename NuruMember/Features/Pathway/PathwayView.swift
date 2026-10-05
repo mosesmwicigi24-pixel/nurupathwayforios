@@ -1298,14 +1298,16 @@ struct LevelsMapView: View {
                 if let s = vm.summary {
                     VStack(alignment: .leading, spacing: 0) {
                         if let a = vm.activeLevel {
-                            PWContinueCard(level: a, words: LevelsMapWords.continueCard(level: a, journey: vm.journey)) {
+                            PWContinueCard(level: a, words: LevelsMapWords.continueCard(level: a, journey: vm.journey),
+                                           pct: Journey.levelPercent(a, journey: vm.journey)) {
                                 onOpenLevel(a.levelNumber)
                             }.padding(.bottom, 20)
                         }
                         sectionHeader.padding(.bottom, 12)
                         VStack(spacing: 12) {
                             ForEach(s.levels) { level in
-                                PWLevelCard(level: level, stagePill: stagePill(for: level),
+                                PWLevelCard(level: level, pct: Journey.levelPercent(level, journey: vm.journey),
+                                            stagePill: stagePill(for: level),
                                             lockLine: LevelsMapWords.lockLine(levelNumber: level.levelNumber, journey: vm.journey,
                                                                               preparing: level.lessonCount <= 0)) {
                                     if level.status != .locked { onOpenLevel(level.levelNumber) }
@@ -1436,8 +1438,9 @@ private struct PWContinueCard: View {
     /// The journey's words for this level (the walk's E5: "CONTINUE YOUR
     /// JOURNEY · Level 1" over a level whose every module was done).
     let words: LevelsMapWords.Card
+    /// The level, its exam the last step (§9.2 #10).
+    let pct: Int
     let onTap: () -> Void
-    private var pct: Int { level.lessonCount > 0 ? min(100, Int(round(Double(level.lessonsDone) / Double(level.lessonCount) * 100))) : 0 }
 
     var body: some View {
         Button { Haptics.tap(); onTap() } label: {
@@ -1473,7 +1476,7 @@ private struct PWContinueCard: View {
                             Text(line).font(.nCardBody).foregroundStyle(PW.ink2)
                                 .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                         }
-                        PWBar(pct: words.line == nil ? pct : 100, height: 8, fill: .linearGradient(colors: [Color(hex: 0xB8911F), Color(hex: 0xD8B84D)], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
+                        PWBar(pct: pct, height: 8, fill: .linearGradient(colors: [Color(hex: 0xB8911F), Color(hex: 0xD8B84D)], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
                             .padding(.top, 12)
                     }
                     .padding(.trailing, 12)
@@ -1494,6 +1497,9 @@ private struct PWContinueCard: View {
 
 private struct PWLevelCard: View {
     let level: PathwayLevel
+    /// The level, its exam the last step (§9.2 #10): Map gave Level 1 "100%"
+    /// before its exam was sat.
+    let pct: Int
     /// The journey's word for the member's own level once its modules are
     /// done ("Exam ready", "Exam passed") — nil for every other level.
     var stagePill: String? = nil
@@ -1508,7 +1514,6 @@ private struct PWLevelCard: View {
     private var isCompleted: Bool { level.walked }
     private var isActive: Bool { level.status == .active }
     private var isLocked: Bool { level.status == .locked }
-    private var pct: Int { level.lessonCount > 0 ? min(100, Int(round(Double(level.lessonsDone) / Double(level.lessonCount) * 100))) : 0 }
     private var subtitle: String { level.theme ?? level.description ?? PW.subtitle[level.levelNumber] ?? "" }
 
     var body: some View {

@@ -85,7 +85,7 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(j.pill, "Exam ready")
         XCTAssertEqual(j.title, "Take the Level 1 exam")
         XCTAssertEqual(j.destination, .exam(1))
-        XCTAssertEqual(j.progressPercent, 17)
+        XCTAssertEqual(j.progressPercent, 16)  // (20/21) / 6 — the exam is the level's last step (§9.2 #10)
         // Home's week row says the same step.
         let row = HomeWeek.pathwayRow(j, enrolledLevel: 1)
         XCTAssertEqual(row.title, "Take the Level 1 exam")
@@ -138,7 +138,7 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(j.line, "3 of 10 modules in Level 2")
         XCTAssertEqual(j.progressLine.bold, "3 of 10 modules")
         XCTAssertEqual(j.levelPercent, 30)
-        XCTAssertEqual(j.progressPercent, 22)  // (1 + 0.3) / 6
+        XCTAssertEqual(j.progressPercent, 21)  // (1 + 3/11) / 6 — the exam is the level's last step (§9.2 #10)
     }
 
     func testAnOlderServerKeepsItsModuleCounts() throws {

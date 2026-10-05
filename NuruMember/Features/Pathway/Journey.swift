@@ -175,8 +175,14 @@ extension Journey {
         }
 
         // (levels before the current + the current level's fraction) / all
-        // levels — the fraction is whole once every module is done.
-        let fraction: Double = stage == .learning ? (y > 0 ? min(1, Double(x) / Double(y)) : 0) : 1
+        // levels. The exam is the level's last step (EXPERIENCE.md §9.2 #10):
+        // a member at the exam and one who passed it both read 17% — the
+        // fraction is whole only once the exam is passed. An older server
+        // counts the exam container in total_modules (no lessons_total):
+        // there the exam is already one of the steps.
+        let examInTotal = cur.lessonsTotal == nil && exam != nil
+        let fraction = levelFraction(lessonsDone: x, lessonCount: examInTotal ? max(0, y - 1) : y,
+                                     examPassed: stage == .awaitingUsher || stage == .finished)
         let progress = stage == .finished ? 1 : min(1, (Double(idx) + fraction) / Double(levels.count))
 
         let pill: String, kicker: String, title: String, line: String
@@ -241,6 +247,31 @@ extension Journey {
     }
 }
 
+
+extension Journey {
+    /// A level's fraction with its exam as the last step (EXPERIENCE.md §9.2
+    /// #10): the lessons done, and the exam once passed, of the lessons and
+    /// the exam. A level with no lessons yet has walked nothing. Android's
+    /// levelFraction.
+    static func levelFraction(lessonsDone: Int, lessonCount: Int, examPassed: Bool) -> Double {
+        if examPassed { return 1 }
+        guard lessonCount > 0 else { return 0 }
+        return min(1, Double(min(max(lessonsDone, 0), lessonCount)) / Double(lessonCount + 1))
+    }
+
+    /// A level's whole percent, its exam the last step: the member's own level
+    /// by the journey's stage; a level before it (walked: its exam passed)
+    /// whole. Every lesson done reads 91%, not 100%, until the exam is passed.
+    static func levelPercent(_ level: PathwayLevel, journey: Journey?) -> Int {
+        let passed: Bool
+        if let j = journey, j.levelNumber == level.levelNumber {
+            passed = j.stage == .awaitingUsher || j.stage == .finished
+        } else {
+            passed = level.walked
+        }
+        return Int((levelFraction(lessonsDone: level.lessonsDone, lessonCount: level.lessonCount, examPassed: passed) * 100).rounded())
+    }
+}
 
 /// The exam's one name, everywhere on the journey (EXPERIENCE.md §9.1 rule
 /// 1): "the Level N exam" — never "review", never "module". The server

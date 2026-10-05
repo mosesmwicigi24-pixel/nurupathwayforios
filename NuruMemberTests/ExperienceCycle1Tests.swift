@@ -130,7 +130,9 @@ final class ExperienceCycle1Tests: XCTestCase {
         let j = try XCTUnwrap(Journey.derive(s, trail: t))
         XCTAssertEqual(j.stage, .examReady)
         XCTAssertEqual(j.destination, .exam(1), "the exam row opens the exam, never the lesson reader")
-        XCTAssertEqual(j.progressPercent, 17, "every module done counts the level whole — the same in either shape")
+        // The exam is the level's last step (§9.2 #10): ten lessons done of ten
+        // and the exam — (0 + 10/11) / 6 — the same in either shape.
+        XCTAssertEqual(j.progressPercent, 15, "every lesson done, the exam still ahead")
     }
 
     func testTheLastLevelsExamOpensTheWayToBeingSent() throws {
@@ -194,7 +196,7 @@ final class ExperienceCycle1Tests: XCTestCase {
         let soon = try journey(row: false)
         XCTAssertEqual(soon.stage, .examSoon)
         XCTAssertNil(soon.destination)
-        XCTAssertEqual(soon.progressPercent, 17, "every lesson done counts the level whole either way")
+        XCTAssertEqual(soon.progressPercent, 15, "every lesson done, the exam still its last step, either way")
         XCTAssertEqual(try journey(row: true, level: false).stage, .examSoon, "the level's own word counts too")
     }
 
@@ -284,7 +286,7 @@ final class ExperienceCycle1Tests: XCTestCase {
         let j = try XCTUnwrap(Journey.derive(s))
         XCTAssertEqual(j.stage, .examReady)
         XCTAssertEqual(j.pill, "Exam ready")
-        XCTAssertEqual(j.progressPercent, 17, "Level 1 of 6 — never 20 of 20 published modules = 100%")
+        XCTAssertEqual(j.progressPercent, 16, "Level 1 of 6, its exam still ahead — (20/21) / 6, never 20 of 20 published modules = 100%")
         XCTAssertFalse(j.summitReached)
         XCTAssertEqual(j.progressLine.bold, "Take the Level 1 exam")
         XCTAssertEqual(j.progressLine.rest, "")
@@ -316,22 +318,22 @@ final class ExperienceCycle1Tests: XCTestCase {
 
     func testJourneyProgressIsCountedInLevels() throws {
         // (levels before the current + the current fraction) / all levels
-        XCTAssertEqual(Journey.derive(try summary(current: 3, level(3, "active", done: 5, of: 10)))?.progressPercent, 42)  // 2.5 / 6
+        XCTAssertEqual(Journey.derive(try summary(current: 3, level(3, "active", done: 5, of: 10)))?.progressPercent, 41)  // (2 + 5/11) / 6
         XCTAssertEqual(Journey.derive(try summary(current: 1, level(1, "active", done: 0, of: 20)))?.progressPercent, 0)
         XCTAssertEqual(Journey.derive(try summary(current: 4, level(4, "awaiting_review", done: 7, of: 7, awaiting: true)))?.progressPercent, 67)  // 4 / 6
         XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "awaiting_review", done: 8, of: 8, awaiting: true)))?.progressPercent, 100)
         let j = try XCTUnwrap(Journey.derive(try summary(current: 3, level(3, "active", done: 5, of: 10))))
-        XCTAssertEqual(j.progress, 2.5 / 6, accuracy: 0.0001)
+        XCTAssertEqual(j.progress, (2 + 5.0 / 11) / 6, accuracy: 0.0001, "the exam is the level's last step (§9.2 #10)")
     }
 
     func testProgressNeverReadsOneHundredBeforeTheSummit() throws {
         // Every module of the last level done, its exam still ahead: 99, and
         // the summit hasn't fired.
         let ready = try XCTUnwrap(Journey.derive(try summary(current: 6, level(6, "completed", done: 8, of: 8))))
-        XCTAssertEqual(ready.progressPercent, 99)
+        XCTAssertEqual(ready.progressPercent, 98)  // (5 + 8/9) / 6: the last exam is a step still ahead
         XCTAssertFalse(ready.summitReached)
-        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "completed", done: 8, of: 8, examPublished: false)))?.progressPercent, 99)
-        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "active", done: 7, of: 8)))?.progressPercent, 98)  // 5.875 / 6
+        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "completed", done: 8, of: 8, examPublished: false)))?.progressPercent, 98)
+        XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "active", done: 7, of: 8)))?.progressPercent, 96)  // (5 + 7/9) / 6
         XCTAssertEqual(Journey.derive(try summary(current: 6, level(6, "active", done: 799, of: 800)))?.progressPercent, 99,
                        "rounding never reaches 100 either")
         let sent = try XCTUnwrap(Journey.derive(try summary(current: 6, level(6, "awaiting_review", done: 8, of: 8, awaiting: true))))

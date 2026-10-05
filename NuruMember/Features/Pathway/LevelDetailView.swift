@@ -150,9 +150,13 @@ final class LevelDetailViewModel: ObservableObject {
     private var lessons: [LevelModule] { modules.filter { !$0.isExam } }
     var completed: Int { min(lessons.filter(\.completed).count, moduleCount) }
     var moduleCount: Int { max(lessons.count, level?.lessonCount ?? 0) }
+    /// The level's percent, its exam the last step (§9.2 #10): every lesson
+    /// done reads 91% until the exam is passed — it said 100% before the
+    /// exam was sat.
     var pct: Int {
-        guard moduleCount > 0 else { return 0 }
-        return Int(round(Double(completed) / Double(moduleCount) * 100))
+        let passed = modules.contains { $0.isExam && $0.completed } || level?.walked == true
+            || (journey.map { $0.levelNumber == levelNumber && ($0.stage == .awaitingUsher || $0.stage == .finished) } ?? false)
+        return Int((Journey.levelFraction(lessonsDone: completed, lessonCount: moduleCount, examPassed: passed) * 100).rounded())
     }
     var minutes: Int {
         let fromMods = modules.compactMap(\.estimatedMinutes).reduce(0, +)

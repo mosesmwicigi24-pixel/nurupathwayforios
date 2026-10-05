@@ -287,6 +287,26 @@ final class ExperienceCycle5Tests: XCTestCase {
                        "never two \"Foundations\"; no theme: the title itself, never a stray first word")
     }
 
+    // MARK: §9.2 #10 — the ring counts the exam as the level's last step
+
+    func testTheExamIsTheLevelsLastStep() throws {
+        XCTAssertEqual(Journey.levelFraction(lessonsDone: 10, lessonCount: 10, examPassed: false), 10.0 / 11, accuracy: 0.0001)
+        XCTAssertEqual(Journey.levelFraction(lessonsDone: 10, lessonCount: 10, examPassed: true), 1)
+        XCTAssertEqual(Journey.levelFraction(lessonsDone: 0, lessonCount: 0, examPassed: false), 0, "nothing published: nothing walked")
+        // Ada (exam not sat) and Eli (exam passed) no longer read the same ring.
+        let ada = try XCTUnwrap(Journey.derive(try summary([level(1, "completed", done: 10, of: 10), level(2, "locked"), level(3, "locked"),
+                                                            level(4, "locked"), level(5, "locked"), level(6, "locked")])))
+        let eli = try XCTUnwrap(Journey.derive(try summary([level(1, "awaiting_review", done: 10, of: 10, awaiting: true), level(2, "locked"),
+                                                            level(3, "locked"), level(4, "locked"), level(5, "locked"), level(6, "locked")])))
+        XCTAssertEqual(ada.progressPercent, 15)   // (10/11) / 6
+        XCTAssertEqual(eli.progressPercent, 17)   // 1 / 6
+        // The level's own percent: 91 until the exam is passed, then 100.
+        let one = try summary([level(1, "completed", done: 10, of: 10)]).levels[0]
+        XCTAssertEqual(Journey.levelPercent(one, journey: ada), 91)
+        let passed = try summary([level(1, "awaiting_review", done: 10, of: 10, awaiting: true)]).levels[0]
+        XCTAssertEqual(Journey.levelPercent(passed, journey: eli), 100)
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)
