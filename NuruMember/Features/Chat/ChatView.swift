@@ -67,6 +67,20 @@ final class ChatInboxViewModel: ObservableObject {
     var groups: [ChatConversation] { conversations.filter { $0.kind == "group" } }
     var discover: [DiscoverSpace] { inbox?.discoverSpaces ?? [] }
     var totalUnread: Int { conversations.reduce(0) { $0 + $1.unread } }
+
+    /// The header's line says what it counts (§7.4 #15): messages — "No new
+    /// messages" / "1 new message" / "N new messages". It said "You're all
+    /// caught up" beside a bell whose dot counts the inbox's notices, which
+    /// read as a contradiction. Nil until the inbox has answered: no count
+    /// that isn't true yet (§7.1 rule 5). Pure.
+    nonisolated static func headerLine(unread: Int?) -> String? {
+        guard let unread else { return nil }
+        switch unread {
+        case ..<1: return "No new messages"
+        case 1: return "1 new message"
+        default: return "\(unread) new messages"
+        }
+    }
     /// Pending asks from someone else — the number the Chat segment badge and
     /// the bell dot both surface prominently.
     var pendingIncomingCount: Int { incomingRequests.count }
@@ -440,7 +454,7 @@ struct ChatView: View {
                 // One header (EXPERIENCE.md §8.1 rule 2): the kicker names the
                 // tab — the greeting belongs to Home alone.
                 NuruHeaderText(kicker: "Community", title: "Nuru Connect",
-                               line: vm.totalUnread > 0 ? "\(vm.totalUnread) unread · \(vm.spaces.count) spaces" : "You’re all caught up")
+                               line: ChatInboxViewModel.headerLine(unread: vm.inbox == nil ? nil : vm.totalUnread))
                 Spacer(minLength: 0)
                 bellButton
             }

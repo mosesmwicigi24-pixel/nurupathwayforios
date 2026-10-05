@@ -213,4 +213,14 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
         XCTAssertEqual(ours.title, "Something went wrong on our side")
         XCTAssertEqual(ours.action, .retry)
     }
+
+    // MARK: §7.4 #15 — the Community header says what it counts
+
+    func testTheCommunityHeaderCountsMessages() {
+        XCTAssertEqual(ChatInboxViewModel.headerLine(unread: 0), "No new messages",
+                       "never \"You're all caught up\" beside a bell with unread notices")
+        XCTAssertEqual(ChatInboxViewModel.headerLine(unread: 1), "1 new message")
+        XCTAssertEqual(ChatInboxViewModel.headerLine(unread: 4), "4 new messages")
+        XCTAssertNil(ChatInboxViewModel.headerLine(unread: nil), "no count before the inbox has answered")
+    }
 }
