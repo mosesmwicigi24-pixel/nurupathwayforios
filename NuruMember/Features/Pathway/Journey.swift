@@ -47,7 +47,10 @@ struct Journey: Equatable {
     /// The member's current level, N.
     let levelNumber: Int
     let levelTitle: String
-    /// X of Y — the current level's modules, exactly as the server counts them.
+    /// X of Y — the current level's modules as the member reads them: its
+    /// LESSONS (`lessons_completed` / `lessons_total`; the module counts from
+    /// an older server). The exam is its own step, never "a module"
+    /// (EXPERIENCE.md §8.2 #4) — so a finisher reads "20 of 20", never "20 of 21".
     let completedModules: Int
     let totalModules: Int
     /// Journey progress in LEVELS, 0…1 (1 only at the summit): (levels before
@@ -112,7 +115,8 @@ extension Journey {
         let n = cur.levelNumber
         let isLast = idx == levels.count - 1
         let nextLevel = idx + 1 < levels.count ? levels[idx + 1].levelNumber : n + 1
-        let x = max(0, cur.completedModules), y = max(0, cur.totalModules)
+        // Lessons — the exam is a step, not a module (§8.2 #4).
+        let y = max(0, cur.lessonCount), x = min(max(0, cur.lessonsDone), y)
 
         // The trail's own exam row (prod's exit-exam module): completed = the
         // exam is passed; NEXT = every lesson done and the exam open. After the
@@ -121,7 +125,14 @@ extension Journey {
         let mods = (trail ?? []).filter { $0.levelNumber == n }
         let exam = mods.first { $0.isExam }
         let examPassed = exam?.completed == true
-        let examOpen = exam.map { !$0.completed && $0.status == .next } ?? false
+        // Without the trail (not loaded yet, or the read failed), the summary
+        // says the same thing in numbers once it counts lessons apart (§8.2
+        // #4): every lesson done, and an exam step counted beyond them that
+        // isn't done — the server's own trail opens that exam row exactly
+        // then. Else Home's first paint read "20 of 20 modules · Continue".
+        let examLeft = exam == nil && cur.lessonsTotal != nil && y > 0 && x >= y
+            && cur.totalModules > y && cur.completedModules < cur.totalModules
+        let examOpen = exam.map { !$0.completed && $0.status == .next } ?? examLeft
         // The exam is offered only when it can be TAKEN (EXPERIENCE.md §7.2
         // #1): published AND with questions — `exam_available` on the level
         // and on the trail's exam row. A published exam with no questions

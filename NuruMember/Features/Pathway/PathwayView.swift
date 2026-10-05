@@ -86,8 +86,9 @@ struct PWReward { let name: String; let emoji: String; let remaining: Int; let p
 private func nextReward(_ s: PathwaySummary) -> PWReward? {
     guard let idx = s.levels.firstIndex(where: { !$0.walked }) else { return nil }
     let l = s.levels[idx]
-    let remaining = max(l.totalModules - l.completedModules, 0)
-    let pct = l.totalModules > 0 ? Int((Double(l.completedModules) / Double(l.totalModules) * 100).rounded()) : 0
+    // Lessons — the exam is a step of its own, never "a module" (§8.2 #4).
+    let remaining = max(l.lessonCount - l.lessonsDone, 0)
+    let pct = l.lessonCount > 0 ? min(100, Int((Double(l.lessonsDone) / Double(l.lessonCount) * 100).rounded())) : 0
     return PWReward(name: pwShortName(l.title), emoji: PW.badgeEmoji[idx % PW.badgeEmoji.count], remaining: remaining, pct: pct)
 }
 
@@ -151,13 +152,14 @@ final class PathwayViewModel: ObservableObject {
     var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.isAwaitingReview } }
 
     var levelsDone: Int { summary?.levels.filter(\.walked).count ?? 0 }
-    var doneModules: Int { summary?.levels.reduce(0) { $0 + $1.completedModules } ?? 0 }
-    var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.totalModules } ?? 0 }
+    // Lessons, every count the member reads (§8.2 #4): the exam is a step.
+    var doneModules: Int { summary?.levels.reduce(0) { $0 + min($1.lessonsDone, $1.lessonCount) } ?? 0 }
+    var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.lessonCount } ?? 0 }
     var levelCount: Int { summary?.levels.count ?? 6 }
     // (The old overallPct — modules done ÷ every PUBLISHED module — is gone: with
     // Levels 2–6 unpublished it read Level 1's twenty as 100% and commissioned
     // the member. The ring and the summit read the journey, counted in levels.)
-    func pct(_ l: PathwayLevel) -> Int { l.totalModules > 0 ? Int(round(Double(l.completedModules) / Double(l.totalModules) * 100)) : 0 }
+    func pct(_ l: PathwayLevel) -> Int { l.lessonCount > 0 ? min(100, Int(round(Double(l.lessonsDone) / Double(l.lessonCount) * 100))) : 0 }
 }
 
 struct PathwayView: View {
@@ -363,7 +365,7 @@ private struct PathwayHubHeader: View {
     /// (an exam row left in the trail is the exam, not "1 module to go").
     private var remaining: Int {
         guard journey?.stage == .learning else { return 0 }
-        return active.map { max($0.totalModules - $0.completedModules, 0) } ?? 0
+        return active.map { max($0.lessonCount - $0.lessonsDone, 0) } ?? 0
     }
 
     var body: some View {
@@ -384,10 +386,10 @@ private struct PathwayHubHeader: View {
                     PWBar(pct: activePct, height: 6,
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
                           track: PW.navy.opacity(0.10))
-                    Text("\(active?.completedModules ?? 0)/\(active?.totalModules ?? 0)")
+                    Text("\(active.map { min($0.lessonsDone, $0.lessonCount) } ?? 0)/\(active?.lessonCount ?? 0)")
                         .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
                         .contentTransition(.numericText())
-                        .animation(.default, value: active?.completedModules)
+                        .animation(.default, value: active?.lessonsDone)
                 }.padding(.top, 16)
                 if remaining > 0 {
                     HStack(spacing: 6) {
@@ -813,7 +815,7 @@ private struct PathwaySelectedModules: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(level.title.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).lineLimit(1)
-                    Text("\(level.completedModules) of \(level.totalModules) done").font(.inter(11)).foregroundStyle(PW.ink2)
+                    Text("\(min(level.lessonsDone, level.lessonCount)) of \(level.lessonCount) done").font(.inter(11)).foregroundStyle(PW.ink2)
                 }
                 Spacer()
                 if let r = resumeShown {
@@ -1442,7 +1444,7 @@ private struct PWStatCard: View {
 private struct PWContinueCard: View {
     let level: PathwayLevel
     let onTap: () -> Void
-    private var pct: Int { level.totalModules > 0 ? Int(round(Double(level.completedModules) / Double(level.totalModules) * 100)) : 0 }
+    private var pct: Int { level.lessonCount > 0 ? min(100, Int(round(Double(level.lessonsDone) / Double(level.lessonCount) * 100))) : 0 }
 
     var body: some View {
         Button { Haptics.tap(); onTap() } label: {
@@ -1502,7 +1504,7 @@ private struct PWLevelCard: View {
     private var isCompleted: Bool { level.walked }
     private var isActive: Bool { level.status == .active }
     private var isLocked: Bool { level.status == .locked }
-    private var pct: Int { level.totalModules > 0 ? Int(round(Double(level.completedModules) / Double(level.totalModules) * 100)) : 0 }
+    private var pct: Int { level.lessonCount > 0 ? min(100, Int(round(Double(level.lessonsDone) / Double(level.lessonCount) * 100))) : 0 }
     private var subtitle: String { level.theme ?? level.description ?? PW.subtitle[level.levelNumber] ?? "" }
 
     var body: some View {
@@ -1544,7 +1546,7 @@ private struct PWLevelCard: View {
                             HStack {
                                 HStack(spacing: 4) {
                                     Icon(.bookOpen, size: 12, color: PW.ink2)
-                                    Text("\(level.completedModules)/\(level.totalModules) modules").font(.nCardMeta).foregroundStyle(PW.ink2)
+                                    Text("\(min(level.lessonsDone, level.lessonCount))/\(level.lessonCount) modules").font(.nCardMeta).foregroundStyle(PW.ink2)
                                 }
                                 Spacer(minLength: 0)
                                 Text("\(pct)%").font(.inter(11, .medium)).foregroundStyle(PW.navy)

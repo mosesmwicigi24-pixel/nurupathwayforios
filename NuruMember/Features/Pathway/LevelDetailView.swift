@@ -136,9 +136,11 @@ final class LevelDetailViewModel: ObservableObject {
         return !modules.isEmpty && !modules.contains(where: \.isExam) && !awaitingReview
     }
 
-    // Derived stats for the strip card.
-    var completed: Int { modules.filter(\.completed).count }
-    var moduleCount: Int { max(modules.count, level?.totalModules ?? 0) }
+    // Derived stats for the strip card — lessons only: the trail's exam row
+    // is a step of its own, never "a module" (EXPERIENCE.md §8.2 #4).
+    private var lessons: [LevelModule] { modules.filter { !$0.isExam } }
+    var completed: Int { min(lessons.filter(\.completed).count, moduleCount) }
+    var moduleCount: Int { max(lessons.count, level?.lessonCount ?? 0) }
     var pct: Int {
         guard moduleCount > 0 else { return 0 }
         return Int(round(Double(completed) / Double(moduleCount) * 100))

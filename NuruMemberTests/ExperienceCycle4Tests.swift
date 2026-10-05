@@ -1,0 +1,158 @@
+// Experience Cycle 4 — visual language, pinned (pathway docs/EXPERIENCE.md
+// §8): every "X of Y modules" counts lessons (the exam is its own step), so
+// a finisher reads "20 of 20" everywhere and never "20 of 21". Payloads are
+// decoded exactly like APIClient's: snake_case in.
+import XCTest
+@testable import NuruMember
+
+final class ExperienceCycle4Tests: XCTestCase {
+
+    // MARK: Fixtures — the /me/pathway and /levels/{n}/modules wire shapes
+
+    private func decode<T: Decodable>(_ type: T.Type, _ object: Any) throws -> T {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        return try d.decode(T.self, from: JSONSerialization.data(withJSONObject: object))
+    }
+
+    /// `lessons` nil = the keys absent (a server that predates them).
+    private func level(_ n: Int, _ status: String, done: Int = 0, of total: Int = 0,
+                       lessons: (done: Int, of: Int)? = nil, examAvailable: Bool? = nil) -> [String: Any] {
+        var row: [String: Any] = [
+            "level_number": n, "title": "Level \(n) title", "theme": NSNull(), "description": NSNull(),
+            "total_modules": total, "completed_modules": done, "minutes": 0, "status": status,
+            "awaiting_review": false, "exam_published": true]
+        if let lessons {
+            row["lessons_completed"] = lessons.done
+            row["lessons_total"] = lessons.of
+        }
+        if let examAvailable { row["exam_available"] = examAvailable }
+        return row
+    }
+
+    private func summary(current: Int, _ row: [String: Any]) throws -> PathwaySummary {
+        let levels: [[String: Any]] = (1...6).map { n in
+            if n == current { return row }
+            return n < current ? level(n, "completed", done: 10, of: 10) : level(n, "locked")
+        }
+        return try decode(PathwaySummary.self, ["current_level": current, "levels": levels])
+    }
+
+    private func module(_ id: String, level: Int, seq: Int, _ status: String,
+                        completed: Bool = false, kind: String = "none") -> [String: Any] {
+        ["module_id": id, "level_number": level, "module_sequence_number": seq, "title": "Module \(id)",
+         "summary": NSNull(), "estimated_minutes": 10, "evaluation_kind": kind, "quiz_pass_mark": 70,
+         "completed": completed, "status": status, "progress": completed ? 100 : 0, "locked": status == "locked"]
+    }
+
+    /// Ada's Level 1 as the local API (and production) serves it: twenty
+    /// lessons done, the exam a module at seq 900 that is open and not passed.
+    private func adasTrail() throws -> [LevelModule] {
+        var rows = (1...20).map { module("m\($0)", level: 1, seq: $0, "completed", completed: true) }
+        rows.append(module("exam", level: 1, seq: 900, "next", kind: "exit_exam"))
+        return try decode([LevelModule].self, rows)
+    }
+
+    /// Ada's /me/pathway level 1, verbatim from the local API (2026-10-05).
+    private var adasLevelOne: [String: Any] {
+        level(1, "active", done: 20, of: 21, lessons: (20, 20), examAvailable: true)
+    }
+
+    // MARK: §8.2 #4 — the lesson counts decode, and fall back
+
+    func testLessonCountsDecodeAndFallBackToTheModuleCounts() throws {
+        let new = try decode(PathwayLevel.self, adasLevelOne)
+        XCTAssertEqual(new.lessonsTotal, 20)
+        XCTAssertEqual(new.lessonsCompleted, 20)
+        XCTAssertEqual(new.lessonCount, 20, "the exam is never counted as a module")
+        XCTAssertEqual(new.lessonsDone, 20)
+        XCTAssertEqual(new.totalModules, 21, "the server's own count is kept as sent")
+
+        let older = try decode(PathwayLevel.self, level(1, "active", done: 20, of: 21))
+        XCTAssertNil(older.lessonsTotal)
+        XCTAssertEqual(older.lessonCount, 21, "absent → the module counts, as before")
+        XCTAssertEqual(older.lessonsDone, 20)
+    }
+
+    // MARK: §8.2 #4 — the journey counts lessons; the exam is its own step
+
+    func testAdaReadsTwentyOfTwentyAndTheExamIsHerStep() throws {
+        let s = try summary(current: 1, adasLevelOne)
+        let j = try XCTUnwrap(Journey.derive(s, trail: try adasTrail()))
+        XCTAssertEqual(j.stage, .examReady)
+        XCTAssertEqual(j.completedModules, 20)
+        XCTAssertEqual(j.totalModules, 20, "never 20 of 21")
+        XCTAssertEqual(j.pill, "Exam ready")
+        XCTAssertEqual(j.title, "Take the Level 1 exam")
+        XCTAssertEqual(j.destination, .exam(1))
+        XCTAssertEqual(j.progressPercent, 17)
+        // Home's week row says the same step.
+        let row = HomeWeek.pathwayRow(j, enrolledLevel: 1)
+        XCTAssertEqual(row.title, "Take the Level 1 exam")
+        XCTAssertEqual(row.line, "Level 1 · Exam ready")
+    }
+
+    /// Before the trail lands (Home's first paint) or when it fails, the
+    /// summary's own numbers say the exam is next — never "20 of 20 modules ·
+    /// Continue" beside a finished level.
+    func testTheExamStepWithoutTheTrail() throws {
+        let ready = try XCTUnwrap(Journey.derive(try summary(current: 1, adasLevelOne)))
+        XCTAssertEqual(ready.stage, .examReady)
+        XCTAssertEqual(ready.destination, .exam(1))
+        XCTAssertEqual(ready.pill, "Exam ready")
+
+        let empty = try XCTUnwrap(Journey.derive(try summary(current: 1, adasLevelOne), trail: []))
+        XCTAssertEqual(empty.stage, .examReady, "a failed trail read ([]) speaks from the summary too")
+
+        let noQuestions = level(1, "active", done: 20, of: 21, lessons: (20, 20), examAvailable: false)
+        let soon = try XCTUnwrap(Journey.derive(try summary(current: 1, noQuestions)))
+        XCTAssertEqual(soon.stage, .examSoon, "an exam with no questions is never offered")
+        XCTAssertNil(soon.destination)
+
+        // A lesson still to walk: learning, in lessons.
+        let walking = try XCTUnwrap(Journey.derive(try summary(current: 1,
+            level(1, "active", done: 19, of: 21, lessons: (19, 20), examAvailable: true))))
+        XCTAssertEqual(walking.stage, .learning)
+        XCTAssertEqual(walking.pill, "19 of 20 modules")
+        XCTAssertEqual(walking.line, "19 of 20 modules in Level 1")
+        XCTAssertEqual(walking.levelPercent, 95)
+    }
+
+    /// The trail's word wins over the numbers: an exam row the server still
+    /// locks is never offered (§7.1 rule 2 — offer only what will work).
+    func testTheTrailsExamRowOutranksTheNumbers() throws {
+        var rows = (1...20).map { module("m\($0)", level: 1, seq: $0, "completed", completed: true) }
+        rows.append(module("exam", level: 1, seq: 900, "locked", kind: "exit_exam"))
+        let t = try decode([LevelModule].self, rows)
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 1, adasLevelOne), trail: t))
+        XCTAssertNotEqual(j.stage, .examReady)
+        XCTAssertNotEqual(j.destination, .exam(1))
+    }
+
+    func testLearningCountsLessonsNotTheExam() throws {
+        // Level 2 at three lessons of ten, its published exam counted in the total.
+        let s = try summary(current: 2, level(2, "active", done: 3, of: 11, lessons: (3, 10)))
+        let j = try XCTUnwrap(Journey.derive(s))
+        XCTAssertEqual(j.stage, .learning)
+        XCTAssertEqual(j.pill, "3 of 10 modules")
+        XCTAssertEqual(j.line, "3 of 10 modules in Level 2")
+        XCTAssertEqual(j.progressLine.bold, "3 of 10 modules")
+        XCTAssertEqual(j.levelPercent, 30)
+        XCTAssertEqual(j.progressPercent, 22)  // (1 + 0.3) / 6
+    }
+
+    func testAnOlderServerKeepsItsModuleCounts() throws {
+        // No lesson fields: exactly as before — the summary's numbers alone
+        // never invent an exam step.
+        let j = try XCTUnwrap(Journey.derive(try summary(current: 1, level(1, "active", done: 20, of: 21))))
+        XCTAssertEqual(j.stage, .learning)
+        XCTAssertEqual(j.pill, "20 of 21 modules")
+    }
+
+    func testTheFoldedLevelAndItsCountAgree() throws {
+        let trail = try adasTrail()
+        let lvl = try decode(PathwayLevel.self, adasLevelOne)
+        XCTAssertEqual(PathwayTrail.foldLine(trail, expanded: false), "20 of 20 modules done · Show")
+        XCTAssertEqual("\(lvl.lessonsDone) of \(lvl.lessonCount)", "20 of 20", "the line above the fold says the same")
+    }
+}

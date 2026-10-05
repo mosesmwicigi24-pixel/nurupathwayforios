@@ -45,8 +45,20 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     /// answers 422, so it is never offered. Defaults TRUE: a server that
     /// predates the field behaves exactly as before.
     var examAvailable: Bool = true
+    /// Lessons only — the exam is a step of its own, never "a module"
+    /// (EXPERIENCE.md §8.2 #4). `total_modules` counts a published exam
+    /// container, so a finisher read "20 of 21" beside "20 of 20". Nil when
+    /// the server predates the fields — then the module counts stand in.
+    var lessonsTotal: Int? = nil
+    var lessonsCompleted: Int? = nil
 
     var id: Int { levelNumber }
+
+    /// Every "X of Y modules" the member reads counts these: the level's
+    /// lessons (the exam is its own step), or — from an older server — the
+    /// module counts, as before.
+    var lessonCount: Int { lessonsTotal ?? totalModules }
+    var lessonsDone: Int { lessonsCompleted ?? completedModules }
 
     /// Exam passed, waiting for the usher — by the status word or the flag
     /// (the server sends both; either is enough).
@@ -58,6 +70,7 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     private enum CodingKeys: String, CodingKey {
         case levelNumber, title, theme, description, totalModules
         case completedModules, minutes, status, awaitingReview, examPublished, examAvailable
+        case lessonsTotal, lessonsCompleted
     }
 
     init(from decoder: Decoder) throws {
@@ -73,6 +86,8 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
         awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
         examPublished = (try? c.decodeIfPresent(Bool.self, forKey: .examPublished)) ?? true
         examAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .examAvailable)) ?? true
+        lessonsTotal = (try? c.decodeIfPresent(Int.self, forKey: .lessonsTotal)) ?? nil
+        lessonsCompleted = (try? c.decodeIfPresent(Int.self, forKey: .lessonsCompleted)) ?? nil
     }
 }
 
