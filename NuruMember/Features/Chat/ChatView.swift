@@ -1,7 +1,7 @@
 // Chat — "Nuru Connect" inbox, the native port of the Figma ChatTab. A cream
 // header (COMMUNITY kicker, serif title, bell → notifications — §8.1 rule 2), a
-// white search bar, the "Quick help from Nuru" AI launcher (gradient ring, orb,
-// live dot), the italic "Verse for today" ribbon, and a capsule segment control
+// white search bar, the "Quick help from Nuru" AI launcher (navy with a gold
+// orb), the italic "Verse for today" ribbon, and a capsule segment control
 // (#My Space · DM · My Groups with counts). Each segment renders one grouped
 // white card of rows: spaces (# avatar, author preview, member dots, Active
 // pill), DMs (stories row, real-or-initials avatars, unread badges, read ticks)
@@ -496,62 +496,54 @@ struct ChatView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: AI card ("Quick help from Nuru" — gradient ring, glows, orb, live dot)
+    // MARK: AI card ("Quick help from Nuru")
 
+    // Navy with gold (EXPERIENCE.md §8.1 rule 1, §8.2 #3): the tab's one dark
+    // feature card, a gold orb, gold accents. It was a purple-and-green
+    // gradient with a green "online" dot — hues the grammar keeps for state,
+    // and a dot that was always on, tied to nothing (§7.1 rule 8).
     private var aiCard: some View {
         Button {
             Haptics.tap()
             showNuru = true
         } label: {
             HStack(spacing: 14) {
-                ZStack(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(RadialGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-                                             center: UnitPoint(x: 0.32, y: 0.28), startRadius: 2, endRadius: 46))
-                        .frame(width: 48, height: 48)
-                        .overlay(Icon(.sparkles, size: 20, color: .white))
-                        .shadow(color: Color(hex: 0x7C3AED).opacity(0.65), radius: 8, y: 5)
-                    Circle().fill(Color(hex: 0x34D399)).frame(width: 12, height: 12)
-                        .overlay(Circle().stroke(Color(hex: 0x0A1628), lineWidth: 2))
-                        .shadow(color: Color(hex: 0x34D399).opacity(0.9), radius: 4)
-                        .offset(x: 2, y: -2)
-                }
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(LinearGradient(colors: [Nuru.goldHi, Nuru.gold, Nuru.goldLo],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 48, height: 48)
+                    .overlay(Icon(.sparkles, size: 22, color: Nuru.navy))
+                    .shadow(color: Nuru.gold.opacity(0.45), radius: 8, y: 4)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text("Quick help from Nuru")
                             .font(.nRowTitle).kerning(-0.16).foregroundStyle(.white)
-                        Text("AI").font(.inter(8, .heavy)).kerning(1.1).foregroundStyle(Color(hex: 0x0A1628))
+                        Text("AI").font(.inter(8, .heavy)).kerning(1.1).foregroundStyle(Nuru.navy)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0x34D399)],
-                                                       startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
+                            .background(Nuru.goldGlow, in: Capsule())
                     }
+                    // Whole, never cut (§8.1 rule 9).
                     Text("The AI assistant · \(vm.totalUnread) updates across \(vm.spaces.count) spaces")
-                        .font(.nCardMeta).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                        .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: .white)
+                Icon(.chevronRight, size: 18, color: Nuru.goldGlow)
                     .frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.10), in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                    .background(Color.white.opacity(0.08), in: Circle())
+                    .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
             }
             .padding(Nuru.S.base)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                LinearGradient(colors: [Color(hex: 0x2A1259), Color(hex: 0x0A1628), Color(hex: 0x053F30)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .overlay(alignment: .topLeading) {
-                        Circle().fill(Color(hex: 0x7C3AED).opacity(0.5)).frame(width: 160, height: 160).blur(radius: 40).offset(x: -40, y: -48)
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        Circle().fill(Color(hex: 0x10B981).opacity(0.4)).frame(width: 160, height: 160).blur(radius: 40).offset(x: 8, y: 56)
+                Nuru.navyGradient
+                    .overlay(alignment: .topTrailing) {
+                        Circle().fill(Nuru.gold.opacity(0.22)).frame(width: 160, height: 160).blur(radius: 44).offset(x: 48, y: -64)
                     }
             )
-            .clipShape(RoundedRectangle(cornerRadius: 24.5, style: .continuous))
-            .padding(1.5)
-            .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0xC89B3C), Color(hex: 0x34D399)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .shadow(color: Color(hex: 0x4C1D95).opacity(0.45), radius: 18, y: 10)
+            .clipShape(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+            .shadow(color: Nuru.navy.opacity(0.22), radius: 14, y: 8)
         }
         .buttonStyle(.pressableSubtle)
     }
