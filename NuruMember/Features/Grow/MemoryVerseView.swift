@@ -1,8 +1,8 @@
 // Memory Verses — the native port of the Figma MemoryVerseScreen
 // (PathwayScreens.tsx): a "This week" hero card for the current verse (quoted
 // serif text, week-day goal, gold Practice CTA), then the "YOUR VERSE LIBRARY"
-// section with mastered/week chips. Kept on top: the derived WORD SCORE
-// dashboard and milestone nudge (shipped scoring feature, not in the make).
+// section with mastered/week chips. Kept on top: the WORD SCORE card — the
+// server's own score, the one Home shows (§1.1) — and the milestone nudge.
 // Practicing opens a type-from-memory sheet; the server bumps status on a
 // strong match.
 import SwiftUI
@@ -14,11 +14,20 @@ final class MemoryVerseViewModel: ObservableObject {
     @Published var verses: [MemoryVerseRow] = []
     @Published var loading = true
     @Published var error: String?
+    /// The Word score as the server computes it (GET /me/scores/word) — the
+    /// same score Home's "Your progress" shows. The page used to work out its
+    /// own (mastered ÷ total, with band names of its own), so one member read
+    /// "Word 2" on Home and "0 /100" here (the Cycle 4 walk). Nil until the
+    /// server answers: the card waits rather than guess.
+    @Published var wordScore: WordScoreWords?
 
     func load() async {
         loading = true; error = nil
+        async let score = try? await MemberAPI.scoreDetail(.word)
         do { verses = try await MemberAPI.memoryVerses() }
         catch { self.error = NuruStateCopy.failureLine("Couldn't load your verses.", error) }
+        // A failed refresh keeps the score already shown.
+        if let s = await score { wordScore = WordScoreWords(s) }
         loading = false
     }
 
@@ -39,29 +48,9 @@ final class MemoryVerseViewModel: ObservableObject {
         verses.filter { $0.memoryVerseId != currentVerse?.memoryVerseId }
     }
 
-    // Derived word-score dashboard (no word-score endpoint exists).
+    // The member's own verses, counted (the milestone nudge — a count, not a score).
     var total: Int { verses.count }
     var mastered: Int { verses.filter { $0.isMastered }.count }
-
-    var score: Int { total == 0 ? 0 : Int((Double(mastered) / Double(total) * 100).rounded()) }
-
-    var band: String {
-        switch score {
-        case ..<25: return "Seedling"
-        case ..<50: return "Sprouting"
-        case ..<75: return "Growing"
-        default:    return "Flourishing"
-        }
-    }
-
-    // Bar values 0…1.
-    var consistency: Double { total == 0 ? 0 : Double(mastered) / Double(total) }
-    var memorization: Double {
-        guard total > 0 else { return 0 }
-        let avg = verses.reduce(0) { $0 + $1.bestMatchPct } / total
-        return Double(avg) / 100
-    }
-    var breadth: Double { min(Double(total) / 10, 1) }
 
     // Next milestone (reach 10 mastered).
     var toNextMilestone: Int { max(0, 10 - mastered) }
@@ -83,10 +72,12 @@ struct MemoryVerseView: View {
                               emptyText: "No memory verses yet.", retry: { Task { await vm.load() } }) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Nuru.S.md) {
-                            WordScoreCard(score: vm.score, band: vm.band,
-                                          consistency: vm.consistency,
-                                          memorization: vm.memorization,
-                                          breadth: vm.breadth)
+                            if let w = vm.wordScore {
+                                WordScoreCard(score: w.score, band: w.band,
+                                              consistency: w.consistency,
+                                              memorization: w.memorization,
+                                              breadth: w.breadth)
+                            }
                             MilestoneCard(remaining: vm.toNextMilestone, mastered: vm.mastered)
                             if let current = vm.currentVerse {
                                 CurrentVerseCard(verse: current) { practiceTarget = current }
@@ -165,6 +156,26 @@ private struct BackButton: View {
 
 // MARK: - Word score card
 
+/// The card's words, from the server's breakdown: its score, its band (the
+/// app's one score vocabulary — "Just beginning", "Growing", …) and its
+/// three parts, each 0–100 on the wire, drawn as 0…1 bars.
+struct WordScoreWords: Equatable {
+    let score: Int
+    let band: String
+    let consistency: Double
+    let memorization: Double
+    let breadth: Double
+
+    init(_ b: ScoreBreakdown) {
+        score = min(max(b.score, 0), 100)
+        band = b.band
+        func part(_ key: String) -> Double { min(max((b.components[key] ?? 0) / 100, 0), 1) }
+        consistency = part("consistency")
+        memorization = part("memorization")
+        breadth = part("breadth")
+    }
+}
+
 private struct WordScoreCard: View {
     let score: Int
     let band: String
@@ -181,9 +192,11 @@ private struct WordScoreCard: View {
                         Text("WORD SCORE")
                             .font(.nCardKicker).kerning(1.4)
                             .foregroundStyle(Nuru.gold)
-                        Text(band)
-                            .font(.nCardTitle)
-                            .foregroundStyle(Nuru.ink)
+                        if !band.isEmpty {
+                            Text(band)
+                                .font(.nCardTitle)
+                                .foregroundStyle(Nuru.ink)
+                        }
                     }
                     VStack(spacing: 6) {
                         Bar(label: "Consistency", value: consistency)

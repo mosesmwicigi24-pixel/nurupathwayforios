@@ -513,4 +513,27 @@ final class ExperienceCycle5Tests: XCTestCase {
         next.remember(.nan, for: "m4")
         XCTAssertNil(next.ratio(for: "m4"), "nothing nonsensical is kept")
     }
+
+    // MARK: Cycle 4 walk — one Word score, the server's
+
+    func testMemoryVersesShowTheServersWordScore() throws {
+        let b = try decode(ScoreBreakdown.self, ["score": 2, "band": "Just beginning",
+                                                 "components": ["consistency": 5, "memorization": 0, "breadth": 0],
+                                                 "detail": ["verses_engaged": 0, "verses_mastered": 0]])
+        let w = WordScoreWords(b)
+        XCTAssertEqual(w.score, 2, "Home's Word score, not mastered ÷ total")
+        XCTAssertEqual(w.band, "Just beginning", "the server's band: one score vocabulary")
+        XCTAssertEqual(w.consistency, 0.05, accuracy: 0.0001)
+        XCTAssertEqual(w.memorization, 0)
+        XCTAssertEqual(w.breadth, 0)
+        // Out-of-range values are held to the ring and the bars.
+        let wild = WordScoreWords(try decode(ScoreBreakdown.self, ["score": 140, "band": "Deeply rooted", "components": ["consistency": 250]]))
+        XCTAssertEqual(wild.score, 100)
+        XCTAssertEqual(wild.consistency, 1)
+        XCTAssertEqual(wild.breadth, 0, "a part the server didn't send is empty, never invented")
+        // The page no longer works a score out of its own verses.
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Grow/MemoryVerseView.swift"), encoding: .utf8)
+        XCTAssertFalse(src.contains("Seedling"), "one band vocabulary: the server's")
+        XCTAssertTrue(src.contains("MemberAPI.scoreDetail(.word)"))
+    }
 }
