@@ -174,6 +174,17 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertEqual(HomeWeekCard.icon(.cell), .users)
     }
 
+    // MARK: §8.2 #5 — the streak in Android's words
+
+    func testTheStreakSpeaksAndroidsWords() {
+        XCTAssertEqual(StreakWords.title(0), "0-day streak")
+        XCTAssertEqual(StreakWords.line(0), "Read today to start your streak 🔥")
+        XCTAssertEqual(StreakWords.title(1), "1-day streak")
+        XCTAssertEqual(StreakWords.title(12), "12-day streak")
+        XCTAssertEqual(StreakWords.line(12), "Read today to keep it alive 🔥")
+        XCTAssertEqual(StreakWords.title(-1), "0-day streak", "never a negative day")
+    }
+
     func testTheFoldedLevelAndItsCountAgree() throws {
         let trail = try adasTrail()
         let lvl = try decode(PathwayLevel.self, adasLevelOne)

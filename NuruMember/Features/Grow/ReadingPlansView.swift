@@ -1406,7 +1406,9 @@ struct PlanDayView: View {
         if !streakQuiet, let days = walkDays, days > 0 {
             HStack(spacing: 8) {
                 PLFlame()
-                Text(days == 1 ? "1 day with God" : "\(days) days with God")
+                // The streak in the Plans card's words (§8.2 #5) — one fact,
+                // one phrasing.
+                Text(StreakWords.title(days))
                     .font(.inter(12, .bold)).foregroundStyle(pal.ink)
                 Text("· grace covers missed days").font(.inter(11)).foregroundStyle(pal.inkDim)
                 Spacer(minLength: 0)

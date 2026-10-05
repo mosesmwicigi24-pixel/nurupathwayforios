@@ -104,6 +104,18 @@ struct PLPulseRing: View {
     }
 }
 
+// MARK: - streak words (EXPERIENCE.md §8.2 #5)
+
+/// The streak in Android's words, on both apps — "0-day streak · Read today
+/// to start your streak 🔥". iOS said "0 days with God", and the card cut it
+/// to "0 days wi…". One fact, one phrasing, wherever the streak shows.
+enum StreakWords {
+    static func title(_ count: Int) -> String { "\(max(0, count))-day streak" }
+    static func line(_ count: Int) -> String {
+        count > 0 ? "Read today to keep it alive 🔥" : "Read today to start your streak 🔥"
+    }
+}
+
 // MARK: - streak strip (cue + reward loop)
 // Real data: `count` = GET /me/achievements streak.current; `todayDone` =
 // GET /me/rhythm/today `word`. The 7-day badge goal is a client-side constant
@@ -136,15 +148,18 @@ struct PLStreakStrip: View {
                     PLFlame()
                 }
                 .frame(width: 44, height: 44)
+                // Android's words, whole — never cut (§8.1 rule 9): the title
+                // keeps one line (easing its size before it would break as
+                // "0-day / streak"); the line under it wraps.
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(count == 1 ? "1 day with God" : "\(count) days with God")
+                    Text(StreakWords.title(count))
                         .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
-                        .lineLimit(1)
-                    // Grace-first tone: an invitation, never loss-aversion or guilt.
-                    Text(count > 0 ? "A day at a time — return when you can 🌱" : "Begin your walk today 🌱")
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(StreakWords.line(count))
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
-                        .lineLimit(2).minimumScaleFactor(0.9)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .layoutPriority(1)
                 Spacer(minLength: 8)
                 HStack(spacing: 4) {
                     ForEach(0..<7, id: \.self) { i in weekDot(i) }
