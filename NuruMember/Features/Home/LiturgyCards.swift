@@ -149,30 +149,30 @@ struct HomeLiturgyCard: View {
     private func scriptureFirstCaption(_ lit: HomeLiturgy) -> some View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(lit.line)
-                        .font(.inter(11.5, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
+                        .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 14)
                     if let vl = lit.verseLine, !vl.text.isEmpty {
                         HStack(alignment: .top, spacing: 8) {
                             Text("“")
-                                .font(.fraunces(44, .semibold)).foregroundStyle(Nuru.gold)
+                                .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.gold)
                                 .offset(y: 2)
                                 .accessibilityHidden(true)
                             Text(vl.text)
-                                .font(.fraunces(19.5)).foregroundStyle(Nuru.navyDeep)
+                                .font(.fraunces(18)).foregroundStyle(Nuru.navyDeep)
                                 .lineSpacing(5)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 7)
                         }
                         .padding(.top, 4)
                         Text(vl.reference.uppercased())
-                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .font(.inter(11, .bold)).kerning(1.4)
                             .foregroundStyle(Color(hex: 0xA8861C))
                             .padding(.top, 10)
                     } else if let ref = lit.scriptureRef {
                         Text(ref.uppercased())
-                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .font(.inter(11, .bold)).kerning(1.4)
                             .foregroundStyle(Color(hex: 0xA8861C))
                             .padding(.top, 10)
                     }
@@ -181,7 +181,7 @@ struct HomeLiturgyCard: View {
                             .frame(height: 1)
                             .padding(.top, 14)
                         Text(charge)
-                            .font(.inter(12.5)).foregroundStyle(Nuru.ink600)
+                            .font(.inter(13)).foregroundStyle(Nuru.ink600)
                             .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 12)
@@ -200,7 +200,7 @@ struct HomeLiturgyCard: View {
         HStack(spacing: 7) {
             Text(partEmoji(lit.part)).font(.system(size: 15))
             Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : partLabel(lit.part))
-                .font(.inter(10.5, .bold)).kerning(1.6)
+                .font(.inter(11, .bold)).kerning(1.6)
                 .foregroundStyle(onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
                 .shadow(color: .black.opacity(onPhoto ? 0.4 : 0), radius: 2, y: 1)
                 .lineLimit(1)
@@ -270,7 +270,7 @@ struct HomeLiturgyCard: View {
                         .foregroundStyle(Color(hex: 0xF2DDA0))
                     if let secs = lit.recordedAudioDurationSec, secs > 0 {
                         Text("\(secs)s")
-                            .font(.inter(10))
+                            .font(.inter(11))
                             .foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.7))
                     }
                 }
@@ -339,7 +339,7 @@ struct CelebrationsRail: View {
                     HStack(spacing: 6) {
                         Text("🎉").font(.system(size: 13))
                         Text("CELEBRATE THE FAMILY")
-                            .font(.inter(10.5, .bold)).kerning(1.6)
+                            .font(.inter(11, .bold)).kerning(1.6)
                             .foregroundStyle(Nuru.muted)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {

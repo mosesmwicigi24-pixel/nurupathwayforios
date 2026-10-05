@@ -97,7 +97,7 @@ struct LoginView: View {
                 }
             }
             Text("Nuru Place")
-                .font(.fraunces(36, .semibold)).kerning(-1.08).foregroundStyle(.white)
+                .font(.fraunces(28, .semibold)).kerning(-1.08).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             HStack(spacing: Nuru.S.sm) {
                 LinearGradient(colors: [.clear, Nuru.gold], startPoint: .leading, endPoint: .trailing)
@@ -108,7 +108,7 @@ struct LoginView: View {
             }
             .padding(.top, 14)
             Text("A MISSIONARY SENDING CHURCH")
-                .font(.inter(10, .medium)).kerning(1.8)
+                .font(.inter(11, .medium)).kerning(1.8)
                 .foregroundStyle(Color.white.opacity(0.45))
                 .padding(.top, 12)
         }

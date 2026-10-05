@@ -343,6 +343,8 @@ struct RootView: View {
                 }
             }
         }
+        // The default font follows the member's text size (rebuilt with it).
+        .nuruDefaultFont()
         .id(textScale)
         // Cream status-bar stripe. The window's status-bar glyphs render DARK (light
         // scheme — reliable across devices, unlike forcing white which came out black
@@ -705,7 +707,7 @@ private struct NuruTabBar: View {
                                 } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
                             if t == .you, chatBadge.count > 0 { badgeDot(chatBadge.count) }
                         }
-                        Text(t.label).font(.inter(10, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
+                        Text(t.label).font(.inter(11, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
                             .lineLimit(1).minimumScaleFactor(0.85)
                     }
                     .frame(maxWidth: .infinity)
@@ -735,7 +737,7 @@ private struct NuruTabBar: View {
     /// Small red count pill — capped "9+" — top-trailing of the You icon.
     private func badgeDot(_ n: Int) -> some View {
         Text(n > 9 ? "9+" : "\(n)")
-            .font(.inter(9, .bold)).foregroundStyle(.white)
+            .font(.inter(11, .bold)).foregroundStyle(.white)
             .padding(.horizontal, n > 9 ? 4 : 0)
             .frame(minWidth: 15, minHeight: 15)
             .background(Color(hex: 0xDC2626), in: Capsule())

@@ -222,7 +222,7 @@ struct CellInfoView: View {
             Avatar(url: vm.cell?.leader?.avatarUrl, name: leaderName ?? vm.name, size: 56)
             VStack(alignment: .leading, spacing: 3) {
                 Text("CELL LEADER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
-                Text(leaderName ?? "Not assigned yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(leaderName ?? "Not assigned yet").font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 if let r = leaderRole { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
             }
             Spacer(minLength: 0)
@@ -354,7 +354,7 @@ struct CellInfoView: View {
                             .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
                     }
                     if overflow > 0 {
-                        Text("+\(overflow)").font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                        Text("+\(overflow)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                             .frame(width: 26, height: 26)
                             .background(Nuru.surface, in: Circle())
                             .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
@@ -473,7 +473,7 @@ struct CellInfoView: View {
                 Icon(.users, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("No cell yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text("No cell yet").font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 Text("When your leader adds you to a discipleship cell, you'll see your leader, meeting rhythm and gatherings here.")
                     .font(.nCaption).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)

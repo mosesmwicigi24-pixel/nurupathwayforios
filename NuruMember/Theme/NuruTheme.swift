@@ -4,6 +4,7 @@
 // cards that float on one soft shadow, gold used with restraint, Inter body type.
 // Sized for the phone canvas (the mobile type scale, NOT the iPad-bumped one).
 import SwiftUI
+import UIKit
 import CoreText
 
 enum Nuru {
@@ -230,6 +231,39 @@ extension Font {
     static var nChipLabel: Font  { inter(12, .semibold) }    // segment/filter chip text
     static var nActionLabel: Font { inter(13, .bold) }       // pill CTA / menu action text
     static var nCardCTA: Font    { inter(14, .semibold) }    // in-card button labels
+}
+
+/// The type scale (EXPERIENCE.md §8.1 rule 3): kicker and meta 11 · 12 ·
+/// body 13–14 · content row title 15 · the reading body 16 · card title 18 ·
+/// 22 · screen title 26–28. Every text size in the app is one of these steps,
+/// proven by TypographyTests' scan; nothing is set under 11.
+enum NuruType {
+    static let scale: [CGFloat] = [11, 12, 13, 14, 15, 16, 18, 22, 26, 28]
+
+    /// The step nearest a size computed from its container (an avatar's
+    /// initials): never under 11, never over 28; halfway goes up.
+    static func snap(_ size: CGFloat) -> CGFloat {
+        var best = scale[0]
+        for step in scale where abs(step - size) <= abs(best - size) { best = step }
+        return best
+    }
+}
+
+extension Nuru {
+    /// A bundled face as a UIFont (UIKit chrome, attributed text). The faces
+    /// are proven to load by TypographyTests; should one ever go missing, a
+    /// debug build stops here instead of drawing the system face in silence.
+    static func uiFont(_ face: String, _ size: CGFloat) -> UIFont {
+        if let font = UIFont(name: face, size: size) { return font }
+        assertionFailure("The bundled face \(face) didn't load")
+        return UIFont.systemFont(ofSize: size)
+    }
+}
+
+extension View {
+    /// Text with no font of its own reads as the body (Inter 14), never the
+    /// system face — set once at the app's root (EXPERIENCE.md §8.3).
+    func nuruDefaultFont() -> some View { font(.nBody) }
 }
 
 private func interFace(_ w: Font.Weight) -> String {

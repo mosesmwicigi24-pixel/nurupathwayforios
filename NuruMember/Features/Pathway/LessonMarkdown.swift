@@ -371,19 +371,11 @@ private struct MLHeadingBlock: View {
     let text: String
     var body: some View {
         Text(MLMarkdown.inline(text))
-            .font(.fraunces(size, .semibold)).kerning(-0.4)
+            .font(.fraunces(level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 16 : 15, .semibold)).kerning(-0.4)
             .foregroundStyle(ML.navy)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
-    }
-    private var size: CGFloat {
-        switch level {
-        case 1:  return 22
-        case 2:  return 19
-        case 3:  return 17
-        default: return 15.5
-        }
     }
 }
 
@@ -433,7 +425,7 @@ private struct MLQuoteCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: attribution == nil ? 0 : 8) {
             Text(MLMarkdown.inline(verse))
-                .font(.fraunces(16.5, .regular)).italic()
+                .font(.fraunces(16, .regular)).italic()
                 .foregroundStyle(ML.navy)
                 .nuruLineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
@@ -490,7 +482,7 @@ private struct MLTableBlock: View {
             ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
                 if i > 0 { Rectangle().fill(ML.border).frame(width: 1) }
                 Text(MLMarkdown.inline(cell))
-                    .font(.inter(12.5, .bold)).foregroundStyle(ML.navy)
+                    .font(.inter(13, .bold)).foregroundStyle(ML.navy)
                     .frame(minWidth: minColumn, maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, cellH).padding(.vertical, cellV)
                     .fixedSize(horizontal: false, vertical: true)

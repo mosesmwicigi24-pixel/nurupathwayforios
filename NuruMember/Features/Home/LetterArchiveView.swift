@@ -61,7 +61,7 @@ struct LetterArchiveView: View {
         VStack(spacing: 10) {
             Icon(.mail, size: 30, color: Color(hex: 0x6B7A8F))
             Text(loadFailed ? "Couldn't load your letters" : "No letters yet")
-                .font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                .font(.fraunces(18, .semibold)).foregroundStyle(.white)
             Text(loadFailed
                  ? "Check your connection and try again."
                  : "One arrives every Sunday evening, written from your own week.")

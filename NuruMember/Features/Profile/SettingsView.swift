@@ -298,7 +298,7 @@ struct SettingsView: View {
                         withAnimation(.easeInOut(duration: 0.15)) { textScale = opt.scale }
                     } label: {
                         Text(opt.label)
-                            .font(.inter(opt.preview, on ? .bold : .semibold))
+                            .font(.inter(NuruType.snap(opt.preview), on ? .bold : .semibold))
                             .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
                             .frame(maxWidth: .infinity).frame(height: 48)
                             .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))

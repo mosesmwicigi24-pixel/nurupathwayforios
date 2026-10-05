@@ -274,7 +274,7 @@ struct LevelDetailView: View {
                     .font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(Nuru.goldGlow)
                 Text(vm.title)
-                    .font(.fraunces(30, .semibold))
+                    .font(.fraunces(28, .semibold))
                     .foregroundStyle(.white)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -393,7 +393,7 @@ struct LevelDetailView: View {
                 Text("YOUR MODULE TRAIL")
                     .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.gold)
                 Text("Learn step by step")
-                    .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                    .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             }
             Spacer()
             Text("\(vm.lessonCount) lessons")
@@ -762,12 +762,12 @@ private struct ModuleTrailCard: View {
     private var statusBadge: some View {
         if module.completed {
             Text("DONE")
-                .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.successText)
+                .font(.inter(11, .bold)).kerning(0.5).foregroundStyle(Nuru.successText)
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(Nuru.successBg, in: Capsule())
         } else if module.locked {
             Text("LOCKED")
-                .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.faint)
+                .font(.inter(11, .bold)).kerning(0.5).foregroundStyle(Nuru.faint)
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(Nuru.mutedBg, in: Capsule())
         }
@@ -1081,7 +1081,7 @@ private struct DisciplerReminderCard: View {
                 Text("WALK WITH YOUR DISCIPLER")
                     .font(.nCardKicker).kerning(1.2).foregroundStyle(Nuru.goldChipText)
                 Text(mentorName.map { "\($0) is walking this with you" } ?? "A discipler is walking this with you")
-                    .font(.inter(14.5, .bold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("You're making real progress — you don't have to walk it alone.")
                     .font(.nCardBody).foregroundStyle(Nuru.ink600)

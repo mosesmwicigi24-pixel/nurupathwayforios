@@ -1436,7 +1436,7 @@ private struct MLHeader: View {
             }
             // Title — centred serif.
             Text(title)
-                .font(.fraunces(24, .medium)).kerning(-0.7)
+                .font(.fraunces(26, .medium)).kerning(-0.7)
                 .foregroundStyle(ML.navy)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1510,12 +1510,12 @@ private struct MLHeader: View {
     private func finishedRibbon(_ f: MLFinishedSummary) -> some View {
         HStack(spacing: 8) {
             Icon(.check, size: 12, color: ML.navy)
-            Text("COMPLETED").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(ML.navy)
+            Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ML.navy)
             if let s = f.score {
                 Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
             }
             if let w = f.when {
-                Text("· \(w)").font(.inter(10.5)).foregroundStyle(ML.secondary).lineLimit(1)
+                Text("· \(w)").font(.inter(11)).foregroundStyle(ML.secondary).lineLimit(1)
             }
             Spacer(minLength: 6)
             if f.canRetake {
@@ -1640,7 +1640,7 @@ private struct MLSectionIndex: View {
         } label: {
             HStack(spacing: 5) {
                 Text("\(idx + 1)")
-                    .font(.inter(10, .bold))
+                    .font(.inter(11, .bold))
                     .foregroundStyle(isCurrent ? ML.navy.opacity(0.7) : ML.secondary.opacity(0.7))
                 Text(title)
                     .font(.inter(12, .semibold))
@@ -1787,7 +1787,7 @@ private struct MLVideoCard: View {
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .overlay(alignment: .topLeading) {
             Text("VIDEO")
-                .font(.inter(10, .bold)).kerning(1).foregroundStyle(.white)
+                .font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Color.black.opacity(0.55), in: Capsule())
                 .padding(12)
@@ -1814,7 +1814,7 @@ private struct MLAudioCard: View {
                     transport
                     VStack(alignment: .leading, spacing: 2) {
                         Text("LISTEN")
-                            .font(.inter(10, .bold)).kerning(1.8)
+                            .font(.inter(11, .bold)).kerning(1.8)
                             .foregroundStyle(ML.kicker)
                         Text(minutes.map { "Narration · \($0)m" } ?? "Narration")
                             .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
@@ -1871,11 +1871,11 @@ private struct MLScriptureCard: View {
             HStack(spacing: 6) {
                 Icon(.quote, size: 12, color: ML.gold)
                 Text("KEY VERSE")
-                    .font(.inter(10, .bold)).kerning(1.8)
+                    .font(.inter(11, .bold)).kerning(1.8)
                     .foregroundStyle(ML.kicker)
             }
             Text("\u{201C}\(line)\u{201D}")
-                .font(.fraunces(16.5, .regular)).italic()
+                .font(.fraunces(16, .regular)).italic()
                 .foregroundStyle(ML.navy)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1909,10 +1909,10 @@ private struct MLSectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(kicker)
-                .font(.inter(10, .bold)).kerning(1.8)
+                .font(.inter(11, .bold)).kerning(1.8)
                 .foregroundStyle(ML.kicker)
             Text(title)
-                .font(.fraunces(23, .semibold)).kerning(-0.5)
+                .font(.fraunces(22, .semibold)).kerning(-0.5)
                 .foregroundStyle(ML.navy)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1940,11 +1940,11 @@ private struct MLReflectionFolded: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("YOUR REFLECTION").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
+                Text("YOUR REFLECTION").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
                 Spacer()
                 HStack(spacing: 3) {
                     Icon(.check, size: 10, color: Color(hex: 0x15803D))
-                    Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    Text("Saved").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 }
             }
             Text(text.isEmpty ? "\u{2014}" : text)
@@ -1975,13 +1975,13 @@ private struct MLReflectionCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("REFLECTION · STEP")
-                    .font(.inter(10, .bold)).kerning(1.8)
+                    .font(.inter(11, .bold)).kerning(1.8)
                     .foregroundStyle(ML.kicker)
                 Spacer(minLength: 0)
                 if done {
                     HStack(spacing: 4) {
                         Icon(.check, size: 10, color: ML.navy)
-                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(ML.navy)
+                        Text("Saved").font(.inter(11, .bold)).foregroundStyle(ML.navy)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(ML.gold.opacity(0.9), in: Capsule())

@@ -212,7 +212,7 @@ struct LiturgyRecordSheet: View {
             Text(alreadyRecorded
                  ? "This replaces your current \(band.label.lowercased()) recording. The congregation hears it instead of the on-device voice from now on."
                  : "The congregation hears this instead of the on-device voice for \(band.label.lowercased()).")
-                .font(.inter(13.5)).foregroundStyle(Nuru.ink)
+                .font(.inter(14)).foregroundStyle(Nuru.ink)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
 
@@ -226,7 +226,7 @@ struct LiturgyRecordSheet: View {
                 }
             case .recording:
                 Text(LiturgyRecorderFormat.timeString(model.seconds))
-                    .font(.fraunces(40)).foregroundStyle(Nuru.navy)
+                    .font(.fraunces(28)).foregroundStyle(Nuru.navy)
                     .monospacedDigit()
                 bigButton(sfSymbol: "stop.fill", label: "Stop", tint: .red) { model.stop() }
             case .recorded, .uploading:
@@ -345,7 +345,7 @@ struct LiturgyRecordingsSheet: View {
                     // No completion language on purpose — mixed coverage is
                     // the permanent normal state, not a checklist to finish.
                     Text("Bands without a recording use the on-device voice — that's expected, not a gap.")
-                        .font(.inter(11.5)).foregroundStyle(Nuru.muted)
+                        .font(.inter(12)).foregroundStyle(Nuru.muted)
                 }
             }
             .listStyle(.insetGrouped)
@@ -400,7 +400,7 @@ struct LiturgyRecordingsSheet: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.band.label)
-                    .font(.inter(14.5, .semibold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                 statusChip(row)
             }
             Spacer(minLength: 8)

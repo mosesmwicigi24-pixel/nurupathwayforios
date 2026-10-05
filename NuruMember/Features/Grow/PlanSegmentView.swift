@@ -1026,7 +1026,7 @@ private struct TalkAvatar: View {
     private var fallback: some View {
         ZStack {
             Circle().fill(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
-            Text(initials).font(.inter(size * 0.34, .bold)).foregroundStyle(.white)
+            Text(initials).font(.inter(NuruType.snap(size * 0.34), .bold)).foregroundStyle(.white)
         }
     }
 }

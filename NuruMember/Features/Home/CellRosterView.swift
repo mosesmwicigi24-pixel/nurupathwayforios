@@ -322,7 +322,7 @@ struct CellRosterView: View {
 
     private var leaderChip: some View {
         Text("LEADER")
-            .font(.inter(9, .bold)).kerning(0.7).foregroundStyle(Nuru.goldChipText)
+            .font(.inter(11, .bold)).kerning(0.7).foregroundStyle(Nuru.goldChipText)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Nuru.goldChipBg, in: Capsule())
             .overlay(Capsule().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
@@ -330,7 +330,7 @@ struct CellRosterView: View {
 
     private var youChip: some View {
         Text("You")
-            .font(.inter(9, .bold)).foregroundStyle(Nuru.navyMid)
+            .font(.inter(11, .bold)).foregroundStyle(Nuru.navyMid)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Nuru.tintBlue, in: Capsule())
     }
@@ -356,7 +356,7 @@ struct CellRosterView: View {
     private func bandPill(_ band: String) -> some View {
         let color = Nuru.bandColor(band)
         return Text(DisciplerRosterView.bandLabel(band))
-            .font(.inter(10, .bold)).foregroundStyle(color)
+            .font(.inter(11, .bold)).foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(color.opacity(0.12), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
@@ -448,7 +448,7 @@ struct CellRosterView: View {
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text(vm.error == nil ? "No one here yet" : "Couldn't load the roster")
-                    .font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 Text(vm.error == nil
                      ? "When your leader adds people to this cell, they'll appear here."
                      : "Check your connection and try again.")

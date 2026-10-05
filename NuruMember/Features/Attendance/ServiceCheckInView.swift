@@ -202,7 +202,7 @@ struct ServiceCheckInView: View {
                        content: UITextContentType) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.gold)
+                .font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.gold)
             TextField("", text: text)
                 .font(.inter(15)).foregroundStyle(.white)
                 .keyboardType(keyboard)
@@ -230,7 +230,7 @@ struct ServiceCheckInView: View {
                 .padding(.top, Nuru.S.xl)
 
                 Text(result?.duplicate == true ? "Already checked in ✓" : "You're checked in ✓")
-                    .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(.white)
+                    .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(.white)
                     .padding(.top, Nuru.S.lg)
                     .gentleEntrance(delay: 0.08)
 
@@ -299,7 +299,7 @@ struct ServiceCheckInView: View {
                 Icon(.camera, size: 28, color: Nuru.gold)
             }
             Text("Camera access needed")
-                .font(.fraunces(21, .medium)).kerning(-0.42).foregroundStyle(.white)
+                .font(.fraunces(22, .medium)).kerning(-0.42).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             Text("Nuru uses the camera only to scan the service check-in code. Turn it on in Settings and come back.")
                 .font(.inter(13)).foregroundStyle(.white.opacity(0.7))
@@ -328,9 +328,9 @@ struct ServiceCheckInView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(kicker)
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
                 Text(title)
-                    .font(.fraunces(20, .semibold)).kerning(-0.4).foregroundStyle(.white)
+                    .font(.fraunces(18, .semibold)).kerning(-0.4).foregroundStyle(.white)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -474,7 +474,7 @@ struct StreakSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("YOUR ATTENDANCE")
-                .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
             HStack(spacing: 8) {
                 tile("Streak", streak.currentStreak)
                 tile("Longest", streak.longestStreak)

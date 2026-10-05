@@ -925,7 +925,7 @@ struct HomeView: View {
                                                     startPoint: .top, endPoint: .bottom)),
                 lineWidth: 3)
             // A score out of 100 (the growth score), not a percent of anything.
-            Text("\(growthScore)").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
+            Text("\(growthScore)").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x166534))
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }
@@ -940,7 +940,7 @@ struct HomeView: View {
     private func trendBadge(_ t: ScoreTrend) -> some View {
         HStack(spacing: 0.5) {
             Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.system(size: 7, weight: .black))
-            Text("\(abs(t.delta))").font(.inter(8, .bold)).contentTransition(.numericText())
+            Text("\(abs(t.delta))").font(.inter(11, .bold)).contentTransition(.numericText())
         }
         .foregroundStyle(.white)
         .padding(.horizontal, 3.5).padding(.vertical, 1.5)
@@ -988,7 +988,7 @@ struct HomeView: View {
                     Icon(.mail, size: 19, color: Color(hex: 0x1E2A1F))
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                    Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
                         .foregroundStyle(Color(hex: 0xE8CA6C))
                     Text("A letter was written for you").font(.fraunces(16, .semibold)).foregroundStyle(.white)
                     if let ref = lt.scriptureRef {
@@ -1029,7 +1029,7 @@ struct HomeView: View {
                     Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                    Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
                         .foregroundStyle(Color(hex: 0xA8861C))
                     // Ink, not white (owner, 2026-08-24): this quiet row sits
                     // on the bright page — white type simply vanished into it.
@@ -1067,7 +1067,7 @@ struct HomeView: View {
                     Icon(.mail, size: 18, color: .white)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                    Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
                         .foregroundStyle(Color(hex: 0xE8CA6C))
                     Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
                     Text("Written for your week")
@@ -1075,7 +1075,7 @@ struct HomeView: View {
                 }
                 Spacer(minLength: 8)
                 Text(Self.sundayLetterCountdown())
-                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x0A1628))
+                    .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x0A1628))
                     .padding(.horizontal, 10).padding(.vertical, 5)
                     .background(Color(hex: 0xC9A227), in: Capsule())
             }
@@ -1450,7 +1450,7 @@ struct HomeView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Text(durationLabel(d)).font(.inter(10, .semibold)).foregroundStyle(.white)
+                        Text(durationLabel(d)).font(.inter(11, .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 3)
                             .background(Color(hex: 0x0F141E).opacity(0.7), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .padding(8)
@@ -1483,7 +1483,7 @@ struct HomeView: View {
                     Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
                     Text((vm.verse?.version ?? "WEB").uppercased())
-                        .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
+                        .font(.inter(11, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
@@ -1512,7 +1512,7 @@ struct HomeView: View {
                 // season ribbon when the server provides one.
                 VStack(alignment: .leading, spacing: 3) {
                     Text(enc.text)
-                        .font(.fraunces(13.5).italic()).foregroundStyle(Nuru.ink)
+                        .font(.fraunces(14).italic()).foregroundStyle(Nuru.ink)
                         .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                     if !enc.author.isEmpty {
                         Text("— \(enc.author)")
@@ -1545,7 +1545,7 @@ struct HomeView: View {
                         HStack(spacing: 3) {
                             Text(e).font(.system(size: 14))
                             if count > 0 {
-                                Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
+                                Text("\(count)").font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
                                     .contentTransition(.numericText())
                             }
                         }
@@ -1822,7 +1822,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .clipped()
             .overlay(alignment: .topLeading) {
-                Text(kicker).font(.inter(9, .bold)).kerning(1.3).foregroundStyle(.white)
+                Text(kicker).font(.inter(11, .bold)).kerning(1.3).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Color.black.opacity(0.45), in: Capsule())
                     .padding(10)
@@ -1958,7 +1958,7 @@ struct HomeView: View {
                         Text("\(s.overall.score)").font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
                             .contentTransition(.numericText())
                             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: s.overall.score)
-                        Text("/100").font(.inter(9, .semibold)).foregroundStyle(HomeFig.faintGray)
+                        Text("/100").font(.inter(11, .semibold)).foregroundStyle(HomeFig.faintGray)
                     }
                 }
                 .frame(width: 64, height: 64)
@@ -2021,7 +2021,7 @@ struct HomeView: View {
             if let d = delta, d != 0 {
                 HStack(spacing: 1) {
                     Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.system(size: 8, weight: .bold))
-                    Text("\(abs(d))").font(.inter(9, .bold))
+                    Text("\(abs(d))").font(.inter(11, .bold))
                 }
                 .foregroundStyle(d < 0 ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A))
                 .frame(width: 26, alignment: .trailing)

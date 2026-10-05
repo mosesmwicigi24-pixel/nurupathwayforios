@@ -1954,7 +1954,7 @@ struct DayPullQuote: View {
             VerseQuoteCard(
                 verse: text, reference: caption,
                 background: pal.verseBg, ink: pal.ink, gold: pal.gold, referenceColor: pal.inkDim,
-                verseSize: pal.fs(18)
+                reading: pal
             )
             // Long-press: keep the day's verse, or copy it with its reference.
             .contextMenu {

@@ -27,12 +27,12 @@ struct HomeEchoCard: View {
                     HStack(spacing: 8) {
                         Icon(.sparkles, size: 13, color: Nuru.goldChipText)
                         Text(kicker)
-                            .font(.inter(10.5, .bold)).kerning(1.6)
+                            .font(.inter(11, .bold)).kerning(1.6)
                             .foregroundStyle(Nuru.goldChipText)
                         Spacer()
                     }
                     Text(e.body)
-                        .font(.inter(14.5)).foregroundStyle(Nuru.ink)
+                        .font(.inter(14)).foregroundStyle(Nuru.ink)
                         .nuruLineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
                     if let q = e.quote, !q.isEmpty {
@@ -47,7 +47,7 @@ struct HomeEchoCard: View {
                     }
                     if let r = e.ref, !r.isEmpty {
                         Text("— \(r)")
-                            .font(.inter(11.5, .semibold)).foregroundStyle(Nuru.goldChipText)
+                            .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
                     }
                 }
                 .padding(16)

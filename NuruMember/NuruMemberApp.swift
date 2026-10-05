@@ -34,6 +34,8 @@ struct NuruMemberApp: App {
             .environmentObject(auth)
             .environmentObject(sync)
             .environmentObject(tabs)
+            // Text with no font of its own is the body, never the system face.
+            .nuruDefaultFont()
             .tint(Nuru.gold)
             // The app is designed in warm light tones; keep system chrome light.
             .preferredColorScheme(.light)
@@ -63,18 +65,22 @@ struct NuruMemberApp: App {
         }
     }
 
-    /// App-wide chrome: brand-navy titles on warm paper bars.
+    /// App-wide chrome: brand-navy titles on warm paper bars, in the type
+    /// scale's faces and steps (EXPERIENCE.md §8.1 rule 3) — never the system
+    /// face, even for a bar button.
     static func configureAppearance() {
-        func font(_ name: String, _ size: CGFloat, _ fallback: UIFont.Weight) -> UIFont {
-            UIFont(name: name, size: size) ?? UIFont.systemFont(ofSize: size, weight: fallback)
-        }
         let navy = UIColor(Nuru.navy)
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = UIColor(Nuru.paper)
         appearance.shadowColor = .clear
-        appearance.largeTitleTextAttributes = [.foregroundColor: navy, .font: font("Inter-SemiBold", 30, .semibold)]
-        appearance.titleTextAttributes = [.foregroundColor: navy, .font: font("Inter-SemiBold", 17, .semibold)]
+        appearance.largeTitleTextAttributes = [.foregroundColor: navy, .font: Nuru.uiFont("Inter-SemiBold", 28)]
+        appearance.titleTextAttributes = [.foregroundColor: navy, .font: Nuru.uiFont("Inter-SemiBold", 16)]
+        let button = UIBarButtonItemAppearance()
+        button.normal.titleTextAttributes = [.font: Nuru.uiFont("Inter-SemiBold", 16)]
+        appearance.buttonAppearance = button
+        appearance.doneButtonAppearance = button
+        appearance.backButtonAppearance = button
         UINavigationBar.appearance().standardAppearance = appearance
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance

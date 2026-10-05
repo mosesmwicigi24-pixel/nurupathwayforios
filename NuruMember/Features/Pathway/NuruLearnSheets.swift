@@ -31,7 +31,7 @@ struct NuruCoachSheet: View {
                     }
                     if let text {
                         Text(text)
-                            .font(.fraunces(17)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
+                            .font(.fraunces(16)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
                             .padding(20)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(hex: 0xFFFDF6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -117,7 +117,7 @@ struct ExplainSheet: View {
                 ScrollView(showsIndicators: false) {
                     if let text {
                         Text(text)
-                            .font(.fraunces(17)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
+                            .font(.fraunces(16)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
                             .padding(20)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(hex: 0xFFFDF6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))

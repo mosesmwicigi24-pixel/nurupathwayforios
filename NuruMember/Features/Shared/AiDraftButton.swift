@@ -59,7 +59,7 @@ struct AiDraftButton: View {
                     .frame(width: 22, height: 22)
                     .overlay(Icon(.sparkles, size: 12, color: .white))
                 Text("NURU SUGGESTS")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
             }
             Text(failed
                  ? "Nuru couldn’t reach the assistant just now — you can still write your own reply below."

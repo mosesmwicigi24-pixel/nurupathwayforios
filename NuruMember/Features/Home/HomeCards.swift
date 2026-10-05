@@ -159,10 +159,10 @@ struct HomeLiveNowCard: View {
         HStack(spacing: 6) {
             if isLive {
                 Circle().fill(.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
-                Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+                Text("LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(.white)
             } else {
                 Icon(.clock, size: 11, color: HomeFig.navy)
-                Text("STARTS IN \(startsInMin ?? 0)M").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(HomeFig.navy)
+                Text("STARTS IN \(startsInMin ?? 0)M").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(HomeFig.navy)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -181,7 +181,7 @@ struct HomeLiveNowCard: View {
                 Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
                     .shadow(color: Color(hex: 0x22C55E), radius: 3)
             }
-            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
+            Text("ON AIR").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(.white)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(HomeFig.navy.opacity(0.55), in: Capsule())
@@ -251,10 +251,10 @@ struct HomeNeedsYouRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("WHAT NEEDS YOU TODAY").font(.inter(9, .bold)).kerning(1.6)
+                Text("WHAT NEEDS YOU TODAY").font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 if nudges.count > 1 {
-                    Text("\(nudges.count)").font(.inter(9, .bold)).foregroundStyle(.white)
+                    Text("\(nudges.count)").font(.inter(11, .bold)).foregroundStyle(.white)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(HomeFig.navy, in: Capsule())
                 }
@@ -303,7 +303,7 @@ struct HomeNeedsYouCard: View {
                 }
                 HStack(spacing: 8) {
                     if let due = dueLabel {
-                        Text(due).font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
+                        Text(due).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Color(hex: 0xFFF4DA), in: Capsule())
                     }
@@ -444,7 +444,7 @@ struct HomeResumeHero: View {
                         }
                     }
                     .frame(height: 6)
-                    Text("\(clamped)%").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.7))
+                    Text("\(clamped)%").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.7))
                 }
                 .padding(.top, 12)
             }
@@ -486,7 +486,7 @@ struct HomeWeekChain: View {
                 let isPastDone = i < todayIdx && todayIdx - i <= streakDays
                 let isDone = isPastDone || (isToday && todayDone)
                 VStack(spacing: 4) {
-                    Text(Self.days[i]).font(.inter(9, .bold)).foregroundStyle(Color(hex: 0xB8BFC9))
+                    Text(Self.days[i]).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0xB8BFC9))
                     ZStack {
                         if isDone {
                             Circle().fill(HomeFig.gold)
@@ -534,7 +534,9 @@ struct VerseQuoteCard: View {
     var ink: Color = Nuru.navyDeep
     var gold: Color = Nuru.gold
     var referenceColor: Color = Nuru.ink400
-    var verseSize: CGFloat = 18
+    /// The reader's own text-size step (the plan reader passes its palette);
+    /// the verse is the 18 card-title size at that step.
+    var reading = ReaderPalette()
 
     /// Strip any wrapping curly/straight quotes from the source text — the
     /// hanging glyph IS the quote mark, so the verse text itself never doubles it.
@@ -553,10 +555,10 @@ struct VerseQuoteCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 6) {
                     Text("\u{201C}")
-                        .font(.fraunces(30, .semibold)).foregroundStyle(gold)
+                        .font(.fraunces(28, .semibold)).foregroundStyle(gold)
                         .offset(y: -8).accessibilityHidden(true)
                     Text(displayVerse)
-                        .font(.fraunces(verseSize)).foregroundStyle(ink)
+                        .font(.fraunces(reading.fs(18))).foregroundStyle(ink)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -590,7 +592,7 @@ struct HomePersonalWord: View {
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
             // Owner (2026-08-26): the quoted head-card word steps down a point.
-            Text("“").font(.fraunces(23, .semibold)).foregroundStyle(HomeFig.gold)
+            Text("“").font(.fraunces(22, .semibold)).foregroundStyle(HomeFig.gold)
                 .offset(y: -2).accessibilityHidden(true)
             Text(text)
                 .font(.fraunces(13)).italic()
@@ -769,7 +771,7 @@ struct HomeGiveCard: View {
                         .font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.gold)
                         .padding(.top, 12)
                     Text("Sow into something eternal")
-                        .font(.fraunces(20, .semibold)).foregroundStyle(.white)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(.white)
                         .padding(.top, 4)
                     Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
                         .font(.nCardBody).foregroundStyle(.white.opacity(0.65))
@@ -830,17 +832,17 @@ struct HomeOnAirCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             studioLights
-                            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
-                            Text("· Nuru Radio").font(.inter(10, .bold)).foregroundStyle(HomeFig.gold)
+                            Text("ON AIR").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(.white)
+                            Text("· Nuru Radio").font(.inter(11, .bold)).foregroundStyle(HomeFig.gold)
                         }
                         HStack(spacing: 8) {
                             if let n = program.peakListeners, n > 0 {
                                 HStack(spacing: 4) {
                                     Icon(.users, size: 11, color: HomeFig.goldSoft)
-                                    Text("\(n) listening").font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+                                    Text("\(n) listening").font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                                 }
                             } else {
-                                Text(program.title).font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+                                Text(program.title).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                                     .lineLimit(1)
                             }
                             Text("❤️ 🙏 🙌").font(.system(size: 11))
@@ -939,7 +941,7 @@ struct HomeLiveBannerCard: View {
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 5) {
                                 Circle().fill(Color.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
-                                Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+                                Text("LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(.white)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(HomeFig.liveRed, in: Capsule())

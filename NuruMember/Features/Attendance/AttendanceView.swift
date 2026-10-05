@@ -53,7 +53,7 @@ struct AttendanceView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("CHURCH SERVICES")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
                 Text("My attendance")
                     .font(.fraunces(26, .semibold)).kerning(-0.5).foregroundStyle(.white)
             }
@@ -84,7 +84,7 @@ struct AttendanceView: View {
                     Icon(.qrCode, size: 22, color: Nuru.navy)
                 }
                 VStack(alignment: .leading, spacing: 1) {
-                    Text("OPEN NOW").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                    Text("OPEN NOW").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
                     Text(service.title).font(.nRowTitle).foregroundStyle(Nuru.onNavy)
                     Text("Scan the QR at church to check in")
                         .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
@@ -106,7 +106,7 @@ struct AttendanceView: View {
     private var historySection: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             Text("SERVICE BY SERVICE")
-                .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
 
             if let error = vm.error {
                 Text(error).font(.inter(13)).foregroundStyle(Nuru.goldLight)

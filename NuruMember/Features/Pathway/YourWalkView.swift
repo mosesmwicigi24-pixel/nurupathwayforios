@@ -58,10 +58,10 @@ struct YourWalkView: View {
                 .buttonStyle(.pressable)
                 Spacer()
             }
-            Text("YOUR WALK").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(Nuru.gold)
+            Text("YOUR WALK").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Nuru.gold)
                 .padding(.top, 10)
             Text("Look how far He has brought you")
-                .font(.fraunces(24)).foregroundStyle(.white)
+                .font(.fraunces(26)).foregroundStyle(.white)
             if !events.isEmpty {
                 Text("\(events.count) moments, all real")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.75))
@@ -122,9 +122,9 @@ private struct WalkNode: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.dateLine)
-                    .font(.inter(10, .semibold)).kerning(0.8).foregroundStyle(Nuru.ink.opacity(0.45))
+                    .font(.inter(11, .semibold)).kerning(0.8).foregroundStyle(Nuru.ink.opacity(0.45))
                 Text(event.title)
-                    .font(.inter(14.5, .semibold)).foregroundStyle(Nuru.navy)
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                     .fixedSize(horizontal: false, vertical: true)
                 if let d = event.detail, !d.isEmpty {
                     Text(d).font(.inter(12)).foregroundStyle(Nuru.ink.opacity(0.65))

@@ -78,7 +78,7 @@ struct VoiceNoteCard: View {
                     Avatar(url: note.avatarUrl, name: note.authorName, size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("A WORD FROM \(firstName.uppercased())")
-                            .font(.inter(10, .bold)).kerning(1.8)
+                            .font(.inter(11, .bold)).kerning(1.8)
                             .foregroundStyle(Nuru.goldChipText)
                         Text("Voice note · \(max(1, note.durationSec / 60))m \(note.durationSec % 60)s")
                             .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -334,7 +334,7 @@ struct VoiceRecordSheet: View {
             Text(existing == nil
                  ? "Everyone in your congregation will hear this at the top of the lesson. Up to five minutes."
                  : "This replaces your current word on this module.")
-                .font(.inter(13.5)).foregroundStyle(Nuru.ink)
+                .font(.inter(14)).foregroundStyle(Nuru.ink)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
 
@@ -348,7 +348,7 @@ struct VoiceRecordSheet: View {
                 }
             case .recording:
                 Text(timeString(model.seconds))
-                    .font(.fraunces(40)).foregroundStyle(Nuru.navy)
+                    .font(.fraunces(28)).foregroundStyle(Nuru.navy)
                     .monospacedDigit()
                 bigButton(icon: nil, sfSymbol: "stop.fill", label: "Stop", tint: .red) { model.stop() }
             case .recorded, .uploading:
@@ -482,7 +482,7 @@ struct CellPresenceLine: View {
                     Icon(.flame, size: 13, color: Nuru.goldChipText)
                         .padding(.top, 1)
                     Text(line)
-                        .font(.inter(12.5)).foregroundStyle(Nuru.ink)
+                        .font(.inter(13)).foregroundStyle(Nuru.ink)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)

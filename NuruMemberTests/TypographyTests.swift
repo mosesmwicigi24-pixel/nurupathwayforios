@@ -25,11 +25,12 @@ final class TypographyTests: XCTestCase {
     // MARK: - The ratchet (§8.3): these may only fall
 
     /// Text sizes set in code that are off the scale (or computed where the
-    /// scan can't prove they land on it). Measured at d55d767: 545 of 1,710.
-    static let offScaleCeiling = 545
+    /// scan can't prove they land on it). Measured at d55d767: 545; falling
+    /// as each area moves onto the scale.
+    static let offScaleCeiling = 365
     /// System-font sites not listed as an icon, emoji or widget — a system
     /// face used for text. Measured at d55d767: 144.
-    static let systemTextCeiling = 144
+    static let systemTextCeiling = 137
 
     // MARK: - 1. The faces resolve
 
@@ -38,6 +39,10 @@ final class TypographyTests: XCTestCase {
         XCTAssertTrue(named.isSuperset(of: ["Inter-Medium", "Inter-SemiBold", "Inter-Bold",
                                             "Fraunces-Medium", "Fraunces-SemiBold", "lucide"]),
                       "the scan must see the faces the type helpers name: \(named.sorted())")
+        // The faces a member can pick for their own Selah thought load too.
+        for f in SelahFont.allCases {
+            XCTAssertNotNil(UIFont(name: f.rawValue, size: 16), "Selah's \(f.label) (\(f.rawValue)) doesn't load")
+        }
         for face in named.sorted() {
             let font = UIFont(name: face, size: 14)
             XCTAssertNotNil(font, "\"\(face)\" is named in the code but doesn't load — every use would fall back to the system face in silence")
@@ -115,16 +120,39 @@ final class TypographyTests: XCTestCase {
         Text("k").font(.system(.title, design: .serif))
         let v = UIFont.systemFont(ofSize: 12); let w = x ?? .boldSystemFont(ofSize: 9)
         Text("l").font(.inter(NuruTypeSnap(size * 0.4)))
+        Text("m").font(.inter(NuruType.snap(size * 0.4), .semibold))
+        let t = Nuru.uiFont("Inter-SemiBold", 17)
+        static let baseSize: CGFloat = 16
+        let f = UIFont(descriptor: d, size: Editor.baseSize)
         """
         let sites = TypeScan.sites(file: "Fixture.swift", text: code)
         let sized = sites.filter { $0.kind.isSized }
         XCTAssertEqual(sized.map(\.arg), ["10", "18", "compact ? 12 : 14", "compact ? 7 : 13", "pal.fs(16)",
-                                          "pal.fs(13.5)", "size * 0.4", "12", "17", "30", "NuruTypeSnap(size * 0.4)"])
-        XCTAssertEqual(sized.map { TypeScan.onScale($0.arg) }, [false, true, true, false, true, false, nil, true, false, false, nil])
+                                          "pal.fs(13.5)", "size * 0.4", "12", "17", "30", "NuruTypeSnap(size * 0.4)",
+                                          "NuruType.snap(size * 0.4)", "17", "Editor.baseSize"])
+        XCTAssertEqual(sized.map { TypeScan.onScale($0.value) },
+                       [false, true, true, false, true, false, nil, true, false, false, nil, true, false, true])
+        XCTAssertEqual(sized.last?.value, "16", "a file's own `let …: CGFloat = 16` is read in")
         XCTAssertEqual(sites.filter { !$0.kind.isSized }.map(\.kind),
                        [.system, .textStyle, .systemStyle, .uiSystem, .uiSystem])
         XCTAssertEqual(sites.first?.line, 1)
         XCTAssertEqual(sites.first(where: { $0.arg == "30" })?.line, 11)
+    }
+
+    /// The app's own scale is the spec's, and `snap` only ever lands on it.
+    func testTheAppsScaleIsTheSpecsAndSnapLandsOnIt() {
+        XCTAssertEqual(Set(NuruType.scale), Self.scale)
+        XCTAssertEqual(NuruType.scale, NuruType.scale.sorted(), "ascending, so a tie goes up")
+        var x: CGFloat = 0
+        while x <= 80 {
+            XCTAssertTrue(Self.scale.contains(NuruType.snap(x)), "snap(\(x)) = \(NuruType.snap(x))")
+            x += 0.25
+        }
+        XCTAssertEqual(NuruType.snap(4), 11, "nothing under 11")
+        XCTAssertEqual(NuruType.snap(14.4), 14)
+        XCTAssertEqual(NuruType.snap(17), 18, "halfway goes up")
+        XCTAssertEqual(NuruType.snap(20), 22)
+        XCTAssertEqual(NuruType.snap(40), 28, "nothing over 28")
     }
 
     // MARK: - 3. What renders is what's asked for
@@ -163,6 +191,13 @@ final class TypographyTests: XCTestCase {
         XCTAssertFalse(inter == system, "a renderer that can't tell Inter from the system face proves nothing")
         let smaller = try Self.pixels(Text(sample).font(.inter(13)))
         XCTAssertFalse(inter == smaller, "nor one that can't tell 14 from 13")
+        // Text with no font of its own, under the app's root default, is the
+        // body in Inter — never the system face.
+        let body = try XCTUnwrap(UIFont(name: "Inter-Medium", size: 14))
+        XCTAssertTrue(try Self.pixels(VStack { Text(sample) }.nuruDefaultFont()) == Self.pixels(Text(sample).font(Font(body))),
+                      "an unstyled Text under nuruDefaultFont() must draw Inter Medium 14")
+        XCTAssertFalse(try Self.pixels(VStack { Text(sample) }) == Self.pixels(Text(sample).font(Font(body))),
+                       "without the root default an unstyled Text is the system face — the check has teeth")
     }
 
     // MARK: - Rendering
@@ -210,9 +245,9 @@ final class TypographyTests: XCTestCase {
 enum TypeScan {
 
     enum Kind: String {
-        case inter, fraunces, nuruDisplay, custom, uiFont
+        case inter, fraunces, nuruDisplay, custom, uiFont, nuruUIFont
         case system, systemStyle, textStyle, uiSystem
-        var isSized: Bool { [.inter, .fraunces, .nuruDisplay, .custom, .uiFont].contains(self) }
+        var isSized: Bool { [.inter, .fraunces, .nuruDisplay, .custom, .uiFont, .nuruUIFont].contains(self) }
     }
 
     struct Site: CustomStringConvertible {
@@ -221,6 +256,9 @@ enum TypeScan {
         let line: Int
         let arg: String
         let source: String
+        /// The size with a file constant (`let baseSize: CGFloat = 16`) read in.
+        var resolved: String? = nil
+        var value: String { resolved ?? arg }
         var description: String { "\(file):\(line)  \(kind.rawValue)(\(arg))  \(source)" }
     }
 
@@ -231,6 +269,7 @@ enum TypeScan {
         case emoji = "an emoji (drawn by Apple Color Emoji whatever the face)"
         case logo = "the brand mark's letter, drawn in proportion to the mark"
         case video = "drawn into the broadcast video frame, sized in the frame's pixels"
+        case fallback = "the release-only fallback if a bundled face failed to load — unreachable while the faces test passes"
     }
 
     /// Sites allowed outside the rules: (file, a snippet of the site's line, why).
@@ -239,7 +278,11 @@ enum TypeScan {
         ("Theme/NuruTheme.swift", ".custom(interFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
+        ("Theme/NuruTheme.swift", "if let font = UIFont(name: face, size: size) { return font }", .typeHelper),
+        ("Theme/NuruTheme.swift", "return UIFont.systemFont(ofSize: size)", .fallback),
         ("Theme/LucideIcons.swift", ".custom(\"lucide\", fixedSize: size)", .icon),
+        ("Features/Shared/Components.swift", ".font(.nuruDisplay(size * 0.56, weight: .semibold))", .logo),
+        ("Features/Live/LiveStageCompositor.swift", ".font: Nuru.uiFont(\"Inter-Bold\", max(12, tileSize.height * 0.14)),", .video),
     ]
 
     struct Report {
@@ -300,8 +343,8 @@ enum TypeScan {
             for s in sites(file: rel, text: text) {
                 if s.kind.isSized {
                     report.sizedCalls += 1
-                    if onScale(s.arg) == true { continue }
-                    if onScale(s.arg) == nil, consume(s) { continue }
+                    if onScale(s.value) == true { continue }
+                    if onScale(s.value) == nil, consume(s) { continue }
                     report.offScale.append(s)
                 } else {
                     if consume(s) { continue }
@@ -386,6 +429,8 @@ enum TypeScan {
             (.nuruDisplay, re(#"(?<![A-Za-z0-9_])(?<!func )nuruDisplay\("#)),
             (.custom, re(#"\.custom\("#)),
             (.uiFont, re(#"UIFont\(name:"#)),
+            (.nuruUIFont, re(#"Nuru\.uiFont\("#)),
+            (.uiFont, re(#"UIFont\(descriptor:"#)),
             (.system, re(#"\.system\(size:"#)),
             (.systemStyle, re(#"\.system\(\s*\.(?:\#(textStyles))\b"#)),
             (.textStyle, re(#"(?:\.font\(\s*|(?<![A-Za-z0-9_])Font)\.(?:\#(textStyles))\b"#)),
@@ -405,6 +450,19 @@ enum TypeScan {
             while lo < hi { let mid = (lo + hi + 1) / 2; if starts[mid] <= offset { lo = mid } else { hi = mid - 1 } }
             return lo + 1
         }
+        // The file's own size constants: `let name: CGFloat = 16` (a `var` can change, so never).
+        var constants: [String: String] = [:]
+        if let cre = try? NSRegularExpression(pattern: #"\blet\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*CGFloat\s*=\s*(\d+(?:\.\d+)?)\b"#) {
+            for m in cre.matches(in: code, range: NSRange(location: 0, length: ns.length)) {
+                constants[ns.substring(with: m.range(at: 1))] = ns.substring(with: m.range(at: 2))
+            }
+        }
+        func resolve(_ arg: String) -> String {
+            let a = arg.trimmingCharacters(in: .whitespaces)
+            guard !a.isEmpty, a.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" || $0 == "." }),
+                  let last = a.split(separator: ".").last, let v = constants[String(last)] else { return arg }
+            return v
+        }
         var out: [(Int, Site)] = []
         for (kind, re) in patterns {
             for m in re.matches(in: code, range: NSRange(location: 0, length: ns.length)) {
@@ -416,13 +474,18 @@ enum TypeScan {
                 case .custom:
                     arg = labelled(ns, from: after, "size") ?? labelled(ns, from: after, "fixedSize") ?? ""
                 case .uiFont:
-                    arg = labelled(ns, from: after - "name:".count, "size") ?? ""
+                    // `UIFont(name:` or `UIFont(descriptor:` — read `size:` from the call's start.
+                    let open = ns.range(of: "(", options: [], range: m.range).location
+                    arg = labelled(ns, from: open + 1, "size") ?? ""
+                case .nuruUIFont:
+                    arg = secondArgument(ns, from: after)
                 case .systemStyle, .textStyle, .uiSystem:
                     arg = ns.substring(with: m.range)
                 }
                 let line = lineOf(m.range.location)
                 let src = line - 1 < lines.count ? lines[line - 1].trimmingCharacters(in: .whitespaces) : ""
-                out.append((m.range.location, Site(kind: kind, file: file, line: line, arg: arg, source: src)))
+                out.append((m.range.location, Site(kind: kind, file: file, line: line, arg: arg, source: src,
+                                                   resolved: kind.isSized ? resolve(arg) : nil)))
             }
         }
         return out.sorted { $0.0 < $1.0 }.map(\.1)
@@ -445,6 +508,25 @@ enum TypeScan {
             i += 1
         }
         return s.substring(with: NSRange(location: from, length: i - from)).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The second top-level argument of a call whose `(` ends just before `from`.
+    static func secondArgument(_ s: NSString, from: Int) -> String {
+        var i = from
+        // Walk past the first argument (as written, with its own nesting) to its comma.
+        var depth = 0, inString = false
+        while i < s.length {
+            let c = s.character(at: i)
+            if inString {
+                if c == 92 { i += 2; continue }
+                if c == 34 { inString = false }
+            } else if c == 34 { inString = true }
+            else if c == 40 || c == 91 || c == 123 { depth += 1 }
+            else if c == 41 || c == 93 || c == 125 { if depth == 0 { return "" }; depth -= 1 }
+            else if c == 44 && depth == 0 { break }
+            i += 1
+        }
+        return i < s.length ? firstArgument(s, from: i + 1) : ""
     }
 
     /// The value of `label:` at the top level of the call that starts at `from`.

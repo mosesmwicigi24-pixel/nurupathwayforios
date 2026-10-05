@@ -125,7 +125,7 @@ struct Avatar: View {
 
     private var initials: some View {
         Text(Self.initials(name))
-            .font(.inter(size * 0.4, .semibold))
+            .font(.inter(NuruType.snap(size * 0.4), .semibold))
             .foregroundStyle(Nuru.navyMid)
     }
 

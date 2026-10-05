@@ -278,7 +278,7 @@ struct LevelExamView: View {
                         .font(.inter(12, .semibold)).kerning(1)
                         .foregroundStyle(EX.kicker)
                     Text(q.questionText)
-                        .font(.inter(20, .bold)).kerning(-0.3)
+                        .font(.inter(18, .bold)).kerning(-0.3)
                         .foregroundStyle(EX.ink)
                         .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
@@ -675,11 +675,11 @@ private struct ExamPassScreen: View {
                     .padding(.top, 26)
                     .gentleEntrance(delay: 0.06)
                 Text("\(score)%")
-                    .font(.inter(56, .bold)).foregroundStyle(EX.gold)
+                    .font(.inter(28, .bold)).foregroundStyle(EX.gold)
                     .padding(.top, 4)
                     .gentleEntrance(delay: 0.1)
                 Text("Level \(levelNumber) Complete")
-                    .font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                    .font(.fraunces(26, .semibold)).foregroundStyle(.white)
                     .padding(.top, 6)
                     .gentleEntrance(delay: 0.18)
                 // §1.9 (new): passing no longer auto-advances — the member now waits
@@ -786,10 +786,10 @@ private struct ExamScoreBreakdown: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("YOUR LEVEL SCORE").font(.inter(10.5, .bold)).kerning(1.6)
+                Text("YOUR LEVEL SCORE").font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(EX.gold.opacity(0.7))
                 Spacer(minLength: 0)
-                Text("\(score.total)").font(.fraunces(20, .semibold)).foregroundStyle(EX.gold)
+                Text("\(score.total)").font(.fraunces(22, .semibold)).foregroundStyle(EX.gold)
                 Text("/ 100").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.5))
             }
             row("Exam", score.exam.score, score.exam.of)
@@ -805,7 +805,7 @@ private struct ExamScoreBreakdown: View {
     private func row(_ label: String, _ got: Int, _ of: Int) -> some View {
         VStack(spacing: 5) {
             HStack {
-                Text(label).font(.inter(12.5, .semibold)).foregroundStyle(.white.opacity(0.8))
+                Text(label).font(.inter(13, .semibold)).foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 0)
                 Text("\(got) / \(of)").font(.inter(12, .bold)).foregroundStyle(EX.goldLight)
             }
@@ -842,7 +842,7 @@ private struct ExamFailScreen: View {
                     .foregroundStyle(EX.copy)
                     .padding(.top, 22)
                 Text("\(score)%")
-                    .font(.inter(44, .bold)).foregroundStyle(EX.ink)
+                    .font(.inter(28, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 4)
                 Text("Not yet — and that's okay")
                     .font(.inter(22, .bold)).foregroundStyle(EX.ink)

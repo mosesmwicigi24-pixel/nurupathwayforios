@@ -1080,14 +1080,16 @@ struct GivingView: View {
     private func methodBadge(_ m: PayMethod) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(hex: m.badgeBg)).frame(width: 40, height: 40)
+                .fill(Color(hex: m.badgeBg)).frame(width: 52, height: 40)
             if let icon = m.icon {
                 Icon(icon, size: 18, color: Color(hex: m.badgeFg))
             } else {
+                // The rail's short name whole, at the 11 pt floor (§8.1 rule 3) —
+                // the badge is wide enough that it never shrinks under it.
                 Text(m.badgeText)
-                    .font(.inter(m.badgeText.count > 3 ? 8 : 11, .heavy)).kerning(-0.2)
+                    .font(.inter(11, .heavy)).kerning(-0.2)
                     .foregroundStyle(Color(hex: m.badgeFg))
-                    .minimumScaleFactor(0.5).lineLimit(1).padding(.horizontal, 2)
+                    .lineLimit(1).fixedSize()
             }
         }
     }

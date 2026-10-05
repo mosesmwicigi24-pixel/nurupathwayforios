@@ -78,7 +78,7 @@ struct VerseTableauHeader: View {
                         .foregroundStyle(Color(hex: 0xF2DDA0))
                     Spacer(minLength: 0)
                     Text(version.uppercased())
-                        .font(.inter(10, .bold)).kerning(1).foregroundStyle(.white)
+                        .font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(.white.opacity(0.16), in: Capsule())
                         .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
@@ -154,7 +154,7 @@ struct VerseShareCard: View {
             ], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 10) {
                 Text("\u{201C}\(verseText)\u{201D}")
-                    .font(.fraunces(verseText.count > 200 ? 17 : 21))
+                    .font(.fraunces(verseText.count > 200 ? 18 : 22))
                     .foregroundStyle(.white).nuruLineSpacing(5)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("\(reference) · \(version.uppercased())")
@@ -165,7 +165,7 @@ struct VerseShareCard: View {
                         RoundedRectangle(cornerRadius: 1).fill(Nuru.gold).frame(width: 2.5, height: 12)
                         RoundedRectangle(cornerRadius: 1).fill(Nuru.gold).frame(width: 9, height: 2.5).offset(y: -2)
                     }
-                    Text("Nuru Pathway").font(.inter(11.5, .semibold)).foregroundStyle(.white.opacity(0.8))
+                    Text("Nuru Pathway").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
                 }
                 .padding(.top, 2)
             }

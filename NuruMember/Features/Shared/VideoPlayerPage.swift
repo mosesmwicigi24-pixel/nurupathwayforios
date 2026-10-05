@@ -85,7 +85,7 @@ struct VideoPlayerPage: View {
                     .font(.inter(11, .semibold)).kerning(1.5)
                     .foregroundStyle(Nuru.gold)
                 Text(title)
-                    .font(.fraunces(30, .semibold))
+                    .font(.fraunces(28, .semibold))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
                 if let summary, !summary.isEmpty {

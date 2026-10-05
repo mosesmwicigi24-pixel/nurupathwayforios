@@ -197,7 +197,6 @@ struct ScripturePassageText: View {
     /// saved under "Book C:V" built from these. Nil disables saving.
     var reference: String? = nil
     var version: String? = nil
-    var size: CGFloat = 16
     @Environment(\.readerPalette) private var pal
     @State private var note: String?
 
@@ -277,11 +276,11 @@ struct ScripturePassageText: View {
 
     private func attributed(_ v: Verse) -> AttributedString {
         var attr = AttributedString(v.body)
-        attr.font = .fraunces(pal.fs(size), .regular)
+        attr.font = .fraunces(pal.fs(16), .regular)   // the 16 reading body
         attr.foregroundColor = pal.ink
         guard let n = v.number else { return attr }
         var num = AttributedString(n + " ")
-        num.font = .inter(pal.fs(10), .bold)
+        num.font = .inter(pal.fs(11), .bold)
         num.foregroundColor = pal.gold
         num.baselineOffset = 5
         return num + attr
@@ -348,7 +347,7 @@ struct ScriptureRefCard: View {
             } label: {
                 HStack(spacing: 10) {
                     Icon(.bookOpen, size: 15, color: pal.goldDeep)
-                    Text(reference).font(.inter(pal.fs(13.5), .semibold)).foregroundStyle(pal.ink)
+                    Text(reference).font(.inter(pal.fs(14), .semibold)).foregroundStyle(pal.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     if loader.loading {
@@ -368,7 +367,7 @@ struct ScriptureRefCard: View {
                     HStack(alignment: .top, spacing: 12) {
                         RoundedRectangle(cornerRadius: 2).fill(pal.gold).frame(width: 3)
                         VStack(alignment: .leading, spacing: 8) {
-                            ScripturePassageText(text: p.text, reference: reference, version: p.version, size: 16)
+                            ScripturePassageText(text: p.text, reference: reference, version: p.version)
                             Text(passageCaption(p).uppercased())
                                 .font(.inter(10.5, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
@@ -439,7 +438,7 @@ struct ScripturePassageSheet: View {
                     .background(PL.gold.opacity(0.14), in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SCRIPTURE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
-                    Text(reference).font(.fraunces(pal.fs(20), .medium)).kerning(-0.4).foregroundStyle(pal.ink)
+                    Text(reference).font(.fraunces(pal.fs(18), .medium)).kerning(-0.4).foregroundStyle(pal.ink)
                 }
                 Spacer(minLength: 8)
                 Button { dismiss() } label: {
@@ -456,7 +455,7 @@ struct ScripturePassageSheet: View {
                     if let p = loader.passage {
                         HStack(alignment: .top, spacing: 12) {
                             RoundedRectangle(cornerRadius: 2).fill(pal.gold).frame(width: 3)
-                            ScripturePassageText(text: p.text, reference: reference, version: p.version, size: 17)
+                            ScripturePassageText(text: p.text, reference: reference, version: p.version)
                         }
                         if !p.version.isEmpty {
                             Text(p.version.uppercased())
@@ -491,7 +490,6 @@ struct ScripturePassageSheet: View {
 /// link. The parent's `openURL` handler decides what a tap opens.
 struct ScriptureLinkedText: View {
     let text: String
-    var size: CGFloat = 16
     @Environment(\.readerPalette) private var pal
 
     var body: some View {
@@ -504,12 +502,12 @@ struct ScriptureLinkedText: View {
 
     private var attributed: AttributedString {
         var attr = AttributedString(text)
-        attr.font = .inter(pal.fs(size), .medium)
+        attr.font = .inter(pal.fs(16), .medium)   // the 16 reading body
         attr.foregroundColor = pal.ink
         for m in ScriptureRefs.detect(in: text) {
             guard let ar = Range(m.nsRange, in: attr), let url = ScriptureRefs.url(for: m.reference) else { continue }
             attr[ar].link = url
-            attr[ar].font = .inter(pal.fs(size), .semibold)
+            attr[ar].font = .inter(pal.fs(16), .semibold)
             attr[ar].foregroundColor = pal.goldDeep
             attr[ar].underlineStyle = .single
         }

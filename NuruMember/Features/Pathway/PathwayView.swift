@@ -376,7 +376,7 @@ private struct PathwayHubHeader: View {
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
                           track: PW.navy.opacity(0.10))
                     Text("\(active.map { min($0.lessonsDone, $0.lessonCount) } ?? 0)/\(active?.lessonCount ?? 0)")
-                        .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
                         .contentTransition(.numericText())
                         .animation(.default, value: active?.lessonsDone)
                 }.padding(.top, 16)
@@ -384,7 +384,7 @@ private struct PathwayHubHeader: View {
                     HStack(spacing: 6) {
                         Icon(.sparkles, size: 11, color: Color(hex: 0x9A7A2A))
                         Text(remaining == 1 ? "Just 1 module left to level up 🎉" : "Only \(remaining) modules to complete this level")
-                            .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                            .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }.padding(.top, 8)
                 }
                 continueCard.padding(.top, 16)
@@ -403,7 +403,7 @@ private struct PathwayHubHeader: View {
                 if vm.streak > 0 {
                     HStack(spacing: 4) {
                         Icon(.flame, size: 9, color: Color(hex: 0x9A7A2A))
-                        Text("\(vm.streak)-day streak").font(.inter(9, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                        Text("\(vm.streak)-day streak").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(Color.white, in: Capsule())
@@ -432,7 +432,7 @@ private struct PathwayHubHeader: View {
                     .background(PW.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text((journey?.kicker ?? "Your pathway").uppercased())
-                        .font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight).lineLimit(1)
+                        .font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight).lineLimit(1)
                     Text(journey?.title ?? "Your pathway").font(.inter(14, .semibold)).foregroundStyle(.white).lineLimit(2)
                     if let line = journey?.line {
                         Text(line).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
@@ -489,7 +489,7 @@ private struct PWHeaderRing: View {
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
-            Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+            Text("\(pct)%").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 .contentTransition(.numericText())
                 .animation(.default, value: pct)
         }
@@ -520,7 +520,7 @@ private struct PathwayAwaitingBanner: View {
             .frame(width: 48, height: 48)
             VStack(alignment: .leading, spacing: 3) {
                 Text("AWAITING YOUR DISCIPLER")
-                    .font(.inter(9, .bold)).kerning(1.4).foregroundStyle(PW.goldLight)
+                    .font(.inter(11, .bold)).kerning(1.4).foregroundStyle(PW.goldLight)
                 Text("Level \(level.levelNumber) complete")
                     .font(.inter(14, .bold)).foregroundStyle(.white)
                 Text("Awaiting your discipler's blessing to continue.")
@@ -558,7 +558,7 @@ private struct PathwayDisciplershipRow: View {
                     Icon(.heartHandshake, size: 20, color: PW.navy)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("WALK WITH YOUR DISCIPLER").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
+                    Text("WALK WITH YOUR DISCIPLER").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
                     Text("Your Discipleship Hub").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
                     Text("Message, feedback & meeting notes").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
                 }
@@ -588,7 +588,7 @@ private struct PathwayWalkRow: View {
                     Icon(.flag, size: 20, color: PW.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("EVERY STEP, REMEMBERED").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
+                    Text("EVERY STEP, REMEMBERED").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
                     Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
                     Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
                 }
@@ -634,10 +634,10 @@ private struct PathwayJourneyRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("THE JOURNEY · \(levels.count) LEVELS").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
+                Text("THE JOURNEY · \(levels.count) LEVELS").font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
                 Spacer()
                 Button { Haptics.tap(); onMap() } label: {
-                    Text("Map view").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                    Text("Map view").font(.inter(11, .bold)).foregroundStyle(PW.gold)
                         .padding(.vertical, 10).padding(.leading, 16)
                         .contentShape(Rectangle())
                 }
@@ -681,7 +681,7 @@ private struct PWJourneyNode: View {
     var body: some View {
         Button(action: onTap) {
             VStack(spacing: 6) {
-                Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(7, .bold)).kerning(0.7)
+                Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(11, .bold)).kerning(0.7)
                     .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(height: 10)
                 // The level NUMBER never leaves the circle — completion becomes a
                 // corner check-seal; locked levels keep their number with a lock-seal.
@@ -722,7 +722,7 @@ private struct PWJourneyNode: View {
                 }
                 .overlay { if selected { Circle().stroke(PW.gold, lineWidth: 2).frame(width: 54, height: 54) } }
                 Text(pwShortName(level.title))
-                    .font(.inter(9, active ? .bold : .medium))
+                    .font(.inter(11, active ? .bold : .medium))
                     .foregroundStyle(active ? PW.navy : (upNext ? PW.goldDeep : PW.ink2))
                     .lineLimit(1)
             }
@@ -814,13 +814,13 @@ private struct PathwaySelectedModules: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(level.title.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).lineLimit(1)
+                    Text(level.title.uppercased()).font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).lineLimit(1)
                     Text("\(min(level.lessonsDone, level.lessonCount)) of \(level.lessonCount) done").font(.inter(11)).foregroundStyle(PW.ink2)
                 }
                 Spacer()
                 if let r = resumeShown {
                     Button { Haptics.tap(); openModule(r.moduleId) } label: {
-                        Text("Continue →").font(.inter(10, .bold)).foregroundStyle(PW.gold)
+                        Text("Continue →").font(.inter(11, .bold)).foregroundStyle(PW.gold)
                             .padding(.vertical, 10).padding(.leading, 16)
                             .contentShape(Rectangle())
                     }
@@ -962,12 +962,12 @@ private struct PWModuleRow: View {
                 Text(module.title).font(.inter(13, (active || isExam) ? .bold : .medium))
                     .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
                 Text(caption)
-                    .font(.inter(9, (active || isExam) ? .bold : .medium))
+                    .font(.inter(11, (active || isExam) ? .bold : .medium))
                     .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
             }
             Spacer(minLength: 0)
             if active {
-                Text(isExam ? "Start exam" : "Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                Text(isExam ? "Start exam" : "Resume").font(.inter(11, .bold)).foregroundStyle(PW.gold)
                     .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
             } else if done {
                 Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
@@ -1041,7 +1041,7 @@ private struct PWAwaitingRow: View {
                 Text("Level \(levelNumber) complete")
                     .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
                 Text("Awaiting your discipler's blessing to continue")
-                    .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
+                    .font(.inter(11, .semibold)).foregroundStyle(PW.goldDeep)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -1075,9 +1075,9 @@ private struct PathwayMilestones: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("MILESTONES").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
+                Text("MILESTONES").font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
                 Spacer()
-                Text("\(earned) earned").font(.inter(9, .semibold)).foregroundStyle(PW.ink3)
+                Text("\(earned) earned").font(.inter(11, .semibold)).foregroundStyle(PW.ink3)
             }.padding(.horizontal, 4)
             if let r = reward, r.remaining > 0 { nextRewardCard(r) }
             ScrollView(.horizontal, showsIndicators: false) {
@@ -1097,11 +1097,11 @@ private struct PathwayMilestones: View {
                     .frame(width: 48, height: 48)
                     .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("NEXT REWARD").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
+                    Text("NEXT REWARD").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
                     Text("The “\(r.name)” badge").font(.inter(13, .bold)).foregroundStyle(.white).lineLimit(1)
                     HStack(spacing: 8) {
                         PWBar(pct: r.pct, height: 6, fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing), track: Color.white.opacity(0.16))
-                        Text("\(r.remaining) to go").font(.inter(9, .semibold)).foregroundStyle(.white.opacity(0.7))
+                        Text("\(r.remaining) to go").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.7))
                     }
                 }
                 Spacer(minLength: 0)
@@ -1125,7 +1125,7 @@ private struct PWRewardBadge: View {
                 .background(earned ? Color.white : PW.mutedBg, in: Circle())
                 .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
                 .grayscale(earned ? 0 : 1).opacity(earned ? 1 : 0.7)
-            Text(name).font(.inter(9, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+            Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
             if earned {
                 HStack(spacing: 1) {
                     ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 8)).foregroundStyle(PW.gold) }
@@ -1162,11 +1162,11 @@ private struct PWSurrenderFigure: View {
             }
             LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.15), Color(hex: 0x081424, alpha: 0.55), Color(hex: 0x081424, alpha: 0.90)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 2) {
-                Text("PAUSE & SURRENDER").font(.inter(7, .bold)).kerning(1.54).foregroundStyle(PW.goldLight)
+                Text("PAUSE & SURRENDER").font(.inter(11, .bold)).kerning(1.54).foregroundStyle(PW.goldLight)
                 Text("“Offer yourselves as a living sacrifice, holy and pleasing to God.”")
                     .font(.fraunces(12, .medium)).italic().foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Romans 12:1 · Surrender to His Word").font(.inter(8, .semibold)).foregroundStyle(.white.opacity(0.65))
+                Text("Romans 12:1 · Surrender to His Word").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.65))
             }
             .padding(14)
         }
@@ -1196,7 +1196,7 @@ private struct PathwaySummitCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("THE SUMMIT · WHERE THIS ROAD LEADS")
-                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).padding(.horizontal, 4)
+                .font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).padding(.horizontal, 4)
             card
         }
         // First time the summit is truly reached → a real celebration (once ever;
@@ -1236,7 +1236,7 @@ private struct PathwaySummitCard: View {
     private var statusChip: some View {
         HStack(spacing: 4) {
             if reached { Image(systemName: "star.fill").font(.system(size: 10)) } else { Icon(.lock, size: 10, color: .white) }
-            Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(9, .bold)).kerning(1)
+            Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(11, .bold)).kerning(1)
         }
         .foregroundStyle(reached ? PW.navy : .white)
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -1253,14 +1253,14 @@ private struct PathwaySummitCard: View {
                 Icon(.award, size: 24, color: reached ? PW.goldLight : PW.gold.opacity(0.75))
             }
             .padding(.bottom, 10)
-            Text("COMMISSIONED").font(.inter(10, .bold)).kerning(2.4).foregroundStyle(PW.goldLight)
+            Text("COMMISSIONED").font(.inter(11, .bold)).kerning(2.4).foregroundStyle(PW.goldLight)
             // The actual charge, not a caption — the words carry the weight.
             Text("“Go therefore and make disciples of all nations…”")
-                .font(.fraunces(19, .semibold)).italic().kerning(-0.2)
+                .font(.fraunces(18, .semibold)).italic().kerning(-0.2)
                 .foregroundStyle(.white).multilineTextAlignment(.center).lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
-            Text("MATTHEW 28:19").font(.inter(9, .bold)).kerning(1.8)
+            Text("MATTHEW 28:19").font(.inter(11, .bold)).kerning(1.8)
                 .foregroundStyle(.white.opacity(0.75)).padding(.top, 4)
             // The road itself: one dot per level, gold when walked.
             HStack(spacing: 8) {
@@ -1355,7 +1355,7 @@ struct LevelsMapView: View {
                 HStack(alignment: .bottom, spacing: 16) {
                     VStack(alignment: .leading, spacing: 0) {
                         Text("Your pathway is unfolding.")
-                            .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
+                            .font(.fraunces(28, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
                         Text("A calm view of your discipleship journey, saved progress, and what opens next.")
                             .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
                             .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
@@ -1409,7 +1409,7 @@ private struct PWProgressRing: View {
                 Text("\(pct)%").font(.fraunces(18, .medium)).kerning(-0.72).foregroundStyle(PW.navy)
                     .contentTransition(.numericText())
                     .animation(.default, value: pct)
-                Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x74808F))
+                Text("DONE").font(.inter(11, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x74808F))
                     .padding(.top, -1)
             }
         }
@@ -1429,7 +1429,7 @@ private struct PWStatCard: View {
     let value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(label.uppercased()).font(.inter(10, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+            Text(label.uppercased()).font(.inter(11, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
             Text(value).font(.inter(16, .bold)).kerning(-0.32).foregroundStyle(PW.navy).padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1525,7 +1525,7 @@ private struct PWLevelCard: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .center) {
-                        Text("LEVEL \(level.levelNumber)").font(.inter(10, .medium)).kerning(1.4).foregroundStyle(PW.goldDeep)
+                        Text("LEVEL \(level.levelNumber)").font(.inter(11, .medium)).kerning(1.4).foregroundStyle(PW.goldDeep)
                         Spacer(minLength: 0)
                         statusPill
                     }
@@ -1589,7 +1589,7 @@ private struct PWLevelCard: View {
             if isActive    { return ("Active", Color(hex: 0xDDF4C6), Color(hex: 0x22612A)) }
             return ("Locked", PW.mutedBg, PW.ink3)
         }()
-        return Text(label).font(.inter(10, .medium)).foregroundStyle(fg)
+        return Text(label).font(.inter(11, .medium)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(bg, in: Capsule())
     }

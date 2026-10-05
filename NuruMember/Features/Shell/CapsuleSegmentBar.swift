@@ -59,7 +59,7 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
                 // Unread only — a quiet chip (no number) IS "nothing waiting",
                 // matching Chat's own segment chips exactly.
                 if count > 0 {
-                    Text(count > 9 ? "9+" : "\(count)").font(.inter(10, .bold))
+                    Text(count > 9 ? "9+" : "\(count)").font(.inter(11, .bold))
                         .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .frame(minWidth: 18)
