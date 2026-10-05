@@ -115,6 +115,27 @@ enum GivingRails {
         for k in server where seen.insert(k).inserted { out.append(k) }
         return out
     }
+
+    /// The rails Give lists (the Cycle 3 walk's E7; §2): only those that can
+    /// take this gift — enabled on the server, completable by this build, in
+    /// the pledge's currency when paying one. Never a "SOON" row.
+    static func listed(_ m: GivingMethods, onlyCurrency: String? = nil) -> [String] {
+        m.offered(onlyCurrency: onlyCurrency).map(\.key).filter { m.isSelectable($0, onlyCurrency: onlyCurrency) }
+    }
+
+    /// `order` with the listed rail at `index` moved one place past its listed
+    /// neighbour; unlisted rails keep their place, unseen.
+    static func moved(_ order: [String], listed: [String], from index: Int, by delta: Int) -> [String] {
+        let to = index + delta
+        guard listed.indices.contains(index), listed.indices.contains(to) else { return order }
+        let key = listed[index], neighbour = listed[to]
+        var arr = order
+        guard let from = arr.firstIndex(of: key) else { return order }
+        arr.remove(at: from)
+        guard let n = arr.firstIndex(of: neighbour) else { return order }
+        arr.insert(key, at: delta > 0 ? n + 1 : n)
+        return arr
+    }
 }
 
 extension GivingMethods {

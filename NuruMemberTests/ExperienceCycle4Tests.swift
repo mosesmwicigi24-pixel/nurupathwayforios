@@ -522,6 +522,27 @@ final class ExperienceCycle4Tests: XCTestCase {
         XCTAssertTrue(view.contains("PlansPrimaryLabel(text: \"Continue · Day"), "the plan in progress holds the gold")
     }
 
+    // MARK: Cycle 3 close walk E7 — Give lists only rails that work
+
+    func testGiveListsOnlyTheRailsThatCanTakeTheGift() {
+        func rail(_ key: String, _ enabled: Bool, _ currency: String, reason: String? = nil) -> GivingMethod {
+            GivingMethod(key: key, label: key, enabled: enabled, unavailableReason: reason, currency: currency,
+                         minMinor: 100, maxMinor: 1_000_000, wholeUnits: true, recurring: true, needsPhone: key == "mpesa")
+        }
+        let m = GivingMethods(methods: [rail("mpesa", true, "KES"), rail("airtel", false, "KES", reason: "coming_soon"),
+                                        rail("paypal", false, "USD", reason: "coming_soon"), rail("card", true, "KES")],
+                              phoneOnFile: nil, defaultMethod: "mpesa")
+        XCTAssertEqual(GivingRails.listed(m), ["mpesa"], "no SOON rows, and no card this build can't complete")
+        XCTAssertEqual(GivingRails.listed(m, onlyCurrency: "USD"), [], "a USD pledge with PayPal off lists nothing (the note says why)")
+        let both = GivingMethods(methods: [rail("mpesa", true, "KES"), rail("airtel", false, "KES"), rail("paypal", true, "KES")],
+                                 phoneOnFile: nil, defaultMethod: "mpesa")
+        XCTAssertEqual(GivingRails.listed(both), ["mpesa", "paypal"])
+        XCTAssertEqual(GivingRails.moved(["mpesa", "airtel", "paypal"], listed: ["mpesa", "paypal"], from: 1, by: -1),
+                       ["paypal", "mpesa", "airtel"], "one tap moves a rail past its listed neighbour")
+        XCTAssertEqual(GivingRails.moved(["mpesa", "airtel", "paypal"], listed: ["mpesa", "paypal"], from: 0, by: 1),
+                       ["airtel", "paypal", "mpesa"])
+    }
+
     func testOneDateShapeWithTheYearOnlyWhenItIsNotThisYear() throws {
         let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
         let now = try XCTUnwrap(NuruDates.parse("2026-10-05T12:00:00Z"))

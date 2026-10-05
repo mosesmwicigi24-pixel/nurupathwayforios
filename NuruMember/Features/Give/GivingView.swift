@@ -454,10 +454,13 @@ struct GivingView: View {
     /// The server's rails in the member's order, each with its paint — the
     /// shilling rails only while paying a pledge or need (pledges are in
     /// shillings; a dollar payment would count against a shilling promise).
+    /// The rails Give lists: only those that can take this gift (§2: never
+    /// name a rail the member can't use — the Cycle 3 walk's E7 found "Pay
+    /// with Airtel Money · SOON", "PayPal · SOON", "Card · SOON").
     private var orderedMethods: [MethodRow] {
-        let offered = Set(vm.methods.offered(onlyCurrency: payRailsCurrency).map(\.key))
+        let shown = Set(GivingRails.listed(vm.methods, onlyCurrency: payRailsCurrency))
         return methodOrder.compactMap { k in
-            guard offered.contains(k) else { return nil }
+            guard shown.contains(k) else { return nil }
             return vm.methods.method(k).map { MethodRow(look: methodLook($0), rail: $0) }
         }
     }
@@ -995,25 +998,36 @@ struct GivingView: View {
     // MARK: Pay methods
 
     private var methodSection: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+        let rails = orderedMethods
+        return VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack {
-                overline("CHOOSE HOW TO PAY")
+                overline(rails.count == 1 ? "HOW YOU'LL PAY" : "CHOOSE HOW TO PAY")
                 Spacer()
-                HStack(spacing: 4) {
-                    Icon(.gripVertical, size: 11, color: Color(hex: 0x74808F))
-                    Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                // Order is a choice only between two or more.
+                if rails.count > 1 {
+                    HStack(spacing: 4) {
+                        Icon(.gripVertical, size: 11, color: Color(hex: 0x74808F))
+                        Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                    }
                 }
             }
+            if rails.isEmpty {
+                // Nothing can take this gift from this phone: say so, in place.
+                Text(payRailsCurrency.map { vm.methods.unavailableNote(forCurrency: $0) }
+                     ?? "Giving from this phone isn't available right now.")
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             VStack(spacing: Nuru.S.sm) {
-                ForEach(Array(orderedMethods.enumerated()), id: \.element.id) { idx, m in
-                    methodRow(m, index: idx)
+                ForEach(Array(rails.enumerated()), id: \.element.id) { idx, m in
+                    methodRow(m, index: idx, reorderable: rails.count > 1)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func methodRow(_ m: MethodRow, index: Int) -> some View {
+    private func methodRow(_ m: MethodRow, index: Int, reorderable: Bool) -> some View {
         // A rail the server says cannot take money here (or this build cannot
         // complete) wears SOON / UNAVAILABLE and cannot be picked.
         let badge = vm.methods.unavailableBadge(m.key)
@@ -1051,17 +1065,19 @@ struct GivingView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            VStack(spacing: 2) {
-                Button { nudgeMethod(from: index, by: -1) } label: {
-                    Icon(.chevronUp, size: 14, color: Nuru.ink300)
-                        .frame(width: 26, height: 22).contentShape(Rectangle())   // easier to hit
-                }.buttonStyle(.plain).disabled(index == 0)
-                Button { nudgeMethod(from: index, by: 1) } label: {
-                    Icon(.chevronDown, size: 14, color: Nuru.ink300)
-                        .frame(width: 26, height: 22).contentShape(Rectangle())
-                }.buttonStyle(.plain).disabled(index == orderedMethods.count - 1)
+            if reorderable {
+                VStack(spacing: 2) {
+                    Button { nudgeMethod(from: index, by: -1) } label: {
+                        Icon(.chevronUp, size: 14, color: Nuru.ink300)
+                            .frame(width: 26, height: 22).contentShape(Rectangle())   // easier to hit
+                    }.buttonStyle(.plain).disabled(index == 0)
+                    Button { nudgeMethod(from: index, by: 1) } label: {
+                        Icon(.chevronDown, size: 14, color: Nuru.ink300)
+                            .frame(width: 26, height: 22).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(index == orderedMethods.count - 1)
+                }
+                Icon(.gripVertical, size: 18, color: Color(hex: 0xC4C9D0))
             }
-            Icon(.gripVertical, size: 16, color: Color(hex: 0xC4C9D0))
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1949,17 +1965,10 @@ struct GivingView: View {
         }
     }
 
+    /// Moves a listed rail past its listed neighbour — rails not listed (they
+    /// can't take this gift) keep their place in the saved order unseen.
     private func moveMethod(from index: Int, by delta: Int) {
-        let to = index + delta
-        guard to >= 0, to < methodOrder.count else { return }
-        var arr = methodOrder
-        // map ordered index back to underlying key
-        let key = orderedMethods[index].key
-        if let realIdx = arr.firstIndex(of: key) {
-            arr.remove(at: realIdx)
-            arr.insert(key, at: max(0, min(arr.count, realIdx + delta)))
-            methodOrder = arr
-        }
+        methodOrder = GivingRails.moved(methodOrder, listed: orderedMethods.map(\.key), from: index, by: delta)
     }
 
     // MARK: Helpers
