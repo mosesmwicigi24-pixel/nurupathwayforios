@@ -84,7 +84,6 @@ private func nextReward(_ s: PathwaySummary) -> PWReward? {
 @MainActor
 final class PathwayViewModel: ObservableObject {
     @Published var summary: PathwaySummary?
-    @Published var streak = 0
     @Published var modulesByLevel: [Int: [LevelModule]] = [:]   // real module trails, cached per level
     @Published var loading = true
     /// Why the pathway didn't load — spoken through the one state language
@@ -99,7 +98,6 @@ final class PathwayViewModel: ObservableObject {
             summary = nil
             failure = error
         }
-        streak = (try? await MemberAPI.achievements())?.streak?.current ?? 0
         // The current level's trail is re-read on every load (pull-to-refresh
         // included): the journey's next step is read from it.
         if let current = summary?.currentLevel { await fetchModules(current, force: true) }
@@ -404,18 +402,9 @@ private struct PathwayHubHeader: View {
 
     private var topBar: some View {
         HStack {
-            HStack(spacing: 8) {
-                Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
-                if vm.streak > 0 {
-                    HStack(spacing: 4) {
-                        Icon(.flame, size: 14, color: Color(hex: 0x9A7A2A))
-                        Text("\(vm.streak)-day streak").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(PW.border, lineWidth: 1))
-                }
-            }
+            // (The streak is named on Home's rhythm card and Plans, not here
+            // — one streak, §9.2 #3.)
+            Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
             Spacer()
             HStack(spacing: 8) {
                 // The one bell (§7.2 #4) — it was decorative here, opening

@@ -106,27 +106,34 @@ struct PLPulseRing: View {
 
 // MARK: - streak words (EXPERIENCE.md §8.2 #5)
 
-/// The streak in Android's words, on both apps — "0-day streak · Read today
-/// to start your streak 🔥". iOS said "0 days with God", and the card cut it
-/// to "0 days wi…". One fact, one phrasing, wherever the streak shows.
+/// The one streak (EXPERIENCE.md §8.2 #5, §9.2 #3) in Android's words, on
+/// both apps: the server's count of days with God (any prayer, Word or
+/// reflection — GET /me/achievements, recomputed overnight, so it doesn't
+/// hold today yet). Home's rhythm card and the Plans card showed it under
+/// two counts — "Start today" on Home beside a done Word, "1-day streak" on
+/// Plans. Both now count and name it by these rules. No emoji in the words
+/// (§8.1 rule 7): the card's flame is its tile.
 enum StreakWords {
     static func title(_ count: Int) -> String { "\(max(0, count))-day streak" }
     static func line(_ count: Int) -> String {
-        count > 0 ? "Read today to keep it alive 🔥" : "Read today to start your streak 🔥"
+        count > 0 ? "Read today to keep it alive" : "Read today to start your streak"
     }
 
-    /// The count beside the week (§7.4 #4). The server recomputes the streak
-    /// overnight, so a day sealed today may not be in it yet — but a sealed
-    /// day IS a day of the streak: a tick never sits beside "0-day streak".
-    static func count(_ server: Int, todayDone: Bool) -> Int {
-        todayDone ? max(server, 1) : max(0, server)
+    /// The streak as shown: today counts once the member was active today —
+    /// at least 1 beside today's mark, never 0.
+    static func days(_ server: Int, activeToday: Bool) -> Int {
+        activeToday ? max(server, 1) : max(0, server)
     }
+
+    /// The count beside the week (§7.4 #4): a day sealed today is a day of
+    /// the streak — a tick never sits beside "0-day streak".
+    static func count(_ server: Int, todayDone: Bool) -> Int { days(server, activeToday: todayDone) }
 
     /// The line under the title: done once today's day is sealed; today's
     /// progress while it is under way ("Today: 2 of 3 parts"); else the
     /// invitation.
     static func line(_ count: Int, todayDone: Bool, today: String?) -> String {
-        if todayDone { return "Today's reading is done 🔥" }
+        if todayDone { return "Today's reading is done" }
         if let today, !today.isEmpty { return today }
         return line(count)
     }
@@ -145,12 +152,16 @@ struct PLStreakStrip: View {
     let count: Int
     let todayDone: Bool
     var today: String? = nil
+    /// The member was active today (any of the rhythm — GET
+    /// /me/rhythm/today): the one streak counts today, as Home counts it.
+    var activeToday: Bool = false
 
     private static let week = ["S", "M", "T", "W", "T", "F", "S"]
     private static let goal = 7
     private var todayIdx: Int { Calendar.current.component(.weekday, from: Date()) - 1 }
-    /// The streak as shown — never 0 beside today's tick.
-    private var shown: Int { StreakWords.count(count, todayDone: todayDone) }
+    /// The streak as shown — the one streak's count (StreakWords.days): a
+    /// day read, or any of the rhythm done today, counts today.
+    private var shown: Int { StreakWords.days(count, activeToday: todayDone || activeToday) }
     private var toReward: Int { max(Self.goal - shown, 0) }
     private var pct: Double { min(Double(shown) / Double(Self.goal), 1) }
 

@@ -473,15 +473,25 @@ struct HomeWeekChain: View {
     let todayDone: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
-    private static let days = ["M", "T", "W", "T", "F", "S", "S"]
+    /// One first day of the week on every strip (EXPERIENCE.md §9.1 rule 8):
+    /// Sunday, as Plans' streak strip and the month calendar — and Android's.
+    /// It started on Monday here.
+    static let days = ["S", "M", "T", "W", "T", "F", "S"]
+
+    /// Today's place in a Sunday-first week (Sun = 0).
+    static func todayIndex(_ now: Date = Date(), calendar: Calendar = .current) -> Int {
+        calendar.component(.weekday, from: now) - 1
+    }
 
     var body: some View {
-        // Monday-first index of today (Sun=6).
-        let todayIdx = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
+        let todayIdx = Self.todayIndex()
+        // The days before today that the streak covers (today is one of them
+        // once it counts).
+        let back = max(todayDone ? streakDays - 1 : streakDays, 0)
         HStack(spacing: 0) {
             ForEach(0..<7, id: \.self) { i in
                 let isToday = i == todayIdx
-                let isPastDone = i < todayIdx && todayIdx - i <= streakDays
+                let isPastDone = i < todayIdx && todayIdx - i <= back
                 let isDone = isPastDone || (isToday && todayDone)
                 VStack(spacing: 4) {
                     Text(Self.days[i]).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0xB8BFC9))

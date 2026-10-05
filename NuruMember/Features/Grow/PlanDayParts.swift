@@ -156,3 +156,48 @@ extension PlanDayUnlockAck {
                                      nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
     }
 }
+
+/// One story about today for the plan being read, on Home and on Plans
+/// (EXPERIENCE.md §9.2 #3): its day is "today's reading" only while today's
+/// reading is still to do; once a day of it was finished today, it is done
+/// for today and the next day waits — "Day 3 done today · Day 4 next". Home
+/// said "Day 4 of 7 · today's reading" beside Plans' "Today's reading is
+/// done". Pure; Android's planTodayLine / planCardLine, word for word.
+enum PlanLines {
+    /// The day to read — the server's `current_day` (it moves past every
+    /// finished day, never beyond the last), else the one after the finished
+    /// days; held to 1…the plan's length.
+    static func day(_ p: ReadingPlanRow) -> Int {
+        let raw = p.currentDay ?? ((p.completedDays?.count ?? 0) + 1)
+        return min(max(1, raw), max(1, p.dayCount))
+    }
+
+    /// A day of this plan was finished today, on the church's (Nairobi)
+    /// calendar — by the server's `last_day_finished_at` (any phone), or by
+    /// this phone's own note of a day it sealed.
+    static func readToday(_ p: ReadingPlanRow, sealedHere: Bool = false, now: Date = Date()) -> Bool {
+        if sealedHere { return true }
+        guard let at = p.lastDayFinishedAt.flatMap(StreakToday.date) else { return false }
+        return PlanPicks.nairobiDay(at) == PlanPicks.nairobiDay(now)
+    }
+
+    /// Home's YOUR WEEK line.
+    static func todayLine(_ p: ReadingPlanRow, readToday: Bool, now: Date = Date()) -> String {
+        doneLine(p, readToday: readToday, now: now) ?? "Day \(day(p)) of \(p.dayCount) · today's reading"
+    }
+
+    /// The Plans tab's continue card: the same story as Home's row, else
+    /// "Today · " and the plan's own subtitle.
+    static func cardLine(_ p: ReadingPlanRow, readToday: Bool, now: Date = Date()) -> String {
+        if let line = doneLine(p, readToday: readToday, now: now) { return line }
+        let sub = (p.subtitle ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        return "Today · " + (sub.isEmpty ? "Day \(day(p)) of \(p.dayCount)" : sub)
+    }
+
+    /// The day read today and the one that waits, in one breath.
+    static func doneLine(_ p: ReadingPlanRow, readToday: Bool, now: Date = Date()) -> String? {
+        guard readToday else { return nil }
+        let d = day(p)
+        return d > 1 ? "Day \(d - 1) done today · Day \(d) next" : "Done today · Day \(d) next"
+    }
+}

@@ -97,6 +97,54 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertFalse(HomeWeek.repeats(try nudge("cell_gathering"), in: noCell))
     }
 
+    // MARK: §9.2 #3 — "Day 3 done today · Day 4 next"; one streak; one first day
+
+    /// Mon 5 Oct 2026, 15:00 in Nairobi.
+    let monday = ISO8601DateFormatter().date(from: "2026-10-05T12:00:00Z")!
+
+    func testTodaysReadingIsOneStoryOnHomeAndPlans() throws {
+        // Ada: First Steps, Days 1–3 done, Day 3 finished this morning.
+        let ada = try plan("first", day: 4, done: [1, 2, 3], lastFinished: "2026-10-05T08:45:28.123Z")
+        XCTAssertTrue(PlanLines.readToday(ada, now: monday))
+        XCTAssertEqual(PlanLines.todayLine(ada, readToday: true, now: monday), "Day 3 done today · Day 4 next")
+        XCTAssertEqual(PlanLines.cardLine(ada, readToday: true, now: monday), "Day 3 done today · Day 4 next")
+        let row = HomeWeek.plansRow([ada], now: monday)
+        XCTAssertEqual(row.line, "Day 3 done today · Day 4 next")
+        // Read yesterday: today's reading is still to do.
+        let yesterday = try plan("first", day: 4, done: [1, 2, 3], lastFinished: "2026-10-04T18:00:00Z")
+        XCTAssertFalse(PlanLines.readToday(yesterday, now: monday))
+        XCTAssertEqual(HomeWeek.plansRow([yesterday], now: monday).line, "Day 4 of 7 · today's reading")
+        // This phone sealed a day today before the server says so.
+        XCTAssertEqual(HomeWeek.plansRow([yesterday], sealedHere: true, now: monday).line, "Day 3 done today · Day 4 next")
+        // Day 1 read today.
+        XCTAssertEqual(PlanLines.doneLine(try plan("first", day: 1, done: []), readToday: true), "Done today · Day 1 next")
+        // Nairobi's midnight, not UTC's: 22:30 UTC on the 4th is the 5th in Nairobi.
+        let lateNight = try plan("first", day: 4, done: [1, 2, 3], lastFinished: "2026-10-04T22:30:00Z")
+        XCTAssertTrue(PlanLines.readToday(lateNight, now: monday))
+    }
+
+    func testTheStreakIsOneStreakCountedOneWay() {
+        // Today counts once the member was active today — at least 1.
+        XCTAssertEqual(StreakWords.days(0, activeToday: false), 0)
+        XCTAssertEqual(StreakWords.days(0, activeToday: true), 1)
+        XCTAssertEqual(StreakWords.days(4, activeToday: true), 4)
+        XCTAssertEqual(StreakWords.days(-1, activeToday: false), 0)
+        XCTAssertEqual(StreakWords.title(StreakWords.days(0, activeToday: true)), "1-day streak")
+        // No emoji in the words (§8.1 rule 7).
+        for line in [StreakWords.line(0), StreakWords.line(3), StreakWords.line(1, todayDone: true, today: nil)] {
+            XCTAssertFalse(line.unicodeScalars.contains { $0.properties.isEmojiPresentation }, line)
+        }
+    }
+
+    func testEveryWeekStripStartsOnSunday() {
+        XCTAssertEqual(HomeWeekChain.days, ["S", "M", "T", "W", "T", "F", "S"])
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Africa/Nairobi")!
+        XCTAssertEqual(HomeWeekChain.todayIndex(monday, calendar: cal), 1, "Monday sits second, after Sunday")
+        let sunday = monday.addingTimeInterval(-86_400)
+        XCTAssertEqual(HomeWeekChain.todayIndex(sunday, calendar: cal), 0)
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)

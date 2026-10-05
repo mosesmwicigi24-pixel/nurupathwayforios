@@ -62,9 +62,10 @@ enum HomeWeek {
     static func rows(journey: Journey?, enrolledLevel: Int?, plans: [ReadingPlanRow]?,
                      calendar: [CalendarOccurrence]?, homeEvents: [HomeEventRow]?, rsvps: [MyRsvp]?,
                      partnership: Partnership?, schedules: [GivingSchedule]?, railsLine: String,
-                     cell: CellSummary.Cell?, now: Date = Date(), timeZone: TimeZone = GiveCalendar.nairobi) -> [HomeWeekRow] {
+                     cell: CellSummary.Cell?, planSealedHere: Bool = false,
+                     now: Date = Date(), timeZone: TimeZone = GiveCalendar.nairobi) -> [HomeWeekRow] {
         [pathwayRow(journey, enrolledLevel: enrolledLevel),
-         plansRow(plans),
+         plansRow(plans, sealedHere: planSealedHere, now: now),
          eventsRow(calendar: calendar, home: homeEvents, rsvps: rsvps, now: now, timeZone: timeZone),
          givingRow(partnership: partnership, schedules: schedules, railsLine: railsLine, now: now),
          cellRow(cell, timeZone: timeZone)]
@@ -124,13 +125,17 @@ enum HomeWeek {
 
     /// The plan being read (ReadingPlanRow.active — the same one the Plans
     /// tab continues first and its header names), opening its day; else the
-    /// invitation to start one.
-    static func plansRow(_ plans: [ReadingPlanRow]?) -> HomeWeekRow {
+    /// invitation to start one. Its line is the one story about today
+    /// (PlanLines, §9.2 #3): "Day 3 done today · Day 4 next" once today's day
+    /// is read — this phone sealed it (`sealedHere`) or any phone did.
+    static func plansRow(_ plans: [ReadingPlanRow]?, sealedHere: Bool = false, now: Date = Date()) -> HomeWeekRow {
         guard let p = ReadingPlanRow.active(in: plans ?? []) else {
             return HomeWeekRow(pillar: .plans, title: "Start a reading plan",
                                line: "A few minutes a day — with the whole family of God.", destination: .plans)
         }
-        return HomeWeekRow(pillar: .plans, title: p.title, line: "\(p.dayLine) · today's reading", destination: .planDay(p))
+        let read = PlanLines.readToday(p, sealedHere: sealedHere, now: now)
+        return HomeWeekRow(pillar: .plans, title: p.title, line: PlanLines.todayLine(p, readToday: read, now: now),
+                           destination: .planDay(p))
     }
 
     // MARK: Events

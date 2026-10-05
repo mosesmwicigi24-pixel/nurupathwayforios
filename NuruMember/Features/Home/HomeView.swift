@@ -911,15 +911,8 @@ struct HomeView: View {
                     Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
                     Text(j.pill)
                         .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    if vm.streak > 0 {
-                        Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
-                        HStack(spacing: 3) {
-                            Icon(.flame, size: 14, color: Nuru.gold)
-                            Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Nuru.goldChipText)
-                                .contentTransition(.numericText())
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: vm.streak)
-                        }
-                    }
+                    // (The streak is named once on Home — on the rhythm card,
+                    // §9.2 #3; it was "🔥 3-day" here too.)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.white, in: Capsule())
@@ -1312,7 +1305,8 @@ struct HomeView: View {
         HomeWeek.rows(journey: vm.journey, enrolledLevel: auth.me?.enrollment?.currentLevel, plans: vm.plans,
                       calendar: vm.events, homeEvents: vm.homeEvents, rsvps: vm.rsvps,
                       partnership: vm.partnership, schedules: vm.schedules,
-                      railsLine: GivingMethods.homeGiveLine(vm.givingMethods), cell: vm.cell)
+                      railsLine: GivingMethods.homeGiveLine(vm.givingMethods), cell: vm.cell,
+                      planSealedHere: PlanDayLog.sealedToday())
     }
 
     /// A row lands where its pillar lives (the TabRouter contract): the
@@ -1934,22 +1928,28 @@ struct HomeView: View {
 
     private var rhythmCard: some View {
         let complete = vm.rhythm.doneCount == 3
-        // Finishing today's rhythm counts today automatically (Figma displayStreak).
-        let displayStreak = vm.streak + (complete ? 1 : 0)
+        // The one streak (§9.2 #3), counted as Plans counts it: today counts
+        // once anything of today's rhythm is done. It read "Start today"
+        // beside a done Word, while Plans said "1-day streak". Named here
+        // alone on Home (the header pill no longer repeats it).
+        let active = vm.rhythm.doneCount > 0
+        let days = StreakWords.days(vm.streak, activeToday: active)
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Text(complete ? "Today's rhythm complete 🎉" : "Today's rhythm")
                     .font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
                 Spacer()
-                HStack(spacing: 4) {
-                    Icon(.flame, size: 14, color: Nuru.goldChipText)
-                    Text(displayStreak > 0 ? "\(displayStreak)-day streak" : "Start today")
-                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
-                        .contentTransition(.numericText())
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: displayStreak)
+                if days > 0 {
+                    HStack(spacing: 4) {
+                        Icon(.flame, size: 14, color: Nuru.goldChipText)
+                        Text(StreakWords.title(days))
+                            .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                            .contentTransition(.numericText())
+                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: days)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Nuru.goldChipBg, in: Capsule())
                 }
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Nuru.goldChipBg, in: Capsule())
             }
             HStack(spacing: Nuru.S.sm) {
                 rhythmTile("prayer", "Prayer")
@@ -1966,8 +1966,8 @@ struct HomeView: View {
                     .padding(.top, Nuru.S.md)
                     .transition(.opacity)
             }
-            // Weekly consistency — reflects real completion (today fills when done).
-            HomeWeekChain(streakDays: vm.streak, todayDone: complete)
+            // The streak's week — today fills once today counts.
+            HomeWeekChain(streakDays: days, todayDone: active)
                 .padding(.top, 14)
             if !complete {
                 Text(vm.rhythm.reflection ? "One more to complete today's rhythm." : "Complete reflection to keep your rhythm.")

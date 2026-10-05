@@ -110,11 +110,11 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
 
         XCTAssertEqual(StreakWords.line(0, todayDone: false, today: "Today: 2 of 3 parts"), "Today: 2 of 3 parts",
                        "Ada before Talk it Over: no tick, the day's progress")
-        XCTAssertEqual(StreakWords.line(1, todayDone: true, today: nil), "Today's reading is done 🔥")
-        XCTAssertEqual(StreakWords.line(1, todayDone: true, today: "Today: 1 of 3 parts"), "Today's reading is done 🔥",
+        XCTAssertEqual(StreakWords.line(1, todayDone: true, today: nil), "Today's reading is done")
+        XCTAssertEqual(StreakWords.line(1, todayDone: true, today: "Today: 1 of 3 parts"), "Today's reading is done",
                        "a sealed day outranks the next day's progress")
-        XCTAssertEqual(StreakWords.line(0, todayDone: false, today: nil), "Read today to start your streak 🔥")
-        XCTAssertEqual(StreakWords.line(3, todayDone: false, today: nil), "Read today to keep it alive 🔥")
+        XCTAssertEqual(StreakWords.line(0, todayDone: false, today: nil), "Read today to start your streak")
+        XCTAssertEqual(StreakWords.line(3, todayDone: false, today: nil), "Read today to keep it alive")
     }
 
     func testTheSealedDayIsTheNairobiDayAndForgottenAtSignOut() throws {

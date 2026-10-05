@@ -107,6 +107,9 @@ final class ReadingPlansViewModel: ObservableObject {
     @Published var todaySealed = false
     /// "Today: 2 of 3 parts" while the day being read is under way.
     @Published var todayLine: String?
+    /// The member was active today (any of the rhythm): the one streak
+    /// counts today, on Plans as on Home (§9.2 #3).
+    @Published var activeToday = false
     @Published var loading = true
     /// Why the catalogue didn't load — spoken through the one state language
     /// (NuruStateCopy), never as the server's raw text.
@@ -118,6 +121,7 @@ final class ReadingPlansViewModel: ObservableObject {
     func load() async {
         loading = true; failure = nil; stale = false
         async let ach = try? MemberAPI.achievements()
+        async let rhythm = try? MemberAPI.rhythmToday()
         // Best-effort and in parallel: a promo failure (offline, older server)
         // must leave today's page exactly as it was.
         async let promoList = try? MemberAPI.planPromos()
@@ -127,6 +131,7 @@ final class ReadingPlansViewModel: ObservableObject {
         // achievements and promos are still on their way.
         await loadToday()
         streak = (await ach)?.streak?.current ?? 0
+        if let r = await rhythm { activeToday = r.doneCount > 0 }
         promos = (await promoList) ?? []
         loading = false
     }
@@ -248,7 +253,7 @@ struct ReadingPlansView: View {
                         .padding(.horizontal, 20).padding(.top, 20)
                 } else {
                     VStack(alignment: .leading, spacing: 24) {
-                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todaySealed, today: vm.todayLine) }
+                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todaySealed, today: vm.todayLine, activeToday: vm.activeToday) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, !continueReading.isEmpty { reminderCard }
                         // The day's invitation, given room to actually invite:
@@ -379,7 +384,10 @@ struct ReadingPlansView: View {
                     Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Text("Day \(day) of \(p.dayCount) · pick up where you left off")
+                    // Home's story about today (§9.2 #3): "Day 3 done today ·
+                    // Day 4 next" once today's day is read, else "Today · " and
+                    // the plan's own words — Android's planCardLine.
+                    Text(PlanLines.cardLine(p, readToday: PlanLines.readToday(p, sealedHere: PlanDayLog.sealedToday())))
                         .font(.inter(12)).foregroundStyle(.white.opacity(0.72))
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
