@@ -164,12 +164,15 @@ final class LevelDetailViewModel: ObservableObject {
     }
     var lessonCount: Int { moduleCount }
     var title: String { level?.title ?? "Level \(levelNumber)" }
-    var verse: (text: String, ref: String) {
-        if let theme = level?.theme, !theme.isEmpty {
-            return ("He that followeth me shall not walk in darkness, but shall have the light of life.", theme)
-        }
-        return ("He that followeth me shall not walk in darkness, but shall have the light of life.", "John 8:12")
-    }
+    var verse: (text: String, ref: String) { (LevelPageVerse.text, LevelPageVerse.ref) }
+}
+
+/// The level page's verse, under its own reference. Whenever a level had a
+/// theme, the page credited John 8:12's words to it ("Foundations") — the
+/// Cycle 4 walk, and Cycle 3's before it.
+enum LevelPageVerse {
+    static let text = "He that followeth me shall not walk in darkness, but shall have the light of life."
+    static let ref = "John 8:12"
 }
 
 struct LevelDetailView: View {

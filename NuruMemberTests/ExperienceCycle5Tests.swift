@@ -536,4 +536,15 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertFalse(src.contains("Seedling"), "one band vocabulary: the server's")
         XCTAssertTrue(src.contains("MemberAPI.scoreDetail(.word)"))
     }
+
+    // MARK: Cycle 4 walk — a verse under its own reference
+
+    @MainActor
+    func testTheLevelPagesVerseIsCreditedToItsOwnReference() throws {
+        XCTAssertEqual(LevelPageVerse.ref, "John 8:12")
+        let vm = LevelDetailViewModel(levelNumber: 1)
+        vm.level = try decode(PathwayLevel.self, level(1, "active", done: 3, of: 10, title: "Foundations of Faith", theme: "Foundations"))
+        XCTAssertEqual(vm.verse.ref, "John 8:12", "never the level's theme")
+        XCTAssertEqual(vm.verse.text, LevelPageVerse.text)
+    }
 }
