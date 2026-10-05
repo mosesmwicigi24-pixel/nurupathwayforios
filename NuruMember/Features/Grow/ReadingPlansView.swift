@@ -72,6 +72,18 @@ struct ReaderPalette {
     var danger: Color { night ? Color(hex: 0xF0A0A0) : Color(hex: 0xB91C1C) }
 }
 private struct ReaderPaletteKey: EnvironmentKey { static let defaultValue = ReaderPalette() }
+
+/// Pushes a plan's day onto the stack that hosts the plan's page — the Plans
+/// tab sets it (it owns the path), so "Begin Day 1" can start the plan AND
+/// open Day 1 in one tap (EXPERIENCE.md §7.4 #2 follow-up). Nil where no
+/// stack offers it: the page then stays, its button now opening the day.
+private struct OpenPlanDayKey: EnvironmentKey { static let defaultValue: ((PlanDayRef) -> Void)? = nil }
+extension EnvironmentValues {
+    var openPlanDay: ((PlanDayRef) -> Void)? {
+        get { self[OpenPlanDayKey.self] }
+        set { self[OpenPlanDayKey.self] = newValue }
+    }
+}
 extension EnvironmentValues {
     var readerPalette: ReaderPalette {
         get { self[ReaderPaletteKey.self] }
@@ -638,10 +650,14 @@ final class PlanDetailViewModel: ObservableObject {
         loading = false
     }
 
-    func start() async {
+    /// Enrol (idempotent). Returns why the server didn't, or nil once it did
+    /// — the page then opens the day to read (one tap, as Android).
+    func start() async -> Error? {
         busy = true; defer { busy = false }
-        try? await MemberAPI.startPlan(planId)
+        do { try await MemberAPI.startPlan(planId) }
+        catch { return error }
         await load()
+        return nil
     }
 
     /// A segment's ack (relayed from the day hub) said this plan's next day
@@ -679,6 +695,9 @@ struct PlanDetailView: View {
     @State private var shareAfterPicker = false
     @State private var inviteSent: InviteSentToast?
     @State private var inviteSentDismiss: Task<Void, Never>?
+    /// Why the plan didn't start — "Couldn't start this plan" (Android's words).
+    @State private var startError: String?
+    @Environment(\.openPlanDay) private var openPlanDay
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -995,10 +1014,15 @@ struct PlanDetailView: View {
                 if d.enrolled, let target {
                     NavigationLink(value: PlanDayRef(planId: d.planId, day: target, planTitle: d.title)) { ctaLabel(label) }
                 } else {
+                    // "Begin Day 1" starts the plan AND opens Day 1 — one tap,
+                    // and only on the server's word (§7.4 #2): a refusal or no
+                    // answer is "Couldn't start this plan" and §4's sentence.
                     Button {
+                        guard !vm.busy else { return }
                         Haptics.action()
-                        Task { await vm.start() }
+                        Task { await beginPlan() }
                     } label: { ctaLabel(label) }
+                    .disabled(vm.busy)
                 }
             }
             .buttonStyle(.pressable)
@@ -1024,6 +1048,11 @@ struct PlanDetailView: View {
             Button("OK") { inviteError = nil }
         } message: {
             Text(inviteError ?? "")
+        }
+        .alert("Couldn't start this plan", isPresented: Binding(get: { startError != nil }, set: { if !$0 { startError = nil } })) {
+            Button("OK") { startError = nil }
+        } message: {
+            Text(startError ?? "")
         }
     }
 
@@ -1075,6 +1104,25 @@ struct PlanDetailView: View {
             Haptics.error()
             inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
         }
+    }
+
+    private func beginPlan() async {
+        if let failed = await vm.start() {
+            Haptics.error()
+            startError = NuruStateCopy.failure(failed).sentence
+            return
+        }
+        guard let d = vm.detail, let day = Self.dayToOpen(d), let openPlanDay else { return }
+        openPlanDay(PlanDayRef(planId: d.planId, day: day, planTitle: d.title))
+    }
+
+    /// The day a just-started plan opens on: the server's next day (Day 1),
+    /// never one still behind the gate.
+    static func dayToOpen(_ d: ReadingPlanDetail) -> ReadingPlanDay? {
+        let n = d.nextDay ?? 1
+        let day = d.days.first { $0.dayNumber == n } ?? d.continueDay
+        guard let day, !day.locked else { return nil }
+        return day
     }
 
     private func ctaLabel(_ text: String) -> some View {

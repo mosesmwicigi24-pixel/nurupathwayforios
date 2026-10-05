@@ -623,6 +623,9 @@ private struct PlansTab: View {
         // outside, SwiftUI never registers the destinations and plan taps do nothing.
         NavigationStack(path: $path) { ReadingPlansView().nuruDestinations() }
             .popsToRoot(on: .plans, path: $path)
+            // "Begin Day 1" opens the day it just started on this stack —
+            // the plan's page stays beneath it as the way back (§7.4 #2).
+            .environment(\.openPlanDay, { ref in path.append(ref) })
             // Cross-tab deep link (Home's resume banner / plan mini / Grow tile):
             // land exactly on the plan with the catalogue as the back stop.
             .onReceive(tabs.$planLink) { link in

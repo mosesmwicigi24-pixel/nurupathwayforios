@@ -334,4 +334,23 @@ final class ExperienceCycle3Part2Tests: XCTestCase {
                                                      deviceOnline: true),
                        "Couldn't save that. Finish the earlier days of this plan first")
     }
+
+    // MARK: Follow-up 3 — "Begin Day 1" opens the day it starts
+
+    func testAJustStartedPlanOpensOnDayOne() throws {
+        let fresh = adasDayOne(nothingDone: true)
+        let started = try decode(ReadingPlanDetail.self, [
+            "plan_id": "first-steps", "title": "First Steps", "day_count": 2, "current_day": 1,
+            "completed_days": [Int](), "enrolled": true, "next_day": 1,
+            "days": [day(1, fresh), day(2, fresh, locked: true)]])
+        XCTAssertEqual(PlanDetailView.dayToOpen(started)?.dayNumber, 1)
+        // An older server without next_day: the first day not finished.
+        let older = try detail([day(1, fresh), day(2, fresh, locked: true)])
+        XCTAssertEqual(PlanDetailView.dayToOpen(older)?.dayNumber, 1)
+        // Never a day still behind the gate.
+        let gated = try decode(ReadingPlanDetail.self, [
+            "plan_id": "p", "title": "P", "day_count": 2, "enrolled": true, "next_day": 2,
+            "days": [day(1, fresh), day(2, fresh, locked: true)]])
+        XCTAssertNil(PlanDetailView.dayToOpen(gated))
+    }
 }
