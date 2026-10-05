@@ -63,10 +63,16 @@ private enum PW {
 
 // Small helpers shared by the PathwayHub subviews (mirror the Figma functions).
 // (The greeting left Pathway with Cycle 4 — it belongs to Home alone, §8.1.)
-private func pwShortName(_ t: String) -> String {
-    let w = t.split(separator: " ").first.map(String.init) ?? ""
-    guard let f = w.first else { return "" }
-    return String(f).uppercased() + w.dropFirst().lowercased()
+/// A level's own short name — the server's `theme` ("Foundations",
+/// "Transformation", "Grace", "Spirit", "Leadership"), on the rail, the
+/// milestones and their reward (EXPERIENCE.md §9.2 #9). The title's first
+/// word made Levels 1 and 3 both "Foundations". Without a theme, the title
+/// itself (production's untitled "Level 6" reads "Level 6", not "Level").
+/// Android's levelShortName.
+func levelShortName(_ level: PathwayLevel) -> String {
+    if let t = level.theme?.trimmingCharacters(in: .whitespaces), !t.isEmpty { return t }
+    let title = level.title.trimmingCharacters(in: .whitespaces)
+    return title.isEmpty ? "Level \(level.levelNumber)" : title
 }
 
 /// The reward the member is working toward — the first not-yet-complete level.
@@ -78,7 +84,7 @@ private func nextReward(_ s: PathwaySummary) -> PWReward? {
     // Lessons — the exam is a step of its own, never "a module" (§8.2 #4).
     let remaining = max(l.lessonCount - l.lessonsDone, 0)
     let pct = l.lessonCount > 0 ? min(100, Int((Double(l.lessonsDone) / Double(l.lessonCount) * 100).rounded())) : 0
-    return PWReward(name: pwShortName(l.title), emoji: PW.badgeEmoji[idx % PW.badgeEmoji.count], remaining: remaining, pct: pct)
+    return PWReward(name: levelShortName(l), emoji: PW.badgeEmoji[idx % PW.badgeEmoji.count], remaining: remaining, pct: pct)
 }
 
 @MainActor
@@ -157,14 +163,10 @@ struct PathwayView: View {
     /// Hub row shows only then (Cycle 4, B1).
     @ObservedObject private var disciplers = DisciplerStore.shared
     @State private var path = NavigationPath()
-    @State private var selectedLevelNumber: Int?
 
-    /// The level whose module list is shown inline (defaults to the active level).
-    private var selectedLevel: PathwayLevel? {
-        guard let s = vm.summary else { return nil }
-        let target = selectedLevelNumber ?? vm.activeLevel?.levelNumber
-        return s.levels.first { $0.levelNumber == target } ?? vm.activeLevel
-    }
+    /// The level whose module list is shown inline — the member's own. (A
+    /// rail circle opens its level's page instead, §9.2 #9.)
+    private var selectedLevel: PathwayLevel? { vm.activeLevel }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -282,11 +284,9 @@ struct PathwayView: View {
 
                 PathwayJourneyRail(
                     levels: s.levels, current: journey?.levelNumber,
-                    selected: selectedLevel?.levelNumber ?? -1,
-                    onSelect: { n in
-                        Haptics.selection()
-                        withAnimation(.easeInOut(duration: 0.2)) { selectedLevelNumber = n }
-                    },
+                    // A walked or current level's circle opens that level's
+                    // page; a locked one is not a button (§9.2 #9).
+                    onOpen: { n in path.append(PathwayRoute.level(n)) },
                     onMap: { path.append(PathwayRoute.map) })
                     .gentleEntrance()
 
@@ -575,8 +575,7 @@ private struct PathwayJourneyRail: View {
     /// The member's own level (the journey's) — wears "▾ You" whatever its
     /// status: still walking it, every module done, or its exam passed.
     let current: Int?
-    let selected: Int
-    let onSelect: (Int) -> Void
+    let onOpen: (Int) -> Void
     let onMap: () -> Void
 
     private var currentIndex: Int? {
@@ -610,9 +609,9 @@ private struct PathwayJourneyRail: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWJourneyNode(level: lvl, number: i + 1, selected: lvl.levelNumber == selected,
+                        PWJourneyNode(level: lvl, number: i + 1,
                                       isCurrent: i == currentIndex,
-                                      upNext: i == upNextIndex) { onSelect(lvl.levelNumber) }
+                                      upNext: i == upNextIndex) { onOpen(lvl.levelNumber) }
                         if i < levels.count - 1 {
                             // Connectors ahead of the member read at 0.28 — 0.12
                             // vanished into the cream (locked-rail pass, 2026-09).
@@ -630,7 +629,6 @@ private struct PathwayJourneyRail: View {
 private struct PWJourneyNode: View {
     let level: PathwayLevel
     let number: Int
-    let selected: Bool
     /// The member's own level — "▾ You" and the navy ring.
     var isCurrent: Bool = false
     /// The locked level right after the member's — gold ring + "▾ Next".
@@ -641,8 +639,25 @@ private struct PWJourneyNode: View {
     private var done: Bool { level.walked }
     private var active: Bool { isCurrent }
 
+    /// A circle opens its level only when there is a level to open: walked,
+    /// or the member's own. A locked circle isn't a button — its lock seal
+    /// says why (§9.2 #9).
+    private var opens: Bool { done || active }
+
     var body: some View {
-        Button(action: onTap) {
+        if opens {
+            Button { Haptics.tap(); onTap() } label: { node }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Level \(number), \(levelShortName(level))")
+                .accessibilityHint("Opens Level \(number)")
+        } else {
+            node
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Level \(number), \(levelShortName(level)), locked")
+        }
+    }
+
+    private var node: some View {
             VStack(spacing: 6) {
                 Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(11, .bold)).kerning(0.7)
                     .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(height: 10)
@@ -683,15 +698,14 @@ private struct PWJourneyNode: View {
                         .offset(x: 3, y: -2)
                     }
                 }
-                .overlay { if selected { Circle().stroke(PW.gold, lineWidth: 2).frame(width: 54, height: 54) } }
-                Text(pwShortName(level.title))
+                // Its own name, whole (§8.1 rule 9): the node grows to fit
+                // "Transformation" rather than cut it.
+                Text(levelShortName(level))
                     .font(.inter(11, active ? .bold : .medium))
                     .foregroundStyle(active ? PW.navy : (upNext ? PW.goldDeep : PW.ink2))
-                    .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(width: 68)
-        }
-        .buttonStyle(.pressable)
+            .frame(minWidth: 68)
     }
 }
 
@@ -1056,7 +1070,7 @@ private struct PathwayMilestones: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWRewardBadge(name: pwShortName(lvl.title), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.walked)
+                        PWRewardBadge(name: levelShortName(lvl), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.walked)
                     }
                 }.padding(.horizontal, 2)
             }

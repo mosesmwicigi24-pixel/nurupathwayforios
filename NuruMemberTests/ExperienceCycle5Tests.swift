@@ -276,6 +276,17 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertFalse(DisciplerStore.offers(none.mentor))
     }
 
+    // MARK: §9.2 #9 — the rail names each level by its own theme
+
+    func testTheRailNamesEachLevelByItsTheme() throws {
+        let s = try summary([level(1, "active", of: 10, title: "Foundations of Faith", theme: "Foundations"),
+                             level(3, "locked", title: "Foundations of Grace & Kingdom Perspective", theme: "Grace"),
+                             level(6, "locked", title: "Level 6"),
+                             level(7, "locked", title: " ", theme: " ")])
+        XCTAssertEqual(s.levels.map(levelShortName), ["Foundations", "Grace", "Level 6", "Level 7"],
+                       "never two \"Foundations\"; no theme: the title itself, never a stray first word")
+    }
+
     func testTheExamReadsItsPassMarkFromTheServer() throws {
         let exam = try decode(AssembledExam.self, ["level_number": 1, "question_count": 91, "pass_mark": 80, "questions": []])
         XCTAssertEqual(exam.passMark, 80)
