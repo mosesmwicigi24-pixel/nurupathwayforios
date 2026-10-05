@@ -75,7 +75,7 @@ private struct PayMethod: Identifiable {
     var id: String { key }
 }
 private let methodLooks: [PayMethod] = [
-    PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "STK push to your phone",
+    PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "A prompt on your phone",   // never "STK push" (rule 8: no jargon)
               badgeText: "M-PESA", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
     PayMethod(key: "airtel",   label: "Pay with Airtel Money",       sub: "Mobile money",
               badgeText: "AIRTEL", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
