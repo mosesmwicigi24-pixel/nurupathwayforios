@@ -1009,6 +1009,9 @@ struct HomeView: View {
         .overlay(alignment: .bottomTrailing) {
             if let t = growthTrend, t.delta != 0 { trendBadge(t).offset(x: 5, y: 4) }
         }
+        // The figure and its badge keep the everyday size inside the ring
+        // (§9.6 #4 — "↑2(" at the largest size).
+        .nuruFixedFigure()
         .accessibilityLabel("Growth score \(growthScore) out of 100")
     }
 
@@ -2115,6 +2118,7 @@ struct HomeView: View {
                     }
                 }
                 .frame(width: 64, height: 64)
+                .nuruFixedFigure()
                 VStack(alignment: .leading, spacing: 1) {
                     Text("OVERALL GROWTH").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                     Text(s.overall.band).font(.nCardTitle).foregroundStyle(HomeFig.navy)

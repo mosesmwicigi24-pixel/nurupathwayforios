@@ -436,11 +436,14 @@ private struct PathwayHubHeader: View {
                     .frame(width: 44, height: 44)
                     .background(PW.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
+                    // Whole at every text size (§9.6 #4): "EXAM READY…",
+                    // "Take the Level 1 e…" at the largest.
                     Text((journey?.kicker ?? "Your pathway").uppercased())
-                        .font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight).lineLimit(1)
+                        .font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     // The card's title (§8.1 rule 3): Fraunces 18, wrapping.
                     Text(journey?.title ?? "Your pathway").font(.nCardTitle).foregroundStyle(.white)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if let line = journey?.line {
                         Text(line).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)
@@ -502,6 +505,7 @@ private struct PWHeaderRing: View {
                 .animation(.default, value: pct)
         }
         .frame(width: 40, height: 40)
+        .nuruFixedFigure()
         .onAppear {
             guard !shown else { return }
             if reduceMotion { shown = true }
@@ -1445,6 +1449,7 @@ private struct PWProgressRing: View {
             }
         }
         .frame(width: 74, height: 74)
+        .nuruFixedFigure()
         .onAppear {
             guard !shown else { return }
             if reduceMotion { shown = true }

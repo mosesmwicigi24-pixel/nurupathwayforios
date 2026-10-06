@@ -259,6 +259,7 @@ private struct ScoreRing: View {
             }
         }
         .frame(width: 84, height: 84)
+        .nuruFixedFigure()
         .onAppear {
             guard !grown else { return }
             if reduceMotion { grown = true; return }

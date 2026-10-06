@@ -775,8 +775,13 @@ private struct NuruTabBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(focused ? [.isSelected] : [])
+                .accessibilityShowsLargeContentViewer()
             }
         }
+        // A bar of six: its labels keep the standard size, as the system's
+        // own tab bars do, and a long press shows them large (§9.6 #4 —
+        // they read "H… Pa… Pl…" at the largest size).
+        .nuruBarText(upTo: .large)
         .padding(.top, 6)
         .padding(.bottom, Self.safeBottom)
         .background(Nuru.paper)

@@ -590,6 +590,7 @@ struct ProfileView: View {
                             .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1.5))
                         Text("\(s.overall.score)").font(.fraunces(16, .semibold)).foregroundStyle(Nuru.navy)
                     }
+                    .nuruFixedFigure()
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Overall").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         Text(s.overall.band).font(.inter(11)).foregroundStyle(Color(hex: 0x8A6D18))

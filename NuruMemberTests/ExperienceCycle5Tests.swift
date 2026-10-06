@@ -675,7 +675,7 @@ final class ExperienceCycle5Tests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(n, Self.fixedLineLimitCeiling, "a new fixed line limit can cut text at the largest size — use .nuruLineLimit, which lifts there")
     }
-    static let fixedLineLimitCeiling = 273
+    static let fixedLineLimitCeiling = 270
 
     // MARK: Cycle 4 walk — a finished lesson offers the way on
 
@@ -759,5 +759,40 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertNil(ProfileMilestoneWords.current(level: 2, journey: ada))
         let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Profile/ProfileView.swift"), encoding: .utf8)
         XCTAssertFalse(src.contains("in progress\", meta: \"Keep going\""))
+    }
+
+    /// The chrome on every screen at the largest sizes: a bar's words grow
+    /// through the everyday sizes and stop at the largest of them (at the
+    /// accessibility sizes the tab bar read "H… Pa… Pl…" and Give's switch
+    /// "PARTN…"), and a figure inside a fixed ring keeps the everyday size
+    /// (Home's ring read "↑2(").
+    @MainActor
+    func testBarsAndRingsHoldTheirTypeAtTheLargestSizes() throws {
+        let label = Text("Pathway").font(.inter(11, .medium))
+        XCTAssertGreaterThan(try renderedHeight(label.nuruBarText(), .xxxLarge, width: 200),
+                             try renderedHeight(label.nuruBarText(), .large, width: 200), "a bar's words grow…")
+        XCTAssertEqual(try renderedHeight(label.nuruBarText(), .accessibility5, width: 200),
+                       try renderedHeight(label.nuruBarText(), .xxxLarge, width: 200), accuracy: 0.5, "…and stop at the largest everyday size")
+        let figure = Text("26").font(.fraunces(13, .semibold))
+        XCTAssertEqual(try renderedHeight(figure.nuruFixedFigure(), .accessibility5, width: 60),
+                       try renderedHeight(figure.nuruFixedFigure(), .large, width: 60), accuracy: 0.5, "a ring's figure stays inside its ring")
+        // Home's verse tableau: the owner's 216 pt photograph at the everyday
+        // sizes, even for a long verse; at the largest it grows to hold the
+        // whole verse (drawn over the fixed photo, it climbed over its kicker).
+        let art = try decode(VerseArt.self, ["url": "", "alt": "A quiet field"])
+        let verse = "Likewise the Spirit helps us in our weakness. For we do not know what to pray for as we ought, but the Spirit himself intercedes for us."
+        let tableau = VerseTableauHeader(art: art, verseText: verse, reference: "Romans 8:26", version: "ESV")
+        XCTAssertEqual(try renderedHeight(tableau, .large), 216, accuracy: 0.5, "the everyday tableau is unchanged")
+        XCTAssertGreaterThan(try renderedHeight(tableau, .accessibility5), 300, "the largest size holds the whole verse")
+        func src(_ rel: String) throws -> String { try String(contentsOf: TypeScan.appRoot.appendingPathComponent(rel), encoding: .utf8) }
+        XCTAssertTrue(try src("Features/Shell/RootView.swift").contains(".nuruBarText(upTo: .large)"), "the tab bar keeps the standard size")
+        XCTAssertTrue(try src("Features/Shell/SplitSegmentBar.swift").contains(".nuruBarText()"), "the Give | Partners switch")
+        XCTAssertEqual(try renderedHeight(label.nuruBarText(upTo: .large), .accessibility5, width: 200),
+                       try renderedHeight(label.nuruBarText(upTo: .large), .large, width: 200), accuracy: 0.5)
+        for (rel, rings) in [("Features/Home/HomeView.swift", 2), ("Features/Pathway/PathwayView.swift", 2),
+                             ("Features/Pathway/LevelDetailView.swift", 1), ("Features/Grow/MemoryVerseView.swift", 1),
+                             ("Features/Profile/ProfileView.swift", 1)] {
+            XCTAssertEqual(try src(rel).components(separatedBy: ".nuruFixedFigure()").count - 1, rings, rel)
+        }
     }
 }

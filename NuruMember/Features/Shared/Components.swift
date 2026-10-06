@@ -73,6 +73,19 @@ extension View {
     /// `.lineLimit(lines)` at the everyday sizes, none at the accessibility
     /// sizes (§9.6 #4).
     func nuruLineLimit(_ lines: Int) -> some View { modifier(NuruLineLimit(lines: lines)) }
+
+    /// A bar's words (the tab bar, a segment switch) grow with the phone's
+    /// text size only as far as the bar has room — by default up to the
+    /// largest everyday size — and stop there. In a fixed bar the
+    /// accessibility sizes would cut them ("H… Pa… Pl…"), so, as the system's
+    /// own bars do, a long press shows them large instead (the Large Content
+    /// Viewer, on each of the bar's buttons). §9.6 #4.
+    func nuruBarText(upTo largest: DynamicTypeSize = .xxxLarge) -> some View { dynamicTypeSize(...largest) }
+
+    /// A figure drawn inside a fixed shape (a progress ring) keeps the
+    /// everyday size, so it never spills out of its shape at the larger text
+    /// sizes; the screen's own words carry the same fact, and grow. §9.6 #4.
+    func nuruFixedFigure() -> some View { dynamicTypeSize(...DynamicTypeSize.large) }
 }
 
 /// A white card that floats on one soft shadow.

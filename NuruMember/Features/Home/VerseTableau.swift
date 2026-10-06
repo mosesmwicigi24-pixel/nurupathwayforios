@@ -38,71 +38,81 @@ struct VerseTableauHeader: View {
     // 2026-08-25: smaller — the words keep to the image's lower third); the
     // steps are written where the verse is drawn, so the type test reads them.
 
+    /// At the accessibility sizes the card grows to hold the whole verse
+    /// (§9.6 #4): drawn over a fixed 216 pt photograph it climbed over its
+    /// own kicker. At the everyday sizes it is the same 216 pt tableau.
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        Color.clear
-            .frame(height: 216)
-            .overlay {
-                CachedAsyncImage(url: URL(string: art.url)) { phase in
-                    if let img = phase.image {
-                        img.resizable().scaledToFill()
-                    } else {
-                        // Loading / failed: a quiet navy field so the white
-                        // verse text always has contrast — never a flash.
-                        LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Icon(.bookOpen, size: 14, color: Color(hex: 0xF2DDA0))
+                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4)
+                    .foregroundStyle(Color(hex: 0xF2DDA0))
+                Spacer(minLength: 0)
+                Text(version.uppercased())
+                    .font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(.white.opacity(0.16), in: Capsule())
+                    .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
+            }
+            Spacer(minLength: 24)
+            VStack(alignment: .leading, spacing: 6) {
+                if let t = verseText, !t.isEmpty {
+                    // Long verses step down 14 → 13 → 12 and may give way to
+                    // 11 (12 × 0.92) — never under it.
+                    Text("\u{201C}\(t)\u{201D}")
+                        .font(.fraunces(t.count > 220 ? 12 : t.count > 140 ? 13 : 14)).foregroundStyle(.white)
+                        .nuruLineSpacing(3)
+                        .nuruLineLimit(4)
+                        .minimumScaleFactor(0.92)
+                        .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Text(reference)
+                    .font(.inter(11, .bold)).kerning(0.3)
+                    .foregroundStyle(Color(hex: 0xF2DDA0))
+                    .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, minHeight: 216, alignment: .leading)
+        .background {
+            Color.clear
+                .overlay {
+                    CachedAsyncImage(url: URL(string: art.url)) { phase in
+                        if let img = phase.image {
+                            img.resizable().scaledToFill()
+                        } else {
+                            // Loading / failed: a quiet navy field so the white
+                            // verse text always has contrast — never a flash.
+                            LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing)
+                        }
                     }
                 }
-            }
-            .clipped()   // the fill overlay can never spill past the owned frame
-            // The photograph SHOWS (owner, 2026-08-25): no full veil — a slim
-            // top scrim for the kicker and a bottom-third scrim for the verse,
-            // so the words occupy only the image's lower third.
-            .overlay {
-                LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
-                                       .init(color: .clear, location: 0.28)],
-                               startPoint: .top, endPoint: .bottom)
-            }
-            .overlay {
-                LinearGradient(stops: [.init(color: .clear, location: 0.5),
-                                       .init(color: Color(hex: 0x0A1C33).opacity(0.85), location: 0.78),
-                                       .init(color: Color(hex: 0x06111F).opacity(0.95), location: 1)],
-                               startPoint: .top, endPoint: .bottom)
-            }
-            .overlay(alignment: .topLeading) {
-                HStack(spacing: 6) {
-                    Icon(.bookOpen, size: 14, color: Color(hex: 0xF2DDA0))
-                    Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4)
-                        .foregroundStyle(Color(hex: 0xF2DDA0))
-                    Spacer(minLength: 0)
-                    Text(version.uppercased())
-                        .font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
-                        .padding(.horizontal, 10).padding(.vertical, 4)
-                        .background(.white.opacity(0.16), in: Capsule())
-                        .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
+                .clipped()   // the fill overlay can never spill past the owned frame
+                // The photograph SHOWS (owner, 2026-08-25): no full veil — a slim
+                // top scrim for the kicker and a bottom-third scrim for the verse,
+                // so the words occupy only the image's lower third.
+                .overlay {
+                    LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
+                                           .init(color: .clear, location: 0.28)],
+                                   startPoint: .top, endPoint: .bottom)
                 }
-                .padding(Nuru.S.base)
-            }
-            .overlay(alignment: .bottomLeading) {
-                VStack(alignment: .leading, spacing: 6) {
-                    if let t = verseText, !t.isEmpty {
-                        // Long verses step down 14 → 13 → 12 and may give way to
-                        // 11 (12 × 0.92) — never under it.
-                        Text("\u{201C}\(t)\u{201D}")
-                            .font(.fraunces(t.count > 220 ? 12 : t.count > 140 ? 13 : 14)).foregroundStyle(.white)
-                            .nuruLineSpacing(3)
-                            .lineLimit(4)
-                            .minimumScaleFactor(0.92)
-                            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Text(reference)
-                        .font(.inter(11, .bold)).kerning(0.3)
-                        .foregroundStyle(Color(hex: 0xF2DDA0))
-                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                .overlay {
+                    LinearGradient(stops: [.init(color: .clear, location: 0.5),
+                                           .init(color: Color(hex: 0x0A1C33).opacity(0.85), location: 0.78),
+                                           .init(color: Color(hex: 0x06111F).opacity(0.95), location: 1)],
+                                   startPoint: .top, endPoint: .bottom)
                 }
-                .padding(Nuru.S.base)
-            }
-            .accessibilityLabel(Text(art.alt))
+                // Grown to hold a large verse, the words cover the whole image:
+                // it is veiled so they always read.
+                .overlay { if typeSize.isAccessibilitySize { Color(hex: 0x06111F).opacity(0.7) } }
+        }
+        .clipped()
+        .accessibilityLabel(Text(art.alt))
     }
 }
 

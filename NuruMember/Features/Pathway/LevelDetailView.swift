@@ -1068,6 +1068,7 @@ private struct StatsRing: View {
                 .animation(.default, value: pct)
         }
         .frame(width: 60, height: 60)
+        .nuruFixedFigure()
         .onAppear {
             guard !shown else { return }
             if reduceMotion { shown = true }

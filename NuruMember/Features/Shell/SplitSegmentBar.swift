@@ -28,6 +28,8 @@ struct SplitSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccessCo
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .contain)
+        // A bar: "GIVE | PARTN…" at the largest size (§9.6 #4).
+        .nuruBarText()
     }
 
     private func half(_ seg: S) -> some View {
@@ -46,5 +48,6 @@ struct SplitSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccessCo
         .buttonStyle(.plain)
         .accessibilityLabel(seg.label)
         .accessibilityAddTraits(on ? [.isSelected] : [])
+        .accessibilityShowsLargeContentViewer()
     }
 }
