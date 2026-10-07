@@ -37,7 +37,12 @@ struct NuruMemberApp: App {
             .environmentObject(tabs)
             // Text with no font of its own is the body, never the system face.
             .nuruDefaultFont()
-            .tint(Nuru.gold)
+            // The system's own chrome — an alert's or a dialog's answers, a
+            // menu, a toolbar's word, a caret — takes this tint: navy, the
+            // chrome colour (§8.1 rule 1; final walk M5: gold answers read
+            // about 1.05:1 on the alert's glass). Gold stays where a view sets
+            // it: a selected switch, a picker, the primary action.
+            .tint(Nuru.navy)
             // The app is designed in warm light tones; keep system chrome light.
             .preferredColorScheme(.light)
             // Start the offline sync engine once we're authenticated; drain the
@@ -114,11 +119,14 @@ struct NuruMemberApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
         UINavigationBar.appearance().tintColor = UIColor(Nuru.gold)
-        // System alerts and confirmation dialogs answer in navy (final walk
-        // M5): they took the gold accent, about 1.05:1 on their grey glass —
-        // "Keep it private" before a private prayer goes congregation-wide.
-        // A destructive answer keeps the system's red.
-        UIView.appearance(whenContainedInInstancesOf: [UIAlertController.self]).tintColor = navy
+        // System alerts, confirmation dialogs and menus answer in the app's
+        // accent, which is navy (Assets: AccentColor; final walk M5): gold
+        // read about 1.05:1 on their grey glass — "Keep it private" before a
+        // private prayer goes congregation-wide. iOS 26 sets an alert's tint
+        // from SwiftUI's accent, so no appearance proxy reaches it. Navy is
+        // chrome (§8.1 rule 1); gold stays where the app sets it — selected
+        // toggles, pickers, the primary action. A destructive answer keeps
+        // the system's red.
     }
 }
 
