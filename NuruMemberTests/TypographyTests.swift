@@ -254,6 +254,92 @@ final class TypographyTests: XCTestCase {
                        "without the root default an unstyled Text is the system face — the check has teeth")
     }
 
+    // MARK: - 4. The member's own text size reaches every surface
+
+    /// The member's text size (Profile → Display — `Nuru.textScale`, the
+    /// rig's `-nuru.textScale`) reaches every surface the app draws: a sheet,
+    /// a cover, a hosted window, a bar — not only the system's Dynamic Type
+    /// (the Android audit, 2026-10-07: its dialogs and sheets dropped it). The
+    /// SwiftUI type helpers read it as they draw, wherever they draw; what can
+    /// drop it is UIKit text set at a fixed size, and a SwiftUI root hosted
+    /// outside the app's, which inherits no default font. A new one of either
+    /// fails here.
+    func testTheInAppTextSizeReachesEverySurface() throws {
+        // 1. Every UIKit font a member reads carries it.
+        let exempt: [(file: String, snippet: String, why: String)] = [
+            ("Theme/NuruTheme.swift", "UIFont(name: face, size: points)", "the helper that scales"),
+            ("Features/Live/LiveStageCompositor.swift", "Nuru.uiFont(\"Inter-Bold\", max(12, tileSize.height * 0.14))",
+             "drawn into the broadcast video, in its pixels"),
+        ]
+        var fixed: [String] = [], seen = 0
+        let scaledVar = try NSRegularExpression(pattern: #"\bvar\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*CGFloat\s*\{\s*\d+(?:\.\d+)?\s*\*\s*Nuru\.textScale\s*\}"#)
+        for (rel, text) in try TypeScan.files() {
+            let ns = text as NSString
+            let carriers = Set(scaledVar.matches(in: text, range: NSRange(location: 0, length: ns.length))
+                .map { ns.substring(with: $0.range(at: 1)) })
+            for s in TypeScan.sites(file: rel, text: text) where s.kind == .uiFont || s.kind == .nuruUIFont {
+                seen += 1
+                if exempt.contains(where: { $0.file == rel && s.source.contains($0.snippet) }) { continue }
+                let name = String(s.arg.split(separator: ".").last ?? "")
+                let carries = s.source.contains("scaled: true") || s.arg.contains("Nuru.textScale") || carriers.contains(name)
+                if !carries { fixed.append(s.description) }
+            }
+        }
+        XCTAssertGreaterThan(seen, 10, "the scan must see the app's UIKit fonts")
+        XCTAssertEqual(fixed, [], "a UIKit font at a fixed size drops the member's text size — `Nuru.uiFont(face, size, scaled: true)`")
+
+        // 2. A SwiftUI root hosted outside the app's takes the default font itself.
+        var hosted = 0
+        for (rel, text) in try TypeScan.files() {
+            let ns = text as NSString
+            var at = ns.range(of: "UIHostingController(rootView:")
+            while at.location != NSNotFound {
+                hosted += 1
+                let root = TypeScan.firstArgument(ns, from: at.location + "UIHostingController(".utf16.count)
+                XCTAssertTrue(root.contains(".nuruDefaultFont()"), "\(rel): a hosted root inherits nothing from the app's — give it `.nuruDefaultFont()`")
+                let next = at.location + at.length
+                at = ns.range(of: "UIHostingController(rootView:", range: NSRange(location: next, length: ns.length - next))
+            }
+        }
+        XCTAssertEqual(hosted, 1, "IncomingLiveInvite's own window — a new hosted root: check it carries the size")
+
+        // 3. The tabs rebuild at a new size; overlays and covers above them take the default too.
+        let root = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Shell/RootView.swift"), encoding: .utf8)
+        XCTAssertTrue(root.contains(".nuruDefaultFont()\n        .id(textScale)"))
+        XCTAssertTrue(root.contains("        .nuruDefaultFont()\n    }\n\n    // Type-ERASED per tab"), "the outermost default font")
+
+        // 4. The bars follow it: set again the moment it changes.
+        let app = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("NuruMemberApp.swift"), encoding: .utf8)
+        XCTAssertTrue(app.contains("Self.followTextSize()"))
+    }
+
+    /// What it draws: at the largest in-app size (1.3) a scaled UIKit font,
+    /// the Selah editor's text and the bars are 1.3× their design size — and
+    /// the bars follow a change without a relaunch.
+    @MainActor
+    func testUIKitTextGrowsWithTheInAppTextSize() throws {
+        let key = Nuru.textScaleKey
+        let saved = UserDefaults.standard.object(forKey: key)
+        defer {
+            if let saved { UserDefaults.standard.set(saved, forKey: key) } else { UserDefaults.standard.removeObject(forKey: key) }
+            NuruMemberApp.configureAppearance()
+        }
+        UserDefaults.standard.set(1.3, forKey: key)
+        XCTAssertEqual(Nuru.uiFont("Inter-SemiBold", 16, scaled: true).pointSize, 20.8, accuracy: 0.01)
+        XCTAssertEqual(Nuru.uiFont("Inter-SemiBold", 16).pointSize, 16, accuracy: 0.01, "unscaled stays as asked")
+        XCTAssertEqual(SelahRichText.baseSize, 20.8, accuracy: 0.01, "the Selah editor's text")
+        XCTAssertEqual(SelahRichText.baseFont.pointSize, 20.8, accuracy: 0.01)
+        func barTitle() -> CGFloat? {
+            (UINavigationBar.appearance().standardAppearance.titleTextAttributes[.font] as? UIFont)?.pointSize
+        }
+        // The app's observer set the bars again when the size changed (the test runs in the app).
+        XCTAssertEqual(try XCTUnwrap(barTitle()), 20.8, accuracy: 0.01, "the bars follow the change")
+        UserDefaults.standard.set(1.0, forKey: key)
+        XCTAssertEqual(try XCTUnwrap(barTitle()), 16, accuracy: 0.01)
+        XCTAssertEqual((UINavigationBar.appearance().standardAppearance.buttonAppearance.normal.titleTextAttributes[.font] as? UIFont)?.pointSize ?? 0,
+                       16, accuracy: 0.01)
+    }
+
     // MARK: - Rendering
 
     struct Pixels: Equatable {
@@ -344,8 +430,8 @@ enum TypeScan {
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", ".custom(\"Fraunces72pt-Italic\", size: size * Nuru.textScale)", .typeHelper),
-        ("Theme/NuruTheme.swift", "if let font = UIFont(name: face, size: size) { return font }", .typeHelper),
-        ("Theme/NuruTheme.swift", "return UIFont.systemFont(ofSize: size)", .fallback),
+        ("Theme/NuruTheme.swift", "if let font = UIFont(name: face, size: points) { return font }", .typeHelper),
+        ("Theme/NuruTheme.swift", "return UIFont.systemFont(ofSize: points)", .fallback),
         ("Theme/NuruTheme.swift", ".system(size: size, weight: weight)", .icon),
         ("Theme/NuruTheme.swift", "static func emoji(_ size: CGFloat) -> Font { .system(size: size) }", .emoji),
         ("Theme/LucideIcons.swift", ".custom(\"lucide\", fixedSize: size)", .icon),
@@ -356,7 +442,7 @@ enum TypeScan {
         (editorialFile, ".font(.fraunces(34, .medium))", .editorial),
         (editorialFile, ".font(.fraunces(44))", .editorial),
         (editorialFile, ".font(.custom(\"MrsSaintDelafield-Regular\", size: 52 * Nuru.textScale))", .editorial),
-        (editorialFile, "Nuru.uiFont(\"Fraunces-SemiBold\", 58)", .editorial),
+        (editorialFile, "Nuru.uiFont(\"Fraunces-SemiBold\", 58, scaled: true)", .editorial),
     ]
 
     /// Where an SF Symbol keeps the system face (`.symbol(size)`), per file.
@@ -683,9 +769,13 @@ enum TypeScan {
             while lo < hi { let mid = (lo + hi + 1) / 2; if starts[mid] <= offset { lo = mid } else { hi = mid - 1 } }
             return lo + 1
         }
-        // The file's own size constants: `let name: CGFloat = 16` (a `var` can change, so never).
+        // The file's own size constants: `let name: CGFloat = 16` (a `var` can change, so never)
+        // — and a size that carries the member's text size, `var name: CGFloat { 16 * Nuru.textScale }`,
+        // read as its design size.
         var constants: [String: String] = [:]
-        if let cre = try? NSRegularExpression(pattern: #"\blet\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*CGFloat\s*=\s*(\d+(?:\.\d+)?)\b"#) {
+        for pattern in [#"\blet\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*CGFloat\s*=\s*(\d+(?:\.\d+)?)\b"#,
+                        #"\bvar\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*CGFloat\s*\{\s*(\d+(?:\.\d+)?)\s*\*\s*Nuru\.textScale\s*\}"#] {
+            guard let cre = try? NSRegularExpression(pattern: pattern) else { continue }
             for m in cre.matches(in: code, range: NSRange(location: 0, length: ns.length)) {
                 constants[ns.substring(with: m.range(at: 1))] = ns.substring(with: m.range(at: 2))
             }

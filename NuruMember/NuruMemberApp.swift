@@ -18,6 +18,7 @@ struct NuruMemberApp: App {
         configureNuruCaches()
         Nuru.registerFonts()
         Self.configureAppearance()
+        Self.followTextSize()
     }
 
     var body: some Scene {
@@ -71,19 +72,41 @@ struct NuruMemberApp: App {
         }
     }
 
+    /// The bars carry the member's own text size, as everything else does:
+    /// set again the moment it changes — before RootView rebuilds under its
+    /// new `.id(textScale)` — so every bar made after has it, the tabs' and
+    /// every sheet's. (They kept 16 pt whatever the size: the Cycle 5–10
+    /// text-size audit, 2026-10-07.)
+    static func followTextSize() {
+        var applied = Nuru.textScale
+        textSizeObserver = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: nil
+        ) { _ in
+            let now = Nuru.textScale
+            guard now != applied else { return }
+            applied = now
+            if Thread.isMainThread {
+                MainActor.assumeIsolated { configureAppearance() }
+            } else {
+                DispatchQueue.main.async { MainActor.assumeIsolated { configureAppearance() } }
+            }
+        }
+    }
+    nonisolated(unsafe) private static var textSizeObserver: NSObjectProtocol?
+
     /// App-wide chrome: brand-navy titles on warm paper bars, in the type
     /// scale's faces and steps (EXPERIENCE.md §8.1 rule 3) — never the system
-    /// face, even for a bar button.
+    /// face, even for a bar button — at the member's own text size.
     static func configureAppearance() {
         let navy = UIColor(Nuru.navy)
         let appearance = UINavigationBarAppearance()
         appearance.configureWithOpaqueBackground()
         appearance.backgroundColor = UIColor(Nuru.paper)
         appearance.shadowColor = .clear
-        appearance.largeTitleTextAttributes = [.foregroundColor: navy, .font: Nuru.uiFont("Inter-SemiBold", 28)]
-        appearance.titleTextAttributes = [.foregroundColor: navy, .font: Nuru.uiFont("Inter-SemiBold", 16)]
+        appearance.largeTitleTextAttributes = [.foregroundColor: navy, .font: Nuru.uiFont("Inter-SemiBold", 28, scaled: true)]
+        appearance.titleTextAttributes = [.foregroundColor: navy, .font: Nuru.uiFont("Inter-SemiBold", 16, scaled: true)]
         let button = UIBarButtonItemAppearance()
-        button.normal.titleTextAttributes = [.font: Nuru.uiFont("Inter-SemiBold", 16)]
+        button.normal.titleTextAttributes = [.font: Nuru.uiFont("Inter-SemiBold", 16, scaled: true)]
         appearance.buttonAppearance = button
         appearance.doneButtonAppearance = button
         appearance.backButtonAppearance = button

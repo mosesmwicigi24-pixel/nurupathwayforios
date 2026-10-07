@@ -288,7 +288,10 @@ final class IncomingLiveInviteCenter: ObservableObject {
                 ?? scenes.first(where: { $0.activationState == .foregroundInactive }) else { return false }
         // A call takes the screen: put the keyboard away.
         UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-        let host = UIHostingController(rootView: IncomingLiveInviteView(invite: invite, remaining: remaining, center: self))
+        // Its own window is outside the app's root: it takes the root's
+        // default font (the member's text size) itself.
+        let host = UIHostingController(rootView: IncomingLiveInviteView(invite: invite, remaining: remaining, center: self)
+            .nuruDefaultFont())
         host.view.backgroundColor = .clear
         let w = UIWindow(windowScene: scene)
         w.windowLevel = .alert

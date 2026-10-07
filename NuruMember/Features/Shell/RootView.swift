@@ -592,6 +592,11 @@ struct RootView: View {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
             }
         }
+        // Text with no font of its own in the overlays and the covers above
+        // (the radio, the Live player, the island, celebrations) takes the
+        // default at the member's text size too — the tabs' default above is
+        // inside the `.id(textScale)` rebuild; the app root's is set once.
+        .nuruDefaultFont()
     }
 
     // Type-ERASED per tab (AnyView): otherwise RootView.body's type embeds all

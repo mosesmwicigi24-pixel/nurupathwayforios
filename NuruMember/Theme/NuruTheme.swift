@@ -264,13 +264,18 @@ enum NuruType {
 }
 
 extension Nuru {
-    /// A bundled face as a UIFont (UIKit chrome, attributed text). The faces
-    /// are proven to load by TypographyTests; should one ever go missing, a
-    /// debug build stops here instead of drawing the system face in silence.
-    static func uiFont(_ face: String, _ size: CGFloat) -> UIFont {
-        if let font = UIFont(name: face, size: size) { return font }
+    /// A bundled face as a UIFont (UIKit chrome, attributed text). `scaled`:
+    /// it carries the member's own text size (Profile → Display, the same
+    /// `Nuru.textScale` every SwiftUI type helper multiplies by) — every UIKit
+    /// font a member reads does (TypographyTests: the in-app text size reaches
+    /// every surface). The faces are proven to load by TypographyTests; should
+    /// one ever go missing, a debug build stops here instead of drawing the
+    /// system face in silence.
+    static func uiFont(_ face: String, _ size: CGFloat, scaled: Bool = false) -> UIFont {
+        let points = scaled ? size * Nuru.textScale : size
+        if let font = UIFont(name: face, size: points) { return font }
         assertionFailure("The bundled face \(face) didn't load")
-        return UIFont.systemFont(ofSize: size)
+        return UIFont.systemFont(ofSize: points)
     }
 }
 

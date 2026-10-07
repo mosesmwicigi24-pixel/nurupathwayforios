@@ -97,7 +97,12 @@ extension UIColor {
 // MARK: - body + [ThoughtSpan] ⇄ NSAttributedString
 
 enum SelahRichText {
-    static let baseSize: CGFloat = 16
+    /// The 16 reading body at the member's own text size (Profile →
+    /// Display): the editor's text grows with it as every other text does —
+    /// it kept 16 pt whatever the size (the text-size audit, 2026-10-07).
+    /// Display only: a thought stores its spans' faces and traits, never a
+    /// size.
+    static var baseSize: CGFloat { 16 * Nuru.textScale }
     static let baseFontName = SelahFont.inter.rawValue
     /// Inter at the 16 reading body — every run a member hasn't restyled.
     static var baseFont: UIFont { Nuru.uiFont(baseFontName, baseSize) }

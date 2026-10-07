@@ -661,14 +661,13 @@ struct LetterDropCapParagraph: UIViewRepresentable {
     /// The reading text as SwiftUI sets it beside it: Fraunces 18, the
     /// member's text size, scaled with the phone's like `.fraunces(18)`.
     static func bodyFont(_ traits: UITraitCollection) -> UIFont {
-        let base = Nuru.uiFont("Fraunces-Regular", 18)
-        return UIFontMetrics(forTextStyle: .body)
-            .scaledFont(for: base.withSize(base.pointSize * Nuru.textScale), compatibleWith: traits)
+        UIFontMetrics(forTextStyle: .body)
+            .scaledFont(for: Nuru.uiFont("Fraunces-Regular", 18, scaled: true), compatibleWith: traits)
     }
 
     /// The initial's face — sized at layout to span the cap's lines.
     static func capFace() -> UIFont {
-        Nuru.uiFont("Fraunces-SemiBold", 58)   // the drop cap (an editorial size — TypeScan.listed)
+        Nuru.uiFont("Fraunces-SemiBold", 58, scaled: true)   // the drop cap (an editorial size — TypeScan.listed)
     }
 }
 
