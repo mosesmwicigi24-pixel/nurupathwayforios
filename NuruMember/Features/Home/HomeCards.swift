@@ -593,6 +593,75 @@ struct VerseQuoteCard: View {
     }
 }
 
+// MARK: - The Sunday Letter, quiet (owner, 2026-10-07: colour option A)
+
+/// The Sunday Letter is navy in every state: "navy for the church's voice".
+/// This is its quiet card, for a letter already read and for the weeks before
+/// a letter exists. It is the unread knock's card without the knock: the same
+/// navy gradient, a gold hairline at 0.35 and a soft navy shadow instead of
+/// the gold glow, the gold envelope, the gold kicker, the title in white
+/// Fraunces, one line in #B9C4D4, and a gold chevron. Its words grow with the
+/// phone's text size and are never cut or split (§9.6 #4).
+struct HomeLetterQuietCard: View {
+    let title: String
+    let line: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 44, height: 44)
+                Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
+                    .foregroundStyle(Color(hex: 0xE8CA6C))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.fraunces(16, .semibold)).foregroundStyle(.white)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(title, font: .fraunces(16, .semibold))
+                Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Icon(.chevronRight, size: 18, color: Nuru.goldGlow)
+        }
+        .padding(14)
+        .background(
+            LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(Color(hex: 0xC9A227).opacity(0.35), lineWidth: 1))
+        .shadow(color: Color(hex: 0x0B1F33).opacity(0.18), radius: 8, y: 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The Sunday Letter's quiet lines (owner, 2026-10-07: colour option A).
+enum HomeLetterWords {
+    /// "Sun 4 Oct · Read again": the letter's Sunday, `week_of`, a calendar
+    /// date shown as sent and never shifted by a time zone (§8.1 rule 8).
+    static func readLine(weekOf: String, now: Date = Date()) -> String {
+        let utc = TimeZone(identifier: "UTC") ?? .current
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = utc
+        f.dateFormat = "yyyy-MM-dd"
+        guard let day = f.date(from: String(weekOf.prefix(10))) else { return "Read again" }
+        return "\(NuruDates.day(day, now: now, timeZone: utc)) · Read again"
+    }
+
+    /// "Written for your week · In 4 days": before a letter exists, its own
+    /// words, the countdown to Sunday evening folded into its one line.
+    static func arrivalLine(countdown: String) -> String { "Written for your week · \(countdown)" }
+}
+
 // MARK: - Encouragement ("You're one reflection away…" / "Beautifully done today.")
 
 /// Nuru's daily word in the header — the AI blessing written for this member.

@@ -907,6 +907,24 @@ final class ExperienceCycle5Tests: XCTestCase {
                        try renderedHeight(NuruHeaderText(title: "Faith"), .accessibility5, width: 4000), accuracy: 0.5)
         XCTAssertEqual(NuruWholeWords.steps(from: .accessibility2), [.accessibility2, .accessibility1, .xxxLarge, .xxLarge, .xLarge, .large, .medium, .small, .xSmall])
     }
+
+    // MARK: Owner, 2026-10-07 — colour option A: navy for the church's voice and the next step
+
+    /// The read letter says its Sunday and "Read again"; before a letter
+    /// exists, its own words with the countdown on its line.
+    func testTheLetterSaysItsSundayAndReadAgain() {
+        let wednesday = ISO8601DateFormatter().date(from: "2026-10-07T05:00:00Z")!
+        XCTAssertEqual(HomeLetterWords.readLine(weekOf: "2026-10-04", now: wednesday), "Sun 4 Oct · Read again")
+        XCTAssertEqual(HomeLetterWords.readLine(weekOf: "2025-12-28", now: wednesday), "Sun 28 Dec 2025 · Read again",
+                       "the year when it isn't this year")
+        XCTAssertEqual(HomeLetterWords.readLine(weekOf: "2026-10-04T00:00:00Z", now: wednesday), "Sun 4 Oct · Read again",
+                       "the calendar date sent, never shifted by a time zone")
+        XCTAssertEqual(HomeLetterWords.readLine(weekOf: "", now: wednesday), "Read again")
+        XCTAssertEqual(HomeLetterWords.arrivalLine(countdown: "In 4 days"), "Written for your week · In 4 days")
+        // Every state is navy now: the read and waiting cards are the one quiet card.
+        let home = try? String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Home/HomeView.swift"), encoding: .utf8)
+        XCTAssertEqual(home?.components(separatedBy: "HomeLetterQuietCard(").count, 3, "read and before a letter exists")
+    }
 }
 
 /// The verse tableau as it was before 84d2acb (3137194), kept as the

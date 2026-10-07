@@ -1094,35 +1094,18 @@ struct HomeView: View {
         .buttonStyle(.pressableSubtle)
     }
 
-    /// 0c (read) — the SAME letter once it's no longer new: a quiet row, not
+    /// 0c (read) — the same letter once it's no longer new: a quiet card, not
     /// a knock, so a member can always find their way back to it (and the
     /// archive one tap further) without Home manufacturing false urgency for
-    /// something they've already read.
+    /// something they've already read. Navy, as every state of the letter is
+    /// (owner, 2026-10-07: colour option A): its own title, its Sunday and
+    /// "Read again".
     private func letterReadRow(_ lt: PastoralLetter) -> some View {
         Button {
             Haptics.tap()
             openedLetter = lt
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.85))
-                        .frame(width: 38, height: 38)
-                    Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
-                        .foregroundStyle(Color(hex: 0xA8861C))
-                    // Ink, not white (owner, 2026-08-24): this quiet row sits
-                    // on the bright page — white type simply vanished into it.
-                    Text(lt.title).font(.fraunces(14, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                Icon(.chevronRight, size: 14, color: Color(hex: 0x8A97AA))
-            }
-            .padding(13)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Nuru.border, lineWidth: 1))
+            HomeLetterQuietCard(title: lt.title, line: HomeLetterWords.readLine(weekOf: lt.weekOf))
         }
         .buttonStyle(.pressableSubtle)
     }
@@ -1139,35 +1122,11 @@ struct HomeView: View {
             Haptics.tap()
             showLetterArchive = true
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 44, height: 44)
-                    Icon(.mail, size: 18, color: .white)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
-                        .foregroundStyle(Color(hex: 0xE8CA6C))
-                    Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
-                    Text("Written for your week")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0xC7D0DC))
-                }
-                Spacer(minLength: 8)
-                Text(Self.sundayLetterCountdown())
-                    .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x0A1628))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color(hex: 0xC9A227), in: Capsule())
-            }
-            .padding(14)
-            .background(
-                LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1))
+            // The read card's quiet navy, with its own words (owner,
+            // 2026-10-07: colour option A); the countdown joins its line — a
+            // fixed gold badge cut "In 4 days" at the largest text size.
+            HomeLetterQuietCard(title: "Your letter arrives Sunday evening",
+                                line: HomeLetterWords.arrivalLine(countdown: Self.sundayLetterCountdown()))
         }
         .buttonStyle(.pressableSubtle)
         .accessibilityHint("Opens your letters.")
