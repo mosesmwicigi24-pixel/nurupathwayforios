@@ -20,22 +20,18 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
     let onSelect: (S) -> Void
 
     var body: some View {
-        ScrollViewReader { proxy in
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 4) {
-                    ForEach(Array(S.allCases), id: \.self) { seg in
-                        segmentButton(seg, counts[seg] ?? 0).id(seg)
-                    }
-                }
-                .padding(4)
-            }
-            // The chosen segment is always in full view — at the larger text
-            // sizes the row scrolls, and "Depa…" sat cut at its edge (§9.6 #4).
-            .onAppear { proxy.scrollTo(selection, anchor: .center) }
-            .onChange(of: selection) { _, s in
-                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(s, anchor: .center) }
-            }
+        // Every segment fits, at every size a member can choose (final walk
+        // C3: the row scrolled, and "unity" and "Prof" sat cut at its edges).
+        // The fullest form that fits is drawn: icons and words; then words
+        // alone; then the chosen segment's words with the others' icons —
+        // each still named to VoiceOver and shown large on a long press.
+        ViewThatFits(in: .horizontal) {
+            row(.full)
+            row(.words)
+            row(.chosenWords)
         }
+        .frame(maxWidth: .infinity)
+        .padding(4)
         // A bar: its words stop at the largest everyday size; a long press
         // shows a segment large (§9.6 #4).
         .nuruBarText()
@@ -59,14 +55,35 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
-    private func segmentButton(_ seg: S, _ count: Int) -> some View {
+    /// How much of each segment is drawn.
+    enum Form { case full, words, chosenWords }
+
+    private func row(_ form: Form) -> some View {
+        HStack(spacing: 4) {
+            ForEach(Array(S.allCases), id: \.self) { seg in
+                segmentButton(seg, counts[seg] ?? 0, form: form)
+            }
+        }
+        .fixedSize()
+    }
+
+    private func segmentButton(_ seg: S, _ count: Int, form: Form) -> some View {
         let selected = selection == seg
+        // full: icon and words · words: words alone · chosenWords: the chosen
+        // segment's icon and words, the others' icons.
+        let showsIcon = form != .words
+        let showsWords = form != .chosenWords || selected
         return Button {
             onSelect(seg)
         } label: {
             HStack(spacing: 5) {
-                Icon(seg.icon, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C))
-                Text(seg.label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
+                if showsIcon {
+                    Icon(seg.icon, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C))
+                }
+                if showsWords {
+                    Text(seg.label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
+                        .lineLimit(1)
+                }
                 // Unread only — a quiet chip (no number) IS "nothing waiting",
                 // matching Chat's own segment chips exactly.
                 if count > 0 {
@@ -78,7 +95,7 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 14)
+            .padding(.horizontal, form == .full ? 14 : 12)
             .padding(.vertical, 10)
             .background(
                 selected
@@ -89,7 +106,11 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
             .shadow(color: selected ? Color(hex: 0x0B1F33).opacity(0.35) : .clear, radius: 8, y: 4)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(seg.label)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
-        .accessibilityShowsLargeContentViewer()
+        .accessibilityShowsLargeContentViewer {
+            Icon(seg.icon, size: 22, color: Nuru.navy)
+            Text(seg.label)
+        }
     }
 }

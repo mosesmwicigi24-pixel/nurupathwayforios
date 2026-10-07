@@ -378,7 +378,7 @@ struct RootView: View {
                 .frame(height: Self.safeAreaTop)
                 .ignoresSafeArea(edges: .top)
         }
-        .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
+        .overlay(alignment: .bottom) { SyncStatusBanner(sync: sync) }
         // Nuru Radio island — while the station is tuned, the black capsule
         // WRAPS the phone's Dynamic Island (wings around the hardware cutout,
         // Apple-Music style) on every tab. On Home it appears only once the
@@ -621,16 +621,19 @@ struct RootView: View {
 /// Thin status pill that appears under the status bar when the member is offline
 /// (or a queued write is still catching up). Reassures that nothing was lost —
 /// the durable queue will sync on reconnect.
-private struct SyncStatusBanner: View {
+struct SyncStatusBanner: View {
     @ObservedObject var sync: SyncCoordinator
 
-    private var message: String? {
-        if !sync.isOnline {
-            return sync.pendingCount > 0
-                ? "Offline · \(sync.pendingCount) change\(sync.pendingCount == 1 ? "" : "s") will sync"
-                : "You're offline · changes are saved on this device"
-        }
-        if sync.isSyncing && sync.pendingCount > 0 { return "Syncing \(sync.pendingCount)…" }
+    private var message: String? { Self.message(online: sync.isOnline, pending: sync.pendingCount, syncing: sync.isSyncing) }
+
+    /// Only changes waiting to sync (final walk M3): being offline is each
+    /// tab's own notice, under its header (NuruSavedCopyNotice), and nothing
+    /// says "changes are saved on this device" — over Give, where money is
+    /// never queued (§2), it was not true.
+    static func message(online: Bool, pending: Int, syncing: Bool) -> String? {
+        let changes = "\(pending) change\(pending == 1 ? "" : "s")"
+        if !online { return pending > 0 ? "Offline · \(changes) will sync" : nil }
+        if syncing && pending > 0 { return "Syncing \(changes)…" }
         return nil
     }
 
@@ -644,7 +647,7 @@ private struct SyncStatusBanner: View {
         // The animation/transition pair lives OUTSIDE the `if let` — attached to
         // the conditional content itself they never ran, so the pill used to pop
         // in/out instead of sliding.
-        ZStack(alignment: .top) {
+        ZStack(alignment: .bottom) {
             if let message = shown {
                 HStack(spacing: 6) {
                     Icon(.clock, size: 14, color: Nuru.onNavy)
@@ -654,8 +657,10 @@ private struct SyncStatusBanner: View {
                 .padding(.vertical, 6)
                 .background(Capsule().fill(sync.isOnline ? Nuru.navy : Nuru.ink))
                 .nuruShadow()
-                .padding(.top, 60)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                // Above the tab bar, never on a header (final walk M3: it
+                // covered each tab's title for its first seconds).
+                .padding(.bottom, Nuru.tabBarSpace)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
         .animation(.easeInOut(duration: 0.25), value: shown)

@@ -132,6 +132,28 @@ extension NuruStateCopy {
     }
 }
 
+/// A tab showing its saved copy says so, for as long as it does (final walk
+/// M3; EXPERIENCE.md §4): "You're offline · Showing what you last saw —
+/// we'll refresh when you're back." It sits under the tab's header, never
+/// over it (the old pill covered each title, then left), and never over a
+/// skeleton or a page with nothing saved (`hasContent` false): there the
+/// screen's own state card says what happened. Nothing while online.
+struct NuruSavedCopyNotice: View {
+    let hasContent: Bool
+    @ObservedObject private var sync = SyncCoordinator.shared
+
+    /// Pure, for the tests: offline, with something on the page.
+    static func shows(online: Bool, hasContent: Bool) -> Bool { !online && hasContent }
+    static let copy = NuruStateCopy.offline(showingSaved: true)
+
+    var body: some View {
+        if Self.shows(online: sync.isOnline, hasContent: hasContent) {
+            NuruStateView(state: .failed(Self.copy), compact: true)
+                .accessibilityIdentifier("savedCopyNotice")
+        }
+    }
+}
+
 /// What a screen shows in place of its content.
 enum NuruState: Equatable {
     case loading

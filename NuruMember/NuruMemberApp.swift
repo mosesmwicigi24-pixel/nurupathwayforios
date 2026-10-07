@@ -114,6 +114,11 @@ struct NuruMemberApp: App {
         UINavigationBar.appearance().scrollEdgeAppearance = appearance
         UINavigationBar.appearance().compactAppearance = appearance
         UINavigationBar.appearance().tintColor = UIColor(Nuru.gold)
+        // System alerts and confirmation dialogs answer in navy (final walk
+        // M5): they took the gold accent, about 1.05:1 on their grey glass —
+        // "Keep it private" before a private prayer goes congregation-wide.
+        // A destructive answer keeps the system's red.
+        UIView.appearance(whenContainedInInstancesOf: [UIAlertController.self]).tintColor = navy
     }
 }
 

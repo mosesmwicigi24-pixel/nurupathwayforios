@@ -59,6 +59,119 @@ struct NuruHeaderText: View {
     }
 }
 
+/// A pushed page's one header (EXPERIENCE.md §8.1 rule 2: back · kicker ·
+/// title), on the tabs' cream band: the "←" back on a white tile (rule 7 —
+/// never the system's "‹" or its centred inline title), the gold kicker
+/// naming where the page lives, the Fraunces title, and one line. The page
+/// hides the system bar (`.toolbar(.hidden, for: .navigationBar)`) and sets
+/// this at its top, ignoring the top safe area.
+struct NuruPushedHeader: View {
+    let kicker: String
+    let title: String
+    var line: String? = nil
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Nuru.S.md) {
+            Button { Haptics.tap(); dismiss() } label: {
+                Icon(.arrowLeft, size: 18, color: Nuru.navy)
+                    .frame(width: 40, height: 40)
+                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Back")
+            NuruHeaderText(kicker: kicker, title: title, line: line)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Nuru.S.screen)
+        .padding(.top, NuruSafeArea.top + 8)
+        .padding(.bottom, Nuru.S.lg)
+        .background(
+            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .overlay(alignment: .topTrailing) {
+                    Circle().fill(Nuru.gold.opacity(0.25)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
+                }
+                .clipShape(.rect(bottomLeadingRadius: 24, bottomTrailingRadius: 24))
+                .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+        )
+    }
+}
+
+/// A decorative pulse that runs only while its screen is seen (final walk
+/// M7: nothing animates behind a covered Home). `pulse` turns on, with the
+/// repeating `animation`, while the screen is visible and Reduce Motion is
+/// off; it turns off at once — the repeat ends — when the screen is covered
+/// (another tab, a page pushed over it: `screenVisible`).
+struct NuruPulse: ViewModifier {
+    @Binding var pulse: Bool
+    let animation: Animation
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.screenVisible) private var visible
+
+    func body(content: Content) -> some View {
+        content
+            .onAppear { update() }
+            .onChange(of: visible) { _, _ in update() }
+            .onChange(of: reduceMotion) { _, _ in update() }
+    }
+
+    private func update() {
+        if NuruPulse.runs(visible: visible, reduceMotion: reduceMotion) {
+            withAnimation(animation) { pulse = true }
+        } else {
+            var t = Transaction()
+            t.disablesAnimations = true
+            withTransaction(t) { pulse = false }
+        }
+    }
+
+    /// Pure, for the tests.
+    static func runs(visible: Bool, reduceMotion: Bool) -> Bool { visible && !reduceMotion }
+}
+
+extension View {
+    func nuruPulse(_ pulse: Binding<Bool>, _ animation: Animation) -> some View {
+        modifier(NuruPulse(pulse: pulse, animation: animation))
+    }
+}
+
+/// Text that must not break where a reader wouldn't (§8.1 rule 9; final
+/// walk C3). Pure, for the tests.
+enum NuruText {
+    /// An address breaks only after its "@" or a "." — a zero-width space
+    /// marks each place ("student1@de / v.local" at the largest size).
+    static func emailBreaks(_ s: String) -> String {
+        var out = ""
+        for ch in s {
+            out.append(ch)
+            if ch == "@" || ch == "." { out.append("\u{200B}") }
+        }
+        return out
+    }
+
+    /// A hyphen that never breaks ("Seven‑Day"): U+2011.
+    static func keepHyphens(_ s: String) -> String { s.replacingOccurrences(of: "-", with: "\u{2011}") }
+
+    /// A badge's name on its medallion (final walk C3: "Seven- / Day
+    /// Faithful", then cut at 1.3): a short name on one line; a longer one
+    /// in two, split at the space nearest its middle — never at a hyphen,
+    /// never inside a word.
+    static func badgeLines(_ name: String, oneLineUpTo limit: Int = 12) -> String {
+        let keep = keepHyphens(name.trimmingCharacters(in: .whitespaces))
+        let words = keep.split(separator: " ").map(String.init)
+        guard keep.count > limit, words.count > 1 else { return keep }
+        var best = 1
+        var bestGap = Int.max
+        for i in 1..<words.count {
+            let a = words[..<i].joined(separator: " ").count
+            let b = words[i...].joined(separator: " ").count
+            if abs(a - b) < bestGap { bestGap = abs(a - b); best = i }
+        }
+        return words[..<best].joined(separator: " ") + "\n" + words[best...].joined(separator: " ")
+    }
+}
+
 /// A line limit for the sizes most members read at; at the accessibility
 /// sizes the text wraps in full — it grows with the phone's text size and is
 /// never cut (EXPERIENCE.md §9.6 #4). Titles still wrap to two lines at the
