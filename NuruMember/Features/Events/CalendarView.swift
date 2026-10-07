@@ -170,44 +170,10 @@ struct CalendarView: View {
     // MARK: header — cream sub-page chrome (make's CommunityPage).
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Icon(.arrowLeft, size: 18, color: Nuru.navy)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-                Spacer()
-                Text("EVENTS").font(.inter(11, .bold)).kerning(1.5)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-            }
-            Text("All events & calendar")
-                .font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy)
-                .padding(.top, Nuru.S.base)
-            Text(ZeroCounts.calendarHeader(upcoming: vm.upcomingCount, month: vm.headerTitle))
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 6)
-            RoundedRectangle(cornerRadius: 2)
-                .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))
-                .frame(width: 48, height: 3)
-                .padding(.top, Nuru.S.md)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
-        .background {
-            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
-                }
-        }
-        .clipShape(.rect(bottomLeadingRadius: 30, bottomTrailingRadius: 30))
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+        // The §8.1 pushed-page header (rule 2: back · kicker · title · one
+        // line; final walk #38): the chip and the gold underline went.
+        NuruPushedHeader(kicker: "Events", title: "All events & calendar",
+                         line: ZeroCounts.calendarHeader(upcoming: vm.upcomingCount, month: vm.headerTitle))
     }
 
     // MARK: month-grid card

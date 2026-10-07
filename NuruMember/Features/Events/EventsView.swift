@@ -41,6 +41,18 @@ enum Ev {
     static func weekday(_ iso: String, _ fmt: String) -> String {
         let f = DateFormatter(); f.dateFormat = fmt; return f.string(from: date(iso))
     }
+    /// "NOV" for a gathering outside this month; nil within it — a date
+    /// chip's month line (§8.1 rule 8). The chip's 48 pt holds a month, not a
+    /// year: the gathering's own page and its countdown carry the rest.
+    static func otherMonthLabel(_ iso: String, now: Date = Date(), calendar: Calendar = .current) -> String? {
+        let d = date(iso)
+        guard d != .distantPast, !calendar.isDate(d, equalTo: now, toGranularity: .month) else { return nil }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = calendar.timeZone
+        f.dateFormat = "MMM"
+        return f.string(from: d).uppercased()
+    }
     /// "h:mm a" for an arbitrary date (series cadence subline).
     static func timeOfDate(_ d: Date) -> String {
         let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: d)
@@ -321,7 +333,7 @@ final class EventsViewModel: ObservableObject {
         if hasFilters { return "Try a different search or category." }
         return segment == .rsvps
             ? "Tap an event to say you'll be there."
-            : "Browse the full calendar to find a gathering."
+            : "The calendar above holds every gathering."
     }
 
     /// Optimistically flip a series' follow state after the server confirms.
@@ -360,6 +372,8 @@ struct EventsView: View {
                 VStack(spacing: 0) {
                     header
                     VStack(spacing: Nuru.S.base) {
+                        // A saved copy says so (final walk M3).
+                        NuruSavedCopyNotice(hasContent: !vm.occurrences.isEmpty || !vm.series.isEmpty || !vm.announcements.isEmpty)
                         // Broadcasters only (PARTNERS_PROGRAMME §0): the old
                         // Live tab's Go Live / return-to-broadcast / My
                         // Broadcasts card, gated exactly as that tab was.
@@ -430,13 +444,18 @@ struct EventsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
-            HStack(alignment: .top) {
-                // The one header's words (§8.1 rules 2–3).
-                NuruHeaderText(kicker: "Events", title: "Gathered together", line: vm.headerLine)
-                Spacer()
-                // The one bell (§7.2 #4): the dot only while the inbox has
-                // something unread (it was painted on).
-                NuruBell()
+            // One header (§8.1 rule 2), laid out as Home's and Pathway's: the
+            // kicker and the bell on one line, the title and its line below
+            // (final walk #38: the bell sat between the kicker and the title).
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center) {
+                    Text("EVENTS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                    Spacer()
+                    // The one bell (§7.2 #4): the dot only while the inbox has
+                    // something unread (it was painted on).
+                    NuruBell()
+                }
+                NuruHeaderText(title: "Gathered together", line: vm.headerLine)
             }
             // The counts only when there is something to count — a quiet
             // week's header line already says it.
@@ -450,7 +469,7 @@ struct EventsView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, embeddedInYou ? Nuru.S.base : 60).padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, embeddedInYou ? Nuru.S.base : NuruSafeArea.top + 8).padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {
@@ -743,17 +762,10 @@ struct EventsView: View {
 
     private var gatherings: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
-            HStack {
-                Text(vm.sectionTitle).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
-                Spacer()
-                NavigationLink(value: EventsNav.calendar) {
-                    HStack(spacing: 3) {
-                        Text("All & calendar").font(.inter(11, .semibold)).foregroundStyle(Nuru.navy)
-                        Icon(.chevronRight, size: 14, color: Nuru.navy)
-                    }
-                }
-                .buttonStyle(.plain)
-            }
+            // One way to the calendar (§9.6 #3; final walk C5): the CALENDAR
+            // row above. "All & calendar ›" here and "View calendar" in the
+            // empty state were the second and third.
+            Text(vm.sectionTitle).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             gatheringBody
         }
     }
@@ -809,16 +821,6 @@ struct EventsView: View {
             }
             Text(vm.emptyTitle).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
             Text(vm.emptyCaption).font(.nCardMeta).foregroundStyle(Nuru.faint).multilineTextAlignment(.center)
-            NavigationLink(value: EventsNav.calendar) {
-                HStack(spacing: 6) {
-                    Icon(.calendarDays, size: 14, color: .white)
-                    Text("View calendar").font(.inter(11, .semibold)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 16).padding(.vertical, 8)
-                .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, 4)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl).padding(.horizontal, Nuru.S.base)
         .cardSurfaceEv()
@@ -1187,12 +1189,18 @@ private struct EvCardCover: View {
     }
 
     private var dateChip: some View {
-        VStack(spacing: 0) {
+        // A gathering in another month carries its month (§8.1 rule 8; the
+        // walk's "SUN 15" under "OCTOBER 2026" was 15 Nov).
+        let month = Ev.otherMonthLabel(occ.startAt)
+        return VStack(spacing: 0) {
             Text(Ev.weekday(occ.startAt, "EEE").uppercased())
                 .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(accent)
             Text(Ev.weekday(occ.startAt, "d")).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
+            if let month {
+                Text(month).font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.ink600)
+            }
         }
-        .frame(width: 48, height: 48)
+        .frame(width: 48, height: month == nil ? 48 : 62)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         // A figure in a fixed tile keeps the everyday size (§9.6 #4): the "11"
         // spilled out of it; the card's countdown carries the day, and grows.
@@ -1373,46 +1381,11 @@ private struct EvSubHeader: View {
     let eyebrow: String
     let title: String
     var subtitle: String? = nil
-    @Environment(\.dismiss) private var dismiss
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Icon(.arrowLeft, size: 18, color: Nuru.navy)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-                Spacer()
-                Text(eyebrow.uppercased()).font(.inter(11, .bold)).kerning(1.5)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-            }
-            Text(title).font(.fraunces(26, .semibold)).foregroundStyle(Nuru.navy).padding(.top, Nuru.S.base)
-            if let subtitle {
-                Text(subtitle).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 6)
-            }
-            RoundedRectangle(cornerRadius: 2)
-                .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))
-                .frame(width: 48, height: 3)
-                .padding(.top, Nuru.S.md)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
-        .background {
-            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
-                }
-        }
-        .clipShape(.rect(bottomLeadingRadius: 30, bottomTrailingRadius: 30))
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
-    }
+    /// The §8.1 pushed-page header (rule 2: back · kicker · title · one line;
+    /// final walk #38): the chip where the bell would be and the gold
+    /// underline went.
+    var body: some View { NuruPushedHeader(kicker: eyebrow, title: title, line: subtitle) }
 }
 
 // MARK: - "See all" announcements page
@@ -1423,8 +1396,8 @@ private struct AnnouncementsListPage: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                EvSubHeader(eyebrow: "Announcements", title: "From your church",
-                            subtitle: "\(vm.announcements.count) recent")
+                EvSubHeader(eyebrow: "Events", title: "Announcements",
+                            subtitle: "\(vm.announcements.count) recent, from your church")
                 VStack(spacing: 0) {
                     ForEach(Array(vm.announcements.enumerated()), id: \.element.id) { idx, a in
                         NavigationLink(value: AppRoute.announcement(a.announcementId)) {
@@ -1466,7 +1439,9 @@ private struct SeriesListPage: View {
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
-                EvSubHeader(eyebrow: "Series", title: "Series you follow")
+                // The page's name says what it shows (final walk C5: it read
+                // "Series you follow" over Discover's three).
+                EvSubHeader(eyebrow: "Events", title: discover ? "More series" : "Series you follow")
                 VStack(spacing: Nuru.S.md) {
                     tabs
                     if shown.isEmpty { emptyCard } else { rows }
@@ -1574,7 +1549,10 @@ private struct SeriesListRow: View {
             .frame(width: 40, height: 40)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(series.title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
+                    // A content row title (§8.1 rule 3), wrapping to two
+                    // lines, never cut (rule 9: "Welcome to Ablaze Worsh…").
+                    Text(series.title).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if series.following && series.newCount > 0 {
                         Text("\(series.newCount) new").font(.inter(11, .bold))
                             .foregroundStyle(Color(hex: 0x8A6D18))

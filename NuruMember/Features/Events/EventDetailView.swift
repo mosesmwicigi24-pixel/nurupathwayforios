@@ -445,7 +445,7 @@ private struct EvdHero: View {
                 Spacer()
             }
             .padding(.horizontal, 16)
-            .padding(.top, 54)   // Figma frames 42; nudged for the real status bar
+            .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band on every phone (final walk C7: the disc was cut flat at 54)
 
             Spacer(minLength: 0)
 

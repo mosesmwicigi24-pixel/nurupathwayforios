@@ -10,6 +10,10 @@ struct AnnouncementsAllView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        VStack(spacing: 0) {
+        // The §8.1 pushed-page header (rule 2: back · kicker · title), not the
+        // system's centred title.
+        NuruPushedHeader(kicker: "Home", title: "Announcements", line: "From your church")
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
                 if loading {
@@ -33,12 +37,15 @@ struct AnnouncementsAllView: View {
             .padding(.horizontal, 20).padding(.top, 12)
             .padding(.bottom, Nuru.tabBarSpace)
         }
-        .background(Color(hex: 0xFAF7F0).ignoresSafeArea())
         .refreshable {
             do { items = try await MemberAPI.myAnnouncements(); failed = false } catch { failed = true }
         }
-        .navigationTitle("Announcements")
-        .navigationBarTitleDisplayMode(.inline)
+        }
+        .ignoresSafeArea(edges: .top)
+        .background(Nuru.paper.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .nuruEdgeSwipeBack()
         .task {
             do { items = try await MemberAPI.myAnnouncements(); failed = false }
             catch { failed = true }
@@ -60,8 +67,9 @@ struct AnnouncementsAllView: View {
                 Text(a.body)
                     .font(.inter(12)).foregroundStyle(Nuru.ink600)
                     .lineLimit(2).multilineTextAlignment(.leading)
-                if let at = a.sentAt {
-                    Text(String(at.prefix(10)))
+                // The one date shape (§8.1 rule 8) — it showed "2026-10-05".
+                if let at = a.sentAt, let d = NuruDates.parse(at) ?? PauseDates.date(String(at.prefix(10))) {
+                    Text(NuruDates.day(d))
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600.opacity(0.7))
                 }
             }
