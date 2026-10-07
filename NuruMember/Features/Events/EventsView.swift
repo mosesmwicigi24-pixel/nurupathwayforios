@@ -499,9 +499,12 @@ struct EventsView: View {
             }
             .padding(.horizontal, 4)
             // The eight days fill the card — no scrolling to find this week.
+            // A bar: its words grow as far as eight cells have room and stop
+            // ("1 / 0" at the largest size); a long press shows a day large.
             HStack(spacing: 4) {
                 ForEach(vm.week) { d in dayPill(d) }
             }
+            .nuruBarText()
         }
         .padding(Nuru.S.md)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
@@ -527,6 +530,7 @@ struct EventsView: View {
             .background(bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.pressable)
+        .accessibilityShowsLargeContentViewer()
     }
 
     // MARK: 2b — a quiet week (§6.5): one calm card, then the calendar and
@@ -618,10 +622,15 @@ struct EventsView: View {
                     Icon(.qrCode, size: 22, color: Nuru.navy)
                 }
                 VStack(alignment: .leading, spacing: 1) {
+                    // Whole at the largest size: "ATTENDANC / E", "Check in to a serv…" (§9.6 #4).
                     Text("CHURCH ATTENDANCE").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords("CHURCH ATTENDANCE", font: .inter(11, .bold), kerning: 1.5)
                     Text("Check in to a service").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Scan the QR at church · see your streak")
                         .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: .white)
@@ -649,6 +658,8 @@ struct EventsView: View {
         .padding(4)
         .background(Nuru.white, in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
+        // A bar: "Upc / omi" under its count at the largest size (§9.6 #4).
+        .nuruBarText()
     }
 
     private func segmentPill(_ s: EventSegment) -> some View {
@@ -672,6 +683,7 @@ struct EventsView: View {
             .background(on ? Nuru.navy : .clear, in: Capsule())
         }
         .buttonStyle(.plain)
+        .accessibilityShowsLargeContentViewer()
     }
 
     // MARK: 5 — search (with clear affordance)
@@ -1182,6 +1194,9 @@ private struct EvCardCover: View {
         }
         .frame(width: 48, height: 48)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // A figure in a fixed tile keeps the everyday size (§9.6 #4): the "11"
+        // spilled out of it; the card's countdown carries the day, and grows.
+        .nuruFixedFigure()
     }
 
     @ViewBuilder private var statusPill: some View {
@@ -1231,16 +1246,31 @@ private struct EvCardBody: View {
     let occ: CalendarOccurrence
     let rsvpStatus: String?
     let onRsvp: (() async -> Void)?
+    /// At the accessibility sizes the card's words wrap whole and the time
+    /// and place stand one above the other (§9.6 #4): "Ablaze Worsh…",
+    /// "3:00 P…", "Nuru Pl…".
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(occ.title).font(.nRowTitle).foregroundStyle(Nuru.ink).lineLimit(1)
+            Text(occ.title).font(.nRowTitle).foregroundStyle(Nuru.ink)
+                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
             if let d = occ.description, !d.isEmpty {
-                Text(d).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(2).padding(.top, 4)
+                Text(d).font(.nCardMeta).foregroundStyle(Nuru.muted)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true).padding(.top, 4)
             }
-            HStack(spacing: Nuru.S.base) {
-                meta(.clock, Ev.timeRange(occ.startAt, occ.endAt))
-                if let loc = occ.location, !loc.isEmpty { meta(.mapPin, loc) }
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 4) {
+                        meta(.clock, Ev.timeRange(occ.startAt, occ.endAt))
+                        if let loc = occ.location, !loc.isEmpty { meta(.mapPin, loc) }
+                    }
+                } else {
+                    HStack(spacing: Nuru.S.base) {
+                        meta(.clock, Ev.timeRange(occ.startAt, occ.endAt))
+                        if let loc = occ.location, !loc.isEmpty { meta(.mapPin, loc) }
+                    }
+                }
             }
             .padding(.top, Nuru.S.sm)
             Divider().overlay(Nuru.border).padding(.top, Nuru.S.md)
@@ -1253,7 +1283,8 @@ private struct EvCardBody: View {
     private func meta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
             Icon(icon, size: 14, color: Nuru.ink600)
-            Text(text).font(.nCardMeta).foregroundStyle(Nuru.muted).lineLimit(1)
+            Text(text).font(.nCardMeta).foregroundStyle(Nuru.muted)
+                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -1270,6 +1301,7 @@ private struct EvCardFooter: View {
             avatars
             Text(occ.going > 0 ? "\(occ.going) going" : "Be the first to RSVP")
                 .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
+                .fixedSize(horizontal: false, vertical: true)   // "Be the first to R…" at the largest (§9.6 #4)
             Spacer(minLength: 0)
             if onRsvp != nil { rsvpButton }
         }
