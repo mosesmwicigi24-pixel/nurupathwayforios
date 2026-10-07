@@ -271,3 +271,12 @@ enum PlanLines {
         return "You paused on \(f.string(from: at)) — Day \(waitingDay) is waiting"
     }
 }
+
+/// A plan day's kickers (final walk M6, "today" means today): the day's own
+/// parts and reading, which may be read on any day — never "TODAY'S" over a
+/// day paused since Monday. Android says the same.
+enum PlanDayWords {
+    static func hubKicker(parts n: Int) -> String { "THIS DAY · \(n) PART\(n == 1 ? "" : "S")" }
+    static let readingKicker = "THE READING"
+    static func questionKicker(_ n: Int) -> String { n == 1 ? "THE QUESTION" : "THE QUESTIONS" }
+}

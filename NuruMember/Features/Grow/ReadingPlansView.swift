@@ -1353,7 +1353,10 @@ struct PlanDayView: View {
                     VStack(spacing: 0) {
                         dayHeader
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("TODAY'S JOURNEY · \(hubParts.count) PART\(hubParts.count == 1 ? "" : "S")")
+                            // The day's own parts — never "TODAY'S" on a day
+                            // read later than its own (final walk M6: Day 4 of
+                            // a plan paused since Monday said "TODAY'S JOURNEY").
+                            Text(PlanDayWords.hubKicker(parts: hubParts.count))
                                 .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
                             ForEach(hubParts) { part in
                                 partLink(part) { partRow(part) }

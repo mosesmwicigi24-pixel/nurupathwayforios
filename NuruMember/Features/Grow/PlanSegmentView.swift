@@ -779,7 +779,7 @@ struct TalkItOverView: View {
 
     private var promptCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(promptLines.count == 1 ? "TODAY'S QUESTION" : "TODAY'S QUESTIONS")
+            Text(PlanDayWords.questionKicker(promptLines.count))
                 .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
             ForEach(Array(promptLines.enumerated()), id: \.offset) { _, q in
                 Text(q)

@@ -74,7 +74,9 @@ struct DayOpening: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TODAY'S READING").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+            // Not "TODAY'S READING": the day may be read on any day (final
+            // walk M6).
+            Text(PlanDayWords.readingKicker).font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
             if let t = title, !t.isEmpty {
                 Text(t).font(.fraunces(pal.fs(26), .medium)).kerning(-0.5).foregroundStyle(pal.ink)
                     .fixedSize(horizontal: false, vertical: true)
