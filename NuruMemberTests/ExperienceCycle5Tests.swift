@@ -675,7 +675,7 @@ final class ExperienceCycle5Tests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(n, Self.fixedLineLimitCeiling, "a new fixed line limit can cut text at the largest size — use .nuruLineLimit, which lifts there")
     }
-    static let fixedLineLimitCeiling = 257
+    static let fixedLineLimitCeiling = 229
 
     // MARK: Cycle 4 walk — a finished lesson offers the way on
 

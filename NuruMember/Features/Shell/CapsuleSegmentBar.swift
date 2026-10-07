@@ -20,14 +20,25 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
     let onSelect: (S) -> Void
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 4) {
-                ForEach(Array(S.allCases), id: \.self) { seg in
-                    segmentButton(seg, counts[seg] ?? 0)
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 4) {
+                    ForEach(Array(S.allCases), id: \.self) { seg in
+                        segmentButton(seg, counts[seg] ?? 0).id(seg)
+                    }
                 }
+                .padding(4)
             }
-            .padding(4)
+            // The chosen segment is always in full view — at the larger text
+            // sizes the row scrolls, and "Depa…" sat cut at its edge (§9.6 #4).
+            .onAppear { proxy.scrollTo(selection, anchor: .center) }
+            .onChange(of: selection) { _, s in
+                withAnimation(.easeInOut(duration: 0.2)) { proxy.scrollTo(s, anchor: .center) }
+            }
         }
+        // A bar: its words stop at the largest everyday size; a long press
+        // shows a segment large (§9.6 #4).
+        .nuruBarText()
         .background(Color.white.opacity(0.7), in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
         .padding(.horizontal, Nuru.S.screen)
@@ -79,5 +90,6 @@ struct CapsuleSegmentBar<S: CapsuleSegment>: View where S.AllCases: RandomAccess
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? [.isSelected] : [])
+        .accessibilityShowsLargeContentViewer()
     }
 }

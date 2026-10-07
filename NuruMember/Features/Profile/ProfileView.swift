@@ -211,7 +211,9 @@ struct ProfileView: View {
                     .accessibilityLabel("Settings")
                 }
             }
-            HStack(spacing: 16) {
+            // The name beside the photo at the everyday sizes; under it at the
+            // largest, where it read "Ada Thri…" (§9.6 #4).
+            NuruAdaptiveStack(spacing: 16) {
                 // Tap anywhere on the avatar (incl. the pencil) to pick a new photo.
                 PhotosPicker(selection: $avatarPick, matching: .images, photoLibrary: .shared()) {
                     ZStack(alignment: .bottomTrailing) {
@@ -237,10 +239,13 @@ struct ProfileView: View {
                 .disabled(avatarUploading)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(p?.fullName ?? "").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .nuruLineLimit(1).minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(p?.fullName ?? "", font: .fraunces(22, .medium), kerning: -0.44)
                     if let email = p?.email {
                         Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
-                            .lineLimit(1).truncationMode(.middle)
+                            .nuruLineLimit(1).truncationMode(.middle)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     // Only when there IS a level. This read
                     // `currentLevel ?? 1` and so told every member without an

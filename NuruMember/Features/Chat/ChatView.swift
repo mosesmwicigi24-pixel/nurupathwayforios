@@ -1294,6 +1294,9 @@ private struct MemberStack: View {
 private struct RowPreview: View {
     let c: ChatConversation
     let showAuthor: Bool
+    /// One line at the everyday sizes; two at the largest, where one cut even
+    /// "No messages yet" to "No message…" (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var unread: Bool { c.unread > 0 }
     var body: some View {
         HStack(spacing: 4) {
@@ -1308,9 +1311,10 @@ private struct RowPreview: View {
             } else {
                 (authorText + Text(c.lastBody ?? "No messages yet"))
                     .font(.inter(11)).foregroundStyle(bodyColor)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .lineLimit(1)
+        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
     }
     private var authorText: Text {
         guard showAuthor, let a = c.lastAuthor, !a.isEmpty else { return Text("") }

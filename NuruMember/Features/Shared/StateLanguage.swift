@@ -178,6 +178,8 @@ struct NuruStateView: View {
                 Text(title)
                     .font(.nCardTitle).foregroundStyle(Nuru.navy)
                     .fixedSize(horizontal: false, vertical: true)
+                    // Every state card's title keeps its words whole (§9.6 #4).
+                    .nuruWholeWords(title, font: .nCardTitle)
                     .padding(.top, 14)
                 if let line {
                     Text(line)

@@ -243,9 +243,13 @@ struct SettingsView: View {
             HStack(spacing: Nuru.S.md) {
                 iconTile(.fingerprint)   // its state is in its words (rule 1)
                 VStack(alignment: .leading, spacing: 1) {
+                    // "authentica / tion" beside the switch at the largest size (§9.6 #4).
                     Text("Two-factor authentication").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords("Two-factor authentication", font: .inter(13, .semibold))
                     Text(twoFactorOn ? "Active · Authenticator app" : "Not enabled · recommended")
                         .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Toggle("", isOn: Binding(get: { twoFactorOn }, set: { want in
@@ -327,8 +331,11 @@ struct SettingsView: View {
                             .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
+                    .accessibilityShowsLargeContentViewer()
                 }
             }
+            // A bar too: its three choices stop at the largest everyday size.
+            .nuruBarText()
             .padding(.top, Nuru.S.xs)
             Text("Adjusts text size across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
 
@@ -351,8 +358,11 @@ struct SettingsView: View {
                         .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
+                    .accessibilityShowsLargeContentViewer()
                 }
             }
+            // A bar: "Co… Def… Rela…" at the largest size (§9.6 #4).
+            .nuruBarText()
             .padding(.top, Nuru.S.xs)
             Text("Adjusts line spacing across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
         }

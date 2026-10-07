@@ -165,6 +165,10 @@ struct DepartmentsView: View {
             }
             Text("No departments yet")
                 .font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                // "departme / nts" at the largest size (§9.6 #4).
+                .nuruWholeWords("No departments yet", font: .fraunces(22, .semibold))
             Text("When the church sets up its serving teams, they'll appear here — what they do, what they need, and how to join one.")
                 .font(.nBody).foregroundStyle(Nuru.ink600)
                 .multilineTextAlignment(.center)
