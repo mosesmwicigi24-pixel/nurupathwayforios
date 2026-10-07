@@ -197,7 +197,7 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(HomeWeek.plansRow([cara], now: monday).title, "Continue · First Steps")
         let ada = try plan("p1", day: 4, done: [1, 2, 3], lastFinished: "2026-10-05T08:45:28.123Z")
         XCTAssertEqual(HomeWeek.plansRow([ada], now: monday).title, "Done today · First Steps")
-        XCTAssertEqual(HomeWeek.plansRow(nil).title, "Start a reading plan")
+        XCTAssertEqual(HomeWeek.plansRow([]).title, "Start a reading plan")
         let quiet = HomeWeek.eventsRow(calendar: [], home: [], rsvps: [], now: monday, timeZone: TimeZone(identifier: "Africa/Nairobi")!)
         XCTAssertEqual(quiet.title, "See the church calendar")
         XCTAssertEqual(quiet.line, "No gatherings this week")
@@ -974,7 +974,8 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(HomeWeek.plansRow([try plan("p1", day: 2, done: [1], lastFinished: "2026-10-01T09:33:50.486Z")], now: monday).ask?.verb,
                        "Continue")
         XCTAssertNil(HomeWeek.plansRow([try plan("p1", day: 4, done: [1, 2, 3], lastFinished: "2026-10-05T08:45:28.123Z")], now: monday).ask)
-        XCTAssertNil(HomeWeek.plansRow(nil).ask, "starting a plan is a standing invitation")
+        XCTAssertNil(HomeWeek.plansRow([]).ask, "starting a plan is a standing invitation")
+        XCTAssertNil(HomeWeek.plansRow(nil).ask, "a failed read never asks (final walk M4)")
         // Cell: no cell asks to be connected, until it has asked; a cell asks nothing.
         let nairobi = TimeZone(identifier: "Africa/Nairobi")!
         XCTAssertEqual(HomeWeek.cellRow(nil, timeZone: nairobi, now: monday).ask, .init(verb: "Ask", subject: "Find your cell"))

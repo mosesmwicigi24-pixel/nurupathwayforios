@@ -79,7 +79,10 @@ struct CellInfoView: View {
                             if let live = vm.liveStream { cellLiveCard(live) }
                             if LiveBroadcastEligibility.showCellEntryPoint(auth.profile) { goLiveButton }
                             leaderCard
-                            if hasRhythm { rhythmCard }
+                            // When it meets, always said (final walk C4): with
+                            // nothing set, "No gathering set yet" — the page
+                            // said nothing at all.
+                            rhythmCard
                             if let n = vm.cell?.next { nextGatheringCard(n) }
                             if let lv = vm.cell?.leaderView, lv.count > 0 { shepherdsNoteCard(lv) }
                             membersCard
@@ -247,11 +250,6 @@ struct CellInfoView: View {
 
     // MARK: Meeting rhythm (own cell, from cell-summary)
 
-    private var hasRhythm: Bool {
-        guard let c = vm.cell else { return false }
-        return c.meets != nil || c.room != nil || c.next != nil || c.rhythmSource != nil
-    }
-
     private var rhythmCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("MEETING RHYTHM").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.muted)
@@ -261,7 +259,7 @@ struct CellInfoView: View {
             } else if vm.cell?.rhythmSource != "series" {
                 // No occurrence on the books and no series to imply one —
                 // say so honestly instead of borrowing a date.
-                rhythmRow(.calendarDays, "Next session", "Not scheduled yet", muted: true)
+                rhythmRow(.calendarDays, "Next gathering", CellRhythmWords.noneSet, muted: true)
             }
             if let r = vm.cell?.room { rhythmRow(.mapPin, "Where", r) }
         }
@@ -556,4 +554,10 @@ enum CellLeaderWords {
         default: return raw
         }
     }
+}
+
+/// The cell page's words for a cell with no gathering on the books (final
+/// walk C4) — Android says the same.
+enum CellRhythmWords {
+    static let noneSet = "No gathering set yet"
 }

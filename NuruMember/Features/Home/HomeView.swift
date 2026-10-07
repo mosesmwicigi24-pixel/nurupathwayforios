@@ -31,6 +31,14 @@ final class HomeViewModel: ObservableObject {
     /// with the row the Plans stack expects, and YOUR WEEK names the plan
     /// being read (ReadingPlanRow.active).
     @Published var plans: [ReadingPlanRow] = []
+    /// The plans, the cell summary and the calendar each answered at least
+    /// once (final walk M4): until then a failed read is "Didn't load just
+    /// now" on YOUR WEEK — never "Start a reading plan", "Find your cell ·
+    /// Ask" or "No gatherings this week" for a member who may have all three.
+    /// A later refresh that fails keeps what was shown.
+    @Published var plansLoaded = false
+    @Published var cellLoaded = false
+    @Published var eventsLoaded = false
 
     // Verse
     @Published var verse: (text: String, reference: String, version: String)?
@@ -175,15 +183,15 @@ final class HomeViewModel: ObservableObject {
 
         self.welcomeVideo = await video ?? nil
         self.prayerPosts = await posts ?? []
-        self.plans = await plans ?? []
+        if let p = await plans { self.plans = p; plansLoaded = true }
         self.featuredAnnouncement = await fann ?? nil
         self.announcements = await anns ?? []
-        self.cell = (await summary)?.cell
+        if let s = await summary { self.cell = s.cell; cellLoaded = true }
         // Asked to be connected? Only worth asking while there's no cell.
-        if self.cell == nil, let s = try? await MemberAPI.cellConnection(), !s.inCell {
+        if cellLoaded, self.cell == nil, let s = try? await MemberAPI.cellConnection(), !s.inCell {
             self.cellAskedAt = s.request?.requestedAt
         }
-        self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
+        if let c = await cal { self.events = c.sorted { $0.startAt < $1.startAt }; eventsLoaded = true }
         // Rendered exactly as received — the server caps at 5 and orders
         // soonest-first; the client never caps, sorts, or filters.
         self.homeEvents = await hev ?? []
@@ -397,6 +405,9 @@ struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.scenePhase) private var scenePhase
+    /// False while another tab is shown: the tabs are kept alive behind one
+    /// another (RootView), so onAppear / onDisappear never fire for Home.
+    @Environment(\.screenVisible) private var screenVisible
     @StateObject private var vm = HomeViewModel()
     /// Whether a discipler is paired (GET /growth/mentor) — the discipler row
     /// shows only then (Cycle 4, B1).
@@ -406,6 +417,15 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     /// Featured-carousel position (auto-advances every 6s; swipes respected).
     @State private var featuredPageIndex = 0
+
+    /// Home is what the member sees (final walk M7): its tab, at its root,
+    /// the app active, nothing full-screen over it. The featured carousel
+    /// turns and the on-air and live polls run only then — they ran on
+    /// behind the other tabs and every page pushed over Home.
+    private var onScreen: Bool {
+        HomeMotion.onScreen(selected: screenVisible, atRoot: path.isEmpty, active: scenePhase == .active,
+                            covered: showServiceScanner || openLiveItem != nil || openedLetter != nil || showLetterArchive)
+    }
     @State private var playingVideo = false
     /// Poster frames cut from videos the server gave no thumbnail for.
     @StateObject private var posters = VideoPosterCache.shared
@@ -496,7 +516,10 @@ struct HomeView: View {
         // A first day leads with the path's first step, not a side task
         // (§9.1 rule 4): the reflection waits; a person waiting never does.
         let firstDay = vm.journey?.isFirstDay == true
-        let needs = vm.nudges.filter { !HomeWeek.repeats($0, in: week) && !(firstDay && $0.kind == "reflection_due") }
+        // The letter card above the rail is the letter's own place (final
+        // walk C1): its "waiting" nudge is never said again below it.
+        let needs = vm.nudges.filter { !HomeWeek.repeats($0, in: week, letterOnHome: vm.letter?.letterId)
+            && !(firstDay && $0.kind == "reflection_due") }
         // Nuru Live — the church-scope LIVE banner sits at the very TOP of the
         // whole feed, above even the load-error strip: a live broadcast is the
         // most urgent thing on the screen. Hidden entirely when nothing church-
@@ -583,6 +606,10 @@ struct HomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     header
+                    // A saved copy says so, under the header, for as long as
+                    // it shows (final walk M3) — never over the skeleton.
+                    NuruSavedCopyNotice(hasContent: vm.pathway != nil)
+                        .padding(.horizontal, Nuru.S.base).padding(.top, Nuru.S.base)
                     // Split into opaque `some View` groups. A single VStack with all
                     // ~18 sections compiles to one enormous parameter-pack TupleView
                     // whose mangled type name overflows the Swift metadata demangler
@@ -620,6 +647,10 @@ struct HomeView: View {
                 }
                 .scrollsToTopOnReselect(.home)   // a re-tap at the root returns to the top (B10)
             }
+            // Home's own cards see whether Home is what the member sees
+            // (final walk M7): their pulses stop behind another tab, a page
+            // pushed over Home, or a cover.
+            .environment(\.screenVisible, onScreen)
             .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -755,10 +786,13 @@ struct HomeView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active, tabs.selected == .home { Task { await vm.refreshQuietly() } }
         }
-        // Radio poll — re-check now-playing every 45s while Home is visible so the
-        // ON AIR card appears/disappears as broadcasts start and end. The `.task`
-        // is cancelled automatically when Home leaves the screen.
-        .task {
+        // Radio poll — re-check now-playing every 45s while Home is on screen
+        // so the ON AIR card appears/disappears as broadcasts start and end.
+        // Keyed by `onScreen` (final walk M7): the tabs are kept alive behind
+        // one another, so a plain `.task` never ended when another tab, or a
+        // page pushed over Home, covered it.
+        .task(id: onScreen) {
+            guard onScreen else { return }
             while !Task.isCancelled {
                 await vm.refreshOnAir()
                 try? await Task.sleep(nanoseconds: 45_000_000_000)
@@ -773,7 +807,8 @@ struct HomeView: View {
         // wait for a stream to already be known). Every result is folded into
         // the shared LiveDiscoveryCenter, which decides whether to pop the
         // mini-window (a stream_id this session hasn't surfaced yet).
-        .task {
+        .task(id: onScreen) {
+            guard onScreen else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled else { return }
@@ -997,6 +1032,10 @@ struct HomeView: View {
     /// This-28-days vs previous-28-days movement, for the ▲/▼ badge.
     private var growthTrend: ScoreTrend? { vm.scores?.trend }
 
+    /// The header ring's side: 42 pt at the everyday size, growing with the
+    /// in-app text size so its figure and badge never meet.
+    static var ringSide: CGFloat { 42 * Nuru.textScale }
+
     // MiniRing (Figma) — 42px, growth ring, with a ▲/▼ 28-day trend badge.
     // The arc sweeps in once on appear and re-tracks smoothly as data lands.
     private var progressRing: some View {
@@ -1015,7 +1054,9 @@ struct HomeView: View {
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }
-        .frame(width: 42, height: 42)
+        // The ring grows with the member's own text size, as its figure and
+        // badge do (final walk C3: at 1.3 the "↑26" badge covered the "26").
+        .frame(width: Self.ringSide, height: Self.ringSide)
         .overlay(alignment: .bottomTrailing) {
             if let t = growthTrend, t.delta != 0 { trendBadge(t).offset(x: 5, y: 4) }
         }
@@ -1311,11 +1352,12 @@ struct HomeView: View {
     /// The five rows from what Home already loaded; HomeWeek decides the
     /// words (and each row's "none" form when its data didn't come).
     private var weekRows: [HomeWeekRow] {
-        HomeWeek.rows(journey: vm.journey, enrolledLevel: auth.me?.enrollment?.currentLevel, plans: vm.plans,
-                      calendar: vm.events, homeEvents: vm.homeEvents, rsvps: vm.rsvps,
+        HomeWeek.rows(journey: vm.journey, enrolledLevel: auth.me?.enrollment?.currentLevel,
+                      plans: vm.plansLoaded ? vm.plans : nil,
+                      calendar: vm.eventsLoaded ? vm.events : nil, homeEvents: vm.homeEvents, rsvps: vm.rsvps,
                       partnership: vm.partnership, schedules: vm.schedules,
                       railsLine: GivingMethods.homeGiveLine(vm.givingMethods), cell: vm.cell,
-                      cellAskedAt: vm.cellAskedAt,
+                      cellLoaded: vm.cellLoaded, cellAskedAt: vm.cellAskedAt,
                       planSealedHere: PlanDayLog.sealedToday())
     }
 
@@ -1913,10 +1955,16 @@ struct HomeView: View {
                 .animation(.easeInOut(duration: 0.25), value: featuredPageIndex)
             }
         }
-        .onReceive(Timer.publish(every: 6, on: .main, in: .common).autoconnect()) { _ in
-            guard pages.count > 1 else { return }
-            withAnimation(.easeInOut(duration: 0.45)) {
-                featuredPageIndex = (featuredPageIndex + 1) % pages.count
+        // Turns every 6 s only while Home is on screen (final walk M7): a
+        // Timer publisher fired on behind the other tabs and pushed pages.
+        .task(id: HomeMotion.turns(onScreen: onScreen, pages: pages.count)) {
+            guard HomeMotion.turns(onScreen: onScreen, pages: pages.count) else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                guard !Task.isCancelled, pages.count > 1 else { return }
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    featuredPageIndex = (featuredPageIndex + 1) % pages.count
+                }
             }
         }
     }
@@ -2163,14 +2211,30 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, Nuru.S.base)
-            VStack(spacing: 10) {
-                scoreBar("Habits", s.habits.score, Nuru.gold, delta: s.trend?.domains?["habits"])
-                // Every bar is progress — gold (§8.1 rule 1; Word was blue,
-                // Attendance green).
-                scoreBar("Word", s.word.score, Nuru.gold, delta: s.trend?.domains?["word"])
-                scoreBar("Prayer", s.prayer.score, Nuru.gold, delta: s.trend?.domains?["prayer"])
-                scoreBar("Curriculum", s.curriculum.score, Nuru.gold, delta: s.trend?.domains?["curriculum"])
-                scoreBar("Attendance", s.attendance.score, Nuru.gold, delta: s.trend?.domains?["attendance"])
+            // Every bar is progress — gold (§8.1 rule 1; Word was blue,
+            // Attendance green).
+            let bars: [(label: String, value: Int, key: String)] = [
+                ("Habits", s.habits.score, "habits"), ("Word", s.word.score, "word"),
+                ("Prayer", s.prayer.score, "prayer"), ("Curriculum", s.curriculum.score, "curriculum"),
+                ("Attendance", s.attendance.score, "attendance")]
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(spacing: 10) {
+                        ForEach(bars, id: \.key) { b in scoreBar(b.label, b.value, Nuru.gold, delta: s.trend?.domains?[b.key]) }
+                    }
+                } else {
+                    // The labels' column is as wide as its widest word, at
+                    // every in-app size (final walk C3): a fixed 72 pt broke
+                    // "Curriculu / m" and "Attendanc / e" at "Large".
+                    Grid(alignment: .leading, horizontalSpacing: Nuru.S.md, verticalSpacing: 10) {
+                        ForEach(bars, id: \.key) { b in
+                            GridRow {
+                                Text(b.label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).fixedSize()
+                                scoreBarLine(b.value, Nuru.gold, delta: s.trend?.domains?[b.key])
+                            }
+                        }
+                    }
+                }
             }
             .padding(.top, Nuru.S.base)
             // (The journey's next step was repeated here — "Take the Level 1
@@ -2256,10 +2320,13 @@ struct HomeView: View {
                     let t = growTiles[i]
                     growTileLink(t)
                         .buttonStyle(.pressable)
-                        // "New today" cue on the devotional — a gentle pull to start.
-                        // (Decoration only — must never intercept the tile's tap.)
+                        // "New today" cue on the devotional — only while
+                        // there is something new: today's reflection is
+                        // still to write (§7.1 rule 8; final walk C10: the
+                        // dot was always drawn). Decoration only — never
+                        // intercepts the tile's tap.
                         .overlay(alignment: .topTrailing) {
-                            if i == 0 {
+                            if i == 0 && reflectionDue {
                                 HomePulseDot().offset(x: 2, y: -2).allowsHitTesting(false)
                             }
                         }
@@ -2514,10 +2581,8 @@ private struct HomeLiveHeaderRing: View {
             .stroke(Color(hex: 0xDC2626), lineWidth: 1.5)
             .scaleEffect(expand ? 1.28 : 1)
             .opacity(expand ? 0 : 0.8)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) { expand = true }
-            }
+            // Pulses only while Home is seen (final walk M7).
+            .nuruPulse($expand, .easeOut(duration: 1.3).repeatForever(autoreverses: false))
     }
 }
 

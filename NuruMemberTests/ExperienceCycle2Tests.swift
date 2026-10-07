@@ -261,7 +261,10 @@ final class ExperienceCycle2Tests: XCTestCase {
         let finished = try plan("fear", "Fear Not", completedAt: "2026-09-30T08:00:00Z")
         let reading = try plan("new", "New Grace", current: 4)
         XCTAssertTrue(HomeWeek.plansRow([finished, reading]).title.hasSuffix("· New Grace"), "the first enrolled, UNFINISHED plan")
-        XCTAssertEqual(HomeWeek.plansRow(nil), none, "the plans didn't load — the none form")
+        // A failed read is never a fact (final walk M4): it says so, and
+        // never invites a member who may be reading one to start a plan.
+        XCTAssertEqual(HomeWeek.plansRow(nil).title, "Your reading plans", "the plans didn't load")
+        XCTAssertEqual(HomeWeek.plansRow(nil).line, "Didn't load just now")
         XCTAssertEqual(HomeWeek.plansRow([]), none)
     }
 
@@ -336,13 +339,16 @@ final class ExperienceCycle2Tests: XCTestCase {
     }
 
     func testNoGatheringIsAQuietRow() throws {
-        let none = eventsRow()
+        let none = eventsRow(calendar: [])
         XCTAssertEqual(none.title, "See the church calendar")
         XCTAssertNil(none.ask, "the calendar is a standing invitation, not a step (colour option A)")
         XCTAssertEqual(none.line, "No gatherings this week")
         XCTAssertEqual(none.destination, .events)
         XCTAssertEqual(eventsRow(calendar: [], home: [], rsvps: []), none, "Ada today: nothing on the calendar")
-        XCTAssertEqual(eventsRow(rsvps: [try rsvp("ev-1", "No date", at: nil)]), none, "an RSVP with no next occurrence")
+        XCTAssertEqual(eventsRow(calendar: [], rsvps: [try rsvp("ev-1", "No date", at: nil)]), none, "an RSVP with no next occurrence")
+        // The calendar didn't load: the week is not known to be quiet (final walk M4).
+        XCTAssertEqual(eventsRow().line, "Didn't load just now")
+        XCTAssertEqual(eventsRow().title, "See the church calendar")
     }
 
     // Giving
@@ -375,10 +381,13 @@ final class ExperienceCycle2Tests: XCTestCase {
 
     func testAGiftThatPromptsNothingThisWeekIsNotTheRow() throws {
         let give = givingRow(try standing(), [try gift("s-far", nextRunAt: "2026-10-12T06:00:00Z"),
-                                              try gift("s-paused", status: "paused", nextRunAt: "2026-10-06T06:00:00Z"),
                                               try gift("s-paid", nextRunAt: "2026-10-06T06:00:00Z", next: "0"),
                                               try gift("s-stopping", pledge: "p-old", nextRunAt: "2026-10-06T06:00:00Z", next: "null")])
-        XCTAssertEqual(give.title, "Give", "the eighth day, a paused gift, nothing to pay, a collector stopping with its pledge")
+        XCTAssertEqual(give.title, "Give", "the eighth day, nothing to pay, a collector stopping with its pledge")
+        // A paused gift is never offered as a new "Give" (final walk M2):
+        // Home says what Give says (FinalFixesTests).
+        XCTAssertEqual(givingRow(try standing(), [try gift("s-paused", status: "paused", nextRunAt: "2026-10-06T06:00:00Z")]).title,
+                       "Paused · Your monthly gift")
         XCTAssertNil(give.ask, "Give is a standing invitation, not a step (colour option A)")
         XCTAssertEqual(give.line, "Tithe & offering · M-Pesa", "the rails line — only rails that work here")
         XCTAssertEqual(give.destination, .give)
@@ -446,12 +455,15 @@ final class ExperienceCycle2Tests: XCTestCase {
         XCTAssertEqual(r.line, "Collected on Tue 6 Oct")
     }
 
-    func testEitherReadFailingIsGive() throws {
+    func testEitherReadFailingSaysSo() throws {
         let p = try standing(pledges: [kenyaPledge], due: [dueJSON("p-kenya", "Kenya trip", dueOn: "2026-10-05", amount: 500_000)])
         let gifts = [try gift("s-kenya", pledge: "p-kenya")]
         XCTAssertEqual(givingRow(p, nil), givingRow(nil, gifts), "nothing about a gift or a pledge is said on a guess")
-        XCTAssertEqual(givingRow(nil, gifts).title, "Give")
+        // Nor "Give" as if nothing were in motion (final walk M4).
+        XCTAssertEqual(givingRow(nil, gifts).title, "Your giving")
+        XCTAssertEqual(givingRow(nil, gifts).line, "Didn't load just now")
         XCTAssertEqual(givingRow(nil, gifts).destination, .give)
+        XCTAssertFalse(HomeWeek.asksToGive([givingRow(nil, gifts)]))
     }
 
     // Cell — the member's own
@@ -477,7 +489,9 @@ final class ExperienceCycle2Tests: XCTestCase {
         // "Ask to be connected" (§9.2 #12) — it opened Community, which has no way to find one.
         XCTAssertEqual(r.line, "Ask to be connected — tell the church where you live.")
         XCTAssertEqual(r.destination, .cellConnect)
-        XCTAssertEqual(HomeWeek.cellRow(nil, timeZone: nairobi), r, "the summary didn't load — the none form")
+        // The summary didn't load: never "Find your cell" (final walk M4).
+        XCTAssertEqual(HomeWeek.cellRow(nil, loaded: false, timeZone: nairobi).title, "Your cell")
+        XCTAssertNil(HomeWeek.cellRow(nil, loaded: false, timeZone: nairobi).ask)
     }
 
     // The block
@@ -485,11 +499,18 @@ final class ExperienceCycle2Tests: XCTestCase {
     func testTheWeekIsFiveRowsInTheJourneysOrder() throws {
         let rows = HomeWeek.rows(journey: nil, enrolledLevel: nil, plans: nil, calendar: nil, homeEvents: nil, rsvps: nil,
                                  partnership: nil, schedules: nil, railsLine: "Tithe & offering", cell: nil,
-                                 now: now, timeZone: nairobi)
+                                 cellLoaded: false, now: now, timeZone: nairobi)
         XCTAssertEqual(rows.map(\.pillar), [.pathway, .plans, .events, .giving, .cell])
-        XCTAssertEqual(rows.map(\.title), ["Open your pathway", "Start a reading plan", "See the church calendar", "Give", "Find your cell"],
-                       "nothing loaded: every row in its none form — the card still stands")
-        XCTAssertTrue(HomeWeek.asksToGive(rows))
+        // Nothing loaded: every row says so — never a "none" form, never an
+        // ask (final walk M4) — and the card still stands.
+        XCTAssertEqual(rows.map(\.title), ["Open your pathway", "Your reading plans", "See the church calendar", "Your giving", "Your cell"])
+        XCTAssertFalse(HomeWeek.asksToGive(rows))
+        // Loaded and empty, each row is its none form.
+        let none = HomeWeek.rows(journey: nil, enrolledLevel: nil, plans: [], calendar: [], homeEvents: [], rsvps: [],
+                                 partnership: try standing(), schedules: [], railsLine: "Tithe & offering", cell: nil,
+                                 now: now, timeZone: nairobi)
+        XCTAssertEqual(none.map(\.title), ["Open your pathway", "Start a reading plan", "See the church calendar", "Give", "Find your cell"])
+        XCTAssertTrue(HomeWeek.asksToGive(none))
     }
 
     // MARK: §6.2 / §6.5 — one header line on Events and Plans; a quiet week is quiet

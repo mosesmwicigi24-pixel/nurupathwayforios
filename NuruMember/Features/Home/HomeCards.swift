@@ -104,10 +104,8 @@ struct HomeLiveNowCard: View {
         .background(HomeFig.navy)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .onAppear {
-            guard !reduceMotion else { return }   // pulses are decoration only
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1.2).repeatForever(autoreverses: true))
     }
 
     // 16:9 poster with LIVE pill, ON AIR studio lights, and the gold play disc.
@@ -517,10 +515,8 @@ struct HomeWeekChain: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1.4).repeatForever(autoreverses: true))
     }
 }
 
@@ -813,7 +809,10 @@ struct HomeWeekCard: View {
                     .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .nuruWholeWords(row.title, font: .nRowTitle)
                 if !row.line.isEmpty {
-                    Text(row.line).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
+                    // A gift's failed prompt is told in Give's amber, in the
+                    // server's words (final walk M2).
+                    Text(row.urgent ? NuruText.keepHyphens(row.line) : row.line).font(row.urgent ? .inter(11, .semibold) : .nCardMeta)
+                        .foregroundStyle(row.urgent ? Nuru.urgentText : HomeFig.metaGray)
                         .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -978,10 +977,8 @@ struct HomeOnAirCard: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .stroke(Color.white.opacity(0.06), lineWidth: 1))
         .shadow(color: Color(hex: 0x0A1628).opacity(0.35), radius: 12, y: 7)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1).repeatForever(autoreverses: true))
     }
 
     private var art: some View {
@@ -1086,10 +1083,8 @@ struct HomeLiveBannerCard: View {
             in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(HomeFig.liveRed.opacity(0.4), lineWidth: 1))
         .shadow(color: HomeFig.liveRed.opacity(0.2), radius: 10, y: 5)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1).repeatForever(autoreverses: true))
     }
 }
 
@@ -1105,10 +1100,8 @@ struct HomePulseDot: View {
                 .opacity(pulse ? 0 : 0.6)
             Circle().fill(HomeFig.gold).frame(width: 10, height: 10)
         }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeOut(duration: 1.6).repeatForever(autoreverses: false))
     }
 }
 

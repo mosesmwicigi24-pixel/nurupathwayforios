@@ -7,8 +7,11 @@
 //
 // Pure (no views, no network): the tests pin every row's every form, and
 // Android says the same words from the same table (YourWeek.kt). A row whose
-// data failed to load (nil, or nothing) speaks in its "none" form — it never
-// blocks the card. A row's forms are tried in the table's order; the first
+// data failed to load says so — "Didn't load just now" under the pillar's
+// own name, with no ask — and never speaks in its "none" form: a failed read
+// is never a fact (final walk M4: "Find your cell · Ask" and "Start a reading
+// plan" for a member in a cell with a plan under way). It never blocks the
+// card. A row's forms are tried in the table's order; the first
 // that holds shows. "This week" is today through the seventh day after, on
 // the church's (Nairobi) clock — the server's own DUE window. Money keeps the
 // Give code's own rules: which gift collects itself (PledgePace,
@@ -60,6 +63,14 @@ struct HomeWeekRow: Equatable, Identifiable {
     /// a level being prepared, the exam opening soon) and for a standing
     /// invitation ("Start a reading plan", "Give", the church calendar).
     var ask: Ask? = nil
+    /// Its read failed and nothing was kept: the row names its pillar and
+    /// says "Didn't load just now" — never a "none" form, never an ask, and
+    /// never the cue for "Support God's work" (final walk M4).
+    var unloaded: Bool = false
+    /// Its line is a failure in the server's own words — a recurring gift's
+    /// last prompt that didn't go through — drawn in the urgent colour, as
+    /// Give draws it (final walk M2).
+    var urgent: Bool = false
     var id: Pillar { pillar }
 
     struct Ask: Equatable {
@@ -88,19 +99,30 @@ enum HomeWeek {
     static func rows(journey: Journey?, enrolledLevel: Int?, plans: [ReadingPlanRow]?,
                      calendar: [CalendarOccurrence]?, homeEvents: [HomeEventRow]?, rsvps: [MyRsvp]?,
                      partnership: Partnership?, schedules: [GivingSchedule]?, railsLine: String,
-                     cell: CellSummary.Cell?, cellAskedAt: String? = nil, planSealedHere: Bool = false,
+                     cell: CellSummary.Cell?, cellLoaded: Bool = true, cellAskedAt: String? = nil,
+                     planSealedHere: Bool = false,
                      now: Date = Date(), timeZone: TimeZone = GiveCalendar.nairobi) -> [HomeWeekRow] {
         [pathwayRow(journey, enrolledLevel: enrolledLevel),
          plansRow(plans, sealedHere: planSealedHere, now: now),
          eventsRow(calendar: calendar, home: homeEvents, rsvps: rsvps, now: now, timeZone: timeZone),
          givingRow(partnership: partnership, schedules: schedules, railsLine: railsLine, now: now),
-         cellRow(cell, askedAt: cellAskedAt, timeZone: timeZone, now: now)]
+         cellRow(cell, loaded: cellLoaded, askedAt: cellAskedAt, timeZone: timeZone, now: now)]
+    }
+
+    /// What a row says when its read failed and nothing was kept (final walk
+    /// M4): the pillar's own name, "Didn't load just now", its home — no ask.
+    static let didntLoad = "Didn't load just now"
+    static func unloadedRow(_ pillar: HomeWeekRow.Pillar, _ title: String,
+                            _ destination: HomeWeekRow.Destination) -> HomeWeekRow {
+        HomeWeekRow(pillar: pillar, title: title, line: didntLoad, destination: destination, unloaded: true)
     }
 
     /// Support God's work shows only while the week's giving row is "Give" —
-    /// a member already giving isn't asked twice (§6.1, 7).
+    /// a member already giving isn't asked twice (§6.1, 7) — and never while
+    /// the gifts didn't load (that is not "nothing in motion").
     static func asksToGive(_ rows: [HomeWeekRow]) -> Bool {
-        rows.first { $0.pillar == .giving }?.destination == .give
+        guard let g = rows.first(where: { $0.pillar == .giving }) else { return false }
+        return g.destination == .give && !g.unloaded
     }
 
     /// "What needs you today" never repeats a YOUR WEEK row (EXPERIENCE.md
@@ -109,12 +131,20 @@ enum HomeWeek {
     /// cell the Cell row opens, the test inside the module the Pathway row
     /// continues — is the same ask twice on one page ("Take the Level 1
     /// exam" over "Take the Level 1 exam"). The row keeps it; the rail drops
-    /// it. Reflection, the letter, invites and messages are no row's — they
-    /// stay. Android's YourWeek.repeats, the same rule.
-    static func repeats(_ n: HomeNudge, in week: [HomeWeekRow]) -> Bool {
+    /// it. Reflection, invites and messages are no row's — they stay. The
+    /// letter has its own card above the rail (final walk C1): a nudge for
+    /// the letter that card shows ("Your Sunday letter is waiting · Read it"
+    /// under the letter itself) is the same ask twice, and the card keeps it;
+    /// a nudge for an older letter still sealed is its own ask. Android's
+    /// YourWeek.repeats, the same rule.
+    static func repeats(_ n: HomeNudge, in week: [HomeWeekRow], letterOnHome: String? = nil) -> Bool {
         let key = n.route.isEmpty ? n.kind : n.route
         let p = n.params
         switch key {
+        case "letter", "letter_unread":
+            guard let shown = letterOnHome, !shown.isEmpty else { return false }
+            let id = p?.letterId ?? ""
+            return id.isEmpty || id == shown
         case "level_exam", "level_review":
             guard let level = p?.levelNumber else { return false }
             return week.contains { $0.destination == .journey(.exam(level)) }
@@ -170,8 +200,11 @@ enum HomeWeek {
     /// invitation to start one. Its line is the one story about today
     /// (PlanLines, §9.2 #3): "Day 3 done today · Day 4 next" once today's day
     /// is read — this phone sealed it (`sealedHere`) or any phone did.
+    /// Nil: the plans didn't load — "Your reading plans · Didn't load just
+    /// now", never the invitation to start one (final walk M4).
     static func plansRow(_ plans: [ReadingPlanRow]?, sealedHere: Bool = false, now: Date = Date()) -> HomeWeekRow {
-        guard let p = ReadingPlanRow.active(in: plans ?? []) else {
+        guard let plans else { return unloadedRow(.plans, "Your reading plans", .plans) }
+        guard let p = ReadingPlanRow.active(in: plans) else {
             return HomeWeekRow(pillar: .plans, title: "Start a reading plan",
                                line: "A few minutes a day — with the whole family of God.", destination: .plans)
         }
@@ -251,6 +284,9 @@ enum HomeWeek {
             return HomeWeekRow(pillar: .events, title: "Join · \(g.title)", line: when(g.start, timeZone), destination: .event(g.occ),
                                ask: ask)
         }
+        // "No gatherings this week" is read from the calendar: without it
+        // (the read failed) the week is not known to be quiet (final walk M4).
+        if calendar == nil { return unloadedRow(.events, "See the church calendar", .events) }
         return HomeWeekRow(pillar: .events, title: "See the church calendar", line: "No gatherings this week",
                            destination: .events)
     }
@@ -271,15 +307,47 @@ enum HomeWeek {
     ///    the server says it is late; Partners. Money already on its way is
     ///    never asked for twice — only the uncovered rest, and none at all
     ///    while every shilling of it is;
-    /// 3. otherwise "Give" and the rails that work here; Give.
-    /// Either read failed → "Give": nothing about a gift or a pledge is said
-    /// on a guess.
+    /// 3. a paused recurring gift: "Paused · Your monthly gift" (or the
+    ///    pledge it collects) and whether and when it prompts again, in Give's
+    ///    own words (PauseCopy.cardLine); the gift's sheet. A paused gift is
+    ///    never offered as a new "Give" (final walk M2: Cara);
+    /// 4. otherwise "Give" and the rails that work here; Give.
+    /// Before all of them, a running gift whose last prompt didn't go through
+    /// says so in the server's words, as Give does — never "Collected on …"
+    /// (final walk M2: Ben's "There wasn't enough in the M-Pesa account.").
+    /// Either read failed → "Your giving · Didn't load just now": nothing
+    /// about a gift or a pledge is said on a guess, nor "Give" as if nothing
+    /// were in motion (final walk M4).
     static func givingRow(partnership: Partnership?, schedules: [GivingSchedule]?, railsLine: String,
                           now: Date) -> HomeWeekRow {
         let give = HomeWeekRow(pillar: .giving, title: "Give", line: railsLine, destination: .give)
-        guard let p = partnership, let gifts = schedules else { return give }
+        guard let p = partnership, let gifts = schedules else { return unloadedRow(.giving, "Your giving", .give) }
         let today = PauseDates.wire(now)
         func pledge(_ id: String) -> Pledge? { p.pledges.first { $0.pledgeId == id } }
+        /// The pledge a gift collects — named on the gift, or (an older row)
+        /// by the pledge's own `schedule_id`.
+        func pledgeId(of s: GivingSchedule) -> String? {
+            s.pledge?.pledgeId
+                ?? p.pledges.first { !($0.scheduleId ?? "").isEmpty && $0.scheduleId == s.scheduleId }?.pledgeId
+        }
+        /// "Your weekly gift" · "Your monthly gift" · the pledge it collects.
+        func giftTitle(_ s: GivingSchedule) -> String {
+            guard let id = pledgeId(of: s) else {
+                return ScheduleRhythm.isWeekly(s.frequency) ? "Your weekly gift" : "Your monthly gift"
+            }
+            return pledge(id)?.displayTitle ?? s.pledge.flatMap { $0.title.isEmpty ? nil : $0.title } ?? "Your pledge"
+        }
+        /// Its last prompt didn't go through, and it still runs: the server
+        /// clears `last_failure` once a prompt is paid.
+        func failing(_ s: GivingSchedule) -> Bool {
+            s.status.lowercased() == "active" && !(s.lastFailure?.reason ?? "").isEmpty
+        }
+
+        // 0 · A running gift whose last prompt failed — Give's amber line.
+        if let s = gifts.first(where: failing) {
+            return HomeWeekRow(pillar: .giving, title: "Giving · \(giftTitle(s))", line: s.lastFailure?.reason ?? "",
+                               destination: .schedule(s.scheduleId), urgent: true)
+        }
         // Nothing is urgent before it is (§9.3 rule 2): a total pledge's far
         // deadline is not this week's ask.
         let owedByHand = p.due.filter { d in
@@ -290,12 +358,11 @@ enum HomeWeek {
 
         // 1 · A gift that collects itself this week — the soonest.
         var soonest: (gift: GivingSchedule, day: String, pledgeId: String?)?
-        for s in gifts where s.status.lowercased() == "active" {
+        for s in gifts where s.status.lowercased() == "active" && !failing(s) {
             guard let at = giveParseDate(s.nextRunAt) else { continue }
             let day = PauseDates.wire(at)
             guard let n = days(from: today, to: day), (0...weekDays).contains(n) else { continue }
-            let pledgeId = s.pledge?.pledgeId
-                ?? p.pledges.first { !($0.scheduleId ?? "").isEmpty && $0.scheduleId == s.scheduleId }?.pledgeId
+            let pledgeId = pledgeId(of: s)
             // What the prompt asks: 0 is nothing (a pledge already covered); a
             // pledge's collector with no amount is stopping with its pledge.
             let asks = pledgeId != nil ? (s.nextAmountMinor ?? 0) > 0 : s.nextAmountMinor != 0
@@ -305,10 +372,9 @@ enum HomeWeek {
         // "Giving ·" — in motion, nothing to do (§9.1 rule 3).
         if let c = soonest, let line = ScheduleRhythm.collectedOn(c.day) {
             if let id = c.pledgeId {
-                let title = pledge(id)?.displayTitle ?? c.gift.pledge.flatMap { $0.title.isEmpty ? nil : $0.title } ?? "Your pledge"
-                return HomeWeekRow(pillar: .giving, title: "Giving · \(title)", line: line, destination: .pledge(id))
+                return HomeWeekRow(pillar: .giving, title: "Giving · \(giftTitle(c.gift))", line: line, destination: .pledge(id))
             }
-            return HomeWeekRow(pillar: .giving, title: "Giving · " + (ScheduleRhythm.isWeekly(c.gift.frequency) ? "Your weekly gift" : "Your monthly gift"),
+            return HomeWeekRow(pillar: .giving, title: "Giving · \(giftTitle(c.gift))",
                                line: line, destination: .schedule(c.gift.scheduleId))
         }
 
@@ -324,6 +390,12 @@ enum HomeWeek {
             }
             return HomeWeekRow(pillar: .giving, title: "Pay · \(title)", line: line, destination: .partners,
                                ask: .init(verb: "Pay", subject: title))
+        }
+
+        // 3 · A paused gift — Give's words for whether and when it comes back.
+        if let s = gifts.first(where: { $0.status.lowercased() == "paused" }) {
+            return HomeWeekRow(pillar: .giving, title: "Paused · \(giftTitle(s))", line: PauseCopy.cardLine(for: s, now: now),
+                               destination: .schedule(s.scheduleId))
         }
         return give
     }
@@ -356,9 +428,13 @@ enum HomeWeek {
     /// The member's OWN cell (GET /me/cell-summary) — never the congregation's
     /// featured cell, which is the church's pick, not theirs: its name and
     /// next gathering, else the honest "not set" and how many walk in it. No
-    /// cell (or the read failed): the way to find one.
-    static func cellRow(_ c: CellSummary.Cell?, askedAt: String? = nil, timeZone: TimeZone,
+    /// cell: the way to find one. The read failed (`loaded` false): "Your
+    /// cell · Didn't load just now".
+    static func cellRow(_ c: CellSummary.Cell?, loaded: Bool = true, askedAt: String? = nil, timeZone: TimeZone,
                         now: Date = Date()) -> HomeWeekRow {
+        // The summary didn't load: never "Find your cell · Ask" to a member
+        // who may well be in one (final walk M4).
+        if c == nil, !loaded { return unloadedRow(.cell, "Your cell", .community) }
         guard let c else {
             // "Ask to be connected" (§9.2 #12): it opened Community, which has
             // no way to find a cell. Once asked — on any phone — it says so.
@@ -400,4 +476,19 @@ enum HomeWeek {
         guard let a = PauseDates.date(from), let b = PauseDates.date(to) else { return nil }
         return GiveCalendar.calendar.dateComponents([.day], from: a, to: b).day
     }
+}
+
+/// What moves on Home, and when (final walk M7): nothing animates or polls
+/// behind a covered Home. Pure, for the tests.
+enum HomeMotion {
+    /// Home is what the member sees: its tab is selected, it is at its root
+    /// (no page pushed over it), the app is active, and nothing full-screen
+    /// covers it.
+    static func onScreen(selected: Bool, atRoot: Bool, active: Bool, covered: Bool) -> Bool {
+        selected && atRoot && active && !covered
+    }
+
+    /// The featured carousel turns only on screen, and only with two pages
+    /// or more.
+    static func turns(onScreen: Bool, pages: Int) -> Bool { onScreen && pages > 1 }
 }
