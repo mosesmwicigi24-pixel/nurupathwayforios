@@ -1449,10 +1449,9 @@ struct HomeView: View {
             }
             .padding(Nuru.S.base)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(hex: 0xEEF0F3), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        // The standard white card — a hairline, the one soft shadow (owner,
+        // 2026-10-07: colour option A). Its #EEF0F3 fill was off the palette.
+        .cardSurface()
     }
 
     private func videoThumb(_ v: WelcomeVideo, shape: CGFloat) -> some View {
