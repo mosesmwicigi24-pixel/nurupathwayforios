@@ -389,15 +389,20 @@ struct PLPlanTile: View {
                         }
                     }
                 VStack(alignment: .leading, spacing: 2) {
+                    // Whole at the largest sizes (§9.6 #4): the grid is one
+                    // column there, and the words wrap rather than cut.
                     Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy)
-                        .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                        .nuruLineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     if plan.enrolled, plan.completedAt == nil {
-                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(11, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep).lineLimit(1)
+                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(11, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep)
+                            .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     } else if plan.completedAt != nil {
-                        Text("COMPLETED").font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep).lineLimit(1)
+                        Text("COMPLETED").font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep)
+                            .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     } else if let c = plan.category, !c.isEmpty {
                         Text(c.uppercased()).font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.catText)
-                            .lineLimit(1)
+                            .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -607,12 +612,13 @@ struct PLPlanPromo: View {
                         .fixedSize(horizontal: false, vertical: true)
                     if let s = plan.subtitle, !s.isEmpty {
                         Text(s).font(.inter(12, .semibold)).foregroundStyle(PL.gold)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if let h = blurb {
                         Text(h)
                             .font(.fraunces(13)).italic().foregroundStyle(PL.ink2)
                             .nuruLineSpacing(4)
-                            .lineLimit(3)
+                            .nuruLineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 2)
                     }
@@ -627,6 +633,7 @@ struct PLPlanPromo: View {
                         Icon(.clock, size: 14, color: PL.ink3)
                         Text("\(plan.dayCount) days · a few minutes a day")
                             .font(.inter(11)).foregroundStyle(PL.ink3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 2)
                 }

@@ -155,6 +155,9 @@ final class ReadingPlansViewModel: ObservableObject {
 struct ReadingPlansView: View {
     @StateObject private var vm = ReadingPlansViewModel()
     @EnvironmentObject private var tabs: TabRouter
+    /// At the accessibility sizes the plan grid is one column and a section's
+    /// count takes a line of its own (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var query = ""
     @State private var category = "all"
     @AppStorage("planReminderOn") private var reminderOn = false
@@ -552,12 +555,23 @@ struct ReadingPlansView: View {
         VStack(alignment: .leading, spacing: 24) {
             ForEach(Array(collections.enumerated()), id: \.element.id) { i, col in
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
-                        Spacer(minLength: 0)
-                        Text("\(col.plans.count)").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
+                    // The count beside the label at the everyday sizes; under
+                    // it at the largest, where "· 2 weeks and up 4" read as "24".
+                    if typeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .nuruWholeWords(col.label, font: .fraunces(13, .semibold), kerning: -0.13)
+                            Text("\(col.plans.count) plan\(col.plans.count == 1 ? "" : "s")").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
+                        }
+                    } else {
+                        HStack {
+                            Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
+                            Spacer(minLength: 0)
+                            Text("\(col.plans.count)").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
+                        }
                     }
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    LazyVGrid(columns: planColumns, spacing: 12) {
                         ForEach(col.plans) { plan in PLPlanTile(plan: plan) }
                     }
                 }
@@ -588,6 +602,13 @@ struct ReadingPlansView: View {
         }
     }
 
+    /// Two plans to a row at the everyday sizes; one at the largest, where
+    /// two cut every title ("Who A…", "Healed…") and topic ("IDENTI…"). §9.6 #4.
+    private var planColumns: [GridItem] {
+        typeSize.isAccessibilitySize ? [GridItem(.flexible())]
+                                     : [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
+    }
+
     private var filteredResults: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
@@ -614,7 +635,7 @@ struct ReadingPlansView: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: planColumns, spacing: 12) {
                     ForEach(filtered) { plan in PLPlanTile(plan: plan) }
                 }
             }

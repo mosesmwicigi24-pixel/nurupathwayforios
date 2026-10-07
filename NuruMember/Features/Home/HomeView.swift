@@ -1980,7 +1980,7 @@ struct HomeView: View {
                 Text(title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
                     .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .nuruWholeWords(title, font: .nCardTitle)
-                Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
+                Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).nuruLineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
                     .layoutPriority(-1)
                 Spacer(minLength: 0)
