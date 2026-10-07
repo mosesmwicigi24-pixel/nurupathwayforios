@@ -1481,6 +1481,8 @@ private struct MLHeader: View {
                 .foregroundStyle(ML.navy)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                // "Relationships" whole at the largest size (§9.6 #4).
+                .nuruWholeWords(title, font: .fraunces(26, .medium), kerning: -0.7)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 14)
             // Meta row — read · sections · watch · listen, evenly spaced.

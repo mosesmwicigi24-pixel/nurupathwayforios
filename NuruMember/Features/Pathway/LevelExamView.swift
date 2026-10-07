@@ -488,6 +488,7 @@ private struct ExamFrontDoor: View {
                         Text(levelTitle.uppercased())
                             .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                             .fixedSize(horizontal: false, vertical: true)
+                            .nuruWholeWords(levelTitle.uppercased(), font: .nCardKicker, kerning: 1.4)
                     }
                     Text(door.title)
                         .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)

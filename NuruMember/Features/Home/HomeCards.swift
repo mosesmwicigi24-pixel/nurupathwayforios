@@ -718,6 +718,7 @@ struct HomeWeekCard: View {
                 // lines rather than cut (rule 9).
                 Text(row.title).font(.nRowTitle).foregroundStyle(HomeFig.navy)
                     .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(row.title, font: .nRowTitle)
                 if !row.line.isEmpty {
                     Text(row.line).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
                         .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)

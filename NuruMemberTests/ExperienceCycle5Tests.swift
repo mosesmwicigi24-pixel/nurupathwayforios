@@ -675,7 +675,7 @@ final class ExperienceCycle5Tests: XCTestCase {
         }
         XCTAssertLessThanOrEqual(n, Self.fixedLineLimitCeiling, "a new fixed line limit can cut text at the largest size — use .nuruLineLimit, which lifts there")
     }
-    static let fixedLineLimitCeiling = 270
+    static let fixedLineLimitCeiling = 265
 
     // MARK: Cycle 4 walk — a finished lesson offers the way on
 
@@ -794,5 +794,89 @@ final class ExperienceCycle5Tests: XCTestCase {
                              ("Features/Profile/ProfileView.swift", 1)] {
             XCTAssertEqual(try src(rel).components(separatedBy: ".nuruFixedFigure()").count - 1, rings, rel)
         }
+    }
+
+    // MARK: §9.6 #4, largest text — the verse card holds its words; a name never breaks a word
+
+    /// A view's pixels across a width, at a text size.
+    @MainActor
+    func renderedPixels<V: View>(_ view: V, _ size: DynamicTypeSize, width: CGFloat = 343) throws -> (h: Int, bytes: [UInt8]) {
+        let r = ImageRenderer(content: view.frame(width: width).environment(\.dynamicTypeSize, size))
+        r.proposedSize = ProposedViewSize(width: width, height: nil)
+        r.scale = 2
+        let image = try XCTUnwrap(r.cgImage, "nothing rendered")
+        let w = image.width, h = image.height
+        var bytes = [UInt8](repeating: 0, count: w * h * 4)
+        let drawn = bytes.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: w, height: h, bitsPerComponent: 8, bytesPerRow: w * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+            return true
+        }
+        XCTAssertTrue(drawn, "couldn't read the rendered pixels")
+        return (h, bytes)
+    }
+    /// Production's six levels: their names and short names.
+    static let productionLevelNames = [
+        "Foundations of Faith", "Inner Transformation", "Foundations of Grace & Kingdom Perspective",
+        "Life & Power of the Holy Spirit", "Kingdom Culture, Leadership & Multiplication", "Level 6",
+        "Foundations", "Transformation", "Grace", "Spirit", "Leadership",
+    ]
+
+    /// At the largest size a long word in a display face was wider than the
+    /// line and broke in two: Pathway's "Foundatio / ns of / Faith". Every word
+    /// of every level's name, set in each title that shows a level's name, at
+    /// that title's line on a 375 pt phone, takes one line: no taller than the
+    /// same word on a line with room to spare (a word broken in two is two
+    /// lines).
+    @MainActor
+    func testALevelsNameNeverBreaksAWordAtTheLargestSize() throws {
+        let words = Set(Self.productionLevelNames.flatMap { NuruWholeWords.words($0) }).sorted()
+        // Each title that shows a level's name, and its line on a 375 pt
+        // phone. The two private cards are set exactly as their views set them.
+        let titles: [(String, CGFloat, (String) -> AnyView)] = [
+            ("Pathway's header", 335, { AnyView(NuruHeaderText(title: $0)) }),
+            ("a header beside the bell", 283, { AnyView(NuruHeaderText(title: $0)) }),
+            ("the level page's hero", 335, { AnyView(LevelHeroTitle(overline: "Level 3", title: $0)) }),
+            ("Map view's level card", 200, { w in
+                AnyView(Text(w).font(.nRowTitle).kerning(-0.3).nuruLineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true).nuruWholeWords(w, font: .nRowTitle, kerning: -0.3)) }),
+            ("Pathway's section kicker", 300, { w in
+                let u = w.uppercased()
+                return AnyView(Text(u).font(.nCardKicker).kerning(1.4).nuruLineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true).nuruWholeWords(u, font: .nCardKicker, kerning: 1.4)) }),
+        ]
+        for (title, line, view) in titles {
+            for w in words {
+                let set = try renderedHeight(view(w), .accessibility5, width: line)
+                let roomy = try renderedHeight(view(w), .accessibility5, width: 4000)
+                XCTAssertLessThanOrEqual(set, roomy + 0.5, "\"\(w)\" breaks mid-word in \(title) at \(Int(line)) pt")
+            }
+        }
+        // The check has teeth: the bare title broke "Transformation" (and "Foundations").
+        for w in ["Transformation", "Foundations"] {
+            let bare = Text(w).font(.fraunces(26, .semibold)).kerning(-0.52).fixedSize(horizontal: false, vertical: true)
+            XCTAssertGreaterThan(try renderedHeight(bare, .accessibility5, width: 335),
+                                 try renderedHeight(bare, .accessibility5, width: 4000) + 1, "\(w) broke without the guard")
+        }
+        // The whole name too: no word of it is broken.
+        let name = "Kingdom Culture, Leadership & Multiplication"
+        XCTAssertEqual(NuruWholeWords.words(name), ["Kingdom", "Culture,", "Leadership", "&", "Multiplication"])
+        // At the everyday sizes the guard is inert: the same pixels as the bare title.
+        for size in [DynamicTypeSize.large, .xxxLarge] {
+            for t in ["Foundations of Faith", "Inner Transformation", "Grow in the Word"] {
+                let guarded = try renderedPixels(Text(t).font(.fraunces(26, .semibold)).kerning(-0.52)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(t, font: .fraunces(26, .semibold), kerning: -0.52), size, width: 335)
+                let bare = try renderedPixels(Text(t).font(.fraunces(26, .semibold)).kerning(-0.52)
+                    .fixedSize(horizontal: false, vertical: true), size, width: 335)
+                XCTAssertTrue(guarded.bytes == bare.bytes, "\(size): \"\(t)\" is untouched at the everyday sizes")
+            }
+        }
+        // Down only as far as it must: a word that fits keeps the member's size.
+        XCTAssertEqual(try renderedHeight(NuruHeaderText(title: "Faith"), .accessibility5, width: 335),
+                       try renderedHeight(NuruHeaderText(title: "Faith"), .accessibility5, width: 4000), accuracy: 0.5)
+        XCTAssertEqual(NuruWholeWords.steps(from: .accessibility2), [.accessibility2, .accessibility1, .xxxLarge, .xxLarge, .xLarge, .large, .medium, .small, .xSmall])
     }
 }

@@ -444,6 +444,7 @@ private struct PathwayHubHeader: View {
                     // The card's title (§8.1 rule 3): Fraunces 18, wrapping.
                     Text(journey?.title ?? "Your pathway").font(.nCardTitle).foregroundStyle(.white)
                         .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(journey?.title ?? "Your pathway", font: .nCardTitle)
                     if let line = journey?.line {
                         Text(line).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                             .fixedSize(horizontal: false, vertical: true)
@@ -833,7 +834,8 @@ private struct PathwaySelectedModules: View {
                     // Whole, never cut (§8.1 rule 9): "FOUNDATIONS OF GRACE &
                     // KINGDOM PERSPECT…" wraps to a second line instead.
                     Text(level.title.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(PW.goldDeep)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(level.title.uppercased(), font: .nCardKicker, kerning: 1.4)
                     Text(PathwayTrail.sectionCountLine(level)).font(.inter(11)).foregroundStyle(PW.ink2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -987,8 +989,10 @@ private struct PWModuleRow: View {
                 Text(ExamWords.rowTitle(module)).font(.nRowTitle)
                     .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy)
                     // Titles wrap to two lines, never cut (§8.1 rule 9):
-                    // "Christian Living & Character (First Ste…".
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    // "Christian Living & Character (First Ste…"; in full,
+                    // whole words, at the accessibility sizes (§9.6 #4).
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(ExamWords.rowTitle(module), font: .nRowTitle)
                 Text(caption)
                     .font(.inter(11, (active || isExam) ? .bold : .medium))
                     .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
@@ -1511,11 +1515,13 @@ private struct PWContinueCard: View {
 
                     VStack(alignment: .leading, spacing: 0) {
                         Text(words.kicker).font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.goldDeep)
-                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                            .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                         Text(words.title)
                             .font(.nCardTitle).kerning(-0.54).foregroundStyle(PW.ink)
-                            .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
+                            .nuruLineLimit(2).multilineTextAlignment(.leading)
                             .fixedSize(horizontal: false, vertical: true)
+                            .nuruWholeWords(words.title, font: .nCardTitle, kerning: -0.54)
+                            .padding(.top, 4)
                         if let line = words.line {
                             Text(line).font(.nCardBody).foregroundStyle(PW.ink2)
                                 .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
@@ -1583,7 +1589,10 @@ private struct PWLevelCard: View {
                         statusPill
                     }
                     Text(level.title).font(.nRowTitle).kerning(-0.3).foregroundStyle(PW.ink)
-                        .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 6)
+                        .nuruLineLimit(2).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(level.title, font: .nRowTitle, kerning: -0.3)
+                        .padding(.top, 6)
                     if !subtitle.isEmpty {
                         Text(subtitle).font(.nCardBody).foregroundStyle(PW.ink2).lineSpacing(2)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)

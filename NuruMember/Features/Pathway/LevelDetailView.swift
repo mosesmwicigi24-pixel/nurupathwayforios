@@ -175,6 +175,29 @@ enum LevelPageVerse {
     static let ref = "John 8:12"
 }
 
+/// The level page hero's words: "LEVEL 3" and the level's name. The name
+/// wraps to two lines at the everyday sizes, in full at the accessibility
+/// sizes, and never breaks a word (§8.1 rule 9; §9.6 #4).
+struct LevelHeroTitle: View {
+    let overline: String
+    let title: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(overline.uppercased())
+                .font(.inter(11, .bold)).kerning(1.6)
+                .foregroundStyle(Nuru.goldGlow)
+            Text(title)
+                .font(.fraunces(28, .semibold))
+                .foregroundStyle(.white)
+                .nuruLineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords(title, font: .fraunces(28, .semibold))
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
 struct LevelDetailView: View {
     let levelNumber: Int
     @StateObject private var vm: LevelDetailViewModel
@@ -285,20 +308,16 @@ struct LevelDetailView: View {
                 colors: [Color.black.opacity(0.0), Color.black.opacity(0.35), Color(hex: 0x081C36).opacity(0.92)],
                 startPoint: .top, endPoint: .bottom)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(overline.uppercased())
-                    .font(.inter(11, .bold)).kerning(1.6)
-                    .foregroundStyle(Nuru.goldGlow)
-                Text(vm.title)
-                    .font(.fraunces(28, .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, Nuru.S.screen)
-            .padding(.bottom, Nuru.S.xl + Nuru.S.sm)
+            LevelHeroTitle(overline: overline, title: vm.title)
+                .padding(.horizontal, Nuru.S.screen)
+                // Clear of the back button (top 58 + 40) when the words grow.
+                .padding(.top, 58 + 40 + Nuru.S.md)
+                .padding(.bottom, Nuru.S.xl + Nuru.S.sm)
         }
-        .frame(height: 280)
+        // At least the 280 pt hero; taller when the level's name needs it at
+        // the larger text sizes (§9.6 #4) — a fixed 280 let "Foundations of
+        // Grace & Kingdom Perspective" run out of it.
+        .frame(minHeight: 280)
         .overlay(alignment: .topLeading) {
             // Custom back button (nav bar is hidden). Once it scrolls away with
             // the hero, the edge swipe goes back (nuruEdgeSwipeBack, B9).
@@ -774,6 +793,7 @@ private struct ModuleTrailCard: View {
             Text(ExamWords.rowTitle(module))
                 .font(.nCardTitle).foregroundStyle(Nuru.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords(ExamWords.rowTitle(module), font: .nCardTitle)
             if let summary = module.summary, !summary.isEmpty {
                 Text(summary)
                     .font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(2)

@@ -44,6 +44,8 @@ struct NuruHeaderText: View {
                 .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(Nuru.navy)
                 .nuruLineLimit(2).minimumScaleFactor(0.85)
                 .fixedSize(horizontal: false, vertical: true)
+                // Never "Foundatio / ns" at the largest size (§9.6 #4).
+                .nuruWholeWords(title, font: .fraunces(26, .semibold), kerning: -0.52)
             if let line, !line.isEmpty {
                 Text(line)
                     .font(.inter(13)).foregroundStyle(Nuru.ink600)
@@ -86,6 +88,84 @@ extension View {
     /// everyday size, so it never spills out of its shape at the larger text
     /// sizes; the screen's own words carry the same fact, and grow. §9.6 #4.
     func nuruFixedFigure() -> some View { dynamicTypeSize(...DynamicTypeSize.large) }
+
+    /// The title never breaks a word (`NuruWholeWords`): `text` is the string
+    /// shown, `font` and `kerning` its own.
+    func nuruWholeWords(_ text: String, font: Font, kerning: CGFloat = 0) -> some View {
+        modifier(NuruWholeWords(text: text, font: font, kerning: kerning))
+    }
+}
+
+/// A title that never breaks a word (§8.1 rule 9; §9.6 #4). At the
+/// accessibility text sizes a long word in a display face can be wider than
+/// the line, and the text then breaks inside it: Pathway's "Foundatio / ns of
+/// / Faith" at the largest size. There the title steps down through the
+/// Dynamic Type sizes, one at a time from the member's own, to the largest
+/// at which its widest word fits the line, and wraps between words as usual.
+/// At the everyday sizes every word fits, and the title is untouched.
+struct NuruWholeWords: ViewModifier {
+    let text: String
+    let font: Font
+    var kerning: CGFloat = 0
+    @Environment(\.dynamicTypeSize) private var size
+
+    func body(content: Content) -> some View {
+        if size.isAccessibilitySize {
+            ViewThatFits(in: .horizontal) {
+                ForEach(Self.steps(from: size), id: \.self) { step in
+                    NuruWholeWordsLayout {
+                        content
+                        stick
+                    }
+                    .environment(\.dynamicTypeSize, step)
+                }
+            }
+        } else {
+            content
+        }
+    }
+
+    /// The member's size, then each smaller one.
+    static func steps(from size: DynamicTypeSize) -> [DynamicTypeSize] {
+        DynamicTypeSize.allCases.filter { $0 <= size }.reversed()
+    }
+
+    static func words(_ text: String) -> [String] {
+        text.split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+
+    /// Every word on a line of its own, unwrapped: as wide as the widest.
+    private var stick: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(Self.words(text).enumerated()), id: \.offset) { _, word in
+                Text(word).font(font).kerning(kerning).lineLimit(1).fixedSize()
+            }
+        }
+        .hidden()
+        .accessibilityHidden(true)
+    }
+}
+
+/// The title and its hidden measuring stick. Given a width, it is the title.
+/// Asked for its ideal width, as ViewThatFits asks, it answers with the
+/// widest word's (and a point to spare), so ViewThatFits takes the first
+/// size at which that word fits the line.
+private struct NuruWholeWordsLayout: Layout {
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard subviews.count == 2 else { return subviews.first?.sizeThatFits(proposal) ?? .zero }
+        guard proposal.width == nil else { return subviews[0].sizeThatFits(proposal) }
+        let widest = subviews[1].sizeThatFits(.unspecified).width.rounded(.up) + 1
+        let title = subviews[0].sizeThatFits(ProposedViewSize(width: widest, height: proposal.height))
+        return CGSize(width: widest, height: title.height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        guard let title = subviews.first else { return }
+        title.place(at: bounds.origin, anchor: .topLeading, proposal: ProposedViewSize(bounds.size))
+        if subviews.count == 2 {
+            subviews[1].place(at: bounds.origin, anchor: .topLeading, proposal: .unspecified)
+        }
+    }
 }
 
 /// A white card that floats on one soft shadow.
