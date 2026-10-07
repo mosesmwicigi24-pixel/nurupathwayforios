@@ -1751,6 +1751,13 @@ struct PledgeDetailView: View {
     private var pledge: Pledge? {
         detail?.pledge ?? vm.partnership?.pledges.first { $0.pledgeId == pledgeId } ?? seed
     }
+    /// What the office is checking toward it (final walk M1) — the single-
+    /// pledge read doesn't carry `pending_claim_minor`, so the list's copy
+    /// and this page's own claims say it too.
+    private func checkingMinor(_ p: Pledge) -> Int {
+        PledgeChecking.minor(rows: [detail?.pledge, vm.partnership?.pledges.first { $0.pledgeId == pledgeId }, seed],
+                             claims: claims, currency: p.currency)
+    }
     private var busy: Bool { vm.busyId == pledgeId }
 
     var body: some View {
@@ -1766,7 +1773,7 @@ struct PledgeDetailView: View {
                         // 1; final walk M1): money the office is checking
                         // leads the page — it sat at the foot, under a gold
                         // "Pay now", and a member could pay twice.
-                        if let claim = p.claimLine { PledgeClaimLead(line: claim) }
+                        if let claim = PledgeChecking.line(checkingMinor(p), p.currency) { PledgeClaimLead(line: claim) }
                         VStack(alignment: .leading, spacing: 4) {
                             // The name is the page's header; this card carries the promise.
                             Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
@@ -1847,7 +1854,7 @@ struct PledgeDetailView: View {
             }
         }
         .sheet(item: $claiming) { p in
-            PledgeClaimSheet(pledge: p) { body in await sendClaim(p, body) }
+            PledgeClaimSheet(pledge: p, checking: PledgeChecking.line(checkingMinor(p), p.currency)) { body in await sendClaim(p, body) }
         }
         // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
         .alert(
@@ -2045,7 +2052,7 @@ struct PledgeDetailView: View {
         let early = PledgePace.paysEarly(p, schedules: schedules)
         // Money the office is checking: paying is still possible, never the
         // page's gold primary (final walk M1).
-        let quiet = early || p.pendingClaimMinor > 0
+        let quiet = early || checkingMinor(p) > 0
         if !fulfilled && p.status != "cancelled" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {

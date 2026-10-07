@@ -112,6 +112,9 @@ enum ClaimCopy {
 
 struct PledgeClaimSheet: View {
     let pledge: Pledge
+    /// "KSh 2,000 is being checked by the office" — what is already told
+    /// (final walk M1); nil when nothing waits.
+    var checking: String? = nil
     /// Sends the claim: nil when the office has it (the sheet closes), else
     /// the words to show — the server's own for a refusal.
     let onSend: (MemberAPI.PledgeClaimBody) async -> String?
@@ -134,8 +137,9 @@ struct PledgeClaimSheet: View {
     /// The church's today, fixed while the sheet is open.
     private let today: String
 
-    init(pledge: Pledge, onSend: @escaping (MemberAPI.PledgeClaimBody) async -> String?) {
+    init(pledge: Pledge, checking: String? = nil, onSend: @escaping (MemberAPI.PledgeClaimBody) async -> String?) {
         self.pledge = pledge
+        self.checking = checking ?? pledge.claimLine
         self.onSend = onSend
         let t = PledgeMath.today()
         today = t
@@ -172,7 +176,7 @@ struct PledgeClaimSheet: View {
 
                 // What the office is already checking, so the same money is
                 // never told twice (final walk M1).
-                if let claim = pledge.claimLine {
+                if let claim = checking {
                     Text(claim + ".")
                         .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -294,6 +298,7 @@ struct PledgeClaimSheet: View {
                               ? .height(PSheetFit.height(content: contentHeight, chrome: 12, screen: UIScreen.main.bounds.height))
                               : .large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Nuru.paper)   // opaque, not the system's glass (§8.1 rule 5)
         .onChange(of: amountText) { _, _ in error = nil }
         .onChange(of: day) { _, _ in error = nil; withAnimation(.easeInOut(duration: 0.2)) { choosingDay = false } }
     }

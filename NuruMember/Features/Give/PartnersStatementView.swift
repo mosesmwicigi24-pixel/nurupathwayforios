@@ -924,8 +924,12 @@ private struct StatementPledgeRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
+                    // A pledge is a content row (§8.1 rule 3: Fraunces 15
+                    // semibold, as on Partners; final walk #38 — it was
+                    // Inter here), wrapping rather than cut (rule 9).
                     Text(pledge.title.isEmpty ? "Pledge" : pledge.title)
-                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                        .font(.nRowTitle).foregroundStyle(Nuru.ink)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(pledgeAmountLine(pledge))
                         .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 }

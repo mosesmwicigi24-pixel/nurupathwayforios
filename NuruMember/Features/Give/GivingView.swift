@@ -2131,6 +2131,9 @@ private struct GiveKeypadSheet: View {
             name = initialName
         }
         .presentationDetents([.height(720)])
+        // An opaque sheet (§8.1 rule 5; final walk 58–59): the system's
+        // glass showed the page through it.
+        .presentationBackground(Nuru.white)
         .presentationDragIndicator(.visible)
     }
 
@@ -2339,6 +2342,7 @@ private struct MobileMoneySheet: View {
         })
         .frame(maxHeight: .infinity, alignment: .top)
         .presentationDetents([.height(contentHeight)])
+        .presentationBackground(Nuru.white)   // opaque, not the system's glass (§8.1 rule 5)
         .presentationDragIndicator(.visible)
         // One phone format (§8.1 rule 8, Cycle 1): the field reads the number
         // as a Kenyan reads it — "0700 000 000", never "+254700000000". The
@@ -2488,6 +2492,7 @@ private struct ScheduleDetailSheet: View {
                               ? .height(PSheetFit.height(content: contentHeight, chrome: 12, screen: UIScreen.main.bounds.height))
                               : .large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Nuru.white)   // opaque, not the system's glass (§8.1 rule 5)
     }
 
     // MARK: Header + summary

@@ -656,10 +656,7 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     /// "US$ 50.00 is being checked by the office" while a claim waits — the
     /// pledge's row and its page lead with it (final walk M1: a member must
     /// never be invited to pay twice). Nil when nothing waits.
-    var claimLine: String? {
-        guard pendingClaimMinor > 0 else { return nil }
-        return "\(GiveMoney.format(pendingClaimMinor, currency)) is being checked by the office"
-    }
+    var claimLine: String? { PledgeChecking.line(pendingClaimMinor, currency) }
     func hash(into h: inout Hasher) { h.combine(pledgeId) }
 
     var isMonthly: Bool { shape == "monthly" }
@@ -1340,4 +1337,25 @@ extension GivingRecord {
 
 extension GivingDetail {
     var shownAt: String { GiftTime.shown(settledAt: settledAt, createdAt: createdAt) }
+}
+
+/// What the office is still checking toward one pledge (final walk M1),
+/// whichever read knows: the pledge rows' `pending_claim_minor` (the list
+/// and Partners carry it; the single-pledge read does not) or the pending
+/// claims the pledge's page reads itself, in the pledge's currency. Shown,
+/// never subtracted.
+enum PledgeChecking {
+    static func minor(rows: [Pledge?], claims: [PledgeClaim]?, currency: String) -> Int {
+        let fromRows = rows.compactMap { $0?.pendingClaimMinor }.max() ?? 0
+        let code = currency.uppercased()
+        let fromClaims = (claims ?? [])
+            .filter { $0.status == "pending" && $0.currency.uppercased() == code }
+            .reduce(0) { $0 + max(0, $1.amountMinor) }
+        return max(fromRows, fromClaims)
+    }
+
+    static func line(_ minor: Int, _ currency: String) -> String? {
+        guard minor > 0 else { return nil }
+        return "\(GiveMoney.format(minor, currency)) is being checked by the office"
+    }
 }

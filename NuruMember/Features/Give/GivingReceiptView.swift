@@ -105,6 +105,8 @@ struct GivingReceiptView: View {
                 Spacer()
             }
         }
+        // The header sits at the screen's top and pads the status bar itself.
+        .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -117,33 +119,14 @@ struct GivingReceiptView: View {
         .sheet(item: $sharePayload) { p in ReceiptShareSheet(items: p.items) }
     }
 
-    // MARK: Header — cream band, back + title + share
+    // MARK: Header — the pushed page's one header
 
+    /// back · kicker · title (§8.1 rule 2; final walk #38: "Receipt" had no
+    /// kicker, and an empty band sat above it — the header padded the status
+    /// bar's height a second time). Share is offered once — "Share receipt"
+    /// below, beside "View statement" (§9.6 #3).
     private var header: some View {
-        HStack(spacing: Nuru.S.md) {
-            Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.navy).frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-            .accessibilityLabel("Back")
-            Text("Receipt").font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
-            Spacer()
-            // Share is offered once — "Share receipt" below, beside "View
-            // statement" (EXPERIENCE.md §9.6 #3: the header said it too).
-        }
-        .padding(.horizontal, Nuru.S.lg)
-        // Right under the status bar — the real inset, never a fixed 60.
-        .padding(.top, NuruSafeArea.top + 8)
-        .padding(.bottom, Nuru.S.lg)
-        .background(
-            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.22)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 40, y: -60)
-                }
-        )
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+        NuruPushedHeader(kicker: "Give", title: "Receipt")
     }
 
     // MARK: Loading — the receipt's silhouette (hero, details, two buttons)
