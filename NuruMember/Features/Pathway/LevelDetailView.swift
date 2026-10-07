@@ -167,6 +167,17 @@ final class LevelDetailViewModel: ObservableObject {
     var verse: (text: String, ref: String) { (LevelPageVerse.text, LevelPageVerse.ref) }
 }
 
+/// The level page's count (final walk C8): the modules, and — once every
+/// lesson is done but the level isn't — the exam, by its one name, so 91%
+/// says what the last 9% is. Android says the same.
+enum LevelProgressWords {
+    static func line(completed: Int, total: Int, levelNumber: Int, pct: Int) -> String {
+        let count = "\(completed) of \(total) modules"
+        guard total > 0, completed >= total, pct < 100 else { return count }
+        return "\(count) · the \(ExamWords.name(levelNumber)) is next"
+    }
+}
+
 /// The level page's verse, under its own reference. Whenever a level had a
 /// theme, the page credited John 8:12's words to it ("Foundations") — the
 /// Cycle 4 walk, and Cycle 3's before it.
@@ -331,7 +342,7 @@ struct LevelDetailView: View {
             .buttonStyle(.pressable)
             .accessibilityLabel("Back")
             .padding(.leading, Nuru.S.screen)
-            .padding(.top, 58)
+            .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band (final walk C7 class)
         }
     }
 
@@ -346,8 +357,13 @@ struct LevelDetailView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(vm.completed) of \(vm.moduleCount) modules")
+                    // Names the exam on the first view once the lessons are
+                    // done (final walk C8, #13): "10 of 10 modules · 91%"
+                    // left the missing step unsaid.
+                    Text(LevelProgressWords.line(completed: vm.completed, total: vm.moduleCount,
+                                                 levelNumber: levelNumber, pct: vm.pct))
                         .font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
                         .animation(.default, value: vm.completed)
                     Spacer()
@@ -357,9 +373,10 @@ struct LevelDetailView: View {
                         .animation(.default, value: vm.pct)
                 }
                 progressBar(Double(vm.pct) / 100)
+                // One word for one count (§8.1 rule 8): "10 lessons" beside
+                // "10 of 10 modules" said it twice.
                 HStack(spacing: Nuru.S.sm) {
                     statChip(.clock, "≈ \(vm.minutes) min")
-                    statChip(.bookOpen, "\(vm.lessonCount) lessons")
                 }
             }
         }

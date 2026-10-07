@@ -1515,7 +1515,7 @@ private struct MLHeader: View {
             }
         }
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 56)
+        .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band (final walk C7 class)
         .padding(.bottom, Nuru.S.screen)
         .frame(maxWidth: .infinity)
         .background(headerBackground)

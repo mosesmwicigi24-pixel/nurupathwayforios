@@ -401,7 +401,7 @@ private struct QuizHeader: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Nuru.S.screen)
-            .padding(.top, 52)
+            .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band (final walk C7 class)
 
             HStack(spacing: 6) {
                 ForEach(0..<count, id: \.self) { i in

@@ -181,7 +181,10 @@ struct PathwayView: View {
                     } else {
                         // Includes a decoded-but-empty levels array — rendering
                         // "Level 1 of 0" with dead CTAs is worse than retrying.
-                        errorState.padding(.horizontal, 20).padding(.top, 120)
+                        // The tab keeps its one header (§8.1 rule 2; final
+                        // walk #36: the failed tab had none).
+                        PathwayFailedHeader()
+                        errorState.padding(.horizontal, 20).padding(.top, 24)
                     }
                 }
                 .scrollsToTopOnReselect(.pathway)   // a re-tap at the root returns to the top (B10)
@@ -274,6 +277,8 @@ struct PathwayView: View {
                 })
 
             VStack(alignment: .leading, spacing: 24) {
+                // A saved copy says so (final walk M3).
+                NuruSavedCopyNotice(hasContent: true)
                 // Awaiting the usher (the exam passed; the next level stays LOCKED
                 // until awaitingReview clears server-side) is the hero's own story
                 // — "Level N+1 is next · Your leader will open Level N+1" (§3). A
@@ -343,6 +348,30 @@ struct PathwayView: View {
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
 }
 
+// MARK: - The header of a pathway that didn't load
+
+/// The tab's one header when its pathway didn't come (§8.1 rule 2): the
+/// PATHWAY kicker and the bell, then "Your pathway" — on the hero's own
+/// cream, so a failed read never leaves a page without its name.
+private struct PathwayFailedHeader: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                Spacer()
+                NuruBell()
+            }
+            NuruHeaderText(title: "Your pathway").padding(.top, 12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 20)
+        .background(LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
+        .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
+    }
+}
+
 // MARK: - PathwayHub · cinematic hero (your current level)
 
 private struct PathwayHubHeader: View {
@@ -356,7 +385,10 @@ private struct PathwayHubHeader: View {
         guard let a = active, let levels = vm.summary?.levels else { return 0 }
         return levels.firstIndex { $0.levelNumber == a.levelNumber } ?? 0
     }
-    private var activePct: Int { active.map { vm.pct($0) } ?? 0 }
+    /// The level's one measure (final walk C8): its exam the last step, as
+    /// the level page and Map view count it — the bar read 10/10 here and
+    /// 91% on the level's own page.
+    private var activePct: Int { active.map { Journey.levelPercent($0, journey: journey) } ?? 0 }
     /// Modules still to walk — said only while the member is walking them
     /// (an exam row left in the trail is the exam, not "1 module to go").
     private var remaining: Int {
@@ -385,10 +417,12 @@ private struct PathwayHubHeader: View {
                     PWBar(pct: activePct, height: 6,
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
                           track: PW.navy.opacity(0.10))
-                    Text("\(active.map { min($0.lessonsDone, $0.lessonCount) } ?? 0)/\(active?.lessonCount ?? 0)")
+                    // The bar's own figure — the same percent the level page
+                    // and Map view show; the line above counts the modules.
+                    Text("\(activePct)%")
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
                         .contentTransition(.numericText())
-                        .animation(.default, value: active?.lessonsDone)
+                        .animation(.default, value: activePct)
                 }.padding(.top, 16)
                 }
                 if remaining > 0 {
@@ -569,8 +603,10 @@ private struct PathwayWalkRow: View {
                     // Whole at the largest size: "Your whole jo…" (§9.6 #4).
                     Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
                         .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    // Wraps rather than cut (§8.1 rule 9; final walk C3:
+                    // "…on one gold thr…" at "Large").
                     Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2)
-                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: PW.chevron)
@@ -789,6 +825,13 @@ enum PathwayTrail {
         return "\(done) of \(lessons.count) modules done · \(expanded ? "Hide" : "Show")"
     }
 
+    /// The section link's verb (§3): "Start" while nothing in the level is
+    /// begun — no lesson done, none opened part-way — else "Continue".
+    static func resumeVerb(_ modules: [LevelModule]) -> String {
+        let begun = modules.contains { !$0.isExam && ($0.completed || $0.status == .completed || $0.progress > 0) }
+        return begun ? "Continue" : "Start"
+    }
+
     /// The hero shows the exam step — the journey at its exam on this level —
     /// so the trail's own exam row is not shown again (nor offered by its
     /// "Continue →").
@@ -853,7 +896,10 @@ private struct PathwaySelectedModules: View {
                 Spacer()
                 if let r = resumeShown {
                     Button { Haptics.tap(); openModule(r.moduleId) } label: {
-                        Text("Continue →").font(.inter(11, .bold)).foregroundStyle(PW.gold)
+                        // "Start" before anything is begun (§3; final walk
+                        // C8, #14: Ben's first day read "Continue →" under a
+                        // card saying "Start").
+                        Text("\(PathwayTrail.resumeVerb(modules)) →").font(.inter(11, .bold)).foregroundStyle(PW.gold)
                             .padding(.vertical, 10).padding(.leading, 16)
                             .contentShape(Rectangle())
                     }
@@ -1179,12 +1225,11 @@ private struct PWRewardBadge: View {
                 .background(earned ? Color(hex: Nuru.tileTint) : PW.mutedBg, in: Circle())
                 .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
                 .opacity(earned ? 1 : 0.7)
-            if typeSize.isAccessibilitySize {
-                Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
-                    .fixedSize().padding(.horizontal, 12)
-            } else {
-                Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
-            }
+            // As wide as its name at every size — the rail scrolls sideways —
+            // so a name is never cut (final walk C3: "Transform…" at
+            // "Large"; 84 pt cut "Fo…" at the largest before).
+            Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+                .fixedSize().padding(.horizontal, 12)
             if earned {
                 HStack(spacing: 1) {
                     ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.symbol(8)).foregroundStyle(PW.gold) }
@@ -1193,7 +1238,7 @@ private struct PWRewardBadge: View {
                 Icon(.lock, size: 14, color: PW.ink3)
             }
         }
-        .frame(width: typeSize.isAccessibilitySize ? nil : 84).frame(minWidth: 84).padding(.vertical, 12)
+        .frame(minWidth: 84).padding(.vertical, 12)
         .background(earned
                     ? AnyShapeStyle(LinearGradient(colors: [PW.gold.opacity(0.14), PW.gold.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     : AnyShapeStyle(PW.surface),
@@ -1471,16 +1516,20 @@ struct LevelsMapView: View {
         }
     }
 
+    /// The member's journey in two counts, both read from the pathway (final
+    /// walk C6, as Android's LevelsScreen): "Offline · Ready" was words about
+    /// the app, not the journey (§8.1 rule 8), and is gone.
     @ViewBuilder private var mapStats: some View {
         PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
         PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
-        PWStatCard(label: "Offline", value: "Ready")
     }
 
     private var sectionHeader: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("SIX-LEVEL PATHWAY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.ink2)
+                // The road's real length, read from the pathway — "SIX" was
+                // written in (Android's countWord).
+                Text(LevelsMapWords.pathwayKicker(levels: vm.levelCount)).font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.ink2)
                 Text("Choose your level").font(.fraunces(22, .medium)).kerning(-0.88).foregroundStyle(PW.ink).padding(.top, 4)
             }
             Spacer(minLength: 0)
@@ -1847,6 +1896,14 @@ enum ModuleRowWords {
 /// tests pin it.
 enum LevelsMapWords {
     struct Card: Equatable { let kicker: String; let title: String; let line: String? }
+
+    /// "SIX-LEVEL PATHWAY" — the number of levels the pathway really has, in
+    /// words (Android's countWord): never written in (final walk C6).
+    static func pathwayKicker(levels n: Int) -> String {
+        let words = ["", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN"]
+        let count = (1...10).contains(n) ? words[n] : "\(n)"
+        return "\(count)-LEVEL PATHWAY"
+    }
 
     /// The continue card for the member's level: the journey's next step once
     /// the modules are done; "continue" only while there are modules to walk.

@@ -123,8 +123,10 @@ private struct WalkNode: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.dateLine)
                     .font(.inter(11, .semibold)).kerning(0.8).foregroundStyle(Nuru.ink.opacity(0.45))
-                Text(event.title)
-                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                // A thing walked — the content row title (§8.1 rule 3:
+                // Fraunces 15 semibold), its quotation marks curled.
+                Text(event.shownTitle)
+                    .font(.nRowTitle).foregroundStyle(Nuru.navy)
                     .fixedSize(horizontal: false, vertical: true)
                 if let d = event.detail, !d.isEmpty {
                     Text(d).font(.inter(12)).foregroundStyle(Nuru.ink.opacity(0.65))
