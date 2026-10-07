@@ -412,6 +412,10 @@ struct ModuleView: View {
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// At the accessibility sizes the lesson's header scrolls with its text
+    /// (§9.6 #4): pinned above the reader with the gate below, it left the
+    /// reading a sliver between them.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var reflection: String = ""
     @State private var playingVideo = false      // real inline player started
@@ -801,9 +805,7 @@ struct ModuleView: View {
         let pageTitle = sectionTitles[pageIndex]
         let video = mlVideo(d)
         return ScrollViewReader { proxy in
-            VStack(spacing: 0) {
-                if !chromeHidden {
-                    MLHeader(levelNumber: d.levelNumber,
+            let header = MLHeader(levelNumber: d.levelNumber,
                              moduleNumber: d.moduleSequenceNumber,
                              title: d.title,
                              minutes: d.estimatedMinutes,
@@ -826,10 +828,14 @@ struct ModuleView: View {
                                      Haptics.action()
                                      quizTarget = d.moduleId
                                  }) : nil)
-                        .transition(.opacity)
+            let scrollsWithText = typeSize.isAccessibilitySize
+            VStack(spacing: 0) {
+                if !chromeHidden && !scrollsWithText {
+                    header.transition(.opacity)
                 }
                 reader(d, pages: pages, bodyBlocks: bodyBlocks,
-                       sectionTitle: pageTitle, video: video, pageIndex: pageIndex)
+                       sectionTitle: pageTitle, video: video, pageIndex: pageIndex,
+                       scrollingHeader: scrollsWithText ? header : nil)
                 if pages.count > 1 && !chromeHidden {
                     MLPagerBar(pageCount: pages.count, current: pageIndex) {
                         goToPage($0, pageCount: pages.count)
@@ -883,10 +889,15 @@ struct ModuleView: View {
     private func reader(_ d: ModuleDetail, pages: [String],
                         bodyBlocks: [MLBlock],
                         sectionTitle: String,
-                        video: WelcomeVideo?, pageIndex: Int) -> some View {
+                        video: WelcomeVideo?, pageIndex: Int,
+                        scrollingHeader: MLHeader? = nil) -> some View {
         GeometryReader { viewport in
             ZStack {
                 ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                    // The header, scrolling with the text at the accessibility
+                    // sizes (it clears the status bar itself).
+                    if let scrollingHeader { scrollingHeader }
                     lessonBody(d, bodyBlocks: bodyBlocks, sectionTitle: sectionTitle,
                                pageIndex: pageIndex, pageCount: pages.count,
                                video: pageIndex == 0 ? video : nil,
@@ -894,7 +905,7 @@ struct ModuleView: View {
                                isLastPage: pageIndex == pages.count - 1)
                         .id("top")
                         .padding(.horizontal, Nuru.S.screen)
-                        .padding(.top, chromeHidden ? Self.safeAreaTop + 8 : Nuru.S.base)
+                        .padding(.top, chromeHidden && scrollingHeader == nil ? Self.safeAreaTop + 8 : Nuru.S.base)
                         // Clear the home indicator when immersive (no gate below);
                         // a smaller cushion when the gate sits beneath the scroll.
                         .padding(.bottom, chromeHidden ? Self.safeAreaBottom + 40 : Nuru.S.xl + 12)
@@ -908,6 +919,7 @@ struct ModuleView: View {
                                                            contentHeight: g.size.height))
                             }
                         )
+                    }
                 }
                 .coordinateSpace(name: "mlScroll")
                 // Taps summon the chrome (simultaneous, so links/buttons still work).
@@ -2312,8 +2324,12 @@ private struct MLBottomGate: View {
                 Icon(.lock, size: 14, color: ML.secondary)
                 Text(lockReason)
                     .font(.inter(14, .bold))
+                    // Wraps whole: "Add a reflectio…" at the largest size (§9.6 #4).
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(ML.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)

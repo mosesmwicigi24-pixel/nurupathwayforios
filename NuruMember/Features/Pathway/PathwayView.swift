@@ -534,8 +534,12 @@ private struct PathwayDisciplershipRow: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("WALK WITH YOUR DISCIPLER").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
-                    Text("Your Discipleship Hub").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text("Message, feedback & meeting notes").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size (§9.6 #4).
+                    Text("Your Discipleship Hub").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    Text("Message, feedback & meeting notes").font(.inter(11)).foregroundStyle(PW.ink2)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: PW.chevron)
@@ -561,8 +565,12 @@ private struct PathwayWalkRow: View {
                     .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("EVERY STEP, REMEMBERED").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
-                    Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size: "Your whole jo…" (§9.6 #4).
+                    Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: PW.chevron)
@@ -668,8 +676,11 @@ private struct PWJourneyNode: View {
 
     private var node: some View {
             VStack(spacing: 6) {
+                // At least 10 pt, and as tall as its words: a fixed 10 pt let
+                // "▾ You" spill past the rail's top edge, where the scroll cut it
+                // at the largest text size (§9.6 #4).
                 Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(11, .bold)).kerning(0.7)
-                    .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(height: 10)
+                    .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(minHeight: 10)
                 // The level NUMBER never leaves the circle — completion becomes a
                 // corner check-seal; locked levels keep their number with a lock-seal.
                 // Locked = cream surface + navy ring (was flat mutedBg with ink3
@@ -1042,7 +1053,8 @@ private struct PWFoldRow: View {
                         .frame(width: 32, height: 32)
                     Icon(.check, size: 14, color: PW.goldDeep)
                 }
-                Text(line).font(.inter(13, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
+                Text(line).font(.inter(13, .semibold)).foregroundStyle(PW.navy)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)   // "10 of 10 mo…" at the largest (§9.6 #4)
                 Spacer(minLength: 0)
                 Icon(expanded ? .chevronUp : .chevronDown, size: 14, color: PW.ink3)
             }
@@ -1157,6 +1169,9 @@ private struct PWRewardBadge: View {
     let name: String
     let glyph: Lucide
     let earned: Bool
+    /// The rail scrolls sideways, so at the accessibility sizes a badge is as
+    /// wide as its name: 84 pt cut "Fo…", "Tra…", "Gra…" (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         VStack(spacing: 6) {
             // Lucide on a gold-tint tile (§8.1 rule 7); quiet until earned.
@@ -1164,7 +1179,12 @@ private struct PWRewardBadge: View {
                 .background(earned ? Color(hex: Nuru.tileTint) : PW.mutedBg, in: Circle())
                 .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
                 .opacity(earned ? 1 : 0.7)
-            Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+            if typeSize.isAccessibilitySize {
+                Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+                    .fixedSize().padding(.horizontal, 12)
+            } else {
+                Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+            }
             if earned {
                 HStack(spacing: 1) {
                     ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.symbol(8)).foregroundStyle(PW.gold) }
@@ -1173,7 +1193,7 @@ private struct PWRewardBadge: View {
                 Icon(.lock, size: 14, color: PW.ink3)
             }
         }
-        .frame(width: 84).padding(.vertical, 12)
+        .frame(width: typeSize.isAccessibilitySize ? nil : 84).frame(minWidth: 84).padding(.vertical, 12)
         .background(earned
                     ? AnyShapeStyle(LinearGradient(colors: [PW.gold.opacity(0.14), PW.gold.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     : AnyShapeStyle(PW.surface),
@@ -1224,6 +1244,7 @@ private struct PathwaySummitCard: View {
     let reached: Bool
     let levels: [PathwayLevel]
     let firstName: String
+    @Environment(\.dynamicTypeSize) private var typeSize
     /// Levels still between the member and being sent — at least one until
     /// the summit: every module done at the last level still leaves its exam
     /// (it used to read "0 levels between you and being sent").
@@ -1250,8 +1271,19 @@ private struct PathwaySummitCard: View {
     /// card is the journey's step at the top; the summit under a photograph
     /// and a navy wash was a second (the Cycle 4 walk's 09).
     private var card: some View {
-        content
-            .padding(.top, 28)
+        Group {
+            if typeSize.isAccessibilitySize {
+                // The chip in the flow at the largest sizes: laid over the
+                // card's corner it covered the seal (§9.6 #4).
+                VStack(spacing: 12) {
+                    statusChip.frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
+                    content
+                }
+                .padding(.top, 12)
+            } else {
+                content.padding(.top, 28)
+            }
+        }
             .frame(maxWidth: .infinity)
             .background(Nuru.verseBg)
             .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
@@ -1259,7 +1291,7 @@ private struct PathwaySummitCard: View {
         // Reached earns a gold ceremonial ring; the road there stays quiet.
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
             .strokeBorder(reached ? PW.gold.opacity(0.85) : .clear, lineWidth: 1.5))
-        .overlay(alignment: .topTrailing) { statusChip.padding(12) }
+        .overlay(alignment: .topTrailing) { if !typeSize.isAccessibilitySize { statusChip.padding(12) } }
     }
 
     private var statusChip: some View {
@@ -1324,6 +1356,9 @@ struct LevelsMapView: View {
     @ObservedObject var vm: PathwayViewModel
     let onOpenLevel: (Int) -> Void
     @Environment(\.dismiss) private var dismiss
+    /// At the accessibility sizes the ring sits under the title and the three
+    /// stats stand one above another (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// The member's own level wears the journey's word once its modules are
     /// done ("Exam ready", "Exam passed") — not the server's bare "completed",
@@ -1389,23 +1424,29 @@ struct LevelsMapView: View {
                 // greeting is Home's alone (the walk's E5: "WELCOME BACK, ADA").
                 Text("MAP VIEW")
                     .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A)).padding(.top, 14)
-                HStack(alignment: .bottom, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Your pathway is unfolding.")
-                            .font(.fraunces(28, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
-                            // Whole beside the ring (§8.1 rule 9): it read "Your pathway is un…".
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("A calm view of your discipleship journey, saved progress, and what opens next.")
-                            .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
-                            .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
+                // Beside the ring at the everyday sizes; above it at the
+                // largest, where the narrowed column broke "pathw / ay is /
+                // unfold / ing." (§9.6 #4).
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 16) {
+                        mapTitle
+                        PWProgressRing(pct: vm.journey?.progressPercent ?? 0)
+                    }.padding(.top, 12)
+                } else {
+                    HStack(alignment: .bottom, spacing: 16) {
+                        mapTitle
+                        Spacer(minLength: 0)
+                        PWProgressRing(pct: vm.journey?.progressPercent ?? 0)
+                    }.padding(.top, 12)
+                }
+                // Three across at the everyday sizes; one above another at the
+                // largest ("LEVE / LS", "10/1 / 0", "Rea / dy").
+                Group {
+                    if typeSize.isAccessibilitySize {
+                        VStack(spacing: 8) { mapStats }
+                    } else {
+                        HStack(spacing: 8) { mapStats }
                     }
-                    Spacer(minLength: 0)
-                    PWProgressRing(pct: vm.journey?.progressPercent ?? 0)
-                }.padding(.top, 12)
-                HStack(spacing: 8) {
-                    PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
-                    PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
-                    PWStatCard(label: "Offline", value: "Ready")
                 }.padding(.top, 24)
             }
             .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 24)
@@ -1414,6 +1455,26 @@ struct LevelsMapView: View {
         .background(LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing))
         .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
         .clipped()
+    }
+
+    private var mapTitle: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Your pathway is unfolding.")
+                .font(.fraunces(28, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
+                // Whole beside the ring (§8.1 rule 9): it read "Your pathway is un…".
+                .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords("Your pathway is unfolding.", font: .fraunces(28, .medium), kerning: -1.35)
+            Text("A calm view of your discipleship journey, saved progress, and what opens next.")
+                .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : 280, alignment: .leading).padding(.top, 12)
+        }
+    }
+
+    @ViewBuilder private var mapStats: some View {
+        PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
+        PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
+        PWStatCard(label: "Offline", value: "Ready")
     }
 
     private var sectionHeader: some View {
