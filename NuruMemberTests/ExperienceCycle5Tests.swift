@@ -817,6 +817,34 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertTrue(drawn, "couldn't read the rendered pixels")
         return (h, bytes)
     }
+
+    /// Home's verse card. At the default size it is the owner's 216 pt
+    /// tableau pixel for pixel — the tableau as it was before 84d2acb rebuilt
+    /// it, kept below as the reference. At the largest size it grows to hold
+    /// every word: drawn over a fixed 216 pt photograph the verse ran out of
+    /// the card's top and under its kicker; now the kicker row is above the
+    /// verse and the card is as tall as its words.
+    @MainActor
+    func testTheVerseCardIsTheOwnersTableauAndHoldsItsWordsAtTheLargest() throws {
+        let art = try decode(VerseArt.self, ["url": "", "alt": "A quiet field"])
+        let verses = ["Pray without ceasing.",
+                      "Likewise the Spirit helps us in our weakness. For we do not know what to pray for as we ought, but the Spirit himself intercedes for us.",
+                      String(repeating: "And we know that for those who love God all things work together for good. ", count: 3)]
+        for v in verses {
+            let now = try renderedPixels(VerseTableauHeader(art: art, verseText: v, reference: "Romans 8:26", version: "ESV"), .large)
+            let before = try renderedPixels(VerseTableauBefore84d2acb(art: art, verseText: v, reference: "Romans 8:26", version: "ESV"), .large)
+            XCTAssertEqual(now.h, 432, "216 pt at 2×")
+            XCTAssertEqual(now.h, before.h)
+            XCTAssertTrue(now.bytes == before.bytes, "the default-size tableau is the owner's, pixel for pixel: \"\(v.prefix(24))…\"")
+        }
+        // At the largest size the card is as tall as its words: more words, a taller card.
+        func height(_ v: String) throws -> CGFloat {
+            try renderedHeight(VerseTableauHeader(art: art, verseText: v, reference: "Romans 8:26", version: "ESV"), .accessibility5, width: 343)
+        }
+        XCTAssertGreaterThan(try height(verses[0]), 216)
+        XCTAssertGreaterThan(try height(verses[1]), try height(verses[0]) + 100, "it grows with the verse, never a fixed height")
+    }
+
     /// Production's six levels: their names and short names.
     static let productionLevelNames = [
         "Foundations of Faith", "Inner Transformation", "Foundations of Grace & Kingdom Perspective",
@@ -878,5 +906,74 @@ final class ExperienceCycle5Tests: XCTestCase {
         XCTAssertEqual(try renderedHeight(NuruHeaderText(title: "Faith"), .accessibility5, width: 335),
                        try renderedHeight(NuruHeaderText(title: "Faith"), .accessibility5, width: 4000), accuracy: 0.5)
         XCTAssertEqual(NuruWholeWords.steps(from: .accessibility2), [.accessibility2, .accessibility1, .xxxLarge, .xxLarge, .xLarge, .large, .medium, .small, .xSmall])
+    }
+}
+
+/// The verse tableau as it was before 84d2acb (3137194), kept as the
+/// default-size reference: a fixed 216 pt photograph with its words overlaid.
+private struct VerseTableauBefore84d2acb: View {
+    let art: VerseArt
+    let verseText: String?
+    let reference: String
+    let version: String
+
+    var body: some View {
+        Color.clear
+            .frame(height: 216)
+            .overlay {
+                CachedAsyncImage(url: URL(string: art.url)) { phase in
+                    if let img = phase.image {
+                        img.resizable().scaledToFill()
+                    } else {
+                        LinearGradient(colors: [Color(hex: 0x16273F), Color(hex: 0x0A1C33)],
+                                       startPoint: .topLeading, endPoint: .bottomTrailing)
+                    }
+                }
+            }
+            .clipped()
+            .overlay {
+                LinearGradient(stops: [.init(color: .black.opacity(0.35), location: 0),
+                                       .init(color: .clear, location: 0.28)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .overlay {
+                LinearGradient(stops: [.init(color: .clear, location: 0.5),
+                                       .init(color: Color(hex: 0x0A1C33).opacity(0.85), location: 0.78),
+                                       .init(color: Color(hex: 0x06111F).opacity(0.95), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .overlay(alignment: .topLeading) {
+                HStack(spacing: 6) {
+                    Icon(.bookOpen, size: 14, color: Color(hex: 0xF2DDA0))
+                    Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4)
+                        .foregroundStyle(Color(hex: 0xF2DDA0))
+                    Spacer(minLength: 0)
+                    Text(version.uppercased())
+                        .font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
+                        .padding(.horizontal, 10).padding(.vertical, 4)
+                        .background(.white.opacity(0.16), in: Capsule())
+                        .overlay(Capsule().stroke(.white.opacity(0.25), lineWidth: 1))
+                }
+                .padding(Nuru.S.base)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let t = verseText, !t.isEmpty {
+                        Text("\u{201C}\(t)\u{201D}")
+                            .font(.fraunces(t.count > 220 ? 12 : t.count > 140 ? 13 : 14)).foregroundStyle(.white)
+                            .nuruLineSpacing(3)
+                            .lineLimit(4)
+                            .minimumScaleFactor(0.92)
+                            .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    Text(reference)
+                        .font(.inter(11, .bold)).kerning(0.3)
+                        .foregroundStyle(Color(hex: 0xF2DDA0))
+                        .shadow(color: .black.opacity(0.5), radius: 2, y: 1)
+                }
+                .padding(Nuru.S.base)
+            }
+            .accessibilityLabel(Text(art.alt))
     }
 }
