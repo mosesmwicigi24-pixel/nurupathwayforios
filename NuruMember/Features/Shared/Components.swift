@@ -168,6 +168,24 @@ private struct NuruWholeWordsLayout: Layout {
     }
 }
 
+/// Side by side at the everyday sizes; one above another at the
+/// accessibility sizes, where side by side cut or broke their words
+/// ("PLED / GED", "REMAI / NING"; §9.6 #4).
+struct NuruAdaptiveStack<Content: View>: View {
+    var spacing: CGFloat? = nil
+    var rowAlignment: VerticalAlignment = .center
+    @ViewBuilder var content: () -> Content
+    @Environment(\.dynamicTypeSize) private var size
+
+    var body: some View {
+        if size.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: spacing) { content() }
+        } else {
+            HStack(alignment: rowAlignment, spacing: spacing) { content() }
+        }
+    }
+}
+
 /// A white card that floats on one soft shadow.
 struct Card<Content: View>: View {
     var padding: CGFloat = Nuru.S.base
@@ -245,6 +263,10 @@ struct Avatar: View {
         Text(Self.initials(name))
             .font(.inter(NuruType.snap(size * 0.4), .semibold))
             .foregroundStyle(Nuru.navyMid)
+            // Letters drawn inside a fixed circle keep the everyday size: at
+            // the largest text size "AT" spilled past the circle and was cut
+            // (§9.6 #4). The name beside the photo carries the same words.
+            .nuruFixedFigure()
     }
 
     static func initials(_ name: String) -> String {

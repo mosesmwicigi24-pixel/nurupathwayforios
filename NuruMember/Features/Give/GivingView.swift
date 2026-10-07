@@ -275,6 +275,8 @@ struct GivingView: View {
     /// band's first row when both are supplied (GiveTabView), omitted otherwise.
     var segment: GiveSegment? = nil
     var onSelectSegment: ((GiveSegment) -> Void)? = nil
+    /// At the accessibility sizes the band scrolls with the page (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @StateObject private var vm = GivingViewModel()
     /// "Hide the amount" on the year pill — a member glancing at Give in
@@ -491,6 +493,11 @@ struct GivingView: View {
             ZStack(alignment: .bottom) {
                 Nuru.paper.ignoresSafeArea()
                 ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                    // At the accessibility sizes the band scrolls with the
+                    // page: pinned, it filled two thirds of the screen and the
+                    // form scrolled in a sliver under it (§9.6 #4).
+                    if typeSize.isAccessibilitySize { headerBlock }
                     VStack(alignment: .leading, spacing: Nuru.S.md) {
                         // Give's reads didn't come (offline, our side): say so
                         // first, in §4's words — the form below still stands.
@@ -526,12 +533,13 @@ struct GivingView: View {
                         scriptureStrip
                         secureNote
                     }
-                    .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
                     .padding(.horizontal, Nuru.S.screen)
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace + 80)
+                    }
+                    .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
                 }
-                .safeAreaInset(edge: .top, spacing: 0) { headerBlock }
+                .safeAreaInset(edge: .top, spacing: 0) { if !typeSize.isAccessibilitySize { headerBlock } }
                 ctaBar
             }
             .ignoresSafeArea(edges: .top)
@@ -730,11 +738,14 @@ struct GivingView: View {
                         Icon(.badgeCheck, size: 14, color: Nuru.gold)
                         Text(yearPillText)
                             .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                            .lineLimit(1).minimumScaleFactor(0.85)
+                            .nuruLineLimit(1).minimumScaleFactor(0.85)   // "KSh 1,200 giv…" at the largest (§9.6 #4)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
+                    // A capsule while it is one line; a rounded card when the
+                    // largest sizes wrap it, so the ends never crowd the words.
+                    .background(Color.white, in: yearPillShape)
+                    .overlay(yearPillShape.stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .accessibilityHint("Opens your giving statement")
@@ -772,6 +783,10 @@ struct GivingView: View {
         )
     }
 
+    private var yearPillShape: AnyShape {
+        typeSize.isAccessibilitySize ? AnyShape(RoundedRectangle(cornerRadius: 20, style: .continuous)) : AnyShape(Capsule())
+    }
+
     /// "KSh 12,340 given this year" — or bullets while the member has chosen
     /// to hide it. The word "given" stays, so the pill still says what it is.
     /// Per currency (Giving Cycle 2): "KSh 3,500 + US$ 20.00 given this year"
@@ -795,12 +810,22 @@ struct GivingView: View {
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size: "KSh 200…" (§9.6 #4).
                     Text("\(money(g.amountMinor, g.currency)) · \(g.fund.capitalized) · via \(givingMethodName(g.method))")
-                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    if typeSize.isAccessibilitySize {
+                        Text("Give again")
+                            .font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                            .padding(.top, 4)
+                    }
                 }
                 Spacer(minLength: Nuru.S.sm)
-                Text("Give again")
-                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                if !typeSize.isAccessibilitySize {
+                    Text("Give again")
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -840,13 +865,17 @@ struct GivingView: View {
                     Icon(f.icon, size: 18, color: Color(hex: f.fg))
                 }
                 Text(f.label).font(.inter(13, .semibold)).kerning(-0.13).foregroundStyle(Nuru.navy)
-                    .lineLimit(1).minimumScaleFactor(0.85)
+                    .nuruLineLimit(1).minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(f.label, font: .inter(13, .semibold), kerning: -0.13)
                     .padding(.top, 8)
                 Text(f.tagline).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
-            .frame(width: 124, alignment: .leading)
+            // The rail scrolls sideways: at the largest sizes a card is wider
+            // and its words whole ("Offeri…", "A faithf…"; §9.6 #4).
+            .frame(width: typeSize.isAccessibilitySize ? 240 : 124, alignment: .leading)
             .padding(12)
             .background(on ? Nuru.priorityBg : Nuru.white,
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -904,9 +933,13 @@ struct GivingView: View {
             } label: {
                 HStack(spacing: 6) {
                     Icon(.pencil, size: 14, color: Nuru.gold)
+                    // Whole at the largest size: "Enter a custo…" (§9.6 #4).
                     Text("Enter a custom amount").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity).frame(height: 38)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity).frame(minHeight: 38)
                 .background(Nuru.white, in: Capsule())
                 .overlay(Capsule().stroke(Nuru.gold.opacity(0.55), lineWidth: 1))
             }
@@ -952,11 +985,15 @@ struct GivingView: View {
                         .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .nuruShadow(on ? 0.6 : 0)
                 }.buttonStyle(.plain)
+                .accessibilityShowsLargeContentViewer()
             }
         }
         .padding(4)
         .background(Color(hex: 0x0A2540, alpha: 0.06),
                     in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // A bar: "One… Wee… Mon…" at the largest size (§9.6 #4); a long press
+        // shows a choice large.
+        .nuruBarText()
     }
 
     /// Honest recurring summary. The day is the server's (today's Nairobi
@@ -1088,10 +1125,13 @@ struct GivingView: View {
                 HStack(spacing: Nuru.S.md) {
                     methodBadge(m.look)
                     VStack(alignment: .leading, spacing: 2) {
+                        // Whole at the largest size: "Pay wi…", "0700 0…" (§9.6 #4).
                         Text(m.look.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                            .lineLimit(1).minimumScaleFactor(0.85)
+                            .nuruLineLimit(1).minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
                         if on {
-                            Text(activeDetail(m)).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                            Text(activeDetail(m)).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer(minLength: Nuru.S.sm)
@@ -1156,6 +1196,9 @@ struct GivingView: View {
                     .lineLimit(1).fixedSize()
             }
         }
+        // A figure in a fixed shape keeps the everyday size (§9.6 #4): the
+        // rail's name spilled out of its badge; the row's own words grow.
+        .nuruFixedFigure()
     }
 
     // MARK: Cover fee
@@ -1272,16 +1315,20 @@ struct GivingView: View {
 
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                overline("RECENT GIVING")
-                Spacer()
-                // Always reachable — the statement page has its own empty state, so the
-                // giving record + receipts stay discoverable even before the first gift.
-                NavigationLink(value: GiveRoute.statement) {
-                    HStack(spacing: 3) {
-                        Text("View statement").font(.inter(12, .semibold))
-                        Icon(.arrowRight, size: 14, color: Nuru.gold)
-                    }.foregroundStyle(Nuru.gold)
+            Group {
+                // The link under the overline at the largest sizes: beside it,
+                // "View statemen / t" (§9.6 #4).
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 4) {
+                        overline("RECENT GIVING")
+                        statementLink
+                    }
+                } else {
+                    HStack {
+                        overline("RECENT GIVING")
+                        Spacer()
+                        statementLink
+                    }
                 }
             }
             .padding(.horizontal, Nuru.S.base).padding(.top, 14).padding(.bottom, 6)
@@ -1308,21 +1355,53 @@ struct GivingView: View {
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
+    // Always reachable — the statement page has its own empty state, so the
+    // giving record + receipts stay discoverable even before the first gift.
+    private var statementLink: some View {
+        NavigationLink(value: GiveRoute.statement) {
+            HStack(spacing: 3) {
+                Text("View statement").font(.inter(12, .semibold))
+                Icon(.arrowRight, size: 14, color: Nuru.gold)
+            }.foregroundStyle(Nuru.gold)
+        }
+    }
+
     private func recentRow(_ g: GivingRecord) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                    .lineLimit(1)
-                Text("\(giveDateShort(g.shownAt)) · \(givingMethodName(g.method))")
-                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+        Group {
+            // The amount under the words at the largest sizes: beside it the
+            // date and rail were cut ("Mon 5 O…"; §9.6 #4).
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    recentWords(g)
+                    recentAmount(g).padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack {
+                    recentWords(g)
+                    Spacer()
+                    recentAmount(g).layoutPriority(1)
+                }
             }
-            Spacer()
-            Text(money(g.amountMinor, g.currency))
-                .font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                .lineLimit(1).layoutPriority(1)
         }
         .padding(.horizontal, Nuru.S.base).padding(.vertical, 11)
         .contentShape(Rectangle())
+    }
+
+    private func recentWords(_ g: GivingRecord) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+            Text("\(giveDateShort(g.shownAt)) · \(givingMethodName(g.method))")
+                .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func recentAmount(_ g: GivingRecord) -> some View {
+        Text(money(g.amountMinor, g.currency))
+            .font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+            .lineLimit(1)
     }
 
     // MARK: Scripture + secure note

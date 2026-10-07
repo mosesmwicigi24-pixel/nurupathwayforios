@@ -641,6 +641,8 @@ struct PartnersView: View {
     /// band's first row when both are supplied (GiveTabView).
     var segment: GiveSegment? = nil
     var onSelectSegment: ((GiveSegment) -> Void)? = nil
+    /// At the accessibility sizes the band scrolls with the page (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @StateObject private var vm = PartnersModel()
     @EnvironmentObject private var tabs: TabRouter
@@ -740,16 +742,21 @@ struct PartnersView: View {
         ZStack {
             Nuru.paper.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    sections
+                VStack(alignment: .leading, spacing: 0) {
+                    // At the accessibility sizes the band scrolls with the
+                    // page: pinned, it filled two thirds of the screen (§9.6 #4).
+                    if embedded && typeSize.isAccessibilitySize { band }
+                    VStack(alignment: .leading, spacing: 12) {
+                        sections
+                    }
+                    .padding(.horizontal, Nuru.S.base)
+                    .padding(.top, Nuru.S.base)
+                    .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)
                 }
                 .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
-                .padding(.horizontal, Nuru.S.base)
-                .padding(.top, Nuru.S.base)
-                .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if embedded { band }
+                if embedded && !typeSize.isAccessibilitySize { band }
             }
             .refreshable {
                 await vm.load()
@@ -894,10 +901,13 @@ struct PartnersView: View {
                      : "\(money(item.amountMinor, item.currency)) · \(when.text)")
                     .font(.nRowTitle)   // a content row (§8.1 rule 3)
                     .foregroundStyle(when.overdue ? Nuru.goldChipText : Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Whole at the largest size: "Roof shee…" (§9.6 #4).
                 Text(partial
                      ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
                      : dueSubtitle(item, p))
-                    .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    .font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 // What the office is already checking, on the row it covers
                 // (§9.3 rule 1): said, never subtracted — the row and Pay
                 // still ask what is owed.
@@ -1159,7 +1169,7 @@ struct PartnersView: View {
         let anyFigure = figures.contains { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
         return VStack(alignment: .leading, spacing: 0) {
             if anyFigure {
-                HStack(alignment: .top, spacing: 8) {
+                NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
                     summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
                     summaryColumn("Paid", figures.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
                     summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
@@ -1339,6 +1349,10 @@ private struct StandingCard: View {
     let faithfulness: GivingStatements.Faithfulness?
     let onPledge: () -> Void
     let onStatement: () -> Void
+    /// At the accessibility sizes the tier sits under the standing and the two
+    /// buttons stand one above the other (§9.6 #4): "Partne / r since",
+    /// "discipl / es".
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -1355,51 +1369,79 @@ private struct StandingCard: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 10) {
-                // The ONLY gold-filled button on the page.
-                Button(action: onPledge) {
-                    HStack(spacing: 6) {
-                        Icon(.plus, size: 14, color: Nuru.navy)
-                        Text("Make a pledge").font(.inter(14, .bold))
-                    }
-                    .foregroundStyle(Nuru.navy)
-                    .frame(maxWidth: .infinity).frame(height: 44)
-                    .background(Nuru.gold, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-
-                Button(action: onStatement) {
-                    Text("Statement").font(.inter(14, .semibold))
-                        .foregroundStyle(Nuru.navy)
-                        .frame(maxWidth: .infinity).frame(height: 44)
-                        .background(Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
-                }
-                .buttonStyle(.pressable)
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 10) { pledgeButton; statementButton }
+            } else {
+                HStack(spacing: 10) { pledgeButton; statementButton }
             }
         }
         .partnerCard()
     }
 
+    // The ONLY gold-filled button on the page.
+    private var pledgeButton: some View {
+        Button(action: onPledge) {
+            HStack(spacing: 6) {
+                Icon(.plus, size: 14, color: Nuru.navy)
+                Text("Make a pledge").font(.inter(14, .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Nuru.navy)
+            .frame(maxWidth: .infinity).frame(minHeight: 44)
+            .background(Nuru.gold, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private var statementButton: some View {
+        Button(action: onStatement) {
+            Text("Statement").font(.inter(14, .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Nuru.navy)
+                .frame(maxWidth: .infinity).frame(minHeight: 44)
+                .background(Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
+        }
+        .buttonStyle(.pressable)
+    }
+
     /// Since · kept, and the tier — shown once the standing is real.
-    private var standingRow: some View {
-        HStack(alignment: .top, spacing: 10) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
-                Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
+    @ViewBuilder private var standingRow: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                standingWords
+                tierChip
             }
-            Spacer(minLength: 8)
-            if let t = partnership.tier, !t.name.isEmpty {
-                HStack(spacing: 5) {
-                    Icon(.award, size: 14, color: Nuru.goldChipText)
-                    Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
-                }
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Nuru.goldChipBg, in: Capsule())
-                .accessibilityElement(children: .ignore)
-                // The tier sentence lives here and nowhere on screen.
-                .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                standingWords
+                Spacer(minLength: 8)
+                tierChip
             }
+        }
+    }
+
+    private var standingWords: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var tierChip: some View {
+        if let t = partnership.tier, !t.name.isEmpty {
+            HStack(spacing: 5) {
+                Icon(.award, size: 14, color: Nuru.goldChipText)
+                Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Nuru.goldChipBg, in: Capsule())
+            .accessibilityElement(children: .ignore)
+            // The tier sentence lives here and nowhere on screen.
+            .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
         }
     }
 
@@ -1499,8 +1541,10 @@ private struct PledgeCard: View {
                     // A pledge is a content row (§8.1 rule 3); its name wraps
                     // to two lines rather than being cut (rule 9).
                     Text(pledge.displayTitle).font(.nRowTitle).foregroundStyle(Nuru.ink)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size: "KSh 5,0…" (§9.6 #4).
+                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 stateChip
@@ -1517,14 +1561,15 @@ private struct PledgeCard: View {
             .frame(height: 6)
             .accessibilityLabel("\(Int((pledge.fraction * 100).rounded())) percent")
 
-            HStack(spacing: 8) {
-                Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
+            NuruAdaptiveStack(spacing: 8) {
+                Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if let n = nextLine {
                     Text(n.text)
                         .font(.inter(11, n.overdue ? .semibold : .regular))
                         .foregroundStyle(n.overdue ? Nuru.goldChipText : Nuru.ink600)
-                        .lineLimit(1)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }

@@ -471,7 +471,7 @@ struct PartnersStatementView: View {
     /// One line per currency in each column (shillings first) — never one
     /// sum across currencies.
     private func summaryCard(_ f: Figures) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
             partnerSummaryColumn("Pledged", f.byCurrency.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
             partnerSummaryColumn("Paid", f.byCurrency.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
             partnerSummaryColumn("Remaining", f.byCurrency.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
