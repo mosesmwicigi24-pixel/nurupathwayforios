@@ -140,6 +140,68 @@ struct SelahDivider: View {
     }
 }
 
+/// Dark cards never touch on Home (owner, 2026-10-07): where a dark card
+/// would sit directly on another dark card, or on a photograph's dark edge,
+/// the quiet Selah divider is set between them. Nothing moves — the owner's
+/// order stands (verse → video → letter → reflection → liturgy); a rest is
+/// added. The check runs over the feed as it was assembled, so it holds
+/// whichever rows a day brings: on a first day the reflection waits (§9.2
+/// #4) and the navy letter would sit on the liturgy's photograph; while a
+/// service is near, "Live now" would sit on the letter.
+enum HomeQuietDivider {
+    enum Edge: Equatable { case light, dark }
+
+    /// What a Home row shows at its top and bottom edge, by the row's id. A
+    /// photograph's edge counts as dark: the hour's and the day's photographs
+    /// carry a dark scrim at the top (a navy field while they load), and a
+    /// gathering's poster can be any tone — a rest too many is quiet, a dark
+    /// seam is not.
+    static func edges(of id: String) -> (top: Edge, bottom: Edge) {
+        switch id {
+        // Navy cards, edge to edge: Nuru Live, Radio on air, Live now, the
+        // Sunday Letter in every state, and "Support God's work".
+        case "livebanner", "onair", "livenow", "letter", "give":
+            return (.dark, .dark)
+        // A photograph above a light caption: the verse's tableau, the
+        // liturgy's hour, a featured gathering's poster.
+        case "verse", "liturgy", "event":
+            return (.dark, .light)
+        default:
+            return (.light, .light)
+        }
+    }
+
+    /// True when the upper row's bottom edge and the lower row's top edge are
+    /// both dark.
+    static func touch(_ upper: String, _ lower: String) -> Bool {
+        edges(of: upper).bottom == .dark && edges(of: lower).top == .dark
+    }
+
+    /// The divider's own id between two rows — stable, so SwiftUI keeps it.
+    static func dividerId(_ upper: String, _ lower: String) -> String { "quiet:\(upper)|\(lower)" }
+
+    /// The rows as assembled, with a divider wherever two dark edges would
+    /// touch, and nothing else changed.
+    static func parted<Row>(_ rows: [Row], id: (Row) -> String,
+                            divider: (_ upper: String, _ lower: String) -> Row) -> [Row] {
+        var out: [Row] = []
+        out.reserveCapacity(rows.count + 2)
+        var above: String?
+        for row in rows {
+            let here = id(row)
+            if let above, touch(above, here) { out.append(divider(above, here)) }
+            out.append(row)
+            above = here
+        }
+        return out
+    }
+
+    /// The same, over the rows' ids alone.
+    static func parted(_ ids: [String]) -> [String] {
+        parted(ids, id: { $0 }, divider: { dividerId($0, $1) })
+    }
+}
+
 // MARK: - Share as a picture
 
 /// The postcard we render to a photograph: the day's art, the verse in serif,

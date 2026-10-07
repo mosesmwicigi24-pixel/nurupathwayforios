@@ -566,7 +566,13 @@ struct HomeView: View {
             s.insert(s.remove(at: idx), at: 0)
         }
         #endif
-        return s
+        // Dark cards never touch (owner, 2026-10-07): where a dark card would
+        // sit directly on another, or on a photograph's dark edge — the letter
+        // on the liturgy's photograph on a first day, "Live now" on the letter
+        // — the quiet Selah divider is set between them. Nothing moves.
+        return HomeQuietDivider.parted(s, id: { $0.id }) { upper, lower in
+            (id: HomeQuietDivider.dividerId(upper, lower), view: AnyView(SelahDivider()))
+        }
     }
 
     var body: some View {
@@ -1037,6 +1043,12 @@ struct HomeView: View {
     /// real event detail and never shows invented viewer counts.
     private var liveNowInfo: (occ: CalendarOccurrence, startsInMin: Int?)? {
         let now = Date()
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted visual verification: NURU_UITEST_LIVENOW=1 shows the next
+        // service as live now, so a headless screenshot sees "Live now" on Home.
+        if ProcessInfo.processInfo.environment["NURU_UITEST_LIVENOW"] == "1",
+           let occ = vm.events.first(where: { isWorshipish($0) }) { return (occ, nil) }
+        #endif
         for occ in vm.events {
             guard isWorshipish(occ), let start = parseISO(occ.startAt) else { continue }
             let end = parseISO(occ.endAt) ?? start.addingTimeInterval(2 * 3600)

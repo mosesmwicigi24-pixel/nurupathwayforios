@@ -985,6 +985,74 @@ final class ExperienceCycle5Tests: XCTestCase {
             XCTAssertTrue(verbs.contains(try XCTUnwrap(r.ask).verb), "one of the owner's five verbs")
         }
     }
+
+    // MARK: Owner, 2026-10-07 — a quiet divider when dark cards would touch
+
+    /// Ben's first day: the reflection waits (§9.2 #4), so nothing stands
+    /// between the navy letter and the liturgy's photograph — the quiet
+    /// divider does. Nothing moves.
+    func testOnAFirstDayAQuietDividerPartsTheLetterFromTheLiturgysPhotograph() throws {
+        // The rows Home assembles on Ben's first day: nothing needs him yet,
+        // and the reflection is held.
+        let firstDay = ["verse", "video", "letter", "liturgy", "week", "rhythm", "echo", "selah1",
+                        "celebrations", "progress", "selah2", "grow", "encourage"]
+        let parted = HomeQuietDivider.parted(firstDay)
+        XCTAssertEqual(parted, ["verse", "video", "letter", "quiet:letter|liturgy", "liturgy", "week", "rhythm", "echo",
+                                "selah1", "celebrations", "progress", "selah2", "grow", "encourage"])
+        // Nothing moves: less the divider, the owner's order is as it was.
+        XCTAssertEqual(parted.filter { !$0.hasPrefix("quiet:") }, firstDay)
+        // Another day, what needs the member (or the reflection) stands between them.
+        for between in ["needsyou", "priority"] {
+            let day = ["verse", "video", "letter", between, "liturgy", "week"]
+            XCTAssertEqual(HomeQuietDivider.parted(day), day, between)
+        }
+    }
+
+    /// While a service is near, "Live now" (navy) would sit on the letter (navy).
+    func testLiveNowOnTheLetterIsPartedToo() {
+        XCTAssertEqual(HomeQuietDivider.parted(["verse", "video", "livenow", "letter", "needsyou", "liturgy"]),
+                       ["verse", "video", "livenow", "quiet:livenow|letter", "letter", "needsyou", "liturgy"])
+        // On a first day, both.
+        XCTAssertEqual(HomeQuietDivider.parted(["verse", "video", "livenow", "letter", "liturgy", "week"]),
+                       ["verse", "video", "livenow", "quiet:livenow|letter", "letter", "quiet:letter|liturgy", "liturgy", "week"])
+    }
+
+    /// Dark edges are the navy cards' and the photographs'; everything else
+    /// on Home is light, and needs no rest.
+    func testDarkEdgesAreTheNavyCardsAndThePhotographs() {
+        // Nuru Live and Radio on air, over the verse's photograph.
+        XCTAssertEqual(HomeQuietDivider.parted(["livebanner", "onair", "verse", "video"]),
+                       ["livebanner", "quiet:livebanner|onair", "onair", "quiet:onair|verse", "verse", "video"])
+        // The verse's and the liturgy's captions are light: what follows them touches no dark edge.
+        XCTAssertFalse(HomeQuietDivider.touch("verse", "letter"))
+        XCTAssertFalse(HomeQuietDivider.touch("liturgy", "week"))
+        XCTAssertFalse(HomeQuietDivider.touch("encourage", "give"))
+        for light in ["loaderror", "video", "needsyou", "priority", "week", "rhythm", "echo", "selah1", "prayerwall",
+                      "celebrations", "announcement", "progress", "selah2", "grow", "encourage"] {
+            XCTAssertEqual(HomeQuietDivider.edges(of: light).top, .light, light)
+            XCTAssertEqual(HomeQuietDivider.edges(of: light).bottom, .light, light)
+        }
+    }
+
+    /// Home runs the check over the rows it assembled, last; and every row it
+    /// can append has its edges named here, so a new dark card cannot slip in
+    /// unparted.
+    func testHomesFeedPartsItsAssembledRowsAndNamesEveryRowsEdges() throws {
+        let home = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Home/HomeView.swift"), encoding: .utf8)
+        XCTAssertTrue(home.contains("return HomeQuietDivider.parted(s, id: { $0.id })"))
+        let re = try NSRegularExpression(pattern: #"s\.append\(\("([a-z0-9]+)""#)
+        let appended = Set(re.matches(in: home, range: NSRange(home.startIndex..., in: home)).compactMap {
+            Range($0.range(at: 1), in: home).map { String(home[$0]) }
+        })
+        let dark: Set = ["livebanner", "onair", "livenow", "letter", "give", "verse", "liturgy", "event"]
+        let light: Set = ["loaderror", "video", "needsyou", "priority", "week", "rhythm", "echo", "selah1", "prayerwall",
+                          "celebrations", "announcement", "progress", "selah2", "grow", "encourage"]
+        XCTAssertEqual(appended, dark.union(light), "a new Home row: name its edges in HomeQuietDivider.edges(of:)")
+        for id in dark {
+            let e = HomeQuietDivider.edges(of: id)
+            XCTAssertTrue(e.top == .dark || e.bottom == .dark, id)
+        }
+    }
 }
 
 /// The verse tableau as it was before 84d2acb (3137194), kept as the
