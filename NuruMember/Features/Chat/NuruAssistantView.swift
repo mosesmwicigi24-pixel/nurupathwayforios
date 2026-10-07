@@ -187,7 +187,7 @@ struct NuruAssistantView: View {
                     .contentShape(Rectangle())
             }.buttonStyle(.pressable)
         }
-        .padding(.horizontal, 12).padding(.top, 56).padding(.bottom, 16)
+        .padding(.horizontal, 12).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 16)   // clears the status-bar band (C7 class)
         .frame(maxWidth: .infinity)
         .background(
             NUR.header

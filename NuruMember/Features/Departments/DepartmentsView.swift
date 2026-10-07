@@ -76,6 +76,8 @@ struct DepartmentsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                 VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                    // A saved copy says so (final walk M3).
+                    NuruSavedCopyNotice(hasContent: !vm.rows.isEmpty)
                     if vm.loading && vm.rows.isEmpty {
                         skeleton
                     } else if let f = vm.failure, vm.rows.isEmpty {

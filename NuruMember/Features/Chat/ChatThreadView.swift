@@ -64,7 +64,7 @@ final class ChatThreadViewModel: ObservableObject {
         let k = thread?.kind ?? conversation.kind
         return k != "dm"
     }
-    var title: String { thread?.title ?? conversation.title ?? "Conversation" }
+    var title: String { (thread?.title ?? conversation.title).map(ChatConversation.shownTitle) ?? "Conversation" }
     var topic: String? {
         let t = thread?.topic ?? conversation.topic
         return (t?.isEmpty == false) ? t : nil

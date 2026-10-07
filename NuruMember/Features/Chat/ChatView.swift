@@ -315,7 +315,9 @@ private let storyRing = LinearGradient(
 
 // Per-row tint cycle (backend sends no space colour) — mirrors the mock palette.
 // Navy or gold only (§8.1 rule 1) — no indigo, sky, green, pink or teal rows.
-private let rowTints: [UInt32] = [0xC89B3C, 0x143559, 0xA87F2E, 0x315F8C]
+// Gold and navy only (§8.1 rule 1; final walk C4: the cell room's tile was
+// the hero's mid-blue #315F8C, a hue no role has).
+private let rowTints: [UInt32] = [0xC89B3C, 0x143559, 0xA87F2E, 0x0B1F33]
 private func rowTint(_ index: Int) -> Color { Color(hex: rowTints[index % rowTints.count]) }
 
 // "9:42 AM" today · "Yesterday" · "Tue" within the week · "4 Jun" beyond.
@@ -358,6 +360,9 @@ struct ChatView: View {
                     VStack(spacing: 0) {
                         header
                         VStack(spacing: Nuru.S.screen) {
+                            // A saved copy says so (final walk M3) — never
+                            // over the skeleton or the failed card.
+                            NuruSavedCopyNotice(hasContent: vm.inbox != nil)
                             // Broadcast is a focused composer — drop the AI/verse
                             // cards there so "Send to all" stays above the fold.
                             if segment != .broadcast {
@@ -788,11 +793,12 @@ struct ChatView: View {
         let groupItems = vm.groups.filter(matches)
         let discoverable = filteredDiscover
         return VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(hash: true, "YOUR SPACES")
+            // A Lucide glyph, not a typed "#" (§8.1 rule 7; final walk C4).
+            sectionLabel(icon: .messageSquareText, "YOUR SPACES")
             if items.isEmpty {
                 emptyCard(icon: query.isEmpty ? .sparkles : .search,
                           query.isEmpty
-                    ? "No spaces yet — follow one below to get started."
+                    ? SpaceWords.none(canFollow: !discoverable.isEmpty)
                     : "No spaces match your search.")
             } else {
                 groupedCard {
@@ -810,7 +816,7 @@ struct ChatView: View {
                 }
             }
             if !discoverable.isEmpty {
-                sectionLabel(hash: true, "DISCOVER SPACES").padding(.top, 6)
+                sectionLabel(icon: .messageSquareText, "DISCOVER SPACES").padding(.top, 6)
                 groupedCard {
                     ForEach(Array(discoverable.enumerated()), id: \.element.id) { idx, s in
                         DiscoverSpaceRow(space: s, index: idx, divider: idx > 0,
@@ -1400,7 +1406,7 @@ private struct ConversationRow: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(c.title ?? "Conversation")
+                    Text(c.shownTitle ?? "Conversation")
                         .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
                         .foregroundStyle(Nuru.navy).lineLimit(1)
                     if c.muted { MutedGlyph() }
@@ -1412,7 +1418,9 @@ private struct ConversationRow: View {
                 HStack(spacing: 8) {
                     RowPreview(c: c, showAuthor: c.kind != "dm")
                     Spacer(minLength: 4)
-                    if unread { UnreadBadge(count: c.unread) } else { DoubleCheck() }
+                    // A read mark only beside a message (§8.1 rule 8: "✓✓"
+                    // sat beside "No messages yet").
+                    if unread { UnreadBadge(count: c.unread) } else if c.lastAt != nil { DoubleCheck() }
                 }
             }
         }
@@ -2095,5 +2103,29 @@ enum PersonWords {
         case let (nil, c?): return c
         default: return nil
         }
+    }
+}
+
+/// Your spaces' words when there are none (final walk C4): "follow one
+/// below" only while there is one below to follow.
+enum SpaceWords {
+    static func none(canFollow: Bool) -> String {
+        canFollow ? "No spaces yet — follow one below to get started."
+                  : "No spaces yet. When the church opens one, you can follow it here."
+    }
+}
+
+extension ChatConversation {
+    /// The room's name as a member reads it (§8.1 rule 8; final walk C4): the
+    /// server names a cell's room "<cell> cell", which read "Dev Cell A cell"
+    /// for a cell already called a Cell. The doubled word goes.
+    var shownTitle: String? { title.map(Self.shownTitle) }
+
+    static func shownTitle(_ raw: String) -> String {
+        let t = raw.trimmingCharacters(in: .whitespaces)
+        guard t.lowercased().hasSuffix(" cell") else { return t }
+        let head = String(t.dropLast(5))
+        let words = head.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return words.contains("cell") ? head : t
     }
 }

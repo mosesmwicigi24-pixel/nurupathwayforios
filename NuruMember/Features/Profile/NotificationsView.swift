@@ -168,10 +168,14 @@ struct NotificationsView: View {
             }
             .accessibilityLabel("Back")
             VStack(alignment: .leading, spacing: 0) {
-                // The header as on Android (§8.2 #10): the serif title, one line.
+                // A pushed page's header (§8.1 rule 2: back · kicker · title;
+                // final walk #38 — it had no kicker): the gold kicker, the
+                // serif title, one line — and no emoji in it (rule 7).
+                Text("INBOX").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                    .padding(.bottom, 2)
                 Text("Notifications").font(.nCardTitle).foregroundStyle(Nuru.ink)
                 HStack(spacing: 6) {
-                    Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up ✨").font(.nCaption).foregroundStyle(Nuru.ink600)
+                    Text(vm.unread > 0 ? "\(vm.unread) unread" : "All caught up").font(.nCaption).foregroundStyle(Nuru.ink600)
                         .contentTransition(.numericText(value: Double(vm.unread)))
                         .animation(.easeInOut(duration: 0.25), value: vm.unread)
                     if rewardUnread > 0 {

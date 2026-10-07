@@ -72,6 +72,8 @@ struct ProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Nuru.S.base) {
                     header
+                    // A saved copy says so (final walk M3).
+                    NuruSavedCopyNotice(hasContent: auth.profile != nil)
                     if isStaff { disciplerEntry }
                     personalInfo
                     achievements
@@ -243,7 +245,8 @@ struct ProfileView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .nuruWholeWords(p?.fullName ?? "", font: .fraunces(22, .medium), kerning: -0.44)
                     if let email = p?.email {
-                        Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
+                        // Breaks only at "@" or "." (final walk C3).
+                        Text(NuruText.emailBreaks(email)).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
                             .nuruLineLimit(1).truncationMode(.middle)
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -365,7 +368,9 @@ struct ProfileView: View {
     private func displayValue(for f: PField) -> String {
         switch f.id {
         case "name": return p?.fullName ?? "Not set"   // an empty value reads "Not set" (§8.1 rule 8)
-        case "email": return p?.email ?? "Not set"
+        // An address breaks only at "@" or "." (final walk C3: "student1@de
+        // / v.local" at the largest size).
+        case "email": return p?.email.map(NuruText.emailBreaks) ?? "Not set"
         // Read the Kenyan way ("0700 000 000"), the same as Give shows it; the
         // edit sheet and the wire keep E.164.
         case "phone": return p?.phoneNumber.map { KenyanPhone.display($0) } ?? "Not set"
@@ -566,7 +571,10 @@ struct ProfileView: View {
                 }
             )) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Personal companion & Sunday Letter").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                    // The card's title (§8.1 rule 3: Fraunces 18 semibold;
+                    // final walk #38 — it was Inter).
+                    Text("Personal companion & Sunday Letter").font(.nCardTitle).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Nuru remembers your journey to walk with you personally. Your prayer journal is never read — ever. Turn this off and Nuru forgets your story, stops reading your reflections, and pauses your Sunday Letters.")
                         .font(.inter(11)).foregroundStyle(Nuru.muted).lineSpacing(2)
                 }
@@ -925,13 +933,16 @@ private struct BadgeMedallion: View {
                     .frame(width: 54, height: 54)
                 Icon(badge.style.icon, size: 22, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
             }
-            Text(badge.name)
+            // Its own lines, never broken at the hyphen nor inside a word,
+            // never cut (final walk C3): the medallion is as wide as its
+            // longest line — the rail scrolls sideways.
+            Text(NuruText.badgeLines(badge.name))
                 .font(.inter(11, badge.earned ? .semibold : .medium))
                 .foregroundStyle(badge.earned ? Nuru.navy : Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .fixedSize()
         }
-        .frame(width: 66)
+        .frame(minWidth: 66)
     }
 }
 
@@ -991,6 +1002,9 @@ private struct BadgeDetailSheet: View {
 private struct BadgeGallerySheet: View {
     let badges: [PBadgeItem]
     @State private var viewing: PBadgeItem?
+    /// One column at the accessibility sizes: a medallion is as wide as its
+    /// name's longest line, and three across would overlap (final walk C3).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var earnedCount: Int { badges.filter(\.earned).count }
 
@@ -999,7 +1013,7 @@ private struct BadgeGallerySheet: View {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("\(earnedCount) of \(badges.count) badges earned")
                     .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 10) {
                     ForEach(badges) { b in
                         Button { Haptics.tap(); viewing = b } label: {
                             VStack(spacing: 6) {
