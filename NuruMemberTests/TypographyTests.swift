@@ -494,7 +494,6 @@ enum TypeScan {
         "Features/Chat/ChatThreadView.swift": 2,
         "Features/Chat/ChatView.swift": 1,
         "Features/Community/PrayerWallDetailView.swift": 1,
-        "Features/Community/PrayerWallView.swift": 2,
         "Features/Discipleship/DisciplerDossierView.swift": 1,
         "Features/Events/EventDetailView.swift": 1,
         "Features/Home/HomeCards.swift": 1,

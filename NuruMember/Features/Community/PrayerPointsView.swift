@@ -97,7 +97,10 @@ private struct ConsentGateCard: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // Secondary (§8.1 rule 4): white, hairline, navy words —
+                    // the page has one primary, "Draft with Nuru" above.
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)
@@ -134,14 +137,16 @@ private struct AssistComposerCard: View {
                     Button {
                         Task { await assist() }
                     } label: {
+                        // The page's one primary (§8.1 rule 4; final walk
+                        // #31): gold fill, navy words, radius 14 — it was a
+                        // gold-to-navy gradient pill beside a second gold
+                        // primary.
                         HStack(spacing: 6) {
-                            if busy { ProgressView().tint(.white) } else { Icon(.sparkles, size: 14, color: .white) }
-                            Text(busy ? "Drafting…" : "Draft with Nuru").font(.inter(12, .bold)).foregroundStyle(.white)
+                            if busy { ProgressView().tint(Nuru.navy) } else { Icon(.sparkles, size: 14, color: Nuru.navy) }
+                            Text(busy ? "Drafting…" : "Draft with Nuru").font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
                         }
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(
-                            Nuru.aiOrb,
-                            in: Capsule())
+                        .padding(.horizontal, 18).padding(.vertical, 12)
+                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.pressable)
                     .disabled(busy)
@@ -224,7 +229,10 @@ private struct GatherPointsCard: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // Secondary (§8.1 rule 4): white, hairline, navy words —
+                    // the page has one primary, "Draft with Nuru" above.
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)

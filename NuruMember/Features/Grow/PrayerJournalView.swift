@@ -81,7 +81,7 @@ final class PrayerJournalViewModel: ObservableObject {
     // The server is idempotent: re-sharing returns the existing wall post, so
     // "already shared" simply succeeds.
 
-    /// Entry ids shared during this session — drives the "On the wall 🙏" state.
+    /// Entry ids shared during this session — drives the "Shared to Corporate" state.
     @Published var sharedToWall: Set<String> = []
     @Published var shareError: String?
 
@@ -96,8 +96,9 @@ final class PrayerJournalViewModel: ObservableObject {
             // mirrors) once the private prayer is confirmed public.
             CelebrationCenter.shared.fire(
                 key: "prayer-share-\(e.entryId)",
-                title: "Shared to Corporate Prayer",
-                subtitle: "Your cell is standing with you 🙏",
+                title: "Shared to Corporate",
+                // One story about who sees it (final walk M8): the congregation.
+                subtitle: PrayerWallWords.posted,
                 confetti: false)
         } catch {
             Haptics.error()
@@ -288,16 +289,17 @@ struct PrayerJournalView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // Sharing publishes a private entry to the whole cell — confirm
-            // first. (Attached to the inner VStack so it never collides with
+            // Sharing publishes a private entry to the whole congregation —
+            // confirm first. One name for the step everywhere (final walk
+            // M8): "Share to Corporate" — the menu, this alert, its answer. (Attached to the inner VStack so it never collides with
             // the delete dialog on the outer ZStack.)
             // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
             .alert(
-                "Share to the prayer wall?",
+                "Share to Corporate?",
                 isPresented: Binding(get: { pendingShare != nil },
                                      set: { if !$0 { pendingShare = nil } })
             ) {
-                Button("Share to wall") {
+                Button("Share") {
                     if let e = pendingShare { Task { await vm.shareToWall(e) } }
                     pendingShare = nil
                 }
@@ -618,7 +620,7 @@ private struct JournalCard: View {
                         Button { Haptics.success(); toggle() } label: { Label("Mark answered", systemImage: "checkmark.circle") }
                     }
                     if !shared {
-                        Button { Haptics.tap(); share() } label: { Label("Publish to Corporate", systemImage: "megaphone") }
+                        Button { Haptics.tap(); share() } label: { Label("Share to Corporate", systemImage: "megaphone") }
                     }
                     Button { edit() } label: { Label("Edit", systemImage: "pencil") }
                     Button(role: .destructive) { remove() } label: { Label("Delete", systemImage: "trash") }
@@ -724,7 +726,7 @@ private struct JournalCard: View {
             if shared {
                 HStack(spacing: 6) {
                     Icon(.handHeart, size: 14, color: Color(hex: 0x16A34A))
-                    Text("On the wall 🙏").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    Text("Shared to Corporate").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)

@@ -22,16 +22,24 @@ struct GiftsView: View {
     @StateObject private var vm = GiftsViewModel()
 
     var body: some View {
-        ZStack {
-            Nuru.paper.ignoresSafeArea()
-            LoadStateView(loading: vm.loading && vm.gifts == nil,
-                          isEmpty: vm.gifts == nil, error: vm.error,
-                          emptyText: "No gifts profile yet.", retry: { Task { await vm.load() } }) {
-                if let g = vm.gifts { content(g) }
+        VStack(spacing: 0) {
+            // The §8.1 header (rule 2: back · kicker · title; final walk #30:
+            // it was the system's centred title and a "‹" back).
+            NuruPushedHeader(kicker: "Profile", title: "Your Calling", line: "How God has wired you to serve.")
+            ZStack {
+                Nuru.paper
+                LoadStateView(loading: vm.loading && vm.gifts == nil,
+                              isEmpty: vm.gifts == nil, error: vm.error,
+                              emptyText: "No gifts profile yet.", retry: { Task { await vm.load() } }) {
+                    if let g = vm.gifts { content(g) }
+                }
             }
         }
-        .navigationTitle("Your Calling")
-        .navigationBarTitleDisplayMode(.inline)
+        .ignoresSafeArea(edges: .top)
+        .background(Nuru.paper.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .nuruEdgeSwipeBack()
         .task { if vm.gifts == nil { await vm.load() } }
     }
 

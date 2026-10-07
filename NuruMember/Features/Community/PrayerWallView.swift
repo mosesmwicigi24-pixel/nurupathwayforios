@@ -9,12 +9,13 @@ final class PrayerWallViewModel: ObservableObject {
     @Published var posts: [PrayerWallPost] = []
     @Published var sort = "latest"
     @Published var loading = true
-    @Published var error: String?
+    /// Why the wall didn't load — told in the one state card (§4).
+    @Published var failure: Error?
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         do { posts = try await MemberAPI.prayerWall(sort: sort) }
-        catch { self.error = NuruStateCopy.failureLine("Couldn't load the prayer wall.", error) }
+        catch { self.failure = error }
         loading = false
     }
 
@@ -50,8 +51,10 @@ struct PrayerWallView: View {
                         ForEach(0..<3, id: \.self) { i in
                             SkeletonPrayerCard().gentleEntrance(delay: Double(i) * 0.08)
                         }
-                    } else if vm.posts.isEmpty, let err = vm.error {
-                        errorState(err)
+                    } else if vm.posts.isEmpty, let f = vm.failure {
+                        // The one state card (§8.1 rule 5; final walk #29).
+                        NuruStateView(state: .failed(.failure(f)), retry: { Task { await vm.load() } })
+                            .padding(.top, Nuru.S.sm)
                     } else if vm.posts.isEmpty {
                         emptyState
                     } else {
@@ -70,7 +73,9 @@ struct PrayerWallView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.posts.map(\.postId))
             }
         }
-        .background(Nuru.coolPaper.ignoresSafeArea())
+        // Warm paper, the page every tab stands on (§8.1 rule 1; final walk
+        // #29: it was the portal's cool #F7F9FC).
+        .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await vm.load() }
@@ -160,30 +165,13 @@ struct PrayerWallView: View {
         }
     }
 
+    /// The one state card (§8.1 rule 5), no emoji (rule 7) — and one story
+    /// about who sees a shared prayer (final walk M8): the congregation, as
+    /// the share prompt says.
     private var emptyState: some View {
-        VStack(spacing: Nuru.S.sm) {
-            Text("🙏").font(.emoji(32))
-            Text("No requests yet").font(.nCardTitle).foregroundStyle(Nuru.ink)
-            Text("Be the first to share a prayer for the family to stand with you.")
-                .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
-        .gentleEntrance()
-    }
-
-    /// Honest failure state — the empty state used to swallow load errors.
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: Nuru.S.sm) {
-            Text(message).font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-            Button { Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                    .padding(.horizontal, 18).padding(.vertical, 8)
-                    .background(Nuru.goldChipBg, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
+        NuruStateView(state: .empty(title: PrayerWallWords.emptyTitle, line: PrayerWallWords.emptyLine))
+            .padding(.top, Nuru.S.sm)
+            .gentleEntrance()
     }
 }
 
@@ -234,7 +222,8 @@ private struct PrayerCardView: View {
             HStack(spacing: Nuru.S.base) {
                 Button { Haptics.love(); pray() } label: {
                     HStack(spacing: 6) {
-                        Text("🙏").font(.emoji(15))
+                        // A Lucide glyph, not an emoji (§8.1 rule 7).
+                        Icon(.handHeart, size: 14, color: post.iPrayed ? Nuru.navyDeep : Nuru.ink600)
                         Text(post.prayCount > 0 ? "\(post.prayCount) praying" : "Pray")
                             .font(.inter(12, .bold)).foregroundStyle(post.iPrayed ? Nuru.navyDeep : Nuru.ink600)
                             .contentTransition(.numericText(value: Double(post.prayCount)))
@@ -338,7 +327,7 @@ private struct PrayerComposeSheet: View {
             CelebrationCenter.shared.fire(
                 key: "prayer-\(UUID().uuidString)",
                 title: "Your prayer is on the wall",
-                subtitle: "Your cell is standing with you 🙏",
+                subtitle: PrayerWallWords.posted,
                 confetti: false)
         } catch {
             Haptics.error()
@@ -349,4 +338,13 @@ private struct PrayerComposeSheet: View {
 
 private extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// The wall's words, one story about who sees a shared prayer (final walk
+/// M8): everyone in the member's congregation — the share prompt's words.
+/// Android says the same.
+enum PrayerWallWords {
+    static let emptyTitle = "No requests yet"
+    static let emptyLine = "Be the first to share a prayer. Everyone in your congregation will see it and can pray with you."
+    static let posted = "Everyone in your congregation can pray with you."
 }
