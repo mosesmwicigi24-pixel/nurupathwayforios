@@ -303,7 +303,7 @@ struct PrayerJournalView: View {
                 }
                 Button("Keep it private", role: .cancel) { pendingShare = nil }
             } message: {
-                Text("Your cell will see this and pray with you.")
+                Text("Everyone in your congregation will see this and can pray with you.")
             }
             .alert("Couldn't share",
                    isPresented: Binding(get: { vm.shareError != nil },
