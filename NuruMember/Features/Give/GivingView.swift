@@ -136,7 +136,9 @@ func giveDateShort(_ iso: String) -> String {
     return NuruDates.day(d)
 }
 
-/// "Mon 5 Oct 2026" — a record kept, so always the year.
+/// "Mon 5 Oct 2026" — always the year: for text that leaves the app (a
+/// shared receipt) and a date in another year. On screen, this year's dates
+/// carry none (§8.1 rule 8) — `giveDateShort`.
 func giveDateFull(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
     return NuruDates.day(d, withYear: true)
@@ -499,6 +501,9 @@ struct GivingView: View {
                     // form scrolled in a sliver under it (§9.6 #4).
                     if typeSize.isAccessibilitySize { headerBlock }
                     VStack(alignment: .leading, spacing: Nuru.S.md) {
+                        // A saved copy says so (final walk M3): what the
+                        // page last read. A gift itself is never queued.
+                        NuruSavedCopyNotice(hasContent: vm.yearKnown)
                         // Give's reads didn't come (offline, our side): say so
                         // first, in §4's words — the form below still stands.
                         if let f = vm.loadFailure, !vm.yearKnown {
@@ -516,7 +521,10 @@ struct GivingView: View {
                         if !payMode && !vm.listedSchedules.isEmpty {
                             overline("RECURRING GIFTS")
                             ForEach(vm.listedSchedules) { recurringGiftRow($0) }
-                            overline("GIVE ONCE").padding(.top, Nuru.S.sm)
+                            // A section's title, not a second kicker stacked on
+                            // "CHOOSE A FUND" (§8.1 rule 3; final walk 64/65).
+                            Text("Give once").font(.nCardTitle).foregroundStyle(Nuru.navy)
+                                .padding(.top, Nuru.S.sm)
                         }
                         if !payMode, let g = vm.lastGift { repeatCard(g) }
                         if payMode { payModeCard.transition(.opacity) } else { fundsSection }
@@ -700,7 +708,7 @@ struct GivingView: View {
                              refCode: successRef,
                              txId: pendingTxId,
                              cadenceWord: elsewhere.map { ScheduleRhythm.isWeekly($0.frequency) ? "week" : "month" } ?? cadenceWord,
-                             nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateFull(scheduledNextAt),
+                             nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateShort(scheduledNextAt),
                              scheduledNote: scheduledNote,
                              nothingTodayLine: scheduledNextAt.isEmpty ? nil : ScheduleRhythm.nothingTodayLine(firstPromptISO: scheduledNextAt),
                              retrying: submitting,
@@ -725,9 +733,10 @@ struct GivingView: View {
                 GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
-            // The one header's words (§8.1 rules 2–3); the switch above
-            // names the tab, so no eyebrow repeats it.
-            NuruHeaderText(title: "Sow into the Kingdom", line: "Generosity is worship — a quiet, joyful act.")
+            // The one header's words (§8.1 rules 2–3): the switch sits above
+            // the kicker, which names the segment (final walk #38: there was
+            // none under the switch).
+            NuruHeaderText(kicker: "Give", title: "Sow into the Kingdom", line: "Generosity is worship — a quiet, joyful act.")
 
             if vm.yearKnown {
             HStack(spacing: 10) {
@@ -803,10 +812,12 @@ struct GivingView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { applyRepeat(g) }
         } label: {
             HStack(spacing: Nuru.S.md) {
+                // A row's icon sits on a gold-tint tile (§8.1 rule 7; final
+                // walk #38 — it was a solid gold tile).
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.goldChipBg)
                         .frame(width: 36, height: 36)
-                    Icon(.repeat, size: 18, color: Nuru.navy)
+                    Icon(.repeat, size: 18, color: Nuru.goldChipText)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -970,7 +981,7 @@ struct GivingView: View {
     // MARK: Frequency
 
     private var frequencyRow: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             ForEach([("once", "One-time"), ("weekly", "Weekly"), ("monthly", "Monthly")], id: \.0) { key, label in
                 let on = freq == key
                 Button {
@@ -978,19 +989,19 @@ struct GivingView: View {
                     Haptics.selection()
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { freq = key }
                 } label: {
+                    // Full pills (§8.1 rule 6; final walk #38): selected navy,
+                    // unselected white with a hairline — not the grey track.
                     Text(label)
                         .font(.inter(13, .semibold))
-                        .foregroundStyle(on ? Nuru.navy : Color(hex: 0x5B6472))
+                        .foregroundStyle(on ? Color.white : Nuru.ink600)
                         .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .nuruShadow(on ? 0.6 : 0)
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                 }.buttonStyle(.plain)
+                .accessibilityAddTraits(on ? [.isSelected] : [])
                 .accessibilityShowsLargeContentViewer()
             }
         }
-        .padding(4)
-        .background(Color(hex: 0x0A2540, alpha: 0.06),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         // A bar: "One… Wee… Mon…" at the largest size (§9.6 #4); a long press
         // shows a choice large.
         .nuruBarText()
@@ -1062,7 +1073,8 @@ struct GivingView: View {
                     }
                     // Why its last prompt failed, while it still fails — the server's words.
                     if let f = s.lastFailure, !f.reason.isEmpty {
-                        Text(f.reason).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
+                        // "M-Pesa" never breaks at its hyphen (rule 9; 64).
+                        Text(NuruText.keepHyphens(f.reason)).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -1390,7 +1402,9 @@ struct GivingView: View {
 
     private func recentWords(_ g: GivingRecord) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+            // A gift is a content row (§8.1 rule 3: Fraunces 15 semibold;
+            // final walk #38 — it was Inter).
+            Text(g.fund.capitalized).font(.nRowTitle).foregroundStyle(Nuru.navy)
                 .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
             Text("\(giveDateShort(g.shownAt)) · \(givingMethodName(g.method))")
                 .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
@@ -2389,6 +2403,9 @@ private struct ScheduleDetailSheet: View {
     @State private var errorText: String?
     /// A refused change named the pledge that owns it (details.pledge_id).
     @State private var errorPledgeId: String?
+    /// The sheet is as tall as what it holds (§8.1 rule 5; final walk #38:
+    /// it opened full height with its lower half empty).
+    @State private var contentHeight: CGFloat = 0
 
     init(schedule: GivingSchedule, rail: GivingMethod?, phoneOnFile: String?,
          followsMonthlyPledge: Bool = false, onOpenPledge: @escaping (String) -> Void = { _ in },
@@ -2459,9 +2476,17 @@ private struct ScheduleDetailSheet: View {
                 }
             }
             .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.xl)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { contentHeight = g.size.height }
+                    .onChange(of: g.size.height) { _, h in contentHeight = h }
+            })
         }
+        .scrollBounceBehavior(.basedOnSize)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: mode)
-        .presentationDetents([.large])
+        .presentationDetents([contentHeight > 0
+                              ? .height(PSheetFit.height(content: contentHeight, chrome: 12, screen: UIScreen.main.bounds.height))
+                              : .large])
         .presentationDragIndicator(.visible)
     }
 
@@ -2580,7 +2605,7 @@ private struct ScheduleDetailSheet: View {
             if paused {
                 row("Next prompt", "None while paused")
             } else {
-                row("Next prompt", giveParseDate(current.nextRunAt).map { ScheduleRhythm.format($0, "EEE d MMM yyyy") } ?? "Not set")
+                row("Next prompt", giveParseDate(current.nextRunAt).map { NuruDates.day($0, timeZone: GiveCalendar.nairobi) } ?? "Not set")
             }
             Divider().overlay(Nuru.border)
             row("Method", givingMethodName(current.method))
@@ -2819,7 +2844,7 @@ private struct ScheduleDetailSheet: View {
                     .tint(Nuru.gold)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                Text("It comes back on its own at its next day on or after \(ScheduleRhythm.format(resumeDate, "d MMM yyyy")).")
+                Text("It comes back on its own at its next day on or after \(NuruDates.day(resumeDate, timeZone: GiveCalendar.nairobi)).")
                     .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                     .fixedSize(horizontal: false, vertical: true)
             }

@@ -145,7 +145,7 @@ struct NewPledgeFlow: View {
 
     /// The first automatic collection, as the server will set it: the first
     /// due day strictly after today on the church's calendar — never today.
-    /// "5 October" ("5 January 2027" in another year).
+    /// "Mon 5 Oct" ("Tue 5 Jan 2027" in another year).
     private var firstCollection: String {
         let today = PledgeMath.today()
         return PledgeMath.dayLabel(PledgeMath.firstDueAfter(today, day: dueDay), today: today)

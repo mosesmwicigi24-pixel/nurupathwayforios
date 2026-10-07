@@ -457,10 +457,12 @@ enum PledgeMath {
         return m == 12 ? ymd(y + 1, 1, d) : ymd(y, m + 1, d)
     }
 
-    /// "5 October" — "5 January 2027" when it falls in another year than `today`.
+    /// "Mon 5 Oct" — "Tue 5 Jan 2027" when it falls in another year than
+    /// `today`: the one date shape (§8.1 rule 8; it read "paid 27 September").
+    /// A date-only value, so the calendar day sent — never shifted by a zone.
     static func dayLabel(_ day: String, today: String) -> String {
-        let words = GivingNotificationCopy.dayWords(day)
-        return day.prefix(4) == today.prefix(4) ? words : "\(words) \(day.prefix(4))"
+        guard let d = PauseDates.date(String(day.prefix(10))) else { return GivingNotificationCopy.dayWords(day) }
+        return NuruDates.day(d, now: PauseDates.date(String(today.prefix(10))) ?? Date(), timeZone: GiveCalendar.nairobi)
     }
 
     /// A monthly pledge's first instalment on or after `day`: its due day,
@@ -767,7 +769,9 @@ struct PartnersView: View {
     }
 
     @ViewBuilder private var sections: some View {
-        if vm.partnership != nil && vm.refreshFailed {
+        // A saved copy says so (final walk M3).
+        NuruSavedCopyNotice(hasContent: vm.partnership != nil)
+        if vm.partnership != nil && vm.refreshFailed && SyncCoordinator.shared.isOnline {
             Text("Couldn't refresh just now — showing what we last had.")
                 .font(.inter(11)).foregroundStyle(Nuru.ink400)
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
@@ -806,9 +810,10 @@ struct PartnersView: View {
                 GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
-            // The one header's words (§8.1 rules 2–3); the switch above
-            // names the tab, so no eyebrow repeats it.
-            NuruHeaderText(title: "Walk with the church", line: "Decide in advance. The church can plan.")
+            // The one header's words (§8.1 rules 2–3): the switch sits above
+            // the kicker, which names the segment (final walk #38: there was
+            // none under the switch).
+            NuruHeaderText(kicker: "Partners", title: "Walk with the church", line: "Decide in advance. The church can plan.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -945,13 +950,18 @@ struct PartnersView: View {
                     Haptics.action()
                     act(on: item, p)
                 } label: {
+                    // While the office checks money toward it, Pay is the
+                    // quiet secondary pill — never the row's navy ask (final
+                    // walk M1): the claim line above says what is happening.
+                    let quiet = item.action != "resume" && item.pendingClaimMinor > 0
                     HStack(spacing: 6) {
-                        if busy { ProgressView().tint(.white).scaleEffect(0.7) }
-                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, .bold))
+                        if busy { ProgressView().tint(quiet ? Nuru.navy : .white).scaleEffect(0.7) }
+                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, quiet ? .semibold : .bold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(quiet ? Nuru.navy : .white)
                     .padding(.horizontal, 18).frame(height: 36)
-                    .background(Nuru.navy, in: Capsule())
+                    .background(quiet ? Nuru.white : Nuru.navy, in: Capsule())
+                    .overlay(Capsule().stroke(quiet ? Nuru.border : .clear, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)
@@ -1171,7 +1181,7 @@ struct PartnersView: View {
             if anyFigure {
                 NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
                     summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
-                    summaryColumn("Paid", figures.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
+                    partnerSummaryColumn("Paid", figures.map { (money($0.paidMinor, $0.currency), PaidTint.color($0.paidMinor)) })
                     summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
                 }
 
@@ -1275,14 +1285,28 @@ extension View {
 /// One column of the Pledged / Paid / Remaining card: the label, then one
 /// amount per currency — the same currency on the same line in every column.
 func partnerSummaryColumn(_ label: String, _ values: [String], _ tint: Color) -> some View {
+    partnerSummaryColumn(label, values.map { ($0, tint) })
+}
+
+/// A column whose figures carry their own colour — "Paid" is green, the
+/// on-track colour, only for money that was paid (final walk C11: "PAID ·
+/// KSh 0" in green).
+func partnerSummaryColumn(_ label: String, _ values: [(text: String, tint: Color)]) -> some View {
     VStack(alignment: .leading, spacing: 3) {
         Text(label.uppercased()).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
         ForEach(Array(values.enumerated()), id: \.offset) { _, value in
-            Text(value).font(.inter(16, .semibold)).foregroundStyle(tint)
+            Text(value.text).font(.inter(16, .semibold)).foregroundStyle(value.tint)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+}
+
+/// Green says a state (§8.1 rule 1: on track): money paid. Nothing paid is
+/// a plain figure, navy.
+enum PaidTint {
+    static func isGreen(_ paidMinor: Int) -> Bool { paidMinor > 0 }
+    static func color(_ paidMinor: Int) -> Color { isGreen(paidMinor) ? Nuru.successText : Nuru.navy }
 }
 
 /// "Partner since Sep 2026" — month + year from the membership's joinedAt,
@@ -1524,6 +1548,35 @@ private struct TroubleRow: View {
 
 // MARK: - One pledge (read-only card; the detail page holds the actions)
 
+/// The pledge page's lead while the office checks a claim (final walk M1):
+/// gentle, on gold tint (§8.1 rule 5) — what is happening, and that it
+/// counts once confirmed. Nothing is subtracted from the figures below.
+struct PledgeClaimLead: View {
+    let line: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Icon(.clock, size: 18, color: Nuru.goldChipText)
+                .frame(width: 36, height: 36)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(line).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(PledgeClaimLead.counts).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    static let counts = "It counts toward this pledge once the office confirms it — no need to pay it again."
+}
+
 private struct PledgeCard: View {
     let pledge: Pledge
     /// "9 of 12 kept this year" — supplied by the screen (needs the statement).
@@ -1542,6 +1595,13 @@ private struct PledgeCard: View {
                     // to two lines rather than being cut (rule 9).
                     Text(pledge.displayTitle).font(.nRowTitle).foregroundStyle(Nuru.ink)
                         .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    // What the office is already checking leads (final walk
+                    // M1; §9.3 rule 1): said, never subtracted — Eli's US$ 50
+                    // was on no row at all, and a member could pay twice.
+                    if let claim = pledge.claimLine {
+                        Text(claim).font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     // Whole at the largest size: "KSh 5,0…" (§9.6 #4).
                     Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600)
                         .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
@@ -1702,6 +1762,11 @@ struct PledgeDetailView: View {
                         autoScheduleNotice(note)
                     }
                     if let p = pledge {
+                        // What is already happening is said first (§9.3 rule
+                        // 1; final walk M1): money the office is checking
+                        // leads the page — it sat at the foot, under a gold
+                        // "Pay now", and a member could pay twice.
+                        if let claim = p.claimLine { PledgeClaimLead(line: claim) }
                         VStack(alignment: .leading, spacing: 4) {
                             // The name is the page's header; this card carries the promise.
                             Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
@@ -1978,6 +2043,9 @@ struct PledgeDetailView: View {
         // The church collects it automatically (the card above says so):
         // paying is a choice — "Pay early", as quiet as Pause (§7.2 #2).
         let early = PledgePace.paysEarly(p, schedules: schedules)
+        // Money the office is checking: paying is still possible, never the
+        // page's gold primary (final walk M1).
+        let quiet = early || p.pendingClaimMinor > 0
         if !fulfilled && p.status != "cancelled" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -1994,14 +2062,14 @@ struct PledgeDetailView: View {
                             currency: p.currency))
                     } label: {
                         HStack(spacing: 6) {
-                            Text(early ? "Pay early" : "Pay now").font(.inter(13, early ? .semibold : .bold))
+                            Text(early ? "Pay early" : "Pay now").font(.inter(13, quiet ? .semibold : .bold))
                             Icon(.arrowRight, size: 14, color: Nuru.navy)
                         }
                         .foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(early ? Nuru.surface : Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(quiet ? Nuru.white : Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                            .stroke(early ? Nuru.border : .clear, lineWidth: 1))
+                            .stroke(quiet ? Nuru.border : .clear, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                     .disabled(paused || busy)
@@ -2158,7 +2226,7 @@ private struct PaymentRowLabel: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(money(payment.amountMinor, payment.currency)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text([giveDateFull(payment.at), payment.receiptCode].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([giveDateShort(payment.at), payment.receiptCode].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
             }
             Spacer(minLength: 8)

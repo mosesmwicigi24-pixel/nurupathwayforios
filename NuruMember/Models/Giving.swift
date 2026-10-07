@@ -558,6 +558,11 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     /// pledge, one not active, fully paid or past its date, and on older
     /// servers.
     let pace: Pace?
+    /// Money the member said they paid another way that the office is still
+    /// checking, in the pledge's own currency (pathway#516). Shown — "KSh
+    /// 2,000 is being checked by the office" — never subtracted: it counts
+    /// once the office confirms it. 0 on older servers.
+    let pendingClaimMinor: Int
     var id: String { pledgeId }
 
     struct Pace: Codable, Sendable, Hashable {
@@ -643,9 +648,18 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         startsOn = (try? c.decodeIfPresent(String.self, forKey: .startsOn)).flatMap { $0.isEmpty ? nil : $0 }
         untilOn = (try? c.decodeIfPresent(String.self, forKey: .untilOn)).flatMap { $0.isEmpty ? nil : $0 }
         pace = try? c.decodeIfPresent(Pace.self, forKey: .pace)
+        pendingClaimMinor = max(0, c.flexInt(.pendingClaimMinor) ?? 0)
     }
 
-    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
+    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle && a.pendingClaimMinor == b.pendingClaimMinor }
+
+    /// "US$ 50.00 is being checked by the office" while a claim waits — the
+    /// pledge's row and its page lead with it (final walk M1: a member must
+    /// never be invited to pay twice). Nil when nothing waits.
+    var claimLine: String? {
+        guard pendingClaimMinor > 0 else { return nil }
+        return "\(GiveMoney.format(pendingClaimMinor, currency)) is being checked by the office"
+    }
     func hash(into h: inout Hasher) { h.combine(pledgeId) }
 
     var isMonthly: Bool { shape == "monthly" }

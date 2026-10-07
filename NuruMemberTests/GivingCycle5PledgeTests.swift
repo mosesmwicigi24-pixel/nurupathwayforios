@@ -53,8 +53,9 @@ final class GivingCycle5PledgeTests: XCTestCase {
     }
 
     func testTheFirstCollectionReadsAsADay() {
-        XCTAssertEqual(PledgeMath.dayLabel("2026-10-05", today: "2026-09-28"), "5 October")
-        XCTAssertEqual(PledgeMath.dayLabel("2027-01-05", today: "2026-12-10"), "5 January 2027", "another year says which")
+        // The one date shape (§8.1 rule 8; final walk C2).
+        XCTAssertEqual(PledgeMath.dayLabel("2026-10-05", today: "2026-09-28"), "Mon 5 Oct")
+        XCTAssertEqual(PledgeMath.dayLabel("2027-01-05", today: "2026-12-10"), "Tue 5 Jan 2027", "another year says which")
     }
 
     func testTodayIsTheChurchsDay() throws {

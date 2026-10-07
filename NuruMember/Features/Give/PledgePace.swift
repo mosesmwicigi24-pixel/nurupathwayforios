@@ -15,7 +15,7 @@
 import Foundation
 
 enum PledgePace {
-    /// "To reach KSh 20,000 by 31 Dec: KSh 5,000 a month — 4 collections"
+    /// "To reach KSh 20,000 by Thu 31 Dec: KSh 5,000 a month — 4 collections"
     /// ("1 collection"; dollars in cents). Nil without a pace.
     static func line(_ pledge: Pledge, today: String = PledgeMath.today()) -> String? {
         guard let pace = pledge.pace else { return nil }
@@ -25,14 +25,12 @@ enum PledgePace {
         return "To reach \(target) by \(shortDay(pace.by, today: today)): \(each) a month — \(n) collection\(n == 1 ? "" : "s")"
     }
 
-    /// "31 Dec" — "31 Mar 2027" in another year than `today`'s. A calendar
-    /// day as given, never shifted by a time zone.
+    /// "Thu 31 Dec" — "Wed 31 Mar 2027" in another year than `today`'s: the
+    /// one date shape (§8.1 rule 8), as the card's "by Thu 31 Dec" above it.
+    /// A calendar day as given, never shifted by a time zone.
     static func shortDay(_ day: String, today: String) -> String {
-        let parts = day.prefix(10).split(separator: "-")
-        guard parts.count == 3, let m = Int(parts[1]), let d = Int(parts[2]), (1...12).contains(m) else { return String(day.prefix(10)) }
-        let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-        let base = "\(d) \(months[m - 1])"
-        return day.prefix(4) == today.prefix(4) ? base : "\(base) \(parts[0])"
+        guard PledgeMath.isDay(String(day.prefix(10))) else { return String(day.prefix(10)) }
+        return PledgeMath.dayLabel(day, today: today)
     }
 
     /// What a pledge's page offers about collecting it automatically.
@@ -107,7 +105,7 @@ enum PledgePace {
         return .collect(amountMinor: pace.perMonthMinor)
     }
 
-    /// "Collected automatically — next KSh 5,000 on 28 Oct" · "… — nothing to
+    /// "Collected automatically — next KSh 5,000 on Wed 28 Oct" · "… — nothing to
     /// pay next time" (the pledge is paid through it) · "… — paused" · just
     /// "Collected automatically" when no prompt is coming (it is stopping
     /// with its pledge). `next_amount_minor` is the server's word for what
@@ -117,10 +115,9 @@ enum PledgePace {
         if s.status.lowercased() == "paused" { return "\(head) — paused" }
         guard let next = s.nextAmountMinor else { return head }
         if next == 0 { return "\(head) — nothing to pay next time" }
-        let when = giveParseDate(s.nextRunAt).map { d -> String in
-            let sameYear = GiveCalendar.calendar.component(.year, from: d) == GiveCalendar.currentYear(now: now)
-            return " on \(ScheduleRhythm.format(d, sameYear ? "d MMM" : "d MMM yyyy"))"
-        } ?? ""
+        // The one date shape (§8.1 rule 8): "on Wed 28 Oct", the year only
+        // when it isn't this year.
+        let when = giveParseDate(s.nextRunAt).map { " on \(NuruDates.day($0, now: now, timeZone: GiveCalendar.nairobi))" } ?? ""
         return "\(head) — next \(GiveMoney.format(next, s.currency))\(when)"
     }
 

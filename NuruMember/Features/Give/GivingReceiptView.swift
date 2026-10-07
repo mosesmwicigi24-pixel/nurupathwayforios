@@ -330,7 +330,9 @@ struct GivingReceiptView: View {
                 row(refLabel, ref, mono: true, copy: (key: "ref", text: ref))
             }
             hairline
-            row("Date", whenFull(d.shownAt))
+            // The one date shape (§8.1 rule 8): "Mon 5 Oct · 11:59 AM", the
+            // year only when it isn't this year. The shared text keeps it.
+            row("Date", whenLine(d.shownAt))
             // No internal transaction id ("Reference bd48d11d…", the walks'
             // E18 and A5; §8.1 rule 8): the member's reference is the
             // provider's code above; the office finds a gift by it, or by
@@ -443,18 +445,20 @@ struct GivingReceiptView: View {
     private func actions(_ d: GivingDetail) -> some View {
         VStack(spacing: Nuru.S.sm) {
             HStack(spacing: 10) {
+                // The page's one primary (§8.1 rule 4; final walk #38): gold
+                // fill, navy words, radius 14 — it was navy.
                 Button { share(d) } label: {
                     HStack(spacing: 8) {
                         if downloading {
-                            ProgressView().tint(.white).scaleEffect(0.85)
-                            Text("Preparing…").font(.inter(14, .semibold)).foregroundStyle(.white)
+                            ProgressView().tint(Nuru.navy).scaleEffect(0.85)
+                            Text("Preparing…").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                         } else {
-                            Icon(.share, size: 18, color: .white)
-                            Text("Share receipt").font(.inter(14, .semibold)).foregroundStyle(.white)
+                            Icon(.share, size: 18, color: Nuru.navy)
+                            Text("Share receipt").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
                         }
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)
-                    .background(Nuru.navy, in: Capsule())
+                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.pressable)
                 .disabled(downloading)
@@ -608,11 +612,6 @@ struct GivingReceiptView: View {
         return NuruDates.dayTime(d)
     }
 
-    /// "Fri 25 Sep 2026 · 8:11 PM" — a record kept, so always the year.
-    private func whenFull(_ iso: String) -> String {
-        guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-        return NuruDates.dayTime(d, withYear: true)
-    }
 }
 
 // MARK: - Share sheet plumbing

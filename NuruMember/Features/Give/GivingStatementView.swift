@@ -421,14 +421,13 @@ struct GivingStatementView: View {
 
     // MARK: Period selector (This year / Last year)
 
+    /// Full pills (§8.1 rule 6; final walk #38): selected navy, unselected
+    /// white with a hairline — not the grey track.
     private var periodSelector: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             segment("This year", thisYear)
             segment("Last year", thisYear - 1)
         }
-        .padding(4)
-        .background(Color(hex: 0x0A2540, alpha: 0.06),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func segment(_ label: String, _ y: Int) -> some View {
@@ -440,11 +439,12 @@ struct GivingStatementView: View {
         } label: {
             Text(label)
                 .font(.inter(13, .semibold))
-                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x5B6472))
+                .foregroundStyle(on ? Color.white : Nuru.ink600)
                 .frame(maxWidth: .infinity).frame(height: 38)
-                .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .nuruShadow(on ? 0.6 : 0)
+                .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
         }.buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
     // MARK: Fund-by-fund totals + ruled grand total
@@ -535,8 +535,10 @@ struct GivingStatementView: View {
                 Icon(meta.icon, size: 18, color: Color(hex: meta.fg))
             }
             VStack(alignment: .leading, spacing: 2) {
+                // A gift is a content row (§8.1 rule 3: Fraunces 15 semibold;
+                // final walk #38 — it was Inter).
                 Text(g.fund.capitalized)
-                    .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+                    .font(.nRowTitle).foregroundStyle(Nuru.navy)
                 Text("\(giveTime(g.shownAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 // A pledge payment says so — the complete record still tells
@@ -750,7 +752,9 @@ func money(_ minor: Int, _ currency: String?) -> String { GiveMoney.format(minor
 func statusChip(_ status: String) -> some View {
     let (bg, fg, label): (Color, Color, String) = {
         switch status {
-        case "succeeded", "settled", "completed": return (Nuru.successBg, Nuru.successText, "Succeeded")
+        // A member's word, not the server's status (§8.1 rule 8; final walk
+        // #38: "Succeeded").
+        case "succeeded", "settled", "completed": return (Nuru.successBg, Nuru.successText, "Received")
         case "processing", "pending", "initiated": return (Nuru.goldChipBg, Nuru.goldChipText, "Processing")
         case "requires_action": return (Nuru.goldChipBg, Nuru.goldChipText, "Waiting for you")
         case "failed", "cancelled", "canceled", "expired": return (Nuru.danger.opacity(0.12), Nuru.danger, "Failed")

@@ -101,7 +101,7 @@ enum ClaimCopy {
         }
     }
 
-    /// "KSh 3,000 · paid 12 September" (with the year when it isn't this one).
+    /// "KSh 3,000 · paid Sat 12 Sep" (with the year when it isn't this one).
     static func line(_ claim: PledgeClaim, today: String) -> String {
         let when = PledgeMath.isDay(claim.paidOn) ? " · paid \(PledgeMath.dayLabel(claim.paidOn, today: today))" : ""
         return "\(GiveMoney.format(claim.amountMinor, claim.currency))\(when)"
@@ -125,6 +125,11 @@ struct PledgeClaimSheet: View {
     @State private var error: String?
     @FocusState private var amountFocused: Bool
     @FocusState private var noteFocused: Bool
+    /// The calendar under the day's pill is open.
+    @State private var choosingDay = false
+    /// The sheet is as tall as what it holds (§8.1 rule 5: its lower
+    /// quarter stood empty).
+    @State private var contentHeight: CGFloat = 0
 
     /// The church's today, fixed while the sheet is open.
     private let today: String
@@ -165,6 +170,14 @@ struct PledgeClaimSheet: View {
                     .font(.nCaption).foregroundStyle(Nuru.ink600)
                     .fixedSize(horizontal: false, vertical: true)
 
+                // What the office is already checking, so the same money is
+                // never told twice (final walk M1).
+                if let claim = pledge.claimLine {
+                    Text(claim + ".")
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
                 VStack(alignment: .leading, spacing: 8) {
                     label("AMOUNT · IN \(GiveMoney.currencyWords(currency).uppercased())")
                     HStack(spacing: 8) {
@@ -189,10 +202,38 @@ struct PledgeClaimSheet: View {
 
                 VStack(alignment: .leading, spacing: 8) {
                     label("THE DAY YOU PAID")
-                    DatePicker("The day you paid", selection: $day, in: ClaimRules.pickerRange(today: today), displayedComponents: .date)
-                        .labelsHidden()
-                        .datePickerStyle(.compact)
-                        .tint(Nuru.gold)
+                    // The day in the one date shape (§8.1 rule 8: "Wed 7 Oct",
+                    // not the system's "7 Oct 2026") on a white pill (rule 6:
+                    // not the system's grey capsule); a tap opens the calendar
+                    // in place.
+                    Button {
+                        Haptics.tap()
+                        amountFocused = false; noteFocused = false
+                        withAnimation(.easeInOut(duration: 0.2)) { choosingDay.toggle() }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Icon(.calendar, size: 14, color: Nuru.gold)
+                            Text(PledgeMath.dayLabel(paidOn, today: today))
+                                .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                            Icon(choosingDay ? .chevronUp : .chevronDown, size: 14, color: Nuru.ink400)
+                        }
+                        .padding(.horizontal, 14).frame(height: 40)
+                        .background(Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(choosingDay ? Nuru.gold : Nuru.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("The day you paid: \(PledgeMath.dayLabel(paidOn, today: today))")
+                    .accessibilityHint(choosingDay ? "Closes the calendar" : "Opens a calendar")
+                    if choosingDay {
+                        DatePicker("The day you paid", selection: $day, in: ClaimRules.pickerRange(today: today), displayedComponents: .date)
+                            .labelsHidden()
+                            .datePickerStyle(.graphical)
+                            .tint(Nuru.gold)
+                            .padding(8)
+                            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                            .transition(.opacity)
+                    }
                     Text("Today, or any day in the last year.")
                         .font(.nCaption).foregroundStyle(Nuru.ink400)
                 }
@@ -239,13 +280,22 @@ struct PledgeClaimSheet: View {
             }
             .padding(.horizontal, Nuru.S.screen)
             .padding(.bottom, Nuru.S.lg)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { contentHeight = g.size.height }
+                    .onChange(of: g.size.height) { _, h in contentHeight = h }
+            })
         }
         .scrollDismissesKeyboard(.interactively)
+        .scrollBounceBehavior(.basedOnSize)
         .background(Nuru.paper.ignoresSafeArea())
-        .presentationDetents([.large])
+        // As tall as what it holds (rule 5), the drag handle above it.
+        .presentationDetents([contentHeight > 0
+                              ? .height(PSheetFit.height(content: contentHeight, chrome: 12, screen: UIScreen.main.bounds.height))
+                              : .large])
         .presentationDragIndicator(.visible)
         .onChange(of: amountText) { _, _ in error = nil }
-        .onChange(of: day) { _, _ in error = nil }
+        .onChange(of: day) { _, _ in error = nil; withAnimation(.easeInOut(duration: 0.2)) { choosingDay = false } }
     }
 
     private func label(_ s: String) -> some View {

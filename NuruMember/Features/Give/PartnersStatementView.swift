@@ -473,7 +473,7 @@ struct PartnersStatementView: View {
     private func summaryCard(_ f: Figures) -> some View {
         NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
             partnerSummaryColumn("Pledged", f.byCurrency.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
-            partnerSummaryColumn("Paid", f.byCurrency.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
+            partnerSummaryColumn("Paid", f.byCurrency.map { (money($0.paidMinor, $0.currency), PaidTint.color($0.paidMinor)) })
             partnerSummaryColumn("Remaining", f.byCurrency.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
         }
         .partnerCard()
@@ -606,13 +606,9 @@ struct PartnersStatementView: View {
         return candidates.min()
     }
 
-    /// "5 Oct" this year, "5 Jan 2027" when it falls in the next.
-    private static func dayMonth(_ d: Date) -> String {
-        let cal = Calendar.current
-        let f = DateFormatter()
-        f.dateFormat = cal.component(.year, from: d) == cal.component(.year, from: Date()) ? "d MMM" : "d MMM yyyy"
-        return f.string(from: d)
-    }
+    /// "Thu 5 Nov" this year, "Tue 5 Jan 2027" when it falls in the next —
+    /// the one date shape (§8.1 rule 8), beside the page's "by Thu 31 Dec".
+    private static func dayMonth(_ d: Date) -> String { NuruDates.day(d) }
 
     private func stripAccessibility(_ strip: MonthStrip) -> String {
         let full = Self.monthCalendar.monthSymbols
@@ -819,15 +815,17 @@ struct PartnersStatementView: View {
 
     private var actions: some View {
         VStack(spacing: 10) {
+            // The page's one primary (§8.1 rule 4; final walk #38): gold
+            // fill, navy words, radius 14 — it was navy.
             Button { download() } label: {
                 HStack(spacing: 8) {
-                    if downloading { ProgressView().tint(.white).scaleEffect(0.8) }
-                    else { Icon(.download, size: 14, color: .white) }
+                    if downloading { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
+                    else { Icon(.download, size: 14, color: Nuru.navy) }
                     Text(downloading ? "Preparing PDF…" : "Download PDF").font(.inter(14, .bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Nuru.navy, in: Capsule())
+                .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.pressable)
             .disabled(downloading)
