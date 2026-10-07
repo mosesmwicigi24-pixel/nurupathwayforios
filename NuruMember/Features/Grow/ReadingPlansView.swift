@@ -387,13 +387,14 @@ struct ReadingPlansView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0xE8CA6C))
                     Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white)
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(p.title, font: .fraunces(18, .medium), kerning: -0.2)
                     // Home's story about today (§9.2 #3): "Day 3 done today ·
                     // Day 4 next" once today's day is read, else "Today · " and
                     // the plan's own words — Android's planCardLine.
                     Text(PlanLines.cardLine(p, readToday: PlanLines.readToday(p, sealedHere: PlanDayLog.sealedToday())))
                         .font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
-                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }

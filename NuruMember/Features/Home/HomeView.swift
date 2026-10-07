@@ -442,6 +442,9 @@ struct HomeView: View {
     @ObservedObject private var broadcast = BroadcastCenter.shared
     @State private var showGoLiveSheet = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The phone's text size: at the accessibility sizes a few rows stack
+    /// rather than squeeze their words (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
     // third discipline lands mid-session. Opacity-only, and Reduce Motion never
     // stages it (the haptic + caption still speak).
@@ -923,7 +926,12 @@ struct HomeView: View {
             }
             Text(HomeHeaderWords.greeting(greeting, fullName: auth.profile?.fullName))
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
-                .lineLimit(1).minimumScaleFactor(0.8)   // long first names shrink, never wrap
+                // Long first names shrink, never wrap — at the everyday sizes;
+                // at the largest it wraps whole ("Good mornin…", §9.6 #4).
+                .nuruLineLimit(1).minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords(HomeHeaderWords.greeting(greeting, fullName: auth.profile?.fullName),
+                                font: .fraunces(22, .semibold), kerning: -0.22)
                 .padding(.top, 10)
                 .gentleEntrance()
             // Nuru's daily word — a blessing written for THIS member (grounded in
@@ -1344,12 +1352,29 @@ struct HomeView: View {
         let liked = v.liked ?? false
         let shape = videoShape(v)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Nuru.S.sm) {
-                BrandMark(size: 28)
-                Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                Icon(.badgeCheck, size: 14, color: Nuru.gold)
-                Spacer(minLength: 0)
-                Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    // The kicker on a line of its own at the largest sizes:
+                    // beside it "Nuru Pathway" broke into "Pathwa / y" (§9.6 #4).
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
+                        HStack(spacing: Nuru.S.sm) {
+                            BrandMark(size: 28)
+                            Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .nuruWholeWords("Nuru Pathway", font: .inter(13, .semibold))
+                            Icon(.badgeCheck, size: 14, color: Nuru.gold)
+                        }
+                    }
+                } else {
+                    HStack(spacing: Nuru.S.sm) {
+                        BrandMark(size: 28)
+                        Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        Icon(.badgeCheck, size: 14, color: Nuru.gold)
+                        Spacer(minLength: 0)
+                        Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
+                    }
+                }
             }
             .padding(Nuru.S.base)
 
@@ -1602,7 +1627,7 @@ struct HomeView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(enc.text)
                         .font(.fraunces(14).italic()).foregroundStyle(Nuru.ink)
-                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                        .nuruLineLimit(3).fixedSize(horizontal: false, vertical: true)
                     if !enc.author.isEmpty {
                         Text("— \(enc.author)")
                             .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
@@ -1865,14 +1890,22 @@ struct HomeView: View {
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
-            TabView(selection: $featuredPageIndex) {
-                ForEach(Array(pages.enumerated()), id: \.element.id) { i, page in
-                    featuredPageCard(page).tag(i)
+            if typeSize.isAccessibilitySize {
+                // At the largest sizes the pages stack, each as tall as its
+                // words: a 348 pt pager cut "Welcome to Ablaze Wor…" (§9.6 #4).
+                VStack(spacing: 12) {
+                    ForEach(pages) { page in featuredPageCard(page) }
                 }
+            } else {
+                TabView(selection: $featuredPageIndex) {
+                    ForEach(Array(pages.enumerated()), id: \.element.id) { i, page in
+                        featuredPageCard(page).tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 348)
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 348)
-            if pages.count > 1 {
+            if pages.count > 1, !typeSize.isAccessibilitySize {
                 HStack(spacing: 5) {
                     ForEach(pages.indices, id: \.self) { i in
                         Capsule()
@@ -1945,7 +1978,8 @@ struct HomeView: View {
                 // A title wraps to two lines (rule 9; the walk's "Experie…");
                 // the body yields its second line when the title needs it.
                 Text(title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(title, font: .nCardTitle)
                 Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
                     .layoutPriority(-1)
@@ -1997,10 +2031,22 @@ struct HomeView: View {
                     .background(Nuru.goldChipBg, in: Capsule())
                 }
             }
-            HStack(spacing: Nuru.S.sm) {
-                rhythmTile("prayer", "Prayer")
-                rhythmTile("word", "Word")
-                rhythmTile("reflection", "Reflection")
+            // Three across at the everyday sizes; a column at the largest,
+            // where three tiles would break "Reflection" (§9.6 #4).
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(spacing: Nuru.S.sm) {
+                        rhythmTile("prayer", "Prayer")
+                        rhythmTile("word", "Word")
+                        rhythmTile("reflection", "Reflection")
+                    }
+                } else {
+                    HStack(spacing: Nuru.S.sm) {
+                        rhythmTile("prayer", "Prayer")
+                        rhythmTile("word", "Word")
+                        rhythmTile("reflection", "Reflection")
+                    }
+                }
             }
             .padding(.top, Nuru.S.md)
             // The seal — appears when the third discipline lands mid-session
@@ -2064,14 +2110,26 @@ struct HomeView: View {
     // MARK: 13 — Your progress (scores)
 
     private func progressCard(_ s: ScoresSummary) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Your progress").font(.nCardTitle).foregroundStyle(HomeFig.navy)   // a card title (§8.1 rule 3)
-                Spacer()
-                Button {
-                    Haptics.tap(); tabs.openPathway(.level(active?.levelNumber ?? 1))
-                } label: {
-                    Text("View pathway").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+        let title = Text("Your progress").font(.nCardTitle).foregroundStyle(HomeFig.navy)   // a card title (§8.1 rule 3)
+        let link = Button {
+            Haptics.tap(); tabs.openPathway(.level(active?.levelNumber ?? 1))
+        } label: {
+            Text("View pathway").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            if typeSize.isAccessibilitySize {
+                // The link on a line of its own at the largest sizes: beside it
+                // the title broke "Your progre / ss" (§9.6 #4).
+                VStack(alignment: .leading, spacing: 6) {
+                    title.fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords("Your progress", font: .nCardTitle)
+                    link
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    title
+                    Spacer()
+                    link
                 }
             }
             HStack(spacing: Nuru.S.base) {
@@ -2091,7 +2149,10 @@ struct HomeView: View {
                 .nuruFixedFigure()
                 VStack(alignment: .leading, spacing: 1) {
                     Text("OVERALL GROWTH").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(s.overall.band).font(.nCardTitle).foregroundStyle(HomeFig.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(s.overall.band, font: .nCardTitle)
                     if let t = s.trend {
                         HStack(spacing: 4) {
                             Image(systemName: t.isDown ? "arrow.down.right" : t.isUp ? "arrow.up.right" : "minus")
@@ -2126,8 +2187,28 @@ struct HomeView: View {
     }
 
     private func scoreBar(_ label: String, _ value: Int, _ fill: Color, delta: Int? = nil) -> some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                // The label on its own line at the largest sizes: its 72 pt
+                // column broke "Hab / its", "Wor / d" (§9.6 #4).
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray)
+                        .fixedSize(horizontal: false, vertical: true)
+                    scoreBarLine(value, fill, delta: delta)
+                }
+            } else {
+                HStack(spacing: Nuru.S.md) {
+                    Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).frame(width: 72, alignment: .leading)
+                    scoreBarLine(value, fill, delta: delta)
+                }
+            }
+        }
+    }
+
+    /// The bar, the 28-day movement and the score.
+    @ViewBuilder
+    private func scoreBarLine(_ value: Int, _ fill: Color, delta: Int?) -> some View {
         HStack(spacing: Nuru.S.md) {
-            Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).frame(width: 72, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 8)
@@ -2141,11 +2222,14 @@ struct HomeView: View {
                     Text("\(abs(d))").font(.inter(11, .bold))
                 }
                 .foregroundStyle(HomeFig.metaGray)   // no state colour for a score (§8.1 rule 1)
-                .frame(width: 26, alignment: .trailing)
+                .fixedSize()
+                .frame(minWidth: 26, alignment: .trailing)   // grows at the largest sizes, never cut
             } else {
                 Spacer().frame(width: 26)
             }
-            Text("\(value)").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy).frame(width: 24, alignment: .trailing)
+            Text("\(value)").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
+                .fixedSize()
+                .frame(minWidth: 24, alignment: .trailing)
         }
     }
 
@@ -2167,7 +2251,11 @@ struct HomeView: View {
 
     private var growCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            // Two across at the everyday sizes; one at the largest, where two
+            // broke "Dev / oti…", "Hide / Hi…" (§9.6 #4).
+            LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())]
+                                                           : [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                      spacing: 10) {
                 ForEach(growTiles.indices, id: \.self) { i in
                     let t = growTiles[i]
                     growTileLink(t)
@@ -2247,9 +2335,10 @@ struct HomeView: View {
             // "Hide His W…", "My Prayer R…", "Discover your…").
             VStack(alignment: .leading, spacing: 0) {
                 Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(t.label, font: .inter(13, .semibold))
                 Text(t.sub).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
