@@ -93,15 +93,32 @@ final class FinalFixesTests: XCTestCase {
         XCTAssertNotEqual(eli, try decode(Pledge.self, pledgeJSON()), "a new claim redraws the row")
     }
 
+    func testThePageKnowsTheClaimWhicheverReadCarriesIt() throws {
+        // The single-pledge read (GET /giving/pledges/:id) carries no
+        // pending_claim_minor; the list's copy and the page's own claims do.
+        let detail = try decode(Pledge.self, pledgeJSON())
+        let listed = try decode(Pledge.self, pledgeJSON(pendingClaim: 5_000))
+        XCTAssertEqual(PledgeChecking.minor(rows: [detail, listed, nil], claims: nil, currency: "USD"), 5_000)
+        let claims = try decode([PledgeClaim].self, [
+            ["claim_id": "c1", "pledge_id": "p-missions", "amount_minor": 5_000, "currency": "USD", "paid_on": "2026-09-30", "status": "pending"],
+            ["claim_id": "c2", "pledge_id": "p-missions", "amount_minor": 2_000, "currency": "USD", "paid_on": "2026-09-01", "status": "confirmed"],
+            ["claim_id": "c3", "pledge_id": "p-missions", "amount_minor": 900, "currency": "KES", "paid_on": "2026-09-02", "status": "pending"]])
+        XCTAssertEqual(PledgeChecking.minor(rows: [detail], claims: claims, currency: "USD"), 5_000,
+                       "pending claims in the pledge's own currency; a confirmed one counts already")
+        XCTAssertEqual(PledgeChecking.minor(rows: [detail], claims: [], currency: "USD"), 0)
+        XCTAssertEqual(PledgeChecking.line(5_000, "USD"), "US$ 50.00 is being checked by the office")
+        XCTAssertNil(PledgeChecking.line(0, "USD"))
+    }
+
     func testThePledgePageLeadsWithTheClaimAndPayStepsAside() throws {
         XCTAssertEqual(PledgeClaimLead.counts,
                        "It counts toward this pledge once the office confirms it — no need to pay it again.")
         let page = try source("Features/Give/PartnersView.swift")
         // The lead card comes before the promise card, and Pay is quiet while a claim waits.
-        let lead = try XCTUnwrap(page.range(of: "if let claim = p.claimLine { PledgeClaimLead(line: claim) }"))
+        let lead = try XCTUnwrap(page.range(of: "if let claim = PledgeChecking.line(checkingMinor(p), p.currency) { PledgeClaimLead(line: claim) }"))
         let promise = try XCTUnwrap(page.range(of: "Text(pledgeAmountLine(p)).font(.nuruDisplay(22))"))
         XCTAssertLessThan(lead.lowerBound, promise.lowerBound, "the claim leads the pledge's page")
-        XCTAssertTrue(page.contains("let quiet = early || p.pendingClaimMinor > 0"))
+        XCTAssertTrue(page.contains("let quiet = early || checkingMinor(p) > 0"))
         XCTAssertTrue(page.contains(".background(quiet ? Nuru.white : Nuru.gold"), "Pay now is never the gold primary then")
         XCTAssertTrue(page.contains("let quiet = item.action != \"resume\" && item.pendingClaimMinor > 0"),
                       "the DUE row's Pay is the quiet pill while the office checks")
@@ -236,14 +253,28 @@ final class FinalFixesTests: XCTestCase {
     // MARK: M5 — system alerts answer in navy
 
     func testSystemAlertsAnswerInNavy() throws {
-        NuruMemberApp.configureAppearance()
-        let tint = try XCTUnwrap(UIView.appearance(whenContainedInInstancesOf: [UIAlertController.self]).tintColor)
+        // iOS 26 tints an alert's and a dialog's answers with SwiftUI's
+        // accent — the app's AccentColor. It is navy #0B1F33, not the gold
+        // #C89B3C that read about 1.05:1 on the alert's glass.
+        let accent = try XCTUnwrap(UIColor(named: "AccentColor"))
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        XCTAssertTrue(tint.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)).getRed(&r, green: &g, blue: &b, alpha: &a))
-        // Navy #0B1F33 — not the gold accent #C89B3C (about 1.05:1 on the alert's glass).
+        XCTAssertTrue(accent.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)).getRed(&r, green: &g, blue: &b, alpha: &a))
         XCTAssertEqual(r, 0x0B / 255, accuracy: 0.01)
         XCTAssertEqual(g, 0x1F / 255, accuracy: 0.01)
         XCTAssertEqual(b, 0x33 / 255, accuracy: 0.01)
+        // …and SwiftUI's own: the app root's tint, which an alert takes, is navy.
+        let app = try String(contentsOf: URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("NuruMember/NuruMemberApp.swift"), encoding: .utf8)
+        XCTAssertTrue(app.contains(".nuruDefaultFont()\n            // The system's own chrome"))
+        XCTAssertTrue(app.contains("            .tint(Nuru.navy)"))
+        XCTAssertFalse(app.contains(".tint(Nuru.gold)"), "a gold root tint is what drew the answers gold")
+        // Gold stays where a selected state asks for it: every switch sets it.
+        for rel in ["Features/Profile/SettingsView.swift", "Features/Give/GivingView.swift", "Features/Profile/ProfileView.swift"] {
+            let text = try source(rel)
+            let toggles = text.components(separatedBy: "Toggle(").count - 1
+            XCTAssertGreaterThan(toggles, 0, rel)
+            XCTAssertGreaterThanOrEqual(text.components(separatedBy: ".tint(Nuru.gold)").count - 1, toggles, "\(rel): a switch's on state is gold")
+        }
     }
 
     // MARK: M6 — "today" means today
@@ -275,6 +306,18 @@ final class FinalFixesTests: XCTestCase {
         let lateUTC = [segment("w", kind: "scripture", done: true, at: "2026-10-06T22:30:00Z", sort: 1),
                        segment("p", kind: "prayer", done: false, sort: 2)]
         XCTAssertEqual(PlanDayParts.todayLine(lateUTC, now: wednesday, doneToday: { _ in false }), "Today: 1 of 2 parts")
+    }
+
+    func testAPlanDayNeverClaimsToday() {
+        // Day 4 of a plan paused since Monday read "TODAY'S JOURNEY · 3 PARTS".
+        XCTAssertEqual(PlanDayWords.hubKicker(parts: 3), "THIS DAY · 3 PARTS")
+        XCTAssertEqual(PlanDayWords.hubKicker(parts: 1), "THIS DAY · 1 PART")
+        XCTAssertEqual(PlanDayWords.readingKicker, "THE READING")
+        XCTAssertEqual(PlanDayWords.questionKicker(1), "THE QUESTION")
+        XCTAssertEqual(PlanDayWords.questionKicker(2), "THE QUESTIONS")
+        for w in [PlanDayWords.hubKicker(parts: 3), PlanDayWords.readingKicker, PlanDayWords.questionKicker(2)] {
+            XCTAssertFalse(w.contains("TODAY"), w)
+        }
     }
 
     func testThisPhoneKeepsOnlyTodaysParts() throws {

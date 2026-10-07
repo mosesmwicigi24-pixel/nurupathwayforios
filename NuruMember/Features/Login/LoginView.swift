@@ -69,6 +69,10 @@ struct LoginView: View {
             #if targetEnvironment(simulator) && DEBUG
             if email.isEmpty { email = "student1@dev.local" }
             if password.isEmpty { password = "pathway123" }
+            // Scripted UI verification signs in as a named seeded persona
+            // (SIMCTL_CHILD_NURU_AUTOLOGIN_EMAIL=student5@dev.local) — over a
+            // remembered address too — so a walk never types into the form.
+            if let who = ProcessInfo.processInfo.environment["NURU_AUTOLOGIN_EMAIL"], !who.isEmpty { email = who }
             // Scripted UI verification (simctl launch with SIMCTL_CHILD_NURU_AUTOLOGIN=1)
             // submits the prefilled dev credentials without a tap.
             if ProcessInfo.processInfo.environment["NURU_AUTOLOGIN"] == "1" {
