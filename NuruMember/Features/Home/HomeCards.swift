@@ -755,15 +755,26 @@ struct HomeEncouragementCard: View {
 struct HomeWeekCard: View {
     let rows: [HomeWeekRow]
     let open: (HomeWeekRow) -> Void
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        // The week's one next step leads, as a navy band (HomeWeek.cardOrder);
+        // the other rows follow, white, in their order.
+        let order = HomeWeek.cardOrder(rows)
         VStack(alignment: .leading, spacing: 0) {
             Text("YOUR WEEK").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
                 .padding(.bottom, 4)
-            ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+            if let step = order.step, let ask = step.ask {
+                Button { Haptics.tap(); open(step) } label: { nextStepBand(step, ask) }
+                    .buttonStyle(.pressableSubtle)
+                    // Inset 10 pt from the card's edge, as drawn: wider than the rows.
+                    .padding(.horizontal, -6)
+                    .padding(.vertical, 6)
+            }
+            ForEach(Array(order.rest.enumerated()), id: \.element.id) { i, row in
                 Button { Haptics.tap(); open(row) } label: { rowView(row) }
                     .buttonStyle(.pressableSubtle)
-                if i < rows.count - 1 {
+                if i < order.rest.count - 1 {
                     Rectangle().fill(Nuru.border).frame(height: 1).padding(.leading, 48)
                 }
             }
@@ -773,6 +784,66 @@ struct HomeWeekCard: View {
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .nuruShadow()
+    }
+
+    /// The week's one next step (owner, 2026-10-07: colour option A, "navy for
+    /// your next step"): a navy band inside the white card — a gold-tint tile
+    /// with the pillar's gold icon, "YOUR NEXT STEP · ‹PILLAR›" in gold, what it
+    /// acts on in white Fraunces, the row's line in #B9C4D4, and the screen's
+    /// one gold primary pill with the row's verb. At the accessibility sizes
+    /// the pill takes a line of its own, so no word is squeezed (§9.6 #4).
+    private func nextStepBand(_ row: HomeWeekRow, _ ask: HomeWeekRow.Ask) -> some View {
+        let gold = Color(hex: 0xE8CA6C)
+        let tile = Icon(Self.icon(row.pillar), size: 18, color: gold)
+            .frame(width: 42, height: 42)
+            .background(gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        // The dot keeps to the word before it, so a wrapped kicker never
+        // starts its second line with "·".
+        let kicker = Text("YOUR NEXT STEP\u{00A0}· \(row.pillar.rawValue.uppercased())")
+            .font(.nCardKicker).kerning(1.4).foregroundStyle(gold)
+            .fixedSize(horizontal: false, vertical: true)
+        let title = Text(ask.subject).font(.nCardTitle).foregroundStyle(.white)
+            .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+            .nuruWholeWords(ask.subject, font: .nCardTitle)
+        let meta = Text(row.line).font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
+            .fixedSize(horizontal: false, vertical: true)
+        let pill = Text(ask.verb).font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
+            .padding(.horizontal, 16).padding(.vertical, 9)
+            .background(Nuru.goldGradient, in: Capsule())
+            .fixedSize()
+        return Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    tile; kicker; title
+                    if !row.line.isEmpty { meta }
+                    pill.padding(.top, 2)
+                }
+            } else {
+                // The kicker and the title take the band's whole width; the
+                // pill sits at the right of the line below, so a phone's width
+                // never squeezes the words.
+                HStack(alignment: .top, spacing: 12) {
+                    tile
+                    VStack(alignment: .leading, spacing: 3) {
+                        kicker
+                        title
+                        HStack(alignment: .center, spacing: 8) {
+                            meta.frame(maxWidth: .infinity, alignment: .leading)
+                            pill
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
     private func rowView(_ row: HomeWeekRow) -> some View {

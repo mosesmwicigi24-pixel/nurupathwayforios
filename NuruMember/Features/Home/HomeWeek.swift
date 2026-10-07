@@ -53,10 +53,34 @@ struct HomeWeekRow: Equatable, Identifiable {
     /// Empty only for a pathway that didn't load from a member not yet placed.
     let line: String
     let destination: Destination
+    /// The row asks the member to act now (owner, 2026-10-07: colour option
+    /// A, "navy for your next step"): its one verb — Begin, Continue, Join,
+    /// Pay or Ask — and what that verb acts on. Nil for a row that only says
+    /// where things stand ("Going ·", "Giving ·", "Done today ·", "Gather ·",
+    /// a level being prepared, the exam opening soon) and for a standing
+    /// invitation ("Start a reading plan", "Give", the church calendar).
+    var ask: Ask? = nil
     var id: Pillar { pillar }
+
+    struct Ask: Equatable {
+        let verb: String
+        let subject: String
+    }
 }
 
 enum HomeWeek {
+    /// The week's one next step (owner, 2026-10-07: colour option A): the
+    /// first row, in the week's own order (Pathway · Plans · Events · Giving ·
+    /// Cell), that asks the member to act now. None asks: no step. It is drawn
+    /// as a navy band at the top of the card, below its kicker; the other rows
+    /// follow in their order.
+    static func cardOrder(_ rows: [HomeWeekRow]) -> (step: HomeWeekRow?, rest: [HomeWeekRow]) {
+        guard let i = rows.firstIndex(where: { $0.ask != nil }) else { return (nil, rows) }
+        var rest = rows
+        let step = rest.remove(at: i)
+        return (step, rest)
+    }
+
     /// How far the week looks: today and the seven days after.
     static let weekDays = 7
 
@@ -125,13 +149,18 @@ enum HomeWeek {
         // path's first step (rule 4). The other stages' titles are their own
         // verbs or facts ("Take the Level 1 exam", "Level 2 is being prepared").
         let title: String
+        var ask: HomeWeekRow.Ask?
         if j.stage == .learning, j.destination != nil, j.totalModules > 0 {
             title = j.completedModules == 0 ? "Start Level \(j.levelNumber) · \(j.title)" : "Continue · \(j.title)"
+            ask = .init(verb: j.completedModules == 0 ? "Begin" : "Continue", subject: j.title)
         } else {
             title = j.title
+            // The exam, when it can be taken, is a step; a level waiting or
+            // being prepared only says where things stand.
+            if j.stage == .examReady, j.destination != nil { ask = .init(verb: "Begin", subject: j.title) }
         }
         return HomeWeekRow(pillar: .pathway, title: title, line: "Level \(j.levelNumber) · \(j.pill)",
-                           destination: .journey(j.destination))
+                           destination: .journey(j.destination), ask: ask)
     }
 
     // MARK: Plans
@@ -150,8 +179,9 @@ enum HomeWeek {
         // Its verb (§9.1 rule 3): "Done today ·" once today's day is read,
         // "Start ·" before the first day, "Continue ·" between.
         let verb = read ? "Done today" : ((p.completedDays ?? []).isEmpty && PlanLines.day(p) == 1 ? "Start" : "Continue")
+        let ask: HomeWeekRow.Ask? = read ? nil : .init(verb: verb == "Start" ? "Begin" : "Continue", subject: p.title)
         return HomeWeekRow(pillar: .plans, title: "\(verb) · \(p.title)", line: PlanLines.todayLine(p, readToday: read, now: now),
-                           destination: .planDay(p))
+                           destination: .planDay(p), ask: ask)
     }
 
     // MARK: Events
@@ -215,7 +245,11 @@ enum HomeWeek {
                                destination: .event(g.occ))
         }
         if let g = week.first(where: { $0.rsvp?.lowercased() != "declined" }) ?? week.first {
-            return HomeWeekRow(pillar: .events, title: "Join · \(g.title)", line: when(g.start, timeZone), destination: .event(g.occ))
+            // A gathering the member hasn't answered asks them to join; one
+            // they declined (shown only when it is the week's only one) doesn't.
+            let ask: HomeWeekRow.Ask? = g.rsvp?.lowercased() == "declined" ? nil : .init(verb: "Join", subject: g.title)
+            return HomeWeekRow(pillar: .events, title: "Join · \(g.title)", line: when(g.start, timeZone), destination: .event(g.occ),
+                               ask: ask)
         }
         return HomeWeekRow(pillar: .events, title: "See the church calendar", line: "No gatherings this week",
                            destination: .events)
@@ -288,7 +322,8 @@ enum HomeWeek {
             } else {
                 line = "\(amount) due" + (dayLabel(d.dueOn).map { " \($0)" } ?? "")
             }
-            return HomeWeekRow(pillar: .giving, title: "Pay · \(title)", line: line, destination: .partners)
+            return HomeWeekRow(pillar: .giving, title: "Pay · \(title)", line: line, destination: .partners,
+                               ask: .init(verb: "Pay", subject: title))
         }
         return give
     }
@@ -327,9 +362,11 @@ enum HomeWeek {
         guard let c else {
             // "Ask to be connected" (§9.2 #12): it opened Community, which has
             // no way to find a cell. Once asked — on any phone — it says so.
+            // Once asked, on any phone, the row only says where it went.
             return HomeWeekRow(pillar: .cell, title: "Find your cell",
                                line: askedAt.map { CellConnectWords.sent($0, now: now, timeZone: timeZone) } ?? CellConnectWords.weekLine,
-                               destination: .cellConnect)
+                               destination: .cellConnect,
+                               ask: askedAt == nil ? .init(verb: "Ask", subject: "Find your cell") : nil)
         }
         let line = c.next.flatMap { parse($0.startAt) }.map { "Next gathering \(format($0, "EEE d MMM", timeZone))" }
             ?? "Next gathering not set · \(c.members) \(c.members == 1 ? "member" : "members")"

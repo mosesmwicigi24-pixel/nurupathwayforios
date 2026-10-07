@@ -925,6 +925,66 @@ final class ExperienceCycle5Tests: XCTestCase {
         let home = try? String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Home/HomeView.swift"), encoding: .utf8)
         XCTAssertEqual(home?.components(separatedBy: "HomeLetterQuietCard(").count, 3, "read and before a letter exists")
     }
+
+    /// The week's one next step is the first row, in the week's own order,
+    /// that asks the member to act now; it leads the card, and the other rows
+    /// follow in their order. Nothing asks: no band.
+    func testTheWeeksNextStepIsTheFirstRowThatAsks() {
+        func row(_ p: HomeWeekRow.Pillar, _ title: String, _ ask: HomeWeekRow.Ask? = nil) -> HomeWeekRow {
+            HomeWeekRow(pillar: p, title: title, line: "", destination: .plans, ask: ask)
+        }
+        let ada = [row(.pathway, "Take the Level 1 exam", .init(verb: "Begin", subject: "Take the Level 1 exam")),
+                   row(.plans, "Continue · First Steps", .init(verb: "Continue", subject: "First Steps")),
+                   row(.events, "Going · Sunday Service"), row(.giving, "Giving · Your weekly gift"),
+                   row(.cell, "Gather · Dev Cell A")]
+        let a = HomeWeek.cardOrder(ada)
+        XCTAssertEqual(a.step?.pillar, .pathway)
+        XCTAssertEqual(a.rest.map(\.pillar), [.plans, .events, .giving, .cell])
+        // Eli: his level waits and today's reading is done; a gathering asks next.
+        let eli = [row(.pathway, "Level 2 is being prepared"), row(.plans, "Done today · First Steps"),
+                   row(.events, "Join · Sunday Service", .init(verb: "Join", subject: "Sunday Service")),
+                   row(.giving, "Pay · Roof sheets", .init(verb: "Pay", subject: "Roof sheets")),
+                   row(.cell, "Find your cell", .init(verb: "Ask", subject: "Find your cell"))]
+        let e = HomeWeek.cardOrder(eli)
+        XCTAssertEqual(e.step?.pillar, .events, "the first that asks, not the most urgent-sounding")
+        XCTAssertEqual(e.rest.map(\.pillar), [.pathway, .plans, .giving, .cell], "the rest keep the week's order")
+        let quiet = [row(.pathway, "Level 2 is being prepared"), row(.plans, "Start a reading plan"),
+                     row(.events, "See the church calendar"), row(.giving, "Give"), row(.cell, "Gather · Dev Cell A")]
+        XCTAssertNil(HomeWeek.cardOrder(quiet).step)
+        XCTAssertEqual(HomeWeek.cardOrder(quiet).rest.map(\.pillar), [.pathway, .plans, .events, .giving, .cell])
+    }
+
+    /// Each row says whether it asks, with one of the owner's five verbs.
+    func testEachRowSaysWhetherItAsksAndWithWhichVerb() throws {
+        let verbs: Set<String> = ["Begin", "Continue", "Join", "Pay", "Ask"]
+        // Pathway: a first lesson and the exam begin, a lesson continues; a level waiting asks nothing.
+        let ben = try bensJourney()
+        XCTAssertEqual(HomeWeek.pathwayRow(ben, enrolledLevel: 1).ask, .init(verb: "Begin", subject: "God & His Nature"))
+        let cara = try XCTUnwrap(Journey.derive(try summary([level(1, "active", done: 2, of: 10)]),
+                                                trail: try decode([LevelModule].self, [module("m3", seq: 3, "next", title: "Salvation by Grace")])))
+        XCTAssertEqual(HomeWeek.pathwayRow(cara, enrolledLevel: 1).ask, .init(verb: "Continue", subject: "Salvation by Grace"))
+        let ada = try XCTUnwrap(Journey.derive(try summary([level(1, "completed", done: 10, of: 10), level(2, "locked")])))
+        XCTAssertEqual(HomeWeek.pathwayRow(ada, enrolledLevel: 1).ask, .init(verb: "Begin", subject: "Take the Level 1 exam"))
+        let eli = try XCTUnwrap(Journey.derive(try summary([level(1, "awaiting_review", done: 10, of: 10, awaiting: true),
+                                                            level(2, "locked")])))
+        XCTAssertNil(HomeWeek.pathwayRow(eli, enrolledLevel: 1).ask)
+        XCTAssertNil(HomeWeek.pathwayRow(nil, enrolledLevel: 1).ask)
+        // Plans: today's day begins or continues; done today, or no plan, asks nothing.
+        XCTAssertEqual(HomeWeek.plansRow([try plan("p1", day: 1, done: [])], now: monday).ask, .init(verb: "Begin", subject: "First Steps"))
+        XCTAssertEqual(HomeWeek.plansRow([try plan("p1", day: 2, done: [1], lastFinished: "2026-10-01T09:33:50.486Z")], now: monday).ask?.verb,
+                       "Continue")
+        XCTAssertNil(HomeWeek.plansRow([try plan("p1", day: 4, done: [1, 2, 3], lastFinished: "2026-10-05T08:45:28.123Z")], now: monday).ask)
+        XCTAssertNil(HomeWeek.plansRow(nil).ask, "starting a plan is a standing invitation")
+        // Cell: no cell asks to be connected, until it has asked; a cell asks nothing.
+        let nairobi = TimeZone(identifier: "Africa/Nairobi")!
+        XCTAssertEqual(HomeWeek.cellRow(nil, timeZone: nairobi, now: monday).ask, .init(verb: "Ask", subject: "Find your cell"))
+        XCTAssertNil(HomeWeek.cellRow(nil, askedAt: "2026-10-05T09:30:00Z", timeZone: nairobi, now: monday).ask)
+        // (Events and Giving: ExperienceCycle2Tests — Join and Pay ask; Going, Giving ·, Give and the calendar don't.)
+        for r in [HomeWeek.pathwayRow(ben, enrolledLevel: 1), HomeWeek.pathwayRow(cara, enrolledLevel: 1),
+                  HomeWeek.pathwayRow(ada, enrolledLevel: 1), HomeWeek.cellRow(nil, timeZone: nairobi, now: monday)] {
+            XCTAssertTrue(verbs.contains(try XCTUnwrap(r.ask).verb), "one of the owner's five verbs")
+        }
+    }
 }
 
 /// The verse tableau as it was before 84d2acb (3137194), kept as the

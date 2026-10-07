@@ -279,6 +279,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let youth = try homeEvent("occ-2", "Youth night", at: "2026-10-10T15:00:00.000Z", rsvp: "going")
         let r = eventsRow(home: [sooner, youth])
         XCTAssertEqual(r.title, "Going · Youth night", "what the member said yes to comes first")
+        XCTAssertNil(r.ask, "going is where things stand, not a step (owner, 2026-10-07: colour option A)")
         XCTAssertEqual(r.line, "Sat 10 Oct · 6:00 PM")
         XCTAssertEqual(eventOf(r)?.occurrenceId, "occ-2")
     }
@@ -306,6 +307,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let sunday = try homeEvent("occ-1", "Sunday service", at: "2026-10-11T06:00:00.000Z")
         let r = eventsRow(home: [sunday, later], rsvps: [])
         XCTAssertEqual(r.title, "Join · Youth night")
+        XCTAssertEqual(r.ask, .init(verb: "Join", subject: "Youth night"), "an unanswered gathering asks (colour option A)")
         XCTAssertEqual(r.line, "Sat 10 Oct · 6:00 PM")
         XCTAssertEqual(eventOf(r)?.occurrenceId, "occ-2")
     }
@@ -325,6 +327,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         XCTAssertEqual(eventsRow(home: [declined, maybe]).title, "Join · Youth night", "a maybe still stands; a no steps aside")
         let alone = eventsRow(home: [declined])
         XCTAssertEqual(alone.title, "Join · Prayer breakfast", "the only gathering this week — said, even though declined")
+        XCTAssertNil(alone.ask, "one the member declined is not their next step (colour option A)")
         XCTAssertEqual(alone.line, "Tue 6 Oct · 8:00 AM", "never \"You're going\"")
         // A no in the RSVP list outranks the curated row's silence.
         let saidNo = eventsRow(home: [try homeEvent("occ-1", "Prayer breakfast", at: "2026-10-06T05:00:00.000Z"), maybe],
@@ -335,6 +338,7 @@ final class ExperienceCycle2Tests: XCTestCase {
     func testNoGatheringIsAQuietRow() throws {
         let none = eventsRow()
         XCTAssertEqual(none.title, "See the church calendar")
+        XCTAssertNil(none.ask, "the calendar is a standing invitation, not a step (colour option A)")
         XCTAssertEqual(none.line, "No gatherings this week")
         XCTAssertEqual(none.destination, .events)
         XCTAssertEqual(eventsRow(calendar: [], home: [], rsvps: []), none, "Ada today: nothing on the calendar")
@@ -361,6 +365,7 @@ final class ExperienceCycle2Tests: XCTestCase {
         let empty = try standing()
         let weekly = givingRow(empty, [try gift("s-tithe", nextRunAt: "2026-10-11T06:01:00.108Z", frequency: "weekly")])
         XCTAssertEqual(weekly.title, "Giving · Your weekly gift")
+        XCTAssertNil(weekly.ask, "a gift collecting itself asks nothing (colour option A)")
         XCTAssertEqual(weekly.line, "Collected on Sun 11 Oct", "the seventh day after counts")
         XCTAssertEqual(weekly.destination, .schedule("s-tithe"), "the gift's sheet")
         let monthly = givingRow(empty, [try gift("s-month", nextRunAt: "2026-10-07T06:00:00Z")])
@@ -374,6 +379,7 @@ final class ExperienceCycle2Tests: XCTestCase {
                                               try gift("s-paid", nextRunAt: "2026-10-06T06:00:00Z", next: "0"),
                                               try gift("s-stopping", pledge: "p-old", nextRunAt: "2026-10-06T06:00:00Z", next: "null")])
         XCTAssertEqual(give.title, "Give", "the eighth day, a paused gift, nothing to pay, a collector stopping with its pledge")
+        XCTAssertNil(give.ask, "Give is a standing invitation, not a step (colour option A)")
         XCTAssertEqual(give.line, "Tithe & offering · M-Pesa", "the rails line — only rails that work here")
         XCTAssertEqual(give.destination, .give)
         XCTAssertTrue(HomeWeek.asksToGive([give]))
@@ -384,6 +390,7 @@ final class ExperienceCycle2Tests: XCTestCase {
                                 due: [dueJSON("p-roof", "Roof sheets for the new hall", dueOn: "2026-10-08", amount: 2_000_000)])
         let r = givingRow(soon, [])
         XCTAssertEqual(r.title, "Pay · Roof sheets for the new hall")
+        XCTAssertEqual(r.ask, .init(verb: "Pay", subject: "Roof sheets for the new hall"), "money owed by hand asks (colour option A)")
         XCTAssertEqual(r.line, "KSh 20,000 due Thu 8 Oct")
         XCTAssertEqual(r.destination, .partners)
         XCTAssertFalse(HomeWeek.asksToGive([r]))
