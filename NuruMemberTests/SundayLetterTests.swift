@@ -363,13 +363,45 @@ final class SundayLetterTests: XCTestCase {
     /// local server answers 404 no_pastor for a congregation with no pastor.
     func testWriteBackSaysWhyItDidntOpen() {
         XCTAssertEqual(LetterEditorialWords.writeBackFailure(
-            APIError.http(status: 404, code: "NOT_FOUND", message: "No pastor available"), signer: "Pastor Moses"),
+            APIError.http(status: 404, code: "NOT_FOUND", message: "No pastor available")),
             "No pastor is available for your congregation yet — please check back soon.")
         XCTAssertEqual(LetterEditorialWords.writeBackFailure(
-            APIError.http(status: 403, code: "FORBIDDEN", message: "x"), signer: "Pastor Moses"),
+            APIError.http(status: 403, code: "FORBIDDEN", message: "x")),
             "Direct messages aren't available on this account.")
-        XCTAssertTrue(LetterEditorialWords.writeBackFailure(APIError.offline, signer: "Pastor Moses")
-            .hasPrefix("Couldn't open your conversation with Pastor Moses."))
+        XCTAssertTrue(LetterEditorialWords.writeBackFailure(APIError.offline)
+            .hasPrefix("Couldn't open your conversation with your pastor."))
+    }
+
+    /// The reply goes to the member's ASSIGNED pastor — who may not be the one
+    /// who signed — so the row says "your pastor"; the signature keeps the name
+    /// (owner, 2026-10-07).
+    func testWriteBackGoesToYourPastorWhoeverSigned() throws {
+        XCTAssertEqual(LetterEditorialWords.writeBackLabel, "Write back to your pastor")
+        XCTAssertEqual(LetterEditorialWords.signer(try v3Letter()).name, "Pastor Moses", "the signature keeps the name")
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent(TypeScan.editorialFile), encoding: .utf8)
+        XCTAssertTrue(src.contains("footerRow(.penLine, LetterEditorialWords.writeBackLabel"))
+        XCTAssertFalse(src.contains("\"Write back to \\("), "never the signer's name on the reply row")
+    }
+
+    /// "Last week" only when the earlier letter is from the Sunday before;
+    /// otherwise that letter's own Sunday (Android's previousLabel).
+    func testLastWeekSaysSoOnlyForTheWeekBefore() {
+        func letter(_ week: String, _ title: String = "Two prayers, answered") -> PastoralLetter {
+            PastoralLetter(letterId: week, weekOf: week, title: title, body: "b", scriptureRef: nil, createdAt: "", readAt: nil)
+        }
+        let now = letter("2026-10-04")
+        XCTAssertEqual(LetterEditorialWords.previousLabel(letter("2026-09-27"), current: now), "Last week: Two prayers, answered")
+        XCTAssertEqual(LetterEditorialWords.previousLabel(letter("2026-09-13"), current: now), "Sun 13 Sep: Two prayers, answered")
+        XCTAssertEqual(LetterEditorialWords.previousLabel(letter("2025-12-28"), current: letter("2026-01-11")),
+                       "Sun 28 Dec 2025: Two prayers, answered", "the year when it isn't this letter's")
+        XCTAssertEqual(LetterEditorialWords.previousLabel(letter("2025-12-28"), current: letter("2026-01-04")),
+                       "Last week: Two prayers, answered", "across the new year, still the week before")
+        XCTAssertEqual(LetterEditorialWords.previousLabel(letter("not a date"), current: now), "Earlier: Two prayers, answered")
+        XCTAssertEqual(LetterEditorialWords.previousLabel(letter("2026-09-27", PastoralLetter.defaultTitle), current: now),
+                       "Last week: Your Sunday Letter")
+        // A letter with no Sunday is never "the one before".
+        XCTAssertNil(LetterEditorialWords.previous(now, in: [now, letter("")]))
+        XCTAssertNil(LetterEditorialWords.previous(letter(""), in: [letter("2026-09-27")]))
     }
 
     /// `pdf_url` is a path from the server's root that already carries /v1 —

@@ -18,14 +18,23 @@ enum LetterEditorialWords {
     /// "No. 6 · Sunday 4 October 2026" — the member's issue, then the Sunday
     /// the letter was written for (`week_of`, a date-only value: read in UTC).
     static func dateline(issueNo: Int?, weekOf: String) -> String {
-        let utc = TimeZone(identifier: "UTC") ?? .current
+        let day = sunday(weekOf).map { NuruDates.dateline($0, timeZone: utc) }
+        return [issueNo.map { "No. \($0)" }, day].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// `week_of` is a calendar date ("2026-10-04"): read and shown in UTC, so
+    /// no time zone ever moves it to the Saturday.
+    private static let utc = TimeZone(identifier: "UTC") ?? .current
+
+    /// The letter's Sunday, or nil when `week_of` isn't a date.
+    static func sunday(_ weekOf: String) -> Date? {
         let f = DateFormatter()
         f.calendar = Calendar(identifier: .gregorian)
         f.locale = Locale(identifier: "en_US_POSIX")
         f.timeZone = utc
         f.dateFormat = "yyyy-MM-dd"
-        let day = f.date(from: String(weekOf.prefix(10))).map { NuruDates.dateline($0, timeZone: utc) }
-        return [issueNo.map { "No. \($0)" }, day].compactMap { $0 }.joined(separator: " · ")
+        let day = String(weekOf.trimmingCharacters(in: .whitespaces).prefix(10))
+        return day.count == 10 ? f.date(from: day) : nil
     }
 
     /// "Your week, read back to you · 2 min".
@@ -74,23 +83,44 @@ enum LetterEditorialWords {
         return opens ? line : "\u{201C}\(line)\u{201D}"
     }
 
-    /// The letter before this one — "Last week: …" — or none.
+    /// The member's letter before this one: the newest with an earlier Sunday.
     static func previous(_ letter: PastoralLetter, in letters: [PastoralLetter]) -> PastoralLetter? {
-        letters.filter { $0.letterId != letter.letterId && $0.weekOf < letter.weekOf }
-            .max { $0.weekOf < $1.weekOf }
+        func week(_ l: PastoralLetter) -> String { String(l.weekOf.trimmingCharacters(in: .whitespaces).prefix(10)) }
+        let current = week(letter)
+        guard !current.isEmpty else { return nil }
+        return letters.filter { $0.letterId != letter.letterId && !week($0).isEmpty && week($0) < current }
+            .max { week($0) < week($1) }
     }
+
+    /// "Last week: Two prayers, answered" — and its own Sunday when it wasn't
+    /// last week ("Sun 20 Sep: …", the year only when it isn't this letter's):
+    /// never "last week" over an older letter. Android's previousLabel.
+    static func previousLabel(_ previous: PastoralLetter, current: PastoralLetter) -> String {
+        let title = previous.title
+        guard let prev = sunday(previous.weekOf) else { return "Earlier: \(title)" }
+        let cur = sunday(current.weekOf)
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = utc
+        if let cur, cal.date(byAdding: .day, value: 7, to: prev) == cur { return "Last week: \(title)" }
+        return "\(NuruDates.day(prev, now: cur ?? prev, timeZone: utc)): \(title)"
+    }
+
+    /// The row opens the member's own pastoral thread, which goes to their
+    /// ASSIGNED pastor — who may not be the one who signed — so it says where
+    /// the reply really goes (owner, 2026-10-07). The signature keeps the name.
+    static let writeBackLabel = "Write back to your pastor"
 
     /// Why "Write back" didn't open, in the Pastor tab's own words (ChatView):
     /// no pastor yet is a 404, messages switched off a 403; anything else in
     /// §4's words.
-    static func writeBackFailure(_ error: Error, signer: String) -> String {
+    static func writeBackFailure(_ error: Error) -> String {
         if case .http(404, _, _, _)? = error as? APIError {
             return "No pastor is available for your congregation yet — please check back soon."
         }
         if case .http(403, _, _, _)? = error as? APIError {
             return "Direct messages aren't available on this account."
         }
-        return NuruStateCopy.failureLine("Couldn't open your conversation with \(signer).", error)
+        return NuruStateCopy.failureLine("Couldn't open your conversation with your pastor.", error)
     }
 
     /// The kept file's name: "Sunday Letter — Sunday 4 October 2026.pdf".
@@ -500,12 +530,14 @@ struct LetterEditorialView: View {
     private var footer: some View {
         VStack(alignment: .leading, spacing: 0) {
             Rectangle().fill(Ink.hairline).frame(height: 1)
-            footerRow(.penLine, "Write back to \(signer.name)", busy: openingThread) { writeBack() }
+            footerRow(.penLine, LetterEditorialWords.writeBackLabel, busy: openingThread) { writeBack() }
             if letter.pdfUrl != nil {
                 footerRow(.fileText, "Keep this letter as a PDF", busy: fetchingPDF) { keepPDF() }
             }
             if let previous {
-                footerRow(.bookOpen, "Last week: \(previous.title)") { Haptics.tap(); showArchive = true }
+                footerRow(.bookOpen, LetterEditorialWords.previousLabel(previous, current: letter)) {
+                    Haptics.tap(); showArchive = true
+                }
             }
             if let actionLine {
                 Text(actionLine).font(.nCardMeta).foregroundStyle(Nuru.danger)
@@ -536,8 +568,8 @@ struct LetterEditorialView: View {
         .disabled(busy)
     }
 
-    /// The member's own pastoral conversation (create-or-open), behind the
-    /// same privacy gate the Pastor tab uses.
+    /// The member's own pastoral conversation (create-or-open) — their
+    /// assigned pastor's — behind the same privacy gate the Pastor tab uses.
     private func writeBack() {
         guard !openingThread else { return }
         Haptics.tap()
@@ -553,7 +585,7 @@ struct LetterEditorialView: View {
                 dismiss()
                 tabs.openConversation(t.conversationId)
             } catch {
-                actionLine = LetterEditorialWords.writeBackFailure(error, signer: signer.name)
+                actionLine = LetterEditorialWords.writeBackFailure(error)
             }
         }
     }
