@@ -78,6 +78,7 @@ final class AuthStore: ObservableObject {
         // (Here, not on isAuthenticated == false: that is also the launch
         // state before the session is restored.)
         PlanDayLog.forget()
+        PlanPartLog.forget()
         me = nil
         isAuthenticated = false
     }

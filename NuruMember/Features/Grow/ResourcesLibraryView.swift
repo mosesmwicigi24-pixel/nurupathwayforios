@@ -115,7 +115,7 @@ struct ResourcesLibraryView: View {
             }
             Text("Resources").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(RES.navy).padding(.top, 12)
         }
-        .padding(.horizontal, 20).padding(.top, 56).padding(.bottom, 20)
+        .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 20)   // clears the status-bar band (C7 class)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack(alignment: .topTrailing) {

@@ -187,8 +187,10 @@ struct PLStreakStrip: View {
                 }
                 .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 1) {
+                    // The streak card's title is a card title (§8.1 rule 3:
+                    // Fraunces 18 semibold; final walk #38 — it was Inter).
                     Text(StreakWords.title(shown))
-                        .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
+                        .font(.nCardTitle).foregroundStyle(PL.navy)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(StreakWords.line(shown, todayDone: todayDone, today: today))
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
@@ -291,7 +293,10 @@ struct PLContinueRow: View {
             PLCover(plan: plan).frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 0) {
-                Text(plan.title).font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy).lineLimit(1)
+                // A plan is a content row (§8.1 rule 3; final walk #38),
+                // wrapping rather than cut (rule 9).
+                Text(plan.title).font(.nRowTitle).foregroundStyle(PL.navy)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text("Today · \(plan.subtitle ?? "Day \(day) of \(total)")")
                     .font(.nCardMeta).foregroundStyle(PL.ink2).lineLimit(1).padding(.top, 2)
                 HStack(spacing: 8) {
@@ -391,7 +396,9 @@ struct PLPlanTile: View {
                 VStack(alignment: .leading, spacing: 2) {
                     // Whole at the largest sizes (§9.6 #4): the grid is one
                     // column there, and the words wrap rather than cut.
-                    Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy)
+                    // A plan in the grid is a content row (§8.1 rule 3: Fraunces
+                    // 15 semibold; final walk #38 — it was Inter).
+                    Text(plan.title).font(.nRowTitle).foregroundStyle(PL.navy)
                         .nuruLineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                         .fixedSize(horizontal: false, vertical: true)
                     if plan.enrolled, plan.completedAt == nil {
@@ -500,7 +507,9 @@ struct PLDetailDayRow: View {
                 // Nothing that matters truncates (§8.1 rule 9): a title takes
                 // two lines, and the day's line wraps — it read "opens when
                 // today is d…".
-                Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+                // A day is a content row (§8.1 rule 3: Fraunces 15 semibold;
+                // final walk #38 — it was Inter).
+                Text(day.title ?? "Reading & reflection").font(.nRowTitle).foregroundStyle(PL.navy)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text(done ? "Completed · \(day.reference)"
                      : syncing ? "Finishing your sync… tap to check"

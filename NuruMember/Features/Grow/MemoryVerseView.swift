@@ -318,11 +318,11 @@ private struct CurrentVerseCard: View {
     let verse: MemoryVerseRow
     let practice: () -> Void
 
-    /// Monday-based day of the week, the Figma "Day 4 of 7" goal.
-    private var dayOfWeek: Int {
-        let wd = Calendar.current.component(.weekday, from: Date())  // 1 = Sunday
-        return wd == 1 ? 7 : wd - 1
-    }
+    /// The day of the church's week, Sunday first — the week every strip
+    /// in the app draws (§9.1 rule 8; final walk #32: it counted from
+    /// Monday, so a Wednesday read "Day 3 of 7" beside strips starting on
+    /// Sunday).
+    private var dayOfWeek: Int { MemoryWeek.day(Date()) }
 
     var body: some View {
         Card {
@@ -551,5 +551,15 @@ private struct PracticeSheet: View {
 
         let combined = max(prefixRatio, overlapRatio * 0.9)
         return min(100, Int((combined * 100).rounded()))
+    }
+}
+
+/// Hide His Word's "Day N of 7": the church's week, Sunday first, on the
+/// church's (Nairobi) calendar. Pure, for the tests.
+enum MemoryWeek {
+    static func day(_ now: Date, timeZone: TimeZone = GiveCalendar.nairobi) -> Int {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal.component(.weekday, from: now)   // 1 = Sunday … 7 = Saturday
     }
 }

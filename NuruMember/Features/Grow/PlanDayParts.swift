@@ -84,6 +84,27 @@ enum PlanDayParts {
         return "Today: \(done) of \(total) parts"
     }
 
+    /// "Today" means today (final walk M6): the day's parts finished TODAY on
+    /// the church's calendar — by the server's `completed_at` when it sends
+    /// one, else this phone's own note — over all of its parts. A part done
+    /// on Monday is not today's: "Today: 1 of 3 parts" sat under "0-day
+    /// streak" beside "You paused on Monday". Nil, as `todayLine`, when
+    /// nothing was done today or the day is done.
+    static func todayLine(_ segments: [PlanSegment], alsoDone: Set<String> = [], now: Date = Date(),
+                          doneToday: (String) -> Bool = { PlanPartLog.doneToday($0) }) -> String? {
+        let all = parts(segments)
+        let today = PlanPicks.nairobiDay(now)
+        func finishedToday(_ s: PlanSegment) -> Bool {
+            if alsoDone.contains(s.segmentId) { return true }
+            if let at = s.completedAt.flatMap(StreakToday.date) { return PlanPicks.nairobiDay(at) == today }
+            return doneToday(s.segmentId)
+        }
+        let done = all.filter { p in p.segments.allSatisfy { $0.completed || alsoDone.contains($0.segmentId) } }
+        let doneToday = done.filter { p in p.segments.contains(where: finishedToday) }
+        guard done.count < all.count else { return nil }
+        return todayLine(done: doneToday.count, total: all.count)
+    }
+
     /// The plan page's gold button (§7.4 #2): "Begin Day 1" until anything of
     /// the plan is done — a day, or any part of one; then "Continue · Day N",
     /// the day the member is on; "Read again" once every day is done.
@@ -136,6 +157,26 @@ enum PlanDayLog {
     static func sealedToday(now: Date = Date(), in defaults: UserDefaults = .standard) -> Bool {
         guard defaults.object(forKey: key) != nil else { return false }
         return defaults.integer(forKey: key) == PlanPicks.nairobiDay(now)
+    }
+
+    static func forget(in defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key) }
+}
+
+/// The plan-day segments this phone finished today, on the church's
+/// (Nairobi) calendar — so the streak card counts only today's parts (final
+/// walk M6). Only today's are kept; yesterday's fall away on the next note.
+enum PlanPartLog {
+    static let key = "nuru.plans.partsDoneOn"
+
+    static func noteDone(_ segmentId: String, now: Date = Date(), in defaults: UserDefaults = .standard) {
+        let today = PlanPicks.nairobiDay(now)
+        var kept = (defaults.dictionary(forKey: key) as? [String: Int] ?? [:]).filter { $0.value == today }
+        kept[segmentId] = today
+        defaults.set(kept, forKey: key)
+    }
+
+    static func doneToday(_ segmentId: String, now: Date = Date(), in defaults: UserDefaults = .standard) -> Bool {
+        (defaults.dictionary(forKey: key) as? [String: Int])?[segmentId] == PlanPicks.nairobiDay(now)
     }
 
     static func forget(in defaults: UserDefaults = .standard) { defaults.removeObject(forKey: key) }

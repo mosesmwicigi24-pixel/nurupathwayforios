@@ -133,6 +133,10 @@ struct PlanSegment: Codable, Sendable, Identifiable, Hashable {
     let videoUrl: String?
     let imageUrl: String?
     let completed: Bool
+    /// When the member finished it (ISO), from a server that sends it; nil
+    /// otherwise — then only this phone's own note (PlanPartLog) can say a
+    /// part was done today.
+    var completedAt: String? = nil
 
     var id: String { segmentId }
 }
@@ -151,6 +155,7 @@ extension PlanSegment {
         videoUrl = try? c.decodeIfPresent(String.self, forKey: .videoUrl)
         imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
         completed = (try? c.decodeIfPresent(Bool.self, forKey: .completed)) ?? false
+        completedAt = (try? c.decodeIfPresent(String.self, forKey: .completedAt)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 

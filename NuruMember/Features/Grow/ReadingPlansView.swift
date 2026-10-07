@@ -147,8 +147,8 @@ final class ReadingPlansViewModel: ObservableObject {
             todayLine = nil
             return
         }
-        let p = PlanDayParts.progress(day.segments ?? [])
-        todayLine = PlanDayParts.todayLine(done: p.done, total: p.total)
+        // Only the parts finished today count as today's (final walk M6).
+        todayLine = PlanDayParts.todayLine(day.segments ?? [])
     }
 }
 
@@ -260,6 +260,8 @@ struct ReadingPlansView: View {
                         .padding(.horizontal, 20).padding(.top, 20)
                 } else {
                     VStack(alignment: .leading, spacing: 24) {
+                        // A saved copy says so (final walk M3).
+                        NuruSavedCopyNotice(hasContent: true)
                         if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todaySealed, today: vm.todayLine, activeToday: vm.activeToday) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, !continueReading.isEmpty { reminderCard }
@@ -298,19 +300,24 @@ struct ReadingPlansView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                // One line of what matters now (§6.2): the plan being read —
-                // the same plan and day Home's week names — else the tagline.
-                // The one header's words (§8.1 rules 2–3).
-                NuruHeaderText(kicker: "Plans", title: "Grow in the Word",
-                               line: ReadingPlanRow.activeLine(in: vm.plans) ?? "A little every day — with the whole family of God.")
+            // One header (§8.1 rule 2), laid out as Home's and Pathway's: the
+            // kicker and the bell on one line, the title and its line below,
+            // from the same top (final walk #38: the bell sat between the
+            // kicker and the title, and the header rode higher).
+            HStack(alignment: .center) {
+                Text("PLANS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                 Spacer(minLength: 8)
                 bellButton
             }
+            // One line of what matters now (§6.2): the plan being read — the
+            // same plan and day Home's week names — else the tagline.
+            NuruHeaderText(title: "Grow in the Word",
+                           line: ReadingPlanRow.activeLine(in: vm.plans) ?? "A little every day — with the whole family of God.")
+                .padding(.top, 12)
             searchBar.padding(.top, 16)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 64)
+        .padding(.top, NuruSafeArea.top + 8)
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .topTrailing) {
@@ -1480,7 +1487,10 @@ struct PlanDayView: View {
                 .background((done || isNext) ? pal.gold.opacity(0.15) : pal.inkDim.opacity(0.07), in: Circle())
                 .overlay(Circle().stroke(done ? pal.gold.opacity(0.5) : (isNext ? pal.gold.opacity(0.4) : pal.border), lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
-                Text(part.label).font(.inter(14, .semibold)).foregroundStyle(pal.ink)
+                // A day's part is a content row (§8.1 rule 3: Fraunces 15
+                // semibold; final walk #38 — it was Inter).
+                Text(part.label).font(.nRowTitle).foregroundStyle(pal.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 // Wraps, never cut (rule 9; the walk's 34: "Scripture & teac…").
                 Text(partSub(part)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -1490,9 +1500,11 @@ struct PlanDayView: View {
                 Image(systemName: "checkmark.circle.fill").font(.symbol(20)).foregroundStyle(pal.gold)
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             } else if isNext {
-                Text("Next").font(.inter(11, .bold)).foregroundStyle(PL.navy)
+                // A status chip, not a second primary (§8.1 rules 4/6; final
+                // walk #38: a gold-filled "Next" beside the gold button).
+                Text("Next").font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(pal.gold, in: Capsule())
+                    .background(Nuru.goldChipBg, in: Capsule())
             } else {
                 Image(systemName: "circle").font(.symbol(20)).foregroundStyle(pal.inkDim.opacity(0.35))
             }

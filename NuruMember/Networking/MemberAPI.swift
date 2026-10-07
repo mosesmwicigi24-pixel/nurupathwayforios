@@ -301,7 +301,11 @@ extension MemberAPI {
     /// POST /growth/segments/{id}/complete — mark one plan-day segment done.
     @discardableResult
     static func completePlanSegment(_ segmentId: String) async throws -> SegmentCompleteResult {
-        try await APIClient.shared.postEmpty("growth/segments/\(segmentId)/complete", as: SegmentCompleteResult.self)
+        let res = try await APIClient.shared.postEmpty("growth/segments/\(segmentId)/complete", as: SegmentCompleteResult.self)
+        // The streak card's "Today: N of M parts" counts only parts done
+        // today (final walk M6) — this phone notes the day it finished one.
+        PlanPartLog.noteDone(segmentId)
+        return res
     }
 
     // MARK: Prayer journal
