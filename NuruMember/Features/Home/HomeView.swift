@@ -702,14 +702,10 @@ struct HomeView: View {
         .sheet(isPresented: $showLetterArchive) { LetterArchiveView() }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
-                // Read on the server — clear the knock locally too. Every v2
-                // field carries over unchanged; only readAt flips.
+                // Read on the server — clear the knock locally too. Every
+                // field carries over unchanged (v3's too); only readAt flips.
                 if let cur = vm.letter, cur.letterId == lt.letterId {
-                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, title: cur.title,
-                                               salutation: cur.salutation, theme: cur.theme, imageKey: cur.imageKey,
-                                               body: cur.body, scriptureRef: cur.scriptureRef, highlights: cur.highlights,
-                                               nextStep: cur.nextStep, shareLine: cur.shareLine, createdAt: cur.createdAt,
-                                               readAt: ISO8601DateFormatter().string(from: Date()))
+                    vm.letter = cur.markedRead(at: ISO8601DateFormatter().string(from: Date()))
                 }
             }
         }

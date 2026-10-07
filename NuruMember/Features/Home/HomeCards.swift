@@ -755,7 +755,6 @@ struct HomeEncouragementCard: View {
 struct HomeWeekCard: View {
     let rows: [HomeWeekRow]
     let open: (HomeWeekRow) -> Void
-    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         // The week's one next step leads, as a navy band (HomeWeek.cardOrder);
@@ -793,57 +792,11 @@ struct HomeWeekCard: View {
     /// one gold primary pill with the row's verb. At the accessibility sizes
     /// the pill takes a line of its own, so no word is squeezed (§9.6 #4).
     private func nextStepBand(_ row: HomeWeekRow, _ ask: HomeWeekRow.Ask) -> some View {
-        let gold = Color(hex: 0xE8CA6C)
-        let tile = Icon(Self.icon(row.pillar), size: 18, color: gold)
-            .frame(width: 42, height: 42)
-            .background(gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
         // The dot keeps to the word before it, so a wrapped kicker never
         // starts its second line with "·".
-        let kicker = Text("YOUR NEXT STEP\u{00A0}· \(row.pillar.rawValue.uppercased())")
-            .font(.nCardKicker).kerning(1.4).foregroundStyle(gold)
-            .fixedSize(horizontal: false, vertical: true)
-        let title = Text(ask.subject).font(.nCardTitle).foregroundStyle(.white)
-            .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
-            .nuruWholeWords(ask.subject, font: .nCardTitle)
-        let meta = Text(row.line).font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
-            .fixedSize(horizontal: false, vertical: true)
-        let pill = Text(ask.verb).font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
-            .padding(.horizontal, 16).padding(.vertical, 9)
-            .background(Nuru.goldGradient, in: Capsule())
-            .fixedSize()
-        return Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 10) {
-                    tile; kicker; title
-                    if !row.line.isEmpty { meta }
-                    pill.padding(.top, 2)
-                }
-            } else {
-                // The kicker and the title take the band's whole width; the
-                // pill sits at the right of the line below, so a phone's width
-                // never squeezes the words.
-                HStack(alignment: .top, spacing: 12) {
-                    tile
-                    VStack(alignment: .leading, spacing: 3) {
-                        kicker
-                        title
-                        HStack(alignment: .center, spacing: 8) {
-                            meta.frame(maxWidth: .infinity, alignment: .leading)
-                            pill
-                        }
-                        .padding(.top, 4)
-                    }
-                }
-            }
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .contentShape(Rectangle())
-        .accessibilityElement(children: .combine)
-        .accessibilityAddTraits(.isButton)
+        NuruNextStepBand(icon: Self.icon(row.pillar),
+                         kicker: "YOUR NEXT STEP\u{00A0}· \(row.pillar.rawValue.uppercased())",
+                         title: ask.subject, line: row.line, verb: ask.verb)
     }
 
     private func rowView(_ row: HomeWeekRow) -> some View {
@@ -1156,5 +1109,73 @@ struct HomePulseDot: View {
             guard !reduceMotion else { return }
             withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
         }
+    }
+}
+
+
+/// The navy "next step" band (owner, 2026-10-07: colour option A, "navy for
+/// your next step"): a gold-tint tile with the step's gold icon, the gold
+/// kicker, what it acts on in white Fraunces, the line in #B9C4D4, and the
+/// screen's one gold primary pill with the step's verb. At the accessibility
+/// sizes the pill takes a line of its own, so no word is squeezed (§9.6 #4).
+/// Home's YOUR WEEK leads with it; the Sunday Letter's one step wears it too.
+struct NuruNextStepBand: View {
+    let icon: Lucide
+    let kicker: String
+    let title: String
+    var line: String = ""
+    let verb: String
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let gold = Color(hex: 0xE8CA6C)
+        let tile = Icon(icon, size: 18, color: gold)
+            .frame(width: 42, height: 42)
+            .background(gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        let kickerText = Text(kicker)
+            .font(.nCardKicker).kerning(1.4).foregroundStyle(gold)
+            .fixedSize(horizontal: false, vertical: true)
+        let titleText = Text(title).font(.nCardTitle).foregroundStyle(.white)
+            .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+            .nuruWholeWords(title, font: .nCardTitle)
+        let meta = Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
+            .fixedSize(horizontal: false, vertical: true)
+        let pill = Text(verb).font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
+            .padding(.horizontal, 16).padding(.vertical, 9)
+            .background(Nuru.goldGradient, in: Capsule())
+            .fixedSize()
+        return Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    tile; kickerText; titleText
+                    if !line.isEmpty { meta }
+                    pill.padding(.top, 2)
+                }
+            } else {
+                // The kicker and the title take the band's whole width; the
+                // pill sits at the right of the line below, so a phone's width
+                // never squeezes the words.
+                HStack(alignment: .top, spacing: 12) {
+                    tile
+                    VStack(alignment: .leading, spacing: 3) {
+                        kickerText
+                        titleText
+                        HStack(alignment: .center, spacing: 8) {
+                            meta.frame(maxWidth: .infinity, alignment: .leading)
+                            pill
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }

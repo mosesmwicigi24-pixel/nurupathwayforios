@@ -132,11 +132,12 @@ enum Nuru {
     static let buttonHeightLg: CGFloat = 56
     static let buttonHeightMd: CGFloat = 48
 
-    // MARK: Fonts — register the bundled OFL faces (Inter + Fraunces).
+    // MARK: Fonts — register the bundled OFL faces (Inter + Fraunces, and the
+    // Sunday Letter's Fraunces italic and signature — FONTS-LICENSE.md).
     static func registerFonts() {
         let faces = ["Inter-Regular", "Inter-Medium", "Inter-SemiBold", "Inter-Bold",
                      "Fraunces-Regular", "Fraunces-Medium", "Fraunces-SemiBold", "Fraunces-Bold",
-                     "lucide"]
+                     "Fraunces72pt-Italic", "MrsSaintDelafield-Regular", "lucide"]
         for f in faces {
             if let url = Bundle.main.url(forResource: f, withExtension: "ttf") {
                 CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
@@ -213,6 +214,12 @@ extension Font {
     }
     static func nuruDisplay(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
         .custom(frauncesFace(weight), size: size * Nuru.textScale)
+    }
+    /// Fraunces italic — a true italic face (Fraunces 72pt Italic, the one
+    /// the Sunday Letter's PDF embeds), for the letter's italics (owner,
+    /// 2026-10-07: board A). Its own family, so no other `.italic()` changes.
+    static func frauncesItalic(_ size: CGFloat) -> Font {
+        .custom("Fraunces72pt-Italic", size: size * Nuru.textScale)
     }
 
     // Semantic scale — matches tokens.ts `type` (designed at ~390pt).

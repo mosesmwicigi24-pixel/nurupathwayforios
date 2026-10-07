@@ -89,6 +89,12 @@ extension View {
     /// sizes; the screen's own words carry the same fact, and grow. §9.6 #4.
     func nuruFixedFigure() -> some View { dynamicTypeSize(...DynamicTypeSize.large) }
 
+    /// Display type — set larger than any reading text already — grows with
+    /// the phone's text size as far as the largest everyday size and stops
+    /// there (§9.6 #4): the Sunday Letter's masthead, figures, opening quote
+    /// and signature. The words a member reads (the title, the letter) grow on.
+    func nuruDisplayType() -> some View { dynamicTypeSize(...DynamicTypeSize.xxxLarge) }
+
     /// The title never breaks a word (`NuruWholeWords`): `text` is the string
     /// shown, `font` and `kerning` its own.
     func nuruWholeWords(_ text: String, font: Font, kerning: CGFloat = 0) -> some View {

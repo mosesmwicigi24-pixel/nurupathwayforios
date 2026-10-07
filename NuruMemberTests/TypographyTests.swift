@@ -110,6 +110,20 @@ final class TypographyTests: XCTestCase {
         }
     }
 
+    /// Type leaves the scale in one place only — the Sunday Letter's board A
+    /// display type, site by site — and never spreads (owner, 2026-10-07).
+    func testOnlyTheLettersDisplayTypeLeavesTheScale() throws {
+        let editorial = TypeScan.listed.filter { $0.why == .editorial }
+        XCTAssertEqual(editorial.count, 5, "the masthead, a figure, the opening quote, the signature, the drop cap")
+        XCTAssertTrue(editorial.allSatisfy { $0.file == TypeScan.editorialFile },
+                      "an editorial size outside the letter: \(editorial.filter { $0.file != TypeScan.editorialFile }.map(\.file))")
+        // The letter's faces load, by name, as the faces test proves for every face.
+        XCTAssertNotNil(UIFont(name: "MrsSaintDelafield-Regular", size: 52))
+        XCTAssertNotNil(UIFont(name: "Fraunces72pt-Italic", size: 18))
+        // Its own family: the app's Fraunces is untouched by it.
+        XCTAssertNotEqual(UIFont(name: "Fraunces72pt-Italic", size: 18)?.familyName, UIFont(name: "Fraunces-Regular", size: 18)?.familyName)
+    }
+
     /// Nothing under 11 pt, even when a label gives way: `.minimumScaleFactor(x)`
     /// times the size of the font set just before it stays at 11 or more.
     func testNothingShrinksUnderEleven() throws {
@@ -316,7 +330,12 @@ enum TypeScan {
         case logo = "the brand mark's letter, drawn in proportion to the mark"
         case video = "drawn into the broadcast video frame, sized in the frame's pixels"
         case fallback = "the release-only fallback if a bundled face failed to load — unreachable while the faces test passes"
+        /// The one place type is set off the scale on purpose, each site listed.
+        case editorial = "the Sunday Letter's editorial display type (owner, 2026-10-07: board A) — its masthead, drop cap, figures, opening quote and signature"
     }
+
+    /// The editorial letter is the only file whose type may leave the scale.
+    static let editorialFile = "Features/Home/LetterEditorialView.swift"
 
     /// Sites allowed outside the rules: (file, a snippet of the site's line, why).
     /// Every entry must still match a site — a stale entry fails the test.
@@ -324,6 +343,7 @@ enum TypeScan {
         ("Theme/NuruTheme.swift", ".custom(interFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", ".custom(frauncesFace(weight), size: size * Nuru.textScale)", .typeHelper),
+        ("Theme/NuruTheme.swift", ".custom(\"Fraunces72pt-Italic\", size: size * Nuru.textScale)", .typeHelper),
         ("Theme/NuruTheme.swift", "if let font = UIFont(name: face, size: size) { return font }", .typeHelper),
         ("Theme/NuruTheme.swift", "return UIFont.systemFont(ofSize: size)", .fallback),
         ("Theme/NuruTheme.swift", ".system(size: size, weight: weight)", .icon),
@@ -331,6 +351,12 @@ enum TypeScan {
         ("Theme/LucideIcons.swift", ".custom(\"lucide\", fixedSize: size)", .icon),
         ("Features/Shared/Components.swift", ".font(.nuruDisplay(size * 0.56, weight: .semibold))", .logo),
         ("Features/Live/LiveStageCompositor.swift", ".font: Nuru.uiFont(\"Inter-Bold\", max(12, tileSize.height * 0.14)),", .video),
+        // The Sunday Letter, board A: display sizes the scale doesn't hold.
+        (editorialFile, ".font(.frauncesItalic(34))", .editorial),
+        (editorialFile, ".font(.fraunces(34, .medium))", .editorial),
+        (editorialFile, ".font(.fraunces(44))", .editorial),
+        (editorialFile, ".font(.custom(\"MrsSaintDelafield-Regular\", size: 52 * Nuru.textScale))", .editorial),
+        (editorialFile, "Nuru.uiFont(\"Fraunces-SemiBold\", 58)", .editorial),
     ]
 
     /// Where an SF Symbol keeps the system face (`.symbol(size)`), per file.
@@ -450,8 +476,10 @@ enum TypeScan {
     static func run() throws -> Report {
         var report = Report()
         var remaining = listed.map { (file: $0.file, snippet: $0.snippet, why: $0.why, used: false) }
-        func consume(_ s: Site) -> Bool {
-            if let i = remaining.firstIndex(where: { !$0.used && $0.file == s.file && s.source.contains($0.snippet) }) {
+        func consume(_ s: Site, editorialOnly: Bool = false) -> Bool {
+            if let i = remaining.firstIndex(where: {
+                !$0.used && $0.file == s.file && s.source.contains($0.snippet) && (!editorialOnly || $0.why == .editorial)
+            }) {
                 remaining[i].used = true
                 return true
             }
@@ -494,6 +522,8 @@ enum TypeScan {
                     report.sizedCalls += 1
                     if onScale(s.value) == true { continue }
                     if onScale(s.value) == nil, consume(s) { continue }
+                    // A size off the scale stands only as the letter's listed display type.
+                    if onScale(s.value) == false, consume(s, editorialOnly: true) { continue }
                     report.offScale.append(s)
                 } else {
                     if consume(s) { continue }
@@ -559,7 +589,7 @@ enum TypeScan {
     /// Every string literal in the app that names a bundled face family.
     static func facesNamedInSource() throws -> Set<String> {
         var faces = Set<String>()
-        let re = try NSRegularExpression(pattern: #""((?:Inter|Fraunces)-[A-Za-z]+|lucide)""#)
+        let re = try NSRegularExpression(pattern: #""((?:Inter|Fraunces|Fraunces72pt|MrsSaintDelafield)-[A-Za-z]+|lucide)""#)
         for (_, text) in try files() {
             let ns = text as NSString
             for m in re.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
@@ -624,6 +654,8 @@ enum TypeScan {
             // With or without a leading dot (the semantic tokens call `fraunces(28…)`), never a definition.
             (.inter, re(#"(?<![A-Za-z0-9_])(?<!func )inter\("#)),
             (.fraunces, re(#"(?<![A-Za-z0-9_])(?<!func )fraunces\("#)),
+            // The letter's true italic (Fraunces 72pt Italic): its sizes hold the scale too.
+            (.fraunces, re(#"(?<![A-Za-z0-9_])(?<!func )frauncesItalic\("#)),
             (.nuruDisplay, re(#"(?<![A-Za-z0-9_])(?<!func )nuruDisplay\("#)),
             (.custom, re(#"\.custom\("#)),
             (.uiFont, re(#"UIFont\(name:"#)),

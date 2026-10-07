@@ -33,6 +33,14 @@ enum NuruDates {
         format(date, "MMMM yyyy", timeZone)
     }
 
+    /// "Sunday 4 October 2026" — the Sunday Letter's dateline, set in full
+    /// under its masthead as a printed letter's is (owner, 2026-10-07: the
+    /// editorial letter, board A). The one long shape; every other day in the
+    /// app stays "Sun 4 Oct".
+    static func dateline(_ date: Date, timeZone: TimeZone = .current) -> String {
+        format(date, "EEEE d MMMM yyyy", timeZone)
+    }
+
     private static func sameYear(_ a: Date, _ b: Date, _ timeZone: TimeZone) -> Bool {
         var cal = Calendar(identifier: .gregorian)
         cal.timeZone = timeZone

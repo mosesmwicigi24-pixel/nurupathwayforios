@@ -360,6 +360,57 @@ actor APIClient {
         try await send(path, method: "POST", body: body, as: RawJSON.self).data
     }
 
+    /// Where a path the server hands out points. One that starts with "/"
+    /// is from the server's root and already carries its version — the
+    /// letter's `pdf_url` is "/v1/me/letters/{id}/pdf" — so it resolves
+    /// against the API's origin, never its base (that would read
+    /// "/v1/v1/…"). A full URL stands as it is; any other path is under the
+    /// API base, as `send` reads one.
+    static func serverURL(_ path: String, base: URL) -> URL? {
+        let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !p.isEmpty else { return nil }
+        if let u = URL(string: p), let scheme = u.scheme?.lowercased(), scheme == "https" || scheme == "http" { return u }
+        if p.hasPrefix("/") {
+            let origin = base.lastPathComponent == "v1" ? base.deletingLastPathComponent() : base
+            return URL(string: p, relativeTo: origin)?.absoluteURL
+        }
+        return base.appendingPathComponent(p)
+    }
+
+    /// GET a file the server hands out by path (the letter's PDF), with the
+    /// session's bearer token: its bytes. A 401 refreshes once, as `send`;
+    /// a failure says what happened in the same terms.
+    func download(serverPath path: String, isRetry: Bool = false) async throws -> Data {
+        guard let url = Self.serverURL(path, base: baseURL) else { throw APIError.transport("Couldn't form the request URL.") }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 30
+        if let token = accessToken { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let data: Data, response: URLResponse
+        do {
+            if UITestHooks.offline { throw URLError(.notConnectedToInternet) }
+            (data, response) = try await Self.session.data(for: req)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+                throw APIError.offline
+            }
+            throw APIError.transport(urlErr.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response.") }
+        if http.statusCode == 401, !isRetry, refreshToken != nil {
+            if await refreshSession() { return try await download(serverPath: path, isRetry: true) }
+            onSessionExpired?()
+            throw APIError.unauthorized
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let env = try? decoder.decode(ErrorEnvelope.self, from: data)
+            throw APIError.http(status: http.statusCode, code: env?.code,
+                                message: env?.text ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+                                details: env?.details)
+        }
+        return data
+    }
+
     // MARK: Login (single endpoint that may return a 2FA challenge)
 
     /// POST /auth/login → either a full Session or a 2FA challenge.

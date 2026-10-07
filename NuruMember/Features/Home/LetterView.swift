@@ -32,7 +32,17 @@ struct LetterView: View {
         return NuruDates.day(d)   // the one date shape (§8.1 rule 8)
     }
 
+    /// A v3 letter is laid out as board A (owner, 2026-10-07: the editorial
+    /// letter); a v2 letter keeps this stationery exactly as it was.
     var body: some View {
+        if letter.isEditorial {
+            LetterEditorialView(letter: letter, onRead: onRead)
+        } else {
+            classicLetter
+        }
+    }
+
+    private var classicLetter: some View {
         ZStack {
             // Deep navy backdrop lets the paper glow.
             LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x081020)],

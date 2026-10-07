@@ -78,5 +78,5 @@ NuruMember/
 │   ├── Shell/                 ← RootView tab shell, Profile
 │   ├── Home/                  ← HomeView (wired to /me, next-action, rhythm)
 │   └── Shared/                ← Card, PButton, BrandMark, NuruField
-└── Resources/Fonts/           ← Inter + Fraunces (OFL)
+└── Resources/Fonts/           ← Inter + Fraunces + Mrs Saint Delafield (OFL — FONTS-LICENSE.md)
 ```
