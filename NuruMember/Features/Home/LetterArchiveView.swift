@@ -7,16 +7,31 @@
 import SwiftUI
 
 struct LetterArchiveView: View {
-    @State private var letters: [PastoralLetter] = []
-    @State private var loading = true
+    @State private var letters: [PastoralLetter]
+    @State private var loading: Bool
     /// Why the letters didn't come, said in §4's words (it read "Check
     /// your connection" whatever the cause).
     @State private var loadFailure: Error?
-    @State private var selected: PastoralLetter?
+    /// The letters open over the list, oldest last: each letter's "Last
+    /// week" turns to the one before it in place, and back returns, letter
+    /// by letter, to the list (owner, 2026-10-07; Android's archive).
+    @State private var path: [LetterRoute]
+    /// A letter the archive opened on, until the list has it.
+    private let opening: PastoralLetter?
     @Environment(\.dismiss) private var dismiss
 
+    /// The archive, or — `opening` a letter, from the editorial letter's
+    /// "Last week" — that letter, with the list behind it. `known`: the
+    /// letters the caller already has, so the list shows at once.
+    init(opening: PastoralLetter? = nil, known: [PastoralLetter] = []) {
+        self.opening = opening
+        _letters = State(initialValue: known)
+        _loading = State(initialValue: known.isEmpty)
+        _path = State(initialValue: opening.map { [LetterRoute(id: $0.letterId)] } ?? [])
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x081020)],
                                startPoint: .top, endPoint: .bottom)
@@ -32,7 +47,7 @@ struct LetterArchiveView: View {
                             ForEach(letters) { lt in
                                 Button {
                                     Haptics.tap()
-                                    selected = lt
+                                    path.append(LetterRoute(id: lt.letterId))
                                 } label: {
                                     row(lt)
                                 }
@@ -54,9 +69,19 @@ struct LetterArchiveView: View {
                         .tint(.white)
                 }
             }
+            .navigationDestination(for: LetterRoute.self) { route in letterPage(route.id) }
         }
         .task { await load() }
-        .sheet(item: $selected) { lt in LetterView(letter: lt) }
+    }
+
+    /// One letter, full page, over the list: its close and the edge swipe go
+    /// back; its "Last week" opens the letter before it here.
+    @ViewBuilder private func letterPage(_ id: String) -> some View {
+        if let lt = letters.first(where: { $0.letterId == id }) ?? opening.flatMap({ $0.letterId == id ? $0 : nil }) {
+            LetterView(letter: lt, archive: letters, openEarlier: { path.append(LetterRoute(id: $0.letterId)) })
+                .toolbar(.hidden, for: .navigationBar)
+                .nuruEdgeSwipeBack()
+        }
     }
 
     private var emptyState: some View {
@@ -104,8 +129,14 @@ struct LetterArchiveView: View {
         do {
             letters = try await MemberAPI.letters()
         } catch {
-            loadFailure = error
+            // The letters the caller handed over still stand.
+            if letters.isEmpty { loadFailure = error }
         }
         loading = false
     }
+}
+
+/// A letter on the archive's stack, by id.
+struct LetterRoute: Hashable {
+    let id: String
 }

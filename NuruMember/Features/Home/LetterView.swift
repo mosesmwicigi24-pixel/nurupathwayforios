@@ -14,6 +14,10 @@ import SwiftUI
 struct LetterView: View {
     let letter: PastoralLetter
     var onRead: () -> Void = {}
+    /// The member's letters, when the caller already has them (the archive).
+    var archive: [PastoralLetter] = []
+    /// Inside the archive: "Last week" turns to that letter in place.
+    var openEarlier: ((PastoralLetter) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -36,7 +40,7 @@ struct LetterView: View {
     /// letter); a v2 letter keeps this stationery exactly as it was.
     var body: some View {
         if letter.isEditorial {
-            LetterEditorialView(letter: letter, onRead: onRead)
+            LetterEditorialView(letter: letter, onRead: onRead, archive: archive, openEarlier: openEarlier)
         } else {
             classicLetter
         }

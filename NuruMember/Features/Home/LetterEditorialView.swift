@@ -105,6 +105,14 @@ enum LetterEditorialWords {
         return "\(NuruDates.day(prev, now: cur ?? prev, timeZone: utc)): \(title)"
     }
 
+    /// The "Last week" row: its words and the one letter it opens — that
+    /// letter itself, whose own row goes on further back. Nil for the
+    /// member's first letter.
+    static func lastWeek(_ letter: PastoralLetter, in letters: [PastoralLetter]) -> (label: String, opens: PastoralLetter)? {
+        guard let earlier = previous(letter, in: letters) else { return nil }
+        return (previousLabel(earlier, current: letter), earlier)
+    }
+
     /// The row opens the member's own pastoral thread, which goes to their
     /// ASSIGNED pastor — who may not be the one who signed — so it says where
     /// the reply really goes (owner, 2026-10-07). The signature keeps the name.
@@ -168,11 +176,18 @@ enum LetterDropCap {
 struct LetterEditorialView: View {
     let letter: PastoralLetter
     var onRead: () -> Void = {}
+    /// The member's letters, when the caller already has them (the archive).
+    var archive: [PastoralLetter] = []
+    /// Inside the archive: "Last week" turns to that letter in place. From
+    /// Home (nil), it opens the archive on that letter.
+    var openEarlier: ((PastoralLetter) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dynamicTypeSize) private var typeSize
-    @State private var showArchive = false
-    @State private var previous: PastoralLetter?
+    /// The member's letters, for "Last week".
+    @State private var letters: [PastoralLetter] = []
+    /// The earlier letter opened from Home — shown in the archive, on it.
+    @State private var earlierOpened: PastoralLetter?
     @State private var pdfFile: URL?
     @State private var fetchingPDF = false
     @State private var openingThread = false
@@ -210,7 +225,7 @@ struct LetterEditorialView: View {
             }
             closeButton
         }
-        .sheet(isPresented: $showArchive) { LetterArchiveView() }
+        .sheet(item: $earlierOpened) { earlier in LetterArchiveView(opening: earlier, known: letters) }
         .quickLookPreview($pdfFile)
         .onAppear {
             guard letter.isUnread else { return }
@@ -218,9 +233,8 @@ struct LetterEditorialView: View {
         }
         .task {
             // "Last week: …" — quietly absent when the archive doesn't answer.
-            if let all = try? await MemberAPI.letters() {
-                previous = LetterEditorialWords.previous(letter, in: all)
-            }
+            if !archive.isEmpty { letters = archive; return }
+            if let all = try? await MemberAPI.letters() { letters = all }
         }
     }
 
@@ -534,10 +548,10 @@ struct LetterEditorialView: View {
             if letter.pdfUrl != nil {
                 footerRow(.fileText, "Keep this letter as a PDF", busy: fetchingPDF) { keepPDF() }
             }
-            if let previous {
-                footerRow(.bookOpen, LetterEditorialWords.previousLabel(previous, current: letter)) {
-                    Haptics.tap(); showArchive = true
-                }
+            if let row = LetterEditorialWords.lastWeek(letter, in: letters) {
+                // That letter itself (owner, 2026-10-07: as on Android) —
+                // whose own row goes on further back.
+                footerRow(.bookOpen, row.label) { Haptics.tap(); openEarlierLetter(row.opens) }
             }
             if let actionLine {
                 Text(actionLine).font(.nCardMeta).foregroundStyle(Nuru.danger)
@@ -566,6 +580,12 @@ struct LetterEditorialView: View {
         }
         .buttonStyle(.pressableSubtle)
         .disabled(busy)
+    }
+
+    /// "Last week" opens that letter: in place inside the archive, else the
+    /// archive opened on it (its list behind it).
+    private func openEarlierLetter(_ earlier: PastoralLetter) {
+        if let openEarlier { openEarlier(earlier) } else { earlierOpened = earlier }
     }
 
     /// The member's own pastoral conversation (create-or-open) — their

@@ -383,6 +383,34 @@ final class SundayLetterTests: XCTestCase {
         XCTAssertFalse(src.contains("\"Write back to \\("), "never the signer's name on the reply row")
     }
 
+    /// "Last week" opens that letter itself (owner, 2026-10-07: as on
+    /// Android) — and from there its own row goes on further back.
+    func testLastWeekOpensThatLetterAndGoesOnBack() throws {
+        func letter(_ id: String, _ week: String) -> PastoralLetter {
+            PastoralLetter(letterId: id, weekOf: week, title: "Letter \(id)", body: "b", scriptureRef: nil, createdAt: "", readAt: nil)
+        }
+        let all = [letter("c", "2026-10-04"), letter("b", "2026-09-27"), letter("a", "2026-09-13")]
+        let fromC = try XCTUnwrap(LetterEditorialWords.lastWeek(all[0], in: all))
+        XCTAssertEqual(fromC.opens.letterId, "b", "the row opens the letter it names")
+        XCTAssertEqual(fromC.label, "Last week: Letter b")
+        let fromB = try XCTUnwrap(LetterEditorialWords.lastWeek(fromC.opens, in: all))
+        XCTAssertEqual(fromB.opens.letterId, "a", "that letter's own row goes on back")
+        XCTAssertEqual(fromB.label, "Sun 13 Sep: Letter a")
+        XCTAssertNil(LetterEditorialWords.lastWeek(fromB.opens, in: all), "the first letter has no row")
+        // The row opens the letter, never the list: in place inside the archive,
+        // else the archive opened on that letter, its list behind it.
+        let src = try String(contentsOf: TypeScan.appRoot.appendingPathComponent(TypeScan.editorialFile), encoding: .utf8)
+        XCTAssertTrue(src.contains("footerRow(.bookOpen, row.label) { Haptics.tap(); openEarlierLetter(row.opens) }"))
+        XCTAssertTrue(src.contains("if let openEarlier { openEarlier(earlier) } else { earlierOpened = earlier }"))
+        XCTAssertTrue(src.contains("LetterArchiveView(opening: earlier, known: letters)"))
+        XCTAssertFalse(src.contains("LetterArchiveView()"), "the row doesn't open the bare list")
+        let archive = try String(contentsOf: TypeScan.appRoot.appendingPathComponent("Features/Home/LetterArchiveView.swift"),
+                                 encoding: .utf8)
+        XCTAssertTrue(archive.contains("_path = State(initialValue: opening.map { [LetterRoute(id: $0.letterId)] } ?? [])"),
+                      "the archive opens on that letter")
+        XCTAssertTrue(archive.contains("openEarlier: { path.append(LetterRoute(id: $0.letterId)) }"), "and turns back in place")
+    }
+
     /// "Last week" only when the earlier letter is from the Sunday before;
     /// otherwise that letter's own Sunday (Android's previousLabel).
     func testLastWeekSaysSoOnlyForTheWeekBefore() {
