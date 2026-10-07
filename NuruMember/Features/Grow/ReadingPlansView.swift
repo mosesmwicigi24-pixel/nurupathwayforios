@@ -385,14 +385,14 @@ struct ReadingPlansView: View {
                 }
                 .frame(width: 48, height: 48)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0xE8CA6C))
                     Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     // Home's story about today (§9.2 #3): "Day 3 done today ·
                     // Day 4 next" once today's day is read, else "Today · " and
                     // the plan's own words — Android's planCardLine.
                     Text(PlanLines.cardLine(p, readToday: PlanLines.readToday(p, sealedHere: PlanDayLog.sealedToday())))
-                        .font(.inter(12)).foregroundStyle(.white.opacity(0.72))
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -400,7 +400,10 @@ struct ReadingPlansView: View {
             PlansPrimaryLabel(text: "Continue · Day \(day)")
         }
         .padding(16).frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+        // Plans' one navy next-step card, in Home's navy (owner, 2026-10-07:
+        // colour option A): the gradient, the gold kicker, the #B9C4D4 line.
+        .background(LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
