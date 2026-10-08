@@ -9,7 +9,9 @@ private let quickReactions = ["🙏", "❤️", "🕊️", "🙌", "✨"]
 final class PrayerWallDetailViewModel: ObservableObject {
     @Published var detail: PrayerWallDetail?
     @Published var loading = true
-    @Published var error: String?
+    /// Why the prayer didn't open — said by §4's state card (a removed
+    /// prayer is "This isn't here any more", with Go back).
+    @Published var failure: Error?
     @Published var draft = ""
     @Published var sending = false
     /// Why the last comment didn't send / the answered mark didn't save, in
@@ -21,9 +23,9 @@ final class PrayerWallDetailViewModel: ObservableObject {
     init(postId: String) { self.postId = postId }
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         do { detail = try await MemberAPI.prayerWallGet(postId) }
-        catch { self.error = NuruStateCopy.failure(error).sentence }   // §4, never raw server text
+        catch { failure = error }   // §4 speaks it, never raw server text
         loading = false
     }
 
@@ -75,20 +77,13 @@ struct PrayerWallDetailView: View {
                 content(d)
                 composer(d)
             } else {
-                Spacer()
-                VStack(spacing: Nuru.S.md) {
-                    Text(vm.error ?? "Couldn't open this request.")
-                        .font(.nBody).foregroundStyle(Nuru.muted)
-                        .multilineTextAlignment(.center).padding(.horizontal, Nuru.S.xl)
-                    Button { Task { await vm.load() } } label: {
-                        Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                            .padding(.horizontal, 18).padding(.vertical, 8)
-                            .background(Nuru.goldChipBg, in: Capsule())
-                            .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-                    }
-                    .buttonStyle(.pressable)
+                // §4's one state card (final walk C16): a removed prayer is
+                // "This isn't here any more" with Go back, not Try again.
+                ScrollView {
+                    NuruStateView(state: .failed(vm.failure.map { NuruStateCopy.failure($0) } ?? .notFound),
+                                  retry: { Task { await vm.load() } }, back: { dismiss() })
+                        .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.xl)
                 }
-                Spacer()
             }
         }
         .background(Nuru.coolPaper.ignoresSafeArea())

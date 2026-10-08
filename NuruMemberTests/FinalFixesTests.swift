@@ -872,6 +872,38 @@ final class FinalFixesTests: XCTestCase {
         XCTAssertTrue(statement.contains("NuruStateView(state: .empty(title: \"No gifts \\(periodLabel)\"))"))
     }
 
+    /// §8.1 rule 4: the state card's action is a secondary — white, a
+    /// hairline, navy words (Android's 8ff40e1) — on the card and the strip;
+    /// never the navy pill with gold words.
+    func testTheStateCardsActionIsASecondary() throws {
+        let state = try source("Features/Shared/StateLanguage.swift")
+        let card = try declarationBody("private var card: some View", in: state)
+        let strip = try declarationBody("private var strip: some View", in: state)
+        for (name, body) in [("card", card), ("strip", strip)] {
+            XCTAssertFalse(body.contains(".background(Nuru.navy, in: Capsule())"), "\(name): no navy pill")
+            XCTAssertFalse(body.contains("Text(action.label).font(.nCardCTA).foregroundStyle(Nuru.gold)"), name)
+            XCTAssertTrue(body.contains(".background(Nuru.white, in: Capsule())"), "\(name): white")
+            XCTAssertTrue(body.contains(".overlay(Capsule().stroke(Nuru.border, lineWidth: 1))"), "\(name): a hairline")
+            XCTAssertTrue(body.contains(".foregroundStyle(Nuru.navy)"), "\(name): navy words")
+        }
+    }
+
+    /// The last hand-made failure lines speak §4: a prayer or a discussion
+    /// that isn't there any more offers Go back, never Try again.
+    func testCommunityDetailFailuresAreTheStateCard() throws {
+        let removed = NuruStateCopy.failure(APIError.http(status: 404, code: "NOT_FOUND", message: "Post not found"),
+                                            deviceOnline: true)
+        XCTAssertEqual(removed, .notFound)
+        XCTAssertEqual(removed.action, .goBack, "a removed prayer: Go back — Try again would find nothing")
+        for rel in ["Features/Community/PrayerWallDetailView.swift", "Features/Community/DiscussionsView.swift"] {
+            let src = try source(rel)
+            XCTAssertFalse(src.contains("Text(\"Try again\")"), "\(rel): a hand-made Try again")
+            XCTAssertFalse(src.contains("var error: String?"), "\(rel): the failure is kept, not flattened to words")
+            XCTAssertTrue(src.contains("NuruStateView(state: .failed("), rel)
+            XCTAssertTrue(src.contains("back: { dismiss() }"), "\(rel): the way back for a removed one")
+        }
+    }
+
     func testGivesPrimarySitsBelowThePageNotOverIt() throws {
         let give = try source("Features/Give/GivingView.swift")
         XCTAssertTrue(give.contains("VStack(spacing: 0) {\n                ScrollView(showsIndicators: false) {"),

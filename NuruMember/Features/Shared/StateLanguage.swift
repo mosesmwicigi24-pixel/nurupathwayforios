@@ -210,10 +210,15 @@ struct NuruStateView: View {
                         .padding(.top, 6)
                 }
                 if let action {
+                    // §8.1 rule 4's secondary — white, a hairline, navy words
+                    // (final walk C16; Android's 8ff40e1). It was a navy pill
+                    // with gold words: navy is the church's voice and the
+                    // next step, and gold the one primary.
                     Button { Haptics.tap(); action.run() } label: {
-                        Text(action.label).font(.nCardCTA).foregroundStyle(Nuru.gold)
+                        Text(action.label).font(.nCardCTA).foregroundStyle(Nuru.navy)
                             .padding(.horizontal, 22).padding(.vertical, 11)
-                            .background(Nuru.navy, in: Capsule())
+                            .background(Nuru.white, in: Capsule())
+                            .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                     .padding(.top, 18)
@@ -243,10 +248,12 @@ struct NuruStateView: View {
             Spacer(minLength: 8)
             if let action {
                 Button { Haptics.tap(); action.run() } label: {
+                    // The same secondary as the card's (§8.1 rule 4).
                     Text(action.label)
-                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(Nuru.navy, in: Capsule())
+                        .background(Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
             }

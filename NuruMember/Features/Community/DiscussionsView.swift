@@ -15,7 +15,8 @@ final class DiscussionsViewModel: ObservableObject {
     /// Optimistic rows queued locally but not yet confirmed by the server.
     @Published var pending: [DiscussionThread] = []
     @Published var loading = true
-    @Published var error: String?
+    /// Why the read failed — said by §4's state card, never a hand-made line.
+    @Published var failure: Error?
 
     /// What the screen renders: queued posts on top, then the server's board
     /// (pinned first, newest next). Ids compare lowercased so the server echo
@@ -27,12 +28,12 @@ final class DiscussionsViewModel: ObservableObject {
 
     func load() async {
         loading = threads.isEmpty && pending.isEmpty
-        error = nil
+        failure = nil
         do {
             threads = try await MemberAPI.discussionThreads()
             prunePending()
         } catch {
-            self.error = NuruStateCopy.failureLine("Couldn't load your cell's board.", error)
+            failure = error   // §4's state card says it (a 422 in the server's own words)
         }
         loading = false
     }
@@ -88,8 +89,12 @@ struct DiscussionsView: View {
                         ForEach(0..<3, id: \.self) { i in
                             SkeletonThreadCard().gentleEntrance(delay: Double(i) * 0.08)
                         }
-                    } else if vm.board.isEmpty, let err = vm.error {
-                        errorState(err)
+                    } else if vm.board.isEmpty, let failure = vm.failure {
+                        // §4's one state card (final walk C16) — the board's
+                        // own line and pill were the last hand-made failure.
+                        NuruStateView(state: .failed(NuruStateCopy.failure(failure)),
+                                      retry: { Task { await vm.load() } }, back: { dismiss() })
+                            .padding(.top, Nuru.S.base)
                     } else if vm.board.isEmpty {
                         emptyState
                     } else {
@@ -188,21 +193,6 @@ struct DiscussionsView: View {
         }
         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
         .gentleEntrance()
-    }
-
-    /// Honest failure state — includes the server's 422 "Join a cell group…" case.
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: Nuru.S.sm) {
-            Text(message).font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-            Button { Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                    .padding(.horizontal, 18).padding(.vertical, 8)
-                    .background(Nuru.goldChipBg, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
     }
 }
 
@@ -357,7 +347,8 @@ final class DiscussionThreadViewModel: ObservableObject {
     /// Optimistic comments queued locally but not yet echoed by the server.
     @Published var pendingComments: [DiscussionComment] = []
     @Published var loading = true
-    @Published var error: String?
+    /// Why the read failed — said by §4's state card, never a hand-made line.
+    @Published var failure: Error?
     @Published var draft = ""
     @Published var sending = false
 
@@ -371,13 +362,13 @@ final class DiscussionThreadViewModel: ObservableObject {
 
     func load() async {
         loading = detail == nil
-        error = nil
+        failure = nil
         do {
             detail = try await MemberAPI.discussionThread(threadId)
             let landed = Set((detail?.comments ?? []).map { $0.commentId.lowercased() })
             pendingComments.removeAll { landed.contains($0.commentId.lowercased()) }
         } catch {
-            self.error = NuruStateCopy.failureLine("Couldn't open this discussion.", error)
+            failure = error   // §4's state card says it; a removed one offers Go back
         }
         loading = false
     }
@@ -433,20 +424,13 @@ struct DiscussionThreadView: View {
                 content(d)
                 if d.isLocked { lockedNotice } else { composer }
             } else {
-                Spacer()
-                VStack(spacing: Nuru.S.md) {
-                    Text(vm.error ?? "Couldn't open this discussion.")
-                        .font(.nBody).foregroundStyle(Nuru.muted)
-                        .multilineTextAlignment(.center).padding(.horizontal, Nuru.S.xl)
-                    Button { Task { await vm.load() } } label: {
-                        Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                            .padding(.horizontal, 18).padding(.vertical, 8)
-                            .background(Nuru.goldChipBg, in: Capsule())
-                            .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-                    }
-                    .buttonStyle(.pressable)
+                // §4's one state card (final walk C16): a removed discussion
+                // is "This isn't here any more" with Go back.
+                ScrollView {
+                    NuruStateView(state: .failed(vm.failure.map { NuruStateCopy.failure($0) } ?? .notFound),
+                                  retry: { Task { await vm.load() } }, back: { dismiss() })
+                        .padding(.horizontal, Nuru.S.screen).padding(.top, Nuru.S.xl)
                 }
-                Spacer()
             }
         }
         .background(Nuru.coolPaper.ignoresSafeArea())
