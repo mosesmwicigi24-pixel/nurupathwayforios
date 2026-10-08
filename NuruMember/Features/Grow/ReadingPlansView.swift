@@ -931,7 +931,7 @@ struct PlanDetailView: View {
                 Spacer()
                 saveButton
             }
-            .padding(.horizontal, 16).padding(.top, 60)
+            .padding(.horizontal, 16).padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         }
     }
 
@@ -1670,7 +1670,7 @@ struct PlanDayView: View {
             .padding(.top, 12)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 60)
+        .padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .topTrailing) {

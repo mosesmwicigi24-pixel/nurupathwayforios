@@ -122,7 +122,7 @@ struct NuruLiveTabView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, NuruSafeArea.top + 8).padding(.bottom, Nuru.S.lg)   // below the status band (rule 9)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {

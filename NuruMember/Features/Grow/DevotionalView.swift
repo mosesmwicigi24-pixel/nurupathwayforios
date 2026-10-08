@@ -118,7 +118,7 @@ struct DevotionalView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
