@@ -521,9 +521,11 @@ struct PLDetailDayRow: View {
             Spacer(minLength: 0)
             if isNext {
                 // "1 part left" once the day is begun, "Start" before (§7.4 #2).
-                Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(11, .bold)).foregroundStyle(PL.navy)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(PL.gold, in: Capsule())
+                // A navy compact pill — the page's one gold primary is its
+                // "Begin Day" button (§8.1 rule 4; Android, the same).
+                Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(11, .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(PL.navy, in: Capsule())
             } else if syncing {
                 Icon(.clock, size: 14, color: PL.goldDeep)
             } else if locked {

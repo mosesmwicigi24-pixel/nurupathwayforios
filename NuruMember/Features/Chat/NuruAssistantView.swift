@@ -172,9 +172,11 @@ struct NuruAssistantView: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text("Nuru").font(.fraunces(18, .semibold)).kerning(-0.2).foregroundStyle(.white)
-                    Text("AI").font(.inter(11, .bold)).kerning(0.98).foregroundStyle(NUR.navy)
+                    // A label pill is tinted, not filled (§8.1 rule 6) — the
+                    // same "AI" chip as Community's Quick help card.
+                    Text("AI").font(.inter(11, .bold)).kerning(0.98).foregroundStyle(Nuru.goldChipText)
                         .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(NUR.sendG, in: Capsule())
+                        .background(Nuru.goldChipBg, in: Capsule())
                 }
                 statusTicker
             }

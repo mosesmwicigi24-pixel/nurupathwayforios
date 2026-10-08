@@ -364,7 +364,9 @@ struct Avatar: View {
 
     var body: some View {
         ZStack {
-            Circle().fill(Nuru.tintBlue)
+            // The palette's gold tint with navy initials (§8.1; Android's
+            // avatar, the same) — it was a cool blue no other surface wears.
+            Circle().fill(Nuru.goldChipBg)
             if let url, let u = URL(string: url) {
                 CachedAsyncImage(url: u) { phase in
                     if let img = phase.image { img.resizable().scaledToFill() }
@@ -381,7 +383,7 @@ struct Avatar: View {
     private var initials: some View {
         Text(Self.initials(name))
             .font(.inter(NuruType.snap(size * 0.4), .semibold))
-            .foregroundStyle(Nuru.navyMid)
+            .foregroundStyle(Nuru.navy)
             // Letters drawn inside a fixed circle keep the everyday size: at
             // the largest text size "AT" spilled past the circle and was cut
             // (§9.6 #4). The name beside the photo carries the same words.

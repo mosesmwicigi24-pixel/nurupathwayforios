@@ -1430,7 +1430,7 @@ private struct StandingCard: View {
                 .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(minHeight: 44)
                 .background(Nuru.white, in: Capsule())
-                .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
+                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
         }
         .buttonStyle(.pressable)
     }
@@ -1921,7 +1921,7 @@ struct PledgeDetailView: View {
                     .foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 44)
                     .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.navy, lineWidth: 1.2))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
                 }
                 .buttonStyle(.pressable)
                 .disabled(startingPace || busy || !sync.isOnline)

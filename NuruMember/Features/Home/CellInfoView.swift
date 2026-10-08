@@ -4,8 +4,8 @@
 // rhythm, next gathering, roster faces, honest cell-wide turnout, level/focus,
 // and the leader-only shepherd's note. It deliberately does NOT touch
 // GET /home/featured-cell: that payload describes the congregation-wide
-// featured cell, not necessarily this member's. Navy rounded-bottom header
-// (no hero image), matching MentorView.
+// featured cell, not necessarily this member's. The one pushed-page header
+// (NuruPushedHeader, §8.1 rule 2).
 import SwiftUI
 
 @MainActor
@@ -97,6 +97,8 @@ struct CellInfoView: View {
                 }
                 .refreshable { await vm.load() }
             }
+            // The header runs under the status band and pads past it itself.
+            .ignoresSafeArea(edges: .top)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -181,38 +183,11 @@ struct CellInfoView: View {
             .nuruShimmer()
     }
 
-    // Navy header with rounded bottom, circular back button, gold overline, serif title.
+    // The one pushed-page header (§8.1 rule 2): back · kicker · title · one
+    // line, on paper — it was a navy band, and navy is the church's voice
+    // and the next step (Android, the same).
     private var header: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
-            Button { Haptics.tap(); dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.onNavy)
-                    .frame(width: 38, height: 38)
-                    .background(Nuru.navyDeep, in: Circle())
-            }
-            .buttonStyle(.pressable)
-
-            VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("YOUR CELL")
-                    .font(.inter(11, .bold)).tracking(1.4)
-                    .foregroundStyle(Nuru.gold)
-                Text(vm.name)
-                    .font(.fraunces(26, .semibold))
-                    .foregroundStyle(Nuru.white)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let f = vm.cell?.focus {
-                    Text(f).font(.nCaption).foregroundStyle(Nuru.onNavyFaint)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, Nuru.S.sm)
-        .padding(.bottom, Nuru.S.lg)
-        .background(
-            UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)
-                .fill(Nuru.navy)
-                .ignoresSafeArea(edges: .top)
-        )
+        NuruPushedHeader(kicker: "Your cell", title: vm.name, line: vm.cell?.focus)
     }
 
     // MARK: Leader / discipler

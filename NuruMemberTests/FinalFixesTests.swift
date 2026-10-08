@@ -904,6 +904,34 @@ final class FinalFixesTests: XCTestCase {
         }
     }
 
+    /// The last parity round (§8.1; Android, the same): label pills tinted,
+    /// avatars on the gold tint, one gold primary, hairline secondaries, a
+    /// navy compact pill, gold text actions, and the one pushed-page header.
+    func testTheLastParityRound() throws {
+        let avatar = try declarationBody("struct Avatar: View", in: try source("Features/Shared/Components.swift"))
+        XCTAssertTrue(avatar.contains("Circle().fill(Nuru.goldChipBg)"), "the avatar's tint is the palette's gold")
+        XCTAssertFalse(avatar.contains("tintBlue"))
+        XCTAssertTrue(avatar.contains(".foregroundStyle(Nuru.navy)"), "navy initials")
+        let assistant = try source("Features/Chat/NuruAssistantView.swift")
+        XCTAssertFalse(assistant.contains(".background(NUR.sendG, in: Capsule())"), "the AI chip is tinted, not filled")
+        XCTAssertTrue(assistant.contains("Text(\"AI\").font(.inter(11, .bold)).kerning(0.98).foregroundStyle(Nuru.goldChipText)"))
+        XCTAssertTrue(try source("Features/Community/PrayerWallView.swift").contains("PButton(title: \"Post to wall\", variant: .gold"))
+        for rel in ["Features/Give/PartnersView.swift", "Features/Give/PartnersStatementView.swift",
+                    "Features/Give/GivingReceiptView.swift", "Features/Give/GivingView.swift"] {
+            let src = try source(rel)
+            XCTAssertFalse(src.contains("stroke(Nuru.navy, lineWidth: 1.2)"), "\(rel): a heavy navy outline")
+            XCTAssertFalse(src.contains("stroke(Nuru.navy.opacity(0.35), lineWidth: 1.2)"), "\(rel): a heavy navy outline")
+        }
+        let cards = try source("Features/Grow/ReadingPlanCards.swift")
+        XCTAssertTrue(cards.contains("Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(11, .bold)).foregroundStyle(.white)"))
+        XCTAssertTrue(cards.contains(".background(PL.navy, in: Capsule())"), "the plan page's Start is a navy compact pill")
+        XCTAssertTrue(try source("Features/Events/EventsView.swift")
+            .contains("Text(\"See all\").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)"))
+        let cell = try source("Features/Home/CellInfoView.swift")
+        XCTAssertTrue(cell.contains("NuruPushedHeader(kicker: \"Your cell\", title: vm.name, line: vm.cell?.focus)"))
+        XCTAssertFalse(cell.contains(".fill(Nuru.navy)"), "no navy header band")
+    }
+
     func testGivesPrimarySitsBelowThePageNotOverIt() throws {
         let give = try source("Features/Give/GivingView.swift")
         XCTAssertTrue(give.contains("VStack(spacing: 0) {\n                ScrollView(showsIndicators: false) {"),

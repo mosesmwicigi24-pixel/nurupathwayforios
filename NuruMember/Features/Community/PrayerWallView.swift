@@ -292,15 +292,11 @@ private struct PrayerComposeSheet: View {
                         .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
                         .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
                     if let err { Text(err).font(.nCaption).foregroundStyle(Nuru.error) }
-                    Button { Task { await post() } } label: {
-                        Text(busy ? "Posting…" : "Post to wall")
-                            .font(.nHeading).foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, minHeight: 52)
-                            .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: Nuru.R.button))
+                    // The sheet's one gold primary (§8.1 rule 4) — it was a
+                    // navy block with white words.
+                    PButton(title: "Post to wall", variant: .gold, busy: busy, disabled: body_.trimmed.isEmpty) {
+                        Task { await post() }
                     }
-                    .buttonStyle(.pressable)
-                    .disabled(busy || body_.trimmed.isEmpty)
-                    .opacity(busy || body_.trimmed.isEmpty ? 0.5 : 1)
                     .animation(.easeInOut(duration: 0.2), value: busy || body_.trimmed.isEmpty)
                     .padding(.top, Nuru.S.base)
                 }

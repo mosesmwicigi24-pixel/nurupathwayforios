@@ -2712,7 +2712,7 @@ private struct ScheduleDetailSheet: View {
                 .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 44)
                 .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.navy.opacity(0.35), lineWidth: 1.2))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
         }
         .buttonStyle(.plain)
         .disabled(busy)

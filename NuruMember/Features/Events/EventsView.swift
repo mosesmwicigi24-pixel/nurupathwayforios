@@ -899,7 +899,8 @@ struct EventsView: View {
         .cardSurfaceEv()
     }
 
-    // Shared in-card rail header: gold overline + navy "See all" that navigates.
+    // Shared in-card rail header: gold overline + a gold "See all" — a text
+    // action is gold (§8.1 rule 4; Android's b070d87).
     private func railHeader(icon: Lucide, title: String, nav: EventsNav) -> some View {
         HStack {
             HStack(spacing: 6) {
@@ -908,7 +909,7 @@ struct EventsView: View {
             }
             Spacer()
             NavigationLink(value: nav) {
-                Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.navy)
+                Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
             }
             .buttonStyle(.plain)
         }

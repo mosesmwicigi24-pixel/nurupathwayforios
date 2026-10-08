@@ -453,7 +453,7 @@ struct GivingReceiptView: View {
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.navy.opacity(0.35), lineWidth: 1.2))
+                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
                 }
                 .buttonStyle(.pressable)
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
