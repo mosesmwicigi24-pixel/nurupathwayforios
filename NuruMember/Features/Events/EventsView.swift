@@ -88,10 +88,11 @@ enum EventsHeader {
         fromToday(events, now: now, timeZone: timeZone).isEmpty
     }
 
-    /// "Next: Sunday Service · Sun 5 Oct", else "Nothing planned this week".
+    /// "Next: Sunday Service · Sun 5 Oct", else "Nothing planned yet" — the
+    /// tab looks ahead from today, never by the week (owner, 2026-10-08).
     static func line(_ events: [CalendarOccurrence], now: Date, timeZone: TimeZone = GiveCalendar.nairobi) -> String {
         guard let next = fromToday(events, now: now, timeZone: timeZone).first, let start = parse(next.startAt) else {
-            return "Nothing planned this week"
+            return EventsWords.nothingPlanned
         }
         return "Next: \(next.title) · \(NuruDates.day(start, timeZone: timeZone))"
     }
@@ -231,9 +232,10 @@ final class EventsViewModel: ObservableObject {
         occurrences.filter { Ev.isLive($0.startAt, $0.endAt) }.count
     }
 
-    /// The week strip: today through the seventh day after — the same eight
-    /// days "N this week" counts (the walk's E21: the strip began two days
-    /// back and ran fourteen, so its week and the header's never agreed).
+    /// The strip: today through the seventh day after — the same eight days
+    /// the header's count counts (the walk's E21: the strip began two days
+    /// back and ran fourteen, so it and the header never agreed). It rolls
+    /// from today and is not a week (owner, 2026-10-08).
     var week: [WeekDay] {
         let letters = DateFormatter()
         letters.dateFormat = "EEEEE"
@@ -261,7 +263,7 @@ final class EventsViewModel: ObservableObject {
     /// (§6.5) — one calm card, and the calendar and check-in as two rows.
     var quiet: Bool { !loading && failure == nil && !hasSomethingToFilter }
     /// The header's one line (§6.2): "Next: «title» · EEE d MMM" or "Nothing
-    /// planned this week" once the calendar has answered — today's date
+    /// planned yet" once the calendar has answered — today's date
     /// until then (and when it could not answer: never a quiet week it can't see).
     var headerLine: String {
         if occurrences.isEmpty && (loading || failure != nil) { return headerSubline }
@@ -463,7 +465,9 @@ struct EventsView: View {
                 // No zero chips (§7.4 #9): "0 you're going" said nothing.
                 HStack(spacing: Nuru.S.sm) {
                     if vm.liveOccurrence != nil { livePulseChip }
-                    if vm.thisWeekCount > 0 { pulseChip("\(vm.thisWeekCount) this week", icon: .calendarDays) }
+                    // The strip's own days, never "this week" (owner,
+                    // 2026-10-08: Events' strip rolls from today).
+                    if vm.thisWeekCount > 0 { pulseChip(EventsWords.stripCount(vm.thisWeekCount), icon: .calendarDays) }
                     if vm.goingCount > 0 { pulseChip("\(vm.goingCount) you're going", icon: .check) }
                 }
             }
@@ -517,7 +521,7 @@ struct EventsView: View {
                 .buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
-            // The eight days fill the card — no scrolling to find this week.
+            // The eight days fill the card — no scrolling to find what is coming.
             // A bar: its words grow as far as eight cells have room and stop
             // ("1 / 0" at the largest size); a long press shows a day large.
             HStack(spacing: 4) {
@@ -560,7 +564,7 @@ struct EventsView: View {
             Icon(.calendarDays, size: 18, color: Nuru.gold)
                 .frame(width: 40, height: 40)
                 .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            Text("The calendar is quiet this week — gatherings the church posts appear here.")
+            Text(EventsWords.quiet)
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -1576,9 +1580,18 @@ extension View {
     }
 }
 
-/// The one "week" on Events (the walk's E21; §6's "this week"): today
-/// through the seventh day after — eight days, as Home's week counts on
-/// both apps. The strip and the header's "N this week" use the same days.
+/// Events' strip and its count: today and the seven days after (eight
+/// cells, as Home's week counts on both apps) — "the next seven days from
+/// today", in the owner's words. It rolls from today and is not a week
+/// (owner, 2026-10-08; §8.1 rule 8): its words never call it one. Android's
+/// eventsSoonPill, word for word.
+enum EventsWords {
+    static func stripCount(_ n: Int) -> String { "\(n) in the next \(EventsWeek.days - 1) days" }
+    static let nothingPlanned = "Nothing planned yet"
+    static let quiet = "The calendar is quiet for now — gatherings the church posts appear here."
+}
+
+/// The strip's days (the walk's E21): today through the seventh day after.
 enum EventsWeek {
     static let days = 8
 }

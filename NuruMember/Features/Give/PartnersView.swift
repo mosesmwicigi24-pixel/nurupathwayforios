@@ -1465,7 +1465,10 @@ private struct StandingCard: View {
             .background(Nuru.goldChipBg, in: Capsule())
             .accessibilityElement(children: .ignore)
             // The tier sentence lives here and nowhere on screen.
-            .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
+            // The tier's words are the server's — "will carry 3 disciples…"
+            // until the partner's money lands, then "carries…" (owner,
+            // 2026-10-08) — and nothing here says otherwise.
+            .accessibilityLabel("\(t.name). \(money(t.monthlyMinor, partnership.currency)) a month.")
         }
     }
 
@@ -1752,8 +1755,9 @@ struct PledgeDetailView: View {
         detail?.pledge ?? vm.partnership?.pledges.first { $0.pledgeId == pledgeId } ?? seed
     }
     /// What the office is checking toward it (final walk M1) — the single-
-    /// pledge read doesn't carry `pending_claim_minor`, so the list's copy
-    /// and this page's own claims say it too.
+    /// pledge read carries `pending_claim_minor` since pathway#516 (an older
+    /// server's didn't), so the list's copy and this page's own claims say
+    /// it too: whichever answered first, the page never leads with Pay.
     private func checkingMinor(_ p: Pledge) -> Int {
         PledgeChecking.minor(rows: [detail?.pledge, vm.partnership?.pledges.first { $0.pledgeId == pledgeId }, seed],
                              claims: claims, currency: p.currency)

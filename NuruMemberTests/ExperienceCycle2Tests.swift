@@ -536,12 +536,12 @@ final class ExperienceCycle2Tests: XCTestCase {
 
     func testNothingFromTodayOnIsAQuietWeek() throws {
         // Ada: nothing on the calendar.
-        XCTAssertEqual(EventsHeader.line([], now: now, timeZone: nairobi), "Nothing planned this week")
+        XCTAssertEqual(EventsHeader.line([], now: now, timeZone: nairobi), "Nothing planned yet")
         XCTAssertTrue(EventsHeader.isQuiet([], now: now, timeZone: nairobi))
         // The tab loads a week back: only past gatherings in range is still quiet.
         let lastSunday = try occurrence("occ-0", "Last Sunday", at: "2026-09-27T06:00:00.000Z")
         XCTAssertTrue(EventsHeader.isQuiet([lastSunday], now: now, timeZone: nairobi))
-        XCTAssertEqual(EventsHeader.line([lastSunday], now: now, timeZone: nairobi), "Nothing planned this week")
+        XCTAssertEqual(EventsHeader.line([lastSunday], now: now, timeZone: nairobi), "Nothing planned yet")
     }
 
     func testThePlansHeaderNamesThePlanBeingRead() throws {

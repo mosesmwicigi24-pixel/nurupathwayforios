@@ -350,7 +350,10 @@ struct PartnersStatementView: View {
             }
         case .toward(let toward, let per):
             let ofLine = "\(money(toward, currency)) of \(PartnerFormat.grouped(per / 100))"
-            heroTile("DISCIPLES CARRIED",
+            // Below the first disciple nothing is carried yet: the tile says
+            // what the money is toward — never "carried" beside the server's
+            // "will carry" (owner, 2026-10-08).
+            heroTile(PartnerTierWords.towardKicker,
                      a11y: "\(money(toward, currency)) of \(money(per, currency)) toward carrying one disciple through a level") {
                 GeometryReader { geo in
                     let f = Double(toward) / Double(per)
@@ -365,7 +368,7 @@ struct PartnersStatementView: View {
                 Text(ofLine).font(.inter(11, .semibold)).foregroundStyle(.white)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
-                tileCaption("toward carrying one disciple through a level")
+                tileCaption(PartnerTierWords.towardCaption)
             }
         }
     }
@@ -1146,4 +1149,18 @@ struct PendingPledgePaymentRow: View {
         default: return "Processing"
         }
     }
+}
+
+/// The statement's empty year, said once in §4's state (final walk C16):
+/// the state's title, never a bare line under PAYMENTS.
+enum PartnerStatementWords {
+    static func noPayments(_ year: Int) -> String { "No pledge payments in \(String(year))" }
+}
+
+/// The statement's words beside the tier (owner, 2026-10-08: the tier says
+/// "will carry" until the partner's money lands). Below the first disciple
+/// the tile names what the money is toward, not "carried".
+enum PartnerTierWords {
+    static let towardKicker = "TOWARD A DISCIPLE"
+    static let towardCaption = "through a level"
 }
