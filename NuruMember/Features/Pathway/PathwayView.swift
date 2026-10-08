@@ -146,7 +146,11 @@ final class PathwayViewModel: ObservableObject {
     /// "awaiting your discipler" banner; the next level stays locked while set.
     var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.isAwaitingReview } }
 
-    var levelsDone: Int { summary?.levels.filter(\.walked).count ?? 0 }
+    /// Map view's "LEVELS n/6": the levels the server calls completed — as
+    /// Android counts them. A level whose exam is passed and awaits the
+    /// leader isn't complete until the server says so; its card says
+    /// "Exam passed" in words.
+    var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }
     // Lessons, every count the member reads (§8.2 #4): the exam is a step.
     var doneModules: Int { summary?.levels.reduce(0) { $0 + min($1.lessonsDone, $1.lessonCount) } ?? 0 }
     var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.lessonCount } ?? 0 }
@@ -1669,9 +1673,10 @@ private struct PWLevelCard: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shakes = 0
 
-    /// Walked: ushered past, or its exam passed and awaiting the usher — an
-    /// awaiting level is the member's own, never "locked".
-    private var isCompleted: Bool { level.walked }
+    /// Completed as the server says it (Android's LevelCard): a level whose
+    /// exam is passed and awaits the leader is the member's own — the cross,
+    /// and "Exam passed" in its pill — not a tick, and never "locked".
+    private var isCompleted: Bool { level.status == .completed }
     private var isActive: Bool { level.status == .active }
     private var isLocked: Bool { level.status == .locked }
     private var subtitle: String { level.theme ?? level.description ?? PW.subtitle[level.levelNumber] ?? "" }
