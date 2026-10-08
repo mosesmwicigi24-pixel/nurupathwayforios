@@ -6,7 +6,8 @@ import SwiftUI
 struct AnnouncementsAllView: View {
     @State private var items: [MyAnnouncement] = []
     @State private var loading = true
-    @State private var failed = false
+    /// Why the list didn't load — said in §4's words, never a bare line.
+    @State private var failure: Error?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -16,15 +17,11 @@ struct AnnouncementsAllView: View {
         NuruPushedHeader(kicker: "Home", title: "Announcements", line: "From your church")
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
-                if loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
-                } else if items.isEmpty {
-                    VStack(spacing: 8) {
-                        Icon(.megaphone, size: 24, color: Nuru.gold)
-                        Text(failed ? "Couldn't load announcements — pull to try again." : "No announcements yet.")
-                            .font(.inter(14)).foregroundStyle(Nuru.ink)
-                    }
-                    .frame(maxWidth: .infinity).padding(.top, 60)
+                // Loading, empty and failed in §4's one state card (final
+                // walk C16's class) — the empty list was a bare line.
+                if let state = NuruState.resolve(loading: loading, isEmpty: items.isEmpty, failure: failure,
+                                                 empty: .empty(title: "No announcements yet")) {
+                    NuruStateView(state: state, retry: { Task { await load() } })
                 } else {
                     ForEach(items) { a in
                         NavigationLink(value: AppRoute.announcement(a.announcementId)) {
@@ -37,20 +34,21 @@ struct AnnouncementsAllView: View {
             .padding(.horizontal, 20).padding(.top, 12)
             .padding(.bottom, Nuru.tabBarSpace)
         }
-        .refreshable {
-            do { items = try await MemberAPI.myAnnouncements(); failed = false } catch { failed = true }
-        }
+        .refreshable { await load() }
         }
         .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .nuruEdgeSwipeBack()
-        .task {
-            do { items = try await MemberAPI.myAnnouncements(); failed = false }
-            catch { failed = true }
-            loading = false
-        }
+        .task { await load() }
+    }
+
+    /// A failed refresh keeps the list on screen; with nothing shown, §4 says why.
+    private func load() async {
+        do { items = try await MemberAPI.myAnnouncements(); failure = nil }
+        catch { failure = error }
+        loading = false
     }
 
     private func row(_ a: MyAnnouncement) -> some View {

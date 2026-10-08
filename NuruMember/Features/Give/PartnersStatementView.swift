@@ -711,9 +711,8 @@ struct PartnersStatementView: View {
         return VStack(alignment: .leading, spacing: 8) {
             eyebrow("PAYMENTS")
             if rows.isEmpty && pending.isEmpty {
-                Text("No pledge payments in \(String(s.year)).")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
-                    .partnerCard()
+                // The empty year in §4's state card (final walk C16) — not a bare line.
+                NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year)))
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     if !pending.isEmpty {

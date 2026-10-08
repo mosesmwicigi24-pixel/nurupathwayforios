@@ -508,8 +508,10 @@ struct GivingStatementView: View {
     @ViewBuilder
     private var historyList: some View {
         if listed.isEmpty {
-            Text("No gifts \(periodLabel).").font(.nBody).foregroundStyle(Nuru.muted)
-                .frame(maxWidth: .infinity).padding(.top, Nuru.S.lg)
+            // The empty period in §4's state card (final walk C16's class) —
+            // not a bare line under the header.
+            NuruStateView(state: .empty(title: "No gifts \(periodLabel)"))
+                .padding(.top, Nuru.S.sm)
         } else {
             ForEach(Array(vm.groups(of: listed).enumerated()), id: \.element.key) { idx, group in
                 VStack(alignment: .leading, spacing: 10) {

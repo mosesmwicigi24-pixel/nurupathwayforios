@@ -1204,8 +1204,8 @@ struct PartnersView: View {
                 Divider().overlay(Nuru.border)
             }
             if rows.isEmpty && pending.isEmpty {
-                Text("No pledge payments in \(String(s.year)).")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
+                // The empty year in §4's state (final walk C16) — not a bare line.
+                NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year)), compact: true)
             } else {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, pay in
                     StatementPaymentRow(payment: pay, title: paymentTitle(pay, s, p)) {

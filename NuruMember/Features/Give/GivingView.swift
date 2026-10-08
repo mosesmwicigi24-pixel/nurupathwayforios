@@ -503,6 +503,11 @@ struct GivingView: View {
         NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 Nuru.paper.ignoresSafeArea()
+                // The page above, its primary below — never over it (final
+                // walk C16): floating, the button hid half the fund cards in
+                // the first view ("A faithful portion" under it). The page now
+                // ends where the button's bar begins, at rest and scrolled.
+                VStack(spacing: 0) {
                 ScrollView(showsIndicators: false) {
                     VStack(alignment: .leading, spacing: 0) {
                     // At the accessibility sizes the band scrolls with the
@@ -552,12 +557,19 @@ struct GivingView: View {
                     }
                     .padding(.horizontal, Nuru.S.screen)
                     .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.tabBarSpace + 80)
+                    .padding(.bottom, Nuru.S.xl)
                     }
                     .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
                 }
                 .safeAreaInset(edge: .top, spacing: 0) { if !typeSize.isAccessibilitySize { headerBlock } }
+                // The page's edge, softened: what continues below fades into
+                // the bar rather than stopping on a hard line.
+                .overlay(alignment: .bottom) {
+                    LinearGradient(colors: [Nuru.paper.opacity(0), Nuru.paper], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 18).allowsHitTesting(false)
+                }
                 ctaBar
+                }
             }
             .ignoresSafeArea(edges: .top)
             .navigationBarBackButtonHidden(true)

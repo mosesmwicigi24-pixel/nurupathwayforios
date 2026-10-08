@@ -316,6 +316,15 @@ final class EventsViewModel: ObservableObject {
         return rows
     }
 
+    /// Search and the filters show over a tab with gatherings, or while one
+    /// is in use (so it can be cleared) — never over an empty day.
+    var showsSearchAndFilters: Bool {
+        Self.showsSearchAndFilters(segmentCount: count(segment), search: search, category: category)
+    }
+    nonisolated static func showsSearchAndFilters(segmentCount: Int, search: String, category: String) -> Bool {
+        segmentCount > 0 || !search.trimmingCharacters(in: .whitespaces).isEmpty || category != "All"
+    }
+
     func count(_ s: EventSegment) -> Int {
         switch s {
         case .today: return occurrences.filter { cal.isDate(Ev.date($0.startAt), inSameDayAs: selectedDay) }.count
@@ -408,8 +417,14 @@ struct EventsView: View {
                             // something to filter.
                             if vm.hasSomethingToFilter {
                                 segmentBar
-                                searchBar
-                                categoryChips
+                                // Search and the filters stand over something to
+                                // search (final walk C16): over an empty day they
+                                // offered nothing. A search or filter in use stays,
+                                // so the way back is there.
+                                if vm.showsSearchAndFilters {
+                                    searchBar
+                                    categoryChips
+                                }
                             }
                             gatherings
                         }
@@ -797,13 +812,20 @@ struct EventsView: View {
         } else if vm.list.isEmpty {
             emptyGatherings
         } else {
-            ForEach(vm.list) { occ in
-                NavigationLink(value: occ) {
-                    EventCardView(occ: occ,
-                                  rsvpStatus: vm.quickRsvps[occ.occurrenceId],
-                                  onRsvp: { await vm.quickRsvp(occ) })
+            // A series' later dates fold under its first card (final walk
+            // C16): one weekly service filled a screen per Sunday.
+            ForEach(EventsGrouping.grouped(vm.list)) { g in
+                VStack(spacing: Nuru.S.sm) {
+                    NavigationLink(value: g.first) {
+                        EventCardView(occ: g.first,
+                                      rsvpStatus: vm.quickRsvps[g.first.occurrenceId],
+                                      onRsvp: { await vm.quickRsvp(g.first) })
+                    }
+                    .buttonStyle(.pressableSubtle)
+                    if !g.more.isEmpty {
+                        EventMoreDates(dates: g.more, rsvps: vm.quickRsvps)
+                    }
                 }
-                .buttonStyle(.pressableSubtle)
             }
         }
     }
@@ -1605,4 +1627,92 @@ enum EventsWords {
 /// The strip's days (the walk's E21): today through the seventh day after.
 enum EventsWeek {
     static let days = 8
+}
+
+/// A gathering list with each series' later dates folded under its first
+/// (final walk C16; the C3 walk's E9): a weekly service filled about a
+/// screen per Sunday. Groups keep the order of their first date; inside a
+/// group the dates stay soonest-first. Pure — the list comes in sorted.
+enum EventsGrouping {
+    struct Group: Identifiable, Equatable {
+        let first: CalendarOccurrence
+        let more: [CalendarOccurrence]
+        var id: String { first.occurrenceId }
+    }
+
+    static func grouped(_ list: [CalendarOccurrence]) -> [Group] {
+        var order: [String] = []
+        var bySeries: [String: [CalendarOccurrence]] = [:]
+        for o in list {
+            if bySeries[o.seriesId] == nil { order.append(o.seriesId) }
+            bySeries[o.seriesId, default: []].append(o)
+        }
+        return order.compactMap { id in
+            guard let all = bySeries[id], let first = all.first else { return nil }
+            return Group(first: first, more: Array(all.dropFirst()))
+        }
+    }
+}
+
+/// A series' later dates, under its first card: one compact row each — the
+/// day, the time and how far off, the member's own answer, and the way in.
+struct EventMoreDates: View {
+    let dates: [CalendarOccurrence]
+    let rsvps: [String: String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("MORE DATES").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                .padding(.bottom, 4)
+            ForEach(Array(dates.enumerated()), id: \.element.id) { i, occ in
+                NavigationLink(value: occ) { row(occ) }
+                    .buttonStyle(.pressableSubtle)
+                if i < dates.count - 1 {
+                    Rectangle().fill(Nuru.border).frame(height: 1).padding(.leading, 52)
+                }
+            }
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private func row(_ occ: CalendarOccurrence) -> some View {
+        let when = [Ev.timeRange(occ.startAt, occ.endAt), Ev.dayCountdown(occ.startAt)].compactMap { $0 }.joined(separator: " · ")
+        return HStack(spacing: 12) {
+            VStack(spacing: 0) {
+                Text(Ev.weekday(occ.startAt, "EEE").uppercased())
+                    .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.goldChipText)
+                Text(Ev.weekday(occ.startAt, "d")).font(.fraunces(15, .semibold)).foregroundStyle(Nuru.navy)
+            }
+            .frame(width: 40, height: 40)
+            .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .nuruFixedFigure()
+            VStack(alignment: .leading, spacing: 2) {
+                Text(NuruDates.day(Ev.date(occ.startAt))).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(when).font(.nCardMeta).foregroundStyle(Nuru.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            if rsvps[occ.occurrenceId] == "going" {
+                HStack(spacing: 4) {
+                    Icon(.check, size: 14, color: Nuru.navy)
+                    Text("GOING").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 5)
+                .background(Nuru.goldGradient, in: Capsule())
+            } else if rsvps[occ.occurrenceId] == "maybe" {
+                Text("MAYBE").font(.inter(11, .bold)).kerning(1).foregroundStyle(Color(hex: 0x92400E))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Color(hex: 0xFEF3C7), in: Capsule())
+            }
+            Icon(.chevronRight, size: 14, color: Nuru.ink300)
+        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
 }
