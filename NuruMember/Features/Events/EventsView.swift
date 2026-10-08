@@ -514,7 +514,8 @@ struct EventsView: View {
                     Haptics.selection()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { vm.selectToday() }
                 } label: {
-                    Text("TODAY").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.navy)
+                    // A text action is gold (§8.1 rule 4) — as Android's TODAY.
+                    Text("TODAY").font(.inter(11, .bold)).kerning(1).foregroundStyle(Nuru.gold)
                         .padding(.vertical, 6).padding(.leading, 12)   // invisible tap-target growth
                         .contentShape(Rectangle())
                 }

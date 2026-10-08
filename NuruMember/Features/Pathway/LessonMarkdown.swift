@@ -306,6 +306,9 @@ struct MLMarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A link in a lesson or a notice is a text action — gold, as the
+        // reader's own links are (§8.1 rule 4); the root tint is navy (M5).
+        .tint(ML.goldDeep)
     }
 
     /// Space above a block, decided by what precedes it.

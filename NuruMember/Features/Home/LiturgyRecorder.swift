@@ -362,8 +362,11 @@ struct LiturgyRecordingsSheet: View {
                 } else if let loadError {
                     VStack(spacing: 8) {
                         Text(loadError).font(.inter(13)).foregroundStyle(.secondary)
+                        // A text action is gold text (§8.1 rule 4) — set here,
+                        // not left to the app's tint, which is navy chrome.
                         Button("Try again") { Task { await load() } }
                             .font(.inter(13, .semibold))
+                            .foregroundStyle(Nuru.gold)
                     }
                     .padding(24)
                 }
