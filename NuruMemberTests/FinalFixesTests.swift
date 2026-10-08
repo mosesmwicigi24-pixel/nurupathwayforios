@@ -490,9 +490,9 @@ final class FinalFixesTests: XCTestCase {
     }
 
     private func moduleJSON(_ id: String, seq: Int, _ status: String, completed: Bool = false,
-                            progress: Int = 0) -> [String: Any] {
+                            progress: Int = 0, kind: String = "none") -> [String: Any] {
         ["module_id": id, "level_number": 1, "module_sequence_number": seq, "title": "Module \(id)",
-         "summary": NSNull(), "estimated_minutes": 10, "evaluation_kind": "none", "quiz_pass_mark": 70,
+         "summary": NSNull(), "estimated_minutes": 10, "evaluation_kind": kind, "quiz_pass_mark": 70,
          "completed": completed, "status": status, "progress": completed ? 100 : progress, "locked": status == "locked"]
     }
 
@@ -533,5 +533,668 @@ final class FinalFixesTests: XCTestCase {
         XCTAssertFalse(wall.contains("Nuru.coolPaper.ignoresSafeArea()"), "warm paper, not the portal's #F7F9FC")
         XCTAssertFalse(wall.contains("Text(\"🙏\")"), "no emoji (rule 7)")
         XCTAssertTrue(wall.contains("NuruStateView(state: .empty(title: PrayerWallWords.emptyTitle"), "the one state card")
+    }
+
+    // MARK: The owner's decisions, 2026-10-08 (EXPERIENCE.md §9.7)
+
+    /// The body of the declaration that starts at `declaration` — brace-matched,
+    /// with strings and comments blanked so a bracket in words never counts.
+    private func declarationBody(_ declaration: String, in src: String) throws -> String {
+        guard let r = src.range(of: declaration) else {
+            XCTFail("not found: \(declaration)")
+            return ""
+        }
+        let raw = Array(src.utf8)
+        let s = TintScan.strip(raw)
+        var i = src.utf8.distance(from: src.startIndex, to: r.upperBound)
+        while i < s.count && s[i] != UInt8(ascii: "{") { i += 1 }
+        let e = TintScan.matchClose(s, i, UInt8(ascii: "{"), UInt8(ascii: "}"))
+        guard e > i else { XCTFail("no body: \(declaration)"); return "" }
+        return String(decoding: raw[i...e], as: UTF8.self)
+    }
+
+    /// D2: navy is the church's voice and each tab's next step — "Check in to a
+    /// service", "Quick help from Nuru" and Home's "Support God's work" are
+    /// paper cards with the §8.1 gold-tint tile, not navy fields.
+    func testOnlyTheChurchsVoiceAndTheNextStepAreNavy() throws {
+        let navyFields = ["colors: [Nuru.navy", "colors: [HomeFig.navy", ".background(Nuru.navy", "Nuru.navyCard", "Nuru.navyGradient"]
+        let cards: [(String, String, String)] = [
+            ("Features/Events/EventsView.swift", "private var attendanceLink: some View", ".background(Nuru.white"),
+            ("Features/Chat/ChatView.swift", "private var aiCard: some View", ".background(Nuru.white"),
+            ("Features/Home/HomeCards.swift", "struct HomeGiveCard: View", "Nuru.priorityBg"),
+        ]
+        for (rel, decl, paper) in cards {
+            let body = try declarationBody(decl, in: try source(rel))
+            for navy in navyFields { XCTAssertFalse(body.contains(navy), "\(decl): \(navy)") }
+            XCTAssertTrue(body.contains(paper), "\(decl) is a paper card")
+            XCTAssertTrue(body.contains("Nuru.tileTint") || body.contains("Nuru.goldChipBg"), "\(decl): the gold-tint tile")
+        }
+        // Home sets the quiet divider only between dark edges: the give card is light now.
+        XCTAssertEqual(HomeQuietDivider.edges(of: "give").top, .light)
+        XCTAssertEqual(HomeQuietDivider.edges(of: "give").bottom, .light)
+        XCTAssertEqual(HomeQuietDivider.edges(of: "letter").top, .dark, "the church's voice stays navy")
+    }
+
+    /// D1: the tier's words are the server's ("will carry …" until money lands,
+    /// then "carries …"); the app adds none that could contradict them.
+    func testTheTierSpeaksOnlyInTheServersWords() throws {
+        for rel in ["Features/Give/PartnersView.swift", "Features/Give/PartnersStatementView.swift",
+                    "Features/Give/PartnerInviteSheet.swift", "Features/Give/NewPledgeFlow.swift"] {
+            let words = literals(try source(rel)).map { $0.lowercased() }
+            XCTAssertEqual(words.filter { $0.contains("carries") || $0.contains("will carry") }, [],
+                           "\(rel) writes its own tier words")
+        }
+        XCTAssertEqual(PartnerTierWords.towardKicker, "TOWARD A DISCIPLE")
+        XCTAssertEqual(PartnerTierWords.towardCaption, "through a level")
+    }
+
+    /// D3: Events' strip rolls from today and never calls itself a week.
+    func testEventsStripNeverCallsItselfAWeek() throws {
+        XCTAssertEqual(EventsWords.stripCount(2), "2 in the next 7 days", "Android's eventsSoonPill, word for word")
+        XCTAssertEqual(EventsWeek.days, 8, "today and the seven days after")
+        XCTAssertEqual(EventsWords.nothingPlanned, "Nothing planned yet")
+        for words in [EventsWords.stripCount(3), EventsWords.nothingPlanned, EventsWords.quiet] {
+            XCTAssertFalse(words.lowercased().contains("week"), words)
+        }
+        // No string on the tab says "week" (the series' cadence parser reads the bare token;
+        // "weekday" and EventsWeek are code inside an interpolation).
+        let events = literals(try source("Features/Events/EventsView.swift"))
+        XCTAssertEqual(events.filter { $0 != "\"week\"" && $0.range(of: "\\bweek\\b", options: [.regularExpression, .caseInsensitive]) != nil }, [])
+    }
+
+    /// The string literals a source writes — comments left out (a comment may
+    /// quote the words it replaced).
+    private func literals(_ src: String) -> [String] {
+        let raw = Array(src.utf8), s = TintScan.strip(raw)
+        let quote = UInt8(ascii: "\""), newline = UInt8(ascii: "\n")
+        var out: [String] = [], i = 0
+        while i < s.count {
+            if s[i] == quote {
+                var j = i + 1
+                while j < s.count && s[j] != quote && s[j] != newline { j += 1 }
+                if j < s.count && s[j] == quote {
+                    out.append(String(decoding: raw[i...j], as: UTF8.self))
+                    i = j + 1
+                    continue
+                }
+            }
+            i += 1
+        }
+        return out
+    }
+
+    // MARK: M5's side effect — a text action is gold, never the tint's navy
+
+    /// §8.1 rule 4: a text action is gold text; navy is for chrome. Since M5 the
+    /// root tint is navy (menus, toolbars, the caret), so a text action left to
+    /// the tint reads navy. Every one colours its own words (TintScan).
+    func testNoTextActionReliesOnTheTint() throws {
+        var found: [TintScan.Finding] = []
+        let root = TypeScan.appRoot
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        XCTAssertGreaterThan(files.count, 100, "the scan reads the app")
+        for url in files {
+            let rel = String(url.path.dropFirst(root.path.count + 1))
+            found += TintScan.findings(file: rel, source: try String(contentsOf: url, encoding: .utf8))
+        }
+        XCTAssertEqual(found.map(\.description), [], "text actions left to the navy tint")
+    }
+
+    /// The scan itself: what it flags, and what it lets be.
+    func testTheTintScanFlagsAWordLeftToTheTint() {
+        func flags(_ code: String) -> Int { TintScan.findings(file: "Probe.swift", source: code).count }
+        XCTAssertEqual(flags("Button(\"See all\") { go() }"), 1, "a string title takes the tint")
+        XCTAssertEqual(flags("Button { go() } label: { Text(\"Try again\").font(.inter(12)) }"), 1)
+        XCTAssertEqual(flags("NavigationLink(value: r) { Text(\"View calendar\") }"), 1)
+        XCTAssertEqual(flags("ShareLink(item: url)"), 1, "the system's Share label")
+        XCTAssertEqual(flags("Button { go() } label: { Text(\"Try again\").foregroundStyle(Nuru.gold) }"), 0)
+        XCTAssertEqual(flags("Button(\"See all\") { go() }.foregroundStyle(Nuru.gold)"), 0)
+        XCTAssertEqual(flags("Button { go() } label: { HStack { Text(\"Give now\") }.foregroundStyle(Nuru.gold) }"), 0)
+        XCTAssertEqual(flags("Button { go() } label: { Text(\"Card\") }.buttonStyle(.pressable)"), 0, "a style that draws its own label")
+        XCTAssertEqual(flags("Button { go() } label: { Text(\"Card\") }.buttonStyle(.borderless)"), 1, "a tinting style is no style")
+        XCTAssertEqual(flags(".alert(\"Leave?\", isPresented: $b) { Button(\"Stay\") { } }"), 0, "an alert's answers are chrome")
+        XCTAssertEqual(flags("Menu { Button(\"Copy\") { } } label: { Icon(.more, size: 18, color: Nuru.navy) }"), 0)
+        XCTAssertEqual(flags(".toolbar { ToolbarItem { Button(\"Done\") { } } }"), 0)
+        XCTAssertEqual(flags("Button { go() } label: { Text(\"🙏\").font(.emoji(18)) }"), 0, "an emoji draws itself")
+    }
+
+    /// A link run inside text is a text action too: wherever a link run is
+    /// made, that view sets its tint (ScripturePassages, ChatThread, lessons).
+    func testALinkRunWearsItsOwnTint() throws {
+        let root = TypeScan.appRoot
+        let files = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
+        var makers: [String] = []
+        for url in files {
+            let src = try String(contentsOf: url, encoding: .utf8)
+            guard src.contains("].link = ") || src.contains("AttributedString(markdown:") else { continue }
+            makers.append(url.lastPathComponent)
+            XCTAssertTrue(src.contains(".tint("), "\(url.lastPathComponent) makes link runs without a tint")
+        }
+        XCTAssertGreaterThanOrEqual(makers.count, 3, "the scan finds the link makers: \(makers)")
+    }
+
+    // MARK: Map view — completed levels only (Eli reads the same on both apps)
+
+    @MainActor
+    func testMapViewCountsOnlyCompletedLevels() throws {
+        func level(_ n: Int, _ status: String, done: Int = 0, of total: Int = 0, awaiting: Bool = false) -> [String: Any] {
+            ["level_number": n, "title": "Level \(n)", "theme": NSNull(), "description": NSNull(),
+             "total_modules": total, "completed_modules": done, "lessons_total": total, "lessons_completed": done,
+             "minutes": 0, "status": status, "awaiting_review": awaiting, "exam_published": true, "exam_available": true]
+        }
+        let vm = PathwayViewModel()
+        // Eli: the exam passed, the leader still to usher — not complete yet.
+        vm.summary = try decode(PathwaySummary.self, ["current_level": 1, "levels": [
+            level(1, "active", done: 10, of: 10, awaiting: true), level(2, "locked"), level(3, "locked")]])
+        XCTAssertEqual(vm.levelsDone, 0, "a passed exam awaiting the leader isn't a completed level")
+        vm.summary = try decode(PathwaySummary.self, ["current_level": 2, "levels": [
+            level(1, "completed", done: 10, of: 10), level(2, "active"), level(3, "locked")]])
+        XCTAssertEqual(vm.levelsDone, 1)
+        let map = try source("Features/Pathway/PathwayView.swift")
+        XCTAssertTrue(map.contains("var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }"))
+    }
+
+    // MARK: M4's class — nothing guessed while a read is in flight
+
+    private func eliPathway(awaiting: Bool = false) throws -> PathwaySummary {
+        try decode(PathwaySummary.self, ["current_level": 1, "levels": [
+            ["level_number": 1, "title": "Foundations", "theme": NSNull(), "description": NSNull(),
+             "total_modules": 11, "completed_modules": awaiting ? 11 : 10, "lessons_total": 10, "lessons_completed": 10,
+             "minutes": 0, "status": "active", "awaiting_review": awaiting, "exam_published": true, "exam_available": true],
+            ["level_number": 2, "title": "Level 2", "theme": NSNull(), "description": NSNull(),
+             "total_modules": 0, "completed_modules": 0, "minutes": 0, "status": "locked",
+             "awaiting_review": false, "exam_published": false, "exam_available": false]]])
+    }
+
+    private func eliTrail(examPassed: Bool = false) throws -> [LevelModule] {
+        var rows = (1...10).map { moduleJSON("m\($0)", seq: $0, "completed", completed: true) }
+        rows.append(moduleJSON("exam", seq: 11, examPassed ? "completed" : "next", completed: examPassed, kind: "exit_exam"))
+        return try decode([LevelModule].self, rows)
+    }
+
+    /// Pathway's hero: the summary and its trail land together. Android found
+    /// "CONTINUE · Level 1 · Continue" for two seconds before "EXAM READY".
+    @MainActor
+    func testPathwayTellsNoStepUntilItsTrailAnswers() async throws {
+        let vm = PathwayViewModel()
+        let first = try eliPathway(), trail = try eliTrail()
+        await vm.load(pathway: { first }, trail: { _ in
+            // In flight: the page holds its skeleton — nothing is told.
+            XCTAssertTrue(vm.loading)
+            XCTAssertNil(vm.summary, "no summary on screen without its trail")
+            XCTAssertNil(vm.journey)
+            return trail
+        })
+        XCTAssertFalse(vm.loading)
+        XCTAssertEqual(vm.journey?.stage, .examReady)
+        XCTAssertEqual(vm.journey?.pill, "Exam ready")
+
+        // A refresh keeps the last pair on screen until the new pair is in.
+        let passed = try eliPathway(awaiting: true), passedTrail = try eliTrail(examPassed: true)
+        await vm.load(pathway: { passed }, trail: { _ in
+            XCTAssertEqual(vm.journey?.stage, .examReady, "the last pair, whole — never the new summary beside the old trail")
+            XCTAssertEqual(vm.summary?.levels.first?.isAwaitingReview, false)
+            return passedTrail
+        })
+        XCTAssertEqual(vm.journey?.stage, .awaitingUsher)
+        XCTAssertEqual(vm.journey?.pill, "Exam passed")
+
+        // A trail that fails reads as none: the journey speaks from the summary.
+        struct Down: Error {}
+        let again = PathwayViewModel()
+        await again.load(pathway: { first }, trail: { _ in throw Down() })
+        XCTAssertEqual(again.modulesByLevel[1]?.isEmpty, true)
+        XCTAssertEqual(again.journey?.stage, .examReady, "the summary alone, once the trail has answered")
+    }
+
+    /// Home: the journey is derived once, from this load's summary AND trail;
+    /// YOUR WEEK, the pill, the needs rail and the encouragement hold their
+    /// loading shapes until the first load has answered.
+    @MainActor
+    func testHomeHoldsItsLoadingShapesUntilItsReadsAnswer() throws {
+        XCTAssertFalse(HomeViewModel().loadedOnce, "nothing has answered before the first load")
+        let home = try source("Features/Home/HomeView.swift")
+        XCTAssertEqual(home.components(separatedBy: "self.journey = Journey.derive(").count - 1, 1,
+                       "one derivation — never from the summary alone")
+        try assertLandsAfterEveryRead("Features/Home/HomeView.swift", anchor: "func load(quiet: Bool = false) async {",
+                                      ["journey", "loadedOnce"])
+        XCTAssertTrue(home.contains("vm.loadedOnce ? AnyView(HomeWeekCard(rows: week) { openWeek($0) })\n                                        : AnyView(HomeWeekSkeleton())"))
+        XCTAssertTrue(home.contains("} else if !vm.loadedOnce {"), "the pill's loading shape")
+        XCTAssertTrue(home.contains("HomePillSkeleton()"))
+        XCTAssertTrue(home.contains("if vm.loadedOnce { s.append((\"encourage\""))
+    }
+
+    /// Every other tab: its reads all answer before any of them shows — a list
+    /// never paints with a neighbour's read still in flight (an RSVP shown as
+    /// "RSVP", "No badges yet", "A discipler has not yet been assigned").
+    func testEachTabsReadsLandTogether() throws {
+        try assertLandsAfterEveryRead("Features/Events/EventsView.swift", anchor: "async let rs = try? MemberAPI.myRsvps()",
+                                      ["occurrences", "series", "announcements", "quickRsvps", "segment"])
+        try assertLandsAfterEveryRead("Features/Give/GivingView.swift", anchor: "async let t = MemberAPI.givingStatements(year: year)",
+                                      ["history", "schedules", "methods", "serverYearTotals", "pledgeShapes", "loadFailure"])
+        try assertLandsAfterEveryRead("Features/Give/PartnersView.swift", anchor: "async let gifts = try? MemberAPI.schedules()",
+                                      ["partnership", "schedules"])
+        try assertLandsAfterEveryRead("Features/Grow/ReadingPlansView.swift", anchor: "async let promoList = try? MemberAPI.planPromos()",
+                                      ["plans", "todaySealed", "todayLine", "streak", "activeToday", "promos"])
+        try assertLandsAfterEveryRead("Features/Pathway/LevelDetailView.swift", anchor: "async let ach = try? MemberAPI.achievements()",
+                                      ["level", "journey", "modules", "encouragements", "mentor", "levelScore", "streak"])
+        try assertLandsAfterEveryRead("Features/Chat/ChatView.swift", anchor: "async let discipleshipReq",
+                                      ["inbox", "people", "connections", "incomingRequests", "outgoingRequests", "discipleship", "isPastor"])
+        try assertLandsAfterEveryRead("Features/Profile/ProfileView.swift", anchor: "async let pathway = try? await MemberAPI.pathway()",
+                                      ["badges", "certs", "scores", "serving", "journey", "extrasAnswered"])
+        let profile = try source("Features/Profile/ProfileView.swift")
+        XCTAssertTrue(profile.contains("journey = Journey.derive(summary, trail: trail)"), "You tells the journey with its trail")
+        XCTAssertEqual(profile.components(separatedBy: "if !extrasAnswered {").count - 1, 2, "badges and certificates wait")
+    }
+
+    /// In the function holding `anchor`, every assignment to `properties`
+    /// comes after the function's last `await`: the reads answer first.
+    private func assertLandsAfterEveryRead(_ rel: String, anchor: String, _ properties: [String],
+                                           file: StaticString = #filePath, line: UInt = #line) throws {
+        let src = try source(rel)
+        guard let a = src.range(of: anchor) else { return XCTFail("\(rel): \(anchor) not found", file: file, line: line) }
+        let s = TintScan.strip(Array(src.utf8))
+        let start = src.utf8.distance(from: src.startIndex, to: a.upperBound)
+        var depth = 0, end = start
+        while end < s.count {
+            if s[end] == UInt8(ascii: "{") { depth += 1 }
+            if s[end] == UInt8(ascii: "}") { if depth == 0 { break }; depth -= 1 }
+            end += 1
+        }
+        let body = String(decoding: s[start..<end], as: UTF8.self)
+        let ns = body as NSString
+        let lastAwait = try NSRegularExpression(pattern: "\\bawait\\b").matches(in: body, range: NSRange(location: 0, length: ns.length))
+            .last?.range.location ?? -1
+        for p in properties {
+            let rx = try NSRegularExpression(pattern: "(?<![A-Za-z0-9_.])(?<!let )(?<!var )(?:self\\.)?\(p) = ")
+            let sets = rx.matches(in: body, range: NSRange(location: 0, length: ns.length))
+            XCTAssertFalse(sets.isEmpty, "\(rel): \(p) is never set here", file: file, line: line)
+            for m in sets {
+                XCTAssertGreaterThan(m.range.location, lastAwait,
+                                     "\(rel): \(p) is shown before every read has answered", file: file, line: line)
+            }
+        }
+    }
+
+    // MARK: C7 — nothing touches the status band (rule 9)
+
+    /// A page whose content runs under the status band (its scroll or its
+    /// header ignores the top safe area) pads its header by the band's own
+    /// height — NuruSafeArea.top + 8 — never a fixed 60, which sat 2 pt under
+    /// a 62 pt band. Checked on the simulator, 2026-10-08.
+    func testNoHeaderSitsUnderTheStatusBand() throws {
+        for rel in ["Features/Grow/DevotionalView.swift", "Features/Departments/DepartmentDetailView.swift",
+                    "Features/Live/NuruLiveTabView.swift", "Features/Give/NewPledgeFlow.swift"] {
+            XCTAssertTrue(try source(rel).contains(".padding(.top, NuruSafeArea.top + 8)"), rel)
+        }
+        let plans = try source("Features/Grow/ReadingPlansView.swift")
+        XCTAssertEqual(plans.components(separatedBy: ".padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)").count - 1, 2,
+                       "a plan's page and its day, over their photographs")
+        // Every fixed top inset left in the 50–61 pt range sits BELOW the band:
+        // its page keeps the top safe area, so the inset is measured from the
+        // band's foot (the giving statement's header stands at 116 pt, the
+        // Prayer Room's at 122 pt — seen on the simulator). A new one is
+        // checked the same way and listed here.
+        let belowTheBand = ["Features/Chat/ChatThreadView.swift": 1, "Features/Community/PrayerWallView.swift": 1,
+                            "Features/Community/PrayerWallDetailView.swift": 1, "Features/Community/DiscussionsView.swift": 2,
+                            "Features/Give/GivingStatementView.swift": 1, "Features/Grow/MemoryVerseView.swift": 1,
+                            "Features/Grow/PrayerJournalView.swift": 1, "Features/Discipleship/DiscipleshipHubView.swift": 1,
+                            "Features/Discipleship/DisciplerDossierView.swift": 1, "Features/Discipleship/DisciplerRosterView.swift": 1,
+                            "Features/Profile/MentorView.swift": 1, "Features/Grow/VerseLibraryView.swift": 1,
+                            "Features/Pathway/YourWalkView.swift": 1,
+                            "Features/Give/PartnersView.swift": 1,   // the spinner under Partners' own header
+                            "Features/Live/LiveChatSheet.swift": 1]  // inside a sheet, below its grabber
+        let rx = try NSRegularExpression(pattern: "\\.padding\\(\\.top, (5[0-9]|6[01])\\)")
+        var found: [String: Int] = [:]
+        let root = TypeScan.appRoot
+        for url in FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+            .compactMap({ $0 as? URL }).filter({ $0.pathExtension == "swift" }) ?? [] {
+            let src = try String(contentsOf: url, encoding: .utf8)
+            let n = rx.numberOfMatches(in: src, range: NSRange(src.startIndex..., in: src))
+            if n > 0 { found[String(url.path.dropFirst(root.path.count + 1)), default: 0] += n }
+        }
+        XCTAssertEqual(found, belowTheBand)
+    }
+
+    // MARK: C16 — the last of the grammar
+
+    func testAnEmptyYearIsTheStateCardNotABareLine() throws {
+        XCTAssertEqual(PartnerStatementWords.noPayments(2026), "No pledge payments in 2026")
+        for rel in ["Features/Give/PartnersView.swift", "Features/Give/PartnersStatementView.swift"] {
+            let src = try source(rel)
+            XCTAssertFalse(src.contains("Text(\"No pledge payments in"), "\(rel): a bare line")
+            XCTAssertTrue(src.contains("NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year))"), rel)
+        }
+        let statement = try source("Features/Give/GivingStatementView.swift")
+        XCTAssertFalse(statement.contains("Text(\"No gifts \\(periodLabel).\")"), "Give's statement: a bare line")
+        XCTAssertTrue(statement.contains("NuruStateView(state: .empty(title: \"No gifts \\(periodLabel)\"))"))
+    }
+
+    func testGivesPrimarySitsBelowThePageNotOverIt() throws {
+        let give = try source("Features/Give/GivingView.swift")
+        XCTAssertTrue(give.contains("VStack(spacing: 0) {\n                ScrollView(showsIndicators: false) {"),
+                      "the page, then its bar — the button never covers a fund card")
+        XCTAssertFalse(give.contains(".padding(.bottom, Nuru.tabBarSpace + 80)"), "no room left under a floating bar")
+    }
+
+    func testEventsOffersSearchOnlyOverSomethingToSearch() {
+        XCTAssertFalse(EventsViewModel.showsSearchAndFilters(segmentCount: 0, search: "", category: "All"), "an empty day")
+        XCTAssertTrue(EventsViewModel.showsSearchAndFilters(segmentCount: 3, search: "", category: "All"))
+        XCTAssertTrue(EventsViewModel.showsSearchAndFilters(segmentCount: 0, search: "youth", category: "All"),
+                      "a search in use stays, so it can be cleared")
+        XCTAssertTrue(EventsViewModel.showsSearchAndFilters(segmentCount: 0, search: "", category: "Worship"))
+        XCTAssertFalse(EventsViewModel.showsSearchAndFilters(segmentCount: 0, search: "  ", category: "All"))
+    }
+
+    func testAWeeklyServiceIsOneCardWithItsDatesBeneath() throws {
+        func occ(_ id: String, series: String, _ start: String) -> [String: Any] {
+            ["occurrence_id": id, "series_id": series, "title": series, "start_at": start, "end_at": start, "going": 0]
+        }
+        let list = try decode([CalendarOccurrence].self, [
+            occ("s11", series: "sunday", "2026-10-11T06:00:00Z"), occ("y14", series: "youth", "2026-10-14T15:00:00Z"),
+            occ("s18", series: "sunday", "2026-10-18T06:00:00Z"), occ("s25", series: "sunday", "2026-10-25T06:00:00Z")])
+        let groups = EventsGrouping.grouped(list)
+        XCTAssertEqual(groups.map(\.first.occurrenceId), ["s11", "y14"], "each series once, by its first date")
+        XCTAssertEqual(groups[0].more.map(\.occurrenceId), ["s18", "s25"], "the later Sundays, soonest first")
+        XCTAssertEqual(groups[1].more, [])
+        XCTAssertEqual(EventsGrouping.grouped([]), [])
+    }
+}
+
+// MARK: - The text-action scan (§8.1 rule 4; final walk M5's side effect)
+
+/// A text action — a Button, NavigationLink, Link, ShareLink or PhotosPicker
+/// whose label is words (a string title, the system's label, or a Text or
+/// Label in its label) — colours its words itself: on the action, on the
+/// words, or on a container around them; or it wears a button style that
+/// draws its own label. The root tint is navy since M5 (menus, toolbars, the
+/// caret), so words left to the tint read navy where rule 4 says gold.
+/// Chrome — alerts, dialogs, menus, toolbars, swipe actions — takes the tint
+/// by design and is let be. (A label drawn by a view of its own is read
+/// where that view is written, not here.)
+enum TintScan {
+    struct Finding: CustomStringConvertible {
+        let file: String
+        let line: Int
+        let what: String
+        var description: String { "\(file):\(line): \(what)" }
+    }
+
+    static let chrome: Set<String> = ["alert", "confirmationDialog", "Menu", "contextMenu", "toolbar",
+                                      "ToolbarItem", "ToolbarItemGroup", "swipeActions"]
+    static let tintingStyles = [".buttonStyle(.borderless)", ".buttonStyle(.automatic)",
+                                ".buttonStyle(.bordered)", ".buttonStyle(.borderedProminent)"]
+    /// Words that are chrome by the way they are shown: a context menu's
+    /// items, built apart from the `.contextMenu { menu }` that shows them.
+    static let chromeDeclarations: [(file: String, declaration: String)] = [
+        ("Features/Chat/ChatThreadView.swift", "@ViewBuilder private var menu: some View"),
+    ]
+
+    private static let space = UInt8(ascii: " "), tab = UInt8(ascii: "\t"), newline = UInt8(ascii: "\n")
+    private static let ret = UInt8(ascii: "\r"), quote = UInt8(ascii: "\""), slash = UInt8(ascii: "/")
+    private static let star = UInt8(ascii: "*"), backslash = UInt8(ascii: "\\"), colon = UInt8(ascii: ":")
+    private static let dot = UInt8(ascii: ".")
+    static let lp = UInt8(ascii: "("), rp = UInt8(ascii: ")"), lb = UInt8(ascii: "{"), rb = UInt8(ascii: "}")
+
+    static func isSpace(_ b: UInt8) -> Bool { b == space || b == tab || b == newline || b == ret }
+    static func isIdent(_ b: UInt8) -> Bool {
+        (b >= 65 && b <= 90) || (b >= 97 && b <= 122) || (b >= 48 && b <= 57) || b == 95
+    }
+
+    /// The source with every string literal's contents and every comment
+    /// blanked byte for byte (a bracket in words never counts), and ASCII
+    /// only, so one byte is one character.
+    static func strip(_ raw: [UInt8]) -> [UInt8] {
+        var out = raw
+        let n = raw.count
+        func at(_ i: Int, _ seq: [UInt8]) -> Bool { i + seq.count <= n && Array(raw[i..<(i + seq.count)]) == seq }
+        let triple: [UInt8] = [quote, quote, quote]
+        var i = 0
+        while i < n {
+            if at(i, triple) {
+                var j = i + 3
+                while j < n && !at(j, triple) { j += 1 }
+                for k in (i + 3)..<min(j, n) where raw[k] != newline { out[k] = space }
+                i = j + 3
+                continue
+            }
+            if raw[i] == quote {
+                var j = i + 1
+                while j < n && raw[j] != quote && raw[j] != newline {
+                    if raw[j] == backslash { j += 2; continue }
+                    j += 1
+                }
+                for k in (i + 1)..<min(max(j, i + 1), n) { out[k] = space }
+                i = j + 1
+                continue
+            }
+            if raw[i] == slash && i + 1 < n && raw[i + 1] == slash {
+                var j = i
+                while j < n && raw[j] != newline { out[j] = space; j += 1 }
+                i = j
+                continue
+            }
+            if raw[i] == slash && i + 1 < n && raw[i + 1] == star {
+                var j = i
+                while j < n && !(raw[j] == star && j + 1 < n && raw[j + 1] == slash) {
+                    if raw[j] != newline { out[j] = space }
+                    j += 1
+                }
+                if j < n { out[j] = space }
+                if j + 1 < n { out[j + 1] = space }
+                i = j + 2
+                continue
+            }
+            i += 1
+        }
+        for k in 0..<n where out[k] >= 0x80 { out[k] = space }
+        return out
+    }
+
+    static func matchClose(_ s: [UInt8], _ i: Int, _ o: UInt8, _ c: UInt8) -> Int {
+        var d = 0, j = i
+        while j < s.count {
+            if s[j] == o { d += 1 } else if s[j] == c { d -= 1; if d == 0 { return j } }
+            j += 1
+        }
+        return -1
+    }
+
+    static func matchOpen(_ s: [UInt8], _ i: Int, _ o: UInt8, _ c: UInt8) -> Int {
+        var d = 0, j = i
+        while j >= 0 {
+            if s[j] == c { d += 1 } else if s[j] == o { d -= 1; if d == 0 { return j } }
+            j -= 1
+        }
+        return -1
+    }
+
+    private static func text(_ s: [UInt8], _ a: Int, _ b: Int) -> String {
+        guard a < b else { return "" }
+        return String(decoding: s[max(0, a)..<min(b, s.count)], as: UTF8.self)
+    }
+
+    /// The name of the call a `{` closure belongs to: `.alert(…) {` → alert,
+    /// `Menu {` → Menu, a `label: {` → the call before it.
+    static func ownerName(_ s: [UInt8], _ brace: Int) -> String {
+        var j = brace - 1
+        while j >= 0 && isSpace(s[j]) { j -= 1 }
+        if j >= 0 && s[j] == colon {
+            var k = j - 1
+            while k >= 0 && isIdent(s[k]) { k -= 1 }
+            if k < j - 1 {
+                j = k
+                while j >= 0 && isSpace(s[j]) { j -= 1 }
+                if j >= 0 && s[j] == rb {
+                    let o = matchOpen(s, j, lb, rb)
+                    if o >= 0 { return ownerName(s, o) }
+                }
+            }
+        }
+        if j >= 0 && s[j] == rp {
+            let o = matchOpen(s, j, lp, rp)
+            j = o - 1
+            while j >= 0 && isSpace(s[j]) { j -= 1 }
+        }
+        var k = j
+        while k >= 0 && isIdent(s[k]) { k -= 1 }
+        return text(s, k + 1, j + 1)
+    }
+
+    /// Where the modifier chain starting at `j` ends: ".a(…) .b { … } …".
+    static func modifiersEnd(_ s: [UInt8], _ from: Int) -> Int {
+        var j = from
+        while true {
+            var t = j
+            while t < s.count && isSpace(s[t]) { t += 1 }
+            guard t < s.count, s[t] == dot, t + 1 < s.count, isIdent(s[t + 1]) else { break }
+            var u = t + 1
+            while u < s.count && isIdent(s[u]) { u += 1 }
+            if u < s.count && s[u] == lp { u = matchClose(s, u, lp, rp) + 1 }
+            var v = u
+            while v < s.count && (s[v] == space || s[v] == tab) { v += 1 }
+            if v < s.count && s[v] == lb { u = matchClose(s, v, lb, rb) + 1 }
+            guard u > t else { break }
+            j = u
+        }
+        return j
+    }
+
+    static func ownStyle(_ mods: String) -> Bool {
+        mods.contains(".buttonStyle(") && !tintingStyles.contains { mods.contains($0) }
+    }
+    static func colored(_ mods: String) -> Bool {
+        mods.contains(".foregroundStyle(") || mods.contains(".foregroundColor(") || mods.contains(".tint(")
+    }
+
+    /// Whether a container around `pos` (out to `stop`) draws its own label or colours its words.
+    static func enclosing(_ s: [UInt8], _ pos: Int, _ stop: Int) -> (styled: Bool, colored: Bool) {
+        var d = 0, styled = false, col = false
+        var j = pos - 1
+        while j >= stop {
+            if s[j] == rb { d += 1 } else if s[j] == lb {
+                if d == 0 {
+                    let e = matchClose(s, j, lb, rb)
+                    if e > 0 {
+                        let mods = text(s, e + 1, modifiersEnd(s, e + 1))
+                        if ownStyle(mods) { styled = true }
+                        if colored(mods) { col = true }
+                    }
+                } else { d -= 1 }
+            }
+            j -= 1
+        }
+        return (styled, col)
+    }
+
+    static func findings(file: String, source: String) -> [Finding] {
+        let raw = Array(source.utf8)
+        let s = strip(raw)
+        let str = String(decoding: s, as: UTF8.self)
+        let ns = str as NSString
+        // Chrome by the way it is shown (a context menu built apart).
+        var skip: [Range<Int>] = []
+        for c in chromeDeclarations where c.file == file {
+            if let r = source.range(of: c.declaration) {
+                var i = source.utf8.distance(from: source.startIndex, to: r.upperBound)
+                while i < s.count && s[i] != lb { i += 1 }
+                let e = matchClose(s, i, lb, rb)
+                if e > i { skip.append(i..<e) }
+            }
+        }
+        guard let sites = try? NSRegularExpression(pattern: "(?<![A-Za-z0-9_.])(Button|NavigationLink|Link|ShareLink|PhotosPicker)\\s*[({]"),
+              let words = try? NSRegularExpression(pattern: "(?<![A-Za-z0-9_.])(Text|Label)\\s*\\("),
+              let stringFirst = try? NSRegularExpression(pattern: "^\\(\\s*\""),
+              let identFirst = try? NSRegularExpression(pattern: "^\\(\\s*[A-Za-z_][A-Za-z0-9_.]*\\s*[,)]")
+        else { return [] }
+        var out: [Finding] = []
+        for m in sites.matches(in: str, range: NSRange(location: 0, length: ns.length)) {
+            let start = m.range.location
+            if skip.contains(where: { $0.contains(start) }) { continue }
+            let kind = ns.substring(with: m.range(at: 1))
+            var j = start + kind.utf8.count
+            while j < s.count && (s[j] == space || s[j] == tab) { j += 1 }
+            var args = ""
+            if j < s.count && s[j] == lp {
+                let e = matchClose(s, j, lp, rp)
+                guard e > j else { continue }
+                args = text(s, j, e + 1)
+                j = e + 1
+            }
+            // Its closures: `{ … }` and `label: { … }`, in order.
+            var closures: [(name: String, open: Int, close: Int)] = []
+            while true {
+                var t = j
+                while t < s.count && isSpace(s[t]) { t += 1 }
+                if t < s.count && s[t] == lb {
+                    let e = matchClose(s, t, lb, rb)
+                    guard e > t else { break }
+                    closures.append(("", t, e)); j = e + 1
+                    continue
+                }
+                var u = t
+                while u < s.count && isIdent(s[u]) { u += 1 }
+                if u > t, u < s.count, s[u] == colon {
+                    var v = u + 1
+                    while v < s.count && isSpace(s[v]) { v += 1 }
+                    if v < s.count && s[v] == lb {
+                        let e = matchClose(s, v, lb, rb)
+                        guard e > v else { break }
+                        closures.append((text(s, t, u), v, e)); j = e + 1
+                        continue
+                    }
+                }
+                break
+            }
+            let mods = text(s, j, modifiersEnd(s, j))
+            // Chrome, by its owners.
+            var owners: [String] = []
+            var d = 0, q = start - 1
+            while q >= 0 {
+                if s[q] == rb { d += 1 } else if s[q] == lb { if d == 0 { owners.append(ownerName(s, q)) } else { d -= 1 } }
+                q -= 1
+            }
+            if owners.contains(where: { chrome.contains($0) }) { continue }
+            if ownStyle(mods) || colored(mods) { continue }
+            let around = enclosing(s, start, 0)
+            if around.styled { continue }
+
+            let argRange = NSRange(location: 0, length: (args as NSString).length)
+            var stringLabel = stringFirst.firstMatch(in: args, range: argRange) != nil
+            if kind == "Button", identFirst.firstMatch(in: args, range: argRange) != nil { stringLabel = true }
+            var label: (open: Int, close: Int)?
+            if kind == "Button" {
+                if let l = closures.first(where: { $0.name == "label" }) { label = (l.open, l.close) }
+                else if args.contains("action:"), let f = closures.first { label = (f.open, f.close) }
+            } else if let l = closures.last {
+                label = (l.open, l.close)
+            }
+            let line = raw[0..<start].filter { $0 == newline }.count + 1
+            if label == nil {
+                if stringLabel {
+                    if !around.colored { out.append(Finding(file: file, line: line, what: "\(kind)'s title is left to the tint")) }
+                } else if kind == "ShareLink" || kind == "PhotosPicker" {
+                    if !around.colored { out.append(Finding(file: file, line: line, what: "\(kind)'s system label is left to the tint")) }
+                }
+                continue
+            }
+            guard let l = label else { continue }
+            let inside = NSRange(location: l.open, length: l.close - l.open)
+            for w in words.matches(in: str, range: inside) {
+                let ts = w.range.location
+                var tp = ts + ns.substring(with: w.range(at: 1)).utf8.count
+                while tp < s.count && (s[tp] == space || s[tp] == tab) { tp += 1 }
+                let te = matchClose(s, tp, lp, rp)
+                guard te > tp else { continue }
+                let tmods = text(s, te + 1, modifiersEnd(s, te + 1))
+                if colored(tmods) || tmods.contains(".font(.emoji(") { continue }
+                if around.colored || enclosing(s, ts, l.open).colored { continue }
+                let wline = raw[0..<ts].filter { $0 == newline }.count + 1
+                out.append(Finding(file: file, line: wline, what: "\(kind)'s words are left to the tint"))
+            }
+        }
+        return out
     }
 }
