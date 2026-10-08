@@ -16,7 +16,7 @@ final class DisciplerRosterViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { roster = try await MemberAPI.disciples() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your disciples." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your disciples.", error) }
         loading = false
     }
 }
@@ -118,7 +118,7 @@ struct DisciplerRosterView: View {
                         .font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
                         .lineLimit(1)
                     Spacer(minLength: Nuru.S.sm)
-                    Icon(.chevronRight, size: 15, color: Nuru.ink300)
+                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
                 }
                 Text(row.cellName.map { "Level \(row.currentLevel) · \($0)" } ?? "Level \(row.currentLevel)")
                     .font(.nCardMeta).foregroundStyle(Nuru.muted)
@@ -157,7 +157,7 @@ struct DisciplerRosterView: View {
     private func bandPill(_ band: String) -> some View {
         let color = Nuru.bandColor(band)
         return Text(Self.bandLabel(band))
-            .font(.inter(10, .bold)).foregroundStyle(color)
+            .font(.inter(11, .bold)).foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
@@ -166,9 +166,9 @@ struct DisciplerRosterView: View {
     /// Gold "Usher · L{n}" — a level advancement is waiting on THIS leader.
     private func usherPill(_ level: Int) -> some View {
         HStack(spacing: 3) {
-            Icon(.sparkles, size: 9, color: Color(hex: 0x8A6D18))
+            Icon(.sparkles, size: 14, color: Color(hex: 0x8A6D18))
             Text("Usher · L\(level)")
-                .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
+                .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(Nuru.goldTint.opacity(0.7), in: Capsule())
@@ -178,7 +178,7 @@ struct DisciplerRosterView: View {
     /// "{n} reflections" (or "1 reflection") awaiting review.
     private func reflectionsChip(_ n: Int) -> some View {
         Text(n == 1 ? "1 reflection" : "\(n) reflections")
-            .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x1B5FAE))
+            .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x1B5FAE))
             .padding(.horizontal, 8).padding(.vertical, 3)
             .background(Color(hex: 0x1B5FAE).opacity(0.10), in: Capsule())
             .overlay(Capsule().stroke(Color(hex: 0x1B5FAE).opacity(0.22), lineWidth: 1))
@@ -252,7 +252,7 @@ struct DisciplerRosterView: View {
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("No disciples assigned yet")
-                    .font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("When members are placed in your care, their journeys will live here.")
                     .font(.nCardBody).foregroundStyle(Nuru.muted)

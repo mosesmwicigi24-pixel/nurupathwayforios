@@ -3,8 +3,8 @@
 // gradient fallback, parallax stretch, navy scrim, category/live/completed
 // pills, serif title), a white content card flush beneath it with the 2x2 meta
 // grid and add-to-calendar/share actions, the "About this gathering" card, the
-// "Who's going" avatar rail, the going/maybe/can't RSVP selector, the
-// "Who's coming" buzz card with the visual hype composer, a "Check in" button
+// "Who's going" avatar rail, the going/maybe/can't RSVP selector, "The wall"
+// (the buzz card, with the visual hype composer), a "Check in" button
 // for today's/live occurrences that opens the real QR scanner
 // (CheckInScannerView → POST /events/{id}/attendance), and a dashed "check-in
 // opens when live" notice for future scheduled events. Bound to the real
@@ -30,7 +30,7 @@ final class EventDetailViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.event(occurrence.occurrenceId); myRsvpOverride = nil }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this event." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this event.", error) }
         loading = false
     }
 
@@ -46,13 +46,15 @@ final class EventDetailViewModel: ObservableObject {
         if sync.isOnline { await load() }  // refresh authoritative counts + roster
     }
 
-    // ---- Event wall ("Who's coming" buzz posts — GET/POST /events/{id}/posts) ----
+    // ---- The wall (buzz posts — GET/POST /events/{id}/posts) ----
 
     @Published var posts: [EventPost] = []
     @Published var postDraft = ""
     /// A photo the member attached to the buzz composer, awaiting upload on Post.
     @Published var pendingImage: Data?
     @Published var posting = false
+    /// Why the last post didn't go up (§4) — the draft and photo are back.
+    @Published var postLine: String?
 
     func loadPosts() async {
         if let fresh = try? await MemberAPI.eventPosts(occurrence.occurrenceId) { posts = fresh }
@@ -66,6 +68,7 @@ final class EventDetailViewModel: ObservableObject {
         let image = pendingImage
         guard (!body.isEmpty || image != nil), !posting else { return }
         posting = true; defer { posting = false }
+        postLine = nil
         let pid = UUID().uuidString
         posts.insert(EventPost(
             postId: pid, authorUserId: "", authorName: "You", authorAvatar: nil,
@@ -85,6 +88,10 @@ final class EventDetailViewModel: ObservableObject {
             postDraft = body
             pendingImage = image
             Haptics.error()
+            // ...and say so, with what is kept (the Cycle 4 lost-input class).
+            postLine = NuruStateCopy.sendFailureLine(
+                error, kept: image == nil ? "Your words are kept — post again when you're ready."
+                                          : "Your words and photo are kept — post again when you're ready.")
         }
     }
 
@@ -135,10 +142,10 @@ private enum EvD {
     static let placeholder = Color(hex: 0x9A8C6A)
 
     /// Deterministic avatar accent for members without a photo (port of colorFor).
+    /// Navy or gold only (§8.1 rule 1).
     static let avatarPalette: [Color] = [
-        Color(hex: 0x0A1628), Color(hex: 0xC9A227), Color(hex: 0x16A34A),
-        Color(hex: 0x0EA5E9), Color(hex: 0xA855F7), Color(hex: 0xDC2626),
-        Color(hex: 0xD97706),
+        Color(hex: 0x0A1628), Color(hex: 0xC9A227), Color(hex: 0x143559),
+        Color(hex: 0xA87F2E), Color(hex: 0x315F8C),
     ]
     static func avatarAccent(_ seed: String) -> Color {
         var h: UInt32 = 0
@@ -178,7 +185,15 @@ struct EventDetailView: View {
             .first { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
     }
     private var isLive: Bool { Ev.isLive(occ.startAt, occ.endAt) }
-    private var isCompleted: Bool { !isLive && Ev.date(occ.endAt) < Date() }
+    /// Over once its end has passed — or, when the end isn't known (an
+    /// occurrence handed over from Home or an RSVP carries none), once its
+    /// day has. An unknown end used to read as long past, so a gathering
+    /// opened from Home said COMPLETED and offered no check-in.
+    private var isCompleted: Bool {
+        guard !isLive else { return false }
+        if occ.endAt.isEmpty { return Ev.date(occ.startAt) < Calendar.current.startOfDay(for: Date()) }
+        return Ev.date(occ.endAt) < Date()
+    }
     private var isToday: Bool { Calendar.current.isDateInToday(Ev.date(occ.startAt)) }
     /// QR check-in shows for live or same-day occurrences; the server still
     /// enforces qr_enabled / checkin_opens_at, so this is presentation only.
@@ -186,7 +201,7 @@ struct EventDetailView: View {
 
     /// What the hero share button and the Share action send.
     private var shareText: String {
-        var lines = [title, "\(Ev.weekday(occ.startAt, "EEEE, MMMM d")) · \(Ev.timeRange(occ.startAt, occ.endAt))"]
+        var lines = [title, "\(NuruDates.day(Ev.date(occ.startAt))) · \(Ev.timeRange(occ.startAt, occ.endAt))"]
         if let location, !location.isEmpty { lines.append(location) }
         return lines.joined(separator: "\n")
     }
@@ -200,7 +215,7 @@ struct EventDetailView: View {
                 VStack(spacing: 0) {
                     EvdHero(title: title, category: category, imageUrl: imageUrl,
                             isLive: isLive, isCompleted: isCompleted,
-                            shareText: shareText, onBack: { dismiss() })
+                            onBack: { dismiss() })
                     content(proxy)
                 }
             }
@@ -330,7 +345,6 @@ private struct EvdHero: View {
     let imageUrl: String?
     let isLive: Bool
     let isCompleted: Bool
-    let shareText: String
     let onBack: () -> Void
 
     /// Natural aspect (w/h) of the decoded cover photo; nil until measured.
@@ -422,16 +436,16 @@ private struct EvdHero: View {
 
     private var overlay: some View {
         VStack(alignment: .leading, spacing: 0) {
-            // top chrome — back (left) + share (right)
+            // Top chrome: back. Share is offered once, beside "Add to
+            // calendar" (EXPERIENCE.md §9.6 #3 — it was here too).
             HStack {
-                Button(action: onBack) { EvdCircleGlyph(icon: .chevronLeft, size: 20) }
+                Button(action: onBack) { EvdCircleGlyph(icon: .arrowLeft, size: 18) }
                     .buttonStyle(.pressable)
+                    .accessibilityLabel("Back")
                 Spacer()
-                ShareLink(item: shareText) { EvdCircleGlyph(icon: .share2, size: 17) }
-                    .buttonStyle(.pressable)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 54)   // Figma frames 42; nudged for the real status bar
+            .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band on every phone (final walk C7: the disc was cut flat at 54)
 
             Spacer(minLength: 0)
 
@@ -439,7 +453,7 @@ private struct EvdHero: View {
             VStack(alignment: .leading, spacing: 8) {
                 pills
                 Text(title)
-                    .font(.fraunces(24, .semibold))
+                    .font(.fraunces(26, .semibold))
                     .kerning(-0.72)                       // -0.03em
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
@@ -453,7 +467,7 @@ private struct EvdHero: View {
         HStack(spacing: 6) {
             if let c = category {
                 Text(c.uppercased())
-                    .font(.inter(10, .bold)).kerning(1.4)
+                    .font(.inter(11, .bold)).kerning(1.4)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Ev.categoryColor(c).opacity(0.9), in: Capsule())
@@ -461,13 +475,13 @@ private struct EvdHero: View {
             if isLive {
                 HStack(spacing: 4) {
                     EvdPulseDot(size: 4)
-                    Text("LIVE").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 2)
                 .background(EvD.going, in: Capsule())
             } else if isCompleted {
                 Text("COMPLETED")
-                    .font(.inter(10, .bold)).kerning(1.4)
+                    .font(.inter(11, .bold)).kerning(1.4)
                     .foregroundStyle(.white.opacity(0.8))
                     .padding(.horizontal, 8).padding(.vertical, 2)
                     .background(Color.white.opacity(0.2), in: Capsule())
@@ -526,15 +540,19 @@ private struct EvdMetaCard: View {
         VStack(spacing: 8) {
             HStack(spacing: 8) {
                 EvdMetaTile(icon: .calendarDays, label: "Date",
-                            value: Ev.weekday(occ.startAt, "EEEE, MMMM d"), accent: accent)
+                            value: NuruDates.day(Ev.date(occ.startAt)), accent: accent)
                 EvdMetaTile(icon: .clock, label: "Time",
                             value: Ev.timeRange(occ.startAt, occ.endAt), accent: accent)
             }
             HStack(spacing: 8) {
                 EvdMetaTile(icon: .mapPin, label: "Where",
                             value: location ?? "To be announced", accent: accent)
-                EvdMetaTile(icon: .users, label: "Going",
-                            value: going == 1 ? "1 person" : "\(going) people", accent: accent)
+                // No zero counts (§7.4 #9): nobody going yet leaves "Where"
+                // the whole row — the RSVP card below asks.
+                if going > 0 {
+                    EvdMetaTile(icon: .users, label: "Going",
+                                value: going == 1 ? "1 person" : "\(going) people", accent: accent)
+                }
             }
         }
     }
@@ -592,15 +610,18 @@ private struct EvdMetaTile: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .fill(accent.opacity(0.12))
                 .frame(width: 32, height: 32)
-                .overlay(Icon(icon, size: 15, color: accent))
+                .overlay(Icon(icon, size: 14, color: accent))
             VStack(alignment: .leading, spacing: 2) {
                 Text(label.uppercased())
-                    .font(.inter(9, .bold)).kerning(1.3)
+                    .font(.inter(11, .bold)).kerning(1.3)
                     .foregroundStyle(EvD.tertiary)
+                // The fact wraps, never cut (§8.1 rule 9; the walk's E9:
+                // "Sunday, Octobe…", "9:00 AM – 1:00…", "The Good News…").
                 Text(value)
-                    .font(.inter(11, .semibold))
+                    .font(.inter(12, .semibold))
                     .foregroundStyle(EvD.ink)
-                    .lineLimit(1)
+                    .lineLimit(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
@@ -661,8 +682,11 @@ private struct EvdRosterCard: View {
             HStack {
                 EvdOverline("Who's going")
                 Spacer(minLength: 0)
-                Text(going == 1 ? "1 going" : "\(going) going")
-                    .font(.inter(11, .bold)).foregroundStyle(EvD.ink)
+                // No zero counts (§7.4 #9) — "Be the first to RSVP." says it.
+                if going > 0 {
+                    Text(going == 1 ? "1 going" : "\(going) going")
+                        .font(.inter(11, .bold)).foregroundStyle(EvD.ink)
+                }
             }
             if shown.isEmpty {
                 Text("Be the first to RSVP.")
@@ -682,7 +706,7 @@ private struct EvdRosterCard: View {
                     VStack(spacing: 6) {
                         EvdRosterAvatar(attendee: a)
                         Text(firstName(a.fullName))
-                            .font(.inter(10, .semibold)).foregroundStyle(EvD.body)
+                            .font(.inter(11, .semibold)).foregroundStyle(EvD.body)
                             .lineLimit(1)
                     }
                     .frame(width: 52)
@@ -700,7 +724,7 @@ private struct EvdRosterCard: View {
                 .frame(width: 46, height: 46)
                 .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.12), lineWidth: 1))
                 .overlay(Text("+\(extra)").font(.inter(12, .bold)).foregroundStyle(EvD.ink))
-            Text("more").font(.inter(10, .semibold)).foregroundStyle(EvD.tertiary)
+            Text("more").font(.inter(11, .semibold)).foregroundStyle(EvD.tertiary)
         }
         .frame(width: 52)
     }
@@ -752,15 +776,20 @@ private struct EvdRsvpCard: View {
         VStack(alignment: .leading, spacing: 0) {
             EvdOverline("Will you be there?")
             HStack(spacing: 6) {
-                option("Going", "going", tint: EvD.going)
-                option("Maybe", "maybe", tint: EvD.maybe)
-                option("Can't", "declined", tint: EvD.declined)
+                // A chosen answer is a selected pill — navy (§8.1 rule 6; the
+                // walk's E17 found a green "Going"). The state reads in the line
+                // under it.
+                option("Going", "going", tint: Nuru.navy)
+                option("Maybe", "maybe", tint: Nuru.navy)
+                option("Can't", "declined", tint: Nuru.navy)
             }
             .padding(.top, 12)
             if mine == "going" {
                 HStack(spacing: 6) {
-                    Icon(.check, size: 13, color: EvD.goingText)
-                    Text("Saved · we'll remind you the day before.")
+                    Icon(.check, size: 14, color: EvD.goingText)
+                    // The day-before reminder is the server's — it lands in the
+                    // inbox; this phone has no remote push yet (B11).
+                    Text(IOSNoticeWords.rsvpSaved)
                         .font(.inter(11, .semibold)).foregroundStyle(EvD.goingText)
                 }
                 .padding(.top, 10)
@@ -794,7 +823,9 @@ private struct EvdRsvpCard: View {
     }
 }
 
-// MARK: - Who's coming — buzz header + working hype composer + real post feed.
+// MARK: - The wall — buzz header + working hype composer + real post feed.
+// "The wall", not "Who's coming" (it sat beside "Who's going"), and
+// "Buzzing" only when there are posts (§7.4 #9).
 // Wired to GET/POST /events/{id}/posts and /events/{id}/posts/{postId}/react.
 // The make's image/camera pickers are not built: the posts contract carries an
 // image_url, but the app has no member image-upload path yet, so those two
@@ -829,6 +860,12 @@ private struct EvdBuzzCard: View {
                         }
                     }
                 }
+                // A post that didn't go up says why, above the composer that
+                // still holds it (§4; the Cycle 4 lost-input class).
+                if let line = vm.postLine {
+                    Text(line).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 EvdComposer(draft: $vm.postDraft, imageData: $vm.pendingImage, posting: vm.posting,
                             onPost: { Task { await vm.submitPost() } },
                             onFocus: onComposerFocus)
@@ -841,20 +878,22 @@ private struct EvdBuzzCard: View {
     private var header: some View {
         HStack {
             HStack(spacing: 6) {
-                Icon(.users, size: 12, color: EvD.overline)
-                EvdOverline("Who's coming")
+                Icon(.users, size: 14, color: EvD.overline)
+                EvdOverline("The wall")
             }
             Spacer(minLength: 0)
-            HStack(spacing: 6) {
-                EvdPulseDot(size: 6)
-                Text(vm.posts.isEmpty ? "Buzzing" : "Buzzing · \(vm.posts.count)")
-                    .font(.inter(10, .bold)).foregroundStyle(.white)
+            if !vm.posts.isEmpty {
+                HStack(spacing: 6) {
+                    EvdPulseDot(size: 6)
+                    Text("Buzzing · \(vm.posts.count)")
+                        .font(.inter(11, .bold)).foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
+                                           startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: Capsule())
+                .shadow(color: EvD.going.opacity(0.35), radius: 5, x: 0, y: 3)
             }
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(LinearGradient(colors: [EvD.going, EvD.goingDeep],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: Capsule())
-            .shadow(color: EvD.going.opacity(0.35), radius: 5, x: 0, y: 3)
         }
     }
 }
@@ -888,7 +927,7 @@ private struct EvdComposer: View {
                     Button {
                         Haptics.tap(); preview = nil; imageData = nil
                     } label: {
-                        Icon(.x, size: 13, color: .white)
+                        Icon(.x, size: 14, color: .white)
                             .frame(width: 28, height: 28)
                             .background(Color.black.opacity(0.55), in: Circle())
                     }
@@ -969,7 +1008,7 @@ private struct EvdComposer: View {
         Circle().fill(.white)
             .frame(width: 36, height: 36)
             .overlay(Circle().stroke(Color(hex: 0x0A2540, alpha: 0.08), lineWidth: 1))
-            .overlay(Icon(icon, size: 17, color: color))
+            .overlay(Icon(icon, size: 18, color: color))
     }
 
     /// The chat bar's send control: a round gold disc, spinner while posting.
@@ -981,7 +1020,7 @@ private struct EvdComposer: View {
         } label: {
             Group {
                 if posting { ProgressView().tint(EvD.ink).scaleEffect(0.8) }
-                else { Icon(.send, size: 16, color: EvD.ink) }
+                else { Icon(.send, size: 18, color: EvD.ink) }
             }
             .frame(width: 38, height: 38)
             .background(LinearGradient(colors: [EvD.gold, EvD.goldDeep],
@@ -1030,7 +1069,7 @@ private struct EvdBuzzPostRow: View {
                 .font(.inter(12, .bold)).foregroundStyle(EvD.ink).lineLimit(1)
             if post.rsvpStatus == "going" {
                 Text("GOING")
-                    .font(.inter(8, .bold)).kerning(1)
+                    .font(.inter(11, .bold)).kerning(1)
                     .foregroundStyle(EvD.goingText)
                     .padding(.horizontal, 5).padding(.vertical, 2)
                     .background(EvD.going.opacity(0.12), in: Capsule())
@@ -1065,10 +1104,13 @@ private struct EvdBuzzPostRow: View {
             tap()
         } label: {
             HStack(spacing: 4) {
-                Text(emoji).font(.system(size: 12))
-                Text("\(count)").font(.inter(10, .bold))
-                    .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
-                    .contentTransition(.numericText())
+                Text(emoji).font(.emoji(12))
+                // The chip is the way to react; its count only once there is one.
+                if count > 0 {
+                    Text("\(count)").font(.inter(11, .bold))
+                        .foregroundStyle(on ? EvD.goldDeep : EvD.secondary)
+                        .contentTransition(.numericText())
+                }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(on ? EvD.gold.opacity(0.14) : Color.white, in: Capsule())
@@ -1112,7 +1154,7 @@ private struct EvdBuzzAvatar: View {
     }
 
     private var initials: some View {
-        Text(Avatar.initials(name)).font(.inter(10, .bold)).foregroundStyle(.white)
+        Text(Avatar.initials(name)).font(.inter(11, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -1125,7 +1167,7 @@ private struct EvdCheckInButton: View {
     var body: some View {
         Button(action: onTap) {
             HStack(spacing: 8) {
-                Icon(.qrCode, size: 16, color: EvD.ink)
+                Icon(.qrCode, size: 18, color: EvD.ink)
                 Text("Check in").font(.inter(13, .bold)).foregroundStyle(EvD.ink)
             }
             .frame(maxWidth: .infinity)
@@ -1146,7 +1188,7 @@ private struct EvdCheckInNotice: View {
         HStack(spacing: 8) {
             Icon(.lock, size: 14, color: EvD.gold)
             Text("Check-in opens when the event is live")
-                .font(.inter(12.5, .semibold)).foregroundStyle(Color(hex: 0x6A7686))
+                .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x6A7686))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 14)

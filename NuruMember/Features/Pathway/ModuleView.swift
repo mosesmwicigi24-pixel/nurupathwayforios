@@ -50,6 +50,11 @@ final class ModuleViewModel: ObservableObject {
     @Published var savedReflection: String?
     @Published var submittingReflection = false
     @Published var reflectionError: String?
+    /// The step after this lesson once it is finished. A finished lesson used
+    /// to end on "Revisit this module", with Back its only way on (the Cycle 4
+    /// walk). Read from the level's own list, so it only offers what the
+    /// server will open.
+    @Published var onward: LessonOnward?
 
     private let moduleId: String
     init(moduleId: String) { self.moduleId = moduleId }
@@ -57,8 +62,16 @@ final class ModuleViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.module(moduleId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this lesson." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this lesson.", error) }
         loading = false
+    }
+
+    /// What follows a finished lesson: the next lesson, or the level's exam.
+    /// Silent on failure — the page keeps its way back, as before.
+    func loadOnward() async {
+        guard let d = detail, d.isFinished,
+              let list = try? await MemberAPI.levelModules(d.levelNumber) else { return }
+        onward = LessonOnward.after(moduleId: d.moduleId, levelNumber: d.levelNumber, in: list)
     }
 
     /// Marks the module complete server-side. Success/failure is surfaced (the
@@ -72,7 +85,7 @@ final class ModuleViewModel: ObservableObject {
             completed = res.isCompleted || res.duplicate
             if completed { Haptics.success() }   // the moment the server confirms
         } catch {
-            completionError = (error as? APIError)?.errorDescription ?? "Couldn't save your progress. Please try again."
+            completionError = NuruStateCopy.failureLine("Couldn't save your progress. Please try again.", error)
             Haptics.error()
         }
     }
@@ -148,7 +161,7 @@ final class ModuleViewModel: ObservableObject {
             reflectDone = true
             Haptics.success()
         } catch {
-            reflectionError = (error as? APIError)?.errorDescription ?? "Couldn't save your reflection. Please try again."
+            reflectionError = NuruStateCopy.failureLine("Couldn't save your reflection. Please try again.", error)
             Haptics.error()
         }
     }
@@ -399,6 +412,10 @@ struct ModuleView: View {
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// At the accessibility sizes the lesson's header scrolls with its text
+    /// (§9.6 #4): pinned above the reader with the gate below, it left the
+    /// reading a sliver between them.
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @State private var reflection: String = ""
     @State private var playingVideo = false      // real inline player started
@@ -406,6 +423,7 @@ struct ModuleView: View {
     @State private var startingQuiz = false       // flushing engagement before the quiz
     @State private var quizTarget: String?        // pushes QuizView once the flush lands
     @State private var nextModuleTarget: String?  // the server-unlocked next module (post-quiz-pass)
+    @State private var examTarget: Int?           // the level's exam, from a finished last lesson
 
     /// Instructor and above may leave "a word from your discipler" on the
     /// lesson for their whole congregation (server enforces the same ladder).
@@ -636,6 +654,7 @@ struct ModuleView: View {
             // hasn't started typing) so it reads as already-done on return.
             if reflection.isEmpty, let saved = vm.savedReflection { reflection = saved }
             applyResume(await totals)
+            await vm.loadOnward()
         }
         .onAppear {
             viewOnScreen = true
@@ -668,6 +687,7 @@ struct ModuleView: View {
             })
         }
         .navigationDestination(item: $nextModuleTarget) { ModuleView(moduleId: $0) }
+        .navigationDestination(item: $examTarget) { LevelExamView(levelNumber: $0) }
         .confirmationDialog("Hear it another way", isPresented: $showExplainMenu, titleVisibility: .visible) {
             Button("In simple English") { explainTarget = ExplainTarget(style: "simple") }
             Button("Kwa Kiswahili") { explainTarget = ExplainTarget(style: "swahili") }
@@ -785,12 +805,10 @@ struct ModuleView: View {
         let pageTitle = sectionTitles[pageIndex]
         let video = mlVideo(d)
         return ScrollViewReader { proxy in
-            VStack(spacing: 0) {
-                if !chromeHidden {
-                    MLHeader(levelNumber: d.levelNumber,
+            let header = MLHeader(levelNumber: d.levelNumber,
                              moduleNumber: d.moduleSequenceNumber,
                              title: d.title,
-                             readMinutes: mlReadMinutes(pages),
+                             minutes: d.estimatedMinutes,
                              sectionCount: pages.count,
                              sectionTitles: sectionTitles,
                              currentSection: pageIndex,
@@ -810,10 +828,14 @@ struct ModuleView: View {
                                      Haptics.action()
                                      quizTarget = d.moduleId
                                  }) : nil)
-                        .transition(.opacity)
+            let scrollsWithText = typeSize.isAccessibilitySize
+            VStack(spacing: 0) {
+                if !chromeHidden && !scrollsWithText {
+                    header.transition(.opacity)
                 }
                 reader(d, pages: pages, bodyBlocks: bodyBlocks,
-                       sectionTitle: pageTitle, video: video, pageIndex: pageIndex)
+                       sectionTitle: pageTitle, video: video, pageIndex: pageIndex,
+                       scrollingHeader: scrollsWithText ? header : nil)
                 if pages.count > 1 && !chromeHidden {
                     MLPagerBar(pageCount: pages.count, current: pageIndex) {
                         goToPage($0, pageCount: pages.count)
@@ -844,6 +866,12 @@ struct ModuleView: View {
                     }
                     .transition(.opacity)
                 }
+                // A finished module has no gate below, so the tab bar sat on
+                // its last lines — "Revisit this module" half under it (the
+                // Cycle 3 walk's B8; §7.1 rule 3). The gate's own clearance.
+                if !chromeHidden && d.isFinished {
+                    Color.clear.frame(height: Nuru.tabBarSpace - 24)
+                }
             }
             // The lesson is on screen: start the reading clock and arm the
             // slide into immersive reading (a scroll gets there sooner).
@@ -861,10 +889,15 @@ struct ModuleView: View {
     private func reader(_ d: ModuleDetail, pages: [String],
                         bodyBlocks: [MLBlock],
                         sectionTitle: String,
-                        video: WelcomeVideo?, pageIndex: Int) -> some View {
+                        video: WelcomeVideo?, pageIndex: Int,
+                        scrollingHeader: MLHeader? = nil) -> some View {
         GeometryReader { viewport in
             ZStack {
                 ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                    // The header, scrolling with the text at the accessibility
+                    // sizes (it clears the status bar itself).
+                    if let scrollingHeader { scrollingHeader }
                     lessonBody(d, bodyBlocks: bodyBlocks, sectionTitle: sectionTitle,
                                pageIndex: pageIndex, pageCount: pages.count,
                                video: pageIndex == 0 ? video : nil,
@@ -872,7 +905,7 @@ struct ModuleView: View {
                                isLastPage: pageIndex == pages.count - 1)
                         .id("top")
                         .padding(.horizontal, Nuru.S.screen)
-                        .padding(.top, chromeHidden ? Self.safeAreaTop + 8 : Nuru.S.base)
+                        .padding(.top, chromeHidden && scrollingHeader == nil ? Self.safeAreaTop + 8 : Nuru.S.base)
                         // Clear the home indicator when immersive (no gate below);
                         // a smaller cushion when the gate sits beneath the scroll.
                         .padding(.bottom, chromeHidden ? Self.safeAreaBottom + 40 : Nuru.S.xl + 12)
@@ -886,6 +919,7 @@ struct ModuleView: View {
                                                            contentHeight: g.size.height))
                             }
                         )
+                    }
                 }
                 .coordinateSpace(name: "mlScroll")
                 // Taps summon the chrome (simultaneous, so links/buttons still work).
@@ -939,7 +973,7 @@ struct ModuleView: View {
             if isFirstPage {
                 // Footprints (Wave 3): cell-mates who already walked this
                 // module — quiet proof nobody reads alone. Absent when fresh.
-                FootprintsStrip(moduleId: d.moduleId)
+                FootprintsStrip(moduleId: d.moduleId, mineDone: d.completed == true)
                     .padding(.bottom, 12)
                 if let vn = d.voiceNote {
                     VoiceNoteCard(note: vn)
@@ -992,6 +1026,10 @@ struct ModuleView: View {
                     if d.isFinished && !editingReflection {
                         VStack(spacing: 14) {
                             MLReflectionFolded(text: vm.savedReflection ?? reflection)
+                            // The way on: the next lesson, or the level's exam.
+                            if let next = vm.onward {
+                                MLOnwardCard(onward: next) { goOnward(next) }
+                            }
                             // The module is sealed — changing anything is an
                             // intentional act, behind one quiet door.
                             Button {
@@ -999,7 +1037,7 @@ struct ModuleView: View {
                                 showRevisitDialog = true
                             } label: {
                                 HStack(spacing: 6) {
-                                    Icon(.bookOpen, size: 12, color: ML.secondary)
+                                    Icon(.bookOpen, size: 14, color: ML.secondary)
                                     Text("Revisit this module")
                                         .font(.inter(13, .semibold)).foregroundStyle(ML.secondary)
                                 }
@@ -1037,6 +1075,16 @@ struct ModuleView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Open the step after a finished lesson.
+    private func goOnward(_ o: LessonOnward) {
+        Haptics.tap()
+        switch o {
+        case .lesson(let id, _, _): nextModuleTarget = id
+        case .exam(let level): examTarget = level
+        case .examSoon: break
+        }
     }
 
     // Read / Reflect (+ Watch when a video exists, + Listen when audio exists) —
@@ -1276,7 +1324,7 @@ private struct MLResumeNote: View {
     let text: String
     var body: some View {
         HStack(spacing: 6) {
-            Icon(.sparkles, size: 12, color: ML.gold)
+            Icon(.sparkles, size: 14, color: ML.gold)
             Text(text).font(.inter(12, .medium)).foregroundStyle(ML.navy)
         }
         .padding(.horizontal, 14)
@@ -1350,7 +1398,7 @@ private struct MLPagerBar: View {
 
     private func arrow(_ icon: Lucide, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: 15, color: enabled ? ML.navy : ML.secondary.opacity(0.4))
+            Icon(icon, size: 14, color: enabled ? ML.navy : ML.secondary.opacity(0.4))
                 .frame(width: 34, height: 34)
                 .background(Color.white, in: Circle())
                 .overlay(Circle().stroke(ML.border, lineWidth: 1))
@@ -1402,7 +1450,8 @@ private struct MLHeader: View {
     let levelNumber: Int
     let moduleNumber: Int
     let title: String
-    let readMinutes: Int
+    /// The server's `estimated_minutes` — the figure the level's trail shows.
+    let minutes: Int?
     let sectionCount: Int
     let sectionTitles: [String]
     let currentSection: Int
@@ -1416,11 +1465,10 @@ private struct MLHeader: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Row 1 — back · centred overline · fullscreen · share.
-            ZStack {
-                Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
-                    .font(.inter(11, .bold)).kerning(2)
-                    .foregroundStyle(ML.overline)
+            // Row 1 — back · explain · fullscreen · share; the overline on its
+            // own line beneath, so the buttons never cover it (the walk's
+            // E15: "LEVEL 1 · MODUL…").
+            VStack(spacing: 10) {
                 HStack(spacing: 8) {
                     MLSquareButton(icon: .arrowLeft, action: onBack)
                     Spacer(minLength: 0)
@@ -1433,13 +1481,20 @@ private struct MLHeader: View {
                     }
                     .buttonStyle(.plain)
                 }
+                Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
+                    .font(.inter(11, .bold)).kerning(2)
+                    .foregroundStyle(ML.overline)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             // Title — centred serif.
             Text(title)
-                .font(.fraunces(24, .medium)).kerning(-0.7)
+                .font(.fraunces(26, .medium)).kerning(-0.7)
                 .foregroundStyle(ML.navy)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                // "Relationships" whole at the largest size (§9.6 #4).
+                .nuruWholeWords(title, font: .fraunces(26, .medium), kerning: -0.7)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 14)
             // Meta row — read · sections · watch · listen, evenly spaced.
@@ -1460,18 +1515,19 @@ private struct MLHeader: View {
             }
         }
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 56)
+        .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band (final walk C7 class)
         .padding(.bottom, Nuru.S.screen)
         .frame(maxWidth: .infinity)
         .background(headerBackground)
         .shadow(color: Color(hex: 0x0A1628).opacity(0.12), radius: 10, y: 6)
     }
 
-    /// ≈ min read · N sections · Watch · Listen. The read + section pills always
-    /// show; Watch/Listen appear only for media that's actually present.
+    /// N min · N sections · Watch · Listen. The time is the server's estimate,
+    /// as on the trail, and shows only when the server sends one; the sections
+    /// always show; Watch/Listen appear only for media that's actually present.
     private var metaRow: some View {
         HStack(spacing: 10) {
-            MLMetaPill(icon: .clock, label: "≈ \(readMinutes) min read")
+            if let time = LessonTime.label(minutes) { MLMetaPill(icon: .clock, label: time) }
             MLMetaPill(icon: .bookOpen,
                        label: "\(sectionCount) section\(sectionCount == 1 ? "" : "s")")
             if let watch = media.watch { MLMetaPill(icon: watch.icon, label: watch.label) }
@@ -1509,13 +1565,20 @@ private struct MLHeader: View {
 
     private func finishedRibbon(_ f: MLFinishedSummary) -> some View {
         HStack(spacing: 8) {
-            Icon(.check, size: 12, color: ML.navy)
-            Text("COMPLETED").font(.inter(10, .bold)).kerning(1.4).foregroundStyle(ML.navy)
-            if let s = f.score {
-                Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
-            }
-            if let w = f.when {
-                Text("· \(w)").font(.inter(10.5)).foregroundStyle(ML.secondary).lineLimit(1)
+            // The date on its own line — it was cut ("5 Oct 2026 · 10:…", the
+            // walk's E15) sharing one line with the status and Retake.
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 8) {
+                    Icon(.check, size: 14, color: ML.navy)
+                    Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ML.navy)
+                    if let s = f.score {
+                        Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
+                    }
+                }
+                if let w = f.when {
+                    Text(w).font(.inter(11)).foregroundStyle(ML.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 6)
             if f.canRetake {
@@ -1528,8 +1591,8 @@ private struct MLHeader: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(ML.gold.opacity(0.14), in: Capsule())
-        .overlay(Capsule().stroke(ML.gold.opacity(0.35), lineWidth: 1))
+        .background(ML.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ML.gold.opacity(0.35), lineWidth: 1))
     }
 
     private var headerBackground: some View {
@@ -1557,8 +1620,8 @@ private struct MLSegment: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if done { Icon(.check, size: 11, color: ML.navy) }
-                else { Icon(icon, size: 12, color: ML.secondary) }
+                if done { Icon(.check, size: 14, color: ML.navy) }
+                else { Icon(icon, size: 14, color: ML.secondary) }
                 Text(label).font(.inter(12, .bold))
             }
             .foregroundStyle(done ? ML.navy : ML.secondary)
@@ -1584,7 +1647,7 @@ private struct MLMediaButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Icon(icon, size: 12, color: active ? ML.navy : ML.secondary)
+                Icon(icon, size: 14, color: active ? ML.navy : ML.secondary)
                 Text(label).font(.inter(12, .bold))
             }
             .foregroundStyle(active ? ML.navy : ML.secondary)
@@ -1640,7 +1703,7 @@ private struct MLSectionIndex: View {
         } label: {
             HStack(spacing: 5) {
                 Text("\(idx + 1)")
-                    .font(.inter(10, .bold))
+                    .font(.inter(11, .bold))
                     .foregroundStyle(isCurrent ? ML.navy.opacity(0.7) : ML.secondary.opacity(0.7))
                 Text(title)
                     .font(.inter(12, .semibold))
@@ -1673,7 +1736,7 @@ private struct MLSquareButton: View {
 private struct MLSquareLabel: View {
     let icon: Lucide
     var body: some View {
-        Icon(icon, size: 17, color: ML.navy)
+        Icon(icon, size: 18, color: ML.navy)
             .frame(width: 40, height: 40)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -1686,7 +1749,7 @@ private struct MLSquareLabel: View {
 private struct MLSlowDownNudge: View {
     var body: some View {
         HStack(spacing: 10) {
-            Text("🕊️").font(.system(size: 20))
+            Text("🕊️").font(.emoji(22))
             VStack(alignment: .leading, spacing: 2) {
                 Text("Slow down — take in the Word")
                     .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
@@ -1718,7 +1781,7 @@ private struct MLImmerseButton: View {
             Image(systemName: expanded
                   ? "arrow.down.right.and.arrow.up.left"
                   : "arrow.up.left.and.arrow.down.right")
-                .font(.system(size: 15, weight: .semibold))
+                .font(.symbol(15, weight: .semibold))
                 .foregroundStyle(floating ? .white : ML.navy)
                 .frame(width: 40, height: 40)
                 .background {
@@ -1744,7 +1807,7 @@ private struct MLMetaPill: View {
     let label: String
     var body: some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 11, color: ML.secondary)
+            Icon(icon, size: 14, color: ML.secondary)
             Text(label).font(.inter(11))
         }
         .foregroundStyle(ML.secondary)
@@ -1787,7 +1850,7 @@ private struct MLVideoCard: View {
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .overlay(alignment: .topLeading) {
             Text("VIDEO")
-                .font(.inter(10, .bold)).kerning(1).foregroundStyle(.white)
+                .font(.inter(11, .bold)).kerning(1).foregroundStyle(.white)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(Color.black.opacity(0.55), in: Capsule())
                 .padding(12)
@@ -1814,7 +1877,7 @@ private struct MLAudioCard: View {
                     transport
                     VStack(alignment: .leading, spacing: 2) {
                         Text("LISTEN")
-                            .font(.inter(10, .bold)).kerning(1.8)
+                            .font(.inter(11, .bold)).kerning(1.8)
                             .foregroundStyle(ML.kicker)
                         Text(minutes.map { "Narration · \($0)m" } ?? "Narration")
                             .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
@@ -1843,7 +1906,7 @@ private struct MLAudioCard: View {
             Circle().fill(ML.goldGradient).frame(width: 44, height: 44)
             // No Lucide "pause" glyph — SF Symbols, as MLImmerseButton already does.
             Image(systemName: playing ? "pause.fill" : "play.fill")
-                .font(.system(size: 16, weight: .bold))
+                .font(.symbol(16, weight: .bold))
                 .foregroundStyle(ML.navy)
                 .offset(x: playing ? 0 : 1)
         }
@@ -1866,25 +1929,74 @@ private struct MLAudioCard: View {
 
 private struct MLScriptureCard: View {
     let line: String
+    @StateObject private var loader = ScripturePassageLoader()
+    @State private var reading: ScriptureSheetItem?
+
+    /// The lesson gave a reference only ("John 1:1–18") — the card fetches
+    /// the words (the walk's E22: it printed the reference in quotes, as if
+    /// it were the verse).
+    private var isReference: Bool { ScriptureRefs.isReference(line) }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Icon(.quote, size: 12, color: ML.gold)
+                Icon(.quote, size: 14, color: ML.gold)
                 Text("KEY VERSE")
-                    .font(.inter(10, .bold)).kerning(1.8)
+                    .font(.inter(11, .bold)).kerning(1.8)
                     .foregroundStyle(ML.kicker)
             }
-            Text("\u{201C}\(line)\u{201D}")
-                .font(.fraunces(16.5, .regular)).italic()
-                .foregroundStyle(ML.navy)
-                .lineSpacing(5)
-                .fixedSize(horizontal: false, vertical: true)
+            if let words = KeyVerseWords.text(line: line, isReference: isReference, fetched: loader.passage?.text) {
+                Text("\u{201C}\(words)\u{201D}")
+                    .font(.fraunces(16, .regular)).italic()
+                    .foregroundStyle(ML.navy)
+                    .lineSpacing(5)
+                    .lineLimit(KeyVerseWords.lineLimit)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if isReference {
+                // The reference under the words — or alone while they come,
+                // or if they can't (never in quotes).
+                Button { Haptics.tap(); reading = ScriptureSheetItem(reference: line) } label: {
+                    HStack(spacing: 4) {
+                        Text(KeyVerseWords.caption(reference: line, version: loader.passage?.version))
+                            .font(.inter(12, .semibold)).foregroundStyle(ML.kicker)
+                        Icon(.chevronRight, size: 14, color: ML.kicker)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the passage")
+            }
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(ML.surface)
         .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .task { if isReference { await loader.load(line) } }
+        .sheet(item: $reading) { item in
+            ScripturePassageSheet(reference: item.reference)
+                .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+/// The key verse card's words (the walk's E22). Pure, so the tests pin it.
+enum KeyVerseWords {
+    /// A long passage shows its opening lines; the reference opens the rest.
+    static let lineLimit = 8
+
+    /// The words to quote: the fetched passage for a reference, the authored
+    /// line otherwise — never the reference itself.
+    static func text(line: String, isReference: Bool, fetched: String?) -> String? {
+        guard isReference else { return line }
+        let t = fetched?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return t.isEmpty ? nil : t
+    }
+
+    /// "John 1:1–18 · NIV" under the words; the reference alone before them.
+    static func caption(reference: String, version: String?) -> String {
+        let v = version?.trimmingCharacters(in: .whitespaces) ?? ""
+        return v.isEmpty ? reference : "\(reference) · \(v)"
     }
 }
 
@@ -1909,10 +2021,10 @@ private struct MLSectionHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(kicker)
-                .font(.inter(10, .bold)).kerning(1.8)
+                .font(.inter(11, .bold)).kerning(1.8)
                 .foregroundStyle(ML.kicker)
             Text(title)
-                .font(.fraunces(23, .semibold)).kerning(-0.5)
+                .font(.fraunces(22, .semibold)).kerning(-0.5)
                 .foregroundStyle(ML.navy)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -1935,16 +2047,94 @@ struct MLFinishedSummary {
 
 /// Finished modules show the reflection FOLDED — the words the member wrote,
 /// read-only and sealed (edits flow through the "Revisit this module" door).
+/// The step after a finished lesson (the Cycle 4 walk: it was a dead end).
+/// The next lesson in its level, in the server's sequence; after the last
+/// lesson, the level's exam while it is the member's to take — or, while it
+/// isn't ready, §7.3's word that it opens soon. A lesson still behind its
+/// gate, or an exam already passed, offers nothing: Back stays the way out.
+enum LessonOnward: Equatable {
+    case lesson(id: String, number: Int, title: String)
+    case exam(level: Int)
+    case examSoon(level: Int)
+
+    static func after(moduleId: String, levelNumber: Int, in modules: [LevelModule]) -> LessonOnward? {
+        let lessons = modules.filter { !$0.isExam }.sorted { $0.moduleSequenceNumber < $1.moduleSequenceNumber }
+        guard let i = lessons.firstIndex(where: { $0.moduleId == moduleId }) else { return nil }
+        if i + 1 < lessons.count {
+            let next = lessons[i + 1]
+            guard next.status != .locked, !next.locked else { return nil }
+            return .lesson(id: next.moduleId, number: next.moduleSequenceNumber, title: next.title)
+        }
+        guard let exam = modules.first(where: \.isExam), !exam.completed,
+              exam.status != .locked, !exam.locked else { return nil }
+        return exam.examAvailable ? .exam(level: levelNumber) : .examSoon(level: levelNumber)
+    }
+
+    var kicker: String {
+        switch self {
+        case .lesson(_, let n, _): return "UP NEXT · MODULE \(n)"
+        case .exam(let l), .examSoon(let l): return "UP NEXT · LEVEL \(l) EXAM"
+        }
+    }
+    var title: String {
+        switch self {
+        case .lesson(_, _, let t): return t
+        case .exam(let l): return "Take the Level \(l) exam"
+        case .examSoon(let l): return "Level \(l) complete"
+        }
+    }
+    var line: String? {
+        switch self {
+        case .examSoon: return "Every module is done. The exam opens soon — we'll let you know."
+        default: return nil
+        }
+    }
+    var actionLabel: String? {
+        switch self {
+        case .lesson: return "Next lesson ›"
+        case .exam: return "Begin the exam ›"
+        case .examSoon: return nil
+        }
+    }
+}
+
+/// The way on, at the foot of a finished lesson: what comes next, and its
+/// one gold action.
+private struct MLOnwardCard: View {
+    let onward: LessonOnward
+    let action: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(onward.kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(onward.title).font(.nRowTitle).foregroundStyle(ML.navy)
+                .fixedSize(horizontal: false, vertical: true)
+            if let line = onward.line {
+                Text(line).font(.nCardBody).foregroundStyle(ML.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let label = onward.actionLabel {
+                PButton(title: label, action: action).padding(.top, 8)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ML.border, lineWidth: 1))
+    }
+}
+
 private struct MLReflectionFolded: View {
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("YOUR REFLECTION").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
+                Text("YOUR REFLECTION").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
                 Spacer()
                 HStack(spacing: 3) {
-                    Icon(.check, size: 10, color: Color(hex: 0x15803D))
-                    Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    Icon(.check, size: 14, color: Color(hex: 0x15803D))
+                    Text("Saved").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 }
             }
             Text(text.isEmpty ? "\u{2014}" : text)
@@ -1975,13 +2165,13 @@ private struct MLReflectionCard: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text("REFLECTION · STEP")
-                    .font(.inter(10, .bold)).kerning(1.8)
+                    .font(.inter(11, .bold)).kerning(1.8)
                     .foregroundStyle(ML.kicker)
                 Spacer(minLength: 0)
                 if done {
                     HStack(spacing: 4) {
-                        Icon(.check, size: 10, color: ML.navy)
-                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(ML.navy)
+                        Icon(.check, size: 14, color: ML.navy)
+                        Text("Saved").font(.inter(11, .bold)).foregroundStyle(ML.navy)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(ML.gold.opacity(0.9), in: Capsule())
@@ -2131,11 +2321,15 @@ private struct MLBottomGate: View {
     private var cta: some View {
         if !complete {
             HStack(spacing: 8) {
-                Icon(.lock, size: 13, color: ML.secondary)
+                Icon(.lock, size: 14, color: ML.secondary)
                 Text(lockReason)
                     .font(.inter(14, .bold))
+                    // Wraps whole: "Add a reflectio…" at the largest size (§9.6 #4).
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .foregroundStyle(ML.secondary)
+            .padding(.horizontal, 12).padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 52)
             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -2152,7 +2346,7 @@ private struct MLBottomGate: View {
                     else {
                         HStack(spacing: 8) {
                             Text("Start the quiz").font(.inter(14, .bold))
-                            Icon(.arrowRight, size: 15, color: ML.navy)
+                            Icon(.arrowRight, size: 14, color: ML.navy)
                         }
                     }
                 }
@@ -2194,7 +2388,7 @@ private struct MLStepChip: View {
         HStack(spacing: 5) {
             ZStack {
                 if step.done {
-                    Icon(.check, size: 10, color: ML.navy)
+                    Icon(.check, size: 14, color: ML.navy)
                 } else {
                     // A partial ring that fills to the live fraction while in progress.
                     Circle().stroke(ML.track, lineWidth: 1.5).frame(width: 14, height: 14)
@@ -2205,7 +2399,7 @@ private struct MLStepChip: View {
                             .frame(width: 14, height: 14)
                             .animation(.easeOut(duration: 0.35), value: step.clamped)
                     }
-                    Icon(step.kind.icon, size: 8, color: inProgress ? ML.overline : ML.secondary)
+                    Icon(step.kind.icon, size: 14, color: inProgress ? ML.overline : ML.secondary)
                 }
             }
             .frame(width: 16, height: 16)
@@ -2237,9 +2431,14 @@ private func mlPages(_ d: ModuleDetail) -> [String] {
 
 /// ≈ read time from the REAL word count of what's actually rendered, at a
 /// standard 200 wpm — a computation, never an invented number.
-private func mlReadMinutes(_ pages: [String]) -> Int {
-    let words = pages.joined(separator: " ").split(whereSeparator: \.isWhitespace).count
-    return max(1, Int((Double(words) / 200.0).rounded()))
+/// One time for a lesson (the Cycle 4 walk): the server's `estimated_minutes`,
+/// in the trail's words ("22 min"). The lesson used to count its own words at
+/// 200 a minute ("≈ 13 min") beside a trail that said 22.
+enum LessonTime {
+    static func label(_ minutes: Int?) -> String? {
+        guard let minutes, minutes > 0 else { return nil }
+        return "\(minutes) min"
+    }
 }
 
 /// A media duration in whole minutes for a "Xm" pill suffix — REAL data only:

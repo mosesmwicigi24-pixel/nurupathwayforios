@@ -96,22 +96,23 @@ enum ScheduleRhythm {
         "\(amountLabel) now, then \(cadence(frequency: frequency, day: setupDay(frequency: frequency, now: now)))"
     }
 
-    /// "Nothing is taken today — the first prompt comes on 5 Oct 2026."
+    /// "Nothing is taken today — the first prompt comes on Mon 5 Oct." The
+    /// year only when it isn't this year (§8.1 rule 8).
     static func nothingTodayLine(frequency: String, now: Date) -> String {
-        "Nothing is taken today — the first prompt comes on \(format(firstPrompt(frequency: frequency, now: now), "d MMM yyyy"))."
+        "Nothing is taken today — the first prompt comes on \(NuruDates.day(firstPrompt(frequency: frequency, now: now), now: now, timeZone: GiveCalendar.nairobi))."
     }
 
     /// The same line from the server's own first prompt (`next_run_at`).
-    static func nothingTodayLine(firstPromptISO: String) -> String {
+    static func nothingTodayLine(firstPromptISO: String, now: Date = Date()) -> String {
         guard let d = giveParseDate(firstPromptISO) else { return "Nothing is taken today." }
-        return "Nothing is taken today — the first prompt comes on \(format(d, "d MMM yyyy"))."
+        return "Nothing is taken today — the first prompt comes on \(NuruDates.day(d, now: now, timeZone: GiveCalendar.nairobi))."
     }
 
-    /// "Your weekly gift is set up — the first prompt comes on 5 Oct 2026."
-    static func setUpLine(frequency: String, firstPromptISO: String) -> String {
+    /// "Your weekly gift is set up — the first prompt comes on Sun 11 Oct."
+    static func setUpLine(frequency: String, firstPromptISO: String, now: Date = Date()) -> String {
         let kind = isWeekly(frequency) ? "weekly" : "monthly"
         guard let d = giveParseDate(firstPromptISO) else { return "Your \(kind) gift is set up." }
-        return "Your \(kind) gift is set up — the first prompt comes on \(format(d, "d MMM yyyy"))."
+        return "Your \(kind) gift is set up — the first prompt comes on \(NuruDates.day(d, now: now, timeZone: GiveCalendar.nairobi))."
     }
 
     /// What Partners' DUE row says for a running recurring gift, in place of
@@ -192,13 +193,13 @@ enum PauseCopy {
     }
 
     /// The sheet's line: "Paused after 3 prompts didn't go through" · "Paused
-    /// until 5 Oct 2026" · "Paused" · "Paused with its pledge — resume the
+    /// until Mon 5 Oct" · "Paused" · "Paused with its pledge — resume the
     /// pledge in Partners". Nil while not paused.
-    static func line(for s: GivingSchedule) -> String? {
+    static func line(for s: GivingSchedule, now: Date = Date()) -> String? {
         switch reason(of: s) {
         case nil: return nil
         case .failures: return "Paused after 3 prompts didn't go through"
-        case .member(let on): return on.flatMap(dayLabel).map { "Paused until \($0)" } ?? "Paused"
+        case .member(let on): return on.flatMap { dayLabel($0, now: now) }.map { "Paused until \($0)" } ?? "Paused"
         case .pledge: return "Paused with its pledge — resume the pledge in Partners"
         case .unknown: return "Paused"
         }
@@ -211,16 +212,22 @@ enum PauseCopy {
         return r != .pledge
     }
 
-    /// The small card's line under a paused gift: when it comes back on its
-    /// own, else that nothing is owed.
-    static func cardLine(for s: GivingSchedule) -> String {
-        if case .member(let on)? = reason(of: s), let day = on.flatMap(shortDayLabel) { return "Resumes \(day)" }
-        return "Nothing is owed"
+    /// Whether and when a paused gift prompts again (final walk C11: "Paused"
+    /// never said): "Resumes Mon 12 Oct" when it comes back on its own; with
+    /// its pledge, "Resumes when you resume its pledge"; otherwise it waits
+    /// for the member, and nothing is owed meanwhile. Give's row and Home's
+    /// week say it in these words.
+    static func cardLine(for s: GivingSchedule, now: Date = Date()) -> String {
+        if reason(of: s) == .pledge { return "Resumes when you resume its pledge" }
+        if let day = s.resumeOn.flatMap({ dayLabel($0, now: now) }) { return "Resumes \(day)" }
+        return "Nothing is owed — it won't prompt again until you resume it"
     }
 
-    /// "2026-10-05" → "5 Oct 2026".
-    static func dayLabel(_ ymd: String) -> String? { PauseDates.date(ymd).map { ScheduleRhythm.format($0, "d MMM yyyy") } }
-    private static func shortDayLabel(_ ymd: String) -> String? { PauseDates.date(ymd).map { ScheduleRhythm.format($0, "d MMM") } }
+    /// "2026-10-05" → "Mon 5 Oct" — the year only when it isn't this year
+    /// (§8.1 rule 8).
+    static func dayLabel(_ ymd: String, now: Date = Date()) -> String? {
+        PauseDates.date(ymd).map { NuruDates.day($0, now: now, timeZone: GiveCalendar.nairobi) }
+    }
 }
 
 // MARK: - Pausing until a date

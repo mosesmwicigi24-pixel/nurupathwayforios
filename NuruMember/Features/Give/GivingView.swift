@@ -44,7 +44,8 @@ import Combine
 /// the Give tab's second segment (GiveTabView, PARTNERS_PROGRAMME §0).
 enum GiveRoute: Hashable { case statement }
 
-// MARK: - Funds (exact Figma palette)
+// MARK: - Funds (one look: §8.1 rules 1 and 7 — a gold-tint tile, navy icon;
+// the walk's E17 found the Offering tile red and the Gift tile purple)
 
 private struct Fund: Identifiable {
     let code, label, tagline: String
@@ -53,38 +54,39 @@ private struct Fund: Identifiable {
     var id: String { code }
 }
 private let funds: [Fund] = [
-    Fund(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: 0xFFF4DA, fg: 0xC89B3C),
-    Fund(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626),
-    Fund(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: 0xF3E8FF, fg: 0xA855F7),
-    Fund(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: 0xE0F2FE, fg: 0x0EA5E9),
-    Fund(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: 0xDCFCE7, fg: 0x16A34A),
+    Fund(code: "tithe",        label: "Tithe",        tagline: "A faithful portion",  icon: .percent,   tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "offering",     label: "Offering",     tagline: "Freewill worship",    icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "gift",         label: "Gift",         tagline: "A special gift",      icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "mission",      label: "Mission",      tagline: "Beyond our walls",    icon: .globe,     tint: Nuru.tileTint, fg: Nuru.tileIcon),
+    Fund(code: "discipleship", label: "Discipleship", tagline: "Growing the Pathway", icon: .bookOpen,  tint: Nuru.tileTint, fg: Nuru.tileIcon),
 ]
 private let presets = [200, 500, 1000, 2500, 5000]
 
-// MARK: - Pay methods (Figma brand badges — square, rounded-xl)
+// MARK: - Pay methods (square, rounded-xl badges — the rail's mark in navy on
+// gold tint, never a brand hue: §8.1 rule 1)
 
 /// How a rail LOOKS. Which rails appear, and whether one can take money, is
 /// the server's answer (GET /giving/methods) — this is only the paint.
 private struct PayMethod: Identifiable {
     let key, label, sub: String
     let badgeText: String           // short logo text inside the badge
-    let badgeBg, badgeFg: UInt32    // brand colours for the badge
+    let badgeBg, badgeFg: UInt32    // the one tile look (Nuru.tileTint / tileIcon)
     let icon: Lucide?               // shown instead of badge text when set
     var id: String { key }
 }
 private let methodLooks: [PayMethod] = [
-    PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "STK push to your phone",
-              badgeText: "M-PESA", badgeBg: 0x16A34A, badgeFg: 0xFFFFFF, icon: nil),
+    PayMethod(key: "mpesa",    label: "Pay with M-Pesa",             sub: "A prompt on your phone",   // never "STK push" (rule 8: no jargon)
+              badgeText: "M-PESA", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
     PayMethod(key: "airtel",   label: "Pay with Airtel Money",       sub: "Mobile money",
-              badgeText: "AIRTEL", badgeBg: 0xDC2626, badgeFg: 0xFFFFFF, icon: nil),
+              badgeText: "AIRTEL", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
     PayMethod(key: "equity",   label: "Pay with Equity Bank",        sub: "Bank account",
-              badgeText: "", badgeBg: 0xA6093D, badgeFg: 0xFFFFFF, icon: .landmark),
+              badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .landmark),
     PayMethod(key: "card",     label: "Pay with Card",               sub: "Visa · Mastercard",
-              badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .creditCard),
+              badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .creditCard),
     PayMethod(key: "applepay", label: "Pay with Apple / Google Pay", sub: "Device wallet",
-              badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet),
+              badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .wallet),
     PayMethod(key: "paypal",   label: "Pay with PayPal",             sub: "PayPal balance / linked",
-              badgeText: "PP", badgeBg: 0xE8F1FB, badgeFg: 0x0070BA, icon: nil),
+              badgeText: "PP", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: nil),
 ]
 
 /// A rail's paint; one the server lists that this build has no badge for
@@ -92,7 +94,7 @@ private let methodLooks: [PayMethod] = [
 private func methodLook(_ rail: GivingMethod) -> PayMethod {
     methodLooks.first { $0.key == rail.key }
         ?? PayMethod(key: rail.key, label: "Pay with \(rail.label.isEmpty ? givingMethodName(rail.key) : rail.label)",
-                     sub: "", badgeText: "", badgeBg: 0xEEF2FF, badgeFg: 0x6366F1, icon: .wallet)
+                     sub: "", badgeText: "", badgeBg: Nuru.tileTint, badgeFg: Nuru.tileIcon, icon: .wallet)
 }
 
 /// A gift's receipt to present (a notification's gift that did not fail).
@@ -128,22 +130,23 @@ func giveParseDate(_ iso: String) -> Date? {
     return f.date(from: String(iso.prefix(10)))
 }
 
+/// "Mon 5 Oct" — the one date shape (§8.1 rule 8), the year when not this year.
 func giveDateShort(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-    let f = DateFormatter(); f.dateFormat = "d MMM"
-    return f.string(from: d)
+    return NuruDates.day(d)
 }
 
+/// "Mon 5 Oct 2026" — always the year: for text that leaves the app (a
+/// shared receipt) and a date in another year. On screen, this year's dates
+/// carry none (§8.1 rule 8) — `giveDateShort`.
 func giveDateFull(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-    let f = DateFormatter(); f.dateFormat = "d MMM yyyy"
-    return f.string(from: d)
+    return NuruDates.day(d, withYear: true)
 }
 
 func giveTime(_ iso: String) -> String {
     guard let d = giveParseDate(iso) else { return "" }
-    let f = DateFormatter(); f.dateFormat = "h:mm a"
-    return f.string(from: d)
+    return NuruDates.time(d)
 }
 
 // MARK: - View model
@@ -191,6 +194,16 @@ final class GivingViewModel: ObservableObject {
     /// A pledge's shape when this year's statement named it; nil = unknown.
     func pledgeShape(_ id: String) -> String? { pledgeShapes[id] }
 
+    /// Why the giving history never loaded — the strip at the top says it in
+    /// §4's words (§9.4); nil once anything has.
+    @Published var loadFailure: Error?
+    /// The year's total is known — from the server's statement or the
+    /// history. Until then the year pill says nothing: "KSh 0 given this
+    /// year" was a fact nobody had read (§9.4).
+    var yearKnown: Bool {
+        appliedHistorySeq > 0 || serverTotalsYear == GiveCalendar.currentYear()
+    }
+
     func load() async {
         loading = true
         loadSeq += 1
@@ -202,18 +215,34 @@ final class GivingViewModel: ObservableObject {
         async let s = MemberAPI.schedules()
         async let m = MemberAPI.givingMethods()
         async let t = MemberAPI.givingStatements(year: year)
+        // Every read answers before any of it shows (final walk, M4's class):
+        // the year pill once summed the history a moment before the
+        // statement's own total landed, and the recurring gifts that lead the
+        // page arrived after the form below them. Now they land together.
+        let readHistory: Result<[GivingRecord], Error>
+        do { readHistory = .success(try await h) } catch { readHistory = .failure(error) }
+        let readGifts = try? await s
+        let readRails = try? await m
+        let readTotals = try? await t
         // A failed refetch keeps what is on screen (stale-while-revalidate)
         // rather than blanking the year pill and Recent giving.
-        if let v = try? await h, seq > appliedHistorySeq { appliedHistorySeq = seq; history = v }
-        if let v = try? await s, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
+        switch readHistory {
+        case .success(let v):
+            if seq > appliedHistorySeq { appliedHistorySeq = seq; history = v; loadFailure = nil }
+        case .failure(let error):
+            // Said only while nothing was ever shown — a failed refetch keeps
+            // what is on screen.
+            if appliedHistorySeq == 0 { loadFailure = error }
+        }
+        if let v = readGifts, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
         // Methods too: a failed call keeps the last answer (M-Pesa alone if
         // there never was one); an answer with no rails in it is no answer.
-        if let v = try? await m, seq > appliedMethodsSeq {
+        if let v = readRails, seq > appliedMethodsSeq {
             appliedMethodsSeq = seq
             let next = v.methods.isEmpty ? GivingMethods.fallback(phoneOnFile: v.phoneOnFile) : v
             if next != methods { methods = next }
         }
-        if let v = try? await t, v.year == year, seq > appliedTotalsSeq {
+        if let v = readTotals, v.year == year, seq > appliedTotalsSeq {
             appliedTotalsSeq = seq
             serverYearTotals = v.totals
             serverTotalsYear = year
@@ -257,6 +286,8 @@ struct GivingView: View {
     /// band's first row when both are supplied (GiveTabView), omitted otherwise.
     var segment: GiveSegment? = nil
     var onSelectSegment: ((GiveSegment) -> Void)? = nil
+    /// At the accessibility sizes the band scrolls with the page (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @StateObject private var vm = GivingViewModel()
     /// "Hide the amount" on the year pill — a member glancing at Give in
@@ -267,6 +298,9 @@ struct GivingView: View {
     /// Whose number to remember — the prompt number is kept per member.
     @EnvironmentObject private var auth: AuthStore
     @Environment(\.scenePhase) private var scenePhase
+    /// Give's own stack (the statement, a receipt) — bound so a re-tap on the
+    /// Give tab can return it to the top (§7.4 #17).
+    @State private var path = NavigationPath()
 
     /// The Give form's normal state — what the tab opens with, and what a
     /// pledge / need payment returns it to once it went through.
@@ -367,6 +401,11 @@ struct GivingView: View {
     /// out (Giving Cycle 4): the server's reason + when the first prompt comes.
     @State private var scheduledNote: String?
     @State private var pollTask: Task<Void, Never>?
+    /// When "Check your phone" began its wait, and whether it has passed the
+    /// minute (StkWatch, EXPERIENCE.md §7.2 #5): the line turns to "Still
+    /// processing…" and Done leads, while the watch keeps going.
+    @State private var stkStartedAt = Date()
+    @State private var stkLate = false
     /// Set when a pledge / need payment went through (or is pending): the
     /// form returns to its normal state once the ceremony has finished
     /// dismissing, so the closing cover never flashes a reset amount.
@@ -446,10 +485,13 @@ struct GivingView: View {
     /// The server's rails in the member's order, each with its paint — the
     /// shilling rails only while paying a pledge or need (pledges are in
     /// shillings; a dollar payment would count against a shilling promise).
+    /// The rails Give lists: only those that can take this gift (§2: never
+    /// name a rail the member can't use — the Cycle 3 walk's E7 found "Pay
+    /// with Airtel Money · SOON", "PayPal · SOON", "Card · SOON").
     private var orderedMethods: [MethodRow] {
-        let offered = Set(vm.methods.offered(onlyCurrency: payRailsCurrency).map(\.key))
+        let shown = Set(GivingRails.listed(vm.methods, onlyCurrency: payRailsCurrency))
         return methodOrder.compactMap { k in
-            guard offered.contains(k) else { return nil }
+            guard shown.contains(k) else { return nil }
             return vm.methods.method(k).map { MethodRow(look: methodLook($0), rail: $0) }
         }
     }
@@ -458,15 +500,49 @@ struct GivingView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack(alignment: .bottom) {
                 Nuru.paper.ignoresSafeArea()
+                // The page above, its primary below — never over it (final
+                // walk C16): floating, the button hid half the fund cards in
+                // the first view ("A faithful portion" under it). The page now
+                // ends where the button's bar begins, at rest and scrolled.
+                VStack(spacing: 0) {
                 ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                    // At the accessibility sizes the band scrolls with the
+                    // page: pinned, it filled two thirds of the screen and the
+                    // form scrolled in a sliver under it (§9.6 #4).
+                    if typeSize.isAccessibilitySize { headerBlock }
                     VStack(alignment: .leading, spacing: Nuru.S.md) {
+                        // A saved copy says so (final walk M3): what the
+                        // page last read. A gift itself is never queued.
+                        NuruSavedCopyNotice(hasContent: vm.yearKnown)
+                        // Give's reads didn't come (offline, our side): say so
+                        // first, in §4's words — the form below still stands.
+                        if let f = vm.loadFailure, !vm.yearKnown {
+                            NuruStateView(state: .failed(NuruStateCopy.failure(f)),
+                                          retry: { Task { await vm.load() } }, compact: true)
+                        }
+                        // What is already in motion leads (EXPERIENCE.md §9.1
+                        // rule 6, §9.2 #6): the recurring gifts — running or
+                        // paused — come first, each told once; a one-time gift
+                        // is the choice below. A weekly tithe used to sit under
+                        // the fold twice ("Your rhythm" and a RECURRING GIFTS
+                        // rail) beneath a pre-filled one-time tithe. A pledge
+                        // payment still leads with its own card. Android's
+                        // 8cfa45d, row for row.
+                        if !payMode && !vm.listedSchedules.isEmpty {
+                            overline("RECURRING GIFTS")
+                            ForEach(vm.listedSchedules) { recurringGiftRow($0) }
+                            // A section's title, not a second kicker stacked on
+                            // "CHOOSE A FUND" (§8.1 rule 3; final walk 64/65).
+                            Text("Give once").font(.nCardTitle).foregroundStyle(Nuru.navy)
+                                .padding(.top, Nuru.S.sm)
+                        }
                         if !payMode, let g = vm.lastGift { repeatCard(g) }
                         if payMode { payModeCard.transition(.opacity) } else { fundsSection }
                         amountCard
-                        if !payMode { rhythmRow }
                         if !payMode && recurringAllowed { frequencyRow }
                         if recurring {
                             recurringSummary.transition(.opacity.combined(with: .move(edge: .top)))
@@ -475,28 +551,39 @@ struct GivingView: View {
                         // The fee table is M-Pesa's, in shillings — nothing to
                         // cover on a dollar rail.
                         if !inDollars { coverFeeRow }
-                        if !vm.listedSchedules.isEmpty { schedulesSection }
                         recentSection
                         scriptureStrip
                         secureNote
                     }
                     .padding(.horizontal, Nuru.S.screen)
                     .padding(.top, Nuru.S.base)
-                    .padding(.bottom, Nuru.tabBarSpace + 80)
+                    .padding(.bottom, Nuru.S.xl)
+                    }
+                    .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
                 }
-                .safeAreaInset(edge: .top, spacing: 0) { headerBlock }
+                .safeAreaInset(edge: .top, spacing: 0) { if !typeSize.isAccessibilitySize { headerBlock } }
+                // The page's edge, softened: what continues below fades into
+                // the bar rather than stopping on a hard line.
+                .overlay(alignment: .bottom) {
+                    LinearGradient(colors: [Nuru.paper.opacity(0), Nuru.paper], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 18).allowsHitTesting(false)
+                }
                 ctaBar
+                }
             }
             .ignoresSafeArea(edges: .top)
             .navigationBarBackButtonHidden(true)
             .toolbar(.hidden, for: .navigationBar)
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
             .navigationDestination(for: GiveRoute.self) { route in
                 switch route {
                 case .statement: GivingStatementView()
                 }
             }
+            .inboxDestinations()   // the band's bell
         }
+        .popsToRoot(on: .give, path: $path, when: { segment == nil || segment == .give })
         // Stale-while-revalidate (2026-09-26: the year pill sat at KSh 0 after
         // pledge payments landed without a ceremony — a scheduled charge,
         // another device). Refetch whenever this segment is SHOWN — first
@@ -642,10 +729,11 @@ struct GivingView: View {
                              refCode: successRef,
                              txId: pendingTxId,
                              cadenceWord: elsewhere.map { ScheduleRhythm.isWeekly($0.frequency) ? "week" : "month" } ?? cadenceWord,
-                             nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateFull(scheduledNextAt),
+                             nextChargeLabel: scheduledNextAt.isEmpty ? nil : giveDateShort(scheduledNextAt),
                              scheduledNote: scheduledNote,
                              nothingTodayLine: scheduledNextAt.isEmpty ? nil : ScheduleRhythm.nothingTodayLine(firstPromptISO: scheduledNextAt),
                              retrying: submitting,
+                             stkLate: stkLate,
                              onDone: { endCeremony() },
                              // Giving Cycle 3: a failed gift is retried on the
                              // server (same fund, amount, pledge, fee cover)
@@ -660,17 +748,18 @@ struct GivingView: View {
     private var headerBlock: some View {
         VStack(alignment: .leading, spacing: 0) {
             // ONE band (Partners UI v2): the GIVE · PARTNERS switch is the
-            // band's first row, so the "GIVE" eyebrow it replaced is gone.
+            // band's first row, so the "GIVE" eyebrow it replaced is gone —
+            // the tab's bell at its right (§6.2).
             if let segment, let onSelectSegment {
-                SplitSegmentBar(selection: segment, onSelect: onSelectSegment)
+                GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
-            Text("Sow into the Kingdom")
-                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-            Text("Generosity is worship — a quiet, joyful act.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 4)
+            // The one header's words (§8.1 rules 2–3): the switch sits above
+            // the kicker, which names the segment (final walk #38: there was
+            // none under the switch).
+            NuruHeaderText(kicker: "Give", title: "Sow into the Kingdom", line: "Generosity is worship — a quiet, joyful act.")
 
+            if vm.yearKnown {
             HStack(spacing: 10) {
                 // The year pill opens the statement — the same page "View
                 // statement" reaches further down.
@@ -679,11 +768,14 @@ struct GivingView: View {
                         Icon(.badgeCheck, size: 14, color: Nuru.gold)
                         Text(yearPillText)
                             .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                            .lineLimit(1).minimumScaleFactor(0.85)
+                            .nuruLineLimit(1).minimumScaleFactor(0.85)   // "KSh 1,200 giv…" at the largest (§9.6 #4)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
+                    // A capsule while it is one line; a rounded card when the
+                    // largest sizes wrap it, so the ends never crowd the words.
+                    .background(Color.white, in: yearPillShape)
+                    .overlay(yearPillShape.stroke(Nuru.gold.opacity(0.45), lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .accessibilityHint("Opens your giving statement")
@@ -692,7 +784,7 @@ struct GivingView: View {
                     Haptics.selection()
                     withAnimation(.easeInOut(duration: 0.15)) { hideYearTotal.toggle() }
                 } label: {
-                    Icon(hideYearTotal ? .eyeOff : .eye, size: 15, color: Nuru.navy)
+                    Icon(hideYearTotal ? .eyeOff : .eye, size: 14, color: Nuru.navy)
                         .frame(width: 36, height: 36)
                         .background(Color.white, in: Circle())
                         .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
@@ -702,6 +794,7 @@ struct GivingView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, 12)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -720,6 +813,10 @@ struct GivingView: View {
         )
     }
 
+    private var yearPillShape: AnyShape {
+        typeSize.isAccessibilitySize ? AnyShape(RoundedRectangle(cornerRadius: 20, style: .continuous)) : AnyShape(Capsule())
+    }
+
     /// "KSh 12,340 given this year" — or bullets while the member has chosen
     /// to hide it. The word "given" stays, so the pill still says what it is.
     /// Per currency (Giving Cycle 2): "KSh 3,500 + US$ 20.00 given this year"
@@ -736,19 +833,31 @@ struct GivingView: View {
             withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { applyRepeat(g) }
         } label: {
             HStack(spacing: Nuru.S.md) {
+                // A row's icon sits on a gold-tint tile (§8.1 rule 7; final
+                // walk #38 — it was a solid gold tile).
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold)
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.goldChipBg)
                         .frame(width: 36, height: 36)
-                    Icon(.repeat, size: 16, color: Nuru.navy)
+                    Icon(.repeat, size: 18, color: Nuru.goldChipText)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Repeat last gift").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size: "KSh 200…" (§9.6 #4).
                     Text("\(money(g.amountMinor, g.currency)) · \(g.fund.capitalized) · via \(givingMethodName(g.method))")
-                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    if typeSize.isAccessibilitySize {
+                        Text("Give again")
+                            .font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                            .padding(.top, 4)
+                    }
                 }
                 Spacer(minLength: Nuru.S.sm)
-                Text("Give again")
-                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                if !typeSize.isAccessibilitySize {
+                    Text("Give again")
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+                }
             }
             .padding(12)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -785,16 +894,20 @@ struct GivingView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: f.tint))
                         .frame(width: 36, height: 36)
-                    Icon(f.icon, size: 17, color: Color(hex: f.fg))
+                    Icon(f.icon, size: 18, color: Color(hex: f.fg))
                 }
                 Text(f.label).font(.inter(13, .semibold)).kerning(-0.13).foregroundStyle(Nuru.navy)
-                    .lineLimit(1).minimumScaleFactor(0.85)
+                    .nuruLineLimit(1).minimumScaleFactor(0.85)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(f.label, font: .inter(13, .semibold), kerning: -0.13)
                     .padding(.top, 8)
-                Text(f.tagline).font(.inter(10)).foregroundStyle(Color(hex: 0x5B6472))
-                    .lineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
+                Text(f.tagline).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
+                    .nuruLineLimit(2).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
-            .frame(width: 124, alignment: .leading)
+            // The rail scrolls sideways: at the largest sizes a card is wider
+            // and its words whole ("Offeri…", "A faithf…"; §9.6 #4).
+            .frame(width: typeSize.isAccessibilitySize ? 240 : 124, alignment: .leading)
             .padding(12)
             .background(on ? Nuru.priorityBg : Nuru.white,
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -813,18 +926,18 @@ struct GivingView: View {
                 showKeypad = true
             } label: {
                 VStack(spacing: 4) {
-                    Text("AMOUNT").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                    Text("AMOUNT").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
                         // PayPal takes dollars (Giving Cycle 2): the field says
                         // so, and shows cents.
                         Text(inDollars ? "US$" : "KSh").font(.inter(14, .medium)).foregroundStyle(Color(hex: 0x74808F))
                         Text(inDollars ? GiveMoney.number(usdCents) : amount.formatted(.number.grouping(.automatic)))
-                            .font(.fraunces(42, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
+                            .font(.fraunces(28, .semibold)).kerning(-1.2).foregroundStyle(Nuru.navy)
                             .lineLimit(1).minimumScaleFactor(0.6)
                             .contentTransition(.numericText(value: Double(giftMinor)))
                     }
                     Text(amountSubtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x5B6472))
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     if inDollars {
                         Text("PayPal gifts are in US dollars")
                             .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x0070BA))
@@ -851,10 +964,14 @@ struct GivingView: View {
                 showKeypad = true
             } label: {
                 HStack(spacing: 6) {
-                    Icon(.pencil, size: 13, color: Nuru.gold)
+                    Icon(.pencil, size: 14, color: Nuru.gold)
+                    // Whole at the largest size: "Enter a custo…" (§9.6 #4).
                     Text("Enter a custom amount").font(.inter(13, .bold)).foregroundStyle(Nuru.gold)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxWidth: .infinity).frame(height: 38)
+                .padding(.vertical, 4)
+                .frame(maxWidth: .infinity).frame(minHeight: 38)
                 .background(Nuru.white, in: Capsule())
                 .overlay(Capsule().stroke(Nuru.gold.opacity(0.55), lineWidth: 1))
             }
@@ -871,23 +988,13 @@ struct GivingView: View {
     /// US$ 5 … 100 while PayPal is chosen. Minor units either way.
     private var presetMinors: [Int] { inDollars ? UsdEntry.presetsCents : presets.map { $0 * 100 } }
 
+    /// One line of pills, as Android (§8.2 #7) — they wrapped "5,000" onto
+    /// a row of its own, pushing "Enter a custom amount" under the Give button.
     private var presetsRow: some View {
-        FlowWrap(spacing: 6, centered: true) {
-            ForEach(presetMinors, id: \.self) { v in
-                let on = giftMinor == v
-                Button {
-                    guard !on else { return }
-                    Haptics.selection()
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
-                        if inDollars { usdCents = v } else { amount = v / 100 }
-                    }
-                } label: {
-                    Text((v / 100).formatted(.number.grouping(.automatic)))
-                        .font(.inter(13, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
-                        .padding(.horizontal, 14).frame(height: 34)
-                        .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
-                        .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
-                }.buttonStyle(.pressable)
+        NuruAmountPills(amounts: presetMinors, selected: giftMinor,
+                        label: { ($0 / 100).formatted(.number.grouping(.automatic)) }) { v in
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                if inDollars { usdCents = v } else { amount = v / 100 }
             }
         }
     }
@@ -895,7 +1002,7 @@ struct GivingView: View {
     // MARK: Frequency
 
     private var frequencyRow: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             ForEach([("once", "One-time"), ("weekly", "Weekly"), ("monthly", "Monthly")], id: \.0) { key, label in
                 let on = freq == key
                 Button {
@@ -903,18 +1010,22 @@ struct GivingView: View {
                     Haptics.selection()
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { freq = key }
                 } label: {
+                    // Full pills (§8.1 rule 6; final walk #38): selected navy,
+                    // unselected white with a hairline — not the grey track.
                     Text(label)
                         .font(.inter(13, .semibold))
-                        .foregroundStyle(on ? Nuru.navy : Color(hex: 0x5B6472))
+                        .foregroundStyle(on ? Color.white : Nuru.ink600)
                         .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .nuruShadow(on ? 0.6 : 0)
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                 }.buttonStyle(.plain)
+                .accessibilityAddTraits(on ? [.isSelected] : [])
+                .accessibilityShowsLargeContentViewer()
             }
         }
-        .padding(4)
-        .background(Color(hex: 0x0A2540, alpha: 0.06),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        // A bar: "One… Wee… Mon…" at the largest size (§9.6 #4); a long press
+        // shows a choice large.
+        .nuruBarText()
     }
 
     /// Honest recurring summary. The day is the server's (today's Nairobi
@@ -925,7 +1036,7 @@ struct GivingView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold)
                     .frame(width: 36, height: 36)
-                Icon(.repeat, size: 16, color: Nuru.navy)
+                Icon(.repeat, size: 18, color: Nuru.navy)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("\(totalLabel) every \(cadenceWord)")
@@ -948,70 +1059,91 @@ struct GivingView: View {
         ScheduleRhythm.cadence(frequency: freq, day: ScheduleRhythm.setupDay(frequency: freq, now: Date()))
     }
 
-    // MARK: Your rhythm (PARTNERS_PROGRAMME §3a, Giving Cycle 4)
+    // MARK: Recurring gifts (EXPERIENCE.md §9.2 #6) — leading the tab
 
-    /// One row under the amount when a recurring gift is running: "Your
-    /// rhythm · KSh 500 every Sunday · next Sun 5 Oct" (the soonest one) —
-    /// a tap opens its sheet.
-    @ViewBuilder
-    private var rhythmRow: some View {
-        if let s = ScheduleRhythm.soonestActive(vm.listedSchedules), let text = ScheduleRhythm.rowText(for: s) {
-            Button {
-                Haptics.tap()
-                scheduleDetail = s
-            } label: {
-                HStack(spacing: Nuru.S.md) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.gold.opacity(0.14))
-                            .frame(width: 36, height: 36)
-                        Icon(.repeat, size: 15, color: Nuru.gold)
+    /// One recurring gift, full width (§9.1 rule 6): its rhythm and when it
+    /// next prompts ("KSh 1,000 every Monday · next Mon 12 Oct"), its fund and
+    /// the pledge it collects, what the next prompt really asks, a pause or a
+    /// failing prompt in words; a tap opens its sheet (change, pause, resume,
+    /// cancel). It was told twice — "Your rhythm" under the amount and a
+    /// half-width card in a rail below the fold.
+    private func recurringGiftRow(_ s: GivingSchedule) -> some View {
+        let paused = s.status.lowercased() == "paused"
+        let fund = funds.first { $0.code == s.fund }?.label ?? s.fund.capitalized
+        let title = paused
+            ? "\(money(s.amountMinor, s.currency)) \(ScheduleRhythm.isWeekly(s.frequency) ? "weekly" : "monthly") · Paused"
+            : (ScheduleRhythm.rowText(for: s) ?? "\(money(s.amountMinor, s.currency)) \(ScheduleRhythm.isWeekly(s.frequency) ? "weekly" : "monthly")")
+        return Button {
+            Haptics.tap()
+            scheduleDetail = s
+        } label: {
+            HStack(spacing: Nuru.S.md) {
+                Icon(.repeat, size: 18, color: Nuru.navy)
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(paused ? "\(fund) · \(PauseCopy.cardLine(for: s))" : fund)
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                        .fixedSize(horizontal: false, vertical: true)
+                    // The pledge it collects, and what the next prompt really asks.
+                    ForEach([ScheduleCopy.pledgeLine(s), ScheduleCopy.nextLine(s)].compactMap { $0 }, id: \.self) { line in
+                        Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Your rhythm").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                        Text(text).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
-                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        // A gift that collects a pledge says so, and what the
-                        // next prompt really asks (Giving Cycle 5).
-                        ForEach([ScheduleCopy.pledgeLine(s), ScheduleCopy.nextLine(s)].compactMap { $0 }, id: \.self) { line in
-                            Text(line).font(.nCardMeta).foregroundStyle(Color(hex: 0x9A7A2A))
-                                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        }
+                    // Why its last prompt failed, while it still fails — the server's words.
+                    if let f = s.lastFailure, !f.reason.isEmpty {
+                        // "M-Pesa" never breaks at its hyphen (rule 9; 64).
+                        Text(NuruText.keepHyphens(f.reason)).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    Spacer(minLength: Nuru.S.sm)
-                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
                 }
-                .padding(12)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                Spacer(minLength: Nuru.S.sm)
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
-            .buttonStyle(.pressable)
-            .accessibilityHint("Opens your recurring gift")
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens your recurring gift")
     }
 
     // MARK: Pay methods
 
     private var methodSection: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.sm) {
+        let rails = orderedMethods
+        return VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack {
-                overline("CHOOSE HOW TO PAY")
+                overline(rails.count == 1 ? "HOW YOU'LL PAY" : "CHOOSE HOW TO PAY")
                 Spacer()
-                HStack(spacing: 4) {
-                    Icon(.gripVertical, size: 11, color: Color(hex: 0x74808F))
-                    Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                // Order is a choice only between two or more.
+                if rails.count > 1 {
+                    HStack(spacing: 4) {
+                        Icon(.gripVertical, size: 14, color: Color(hex: 0x74808F))
+                        Text("Reorder").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                    }
                 }
             }
+            if rails.isEmpty {
+                // Nothing can take this gift from this phone: say so, in place.
+                Text(payRailsCurrency.map { vm.methods.unavailableNote(forCurrency: $0) }
+                     ?? "Giving from this phone isn't available right now.")
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             VStack(spacing: Nuru.S.sm) {
-                ForEach(Array(orderedMethods.enumerated()), id: \.element.id) { idx, m in
-                    methodRow(m, index: idx)
+                ForEach(Array(rails.enumerated()), id: \.element.id) { idx, m in
+                    methodRow(m, index: idx, reorderable: rails.count > 1)
                 }
             }
         }
     }
 
     @ViewBuilder
-    private func methodRow(_ m: MethodRow, index: Int) -> some View {
+    private func methodRow(_ m: MethodRow, index: Int, reorderable: Bool) -> some View {
         // A rail the server says cannot take money here (or this build cannot
         // complete) wears SOON / UNAVAILABLE and cannot be picked.
         let badge = vm.methods.unavailableBadge(m.key)
@@ -1026,40 +1158,45 @@ struct GivingView: View {
                 HStack(spacing: Nuru.S.md) {
                     methodBadge(m.look)
                     VStack(alignment: .leading, spacing: 2) {
+                        // Whole at the largest size: "Pay wi…", "0700 0…" (§9.6 #4).
                         Text(m.look.label).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                            .lineLimit(1).minimumScaleFactor(0.85)
+                            .nuruLineLimit(1).minimumScaleFactor(0.85)
+                            .fixedSize(horizontal: false, vertical: true)
                         if on {
-                            Text(activeDetail(m)).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+                            Text(activeDetail(m)).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer(minLength: Nuru.S.sm)
                     if let badge {
                         Text(badge)
-                            .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.goldChipText)
+                            .font(.inter(11, .bold)).kerning(0.5).foregroundStyle(Nuru.goldChipText)
                             .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(Nuru.goldChipBg, in: Capsule())
                     }
                     if on {
                         ZStack {
                             Circle().fill(Nuru.gold).frame(width: 24, height: 24)
-                            Icon(.check, size: 13, color: Nuru.navy)
+                            Icon(.check, size: 14, color: Nuru.navy)
                         }
                     }
                 }
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            VStack(spacing: 2) {
-                Button { nudgeMethod(from: index, by: -1) } label: {
-                    Icon(.chevronUp, size: 14, color: Nuru.ink300)
-                        .frame(width: 26, height: 22).contentShape(Rectangle())   // easier to hit
-                }.buttonStyle(.plain).disabled(index == 0)
-                Button { nudgeMethod(from: index, by: 1) } label: {
-                    Icon(.chevronDown, size: 14, color: Nuru.ink300)
-                        .frame(width: 26, height: 22).contentShape(Rectangle())
-                }.buttonStyle(.plain).disabled(index == orderedMethods.count - 1)
+            if reorderable {
+                VStack(spacing: 2) {
+                    Button { nudgeMethod(from: index, by: -1) } label: {
+                        Icon(.chevronUp, size: 14, color: Nuru.ink300)
+                            .frame(width: 26, height: 22).contentShape(Rectangle())   // easier to hit
+                    }.buttonStyle(.plain).disabled(index == 0)
+                    Button { nudgeMethod(from: index, by: 1) } label: {
+                        Icon(.chevronDown, size: 14, color: Nuru.ink300)
+                            .frame(width: 26, height: 22).contentShape(Rectangle())
+                    }.buttonStyle(.plain).disabled(index == orderedMethods.count - 1)
+                }
+                Icon(.gripVertical, size: 18, color: Color(hex: 0xC4C9D0))
             }
-            Icon(.gripVertical, size: 16, color: Color(hex: 0xC4C9D0))
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1080,16 +1217,21 @@ struct GivingView: View {
     private func methodBadge(_ m: PayMethod) -> some View {
         ZStack {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(hex: m.badgeBg)).frame(width: 40, height: 40)
+                .fill(Color(hex: m.badgeBg)).frame(width: 52, height: 40)
             if let icon = m.icon {
                 Icon(icon, size: 18, color: Color(hex: m.badgeFg))
             } else {
+                // The rail's short name whole, at the 11 pt floor (§8.1 rule 3) —
+                // the badge is wide enough that it never shrinks under it.
                 Text(m.badgeText)
-                    .font(.inter(m.badgeText.count > 3 ? 8 : 11, .heavy)).kerning(-0.2)
+                    .font(.inter(11, .heavy)).kerning(-0.2)
                     .foregroundStyle(Color(hex: m.badgeFg))
-                    .minimumScaleFactor(0.5).lineLimit(1).padding(.horizontal, 2)
+                    .lineLimit(1).fixedSize()
             }
         }
+        // A figure in a fixed shape keeps the everyday size (§9.6 #4): the
+        // rail's name spilled out of its badge; the row's own words grow.
+        .nuruFixedFigure()
     }
 
     // MARK: Cover fee
@@ -1107,77 +1249,6 @@ struct GivingView: View {
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         .onChange(of: coverFee) { _, _ in Haptics.tap() }
-    }
-
-    // MARK: Active schedules (horizontal scroll, tap to manage)
-
-    /// Active schedules, then paused ones (labelled) — never a cancelled one
-    /// (GiveSchedules.listed; the server returns every schedule ever made).
-    /// Titled RECURRING GIFTS, as on Android and the office's pages: it lists
-    /// paused gifts too, so "active" was not true of all of them.
-    private var schedulesSection: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.sm) {
-            overline("RECURRING GIFTS")
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
-                    ForEach(vm.listedSchedules) { s in
-                        Button {
-                            Haptics.tap()
-                            scheduleDetail = s
-                        } label: { scheduleCard(s) }
-                            .buttonStyle(.pressable)
-                    }
-                }
-                .padding(.vertical, 2)
-            }
-        }
-    }
-
-    private func scheduleCard(_ s: GivingSchedule) -> some View {
-        let paused = s.status.lowercased() == "paused"
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 5) {
-                Icon(.repeat, size: 12, color: Nuru.gold)
-                Text(s.frequency == "weekly" ? "WEEKLY" : "MONTHLY")
-                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
-                if paused {
-                    Spacer(minLength: 4)
-                    Text("Paused").font(.nMicro).foregroundStyle(Nuru.ink600)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(Nuru.mutedBg, in: Capsule())
-                }
-            }
-            Text(money(s.amountMinor, s.currency))
-                .font(.inter(15, .bold)).kerning(-0.15).foregroundStyle(Nuru.navy)
-                .lineLimit(1).minimumScaleFactor(0.8)
-                .padding(.top, 5)
-            Text(s.fund.capitalized).font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
-                .lineLimit(1).truncationMode(.tail)
-                .padding(.top, 1)
-            if let line = ScheduleCopy.pledgeLine(s) {
-                Text(line).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
-            }
-            // A paused schedule charges nothing — its old next date is not a
-            // promise; one paused until a date says when it comes back.
-            Text(paused ? PauseCopy.cardLine(for: s) : "Next \(giveDateShort(s.nextRunAt))")
-                .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
-                .lineLimit(1)
-                .padding(.top, 5)
-            // Why the last charge failed, while it is still failing — the
-            // server's own words.
-            if let f = s.lastFailure, !f.reason.isEmpty {
-                Text(f.reason)
-                    .font(.inter(10, .semibold)).foregroundStyle(Nuru.urgentText)
-                    .lineLimit(3).fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 5)
-            }
-        }
-        .frame(width: 150, alignment: .leading)
-        .padding(12)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     // MARK: Recent giving
@@ -1198,7 +1269,7 @@ struct GivingView: View {
         let line = isPledge ? pledgeLine : needLine
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Icon(isPledge ? .heartHandshake : .target, size: 13, color: Nuru.gold)
+                Icon(isPledge ? .heartHandshake : .target, size: 14, color: Nuru.gold)
                 overline(isPledge ? "PAYING YOUR PLEDGE" : "GIVING TO A NEED")
             }
             Text(title)
@@ -1210,7 +1281,7 @@ struct GivingView: View {
                     .padding(.top, 3)
             }
             HStack(spacing: 6) {
-                Icon(.shieldCheck, size: 12, color: Color(hex: 0x74808F))
+                Icon(.shieldCheck, size: 14, color: Color(hex: 0x74808F))
                 Text(routedLine).font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             .padding(.top, 10)
@@ -1277,16 +1348,20 @@ struct GivingView: View {
 
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                overline("RECENT GIVING")
-                Spacer()
-                // Always reachable — the statement page has its own empty state, so the
-                // giving record + receipts stay discoverable even before the first gift.
-                NavigationLink(value: GiveRoute.statement) {
-                    HStack(spacing: 3) {
-                        Text("View statement").font(.inter(12, .semibold))
-                        Icon(.arrowRight, size: 11, color: Nuru.gold)
-                    }.foregroundStyle(Nuru.gold)
+            Group {
+                // The link under the overline at the largest sizes: beside it,
+                // "View statemen / t" (§9.6 #4).
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 4) {
+                        overline("RECENT GIVING")
+                        statementLink
+                    }
+                } else {
+                    HStack {
+                        overline("RECENT GIVING")
+                        Spacer()
+                        statementLink
+                    }
                 }
             }
             .padding(.horizontal, Nuru.S.base).padding(.top, 14).padding(.bottom, 6)
@@ -1313,21 +1388,55 @@ struct GivingView: View {
         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
+    // Always reachable — the statement page has its own empty state, so the
+    // giving record + receipts stay discoverable even before the first gift.
+    private var statementLink: some View {
+        NavigationLink(value: GiveRoute.statement) {
+            HStack(spacing: 3) {
+                Text("View statement").font(.inter(12, .semibold))
+                Icon(.arrowRight, size: 14, color: Nuru.gold)
+            }.foregroundStyle(Nuru.gold)
+        }
+    }
+
     private func recentRow(_ g: GivingRecord) -> some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(g.fund.capitalized).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                    .lineLimit(1)
-                Text("\(giveDateShort(g.createdAt)) · \(givingMethodName(g.method))")
-                    .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472)).lineLimit(1)
+        Group {
+            // The amount under the words at the largest sizes: beside it the
+            // date and rail were cut ("Mon 5 O…"; §9.6 #4).
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 2) {
+                    recentWords(g)
+                    recentAmount(g).padding(.top, 2)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                HStack {
+                    recentWords(g)
+                    Spacer()
+                    recentAmount(g).layoutPriority(1)
+                }
             }
-            Spacer()
-            Text(money(g.amountMinor, g.currency))
-                .font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                .lineLimit(1).layoutPriority(1)
         }
         .padding(.horizontal, Nuru.S.base).padding(.vertical, 11)
         .contentShape(Rectangle())
+    }
+
+    private func recentWords(_ g: GivingRecord) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            // A gift is a content row (§8.1 rule 3: Fraunces 15 semibold;
+            // final walk #38 — it was Inter).
+            Text(g.fund.capitalized).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+            Text("\(giveDateShort(g.shownAt)) · \(givingMethodName(g.method))")
+                .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func recentAmount(_ g: GivingRecord) -> some View {
+        Text(money(g.amountMinor, g.currency))
+            .font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
+            .lineLimit(1)
     }
 
     // MARK: Scripture + secure note
@@ -1351,7 +1460,7 @@ struct GivingView: View {
 
     private var secureNote: some View {
         HStack(spacing: 6) {
-            Icon(.shieldCheck, size: 13, color: Color(hex: 0x74808F))
+            Icon(.shieldCheck, size: 14, color: Color(hex: 0x74808F))
             // Only rails that can take money here (it used to promise cards).
             Text(vm.methods.secureNote())
                 .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
@@ -1372,12 +1481,16 @@ struct GivingView: View {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.8)
                     Text("Processing…")
                 } else if pledgeId != nil {
+                    // A long pledge name takes a second line before the label
+                        // would shrink under 11 pt (14 × 0.8 = 11.2).
                     Text("Pay \(totalLabel) toward \(pledgeTitle ?? "your pledge")")
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .font(.inter(14, .bold)).multilineTextAlignment(.center)
+                        .lineLimit(2).minimumScaleFactor(0.8)
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if needId != nil {
                     Text("Give \(totalLabel) to \(needTitle ?? "this need")")
-                        .lineLimit(1).minimumScaleFactor(0.75)
+                        .font(.inter(14, .bold)).multilineTextAlignment(.center)
+                        .lineLimit(2).minimumScaleFactor(0.8)
                     Icon(.arrowRight, size: 14, color: Nuru.navy)
                 } else if recurring {
                     Icon(.repeat, size: 14, color: Nuru.navy)
@@ -1497,7 +1610,7 @@ struct GivingView: View {
         } catch {
             // Keep the key ONLY when the server never answered.
             if !Self.gotNoServerAnswer(error) { submissionKey = GiveKey.fresh() }
-            switch GiveRefusal.from(error, fallback: "Couldn't create the schedule.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 // A prompt is already on the phone: nothing was created — watch
                 // that one; the member can set the schedule up after it.
@@ -1543,7 +1656,7 @@ struct GivingView: View {
             // not the member's own) is said in the server's words — neither
             // is ever sent again without a tap (Giving Cycle 6).
             if !Self.gotNoServerAnswer(error) { submissionKey = GiveKey.fresh() }
-            switch GiveRefusal.from(error, fallback: "Something went wrong.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 // Not a failure: this member's prompt from a moment ago is
                 // still on their phone (409 GIFT_IN_PROGRESS). Watch that one.
@@ -1593,9 +1706,7 @@ struct GivingView: View {
         ceremony = "stk"
         // The intent exists (pending) — Partners shows it as Processing.
         GivingSignal.post(from: vm)
-        let tx = res.transactionId
-        pollTask?.cancel()
-        pollTask = Task { await watchOutcome(tx) }
+        startWatching(res.transactionId)
     }
 
     /// "Try again" on the failed result (Giving Cycle 3): the gift that failed
@@ -1629,7 +1740,7 @@ struct GivingView: View {
             // form, and nothing is ever retried without a tap (Giving Cycle 6).
             retryKey = GiveRetry.key(after: error, current: retryKey)
             retryTxId = GiveRetry.target(after: error, retrying: failedTx)
-            switch GiveRefusal.from(error, fallback: "Couldn't try again — check your connection.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 await watchWaitingPrompt(tx, message: message)
             case let .message(text):
@@ -1717,8 +1828,7 @@ struct GivingView: View {
             successRef = nil
             ceremonyNote = "Your \(kind) gift is set up — this is its first prompt."
             ceremony = "stk"
-            pollTask?.cancel()
-            pollTask = Task { await watchOutcome(tx) }
+            startWatching(tx)
         case let .waiting(tx, message):
             Task { await watchWaitingPrompt(tx, message: message) }
         case let .scheduled(note, nextRunAt):
@@ -1744,23 +1854,45 @@ struct GivingView: View {
         ceremony = "stk"
         // Already over by the time we asked? Show how it ended.
         if let detail, await settle(detail) { return }
+        startWatching(txId)
+    }
+
+    /// Starts watching the gift on "Check your phone" — the stage's minute
+    /// starts now (StkWatch). `resume` (a PayPal capture that came back after
+    /// the watch ended) watches again without turning a late stage back.
+    private func startWatching(_ txId: String, resume: Bool = false) {
+        stkStartedAt = Date()
+        if !resume { stkLate = false }
         pollTask?.cancel()
         pollTask = Task { await watchOutcome(txId) }
     }
 
-    /// Polls the REAL transaction for up to ~60s — the ceremony only ever shows
-    /// the server's status, never a fabricated one.
+    /// Polls the REAL transaction while the stage is on screen — every 3 s for
+    /// the first minute, then every 10 s up to five (StkWatch, §7.2 #5), so an
+    /// answer that comes late still lands. The ceremony only ever shows the
+    /// server's status, never a fabricated one; past the minute it says it is
+    /// still processing, and Done leads.
     private func watchOutcome(_ txId: String) async {
-        for _ in 0..<20 {
-            try? await Task.sleep(nanoseconds: 3_000_000_000)
+        let started = stkStartedAt
+        while let delay = StkWatch.nextDelay(elapsed: Date().timeIntervalSince(started)) {
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
             if Task.isCancelled || ceremony != "stk" { return }
+            noteLateIfDue(since: started)
             guard let d = try? await MemberAPI.givingDetail(txId) else { continue }
             // The member may have closed the ceremony while that was in flight.
             if Task.isCancelled || ceremony != "stk" { return }
             if await settle(d) { return }
         }
-        if ceremony == "stk" {
-            ceremonyNote = "Still processing — your gift will appear in Recent giving once it clears."
+        if ceremony == "stk" { noteLateIfDue(since: started) }
+    }
+
+    /// Past the minute: "Still processing — it will show in Recent giving
+    /// once it clears." and Done as the primary. Once.
+    private func noteLateIfDue(since started: Date) {
+        guard !stkLate, StkWatch.isLate(elapsed: Date().timeIntervalSince(started)) else { return }
+        withAnimation(.easeInOut(duration: 0.25)) {
+            stkLate = true
+            ceremonyNote = StkWatch.lateLine
         }
     }
 
@@ -1812,27 +1944,20 @@ struct GivingView: View {
             if let r = try? await MemberAPI.capturePayPal(orderId: orderId),
                r.status == "succeeded" || r.status == "failed" {
                 paypalOrderId = nil   // settled either way — the poll reports the truth
-                // If the 60s poll already lapsed (long PayPal detour), restart it so
+                // If the watch already lapsed (long PayPal detour), restart it so
                 // the ceremony can resolve from the server's status.
                 if let tx = pendingTxId, ceremony == "stk" {
-                    pollTask?.cancel()
-                    pollTask = Task { await watchOutcome(tx) }
+                    startWatching(tx, resume: true)
                 }
             }
         }
     }
 
     private func endCeremony() {
-        // A server-confirmed gift gets its warm moment as the ceremony closes
-        // (the fullScreenCover would sit over the root-mounted CelebrationHost,
-        // so we fire on the way out). Keyed by the real transaction/receipt ref
-        // so each gift celebrates exactly once.
-        if ceremony == "success", let ref = pendingTxId ?? successRef {
-            CelebrationCenter.shared.fire(
-                key: "gift-\(ref)",
-                title: "Thank you for sowing",
-                subtitle: "Every gift carries the gospel further.")
-        }
+        // One celebration per gift (§7.4 #14, §8.2 #17): the gift's own
+        // success screen ("Thank you for your generosity · KSh 1,000 · Tithe ·
+        // Ref …"). A second "Thank you for sowing · Amen 🙌" card used to fire
+        // here on the way out and land later, on whatever tab came next.
         // Double-pay guard: a pledge / need payment that SUCCEEDED, or is
         // still PENDING ("stk" — the intent exists: STK prompt out, PayPal
         // approval, or the poll lapsed while processing), must not be payable
@@ -1852,10 +1977,13 @@ struct GivingView: View {
         // if the server answered, kept only if it never did (so the retry
         // replays it and gets the transaction back if the request landed).
         if ceremony != "failed" { submissionKey = GiveKey.fresh() }
+        // Closing stops only the watching — the gift itself is the server's
+        // and goes on as it was (§7.2 #5); the reload below shows how it ends.
         pollTask?.cancel(); pollTask = nil
         paypalCaptureTask?.cancel(); paypalCaptureTask = nil
         paypalOrderId = nil
         ceremony = nil; ceremonyNote = ""
+        stkLate = false
         // Closed: nothing is left to retry from here.
         retryTxId = nil; retryMethod = nil
         scheduledNextAt = ""
@@ -1926,23 +2054,16 @@ struct GivingView: View {
         }
     }
 
+    /// Moves a listed rail past its listed neighbour — rails not listed (they
+    /// can't take this gift) keep their place in the saved order unseen.
     private func moveMethod(from index: Int, by delta: Int) {
-        let to = index + delta
-        guard to >= 0, to < methodOrder.count else { return }
-        var arr = methodOrder
-        // map ordered index back to underlying key
-        let key = orderedMethods[index].key
-        if let realIdx = arr.firstIndex(of: key) {
-            arr.remove(at: realIdx)
-            arr.insert(key, at: max(0, min(arr.count, realIdx + delta)))
-            methodOrder = arr
-        }
+        methodOrder = GivingRails.moved(methodOrder, listed: orderedMethods.map(\.key), from: index, by: delta)
     }
 
     // MARK: Helpers
 
     private func overline(_ s: String) -> some View {
-        Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+        Text(s).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
     }
 }
 
@@ -1978,7 +2099,7 @@ private struct GiveKeypadSheet: View {
             VStack(spacing: Nuru.S.base) {
                 HStack {
                     Text("CUSTOM AMOUNT · \(fundLabel.uppercased())")
-                        .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                        .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                     Spacer()
                     Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
                 }
@@ -1987,7 +2108,7 @@ private struct GiveKeypadSheet: View {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text(inDollars ? "US$" : "KSh").font(.inter(13, .medium)).foregroundStyle(Color(hex: 0x74808F))
                     Text(inDollars ? (value.isEmpty ? "0" : value) : (minor / 100).formatted(.number.grouping(.automatic)))
-                        .font(.fraunces(38, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
+                        .font(.fraunces(28, .semibold)).kerning(-1.1).foregroundStyle(Nuru.navy)
                 }
                 .frame(maxWidth: .infinity)
                 if inDollars {
@@ -1995,18 +2116,12 @@ private struct GiveKeypadSheet: View {
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x0070BA))
                 }
 
-                HStack(spacing: 6) {
-                    ForEach(presetMinors, id: \.self) { v in
-                        Button { value = inDollars ? UsdEntry.text(v) : String(v / 100) } label: {
-                            Text((v / 100).formatted(.number.grouping(.automatic)))
-                                .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
-                                .padding(.horizontal, 11).frame(height: 32)
-                                .background(Nuru.surface, in: Capsule())
-                                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-                        }.buttonStyle(.plain)
-                    }
+                // The same pills as the form (§8.1 rule 6) — the typed amount,
+                // when it is one of them, is the chosen one.
+                NuruAmountPills(amounts: presetMinors, selected: minor,
+                                label: { ($0 / 100).formatted(.number.grouping(.automatic)) }) { v in
+                    value = inDollars ? UsdEntry.text(v) : String(v / 100)
                 }
-                .frame(maxWidth: .infinity)
 
                 keys
 
@@ -2017,7 +2132,11 @@ private struct GiveKeypadSheet: View {
                     nameFocused = false
                     onConfirm(minor, trimmedName.isEmpty ? nil : trimmedName); dismiss()
                 } label: {
-                    Text("Give \(GiveMoney.format(minor, currency))")
+                    // It sets the amount and closes; the gift itself is the
+                    // form's "Give KSh X" — one way to give, and the last tap
+                    // before money moves names the money (§7.1 rule 7; §9.6
+                    // #3). Android's words.
+                    Text("Set amount")
                         .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 48)
                         .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -2033,6 +2152,9 @@ private struct GiveKeypadSheet: View {
             name = initialName
         }
         .presentationDetents([.height(720)])
+        // An opaque sheet (§8.1 rule 5; final walk 58–59): the system's
+        // glass showed the page through it.
+        .presentationBackground(Nuru.white)
         .presentationDragIndicator(.visible)
     }
 
@@ -2041,7 +2163,7 @@ private struct GiveKeypadSheet: View {
     private var nameSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("NAME YOUR GIFT (OPTIONAL)")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
 
             FlowWrap(spacing: 6) {
                 ForEach(giftNamePresets, id: \.self) { p in
@@ -2050,17 +2172,18 @@ private struct GiveKeypadSheet: View {
                         Haptics.selection()
                         name = on ? "" : p
                     } label: {
+                        // Chips: chosen navy, the rest white with a hairline (§8.1 rule 6).
                         Text(p)
                             .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                             .padding(.horizontal, 11).frame(height: 32)
-                            .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
             }
 
             HStack(spacing: Nuru.S.sm) {
-                Icon(.pencil, size: 15, color: Color(hex: 0x74808F))
+                Icon(.pencil, size: 14, color: Color(hex: 0x74808F))
                 TextField("e.g. \u{201C}For Mom\u{2019}s healing\u{201D}", text: $name)
                     .focused($nameFocused)
                     .font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
@@ -2071,7 +2194,7 @@ private struct GiveKeypadSheet: View {
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
 
             Text("Shows on the church's M-Pesa statement — like a Paybill account name.")
-                .font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
+                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
         }
         .padding(.top, 2)
     }
@@ -2086,7 +2209,7 @@ private struct GiveKeypadSheet: View {
                     Group {
                         if k == "del" {
                             Image(systemName: "delete.left")
-                                .font(.system(size: 19)).foregroundStyle(Color(hex: 0x5B6472))
+                                .font(.symbol(19)).foregroundStyle(Color(hex: 0x5B6472))
                         } else {
                             Text(k).font(.inter(18, .semibold)).foregroundStyle(Nuru.navy)
                         }
@@ -2140,10 +2263,13 @@ private struct MobileMoneySheet: View {
     /// "Start with a gift now" (Giving Cycle 4) — on by default: the first
     /// prompt goes out now, while the member is holding the phone.
     @State private var giveNow = true
+    /// What the sheet says, measured — the sheet is exactly that tall
+    /// (EXPERIENCE.md §8.2 #11). A fixed 430pt left its lower half empty.
+    @State private var contentHeight: CGFloat = 360
 
     private var isMpesa: Bool { methodKey != "airtel" }
     private var railName: String { isMpesa ? "M-Pesa" : "Airtel Money" }
-    private var tint: Color { Color(hex: isMpesa ? 0x16A34A : 0xDC2626) }
+    private var tint: Color { Nuru.navy }   // the rail is named, not coloured (§8.1 rule 1)
     private var check: KenyanPhone.Check { KenyanPhone.check(phone) }
     /// The number as E.164 — nil until the field holds a valid one.
     private var number: String? { KenyanPhone.normalize(phone) }
@@ -2157,7 +2283,7 @@ private struct MobileMoneySheet: View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack {
                 Text(isMpesa ? "M-PESA NUMBER" : "AIRTEL MONEY NUMBER")
-                    .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
+                    .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0x74808F))
                 Spacer()
                 Button { dismiss() } label: { Icon(.x, size: 18, color: Nuru.navy) }.buttonStyle(.plain)
             }
@@ -2170,7 +2296,7 @@ private struct MobileMoneySheet: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: Nuru.S.sm) {
-                    Icon(.smartphone, size: 17, color: tint)
+                    Icon(.smartphone, size: 18, color: tint)
                     TextField("07XX XXX XXX", text: $phone)
                         .keyboardType(.phonePad)
                         .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
@@ -2193,10 +2319,10 @@ private struct MobileMoneySheet: View {
             }
 
             if let onFile = numberOnFile {
-                Button { phone = onFile } label: {
+                Button { phone = KenyanPhone.display(onFile) } label: {
                     HStack(spacing: 5) {
-                        Icon(.repeat, size: 12, color: Nuru.goldLo)
-                        Text("Use my number (\(onFile))")
+                        Icon(.repeat, size: 14, color: Nuru.goldLo)
+                        Text("Use my number (\(KenyanPhone.display(onFile)))")
                             .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldLo)
                     }
                 }.buttonStyle(.plain)
@@ -2209,7 +2335,9 @@ private struct MobileMoneySheet: View {
                 Haptics.action()
                 dismiss(); onSubmit(number, frequency != nil && giveNow)
             } label: {
-                Text(cadenceWord == nil ? "Give Now" : "Start \(cadenceWord == "week" ? "Weekly" : "Monthly") Gift")
+                // The last tap before money moves names the money (§7.2 #6):
+                // "Give KSh 1,000"; a recurring start keeps "Start Monthly Gift".
+                Text(GiveButton.mobileMoneyLabel(amountLabel: amountLabel, frequency: frequency))
                     .font(.inter(15, .bold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
@@ -2219,17 +2347,28 @@ private struct MobileMoneySheet: View {
             .opacity(number == nil ? 0.4 : 1)
 
             HStack(spacing: 5) {
-                Icon(.lock, size: 12, color: Color(hex: 0x74808F))
+                Icon(.lock, size: 14, color: Color(hex: 0x74808F))
                 Text(cadenceWord == nil ? "Number used only for this transaction prompt"
                                         : "Number used only for this gift's prompts")
                     .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
             }
             .frame(maxWidth: .infinity, alignment: .center)
-            Spacer(minLength: 0)
         }
         .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.lg)
-        .presentationDetents([.height(frequency == nil ? 430 : 530)])
+        .fixedSize(horizontal: false, vertical: true)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { contentHeight = g.size.height }
+                .onChange(of: g.size.height) { _, h in contentHeight = h }
+        })
+        .frame(maxHeight: .infinity, alignment: .top)
+        .presentationDetents([.height(contentHeight)])
+        .presentationBackground(Nuru.white)   // opaque, not the system's glass (§8.1 rule 5)
         .presentationDragIndicator(.visible)
+        // One phone format (§8.1 rule 8, Cycle 1): the field reads the number
+        // as a Kenyan reads it — "0700 000 000", never "+254700000000". The
+        // prompt still goes out as E.164 (normalized on the way out).
+        .onAppear { if let n = KenyanPhone.normalize(phone) { phone = KenyanPhone.display(n) } }
     }
 
     /// "Start with a gift now" (Giving Cycle 4): on — "KSh 1,000 now, then
@@ -2289,6 +2428,9 @@ private struct ScheduleDetailSheet: View {
     @State private var errorText: String?
     /// A refused change named the pledge that owns it (details.pledge_id).
     @State private var errorPledgeId: String?
+    /// The sheet is as tall as what it holds (§8.1 rule 5; final walk #38:
+    /// it opened full height with its lower half empty).
+    @State private var contentHeight: CGFloat = 0
 
     init(schedule: GivingSchedule, rail: GivingMethod?, phoneOnFile: String?,
          followsMonthlyPledge: Bool = false, onOpenPledge: @escaping (String) -> Void = { _ in },
@@ -2331,7 +2473,10 @@ private struct ScheduleDetailSheet: View {
                 switch mode {
                 case .view:
                     detailRows.padding(.top, Nuru.S.md)
-                    headsUpRow.padding(.top, Nuru.S.sm)
+                    // "Tell me before each prompt" is a push a few minutes before
+                    // M-Pesa asks for the PIN — this phone can't receive one yet,
+                    // and an inbox notice comes too late to help, so iOS doesn't
+                    // offer it (the walk's B11; §2: promise only what works).
                     actionButtons.padding(.top, Nuru.S.base)
                 case .change:
                     changeForm.padding(.top, Nuru.S.base)
@@ -2356,10 +2501,19 @@ private struct ScheduleDetailSheet: View {
                 }
             }
             .padding(.horizontal, Nuru.S.screen).padding(.bottom, Nuru.S.xl)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { contentHeight = g.size.height }
+                    .onChange(of: g.size.height) { _, h in contentHeight = h }
+            })
         }
+        .scrollBounceBehavior(.basedOnSize)
         .animation(.spring(response: 0.32, dampingFraction: 0.85), value: mode)
-        .presentationDetents([.large])
+        .presentationDetents([contentHeight > 0
+                              ? .height(PSheetFit.height(content: contentHeight, chrome: 12, screen: UIScreen.main.bounds.height))
+                              : .large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Nuru.white)   // opaque, not the system's glass (§8.1 rule 5)
     }
 
     // MARK: Header + summary
@@ -2377,7 +2531,7 @@ private struct ScheduleDetailSheet: View {
             Button { onClose() } label: {
                 ZStack {
                     Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                    Icon(.x, size: 15, color: Nuru.navy)
+                    Icon(.x, size: 14, color: Nuru.navy)
                 }
             }.buttonStyle(.plain)
             .accessibilityLabel("Close")
@@ -2390,10 +2544,10 @@ private struct ScheduleDetailSheet: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 14, style: .continuous)
                     .fill(Nuru.gold.opacity(0.1)).frame(width: 44, height: 44)
-                Icon(.repeat, size: 19, color: Nuru.gold)
+                Icon(.repeat, size: 18, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(money(current.amountMinor, current.currency)).font(.inter(17, .bold)).foregroundStyle(Nuru.navy)
+                Text(money(current.amountMinor, current.currency)).font(.inter(18, .bold)).foregroundStyle(Nuru.navy)
                 Text("\(dayLine) · \(current.fund.capitalized)")
                     .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 // Giving Cycle 5: a gift that collects a pledge asks only what
@@ -2447,7 +2601,7 @@ private struct ScheduleDetailSheet: View {
     private func failureBox(_ f: GiftFailure) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text(f.reason).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
@@ -2477,7 +2631,7 @@ private struct ScheduleDetailSheet: View {
             if paused {
                 row("Next prompt", "None while paused")
             } else {
-                row("Next prompt", giveParseDate(current.nextRunAt).map { ScheduleRhythm.format($0, "EEE d MMM yyyy") } ?? "—")
+                row("Next prompt", giveParseDate(current.nextRunAt).map { NuruDates.day($0, timeZone: GiveCalendar.nairobi) } ?? "Not set")
             }
             Divider().overlay(Nuru.border)
             row("Method", givingMethodName(current.method))
@@ -2498,7 +2652,8 @@ private struct ScheduleDetailSheet: View {
     }
 
     /// "Tell me before each prompt" — a push a few minutes before M-Pesa asks
-    /// for the PIN, so the prompt is expected, not mistaken for a scam.
+    /// for the PIN, so the prompt is expected, not mistaken for a scam. Not
+    /// offered on iOS until it has remote push (B11); kept for that day.
     private var headsUpRow: some View {
         Toggle(isOn: Binding(get: { headsUp }, set: { on in headsUp = on; setHeadsUp(on) })) {
             VStack(alignment: .leading, spacing: 2) {
@@ -2557,7 +2712,7 @@ private struct ScheduleDetailSheet: View {
                 .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 44)
                 .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.navy.opacity(0.35), lineWidth: 1.2))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
         }
         .buttonStyle(.plain)
         .disabled(busy)
@@ -2568,7 +2723,7 @@ private struct ScheduleDetailSheet: View {
     private var changeForm: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("CHANGE THIS GIFT")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
 
             if followsMonthlyPledge, let pledge = current.pledge {
                 // Its amount and day are the pledge's (Giving Cycle 5).
@@ -2632,7 +2787,7 @@ private struct ScheduleDetailSheet: View {
                         Text(String(ScheduleRhythm.weekdays[d].prefix(3)))
                             .font(.inter(12, .semibold)).foregroundStyle(on ? .white : Nuru.navy)
                             .padding(.horizontal, 12).frame(height: 34)
-                            .background(on ? Nuru.navy : Nuru.surface, in: Capsule())
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
                             .overlay(Capsule().stroke(on ? .clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                 }
@@ -2666,7 +2821,7 @@ private struct ScheduleDetailSheet: View {
         fieldLabel("M-Pesa number")
         if !draft.useProfileNumber {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.smartphone, size: 16, color: Color(hex: 0x16A34A))
+                Icon(.smartphone, size: 18, color: Nuru.navy)
                 TextField("07XX XXX XXX", text: $draft.phoneText)
                     .keyboardType(.phonePad)
                     .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
@@ -2683,7 +2838,7 @@ private struct ScheduleDetailSheet: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: draft.useProfileNumber ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
+                        .font(.symbol(16)).foregroundStyle(draft.useProfileNumber ? Nuru.gold : Nuru.ink300)
                     Text("Use my profile number (\(profile))")
                         .font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                 }
@@ -2700,7 +2855,7 @@ private struct ScheduleDetailSheet: View {
     private var pauseForm: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("PAUSE THIS GIFT")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
             Text("Nothing is prompted while it's paused, and nothing is owed.")
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
                 .fixedSize(horizontal: false, vertical: true)
@@ -2715,7 +2870,7 @@ private struct ScheduleDetailSheet: View {
                     .tint(Nuru.gold)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                Text("It comes back on its own at its next day on or after \(ScheduleRhythm.format(resumeDate, "d MMM yyyy")).")
+                Text("It comes back on its own at its next day on or after \(NuruDates.day(resumeDate, timeZone: GiveCalendar.nairobi)).")
                     .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -2742,7 +2897,7 @@ private struct ScheduleDetailSheet: View {
         } label: {
             HStack(spacing: 10) {
                 Image(systemName: on ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 17)).foregroundStyle(on ? Nuru.gold : Nuru.ink300)
+                    .font(.symbol(17)).foregroundStyle(on ? Nuru.gold : Nuru.ink300)
                 Text(title).font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Spacer()
             }
@@ -2808,7 +2963,7 @@ private struct ScheduleDetailSheet: View {
                 // The server's words — SCHEDULE_EXISTS, AMOUNT_OUT_OF_RANGE,
                 // PHONE_REQUIRED, and (Giving Cycle 5) a monthly pledge's
                 // collector whose amount / day are the pledge's.
-                errorText = GiveRefusal.from(error, fallback: "Couldn't save — try again.").message
+                errorText = GiveRefusal.from(error).message
                 if case let .http(_, _, _, details)? = error as? APIError { errorPledgeId = details?.pledgeId }
                 Haptics.error()
             }
@@ -2830,7 +2985,7 @@ private struct ScheduleDetailSheet: View {
                 onUpdated()
             } catch {
                 headsUp = current.headsUp
-                errorText = GiveRefusal.from(error, fallback: "Couldn't change that — try again.").message
+                errorText = GiveRefusal.from(error).message
                 Haptics.error()
             }
             busy = false
@@ -2852,7 +3007,7 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // the server paused it
                 onChanged()
             } catch {
-                errorText = GiveRefusal.from(error, fallback: "Couldn't pause — try again.").message
+                errorText = GiveRefusal.from(error).message
                 busy = false
                 Haptics.error()
             }
@@ -2870,7 +3025,7 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // server confirmed the resume
                 onChanged()
             } catch {
-                errorText = GiveRefusal.from(error, fallback: "Couldn't resume — try again.").message
+                errorText = GiveRefusal.from(error).message
                 busy = false
                 Haptics.error()
             }
@@ -2886,7 +3041,7 @@ private struct ScheduleDetailSheet: View {
                 Haptics.success()   // server confirmed the cancellation
                 onChanged()
             } catch {
-                errorText = (error as? APIError)?.errorDescription ?? "Couldn't cancel — try again."
+                errorText = GiveRefusal.from(error).message
                 busy = false
                 Haptics.error()
             }
@@ -2970,6 +3125,8 @@ private struct GiveCeremonyView: View {
     var nothingTodayLine: String? = nil
     /// A retry of the failed gift is on its way (Try again spins).
     var retrying: Bool = false
+    /// "Check your phone" has passed its minute (StkWatch): Done leads.
+    var stkLate: Bool = false
     var onDone: () -> Void
     var onRetry: () -> Void
     @State private var showReceipt = false
@@ -2979,7 +3136,8 @@ private struct GiveCeremonyView: View {
             (stage == "stk" ? Nuru.navy : Nuru.paper).ignoresSafeArea()
             switch stage {
             case "stk":
-                StkStage(amountLabel: amountLabel, destination: destination, giftName: giftName, phone: phone, note: note)
+                StkStage(amountLabel: amountLabel, destination: destination, giftName: giftName, phone: phone, note: note,
+                         late: stkLate, onClose: onDone)
             case "success":
                 SuccessStage(amountLabel: amountLabel, destination: destination, giftName: giftName, refCode: refCode,
                              hasReceipt: txId != nil,
@@ -3010,12 +3168,20 @@ private struct GiveCeremonyView: View {
     }
 }
 
+/// "Check your phone" (EXPERIENCE.md §7.2 #5, §7.1 rule 3): a quiet Close from
+/// the start — it used to have no button at all, and a prompt answered late
+/// trapped the member on this navy screen. Past the minute the line says it is
+/// still processing and Done leads; either way the watch keeps going while
+/// the stage is on screen, and closing leaves the gift as it is.
 private struct StkStage: View {
     let amountLabel: String
     let destination: GiveDestination
     var giftName: String? = nil
     let phone: String?
     let note: String
+    /// Past the minute (StkWatch): "Still processing…", Done as the primary.
+    var late: Bool = false
+    let onClose: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -3050,20 +3216,46 @@ private struct StkStage: View {
             }
             if let phone {
                 HStack(spacing: 6) {
-                    Icon(.smartphone, size: 13, color: Nuru.gold)
+                    Icon(.smartphone, size: 14, color: Nuru.gold)
                     Text("Prompt sent to \(KenyanPhone.display(phone))").font(.inter(11)).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.white.opacity(0.08), in: Capsule())
                 .padding(.top, Nuru.S.md)
             }
-            HStack(spacing: 6) {
-                ProgressView().tint(.white.opacity(0.5)).scaleEffect(0.7)
-                Text("Waiting up to 60s…").font(.inter(11)).foregroundStyle(.white.opacity(0.5))
+            // True only for the prompt's first minute — gone once it isn't.
+            if !late {
+                HStack(spacing: 6) {
+                    ProgressView().tint(.white.opacity(0.5)).scaleEffect(0.7)
+                    Text("Waiting up to 60s…").font(.inter(11)).foregroundStyle(.white.opacity(0.5))
+                }
+                .padding(.top, Nuru.S.lg)
+                .transition(.opacity)
             }
-            .padding(.top, Nuru.S.lg)
             Spacer()
+            Group {
+                if late {
+                    Button(action: onClose) {
+                        Text("Done")
+                            .font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
+                            .frame(maxWidth: .infinity).frame(height: 48)
+                            .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Button(action: onClose) {
+                        Text("Close")
+                            .font(.inter(14, .semibold)).foregroundStyle(.white.opacity(0.7))
+                            .frame(maxWidth: .infinity).frame(height: 48)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, Nuru.S.xl).padding(.bottom, Nuru.S.xl)
+            .transition(.opacity)
         }
+        .animation(.easeInOut(duration: 0.25), value: late)
     }
 }
 
@@ -3099,7 +3291,7 @@ private struct SuccessStage: View {
             }
             .gentleEntrance()
             Text("Thank you for your generosity")
-                .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
+                .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .multilineTextAlignment(.center)
                 .padding(.top, Nuru.S.lg).padding(.horizontal, Nuru.S.xl)
                 .gentleEntrance(delay: 0.08)
@@ -3152,7 +3344,7 @@ private struct ScheduledStage: View {
             }
             .gentleEntrance()
             Text("Schedule created")
-                .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
+                .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.lg)
                 .gentleEntrance(delay: 0.08)
             Text("\(amountLabel) to \(fundLabel) every \(cadenceWord).")
@@ -3164,7 +3356,7 @@ private struct ScheduledStage: View {
                 // Today's prompt could not go out — the schedule still stands.
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(.symbol(13, weight: .semibold))
                         .foregroundStyle(Nuru.urgentText)
                     Text(note).font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3180,7 +3372,7 @@ private struct ScheduledStage: View {
             }
             if nextChargeLabel != nil {
                 HStack(spacing: 6) {
-                    Icon(.repeat, size: 12, color: Nuru.goldLo)
+                    Icon(.repeat, size: 14, color: Nuru.goldLo)
                     Text("Change, pause or cancel it anytime")
                         .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x8A6D18))
                 }
@@ -3222,7 +3414,7 @@ private struct FailedStage: View {
                 Icon(.x, size: 26, color: Color(hex: 0xDC2626))
             }
             Text("That didn't go through")
-                .font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
+                .font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 .padding(.top, Nuru.S.base)
             if let giftLine {
                 Text(giftLine)

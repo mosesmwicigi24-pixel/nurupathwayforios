@@ -26,7 +26,7 @@ final class DiscipleshipHubViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { hub = try await MemberAPI.discipleship() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your discipleship." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your discipleship.", error) }
         loading = false
 
         // Read-only best-effort: if the DISCIPLER thread already exists, the
@@ -158,9 +158,9 @@ struct DiscipleshipHubView: View {
         HStack(spacing: Nuru.S.base) {
             Avatar(url: d.avatarUrl, name: d.fullName, size: 56)
             VStack(alignment: .leading, spacing: 3) {
-                Text(d.fullName).font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(d.fullName).font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 Text(d.roleLabel.uppercased())
-                    .font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Nuru.gold)
                 if let cell = d.cellName {
                     Text(cell).font(.nCardMeta).foregroundStyle(Nuru.muted)
                 }
@@ -238,7 +238,7 @@ struct DiscipleshipHubView: View {
             if busy {
                 ProgressView().tint(Nuru.navy).scaleEffect(0.85)
             } else {
-                Icon(.messageCircle, size: 17, color: Nuru.navy)
+                Icon(.messageCircle, size: 18, color: Nuru.navy)
             }
             Text("Message \(Self.firstName(d.fullName))")
                 .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
@@ -254,18 +254,18 @@ struct DiscipleshipHubView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("WHERE YOU ARE")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 HStack(alignment: .firstTextBaseline, spacing: Nuru.S.sm) {
                     Text("Level \(p.currentLevel)")
-                        .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
                     Text(p.levelTitle)
                         .font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(1)
                     Spacer(minLength: 0)
                     if p.streakDays > 0 {
                         HStack(spacing: 4) {
-                            Icon(.flame, size: 13, color: Nuru.gold)
+                            Icon(.flame, size: 14, color: Nuru.gold)
                             Text("\(p.streakDays)-day")
                                 .font(.inter(11, .bold)).foregroundStyle(Nuru.goldLo)
                         }
@@ -302,13 +302,16 @@ struct DiscipleshipHubView: View {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.16))
                     .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.system(size: 20))
+                Icon(.flag, size: 22, color: Nuru.goldChipText)   // a glyph, not a colour emoji (§8.1 rule 7)
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Level \(level) complete")
                     .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
-                Text("Awaiting your discipler's blessing to continue.")
+                // The journey's own words (§9.2 #7): one card, one word — it
+                // said "Awaiting your discipler's blessing" while Pathway said
+                // "Your leader will open Level 2". It names no one.
+                Text("You passed the Level \(level) exam — we'll let you know when Level \(level + 1) opens.")
                     .font(.inter(11)).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -326,13 +329,13 @@ struct DiscipleshipHubView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("YOUR GROWTH")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 if let overall = s.overall {
                     HStack(alignment: .lastTextBaseline, spacing: 6) {
                         Text("\(overall)")
-                            .font(.fraunces(34, .semibold)).foregroundStyle(Self.scoreColor(overall))
+                            .font(.fraunces(28, .semibold)).foregroundStyle(Self.scoreColor(overall))
                         Text("overall")
                             .font(.nCardBody).foregroundStyle(Nuru.muted)
                         Spacer(minLength: 0)
@@ -363,7 +366,7 @@ struct DiscipleshipHubView: View {
         return HStack(spacing: Nuru.S.sm) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label.uppercased())
-                    .font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Nuru.faint)
+                    .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.faint)
                 Text("\(value)")
                     .font(.inter(18, .bold)).foregroundStyle(color)
             }
@@ -381,7 +384,7 @@ struct DiscipleshipHubView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("YOUR REFLECTIONS")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(reflections.enumerated()), id: \.element.id) { i, r in
@@ -408,7 +411,7 @@ struct DiscipleshipHubView: View {
             // The discipler's feedback to the student, when present.
             if let notes = r.feedbackNotes, !notes.isEmpty {
                 HStack(alignment: .top, spacing: 6) {
-                    Icon(.messageCircle, size: 11, color: Nuru.goldLo)
+                    Icon(.messageCircle, size: 14, color: Nuru.goldLo)
                     Text(notes)
                         .font(.inter(12)).foregroundStyle(Nuru.muted)
                         .lineSpacing(2)
@@ -436,7 +439,7 @@ struct DiscipleshipHubView: View {
             }
         }()
         return Text(label)
-            .font(.inter(10, .bold)).foregroundStyle(color)
+            .font(.inter(11, .bold)).foregroundStyle(color)
             .padding(.horizontal, 9).padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
@@ -449,7 +452,7 @@ struct DiscipleshipHubView: View {
         return Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("MEETING NOTES")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 // Next meeting inset row.
@@ -502,7 +505,7 @@ struct DiscipleshipHubView: View {
                     .font(.inter(12, .semibold)).foregroundStyle(Nuru.ink)
                 Spacer(minLength: Nuru.S.sm)
                 if let met = Self.shortDate(note.metAt) {
-                    Text(met).font(.inter(10)).foregroundStyle(Nuru.faint)
+                    Text(met).font(.inter(11)).foregroundStyle(Nuru.faint)
                 }
             }
             Text(note.body)
@@ -511,7 +514,7 @@ struct DiscipleshipHubView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let next = note.nextMeetingAt.flatMap(Self.shortDate) {
                 HStack(spacing: 4) {
-                    Icon(.calendar, size: 11, color: Nuru.faint)
+                    Icon(.calendar, size: 14, color: Nuru.faint)
                     Text("Next: \(next)").font(.nMicro).foregroundStyle(Nuru.faint)
                 }
             }
@@ -583,10 +586,10 @@ struct DiscipleshipHubView: View {
                 Icon(.heartHandshake, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("You'll be paired with a discipler soon")
-                    .font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(DisciplerStore.noneLine)
+                    .font(.nCardTitle).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("When your leader walks you into a discipleship relationship, your meetings, notes, and feedback will live here.")
+                Text("You'll see them here, with your meeting notes.")
                     .font(.nCardBody).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -625,11 +628,11 @@ struct DiscipleshipHubView: View {
     }
     private static func longDate(_ iso: String) -> String {
         guard let d = parse(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"; return f.string(from: d)
+        return NuruDates.dayTime(d)
     }
     private static func shortDate(_ iso: String) -> String? {
         guard let d = parse(iso) else { return nil }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"; return f.string(from: d)
+        return NuruDates.day(d)
     }
 }
 

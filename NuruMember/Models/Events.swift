@@ -115,6 +115,24 @@ extension CalendarOccurrence {
         going = 0
         attendees = nil
     }
+
+    /// The same, from one of the member's RSVPs (GET /me/rsvps) — `event_id`
+    /// IS the occurrence id, so the detail page loads it like any other.
+    init(rsvp r: MyRsvp) {
+        occurrenceId = r.eventId
+        seriesId = ""
+        title = r.title
+        description = nil
+        location = nil
+        category = nil
+        primaryImageUrl = nil
+        startAt = r.occursAt ?? ""
+        endAt = ""
+        status = nil
+        rescheduled = nil
+        going = 0
+        attendees = nil
+    }
 }
 
 /// GET /calendar/series — a followable event series (Events "Series you follow").
@@ -169,7 +187,11 @@ struct FeaturedEvent: Codable, Sendable {
     let location: String?
     let category: String?
     let primaryImageUrl: String?
+    /// The series' FIRST start — not when it next meets (the walk's B6).
     let dtstartLocal: String
+    /// When it next meets (servers from 2026-10-05); nil from older ones.
+    let nextAt: String?
+    let nextEndAt: String?
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         seriesId = (try? c.decodeIfPresent(String.self, forKey: .seriesId)) ?? ""
@@ -179,6 +201,26 @@ struct FeaturedEvent: Codable, Sendable {
         category = try? c.decodeIfPresent(String.self, forKey: .category)
         primaryImageUrl = try? c.decodeIfPresent(String.self, forKey: .primaryImageUrl)
         dtstartLocal = (try? c.decodeIfPresent(String.self, forKey: .dtstartLocal)) ?? ""
+        nextAt = try? c.decodeIfPresent(String.self, forKey: .nextAt)
+        nextEndAt = try? c.decodeIfPresent(String.self, forKey: .nextEndAt)
+    }
+
+    /// When the featured gathering next meets, or nil when it won't — and then
+    /// Home shows no card. The walk's B6 found "Sun, Aug 30 · 2:00 PM": a
+    /// weekly series printed at its first date, five weeks gone. The server's
+    /// `next_at` is the answer, kept while the meeting hasn't ended; from a
+    /// server that doesn't send it, the first start counts only while ahead.
+    func nextStart(now: Date = Date(), timeZone: TimeZone = .current) -> Date? {
+        if let s = nextAt, let start = NuruDates.parse(s) {
+            let end = nextEndAt.flatMap(NuruDates.parse) ?? start
+            return end >= now ? start : nil
+        }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = timeZone
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        guard let first = f.date(from: String(dtstartLocal.prefix(19))) else { return nil }
+        return first > now ? first : nil
     }
 }
 
@@ -229,7 +271,7 @@ struct MyRsvp: Codable, Sendable, Identifiable {
     var id: String { rsvpId }
 }
 
-/// GET /events/{id}/posts — one buzz post on the event wall ("Who's coming").
+/// GET /events/{id}/posts — one buzz post on the event wall ("The wall").
 /// Reaction fields are `var` so the screen can apply optimistic updates.
 struct EventPost: Codable, Sendable, Identifiable {
     let postId: String

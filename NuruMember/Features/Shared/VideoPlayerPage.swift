@@ -85,7 +85,7 @@ struct VideoPlayerPage: View {
                     .font(.inter(11, .semibold)).kerning(1.5)
                     .foregroundStyle(Nuru.gold)
                 Text(title)
-                    .font(.fraunces(30, .semibold))
+                    .font(.fraunces(28, .semibold))
                     .foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
                 if let summary, !summary.isEmpty {
@@ -96,7 +96,7 @@ struct VideoPlayerPage: View {
                 }
                 if let quickNote, !quickNote.isEmpty {
                     HStack(spacing: 6) {
-                        Icon(.penLine, size: 12, color: Nuru.gold)
+                        Icon(.penLine, size: 14, color: Nuru.gold)
                         Text(quickNote)
                             .font(.inter(12, .semibold))
                             .foregroundStyle(Color.white.opacity(0.85))
@@ -123,7 +123,7 @@ struct VideoPlayerPage: View {
             playing = true
         } label: {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.play, size: 16, color: Nuru.navy)
+                Icon(.play, size: 18, color: Nuru.navy)
                 Text("Start watching")
                     .font(.inter(16, .bold))
                     .foregroundStyle(Nuru.navy)

@@ -30,7 +30,7 @@ struct PasswordConfirmSheet: View {
         NavigationStack {
             VStack(alignment: .leading, spacing: Nuru.S.base) {
                 HStack(alignment: .top, spacing: 14) {
-                    Icon(.lock, size: 20, color: Color(hex: 0xE6C068))
+                    Icon(.lock, size: 22, color: Color(hex: 0xE6C068))
                         .frame(width: 40, height: 40)
                         .background(Nuru.gold.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     VStack(alignment: .leading, spacing: 4) {
@@ -55,7 +55,7 @@ struct PasswordConfirmSheet: View {
 
                 if let e = errorText {
                     HStack(spacing: 6) {
-                        Icon(.shield, size: 13, color: Color(hex: 0xB91C1C))
+                        Icon(.shield, size: 14, color: Color(hex: 0xB91C1C))
                         Text(e).font(.inter(12, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
                             .fixedSize(horizontal: false, vertical: true)
                     }
@@ -118,16 +118,18 @@ struct PasswordConfirmSheet: View {
             Haptics.error()
             // Say the true thing. A wrong password and a locked account are
             // different problems, and "try again" is bad advice for the second.
-            if case let .http(status, _, message, _) = e {
+            if case let .http(status, _, message, _) = e, status == 429 || status == 401 {
                 errorText = status == 429
                     ? message   // the server names the cooldown — do not paraphrase it
-                    : status == 401 ? "That password isn't right." : message
+                    : "That password isn't right."
             } else {
-                errorText = "Couldn't reach the server. Check your connection."
+                // Anything else in §4's words — never "check your connection"
+                // when it wasn't the connection.
+                errorText = NuruStateCopy.failureLine("Couldn't confirm your password.", e)
             }
         } catch {
             Haptics.error()
-            errorText = "Couldn't confirm just now — please try again."
+            errorText = NuruStateCopy.failureLine("Couldn't confirm your password.", error)
         }
     }
 }

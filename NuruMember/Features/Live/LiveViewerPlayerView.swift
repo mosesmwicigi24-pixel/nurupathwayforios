@@ -402,6 +402,9 @@ struct LiveViewerPlayerView: View {
         .task { await controller.start(mediaPath: item.mediaPath) }
         .task {
             guard item.isLive else { return }
+            // The ringing invite (IncomingLiveInvite) needs to know a player
+            // is already on this stream: its Join then accepts here, in place.
+            IncomingLiveInviteCenter.shared.playerAppeared(item.id)
             pulseController.start()
         }
         .onDisappear {
@@ -410,6 +413,7 @@ struct LiveViewerPlayerView: View {
             guestBannerCollapseTask?.cancel()
             guestStageActive = false
             Task { await guestPublisher.stop() }
+            IncomingLiveInviteCenter.shared.playerDisappeared(item.id)
         }
         .onChange(of: pulseController.freshReactions) { _, fresh in
             guard !fresh.isEmpty else { return }
@@ -423,6 +427,12 @@ struct LiveViewerPlayerView: View {
         .onChange(of: pulseController.pulse?.guests) { _, guests in
             scheduleGuestBannerAutoCollapse(for: guests)
             syncGuestStage(guests)
+            acceptIfJoinedFromRing(guests)
+        }
+        // Join on a ring for THIS stream, while this player is already up:
+        // the guests haven't changed, so the request itself is the cue.
+        .onReceive(IncomingLiveInviteCenter.shared.$acceptRequest) { _ in
+            acceptIfJoinedFromRing(pulseController.pulse?.guests)
         }
         .onChange(of: guestStageActive) { _, active in
             controller.setSelfEchoMuted(active)
@@ -697,9 +707,9 @@ struct LiveViewerPlayerView: View {
             guestBannerCollapsed = false
         } label: {
             HStack(spacing: 6) {
-                Icon(.handHeart, size: 12, color: Nuru.navy)
+                Icon(.handHeart, size: 14, color: Nuru.navy)
                 Text("Invited on stage")
-                    .font(.inter(10.5, .bold)).foregroundStyle(Nuru.navy)
+                    .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 12).padding(.vertical, 7)
             .background(Nuru.gold, in: Capsule())
@@ -752,6 +762,19 @@ struct LiveViewerPlayerView: View {
         await pulseController.pollNow()
     }
 
+    /// Join on the RINGING invite (IncomingLiveInvite) accepts here — the
+    /// card's own Accept, `respondToInvite(accept: true)` — once the pulse
+    /// has my row and it still reads `invited`. A lapsed invite leaves the
+    /// member simply watching.
+    private func acceptIfJoinedFromRing(_ guests: [LiveGuestRow]?) {
+        let rings = IncomingLiveInviteCenter.shared
+        guard item.isLive, rings.wantsAccept(item.id),
+              let guests, let myId = auth.profile?.userId else { return }
+        rings.clearAccept(item.id)
+        guard guests.first(where: { $0.userId == myId })?.status == "invited" else { return }
+        Task { await respondToInvite(accept: true) }
+    }
+
     // MARK: ONE top row (owner redesign, 2026-08-01) — close ✕ · host avatar
     // + name · stream title · LIVE pill · counters (viewers, hands raised),
     // all on a SINGLE line directly under the safe area. Replaces the old
@@ -792,7 +815,7 @@ struct LiveViewerPlayerView: View {
             // 44pt — owner's tap-target floor, honored for every control on
             // this screen, top row included (the old close ✕ was 38pt).
             Button { Haptics.tap(); dismiss() } label: {
-                Icon(.x, size: 15, color: .white)
+                Icon(.x, size: 14, color: .white)
                     .frame(width: 44, height: 44)
                     .background(Color.white.opacity(0.18), in: Circle())
             }
@@ -814,7 +837,7 @@ struct LiveViewerPlayerView: View {
             if item.isLive {
                 HStack(spacing: 4) {
                     PulsingLiveDot()
-                    Text("LIVE").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(Color(hex: 0xDC2626), in: Capsule())
@@ -848,10 +871,10 @@ struct LiveViewerPlayerView: View {
     private var endedState: some View {
         VStack(spacing: 18) {
             Image(systemName: "antenna.radiowaves.left.and.right.slash")
-                .font(.system(size: 36)).foregroundStyle(Nuru.gold.opacity(0.85))
+                .font(.symbol(36)).foregroundStyle(Nuru.gold.opacity(0.85))
             VStack(spacing: 4) {
                 Text(controller.endedMessage)
-                    .font(.fraunces(19, .semibold)).foregroundStyle(.white)
+                    .font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     .multilineTextAlignment(.center)
                 Text(item.title).font(.inter(12)).foregroundStyle(.white.opacity(0.55))
                     .lineLimit(1)
@@ -900,7 +923,7 @@ private struct BigHeartBurstView: View {
 
     var body: some View {
         Image(systemName: "heart.fill")
-            .font(.system(size: 88))
+            .font(.symbol(88))
             .foregroundStyle(Color(hex: 0xE0245E))
             .shadow(color: .black.opacity(0.35), radius: 8)
             .scaleEffect(scale)
@@ -952,7 +975,7 @@ private struct LiveAudioBackdrop: View {
                 }
                 waveform
                 Text(isLive ? "LISTENING LIVE" : "REPLAY")
-                    .font(.inter(10, .bold)).kerning(1.6)
+                    .font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(Nuru.gold.opacity(0.85))
                 Text(title).font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     .multilineTextAlignment(.center)

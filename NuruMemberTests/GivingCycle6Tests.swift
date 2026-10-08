@@ -59,7 +59,7 @@ final class GivingCycle6Tests: XCTestCase {
     func testARateLimitIsSaidInTheServersWordsAndNeverRetriedByItself() {
         let words = "We've sent several prompts to that number just now. Try again in 10 minutes, or give from your own number."
         let limited = APIError.http(status: 429, code: "RATE_LIMITED", message: words, details: nil)
-        XCTAssertEqual(GiveRefusal.from(limited, fallback: "Something went wrong."), .message(words), "as the server said it")
+        XCTAssertEqual(GiveRefusal.from(limited, deviceOnline: true), .message(words), "as the server said it")
         XCTAssertFalse(GiveRefusal.gotNoServerAnswer(limited), "an answer — the key is spent")
         XCTAssertEqual(GiveRetry.key(after: limited, current: "k-0001", fresh: { "k-0002" }), "k-0002")
         XCTAssertNil(GiveRetry.target(after: limited, retrying: "tx-1"),
@@ -75,7 +75,7 @@ final class GivingCycle6Tests: XCTestCase {
         XCTAssertEqual(GiveRetry.key(after: conflict, current: "k-0001", fresh: { "k-0002" }), "k-0002", "a fresh key")
         XCTAssertEqual(GiveRetry.target(after: conflict, retrying: "tx-1"), "tx-1",
                        "the gift itself was fine: the next Try again retries it with the fresh key")
-        XCTAssertEqual(GiveRefusal.from(conflict, fallback: "x"), .message("That request key is already in use. Try again."),
+        XCTAssertEqual(GiveRefusal.from(conflict, deviceOnline: true), .message("That request key is already in use. Try again."),
                        "said once — never looped")
 
         // Other refusals are not key conflicts.

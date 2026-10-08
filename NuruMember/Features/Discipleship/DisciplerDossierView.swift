@@ -26,7 +26,7 @@ final class DisciplerDossierViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { dossier = try await MemberAPI.disciple(userId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this disciple." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this disciple.", error) }
         loading = false
 
         // Resolve the DM thread if one exists, so the CTA deep-links instead of
@@ -169,7 +169,7 @@ struct DisciplerDossierView: View {
         HStack(spacing: Nuru.S.base) {
             Avatar(url: m.avatarUrl, name: m.fullName, size: 56)
             VStack(alignment: .leading, spacing: 3) {
-                Text(m.fullName).font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(m.fullName).font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 if let cell = m.cellName {
                     Text(cell).font(.nCardMeta).foregroundStyle(Nuru.muted)
                 }
@@ -229,7 +229,7 @@ struct DisciplerDossierView: View {
             if busy {
                 ProgressView().tint(Nuru.navy).scaleEffect(0.85)
             } else {
-                Icon(.messageCircle, size: 17, color: Nuru.navy)
+                Icon(.messageCircle, size: 18, color: Nuru.navy)
             }
             Text("Message \(Self.firstName(m.fullName))")
                 .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
@@ -245,7 +245,7 @@ struct DisciplerDossierView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("ENGAGEMENT")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 HStack(spacing: Nuru.S.md) {
@@ -287,18 +287,18 @@ struct DisciplerDossierView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("WHERE THEY ARE")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 HStack(alignment: .firstTextBaseline, spacing: Nuru.S.sm) {
                     Text("Level \(p.currentLevel)")
-                        .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
                     Text(p.levelTitle)
                         .font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(1)
                     Spacer(minLength: 0)
                     if p.streakDays > 0 {
                         HStack(spacing: 4) {
-                            Icon(.flame, size: 13, color: Nuru.gold)
+                            Icon(.flame, size: 14, color: Nuru.gold)
                             Text("\(p.streakDays)-day")
                                 .font(.inter(11, .bold)).foregroundStyle(Nuru.goldLo)
                         }
@@ -335,7 +335,7 @@ struct DisciplerDossierView: View {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.16))
                     .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.system(size: 20))
+                Text("🌿").font(.emoji(22))
             }
             .frame(width: 44, height: 44)
             VStack(alignment: .leading, spacing: 2) {
@@ -360,13 +360,13 @@ struct DisciplerDossierView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("THEIR GROWTH")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 if let overall = s.overall {
                     HStack(alignment: .lastTextBaseline, spacing: 6) {
                         Text("\(overall)")
-                            .font(.fraunces(34, .semibold)).foregroundStyle(Self.scoreColor(overall))
+                            .font(.fraunces(28, .semibold)).foregroundStyle(Self.scoreColor(overall))
                         Text("overall")
                             .font(.nCardBody).foregroundStyle(Nuru.muted)
                         Spacer(minLength: 0)
@@ -397,7 +397,7 @@ struct DisciplerDossierView: View {
         return HStack(spacing: Nuru.S.sm) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(label.uppercased())
-                    .font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Nuru.faint)
+                    .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.faint)
                 Text("\(value)")
                     .font(.inter(18, .bold)).foregroundStyle(color)
             }
@@ -415,7 +415,7 @@ struct DisciplerDossierView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("THEIR REFLECTIONS")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(reflections.enumerated()), id: \.element.id) { i, r in
@@ -457,7 +457,7 @@ struct DisciplerDossierView: View {
             if let notes = r.feedbackNotes, !notes.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
                     Text("YOUR FEEDBACK")
-                        .font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Nuru.goldLo)
+                        .font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.goldLo)
                     Text(notes)
                         .font(.inter(12)).foregroundStyle(Nuru.muted)
                         .lineSpacing(2)
@@ -485,7 +485,7 @@ struct DisciplerDossierView: View {
             }
         }()
         return Text(label)
-            .font(.inter(10, .bold)).foregroundStyle(color)
+            .font(.inter(11, .bold)).foregroundStyle(color)
             .padding(.horizontal, 9).padding(.vertical, 4)
             .background(color.opacity(0.12), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
@@ -499,7 +499,7 @@ struct DisciplerDossierView: View {
         return Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("RECENT ACTIVITY")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(shown.enumerated()), id: \.offset) { i, a in
@@ -616,7 +616,7 @@ struct DisciplerDossierView: View {
     }
     private static func shortDate(_ iso: String) -> String? {
         guard let d = parse(iso) else { return nil }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"; return f.string(from: d)
+        return NuruDates.day(d)
     }
 }
 

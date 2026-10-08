@@ -181,7 +181,7 @@ final class LiturgyRecorderModel: NSObject, ObservableObject {
             _ = try await MemberAPI.uploadLiturgyRecording(band: band.rawValue, m4a: data, durationSec: seconds)
             return true
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save the recording."
+            self.error = NuruStateCopy.failureLine("Couldn't save the recording.", error)
             phase = .recorded
             return false
         }
@@ -212,7 +212,7 @@ struct LiturgyRecordSheet: View {
             Text(alreadyRecorded
                  ? "This replaces your current \(band.label.lowercased()) recording. The congregation hears it instead of the on-device voice from now on."
                  : "The congregation hears this instead of the on-device voice for \(band.label.lowercased()).")
-                .font(.inter(13.5)).foregroundStyle(Nuru.ink)
+                .font(.inter(14)).foregroundStyle(Nuru.ink)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
 
@@ -226,7 +226,7 @@ struct LiturgyRecordSheet: View {
                 }
             case .recording:
                 Text(LiturgyRecorderFormat.timeString(model.seconds))
-                    .font(.fraunces(40)).foregroundStyle(Nuru.navy)
+                    .font(.fraunces(28)).foregroundStyle(Nuru.navy)
                     .monospacedDigit()
                 bigButton(sfSymbol: "stop.fill", label: "Stop", tint: .red) { model.stop() }
             case .recorded, .uploading:
@@ -238,7 +238,7 @@ struct LiturgyRecordSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: model.previewing ? "pause.fill" : "play.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.symbol(12, weight: .bold))
                             Text("Listen back").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -251,7 +251,7 @@ struct LiturgyRecordSheet: View {
                         Haptics.tap(); model.redo()
                     } label: {
                         HStack(spacing: 6) {
-                            Icon(.mic, size: 12, color: Nuru.ink)
+                            Icon(.mic, size: 14, color: Nuru.ink)
                             Text("Redo").font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -310,7 +310,7 @@ struct LiturgyRecordSheet: View {
                 ZStack {
                     Circle().fill(tint).frame(width: 74, height: 74)
                     Image(systemName: sfSymbol)
-                        .font(.system(size: 24, weight: .bold)).foregroundStyle(.white)
+                        .font(.symbol(24, weight: .bold)).foregroundStyle(.white)
                 }
                 .shadow(color: tint.opacity(0.35), radius: 10, y: 4)
                 Text(label).font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
@@ -345,7 +345,7 @@ struct LiturgyRecordingsSheet: View {
                     // No completion language on purpose — mixed coverage is
                     // the permanent normal state, not a checklist to finish.
                     Text("Bands without a recording use the on-device voice — that's expected, not a gap.")
-                        .font(.inter(11.5)).foregroundStyle(Nuru.muted)
+                        .font(.inter(12)).foregroundStyle(Nuru.muted)
                 }
             }
             .listStyle(.insetGrouped)
@@ -362,8 +362,11 @@ struct LiturgyRecordingsSheet: View {
                 } else if let loadError {
                     VStack(spacing: 8) {
                         Text(loadError).font(.inter(13)).foregroundStyle(.secondary)
+                        // A text action is gold text (§8.1 rule 4) — set here,
+                        // not left to the app's tint, which is navy chrome.
                         Button("Try again") { Task { await load() } }
                             .font(.inter(13, .semibold))
+                            .foregroundStyle(Nuru.gold)
                     }
                     .padding(24)
                 }
@@ -377,10 +380,10 @@ struct LiturgyRecordingsSheet: View {
             .presentationDetents([.medium])
             .presentationDragIndicator(.visible)
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             deleteTarget.map { "Remove your \($0.label.lowercased()) recording?" } ?? "",
-            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } })
         ) {
             Button("Remove", role: .destructive) {
                 if let band = deleteTarget { Task { await delete(band) } }
@@ -400,7 +403,7 @@ struct LiturgyRecordingsSheet: View {
         HStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(row.band.label)
-                    .font(.inter(14.5, .semibold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                 statusChip(row)
             }
             Spacer(minLength: 8)
@@ -411,14 +414,14 @@ struct LiturgyRecordingsSheet: View {
                     Button {
                         Haptics.tap(); deleteTarget = row.band
                     } label: {
-                        Icon(.trash2, size: 15, color: .red.opacity(0.75))
+                        Icon(.trash2, size: 14, color: .red.opacity(0.75))
                     }
                     .buttonStyle(.pressable)
                 }
                 Button {
                     Haptics.tap(); recordTarget = row.band
                 } label: {
-                    Icon(.mic, size: 15, color: Nuru.goldChipText)
+                    Icon(.mic, size: 14, color: Nuru.goldChipText)
                         .frame(width: 30, height: 30)
                         .background(Nuru.verseBg, in: Circle())
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
@@ -451,7 +454,7 @@ struct LiturgyRecordingsSheet: View {
             rows = LiturgyRecordingRows.build(from: statuses)
             loadError = nil
         } catch {
-            loadError = (error as? APIError)?.errorDescription ?? "Couldn't load your recordings."
+            loadError = NuruStateCopy.failureLine("Couldn't load your recordings.", error)
         }
         loaded = true
     }

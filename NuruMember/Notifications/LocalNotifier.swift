@@ -3,6 +3,12 @@
 // vibrates automatically when the phone is on silent/vibrate). True background
 // push needs APNs (paid Apple team) — until then we post on every foreground
 // sync, and taps deep-link to the in-app Notification Center.
+//
+// Sound (2026-09-28): each notification sounds by its kind and the member's
+// Sound and vibration switch — the rules a real push follows (NuruPush) — and
+// carries the same `nuru_kind` / `nuru_sound` keys, so the foreground rules
+// below treat both alike: quiet in the open conversation, a ringing
+// full-screen invite for a Live guest invite, sound only when it's on.
 import Foundation
 import UserNotifications
 import UIKit
@@ -28,14 +34,13 @@ final class LocalNotifier: NSObject, ObservableObject {
     private let seenKey = "notif.seenIds"
     private var syncing = false
 
-    /// Ask once after sign-in; safe to call repeatedly (no-op when decided).
-    func requestPermission() {
-        #if targetEnvironment(simulator) && DEBUG
-        // Scripted UI verification must not be blocked by the OS permission alert.
-        if ProcessInfo.processInfo.environment["NURU_AUTOLOGIN"] == "1" { return }
-        #endif
+    /// After sign-in: taps on our notifications route through here. It no
+    /// longer asks the phone for permission — that prompt used to appear
+    /// cold, before the member had asked for anything (EXPERIENCE.md §7.2
+    /// #12). Permission is asked only when the member turns on something that
+    /// needs it (NotificationPermission). Safe to call repeatedly.
+    func attach() {
         UNUserNotificationCenter.current().delegate = self
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
     }
 
     /// Fetch the server inbox and post an iOS notification for anything unseen.
@@ -43,7 +48,10 @@ final class LocalNotifier: NSObject, ObservableObject {
     func sync() async {
         guard !syncing else { return }
         syncing = true; defer { syncing = false }
+        let ticket = InboxBadge.shared.ticket()
         guard let result = try? await MemberAPI.notifications() else { return }
+        // Every bell's dot (§7.2 #4) — the same count as the icon's badge below.
+        InboxBadge.shared.land(result.unread, ticket: ticket)
 
         var seen = Set(UserDefaults.standard.stringArray(forKey: seenKey) ?? [])
         let firstRun = seen.isEmpty
@@ -54,32 +62,52 @@ final class LocalNotifier: NSObject, ObservableObject {
         UserDefaults.standard.set(Array(seen.suffix(400)), forKey: seenKey)
 
         try? await UNUserNotificationCenter.current().setBadgeCount(result.unread)
-        guard !firstRun else { return }
+        guard !firstRun, !fresh.isEmpty else { return }
+        // Settings' "Banners on this phone" (B11): off means none.
+        guard IOSNoticeWords.bannersOn() else { return }
+        let soundOn = await Self.soundEnabled()
+        let now = Date()
 
         for n in fresh.prefix(5) {   // cap a burst; the rest are in the inbox
             let content = UNMutableNotificationContent()
             content.title = Self.title(for: n)
             if let body = Self.body(for: n) { content.body = body }
-            content.sound = .default   // silent mode → vibration
-            // Carry the routing payload so a TAP can land on the exact target.
-            content.userInfo = [
-                "notificationId": n.notificationId,
-                "template": n.template,
-                "announcementId": n.payload?.announcementId ?? "",
-                "moduleId": n.payload?.moduleId ?? "",
-                "levelNumber": n.payload?.levelNumber ?? 0,
-                "inviteToken": n.payload?.inviteToken ?? "",
-                "departmentId": n.payload?.departmentId ?? "",
-                // Giving: the failed gift (Cycle 3) or recurring gift (Cycle 4) a tap opens.
-                "transactionId": n.payload?.transactionId ?? "",
-                "scheduleId": n.payload?.scheduleId ?? "",
-                // Partners (Cycle 5): the pledge a pledge notice opens.
-                "pledgeId": n.payload?.pledgeId ?? "",
-            ]
+            // Sounds by kind (silent mode → vibration): the ring only while
+            // the invite's 30 s run — from when the SERVER sent it, since the
+            // app may open long after — and nothing at all when muted.
+            let kind = NuruPushKind.of(template: n.template)
+            let sentAt = n.sentAt.flatMap { ISO8601DateFormatter.nuru.date(from: $0) ?? ISO8601DateFormatter().date(from: $0) }
+            let ringing = NuruRing.remaining(since: sentAt ?? now, now: now) > 0
+            content.sound = NuruPush.localSound(kind: kind, soundOn: soundOn, ringing: ringing).notificationSound
+            // One conversation's messages stack together, as a push's thread-id does.
+            if kind == .message, let c = n.payload?.conversationId, !c.isEmpty { content.threadIdentifier = c }
+            // Carry the routing payload so a TAP lands where the inbox row
+            // would (NoticeRouter — one router for both, §7.2 #3) …
+            var info = NoticeTarget(n).userInfo
+            info["notificationId"] = n.notificationId
+            // … and how it sounds and shows (NuruPush), in a push's own keys.
+            // A Live guest invite rings for its stream (`title`, carried by the
+            // routing keys for a Live notice, is the stream's name).
+            info["nuru_kind"] = kind.rawValue
+            info["nuru_sound"] = soundOn ? "on" : "off"
+            info["nuru_sent_at"] = n.sentAt ?? ""
+            info["conversation_id"] = n.payload?.conversationId ?? ""
+            info["stream_id"] = n.payload?.streamId ?? ""
+            info["alert_title"] = content.title
+            info["alert_body"] = content.body
+            content.userInfo = info
             let req = UNNotificationRequest(identifier: "nuru-\(n.notificationId)",
                                             content: content, trigger: nil)
             try? await UNUserNotificationCenter.current().add(req)
         }
+    }
+
+    /// Sound and vibration: the server's `sound_enabled`, so a choice made on
+    /// another phone holds here — or, offline, the switch's cached value.
+    /// Asked only when there is something to post.
+    private static func soundEnabled() async -> Bool {
+        if let prefs = try? await MemberAPI.notificationPreferences() { return prefs.soundEnabled }
+        return UserDefaults.standard.object(forKey: NuruPush.soundPrefKey) as? Bool ?? true
     }
 
     // Template → human copy (mirrors NotificationsView's mapping, condensed).
@@ -88,6 +116,9 @@ final class LocalNotifier: NSObject, ObservableObject {
         // a receipt) — ahead of `payload.title`, which on the Partners notices
         // is the pledge's name.
         if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
+        // A Live guest invite's `title` is the STREAM's name — the notice
+        // says what happened, in the server's own words for the push.
+        if n.template == "live_guest_invite" { return LiveInviteCopy.heading }
         if let t = n.payload?.title, !t.isEmpty { return t }
         let t = n.template
         if t.hasPrefix("reflection_approved") { return "Reflection approved" }
@@ -126,6 +157,7 @@ final class LocalNotifier: NSObject, ObservableObject {
     private static func body(for n: NotificationRow) -> String? {
         // Never surface pastoral content in a banner (C3b).
         if n.template.hasPrefix("pastoral") { return nil }
+        if n.template == "live_guest_invite" { return LiveInviteCopy.message(streamTitle: n.payload?.title) }
         if let b = n.payload?.body, !b.isEmpty { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
         return GivingNotificationCopy.body(template: n.template, payload: n.payload)
@@ -133,11 +165,29 @@ final class LocalNotifier: NSObject, ObservableObject {
 }
 
 extension LocalNotifier: UNUserNotificationCenterDelegate {
-    /// Show banner + sound even while the app is open.
+    /// While the app is open (NuruPush.foreground): a message for the
+    /// conversation on screen is a light tap, not a banner; a Live guest
+    /// invite rings full-screen instead of a banner; anything else shows as
+    /// a banner, sounding only when the member's Sound and vibration is on.
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             willPresent notification: UNNotification,
                                             withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
-        completionHandler([.banner, .sound, .badge])
+        let push = NuruPush(userInfo: notification.request.content.userInfo, deliveredAt: notification.date)
+        Task { @MainActor in
+            var shown = push.foreground(openConversationId: OpenConversation.id, now: Date())
+            switch shown {
+            case .quiet(let tap):
+                if tap { Haptics.tap() }
+            case .ring:
+                // No ring while the member is broadcasting (or with no window
+                // to ring in) — then it's a quiet banner, never nothing.
+                let rang = IncomingLiveInvite(push: push).map { IncomingLiveInviteCenter.shared.ring($0) } ?? false
+                if !rang { shown = .show(sound: false) }
+            case .show:
+                break
+            }
+            completionHandler(shown.options)
+        }
     }
 
     /// Tap → land on the EXACT target (RootView routes by the userInfo payload;
@@ -146,12 +196,16 @@ extension LocalNotifier: UNUserNotificationCenterDelegate {
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter,
                                             didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
-        let info = response.notification.request.content.userInfo
+        var info = response.notification.request.content.userInfo
+        // When iOS delivered it — a tapped Live invite still rings if its
+        // 30 s haven't run out (RootView), else opens the stream.
+        info[NuruPush.deliveredAtKey] = response.notification.date
         Task { @MainActor in
             NotificationCenter.default.post(name: .nuruNotificationTap, object: nil,
                                             userInfo: info as? [String: Any])
             if let id = info["notificationId"] as? String, !id.isEmpty {
                 try? await MemberAPI.markNotificationsRead([id])
+                await InboxBadge.shared.refresh()   // the bells, once it's read
             }
         }
         completionHandler()

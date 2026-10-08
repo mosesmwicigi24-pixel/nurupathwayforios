@@ -31,7 +31,7 @@ import SwiftUI
         loading = detail == nil
         error = nil
         do { detail = try await MemberAPI.department(departmentId) }
-        catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this department." } }
+        catch { if detail == nil { self.error = NuruStateCopy.failureLine("We couldn't load this department.", error) } }
         loading = false
     }
 
@@ -84,7 +84,7 @@ import SwiftUI
             return true
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? failure
+            actionError = NuruStateCopy.failureLine(failure, error)
             return false
         }
     }
@@ -165,9 +165,10 @@ struct DepartmentDetailView: View {
             }
             .presentationDetents([.large])
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             row?.isRequested == true ? "Withdraw your request?" : "Leave this department?",
-            isPresented: $confirmLeave, titleVisibility: .visible
+            isPresented: $confirmLeave
         ) {
             Button(row?.isRequested == true ? "Withdraw request" : "Leave the department", role: .destructive) {
                 Haptics.action()
@@ -179,10 +180,10 @@ struct DepartmentDetailView: View {
                  ? "The leader won't see your request any more. You can ask again any time."
                  : "You'll stop appearing on the team. You can ask to serve again any time.")
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Remove this post?",
-            isPresented: Binding(get: { deletingPost != nil }, set: { if !$0 { deletingPost = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { deletingPost != nil }, set: { if !$0 { deletingPost = nil } })
         ) {
             Button("Remove the post", role: .destructive) {
                 if let p = deletingPost { Haptics.action(); Task { await vm.deletePost(p.postId) } }
@@ -217,7 +218,7 @@ struct DepartmentDetailView: View {
                             Label(r.isRequested ? "Withdraw request" : "Leave department", systemImage: "rectangle.portrait.and.arrow.right")
                         }
                     } label: {
-                        Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                        Image(systemName: "ellipsis").font(.symbol(16, weight: .bold)).foregroundStyle(Nuru.navy)
                             .frame(width: 40, height: 40)
                             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -233,7 +234,7 @@ struct DepartmentDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -273,7 +274,7 @@ struct DepartmentDetailView: View {
                         Spacer(minLength: 8)
                     }
                     HStack(spacing: 4) {
-                        Icon(.users, size: 12, color: Nuru.ink400)
+                        Icon(.users, size: 14, color: Nuru.ink400)
                         Text(r.memberCount == 1 ? "1 serving" : "\(r.memberCount) serving")
                             .font(.nCaption).foregroundStyle(Nuru.ink600)
                     }
@@ -300,7 +301,7 @@ struct DepartmentDetailView: View {
         if r.isActiveMember {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Icon(.circleCheckBig, size: 15, color: Nuru.success)
+                    Icon(.circleCheckBig, size: 14, color: Nuru.success)
                     Text(isLeader ? "You lead this team." : "You serve here.")
                         .font(.inter(13, .semibold)).foregroundStyle(Nuru.successText)
                 }
@@ -315,7 +316,7 @@ struct DepartmentDetailView: View {
             .background(Nuru.successBg.opacity(0.6), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         } else if r.isRequested {
             HStack(spacing: 8) {
-                Icon(.clock, size: 15, color: Nuru.urgentText)
+                Icon(.clock, size: 14, color: Nuru.urgentText)
                 Text("Requested — waiting for the leader")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.urgentText)
             }
@@ -358,7 +359,7 @@ struct DepartmentDetailView: View {
                     withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
                 } label: {
                     HStack(spacing: 5) {
-                        Icon(seg.icon, size: 12, color: on ? Nuru.gold : Color(hex: 0x59667C))
+                        Icon(seg.icon, size: 14, color: on ? Nuru.gold : Color(hex: 0x59667C))
                         Text(seg.rawValue).font(.inter(12, .semibold)).foregroundStyle(on ? Color.white : Color(hex: 0x59667C))
                     }
                     .frame(maxWidth: .infinity)
@@ -386,7 +387,7 @@ struct DepartmentDetailView: View {
             if d.isLeader {
                 Button { Haptics.tap(); showComposer = true } label: {
                     HStack(spacing: 6) {
-                        Icon(.penLine, size: 13, color: Nuru.navy)
+                        Icon(.penLine, size: 14, color: Nuru.navy)
                         Text("Write a post").font(.inter(13, .bold))
                     }
                     .foregroundStyle(Nuru.navy)
@@ -456,7 +457,7 @@ struct DepartmentDetailView: View {
             if d.isLeader {
                 Button { Haptics.tap(); showNeedForm = true } label: {
                     HStack(spacing: 6) {
-                        Icon(.plus, size: 13, color: Nuru.navy)
+                        Icon(.plus, size: 14, color: Nuru.navy)
                         Text("Submit a need").font(.inter(13, .bold))
                     }
                     .foregroundStyle(Nuru.navy)
@@ -523,7 +524,7 @@ struct DepartmentDetailView: View {
 
             HStack(spacing: 6) {
                 if let dl = n.deadline, !dl.isEmpty {
-                    Icon(.calendar, size: 11, color: Nuru.ink400)
+                    Icon(.calendar, size: 14, color: Nuru.ink400)
                     Text("by \(formatISODay(dl) ?? String(dl.prefix(10)))").font(.nCaption).foregroundStyle(Nuru.ink600)
                 }
                 if let who = n.submittedName, !who.isEmpty, n.isPending {
@@ -546,7 +547,7 @@ struct DepartmentDetailView: View {
                                                      currency: n.currency))
                 } label: {
                     HStack(spacing: 6) {
-                        Icon(.handHeart, size: 13, color: Nuru.navy)
+                        Icon(.handHeart, size: 14, color: Nuru.navy)
                         Text("Give to this need").font(.inter(13, .bold))
                     }
                     .foregroundStyle(Nuru.navy)
@@ -591,7 +592,7 @@ struct DepartmentDetailView: View {
                                 if m.isLeader {
                                     ZStack {
                                         Circle().fill(Nuru.gold).frame(width: 18, height: 18)
-                                        Icon(.badgeCheck, size: 10, color: .white)
+                                        Icon(.badgeCheck, size: 14, color: .white)
                                     }
                                     .overlay(Circle().stroke(.white, lineWidth: 1.5))
                                     .offset(x: 2, y: 2)
@@ -601,7 +602,7 @@ struct DepartmentDetailView: View {
                                 .multilineTextAlignment(.center).lineLimit(2)
                                 .fixedSize(horizontal: false, vertical: true)
                             if m.isLeader {
-                                Text("Leader").font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Nuru.goldLo)
+                                Text("Leader").font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Nuru.goldLo)
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .top)
@@ -683,7 +684,7 @@ private struct DepartmentPostComposer: View {
                 }
                 .background(Nuru.inputBg, in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("IMAGE LINK (OPTIONAL)").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                    Text("IMAGE LINK (OPTIONAL)").font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                     NuruField(placeholder: "https://…", text: $imageUrl, keyboard: .URL)
                     if !urlOk {
                         Text("That doesn't look like a web link.").font(.nCaption).foregroundStyle(Nuru.danger)
@@ -787,7 +788,7 @@ private struct DepartmentNeedForm: View {
 
     private func labelled<C: View>(_ label: String, @ViewBuilder _ content: () -> C) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(label).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+            Text(label).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
             content()
         }
     }

@@ -33,12 +33,16 @@ final class LevelDetailViewModel: ObservableObject {
     @Published var modules: [LevelModule] = []
     @Published var encouragements: [LevelEncouragement] = []
     @Published var level: PathwayLevel?
+    /// The member's journey (EXPERIENCE.md §3) — read for the level gate, so
+    /// this page and the Pathway hub agree on when the exam is the next step.
+    @Published var journey: Journey?
     @Published var totalLevels = 7
     @Published var loading = true
     @Published var error: String?
-    /// The member's paired discipler (GET /growth/mentor) — feeds the discipler
-    /// name/avatar into both the within-level reminder and the mid-level stats
-    /// card. Best-effort: nil renders a generic "your discipler" fallback.
+    /// The member's paired discipler (GET /growth/mentor). Every offer of a
+    /// discipler on this page — the card, the within-level reminder, the
+    /// mid-level stats card's message — shows only when the server names one
+    /// (Cycle 4, B1); nil shows none of them, never a generic "your discipler".
     @Published var mentor: MentorInfo.Mentor?
     /// This level's mastery (GET /me/levels/{n}/score) — the same server band
     /// ("Deeply rooted" / "Growing" / "Sprouting" / "Just beginning") shown at
@@ -47,6 +51,8 @@ final class LevelDetailViewModel: ObservableObject {
     /// Current streak in days (GET /me/achievements) — the same figure the
     /// Pathway hub header already shows.
     @Published var streak = 0
+    /// The level after this one has no lessons yet (§9.2 #7).
+    @Published var nextPreparing = false
 
     let levelNumber: Int
     init(levelNumber: Int) { self.levelNumber = levelNumber }
@@ -60,17 +66,30 @@ final class LevelDetailViewModel: ObservableObject {
         async let score = try? MemberAPI.levelScore(levelNumber)
         async let ach = try? MemberAPI.achievements()
         let loaded = await mods
-        if let summary = await path {
+        let summaryNow = await path
+        let encNow = await enc
+        let infoNow = await mentorInfo
+        let scoreNow = await score
+        let achNow = await ach
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the trail and its gate once painted beside a stats card
+        // with no streak or score yet, and the encouragements wove in after.
+        if let summary = summaryNow {
             level = summary.levels.first { $0.levelNumber == levelNumber }
             totalLevels = summary.levels.count
+            nextPreparing = UsherWords.nextPreparing(after: levelNumber, in: summary)
+            journey = Journey.derive(summary, trail: loaded)
         }
         if let loaded { modules = loaded }
         else if level == nil { error = "Couldn't load this level." }
         // Best-effort: no encouragements (unauthored or failed fetch) renders nothing.
-        encouragements = (await enc) ?? []
-        mentor = (await mentorInfo)?.mentor
-        levelScore = await score
-        streak = (await ach)?.streak?.current ?? 0
+        encouragements = encNow ?? []
+        if let info = infoNow {
+            mentor = info.mentor
+            DisciplerStore.shared.record(info.mentor)
+        }
+        levelScore = scoreNow
+        streak = achNow?.streak?.current ?? 0
         loading = false
     }
 
@@ -112,23 +131,40 @@ final class LevelDetailViewModel: ObservableObject {
 
     /// The member passed the exam and is waiting to be ushered onward by a
     /// discipler (§1.9). While set, the exam gate is replaced by the waiting card.
-    var awaitingReview: Bool { level?.awaitingReview ?? false }
+    var awaitingReview: Bool { level?.isAwaitingReview ?? false }
 
-    /// The trail is fully walked but the level isn't passed (and not already awaiting
-    /// a discipler's usher) — surface the exam gate. The fields here are the pathway
-    /// API's own (module `completed`, level `status`, `awaitingReview`); the true
-    /// eligibility answer stays the server's (§1.9).
-    var examAvailable: Bool {
-        !modules.isEmpty && modules.allSatisfy(\.completed) && level?.status != .completed && !awaitingReview
-            && (level?.examPublished ?? true)   // hidden until the admin publishes the exam
+    /// The journey says this level's exam is the member's next step — surface
+    /// the exam gate at the trail's end, unless the trail carries its own exam
+    /// row: that row IS the exam step now (drawn "LEVEL N EXAM · … · Begin
+    /// the exam", never "MODULE 11 · Start this module" — the walk's B2), and
+    /// a gate beside it would say the exam twice. The old test
+    /// (`level?.status != .completed`) read the server's "every module done"
+    /// as "level passed", so the gate never showed once the last module was
+    /// finished. The true eligibility answer stays the server's (§1.9).
+    var examAvailable: Bool { gateShows(at: .examReady) }
+
+    /// Every module is done but the exam can't be taken yet (in review, or no
+    /// questions): the gate says so in the journey's words, with nothing to
+    /// tap (EXPERIENCE.md §3, §7.2 #1).
+    var examSoon: Bool { gateShows(at: .examSoon) }
+
+    private func gateShows(at stage: Journey.Stage) -> Bool {
+        guard let j = journey, j.stage == stage, j.levelNumber == levelNumber else { return false }
+        return !modules.isEmpty && !modules.contains(where: \.isExam) && !awaitingReview
     }
 
-    // Derived stats for the strip card.
-    var completed: Int { modules.filter(\.completed).count }
-    var moduleCount: Int { max(modules.count, level?.totalModules ?? 0) }
+    // Derived stats for the strip card — lessons only: the trail's exam row
+    // is a step of its own, never "a module" (EXPERIENCE.md §8.2 #4).
+    private var lessons: [LevelModule] { modules.filter { !$0.isExam } }
+    var completed: Int { min(lessons.filter(\.completed).count, moduleCount) }
+    var moduleCount: Int { max(lessons.count, level?.lessonCount ?? 0) }
+    /// The level's percent, its exam the last step (§9.2 #10): every lesson
+    /// done reads 91% until the exam is passed — it said 100% before the
+    /// exam was sat.
     var pct: Int {
-        guard moduleCount > 0 else { return 0 }
-        return Int(round(Double(completed) / Double(moduleCount) * 100))
+        let passed = modules.contains { $0.isExam && $0.completed } || level?.walked == true
+            || (journey.map { $0.levelNumber == levelNumber && ($0.stage == .awaitingUsher || $0.stage == .finished) } ?? false)
+        return Int((Journey.levelFraction(lessonsDone: completed, lessonCount: moduleCount, examPassed: passed) * 100).rounded())
     }
     var minutes: Int {
         let fromMods = modules.compactMap(\.estimatedMinutes).reduce(0, +)
@@ -136,11 +172,48 @@ final class LevelDetailViewModel: ObservableObject {
     }
     var lessonCount: Int { moduleCount }
     var title: String { level?.title ?? "Level \(levelNumber)" }
-    var verse: (text: String, ref: String) {
-        if let theme = level?.theme, !theme.isEmpty {
-            return ("He that followeth me shall not walk in darkness, but shall have the light of life.", theme)
+    var verse: (text: String, ref: String) { (LevelPageVerse.text, LevelPageVerse.ref) }
+}
+
+/// The level page's count (final walk C8): the modules, and — once every
+/// lesson is done but the level isn't — the exam, by its one name, so 91%
+/// says what the last 9% is. Android says the same.
+enum LevelProgressWords {
+    static func line(completed: Int, total: Int, levelNumber: Int, pct: Int) -> String {
+        let count = "\(completed) of \(total) modules"
+        guard total > 0, completed >= total, pct < 100 else { return count }
+        return "\(count) · the \(ExamWords.name(levelNumber)) is next"
+    }
+}
+
+/// The level page's verse, under its own reference. Whenever a level had a
+/// theme, the page credited John 8:12's words to it ("Foundations") — the
+/// Cycle 4 walk, and Cycle 3's before it.
+enum LevelPageVerse {
+    static let text = "He that followeth me shall not walk in darkness, but shall have the light of life."
+    static let ref = "John 8:12"
+}
+
+/// The level page hero's words: "LEVEL 3" and the level's name. The name
+/// wraps to two lines at the everyday sizes, in full at the accessibility
+/// sizes, and never breaks a word (§8.1 rule 9; §9.6 #4).
+struct LevelHeroTitle: View {
+    let overline: String
+    let title: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(overline.uppercased())
+                .font(.inter(11, .bold)).kerning(1.6)
+                .foregroundStyle(Nuru.goldGlow)
+            Text(title)
+                .font(.fraunces(28, .semibold))
+                .foregroundStyle(.white)
+                .nuruLineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords(title, font: .fraunces(28, .semibold))
         }
-        return ("He that followeth me shall not walk in darkness, but shall have the light of life.", "John 8:12")
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -167,7 +240,7 @@ struct LevelDetailView: View {
                 VStack(spacing: Nuru.S.base) {
                     statsStrip
                     verseCard
-                    disciplerCard
+                    if let mentor = vm.mentor { disciplerCard(mentor) }
                     trailHeader
                     if vm.loading && vm.modules.isEmpty {
                         trailSkeleton
@@ -254,22 +327,19 @@ struct LevelDetailView: View {
                 colors: [Color.black.opacity(0.0), Color.black.opacity(0.35), Color(hex: 0x081C36).opacity(0.92)],
                 startPoint: .top, endPoint: .bottom)
 
-            VStack(alignment: .leading, spacing: 4) {
-                Text(overline.uppercased())
-                    .font(.inter(11, .bold)).kerning(1.6)
-                    .foregroundStyle(Nuru.goldGlow)
-                Text(vm.title)
-                    .font(.fraunces(30, .semibold))
-                    .foregroundStyle(.white)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.horizontal, Nuru.S.screen)
-            .padding(.bottom, Nuru.S.xl + Nuru.S.sm)
+            LevelHeroTitle(overline: overline, title: vm.title)
+                .padding(.horizontal, Nuru.S.screen)
+                // Clear of the back button (top 58 + 40) when the words grow.
+                .padding(.top, 58 + 40 + Nuru.S.md)
+                .padding(.bottom, Nuru.S.xl + Nuru.S.sm)
         }
-        .frame(height: 280)
+        // At least the 280 pt hero; taller when the level's name needs it at
+        // the larger text sizes (§9.6 #4) — a fixed 280 let "Foundations of
+        // Grace & Kingdom Perspective" run out of it.
+        .frame(minHeight: 280)
         .overlay(alignment: .topLeading) {
-            // Custom back button (nav bar is hidden).
+            // Custom back button (nav bar is hidden). Once it scrolls away with
+            // the hero, the edge swipe goes back (nuruEdgeSwipeBack, B9).
             Button { Haptics.tap(); dismiss() } label: {
                 Icon(.arrowLeft, size: 18, color: Nuru.navy)
                     .frame(width: 40, height: 40)
@@ -278,13 +348,16 @@ struct LevelDetailView: View {
                     .contentShape(Circle())
             }
             .buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             .padding(.leading, Nuru.S.screen)
-            .padding(.top, 58)
+            .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band (final walk C7 class)
         }
     }
 
-    /// Short overline above the serif title (the title's first word, e.g. "Foundations").
-    private var overline: String { vm.title.split(separator: " ").first.map(String.init) ?? "Level \(levelNumber)" }
+    /// The kicker above the serif title says where the member is — "LEVEL 1"
+    /// (§8.1 rule 2: back · kicker · title). It was the title's first word:
+    /// "FOUNDATIONS" over "Foundations of Faith", "THE" over "The …".
+    private var overline: String { "Level \(levelNumber)" }
 
     // MARK: - Stats strip
 
@@ -292,8 +365,13 @@ struct LevelDetailView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 HStack(alignment: .firstTextBaseline) {
-                    Text("\(vm.completed) of \(vm.moduleCount) modules")
+                    // Names the exam on the first view once the lessons are
+                    // done (final walk C8, #13): "10 of 10 modules · 91%"
+                    // left the missing step unsaid.
+                    Text(LevelProgressWords.line(completed: vm.completed, total: vm.moduleCount,
+                                                 levelNumber: levelNumber, pct: vm.pct))
                         .font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                         .contentTransition(.numericText())
                         .animation(.default, value: vm.completed)
                     Spacer()
@@ -303,9 +381,10 @@ struct LevelDetailView: View {
                         .animation(.default, value: vm.pct)
                 }
                 progressBar(Double(vm.pct) / 100)
+                // One word for one count (§8.1 rule 8): "10 lessons" beside
+                // "10 of 10 modules" said it twice.
                 HStack(spacing: Nuru.S.sm) {
                     statChip(.clock, "≈ \(vm.minutes) min")
-                    statChip(.bookOpen, "\(vm.lessonCount) lessons")
                 }
             }
         }
@@ -313,7 +392,7 @@ struct LevelDetailView: View {
 
     private func statChip(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 5) {
-            Icon(icon, size: 12, color: Nuru.goldLo)
+            Icon(icon, size: 14, color: Nuru.goldLo)
             Text(text).font(.inter(12, .medium)).foregroundStyle(Nuru.ink600)
         }
         .padding(.horizontal, 12).padding(.vertical, 7)
@@ -326,7 +405,7 @@ struct LevelDetailView: View {
     private var verseCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(spacing: 6) {
-                Icon(.quote, size: 13, color: Nuru.goldChipText)
+                Icon(.quote, size: 14, color: Nuru.goldChipText)
                 Text("WALK IN THE LIGHT")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
             }
@@ -344,30 +423,33 @@ struct LevelDetailView: View {
 
     // MARK: - Discipler card
 
-    private var disciplerCard: some View {
-        Card {
-            HStack(spacing: Nuru.S.md) {
-                ZStack {
-                    Circle().fill(Nuru.goldTint).frame(width: 44, height: 44)
-                    Icon(.handHeart, size: 20, color: Nuru.gold)
+    /// Only for a discipler the server names (Cycle 4, B1) — it said "A
+    /// discipler will walk with you · Tap to learn more · Chat" to members
+    /// with none, and tapping it did nothing. Now it names them and opens the
+    /// Discipleship Hub.
+    private func disciplerCard(_ mentor: MentorInfo.Mentor) -> some View {
+        NavigationLink(value: AppRoute.discipleshipHub) {
+            Card {
+                HStack(spacing: Nuru.S.md) {
+                    Avatar(url: mentor.avatarUrl, name: mentor.fullName, size: 44)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("WALK IT WITH YOUR DISCIPLER")
+                            .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                        Text(mentor.fullName.isEmpty ? "Your discipler" : mentor.fullName)
+                            .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    }
+                    Spacer(minLength: Nuru.S.sm)
+                    HStack(spacing: 6) {
+                        Icon(.messageCircle, size: 14, color: .white)
+                        Text("Message").font(.inter(13, .bold)).foregroundStyle(.white)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(Nuru.navyDeep, in: Capsule())
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("WALK IT WITH YOUR DISCIPLER")
-                        .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
-                    Text("A discipler will walk with you")
-                        .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
-                    Text("Tap to learn more")
-                        .font(.nMicro).foregroundStyle(Nuru.muted)
-                }
-                Spacer(minLength: Nuru.S.sm)
-                HStack(spacing: 6) {
-                    Icon(.messageCircle, size: 14, color: .white)
-                    Text("Chat").font(.inter(13, .bold)).foregroundStyle(.white)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 9)
-                .background(Nuru.navyDeep, in: Capsule())
             }
         }
+        .buttonStyle(.pressable)
     }
 
     // MARK: - Trail header
@@ -378,7 +460,7 @@ struct LevelDetailView: View {
                 Text("YOUR MODULE TRAIL")
                     .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.gold)
                 Text("Learn step by step")
-                    .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                    .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             }
             Spacer()
             Text("\(vm.lessonCount) lessons")
@@ -395,7 +477,7 @@ struct LevelDetailView: View {
 
     private var moduleTrail: some View {
         let items = vm.trailItems
-        let showGate = vm.examAvailable
+        let showGate = vm.examAvailable || vm.examSoon
         let showWaiting = vm.awaitingReview
         return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
@@ -420,21 +502,22 @@ struct LevelDetailView: View {
                 ZStack {
                     Circle().fill(Nuru.goldTint).frame(width: 36, height: 36)
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
-                    Text("🌿").font(.system(size: 16))
+                    Icon(.flag, size: 18, color: Nuru.goldChipText)   // a glyph, not a colour emoji (§8.1 rule 7)
                 }
             }
             .frame(width: 36)
 
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
-                    Icon(.handHeart, size: 12, color: Nuru.goldChipText)
-                    Text("AWAITING YOUR DISCIPLER")
+                    Icon(.handHeart, size: 14, color: Nuru.goldChipText)
+                    Text("EXAM PASSED")
                         .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 }
                 Text("Level \(vm.levelNumber) complete")
                     .font(.nCardTitle).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("You've passed the exam. Awaiting your discipler's blessing to continue to the next level.")
+                // §3's words for who opens the next level (E2, B1).
+                Text(UsherWords.line(passed: vm.levelNumber, nextPreparing: vm.nextPreparing))
                     .font(.nCardBody).foregroundStyle(Nuru.ink600)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
@@ -459,9 +542,9 @@ struct LevelDetailView: View {
                     Circle().fill(Nuru.goldTint).frame(width: 28, height: 28)
                         .overlay(Circle().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
                     if let emoji = e.emoji, !emoji.isEmpty {
-                        Text(emoji).font(.system(size: 12))
+                        Text(emoji).font(.emoji(12))
                     } else {
-                        Icon(.sparkles, size: 12, color: Nuru.gold)
+                        Icon(.sparkles, size: 14, color: Nuru.gold)
                     }
                 }
                 .padding(.top, 4)
@@ -490,7 +573,7 @@ struct LevelDetailView: View {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(Nuru.gold).frame(width: 28, height: 28)
-                    Icon(.trendingUp, size: 13, color: .white)
+                    Icon(.trendingUp, size: 14, color: .white)
                 }
                 if !isLast {
                     Rectangle().fill(Nuru.gold.opacity(0.35)).frame(width: 2).frame(maxHeight: .infinity)
@@ -515,16 +598,27 @@ struct LevelDetailView: View {
             VStack(spacing: 0) {
                 ZStack {
                     Circle().fill(Nuru.gold).frame(width: 36, height: 36)
-                    Icon(.award, size: 16, color: .white)
+                    Icon(.award, size: 18, color: .white)
                 }
             }
             .frame(width: 36)
 
-            NavigationLink(value: PathwayRoute.exam(vm.levelNumber)) {
-                ExamGateCard(levelNumber: vm.levelNumber)
+            Group {
+                if vm.examAvailable {
+                    NavigationLink(value: PathwayRoute.exam(vm.levelNumber)) {
+                        ExamGateCard(title: vm.journey?.title ?? "Take the Level \(vm.levelNumber) exam",
+                                     line: vm.journey?.line ?? "",
+                                     actionLabel: vm.journey?.actionLabel ?? "Begin the exam")
+                    }
+                    .buttonStyle(.pressable)
+                    .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
+                } else {
+                    // "Level N complete · …The exam opens soon" — no way into
+                    // an exam that can't be taken yet.
+                    ExamGateCard(title: vm.journey?.title ?? "Level \(vm.levelNumber) complete",
+                                 line: vm.journey?.line ?? "", actionLabel: nil)
+                }
             }
-            .buttonStyle(.pressable)
-            .simultaneousGesture(TapGesture().onEnded { Haptics.action() })
             .padding(.bottom, Nuru.S.base)
         }
         .fixedSize(horizontal: false, vertical: true)
@@ -587,6 +681,10 @@ struct LevelDetailView: View {
             Group {
                 if m.locked {
                     LockedTrailCard(module: m)
+                } else if m.examOpensSoon {
+                    // The exam has no questions yet: the card says it opens
+                    // soon, and opens nothing (EXPERIENCE.md §7.2 #1).
+                    ModuleTrailCard(module: m)
                 } else {
                     // The level's exam container opens the exam; every other module
                     // opens its lesson reader.
@@ -612,21 +710,26 @@ struct LevelDetailView: View {
                 Circle()
                     .fill(m.completed ? Nuru.gold : (m.locked ? Nuru.mutedBg : Nuru.goldTint))
                     .frame(width: 36, height: 36)
-                Text("\(m.moduleSequenceNumber)")
-                    .font(.inter(14, .bold))
-                    .foregroundStyle(m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+                if m.isExam {
+                    // The exam is its own step, never "module 11" (B2).
+                    Icon(.award, size: 18, color: m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+                } else {
+                    Text("\(m.moduleSequenceNumber)")
+                        .font(.inter(14, .bold))
+                        .foregroundStyle(m.completed ? Nuru.navy : (m.locked ? Nuru.faint : Nuru.gold))
+                }
             }
             if m.completed {
                 ZStack {
                     Circle().fill(Nuru.navy).frame(width: 15, height: 15)
-                    Icon(.check, size: 8, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 }
                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
                 .offset(x: 4, y: -3)
             } else if m.locked {
                 ZStack {
                     Circle().fill(Nuru.mutedBg).frame(width: 15, height: 15)
-                    Icon(.lock, size: 8, color: Nuru.faint)
+                    Icon(.lock, size: 14, color: Nuru.faint)
                 }
                 .overlay(Circle().stroke(.white, lineWidth: 1.5))
                 .offset(x: 4, y: -3)
@@ -660,7 +763,9 @@ struct LevelDetailView: View {
     /// discipler's usher (that's the existing end-of-level element — this adds
     /// a WITHIN-level presence, it doesn't replace it).
     private func maybeShowDisciplerReminder() {
-        guard vm.completed >= 3, !vm.examAvailable, !vm.awaitingReview else { return }
+        // Never for a discipler who doesn't exist (Cycle 4, B1).
+        guard vm.mentor != nil else { return }
+        guard vm.completed >= 3, !vm.examAvailable, !vm.examSoon, !vm.awaitingReview else { return }
         guard DisciplerReminderPolicy.shouldShow(level: levelNumber) else { return }
         withAnimation(reduceMotion ? .easeInOut(duration: 0.25) : .spring(response: 0.5, dampingFraction: 0.85)) {
             showReminder = true
@@ -702,14 +807,18 @@ private struct ModuleTrailCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(alignment: .firstTextBaseline) {
-                Text("MODULE \(module.moduleSequenceNumber)")
+                // The level's exam container is the exam step, as Pathway's
+                // trail draws it — never "MODULE 11 · Start this module" (B2).
+                Text(module.isExam ? "EXAM" : "MODULE \(module.moduleSequenceNumber)")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
                 Spacer()
                 statusBadge
             }
-            Text(module.title)
+            // The exam's one name (§9.1 rule 1) — the server titles it "Level 1 Review".
+            Text(ExamWords.rowTitle(module))
                 .font(.nCardTitle).foregroundStyle(Nuru.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords(ExamWords.rowTitle(module), font: .nCardTitle)
             if let summary = module.summary, !summary.isEmpty {
                 Text(summary)
                     .font(.nCardBody).foregroundStyle(Nuru.muted).lineLimit(2)
@@ -732,12 +841,12 @@ private struct ModuleTrailCard: View {
     private var statusBadge: some View {
         if module.completed {
             Text("DONE")
-                .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.successText)
+                .font(.inter(11, .bold)).kerning(0.5).foregroundStyle(Nuru.successText)
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(Nuru.successBg, in: Capsule())
         } else if module.locked {
             Text("LOCKED")
-                .font(.inter(10, .bold)).kerning(0.5).foregroundStyle(Nuru.faint)
+                .font(.inter(11, .bold)).kerning(0.5).foregroundStyle(Nuru.faint)
                 .padding(.horizontal, 9).padding(.vertical, 4)
                 .background(Nuru.mutedBg, in: Capsule())
         }
@@ -761,7 +870,7 @@ private struct ModuleTrailCard: View {
             if let mins = module.estimatedMinutes {
                 chip(.clock, "\(mins) min")
             }
-            if module.requiresQuiz {
+            if module.requiresQuiz && !module.isExam {
                 chip(.pencil, "Quiz")
             }
         }
@@ -769,7 +878,7 @@ private struct ModuleTrailCard: View {
 
     private func chip(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 5) {
-            Icon(icon, size: 11, color: Nuru.goldLo)
+            Icon(icon, size: 14, color: Nuru.goldLo)
             Text(text).font(.inter(12, .medium)).foregroundStyle(Nuru.ink600)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -780,15 +889,19 @@ private struct ModuleTrailCard: View {
     @ViewBuilder
     private var footerLine: some View {
         if module.completed {
-            Text("Completed — nicely done.")
+            Text(module.isExam ? "Passed." : "Completed — nicely done.")
                 .font(.nMicro).foregroundStyle(Nuru.successText)
         } else if module.locked {
-            Text("Unlocks when you finish the one before.")
+            Text(module.isExam ? "Unlocks when you finish every module." : "Unlocks when you finish the one before.")
                 .font(.nMicro).foregroundStyle(Nuru.faint)
+        } else if module.examOpensSoon {
+            Text("Opens soon.").font(.inter(12, .semibold)).foregroundStyle(Nuru.faint)
+        } else if module.isExam {
+            Text("Ready — tap to begin.").font(.inter(12, .semibold)).foregroundStyle(Nuru.eyebrow)
         } else {
             HStack(spacing: 4) {
                 Text("Start this module").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
-                Icon(.chevronRight, size: 12, color: Nuru.gold)
+                Icon(.chevronRight, size: 14, color: Nuru.gold)
             }
         }
     }
@@ -833,7 +946,7 @@ private struct EncouragementTrailCard: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             HStack(spacing: 6) {
-                Icon(.sparkles, size: 11, color: Nuru.goldChipText)
+                Icon(.sparkles, size: 14, color: Nuru.goldChipText)
                 Text(kicker)
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
             }
@@ -864,29 +977,36 @@ private struct EncouragementTrailCard: View {
 // MARK: - Exam gate card (navy + gold — the trail's ceremonial final door)
 
 private struct ExamGateCard: View {
-    let levelNumber: Int
+    /// The journey's own words for the exam step (§3) — the same title, line
+    /// and action the Pathway hero and Home's continue card say. No action
+    /// while the exam opens soon: the card only says where things stand.
+    let title: String
+    let line: String
+    let actionLabel: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(spacing: 6) {
-                Icon(.award, size: 12, color: Nuru.goldGlow)
+                Icon(.award, size: 14, color: Nuru.goldGlow)
                 Text("THE LEVEL GATE")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
             }
-            Text("Take the Level \(levelNumber) exam")
+            Text(title)
                 .font(.nCardTitle).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-            Text("Every module is complete — the exam draws from the whole level and opens the way forward.")
+            Text(line)
                 .font(.nCardBody).foregroundStyle(Color.white.opacity(0.65))
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 6) {
-                Text("Begin the exam").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
-                Icon(.arrowRight, size: 13, color: Nuru.navyDeep)
+            if let actionLabel {
+                HStack(spacing: 6) {
+                    Text(actionLabel).font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                    Icon(.arrowRight, size: 14, color: Nuru.navyDeep)
+                }
+                .padding(.horizontal, 16).padding(.vertical, 10)
+                .background(Nuru.goldGradient, in: Capsule())
+                .padding(.top, 4)
             }
-            .padding(.horizontal, 16).padding(.vertical, 10)
-            .background(Nuru.goldGradient, in: Capsule())
-            .padding(.top, 4)
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -918,7 +1038,7 @@ private struct MidLevelStatsCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             HStack(spacing: 6) {
-                Icon(.trendingUp, size: 12, color: Nuru.goldGlow)
+                Icon(.trendingUp, size: 14, color: Nuru.goldGlow)
                 Text("YOUR JOURNEY SO FAR")
                     .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldGlow)
             }
@@ -935,21 +1055,24 @@ private struct MidLevelStatsCard: View {
                 }
             }
 
-            Text("Walk the rest with your discipler\(mentorName.map { " — \($0) is right there with you" } ?? "").")
-                .font(.nCardBody).foregroundStyle(Color.white.opacity(0.7))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            // Only with a discipler the server names (Cycle 4, B1).
+            if let mentorName {
+                Text("Walk the rest with your discipler — \(mentorName.isEmpty ? "they're" : mentorName + " is") right there with you.")
+                    .font(.nCardBody).foregroundStyle(Color.white.opacity(0.7))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            NavigationLink(value: AppRoute.discipleshipHub) {
-                HStack(spacing: 6) {
-                    Icon(.messageCircle, size: 13, color: Nuru.navyDeep)
-                    Text("Message your discipler").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                NavigationLink(value: AppRoute.discipleshipHub) {
+                    HStack(spacing: 6) {
+                        Icon(.messageCircle, size: 14, color: Nuru.navyDeep)
+                        Text("Message your discipler").font(.inter(13, .bold)).foregroundStyle(Nuru.navyDeep)
+                    }
+                    .padding(.horizontal, 16).padding(.vertical, 10)
+                    .background(Nuru.goldGradient, in: Capsule())
                 }
-                .padding(.horizontal, 16).padding(.vertical, 10)
-                .background(Nuru.goldGradient, in: Capsule())
+                .buttonStyle(.pressable)
+                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
             }
-            .buttonStyle(.pressable)
-            .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -984,11 +1107,13 @@ private struct StatsRing: View {
                 .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 6, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
-            Text("\(pct)%").font(.inter(14, .bold)).foregroundStyle(.white)
+            // A ring's figure is Fraunces, as every ring's (both apps).
+            Text("\(pct)%").font(.fraunces(14, .semibold)).foregroundStyle(.white)
                 .contentTransition(.numericText())
                 .animation(.default, value: pct)
         }
         .frame(width: 60, height: 60)
+        .nuruFixedFigure()
         .onAppear {
             guard !shown else { return }
             if reduceMotion { shown = true }
@@ -1042,7 +1167,7 @@ private struct DisciplerReminderCard: View {
                 Text("WALK WITH YOUR DISCIPLER")
                     .font(.nCardKicker).kerning(1.2).foregroundStyle(Nuru.goldChipText)
                 Text(mentorName.map { "\($0) is walking this with you" } ?? "A discipler is walking this with you")
-                    .font(.inter(14.5, .bold)).foregroundStyle(Nuru.ink)
+                    .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text("You're making real progress — you don't have to walk it alone.")
                     .font(.nCardBody).foregroundStyle(Nuru.ink600)
@@ -1051,7 +1176,7 @@ private struct DisciplerReminderCard: View {
                 HStack {
                     NavigationLink(value: AppRoute.discipleshipHub) {
                         HStack(spacing: 6) {
-                            Icon(.messageCircle, size: 13, color: .white)
+                            Icon(.messageCircle, size: 14, color: .white)
                             Text("Message").font(.inter(13, .bold)).foregroundStyle(.white)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 9)
@@ -1067,7 +1192,7 @@ private struct DisciplerReminderCard: View {
                 Haptics.tap()
                 onDismiss()
             } label: {
-                Icon(.x, size: 13, color: Nuru.faint)
+                Icon(.x, size: 14, color: Nuru.faint)
                     .frame(width: 26, height: 26)
                     .background(Nuru.mutedBg, in: Circle())
             }

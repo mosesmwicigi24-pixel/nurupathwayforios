@@ -137,9 +137,11 @@ final class GivingCycle5ClaimTests: XCTestCase {
         XCTAssertEqual(claims.map(\.amountMinor), [300_000, 150_000, 2_000], "amounts sent as text are read")
         XCTAssertEqual(claims.map { ClaimCopy.status($0.status) },
                        ["The office is checking it", "Recorded — thank you", "The office couldn't match it"])
-        XCTAssertEqual(ClaimCopy.line(claims[0], today: "2026-09-28"), "KSh \(grouped(3000)) · paid 12 September")
-        XCTAssertEqual(ClaimCopy.line(claims[1], today: "2026-09-28"), "KSh \(grouped(1500)) · paid 20 December 2025", "another year says which")
-        XCTAssertEqual(ClaimCopy.line(claims[2], today: "2026-09-28"), "US$ 20.00 · paid 1 September")
+        // The one date shape (§8.1 rule 8; final walk C2): "paid Sat 12 Sep",
+        // not "paid 12 September".
+        XCTAssertEqual(ClaimCopy.line(claims[0], today: "2026-09-28"), "KSh \(grouped(3000)) · paid Sat 12 Sep")
+        XCTAssertEqual(ClaimCopy.line(claims[1], today: "2026-09-28"), "KSh \(grouped(1500)) · paid Sat 20 Dec 2025", "another year says which")
+        XCTAssertEqual(ClaimCopy.line(claims[2], today: "2026-09-28"), "US$ 20.00 · paid Tue 1 Sep")
         XCTAssertEqual(claims[0].note, "Cash at church")
         XCTAssertNil(claims[2].note, "an empty note reads as none")
         XCTAssertEqual(ClaimCopy.status("something new"), "The office is checking it", "a state this build doesn't know reads as waiting")

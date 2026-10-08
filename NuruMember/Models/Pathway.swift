@@ -6,6 +6,11 @@ import Foundation
 
 enum LevelStatus: String, Codable, Sendable {
     case completed, active, locked
+    /// The member passed this level's exam and waits for their discipler to
+    /// usher them on (§1.9). Its own state: it used to fall through to
+    /// `locked` below, so a member who had just passed saw their own level
+    /// locked (the rail's lock seal, the map's refusal shake).
+    case awaitingReview = "awaiting_review"
     // Tolerate any status the server sends that we don't model (prod may use a
     // vocabulary this client predates) — decode unknowns to `locked` rather than
     // throwing, which would fail the whole pathway response and blank the page.
@@ -35,12 +40,37 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
     /// exam gate is hidden until this is true. Defaults TRUE so payloads from a
     /// server that predates the gate keep showing the exam (no regression).
     var examPublished: Bool = true
+    /// The exam can be TAKEN: published AND it has at least one active
+    /// question (EXPERIENCE.md §7.2 #1) — a published exam with no questions
+    /// answers 422, so it is never offered. Defaults TRUE: a server that
+    /// predates the field behaves exactly as before.
+    var examAvailable: Bool = true
+    /// Lessons only — the exam is a step of its own, never "a module"
+    /// (EXPERIENCE.md §8.2 #4). `total_modules` counts a published exam
+    /// container, so a finisher read "20 of 21" beside "20 of 20". Nil when
+    /// the server predates the fields — then the module counts stand in.
+    var lessonsTotal: Int? = nil
+    var lessonsCompleted: Int? = nil
 
     var id: Int { levelNumber }
 
+    /// Every "X of Y modules" the member reads counts these: the level's
+    /// lessons (the exam is its own step), or — from an older server — the
+    /// module counts, as before.
+    var lessonCount: Int { lessonsTotal ?? totalModules }
+    var lessonsDone: Int { lessonsCompleted ?? completedModules }
+
+    /// Exam passed, waiting for the usher — by the status word or the flag
+    /// (the server sends both; either is enough).
+    var isAwaitingReview: Bool { awaitingReview || status == .awaitingReview }
+    /// The level is behind the member: ushered past (completed), or its exam
+    /// passed and awaiting the usher.
+    var walked: Bool { status == .completed || isAwaitingReview }
+
     private enum CodingKeys: String, CodingKey {
         case levelNumber, title, theme, description, totalModules
-        case completedModules, minutes, status, awaitingReview, examPublished
+        case completedModules, minutes, status, awaitingReview, examPublished, examAvailable
+        case lessonsTotal, lessonsCompleted
     }
 
     init(from decoder: Decoder) throws {
@@ -55,6 +85,9 @@ struct PathwayLevel: Codable, Sendable, Identifiable {
         status = (try? c.decodeIfPresent(LevelStatus.self, forKey: .status)) ?? .locked
         awaitingReview = (try? c.decodeIfPresent(Bool.self, forKey: .awaitingReview)) ?? false
         examPublished = (try? c.decodeIfPresent(Bool.self, forKey: .examPublished)) ?? true
+        examAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .examAvailable)) ?? true
+        lessonsTotal = (try? c.decodeIfPresent(Int.self, forKey: .lessonsTotal)) ?? nil
+        lessonsCompleted = (try? c.decodeIfPresent(Int.self, forKey: .lessonsCompleted)) ?? nil
     }
 }
 
@@ -163,6 +196,11 @@ struct LevelModule: Codable, Sendable, Identifiable {
     let status: ModuleStatus
     let progress: Double
     let locked: Bool
+    /// On the exam row: the exam can be taken — published with at least one
+    /// active question (EXPERIENCE.md §7.2 #1). An open row whose exam has no
+    /// questions yet reads "opens soon" and opens nothing. Absent (an older
+    /// server, or a lesson row) reads as available, as before.
+    let examAvailable: Bool
 
     var id: String { moduleId }
 
@@ -170,6 +208,9 @@ struct LevelModule: Codable, Sendable, Identifiable {
     /// visible, locked-until-ready row at the foot of the trail; tapping it once
     /// unlocked opens the level exam rather than the lesson reader.
     var isExam: Bool { evaluationKind == "exit_exam" }
+    /// The exam row is open but its exam can't be taken yet: it says so, and
+    /// is never a way into the exam (the server would answer 422).
+    var examOpensSoon: Bool { isExam && !completed && !locked && !examAvailable }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -187,6 +228,7 @@ struct LevelModule: Codable, Sendable, Identifiable {
         progress = (try? c.decodeIfPresent(Double.self, forKey: .progress)) ?? 0.0
         // A missing gate must never unlock content (§1.9) — default LOCKED.
         locked = (try? c.decodeIfPresent(Bool.self, forKey: .locked)) ?? true
+        examAvailable = (try? c.decodeIfPresent(Bool.self, forKey: .examAvailable)) ?? true
     }
 }
 
@@ -272,9 +314,7 @@ struct ModuleDetail: Codable, Sendable {
             if date == nil { f.dateFormat = "yyyy-MM-dd HH:mm:ssxx"; date = f.date(from: completedAt) }
         }
         guard let date else { return nil }
-        let out = DateFormatter()
-        out.dateFormat = "d MMM yyyy · HH:mm"
-        return out.string(from: date)
+        return NuruDates.dayTime(date)   // "Mon 5 Oct · 10:16 AM" — the one shape
     }
 }
 

@@ -76,7 +76,9 @@ enum GivingSignal {
 @MainActor final class PartnersModel: ObservableObject {
     @Published var partnership: Partnership?
     @Published var loading = false
-    @Published var error: String?
+    /// Why the portal didn't load (nothing to show yet) — spoken through the
+    /// one state language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
     /// The pledge / schedule id with an action in flight — its control shows a
     /// spinner and refuses a second tap.
     @Published var busyId: String?
@@ -87,6 +89,11 @@ enum GivingSignal {
     /// (`auto_schedule_error`, Giving Cycle 5): its page says why, by pledge
     /// id, until the member dismisses it.
     @Published var pledgeNotices: [String: String] = [:]
+    /// The recurring gifts (GET /giving/schedules) — which DUE instalments a
+    /// pledge's collector takes care of (EXPERIENCE.md §6.4). Nil until the
+    /// first answer; a failed read keeps what was known. While unknown every
+    /// instalment keeps Pay: nothing is said to be collected by guesswork.
+    @Published var schedules: [GivingSchedule]?
 
     // Statements (GET /giving/statements?year=)
     @Published var statements: GivingStatements?
@@ -143,20 +150,30 @@ enum GivingSignal {
 
     func load() async {
         loading = partnership == nil
-        error = nil
+        failure = nil
         partnershipSeq += 1
         let seq = partnershipSeq
-        do {
-            let p = try await MemberAPI.partnership()
+        // Beside the partnership, so the DUE list renders once with both —
+        // never Pay first, then a chip a moment later.
+        async let gifts = try? MemberAPI.schedules()
+        // Both answer before either shows (final walk, M4's class): assigned
+        // between the two awaits, the partnership could paint its DUE rows
+        // with no gifts beside them — Pay, then the chip a moment later.
+        let read: Result<Partnership, Error>
+        do { read = .success(try await MemberAPI.partnership()) } catch { read = .failure(error) }
+        let g = await gifts
+        switch read {
+        case .success(let p):
             if seq > partnershipApplied {
                 partnershipApplied = seq
                 partnership = p
             }
             partnershipRefreshFailed = false
-        } catch {
-            if partnership == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this just now." }
+        case .failure(let error):
+            if partnership == nil { failure = error }
             else { partnershipRefreshFailed = true }
         }
+        if let g { schedules = g }
         loading = false
     }
 
@@ -208,7 +225,7 @@ enum GivingSignal {
             await loadStatements()   // the STATEMENT section appears with membership
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing has changed."
+            actionError = GiveRefusal.from(error).message
         }
     }
 
@@ -248,7 +265,7 @@ enum GivingSignal {
             return true
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your pledge is unchanged."
+            actionError = GiveRefusal.from(error).message
             return false
         }
     }
@@ -263,7 +280,7 @@ enum GivingSignal {
         do { try await MemberAPI.resumeSchedule(id); Haptics.success(); GivingSignal.post(from: self); await load() }
         catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your giving is unchanged."
+            actionError = GiveRefusal.from(error).message
         }
     }
 
@@ -291,7 +308,7 @@ enum GivingSignal {
             statementsRefreshFailed = false
         } catch {
             if quiet { statementsRefreshFailed = true }
-            else { statementsError = (error as? APIError)?.errorDescription ?? "We couldn't load your statement." }
+            else { statementsError = NuruStateCopy.failure(error).sentence }
         }
         if !quiet {
             statementLoadsInFlight -= 1
@@ -446,10 +463,12 @@ enum PledgeMath {
         return m == 12 ? ymd(y + 1, 1, d) : ymd(y, m + 1, d)
     }
 
-    /// "5 October" — "5 January 2027" when it falls in another year than `today`.
+    /// "Mon 5 Oct" — "Tue 5 Jan 2027" when it falls in another year than
+    /// `today`: the one date shape (§8.1 rule 8; it read "paid 27 September").
+    /// A date-only value, so the calendar day sent — never shifted by a zone.
     static func dayLabel(_ day: String, today: String) -> String {
-        let words = GivingNotificationCopy.dayWords(day)
-        return day.prefix(4) == today.prefix(4) ? words : "\(words) \(day.prefix(4))"
+        guard let d = PauseDates.date(String(day.prefix(10))) else { return GivingNotificationCopy.dayWords(day) }
+        return NuruDates.day(d, now: PauseDates.date(String(today.prefix(10))) ?? Date(), timeZone: GiveCalendar.nairobi)
     }
 
     /// A monthly pledge's first instalment on or after `day`: its due day,
@@ -630,6 +649,8 @@ struct PartnersView: View {
     /// band's first row when both are supplied (GiveTabView).
     var segment: GiveSegment? = nil
     var onSelectSegment: ((GiveSegment) -> Void)? = nil
+    /// At the accessibility sizes the band scrolls with the page (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @StateObject private var vm = PartnersModel()
     @EnvironmentObject private var tabs: TabRouter
@@ -646,12 +667,14 @@ struct PartnersView: View {
             if embedded {
                 NavigationStack(path: $path) {
                     content
+                        .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
                         .toolbar(.hidden, for: .navigationBar)
                         .navigationDestination(for: PartnersRoute.self) { destination($0) }
                         // The general statement (reached from the partners
                         // statement's "Giving statement") pushes its gift rows
                         // as GivingRecord values — this stack must know them.
                         .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
+                        .inboxDestinations()   // the band's bell
                 }
             } else {
                 content
@@ -682,6 +705,8 @@ struct PartnersView: View {
             DispatchQueue.main.async { tabs.pledgeLink = nil }
             path = NavigationPath([PartnersRoute.pledge(id)])
         }
+        // A re-tap on Give while Partners shows returns to its top (§7.4 #17).
+        .popsToRoot(on: .give, path: $path, when: { segment == nil || segment == .partners })
         .fullScreenCover(isPresented: $showNewPledge) {
             NewPledgeFlow(isMember: vm.partnership?.isProgrammeMember ?? false,
                           pledgeOptions: vm.partnership?.pledgeOptions ?? [],
@@ -725,15 +750,21 @@ struct PartnersView: View {
         ZStack {
             Nuru.paper.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    sections
+                VStack(alignment: .leading, spacing: 0) {
+                    // At the accessibility sizes the band scrolls with the
+                    // page: pinned, it filled two thirds of the screen (§9.6 #4).
+                    if embedded && typeSize.isAccessibilitySize { band }
+                    VStack(alignment: .leading, spacing: 12) {
+                        sections
+                    }
+                    .padding(.horizontal, Nuru.S.base)
+                    .padding(.top, Nuru.S.base)
+                    .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)
                 }
-                .padding(.horizontal, Nuru.S.base)
-                .padding(.top, Nuru.S.base)
-                .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)
+                .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if embedded { band }
+                if embedded && !typeSize.isAccessibilitySize { band }
             }
             .refreshable {
                 await vm.load()
@@ -744,7 +775,9 @@ struct PartnersView: View {
     }
 
     @ViewBuilder private var sections: some View {
-        if vm.partnership != nil && vm.refreshFailed {
+        // A saved copy says so (final walk M3).
+        NuruSavedCopyNotice(hasContent: vm.partnership != nil)
+        if vm.partnership != nil && vm.refreshFailed && SyncCoordinator.shared.isOnline {
             Text("Couldn't refresh just now — showing what we last had.")
                 .font(.inter(11)).foregroundStyle(Nuru.ink400)
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
@@ -767,10 +800,11 @@ struct PartnersView: View {
             } else {
                 joinCard(p)
             }
-        } else if vm.loading {
-            ProgressView().tint(Nuru.gold).frame(maxWidth: .infinity).padding(.top, 60)
+        } else if let f = vm.failure, !vm.loading {
+            errorState(f)
         } else {
-            errorState
+            // Loading — and the first frame before the first read begins.
+            ProgressView().tint(Nuru.gold).frame(maxWidth: .infinity).padding(.top, 60)
         }
     }
 
@@ -779,14 +813,13 @@ struct PartnersView: View {
     private var band: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let segment, let onSelectSegment {
-                SplitSegmentBar(selection: segment, onSelect: onSelectSegment)
+                GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
-            Text("Walk with the church")
-                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-            Text("Decide in advance. The church can plan.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 4)
+            // The one header's words (§8.1 rules 2–3): the switch sits above
+            // the kicker, which names the segment (final walk #38: there was
+            // none under the switch).
+            NuruHeaderText(kicker: "Partners", title: "Walk with the church", line: "Decide in advance. The church can plan.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -810,7 +843,7 @@ struct PartnersView: View {
         VStack(alignment: .leading, spacing: 10) {
             eyebrow("JOIN THE PARTNERS PROGRAMME")
             Text("Become a partner")
-                .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             Text("Joining costs nothing today. A pledge can come later.")
                 .font(.inter(13)).foregroundStyle(Nuru.ink600)
                 .fixedSize(horizontal: false, vertical: true)
@@ -837,13 +870,26 @@ struct PartnersView: View {
 
     // MARK: Due — soonest first, one action each
 
+    /// "DUE" only within the fortnight; further out the same rows read
+    /// "COMING UP" (EXPERIENCE.md §9.3 rule 2) — Pay still there, for paying
+    /// early. A total pledge's 31 Dec read "DUE" 87 days ahead.
     private func dueSection(_ p: Partnership) -> some View {
+        let today = PauseDates.wire(Date())
+        let soon = p.due.filter { HomeWeek.dueIsSoon($0, today: today) }
+        let later = p.due.filter { !HomeWeek.dueIsSoon($0, today: today) }
+        return VStack(alignment: .leading, spacing: 16) {
+            if !soon.isEmpty { dueGroup("DUE", soon, p) }
+            if !later.isEmpty { dueGroup("COMING UP", later, p) }
+        }
+    }
+
+    private func dueGroup(_ label: String, _ rows: [DueItem], _ p: Partnership) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            eyebrow("DUE")
+            eyebrow(label)
             VStack(spacing: 0) {
-                ForEach(Array(p.due.enumerated()), id: \.element.id) { i, item in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, item in
                     dueRow(item, p)
-                    if i != p.due.count - 1 {
+                    if i != rows.count - 1 {
                         Divider().overlay(Nuru.border).padding(.vertical, 10)
                     }
                 }
@@ -864,12 +910,23 @@ struct PartnersView: View {
                 Text(partial
                      ? "\(money(item.uncoveredMinor, item.currency)) left · \(when.text)"
                      : "\(money(item.amountMinor, item.currency)) · \(when.text)")
-                    .font(.inter(15, .semibold))
+                    .font(.nRowTitle)   // a content row (§8.1 rule 3)
                     .foregroundStyle(when.overdue ? Nuru.goldChipText : Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Whole at the largest size: "Roof shee…" (§9.6 #4).
                 Text(partial
                      ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
                      : dueSubtitle(item, p))
-                    .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    .font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                // What the office is already checking, on the row it covers
+                // (§9.3 rule 1): said, never subtracted — the row and Pay
+                // still ask what is owed.
+                if let claim = item.claimLine {
+                    Text(claim)
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             if item.fullyPending {
@@ -882,35 +939,58 @@ struct PartnersView: View {
                 // A running recurring gift collects itself — no Pay, which
                 // gave a second, one-time gift (owner, 2026-09-28). A tap
                 // opens the gift's own sheet on Give (pause, change).
-                Button {
-                    Haptics.tap()
+                collectedChip(collected, label: "\(collected), automatically. Opens the recurring gift.") {
                     tabs.openGive(link: .schedule(scheduleId: item.id))
-                } label: {
-                    Text(collected)
-                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
-                        .lineLimit(1).minimumScaleFactor(0.85)
-                        .padding(.horizontal, 12).frame(height: 32)
-                        .background(Nuru.goldChipBg, in: Capsule())
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("\(collected), automatically. Opens the recurring gift.")
+            } else if let pledge = p.pledges.first(where: { $0.pledgeId == item.id }),
+                      let day = PledgePace.collectedDay(item, by: vm.schedules.flatMap { PledgePace.collector(of: pledge, in: $0) }),
+                      let collected = ScheduleRhythm.collectedOn(day) {
+                // A pledge whose collector prompts on or before the date says
+                // so too (EXPERIENCE.md §6.4) — the same chip. A tap opens the
+                // pledge, where paying early by hand stays possible.
+                collectedChip(collected, label: "\(collected), automatically. Opens the pledge.") {
+                    path.append(PartnersRoute.pledge(item.id))
+                }
             } else {
                 Button {
                     Haptics.action()
                     act(on: item, p)
                 } label: {
+                    // While the office checks money toward it, Pay is the
+                    // quiet secondary pill — never the row's navy ask (final
+                    // walk M1): the claim line above says what is happening.
+                    let quiet = item.action != "resume" && item.pendingClaimMinor > 0
                     HStack(spacing: 6) {
-                        if busy { ProgressView().tint(.white).scaleEffect(0.7) }
-                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, .bold))
+                        if busy { ProgressView().tint(quiet ? Nuru.navy : .white).scaleEffect(0.7) }
+                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, quiet ? .semibold : .bold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(quiet ? Nuru.navy : .white)
                     .padding(.horizontal, 18).frame(height: 36)
-                    .background(Nuru.navy, in: Capsule())
+                    .background(quiet ? Nuru.white : Nuru.navy, in: Capsule())
+                    .overlay(Capsule().stroke(quiet ? Nuru.border : .clear, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)
             }
         }
+    }
+
+    /// "Collected on Mon 5 Oct" — the gold chip a DUE row wears in place of
+    /// Pay when a prompt will take care of it: a running recurring gift, or
+    /// a pledge's collector (§6.4). One look for both.
+    private func collectedChip(_ text: String, label: String, open: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            open()
+        } label: {
+            Text(text)
+                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                .lineLimit(1).minimumScaleFactor(0.92)
+                .padding(.horizontal, 12).frame(height: 32)
+                .background(Nuru.goldChipBg, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(label)
     }
 
     /// "Waiting for M-Pesa" when the rail of the in-flight payment is known
@@ -1100,14 +1180,19 @@ struct PartnersView: View {
         let figures = PledgeMath.figures(s, pledges: p.pledges)
         let rows = s.pledgePayments
         let pending = s.pendingPledgePayments
+        // Three "KSh 0" tiles say nothing (§7.4 #9; the walks' E14/A1 for
+        // Ben): the figures show once any of them is more than nothing.
+        let anyFigure = figures.contains { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
-                summaryColumn("Paid", figures.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
-                summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
-            }
+            if anyFigure {
+                NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
+                    summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
+                    partnerSummaryColumn("Paid", figures.map { (money($0.paidMinor, $0.currency), PaidTint.color($0.paidMinor)) })
+                    summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
+                }
 
-            Divider().overlay(Nuru.border).padding(.vertical, 14)
+                Divider().overlay(Nuru.border).padding(.vertical, 14)
+            }
 
             // Still processing: listed first, never in Paid above.
             ForEach(pending) { pay in
@@ -1119,8 +1204,8 @@ struct PartnersView: View {
                 Divider().overlay(Nuru.border)
             }
             if rows.isEmpty && pending.isEmpty {
-                Text("No pledge payments in \(String(s.year)).")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
+                // The empty year in §4's state (final walk C16) — not a bare line.
+                NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year)), compact: true)
             } else {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, pay in
                     StatementPaymentRow(payment: pay, title: paymentTitle(pay, s, p)) {
@@ -1137,7 +1222,7 @@ struct PartnersView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("Partners statement and PDF").font(.inter(13, .semibold))
-                    Icon(.arrowRight, size: 12, color: Nuru.gold)
+                    Icon(.arrowRight, size: 14, color: Nuru.gold)
                 }
                 .foregroundStyle(Nuru.gold)
                 .frame(maxWidth: .infinity)
@@ -1161,22 +1246,12 @@ struct PartnersView: View {
 
     // MARK: Error / retry states
 
-    private var errorState: some View {
-        VStack(spacing: Nuru.S.md) {
-            Icon(.circleHelp, size: 28, color: Nuru.muted)
-            Text("We couldn't load this just now").font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
-            Text(vm.error ?? "Your giving is unaffected.")
-                .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                .padding(.horizontal, Nuru.S.xl)
-            Button { Haptics.tap(); Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+    /// Nothing loaded yet and the read failed — what really happened, in the
+    /// one state language (§4). (A failed refresh over a loaded portal keeps
+    /// the portal and says so in its own row.)
+    private func errorState(_ failure: Error) -> some View {
+        NuruStateView(state: .failed(.failure(failure)), retry: { Task { await vm.load() } })
+            .padding(.top, 24)
     }
 
     private func retryRow(_ message: String, retry: @escaping () -> Void) -> some View {
@@ -1196,7 +1271,7 @@ struct PartnersView: View {
 
 /// ONE-word eyebrow: `.inter(9, .semibold)`, kerning 1.6, goldLo.
 func eyebrow(_ s: String) -> some View {
-    Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
+    Text(s).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
 }
 
 /// The Partners card: white, border stroke, radius 16, 16pt padding.
@@ -1216,14 +1291,28 @@ extension View {
 /// One column of the Pledged / Paid / Remaining card: the label, then one
 /// amount per currency — the same currency on the same line in every column.
 func partnerSummaryColumn(_ label: String, _ values: [String], _ tint: Color) -> some View {
+    partnerSummaryColumn(label, values.map { ($0, tint) })
+}
+
+/// A column whose figures carry their own colour — "Paid" is green, the
+/// on-track colour, only for money that was paid (final walk C11: "PAID ·
+/// KSh 0" in green).
+func partnerSummaryColumn(_ label: String, _ values: [(text: String, tint: Color)]) -> some View {
     VStack(alignment: .leading, spacing: 3) {
-        Text(label.uppercased()).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
+        Text(label.uppercased()).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
         ForEach(Array(values.enumerated()), id: \.offset) { _, value in
-            Text(value).font(.inter(16, .semibold)).foregroundStyle(tint)
+            Text(value.text).font(.inter(16, .semibold)).foregroundStyle(value.tint)
                 .lineLimit(1).minimumScaleFactor(0.7)
         }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+}
+
+/// Green says a state (§8.1 rule 1: on track): money paid. Nothing paid is
+/// a plain figure, navy.
+enum PaidTint {
+    static func isGreen(_ paidMinor: Int) -> Bool { paidMinor > 0 }
+    static func color(_ paidMinor: Int) -> Color { isGreen(paidMinor) ? Nuru.successText : Nuru.navy }
 }
 
 /// "Partner since Sep 2026" — month + year from the membership's joinedAt,
@@ -1290,54 +1379,103 @@ private struct StandingCard: View {
     let faithfulness: GivingStatements.Faithfulness?
     let onPledge: () -> Void
     let onStatement: () -> Void
+    /// At the accessibility sizes the tier sits under the standing and the two
+    /// buttons stand one above the other (§9.6 #4): "Partne / r since",
+    /// "discipl / es".
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             eyebrow("STANDING")
 
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
-                    Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
-                }
-                Spacer(minLength: 8)
-                if let t = partnership.tier, !t.name.isEmpty {
-                    HStack(spacing: 5) {
-                        Icon(.award, size: 12, color: Nuru.goldChipText)
-                        Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Nuru.goldChipBg, in: Capsule())
-                    .accessibilityElement(children: .ignore)
-                    // The tier sentence lives here and nowhere on screen.
-                    .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
-                }
+            // A standing only once there is one — a pledge or a gift that
+            // went through (the Android walk's A1: Ben read "Partner since
+            // Oct 2026 · 0 gifts kept" and a tier beside a gift that failed).
+            if PartnerStanding.isReal(partnership) {
+                standingRow
+            } else {
+                Text(PartnerStanding.notYet)
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 10) {
-                // The ONLY gold-filled button on the page.
-                Button(action: onPledge) {
-                    HStack(spacing: 6) {
-                        Icon(.plus, size: 14, color: Nuru.navy)
-                        Text("Make a pledge").font(.inter(14, .bold))
-                    }
-                    .foregroundStyle(Nuru.navy)
-                    .frame(maxWidth: .infinity).frame(height: 44)
-                    .background(Nuru.gold, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-
-                Button(action: onStatement) {
-                    Text("Statement").font(.inter(14, .semibold))
-                        .foregroundStyle(Nuru.navy)
-                        .frame(maxWidth: .infinity).frame(height: 44)
-                        .background(Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
-                }
-                .buttonStyle(.pressable)
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 10) { pledgeButton; statementButton }
+            } else {
+                HStack(spacing: 10) { pledgeButton; statementButton }
             }
         }
         .partnerCard()
+    }
+
+    // The ONLY gold-filled button on the page.
+    private var pledgeButton: some View {
+        Button(action: onPledge) {
+            HStack(spacing: 6) {
+                Icon(.plus, size: 14, color: Nuru.navy)
+                Text("Make a pledge").font(.inter(14, .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Nuru.navy)
+            .frame(maxWidth: .infinity).frame(minHeight: 44)
+            .background(Nuru.gold, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private var statementButton: some View {
+        Button(action: onStatement) {
+            Text("Statement").font(.inter(14, .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Nuru.navy)
+                .frame(maxWidth: .infinity).frame(minHeight: 44)
+                .background(Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
+        }
+        .buttonStyle(.pressable)
+    }
+
+    /// Since · kept, and the tier — shown once the standing is real.
+    @ViewBuilder private var standingRow: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                standingWords
+                tierChip
+            }
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                standingWords
+                Spacer(minLength: 8)
+                tierChip
+            }
+        }
+    }
+
+    private var standingWords: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var tierChip: some View {
+        if let t = partnership.tier, !t.name.isEmpty {
+            HStack(spacing: 5) {
+                Icon(.award, size: 14, color: Nuru.goldChipText)
+                Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Nuru.goldChipBg, in: Capsule())
+            .accessibilityElement(children: .ignore)
+            // The tier sentence lives here and nowhere on screen.
+            // The tier's words are the server's — "will carry 3 disciples…"
+            // until the partner's money lands, then "carries…" (owner,
+            // 2026-10-08) — and nothing here says otherwise.
+            .accessibilityLabel("\(t.name). \(money(t.monthlyMinor, partnership.currency)) a month.")
+        }
     }
 
     /// "Partner since Sep 2026" — the shared formatter (partnerSinceLine).
@@ -1391,7 +1529,7 @@ private struct TroubleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             Text(trouble.paused ? "Your giving is paused — nothing is owed." : "One gift didn't go through — nothing is owed.")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
@@ -1419,6 +1557,35 @@ private struct TroubleRow: View {
 
 // MARK: - One pledge (read-only card; the detail page holds the actions)
 
+/// The pledge page's lead while the office checks a claim (final walk M1):
+/// gentle, on gold tint (§8.1 rule 5) — what is happening, and that it
+/// counts once confirmed. Nothing is subtracted from the figures below.
+struct PledgeClaimLead: View {
+    let line: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Icon(.clock, size: 18, color: Nuru.goldChipText)
+                .frame(width: 36, height: 36)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(line).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(PledgeClaimLead.counts).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    static let counts = "It counts toward this pledge once the office confirms it — no need to pay it again."
+}
+
 private struct PledgeCard: View {
     let pledge: Pledge
     /// "9 of 12 kept this year" — supplied by the screen (needs the statement).
@@ -1433,8 +1600,20 @@ private struct PledgeCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     // The pledge's NAME leads (pledge names contract); the
                     // promise itself sits under it.
-                    Text(pledge.displayTitle).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    // A pledge is a content row (§8.1 rule 3); its name wraps
+                    // to two lines rather than being cut (rule 9).
+                    Text(pledge.displayTitle).font(.nRowTitle).foregroundStyle(Nuru.ink)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    // What the office is already checking leads (final walk
+                    // M1; §9.3 rule 1): said, never subtracted — Eli's US$ 50
+                    // was on no row at all, and a member could pay twice.
+                    if let claim = pledge.claimLine {
+                        Text(claim).font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // Whole at the largest size: "KSh 5,0…" (§9.6 #4).
+                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 stateChip
@@ -1451,14 +1630,15 @@ private struct PledgeCard: View {
             .frame(height: 6)
             .accessibilityLabel("\(Int((pledge.fraction * 100).rounded())) percent")
 
-            HStack(spacing: 8) {
-                Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
+            NuruAdaptiveStack(spacing: 8) {
+                Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if let n = nextLine {
                     Text(n.text)
                         .font(.inter(11, n.overdue ? .semibold : .regular))
                         .foregroundStyle(n.overdue ? Nuru.goldChipText : Nuru.ink600)
-                        .lineLimit(1)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -1497,7 +1677,7 @@ private struct PledgeCard: View {
             default: return (Nuru.successBg, Nuru.successText, "On track")
             }
         }()
-        return Text(text).font(.inter(10, .bold)).foregroundStyle(fg)
+        return Text(text).font(.inter(11, .bold)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 3).background(bg, in: Capsule())
     }
 }
@@ -1580,6 +1760,14 @@ struct PledgeDetailView: View {
     private var pledge: Pledge? {
         detail?.pledge ?? vm.partnership?.pledges.first { $0.pledgeId == pledgeId } ?? seed
     }
+    /// What the office is checking toward it (final walk M1) — the single-
+    /// pledge read carries `pending_claim_minor` since pathway#516 (an older
+    /// server's didn't), so the list's copy and this page's own claims say
+    /// it too: whichever answered first, the page never leads with Pay.
+    private func checkingMinor(_ p: Pledge) -> Int {
+        PledgeChecking.minor(rows: [detail?.pledge, vm.partnership?.pledges.first { $0.pledgeId == pledgeId }, seed],
+                             claims: claims, currency: p.currency)
+    }
     private var busy: Bool { vm.busyId == pledgeId }
 
     var body: some View {
@@ -1591,15 +1779,20 @@ struct PledgeDetailView: View {
                         autoScheduleNotice(note)
                     }
                     if let p = pledge {
+                        // What is already happening is said first (§9.3 rule
+                        // 1; final walk M1): money the office is checking
+                        // leads the page — it sat at the foot, under a gold
+                        // "Pay now", and a member could pay twice.
+                        if let claim = PledgeChecking.line(checkingMinor(p), p.currency) { PledgeClaimLead(line: claim) }
                         VStack(alignment: .leading, spacing: 4) {
                             // The name is the page's header; this card carries the promise.
                             Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
-                            Text("\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "") · \(money(p.progress.paidMinor, p.currency)) given in all")
+                            Text(PledgeWords.progressLine(p))
                                 .font(.nCaption).foregroundStyle(Nuru.ink600)
                             // A total pledge's pace (Giving Cycle 9), as the server sets it.
                             if let pace = PledgePace.line(p) {
                                 HStack(alignment: .top, spacing: 6) {
-                                    Icon(.calendarClock, size: 12, color: Nuru.gold).padding(.top, 2)
+                                    Icon(.calendarClock, size: 14, color: Nuru.gold).padding(.top, 2)
                                     Text(pace).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                                         .fixedSize(horizontal: false, vertical: true)
                                 }
@@ -1628,7 +1821,7 @@ struct PledgeDetailView: View {
                         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
                     } else if let d = detail {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("PAYMENTS").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                            Text("PAYMENTS").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                             if d.payments.isEmpty {
                                 Text("No payments yet — the first one will appear here the moment it settles.")
                                     .font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
@@ -1671,12 +1864,12 @@ struct PledgeDetailView: View {
             }
         }
         .sheet(item: $claiming) { p in
-            PledgeClaimSheet(pledge: p) { body in await sendClaim(p, body) }
+            PledgeClaimSheet(pledge: p, checking: PledgeChecking.line(checkingMinor(p), p.currency)) { body in await sendClaim(p, body) }
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Cancel \u{201C}\(cancelling?.displayTitle ?? "this pledge")\u{201D}?",
-            isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } })
         ) {
             Button("Cancel the pledge", role: .destructive) {
                 if let p = cancelling {
@@ -1695,7 +1888,7 @@ struct PledgeDetailView: View {
         loading = detail == nil
         error = nil
         do { detail = try await MemberAPI.pledge(pledgeId) }
-        catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this pledge." } }
+        catch { if detail == nil { self.error = NuruStateCopy.failure(error).sentence } }
         loading = false
         await loadClaims()
         await loadCollection()
@@ -1728,7 +1921,7 @@ struct PledgeDetailView: View {
                     .foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity).frame(height: 44)
                     .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.navy, lineWidth: 1.2))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
                 }
                 .buttonStyle(.pressable)
                 .disabled(startingPace || busy || !sync.isOnline)
@@ -1751,11 +1944,11 @@ struct PledgeDetailView: View {
                 tabs.openGive(link: .schedule(scheduleId: scheduleId))
             } label: {
                 HStack(spacing: 8) {
-                    Icon(.repeat, size: 13, color: Nuru.gold)
+                    Icon(.repeat, size: 14, color: Nuru.gold)
                     Text(line).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
-                    Icon(.chevronRight, size: 13, color: Nuru.ink300)
+                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
                 }
                 .contentShape(Rectangle())
             }
@@ -1794,7 +1987,7 @@ struct PledgeDetailView: View {
             await load()
         } catch {
             if !GiveRefusal.gotNoServerAnswer(error) { paceKey = GiveKey.fresh() }
-            switch GiveRefusal.from(error, fallback: "That didn't go through. Nothing has changed.") {
+            switch GiveRefusal.from(error) {
             case let .promptWaiting(tx, message):
                 // A prompt from a moment ago is still on the phone: nothing
                 // was made — watch that one, as Give does.
@@ -1832,7 +2025,7 @@ struct PledgeDetailView: View {
             if GiveRefusal.gotNoServerAnswer(error) {
                 return "We couldn't reach the church just now. Try again in a moment."
             }
-            return (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing was sent."
+            return GiveRefusal.from(error).message
         }
     }
 
@@ -1842,7 +2035,7 @@ struct PledgeDetailView: View {
         if let claims, !claims.isEmpty {
             let today = PledgeMath.today()
             VStack(alignment: .leading, spacing: 0) {
-                Text("PAID ANOTHER WAY").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                Text("PAID ANOTHER WAY").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                     .padding(.bottom, 4)
                 ForEach(claims) { claim in
                     PledgeClaimRow(claim: claim, today: today)
@@ -1864,6 +2057,12 @@ struct PledgeDetailView: View {
     @ViewBuilder private func actions(_ p: Pledge) -> some View {
         let paused = p.status == "paused"
         let fulfilled = p.status == "fulfilled" || p.progress.label == "fulfilled"
+        // The church collects it automatically (the card above says so):
+        // paying is a choice — "Pay early", as quiet as Pause (§7.2 #2).
+        let early = PledgePace.paysEarly(p, schedules: schedules)
+        // Money the office is checking: paying is still possible, never the
+        // page's gold primary (final walk M1).
+        let quiet = early || checkingMinor(p) > 0
         if !fulfilled && p.status != "cancelled" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -1880,12 +2079,14 @@ struct PledgeDetailView: View {
                             currency: p.currency))
                     } label: {
                         HStack(spacing: 6) {
-                            Text("Pay now").font(.inter(13, .bold))
-                            Icon(.arrowRight, size: 12, color: Nuru.navy)
+                            Text(early ? "Pay early" : "Pay now").font(.inter(13, quiet ? .semibold : .bold))
+                            Icon(.arrowRight, size: 14, color: Nuru.navy)
                         }
                         .foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(quiet ? Nuru.white : Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(quiet ? Nuru.border : .clear, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                     .disabled(paused || busy)
@@ -1897,7 +2098,7 @@ struct PledgeDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             if busy { ProgressView().tint(Nuru.navy).scaleEffect(0.7) }
-                            else { Icon(paused ? .play : .pause, size: 12, color: Nuru.navy) }
+                            else { Icon(paused ? .play : .pause, size: 14, color: Nuru.navy) }
                             Text(paused ? "Resume" : "Pause").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -1922,11 +2123,11 @@ struct PledgeDetailView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Button { Haptics.tap(); claiming = p } label: {
                         HStack(spacing: 6) {
-                            Icon(.check, size: 12, color: sync.isOnline ? Nuru.navy : Nuru.ink300)
+                            Icon(.check, size: 14, color: sync.isOnline ? Nuru.navy : Nuru.ink300)
                             Text("I paid another way").font(.inter(12, .semibold))
                                 .foregroundStyle(sync.isOnline ? Nuru.navy : Nuru.ink300)
                             Spacer(minLength: 0)
-                            Icon(.chevronRight, size: 12, color: Nuru.ink300)
+                            Icon(.chevronRight, size: 14, color: Nuru.ink300)
                         }
                         .contentShape(Rectangle())
                     }
@@ -1941,8 +2142,11 @@ struct PledgeDetailView: View {
                 Toggle(isOn: Binding(get: { p.remindersEnabled },
                                      set: { on in Task { await vm.setReminders(p, on); await load() } })) {
                     HStack(spacing: 8) {
-                        Icon(.bell, size: 13, color: Nuru.gold)
-                        Text("Remind me before it's due").font(.inter(13)).foregroundStyle(Nuru.ink)
+                        Icon(.bell, size: 14, color: Nuru.gold)
+                        // The server's reminder lands in the inbox; no remote push
+                        // on this phone yet (B11).
+                        Text(IOSNoticeWords.pledgeReminder).font(.inter(13)).foregroundStyle(Nuru.ink)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .tint(Nuru.gold)
@@ -1961,7 +2165,7 @@ struct PledgeDetailView: View {
     private func autoScheduleNotice(_ note: String) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             VStack(alignment: .leading, spacing: 3) {
                 Text("Your pledge is made — automatic collection isn't set up.")
@@ -1972,7 +2176,7 @@ struct PledgeDetailView: View {
             }
             Spacer(minLength: 8)
             Button { Haptics.tap(); vm.pledgeNotices[pledgeId] = nil } label: {
-                Icon(.x, size: 12, color: Nuru.ink400).frame(width: 28, height: 28)
+                Icon(.x, size: 14, color: Nuru.ink400).frame(width: 28, height: 28)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Dismiss")
@@ -1985,7 +2189,7 @@ struct PledgeDetailView: View {
     private func smallAction(_ title: String, _ icon: Lucide, tint: Color = Nuru.ink600, action: @escaping () -> Void) -> some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 5) {
-                Icon(icon, size: 12, color: tint)
+                Icon(icon, size: 14, color: tint)
                 Text(title).font(.inter(12, .semibold)).foregroundStyle(tint)
             }
             .frame(maxWidth: .infinity).frame(height: 32)
@@ -2039,7 +2243,7 @@ private struct PaymentRowLabel: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(money(payment.amountMinor, payment.currency)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text([giveDateFull(payment.at), payment.receiptCode].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([giveDateShort(payment.at), payment.receiptCode].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
             }
             Spacer(minLength: 8)
@@ -2080,5 +2284,41 @@ enum PartnerFormat {
     }()
     static func grouped(_ n: Int) -> String {
         number.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+}
+
+/// Whether the Partners page has a standing to show (the Android walk's A1;
+/// §7.4 #9, no zero facts): a pledge that isn't cancelled, or a gift that
+/// went through. A schedule set up whose first collection failed is not yet
+/// a standing — no "Partner since", no "0 gifts kept", no tier.
+enum PartnerStanding {
+    static func isReal(_ p: Partnership) -> Bool {
+        p.pledges.contains { $0.status != "cancelled" } || p.kept > 0 || p.givenMinor > 0
+    }
+    static let notYet = "Your standing shows here after your first gift or pledge."
+}
+
+/// A pledge's progress line on its page. The Android walk's A7: a monthly
+/// pledge that begins on 5 Nov read "KSh 0 of 5,000 this month" in October —
+/// a month it was never due. Until its first day it says when it starts.
+/// Display only: the numbers are the server's, untouched.
+enum PledgeWords {
+    static func progressLine(_ p: Pledge, today: String = PledgeMath.today()) -> String {
+        let given = p.progress.paidMinor > 0 ? "\(money(p.progress.paidMinor, p.currency)) given in all" : nil
+        if p.isMonthly, let start = PledgeMath.start(p), start > today, let starts = startsLine(start) {
+            return [starts, given].compactMap { $0 }.joined(separator: " · ")
+        }
+        let toward = "\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "")"
+        return [toward, given].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// "Starts Thu 5 Nov" — the calendar day sent, never shifted (§8.1 rule 8).
+    static func startsLine(_ ymd: String) -> String? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = GiveCalendar.nairobi
+        f.dateFormat = "yyyy-MM-dd"
+        guard let d = f.date(from: ymd) else { return nil }
+        return "Starts \(NuruDates.day(d, timeZone: GiveCalendar.nairobi))"
     }
 }

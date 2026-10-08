@@ -32,7 +32,7 @@ struct PartnerInviteSheet: View {
                 header
                 VStack(alignment: .leading, spacing: 18) {
                     Text(campaign.title)
-                        .font(.nuruDisplay(27)).foregroundStyle(Nuru.ink)
+                        .font(.nuruDisplay(26)).foregroundStyle(Nuru.ink)
                         .fixedSize(horizontal: false, vertical: true)
 
                     Text(campaign.blurb)
@@ -105,7 +105,7 @@ struct PartnerInviteSheet: View {
     private func matchNote(_ m: PartnerInvite.Match) -> some View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: "sparkles")
-                .font(.system(size: 13)).foregroundStyle(Nuru.goldLo)
+                .font(.symbol(13)).foregroundStyle(Nuru.goldLo)
                 .padding(.top, 2)
             // The pledger is NAMED. An unnamed match is the kind of claim this
             // whole design exists to prevent.
@@ -125,7 +125,7 @@ struct PartnerInviteSheet: View {
             ForEach(campaign.tiers) { t in
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
                     Text("\(t.currency) \(InviteFormat.grouped(t.amountMinor / 100))")
-                        .font(.nuruDisplay(19)).foregroundStyle(Nuru.ink)
+                        .font(.nuruDisplay(18)).foregroundStyle(Nuru.ink)
                         .frame(minWidth: 96, alignment: .leading)
                     // The meaning comes from the server, derived from one
                     // costing. Never invented here.

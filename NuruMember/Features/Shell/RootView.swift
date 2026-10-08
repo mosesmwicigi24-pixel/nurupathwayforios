@@ -8,6 +8,7 @@
 // for members holding `live:go` (LiveBroadcastEligibility). A custom cream bar
 // draws a navy active icon + label on a gold-tinted pill; the system tab bar
 // is hidden so we can match the design exactly.
+import Combine
 import SwiftUI
 
 enum AppTab: Hashable, CaseIterable {
@@ -152,18 +153,62 @@ struct GiveWatch: Equatable {
 }
 
 /// A cross-tab deep link into the Plans tab — the catalogue root, one plan,
-/// or the "Read with a Friend" hub (a plan_group_* notification without a
-/// redeemable invite token — the group itself is one tap away from the hub).
-enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case readWithFriendHub }
+/// that plan's day to read (Home's YOUR WEEK — the plan's page is the back
+/// stop), or the "Read with a Friend" hub (a plan_group_* notification without
+/// a redeemable invite token — the group itself is one tap away from the hub).
+enum PlanDeepLink: Hashable { case catalogue; case plan(ReadingPlanRow); case planDay(ReadingPlanRow); case readWithFriendHub }
+
+private struct ScreenVisibleKey: EnvironmentKey { static let defaultValue = true }
+
+extension EnvironmentValues {
+    /// False while a screen is mounted but hidden by a keep-alive container —
+    /// another tab (RootView), another You segment (YouTabView), another
+    /// Community door (CommunityView). They switch by opacity, so onAppear /
+    /// onDisappear never fire; a screen that must know whether the member can
+    /// SEE it reads this (ChatThreadView: the open conversation, whose
+    /// messages land as a light tap instead of a banner). Each container ANDs
+    /// its own choice into its parent's. (Give's segments: giveSegmentVisible.)
+    var screenVisible: Bool {
+        get { self[ScreenVisibleKey.self] }
+        set { self[ScreenVisibleKey.self] = newValue }
+    }
+}
 
 /// The selected primary tab, hoisted out of RootView so any screen can switch
 /// tabs (e.g. Home's "Give now" banner → the Give tab). Injected app-wide.
 @MainActor
 final class TabRouter: ObservableObject {
     @Published var selected: AppTab = .initialTab
-    /// Full-screen conversation surfaces (chat threads) hide the tab bar so the
-    /// composer owns the bottom edge — set on appear, cleared on disappear.
-    @Published var chromeHidden = false
+    /// Full-screen surfaces (a chat thread, a plan, a module being read) hide
+    /// the tab bar so they own the bottom edge — set on appear, cleared on
+    /// disappear or by their tab's root. The bar is hidden only where it was
+    /// hidden: on the tab (and, on You, the segment) whose screen hid it
+    /// (EXPERIENCE.md §7.2 #11). A notice that switches tabs from an open
+    /// thread used to land with no bar at all; now the bar is back on the new
+    /// tab, and the thread still owns its edge when the member returns.
+    var chromeHidden: Bool {
+        get { chromeHiddenIn.contains(chromeScope) }
+        set {
+            let scope = chromeScope
+            guard newValue != chromeHiddenIn.contains(scope) else { return }
+            if newValue { chromeHiddenIn.insert(scope) } else { chromeHiddenIn.remove(scope) }
+        }
+    }
+    /// Where a full-screen surface has the bar hidden right now.
+    @Published private(set) var chromeHiddenIn: Set<ChromeScope> = []
+    /// The You tab's visible segment (YouTabView keeps it current) — on You
+    /// the bar belongs to the segment, so a notice landing on Profile isn't
+    /// left bar-less by a thread open under Community.
+    @Published var youSegmentShown: YouSegment = .chat
+
+    /// A tab, and on You its segment.
+    struct ChromeScope: Hashable {
+        let tab: AppTab
+        let segment: YouSegment?
+    }
+    private var chromeScope: ChromeScope {
+        ChromeScope(tab: selected, segment: selected == .you ? youSegmentShown : nil)
+    }
     /// True while Home's ON AIR bar is on screen — the island radio pill yields
     /// to it (one radio surface at a time; scroll the bar away and the pill
     /// slides into the notch, Apple-Music style).
@@ -219,6 +264,15 @@ final class TabRouter: ObservableObject {
     /// consumes it (pushes the page with the list as the back stop) and
     /// clears it.
     @Published var departmentLink: String?
+
+    /// A tap on the tab already shown (§7.4 #17): its stack returns to the
+    /// root. A subject, not @Published — a re-tap is a moment, never a value
+    /// replayed to a stack that mounts later (it would pop a deep link that
+    /// had just landed).
+    let reselected = PassthroughSubject<AppTab, Never>()
+    /// A tap on the tab already shown while its stack is AT its root: the
+    /// root scrolls to its top (§7.4 #17 — the walk's B10).
+    let rootReselected = PassthroughSubject<AppTab, Never>()
 
     func openPathway(_ r: PathwayRoute) { pathwayLink = r; selected = .pathway }
     func openPlans(_ l: PlanDeepLink)   { planLink = l;    selected = .plans }
@@ -302,12 +356,15 @@ struct RootView: View {
             ForEach(visibleTabs, id: \.self) { t in
                 if loaded.contains(t) {
                     tabView(t)
+                        .environment(\.screenVisible, t == tabs.selected)
                         .opacity(t == tabs.selected ? 1 : 0)
                         .allowsHitTesting(t == tabs.selected)
                         .accessibilityHidden(t != tabs.selected)
                 }
             }
         }
+        // The default font follows the member's text size (rebuilt with it).
+        .nuruDefaultFont()
         .id(textScale)
         // Cream status-bar stripe. The window's status-bar glyphs render DARK (light
         // scheme — reliable across devices, unlike forcing white which came out black
@@ -321,7 +378,7 @@ struct RootView: View {
                 .frame(height: Self.safeAreaTop)
                 .ignoresSafeArea(edges: .top)
         }
-        .overlay(alignment: .top) { SyncStatusBanner(sync: sync) }
+        .overlay(alignment: .bottom) { SyncStatusBanner(sync: sync) }
         // Nuru Radio island — while the station is tuned, the black capsule
         // WRAPS the phone's Dynamic Island (wings around the hardware cutout,
         // Apple-Music style) on every tab. On Home it appears only once the
@@ -384,7 +441,7 @@ struct RootView: View {
                         }
                         .transition(reduceMotionForLiveBar ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                     }
-                    NuruTabBar(selection: $tabs.selected, tabs: visibleTabs)
+                    NuruTabBar(selection: $tabs.selected, tabs: visibleTabs) { tabs.reselected.send($0) }
                 }
                 .ignoresSafeArea(edges: .bottom)
                 .transition(.move(edge: .bottom).combined(with: .opacity))
@@ -423,81 +480,38 @@ struct RootView: View {
             LiveViewerPlayerView(item: item, replaysScope: source?.scope, replaysCellId: source?.cellId)
                 .id(item.id)
         }
+        // A Live notice tapped once its stream is over — a banner or an inbox
+        // row alike (NoticeRouter): "This Live has ended", calm, Go back.
+        .fullScreenCover(item: Binding(
+            get: { liveDiscovery.endedNotice },
+            set: { liveDiscovery.endedNotice = $0 }
+        )) { notice in
+            LiveEndedView(notice: notice) { liveDiscovery.endedNotice = nil }
+        }
         // Celebration layer — server-milestone confetti cards + gold banners
-        // (rhythm complete, streak marks, new badges, prayer posted, gift
-        // confirmed). Mounted ONCE here, above every tab and the tab bar.
+        // (rhythm complete, streak marks, new badges, prayer posted; a gift's
+        // one celebration is its own success screen, §7.4 #14). Mounted ONCE
+        // here, above every tab and the tab bar.
         .overlay { CelebrationHost() }
-        // A tapped iOS notification lands on its EXACT target: module/level →
-        // Pathway tab, announcement → Home stack, event/giving/badge families →
-        // their tab. Anything unroutable opens the in-app inbox as before.
+        // A tapped iOS notification lands on its EXACT target — the same one
+        // its row in the inbox opens (NoticeRouter, EXPERIENCE.md §7.2 #3):
+        // a pledge, a gift, an announcement, a module or level, a department,
+        // Read with a Friend, the Live player ("This Live has ended" once
+        // over). A notice with nowhere to go opens the in-app inbox.
         .onReceive(NotificationCenter.default.publisher(for: .nuruNotificationTap)) { note in
             let info = note.userInfo ?? [:]
-            let template = info["template"] as? String ?? ""
-            let announcementId = info["announcementId"] as? String ?? ""
-            let moduleId = info["moduleId"] as? String ?? ""
-            let level = info["levelNumber"] as? Int ?? 0
-            let inviteToken = info["inviteToken"] as? String ?? ""
-            let departmentId = info["departmentId"] as? String ?? ""
-            let transactionId = info["transactionId"] as? String ?? ""
-            let scheduleId = info["scheduleId"] as? String ?? ""
-            let pledgeId = info["pledgeId"] as? String ?? ""
-            if let id = PledgeLink.from(template: template, pledgeId: pledgeId) {
-                // pledge_* and the pledge collector's notices (Giving Cycle
-                // 5: covered, stopped) — the pledge itself.
-                tabs.openPledge(id)
-            } else if let link = GiveLink.from(template: template, transactionId: transactionId, scheduleId: scheduleId) {
-                // giving_gift_failed (Giving Cycle 3) — that gift's result: why
-                // it failed, what to do, and Try again. giving_schedule_failed /
-                // _paused (Cycle 4) — that recurring gift's sheet. (The
-                // heads-up opens Give itself, below.)
-                tabs.openGive(link: link)
-            } else if !announcementId.isEmpty {
-                tabs.openAnnouncement(announcementId)
-            } else if !moduleId.isEmpty {
-                tabs.openPathway(.module(moduleId))
-            } else if template.hasPrefix("level"), level > 0 {
-                tabs.openPathway(.level(level))
-            } else if template.hasPrefix("event") {
-                tabs.openEvents()
-            } else if template.hasPrefix("pledge") {
-                // pledge_due_soon / pledge_overdue / pledge_fulfilled (§3) —
-                // the pledge lives in the Partners portal.
-                tabs.openPartners()
-            } else if template.hasPrefix("serve_request") || template.hasPrefix("department") {
-                // serve_request_* / department_post / department_need_* (§4) —
-                // the department page itself when the payload names it, else
-                // the Departments list.
-                if departmentId.isEmpty { tabs.openYou(.departments) } else { tabs.openDepartment(departmentId) }
-            } else if template.hasPrefix("giving") || template.hasPrefix("payment") {
-                tabs.openGive()
-            } else if template.hasPrefix("badge") || template.hasPrefix("certificate") {
-                tabs.openYou(.profile)
-            } else if template.hasPrefix("reflection") {
-                tabs.selected = .pathway
-            } else if template == "plan_group_invite_received", !inviteToken.isEmpty {
-                // Read with a Friend — same surface a nuru://join/{token} deep
-                // link opens (see onOpenURL below).
-                tabs.openReadingInvite(inviteToken)
-            } else if template.hasPrefix("plan_group") {
-                // Progress/joined pings without a token to redeem — land on
-                // the hub; the specific group is one tap away from there.
-                tabs.openPlans(.readWithFriendHub)
-            } else if template.hasPrefix("live") {
-                // A tapped `live_stream_started` push must land IN THE PLAYER —
-                // re-check /live/now (the stream may have already ended by the
-                // time the tap lands) and open the newest watchable stream;
-                // fall back to Home (which shows its own banner/mini-window
-                // if something else is live) when there's nothing left to join.
-                Task {
-                    await liveDiscovery.refresh()
-                    if let stream = liveDiscovery.newestWatchable {
-                        liveDiscovery.markSeen(stream.streamId)
-                        liveDiscovery.requestedItem = .live(stream)
-                    } else {
-                        tabs.selected = .home
-                    }
-                }
-            } else {
+            // A Live guest invite RINGS (2026-09-28). Tapped inside its 30 s,
+            // it opens the same ringing screen the foreground gets; after
+            // that, the router opens ITS stream — and says "This Live has
+            // ended" once it's over (§7.3), where the player's own invite
+            // card can still answer it.
+            if NoticeTarget(userInfo: info).template == "live_guest_invite",
+               let invite = IncomingLiveInvite(push: NuruPush(userInfo: info)),
+               IncomingLiveInviteCenter.shared.ring(invite) {
+                return
+            }
+            let route = NoticeRouter.route(NoticeTarget(userInfo: info))
+            if !NoticeRouter.open(route, tabs: tabs) {
                 NotificationCenter.default.post(name: .nuruOpenNotifications, object: nil)
             }
         }
@@ -556,6 +570,11 @@ struct RootView: View {
             }
         }
         .sheet(isPresented: $showLocationInvite) { LocationInviteSheet() }
+        #if DEBUG
+        // Scripted check of the ringing Live invite (NURU_RING) — a simulator
+        // gets no pushes. Compiled out of Release, modifier and all.
+        .task { await IncomingLiveInviteCenter.shared.debugRingIfRequested() }
+        #endif
         // The You tab's icon badge (and its Chat segment chip) must be right
         // even for a member who hasn't opened the You tab yet this session —
         // ChatInboxViewModel itself keeps it current once Chat has loaded, but
@@ -573,6 +592,11 @@ struct RootView: View {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
             }
         }
+        // Text with no font of its own in the overlays and the covers above
+        // (the radio, the Live player, the island, celebrations) takes the
+        // default at the member's text size too — the tabs' default above is
+        // inside the `.id(textScale)` rebuild; the app root's is set once.
+        .nuruDefaultFont()
     }
 
     // Type-ERASED per tab (AnyView): otherwise RootView.body's type embeds all
@@ -597,38 +621,56 @@ struct RootView: View {
 /// Thin status pill that appears under the status bar when the member is offline
 /// (or a queued write is still catching up). Reassures that nothing was lost —
 /// the durable queue will sync on reconnect.
-private struct SyncStatusBanner: View {
+struct SyncStatusBanner: View {
     @ObservedObject var sync: SyncCoordinator
 
-    private var message: String? {
-        if !sync.isOnline {
-            return sync.pendingCount > 0
-                ? "Offline · \(sync.pendingCount) change\(sync.pendingCount == 1 ? "" : "s") will sync"
-                : "You're offline · changes are saved on this device"
-        }
-        if sync.isSyncing && sync.pendingCount > 0 { return "Syncing \(sync.pendingCount)…" }
+    private var message: String? { Self.message(online: sync.isOnline, pending: sync.pendingCount, syncing: sync.isSyncing) }
+
+    /// Only changes waiting to sync (final walk M3): being offline is each
+    /// tab's own notice, under its header (NuruSavedCopyNotice), and nothing
+    /// says "changes are saved on this device" — over Give, where money is
+    /// never queued (§2), it was not true.
+    static func message(online: Bool, pending: Int, syncing: Bool) -> String? {
+        let changes = "\(pending) change\(pending == 1 ? "" : "s")"
+        if !online { return pending > 0 ? "Offline · \(changes) will sync" : nil }
+        if syncing && pending > 0 { return "Syncing \(changes)…" }
         return nil
     }
+
+    /// The message on screen. It announces a change, then steps aside after
+    /// a few seconds (EXPERIENCE.md §9.4): pinned, it sat on every tab's
+    /// title ("Sow into the Kingdom" hidden behind it — §8.1 rule 9). Each
+    /// screen keeps saying it is offline in its own state card or strip.
+    @State private var shown: String?
 
     var body: some View {
         // The animation/transition pair lives OUTSIDE the `if let` — attached to
         // the conditional content itself they never ran, so the pill used to pop
         // in/out instead of sliding.
-        ZStack(alignment: .top) {
-            if let message {
+        ZStack(alignment: .bottom) {
+            if let message = shown {
                 HStack(spacing: 6) {
-                    Icon(.clock, size: 12, color: Nuru.onNavy)
+                    Icon(.clock, size: 14, color: Nuru.onNavy)
                     Text(message).font(.inter(12, .semibold)).foregroundStyle(Nuru.onNavy)
                 }
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.vertical, 6)
                 .background(Capsule().fill(sync.isOnline ? Nuru.navy : Nuru.ink))
                 .nuruShadow()
-                .padding(.top, 60)
-                .transition(.move(edge: .top).combined(with: .opacity))
+                // Above the tab bar, never on a header (final walk M3: it
+                // covered each tab's title for its first seconds).
+                .padding(.bottom, Nuru.tabBarSpace)
+                .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: message)
+        .animation(.easeInOut(duration: 0.25), value: shown)
+        .task(id: message) {
+            shown = message
+            guard message != nil else { return }
+            try? await Task.sleep(nanoseconds: 4_000_000_000)
+            if !Task.isCancelled { shown = nil }
+        }
+        .allowsHitTesting(false)
     }
 }
 
@@ -640,7 +682,11 @@ private struct PlansTab: View {
     var body: some View {
         // .nuruDestinations() MUST be inside the stack — applied to the stack from
         // outside, SwiftUI never registers the destinations and plan taps do nothing.
-        NavigationStack(path: $path) { ReadingPlansView().nuruDestinations() }
+        NavigationStack(path: $path) { ReadingPlansView().nuruDestinations().nuruEdgeSwipeBack() }
+            .popsToRoot(on: .plans, path: $path)
+            // "Begin Day 1" opens the day it just started on this stack —
+            // the plan's page stays beneath it as the way back (§7.4 #2).
+            .environment(\.openPlanDay, { ref in path.append(ref) })
             // Cross-tab deep link (Home's resume banner / plan mini / Grow tile):
             // land exactly on the plan with the catalogue as the back stop.
             .onReceive(tabs.$planLink) { link in
@@ -648,6 +694,9 @@ private struct PlansTab: View {
                 path = NavigationPath()
                 switch link {
                 case .plan(let row): path.append(row)
+                case .planDay(let row):
+                    path.append(row)
+                    Task { await openDay(of: row) }
                 case .readWithFriendHub: path.append(GrowDestination.readWithFriendHub)
                 case .catalogue: break
                 }
@@ -664,6 +713,16 @@ private struct PlansTab: View {
                 DispatchQueue.main.async { tabs.readingInviteToken = nil }
             }
     }
+
+    /// Lands on the plan's day — the one its page's Continue opens — once the
+    /// plan answers. A failed read, a day still behind its gate, or a member
+    /// who has already moved on leaves the plan's page as it is: one tap
+    /// from the day.
+    private func openDay(of row: ReadingPlanRow) async {
+        guard let d = try? await MemberAPI.plan(row.planId), let day = d.continueDay, !day.locked,
+              path.count == 1 else { return }
+        path.append(PlanDayRef(planId: d.planId, day: day, planTitle: d.title))
+    }
 }
 
 /// Custom bottom bar: cream, navy active (icon + label on a gold-tinted pill),
@@ -674,6 +733,8 @@ private struct NuruTabBar: View {
     @Binding var selection: AppTab
     /// The tabs to render, in order.
     let tabs: [AppTab]
+    /// A tap on the tab already shown — its stack returns to the root.
+    var onReselect: (AppTab) -> Void = { _ in }
     /// The dms-unread + pending-connection-request count — surfaced on the
     /// You tab's icon exactly like the Chat segment's own chip (ChatBadge is
     /// the one shared source both read from).
@@ -688,14 +749,15 @@ private struct NuruTabBar: View {
             ForEach(tabs, id: \.self) { t in
                 let focused = selection == t
                 Button {
-                    // Re-taps on the current tab are a no-op — no haptic, no bounce.
-                    guard selection != t else { return }
+                    // A re-tap returns the tab to its root (§7.4 #17 — Home kept
+                    // a stale "not found" page in its stack); no haptic, no bounce.
+                    guard selection != t else { onReselect(t); return }
                     Haptics.selection()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { selection = t }
                 } label: {
                     VStack(spacing: 3) {
                         ZStack(alignment: .topTrailing) {
-                            Icon(t.icon, size: 21, color: focused ? Nuru.navy : Self.inactive)
+                            Icon(t.icon, size: 22, color: focused ? Nuru.navy : Self.inactive)
                                 // One subtle bounce on arrival: each selection change runs
                                 // the phase cycle once, and only the newly-focused icon
                                 // actually scales (others stay at 1).
@@ -704,8 +766,8 @@ private struct NuruTabBar: View {
                                 } animation: { _ in .spring(response: 0.26, dampingFraction: 0.55) }
                             if t == .you, chatBadge.count > 0 { badgeDot(chatBadge.count) }
                         }
-                        Text(t.label).font(.inter(10, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
-                            .lineLimit(1).minimumScaleFactor(0.85)
+                        Text(t.label).font(.inter(11, .medium)).foregroundStyle(focused ? Nuru.navy : Self.inactive)
+                            .lineLimit(1)
                     }
                     .frame(maxWidth: .infinity)
                     .frame(height: 44)
@@ -723,8 +785,13 @@ private struct NuruTabBar: View {
                 }
                 .buttonStyle(.plain)
                 .accessibilityAddTraits(focused ? [.isSelected] : [])
+                .accessibilityShowsLargeContentViewer()
             }
         }
+        // A bar of six: its labels keep the standard size, as the system's
+        // own tab bars do, and a long press shows them large (§9.6 #4 —
+        // they read "H… Pa… Pl…" at the largest size).
+        .nuruBarText(upTo: .large)
         .padding(.top, 6)
         .padding(.bottom, Self.safeBottom)
         .background(Nuru.paper)
@@ -734,7 +801,7 @@ private struct NuruTabBar: View {
     /// Small red count pill — capped "9+" — top-trailing of the You icon.
     private func badgeDot(_ n: Int) -> some View {
         Text(n > 9 ? "9+" : "\(n)")
-            .font(.inter(9, .bold)).foregroundStyle(.white)
+            .font(.inter(11, .bold)).foregroundStyle(.white)
             .padding(.horizontal, n > 9 ? 4 : 0)
             .frame(minWidth: 15, minHeight: 15)
             .background(Color(hex: 0xDC2626), in: Capsule())
@@ -758,3 +825,52 @@ private struct NuruTabBar: View {
 }
 
 // ProfileView (full Account screen) lives in Features/Profile/ProfileView.swift.
+
+/// A tap on the tab already shown returns that tab's stack to its root
+/// (EXPERIENCE.md §7.4 #17). `when` narrows it to the segment on screen (You,
+/// Give): a re-tap pops what the member is looking at, never a hidden stack.
+private struct PopsToRootOnReselect: ViewModifier {
+    let tab: AppTab
+    @Binding var path: NavigationPath
+    let when: () -> Bool
+    @EnvironmentObject private var tabs: TabRouter
+
+    func body(content: Content) -> some View {
+        content.onReceive(tabs.reselected) { t in
+            guard t == tab, when() else { return }
+            // At the root already: its top instead (B10 — it did nothing, and
+            // Plans took six swipes back up).
+            if path.isEmpty { tabs.rootReselected.send(tab) } else { path = NavigationPath() }
+        }
+    }
+}
+
+/// On a tab root's scroll content: a re-tap on the tab while the stack is
+/// at its root scrolls the root to its top (§7.4 #17: "Tapping the current
+/// tab returns to its top"; the walk's B10).
+private struct ScrollsToTopOnRootReselect: ViewModifier {
+    let tab: AppTab
+    @EnvironmentObject private var tabs: TabRouter
+    private static let anchor = "nuru.tab.root.top"
+
+    func body(content: Content) -> some View {
+        ScrollViewReader { proxy in
+            content
+                .id(Self.anchor)
+                .onReceive(tabs.rootReselected) { t in
+                    guard t == tab else { return }
+                    withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(Self.anchor, anchor: .top) }
+                }
+        }
+    }
+}
+
+extension View {
+    func popsToRoot(on tab: AppTab, path: Binding<NavigationPath>, when: @escaping () -> Bool = { true }) -> some View {
+        modifier(PopsToRootOnReselect(tab: tab, path: path, when: when))
+    }
+    /// On a tab root's scroll content — see ScrollsToTopOnRootReselect.
+    func scrollsToTopOnReselect(_ tab: AppTab) -> some View {
+        modifier(ScrollsToTopOnRootReselect(tab: tab))
+    }
+}

@@ -9,12 +9,13 @@ final class PrayerWallViewModel: ObservableObject {
     @Published var posts: [PrayerWallPost] = []
     @Published var sort = "latest"
     @Published var loading = true
-    @Published var error: String?
+    /// Why the wall didn't load — told in the one state card (§4).
+    @Published var failure: Error?
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil
         do { posts = try await MemberAPI.prayerWall(sort: sort) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the prayer wall." }
+        catch { self.failure = error }
         loading = false
     }
 
@@ -33,7 +34,7 @@ struct PrayerWallView: View {
     /// True when hosted as the "Corporate Prayer" tab of PrayerRoomView, which
     /// supplies its own back button + title + segmented control — so this
     /// view drops its own hero (and the "+" compose button living inside it)
-    /// in favor of a floating one.
+    /// for a gentle prompt at the top of the list.
     var embedded: Bool = false
     @StateObject private var vm = PrayerWallViewModel()
     @Environment(\.dismiss) private var dismiss
@@ -44,13 +45,16 @@ struct PrayerWallView: View {
             VStack(spacing: 0) {
                 if !embedded { hero }
                 VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                    if embedded { sharePrompt }
                     sortRow
                     if vm.loading && vm.posts.isEmpty {
                         ForEach(0..<3, id: \.self) { i in
                             SkeletonPrayerCard().gentleEntrance(delay: Double(i) * 0.08)
                         }
-                    } else if vm.posts.isEmpty, let err = vm.error {
-                        errorState(err)
+                    } else if vm.posts.isEmpty, let f = vm.failure {
+                        // The one state card (§8.1 rule 5; final walk #29).
+                        NuruStateView(state: .failed(.failure(f)), retry: { Task { await vm.load() } })
+                            .padding(.top, Nuru.S.sm)
                     } else if vm.posts.isEmpty {
                         emptyState
                     } else {
@@ -69,7 +73,9 @@ struct PrayerWallView: View {
                 .animation(.spring(response: 0.4, dampingFraction: 0.85), value: vm.posts.map(\.postId))
             }
         }
-        .background(Nuru.coolPaper.ignoresSafeArea())
+        // Warm paper, the page every tab stands on (§8.1 rule 1; final walk
+        // #29: it was the portal's cool #F7F9FC).
+        .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
         .refreshable { await vm.load() }
@@ -77,21 +83,32 @@ struct PrayerWallView: View {
         .sheet(isPresented: $composing) {
             PrayerComposeSheet { await vm.load() }
         }
-        // Embedded (My Prayer Room) has no hero to carry the "+" compose
-        // action, so it floats one instead — same compose sheet.
-        .overlay(alignment: .bottomTrailing) {
-            if embedded {
-                Button { Haptics.tap(); composing = true } label: {
-                    Icon(.plus, size: 20, color: Nuru.navyDeep)
-                        .frame(width: 52, height: 52)
-                        .background(Nuru.gold, in: Circle())
-                        .shadow(color: Nuru.gold.opacity(0.4), radius: 10, x: 0, y: 6)
+    }
+
+    /// Embedded (My Prayer Room) has no hero to carry "+", so the list opens
+    /// with a gentle prompt on gold tint (§8.1 rule 5) — it floated over the
+    /// cards instead, and sat under the tab bar on a home-button phone and
+    /// under the LIVE bar on every phone (rule 9: a floating button never
+    /// hides anything, nor is it hidden).
+    private var sharePrompt: some View {
+        Button { Haptics.tap(); composing = true } label: {
+            HStack(spacing: Nuru.S.md) {
+                Icon(.plus, size: 18, color: Nuru.navy)
+                    .frame(width: 36, height: 36)
+                    .background(Nuru.white, in: Circle())
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Share a prayer").font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    Text("Let the church carry it with you.").font(.nCardMeta).foregroundStyle(Nuru.ink600)
                 }
-                .buttonStyle(.pressable)
-                .padding(Nuru.S.lg)
-                .accessibilityLabel("Share a prayer")
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 14, color: Nuru.ink400)
             }
+            .padding(Nuru.S.md)
+            .background(Nuru.goldTint.opacity(0.55), in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
         }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Share a prayer")
     }
 
     // Full-bleed hero: brand gradient (image removed by design), controls + title overlaid.
@@ -117,7 +134,7 @@ struct PrayerWallView: View {
                 Spacer()
                 VStack(alignment: .leading, spacing: 2) {
                     Text("PRAY FOR ONE ANOTHER").font(.inter(11, .medium)).kerning(1.8).foregroundStyle(Nuru.gold)
-                    Text("Carry one another").font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                    Text("Carry one another").font(.fraunces(26, .semibold)).foregroundStyle(.white)
                     Text("“Carry each other’s burdens, and in this way you will fulfill the law of Christ.” — Galatians 6:2")
                         .font(.nCaption).foregroundStyle(Nuru.onNavyDim).lineLimit(2).padding(.top, 4)
                 }
@@ -137,40 +154,24 @@ struct PrayerWallView: View {
                     if !on { Haptics.selection() }
                     Task { await vm.setSort(key) }
                 } label: {
+                    // Selected navy, unselected white with a hairline (§8.1 rule 6).
                     Text(label).font(.inter(12, .bold))
-                        .foregroundStyle(on ? Nuru.navyDeep : Nuru.ink600)
+                        .foregroundStyle(on ? .white : Nuru.ink600)
                         .padding(.horizontal, 14).padding(.vertical, 7)
-                        .background(on ? Nuru.goldChipBg : Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                 }
             }
         }
     }
 
+    /// The one state card (§8.1 rule 5), no emoji (rule 7) — and one story
+    /// about who sees a shared prayer (final walk M8): the congregation, as
+    /// the share prompt says.
     private var emptyState: some View {
-        VStack(spacing: Nuru.S.sm) {
-            Text("🙏").font(.system(size: 32))
-            Text("No requests yet").font(.nCardTitle).foregroundStyle(Nuru.ink)
-            Text("Be the first to share a prayer for the family to stand with you.")
-                .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
-        .gentleEntrance()
-    }
-
-    /// Honest failure state — the empty state used to swallow load errors.
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: Nuru.S.sm) {
-            Text(message).font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-            Button { Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(12, .bold)).foregroundStyle(Nuru.navyDeep)
-                    .padding(.horizontal, 18).padding(.vertical, 8)
-                    .background(Nuru.goldChipBg, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.gold, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xxl)
+        NuruStateView(state: .empty(title: PrayerWallWords.emptyTitle, line: PrayerWallWords.emptyLine))
+            .padding(.top, Nuru.S.sm)
+            .gentleEntrance()
     }
 }
 
@@ -221,7 +222,8 @@ private struct PrayerCardView: View {
             HStack(spacing: Nuru.S.base) {
                 Button { Haptics.love(); pray() } label: {
                     HStack(spacing: 6) {
-                        Text("🙏").font(.system(size: 15))
+                        // A Lucide glyph, not an emoji (§8.1 rule 7).
+                        Icon(.handHeart, size: 14, color: post.iPrayed ? Nuru.navyDeep : Nuru.ink600)
                         Text(post.prayCount > 0 ? "\(post.prayCount) praying" : "Pray")
                             .font(.inter(12, .bold)).foregroundStyle(post.iPrayed ? Nuru.navyDeep : Nuru.ink600)
                             .contentTransition(.numericText(value: Double(post.prayCount)))
@@ -248,7 +250,7 @@ private struct PrayerCardView: View {
 
     private var answeredChip: some View {
         HStack(spacing: 4) {
-            Icon(.checkCircle2, size: 11, color: Nuru.successText)
+            Icon(.checkCircle2, size: 14, color: Nuru.successText)
             Text("Answered").font(.nMicro).foregroundStyle(Nuru.successText)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -257,7 +259,7 @@ private struct PrayerCardView: View {
 
     private var voiceTag: some View {
         HStack(spacing: 6) {
-            Icon(.audioLines, size: 13, color: Nuru.gold)
+            Icon(.audioLines, size: 14, color: Nuru.gold)
             Text("Voice prayer").font(.nCaption).foregroundStyle(Nuru.muted)
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
@@ -290,15 +292,11 @@ private struct PrayerComposeSheet: View {
                         .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: Nuru.R.control))
                         .overlay(RoundedRectangle(cornerRadius: Nuru.R.control).stroke(Nuru.border, lineWidth: 1))
                     if let err { Text(err).font(.nCaption).foregroundStyle(Nuru.error) }
-                    Button { Task { await post() } } label: {
-                        Text(busy ? "Posting…" : "Post to wall")
-                            .font(.nHeading).foregroundStyle(.white)
-                            .frame(maxWidth: .infinity, minHeight: 52)
-                            .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: Nuru.R.button))
+                    // The sheet's one gold primary (§8.1 rule 4) — it was a
+                    // navy block with white words.
+                    PButton(title: "Post to wall", variant: .gold, busy: busy, disabled: body_.trimmed.isEmpty) {
+                        Task { await post() }
                     }
-                    .buttonStyle(.pressable)
-                    .disabled(busy || body_.trimmed.isEmpty)
-                    .opacity(busy || body_.trimmed.isEmpty ? 0.5 : 1)
                     .animation(.easeInOut(duration: 0.2), value: busy || body_.trimmed.isEmpty)
                     .padding(.top, Nuru.S.base)
                 }
@@ -325,15 +323,24 @@ private struct PrayerComposeSheet: View {
             CelebrationCenter.shared.fire(
                 key: "prayer-\(UUID().uuidString)",
                 title: "Your prayer is on the wall",
-                subtitle: "Your cell is standing with you 🙏",
+                subtitle: PrayerWallWords.posted,
                 confetti: false)
         } catch {
             Haptics.error()
-            err = (error as? APIError)?.errorDescription ?? "Couldn't post. Try again."; busy = false
+            err = NuruStateCopy.failureLine("Couldn't post. Try again.", error); busy = false
         }
     }
 }
 
 private extension String {
     var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// The wall's words, one story about who sees a shared prayer (final walk
+/// M8): everyone in the member's congregation — the share prompt's words.
+/// Android says the same.
+enum PrayerWallWords {
+    static let emptyTitle = "No requests yet"
+    static let emptyLine = "Be the first to share a prayer. Everyone in your congregation will see it and can pray with you."
+    static let posted = "Everyone in your congregation can pray with you."
 }

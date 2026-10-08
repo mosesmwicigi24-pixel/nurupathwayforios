@@ -32,12 +32,14 @@ struct HomeLiturgyCard: View {
         }
     }
 
-    private func partEmoji(_ p: String) -> String {
+    /// The hour's glyph — Lucide on a gold-tint tile, never a colour emoji
+    /// (§8.1 rule 7; the walk's 🌆): the sun by day, the first star at
+    /// evening, the moon at night.
+    private func partGlyph(_ p: String) -> Lucide {
         switch p {
-        case "morning": return "🌅"
-        case "midday": return "☀️"
-        case "evening": return "🌆"
-        default: return "🌙"
+        case "morning", "midday": return .sun
+        case "evening": return .sparkle
+        default: return .moon
         }
     }
 
@@ -149,30 +151,30 @@ struct HomeLiturgyCard: View {
     private func scriptureFirstCaption(_ lit: HomeLiturgy) -> some View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(lit.line)
-                        .font(.inter(11.5, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
+                        .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
                         .lineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.top, 14)
                     if let vl = lit.verseLine, !vl.text.isEmpty {
                         HStack(alignment: .top, spacing: 8) {
                             Text("“")
-                                .font(.fraunces(44, .semibold)).foregroundStyle(Nuru.gold)
+                                .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.gold)
                                 .offset(y: 2)
                                 .accessibilityHidden(true)
                             Text(vl.text)
-                                .font(.fraunces(19.5)).foregroundStyle(Nuru.navyDeep)
+                                .font(.fraunces(18)).foregroundStyle(Nuru.navyDeep)
                                 .lineSpacing(5)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .padding(.top, 7)
                         }
                         .padding(.top, 4)
                         Text(vl.reference.uppercased())
-                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .font(.inter(11, .bold)).kerning(1.4)
                             .foregroundStyle(Color(hex: 0xA8861C))
                             .padding(.top, 10)
                     } else if let ref = lit.scriptureRef {
                         Text(ref.uppercased())
-                            .font(.inter(9.5, .bold)).kerning(1.4)
+                            .font(.inter(11, .bold)).kerning(1.4)
                             .foregroundStyle(Color(hex: 0xA8861C))
                             .padding(.top, 10)
                     }
@@ -181,7 +183,7 @@ struct HomeLiturgyCard: View {
                             .frame(height: 1)
                             .padding(.top, 14)
                         Text(charge)
-                            .font(.inter(12.5)).foregroundStyle(Nuru.ink600)
+                            .font(.inter(13)).foregroundStyle(Nuru.ink600)
                             .lineSpacing(4)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 12)
@@ -198,9 +200,11 @@ struct HomeLiturgyCard: View {
         // Just the hour (owner's trim, 2026-08-25): no season word, no brand
         // wordmark — the card speaks for itself. Voice controls keep their seat.
         HStack(spacing: 7) {
-            Text(partEmoji(lit.part)).font(.system(size: 15))
+            Icon(partGlyph(lit.part), size: 14, color: Nuru.navy)
+                .frame(width: 24, height: 24)
+                .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             Text(lit.isSunday ? "SUNDAY · \(partLabel(lit.part))" : partLabel(lit.part))
-                .font(.inter(10.5, .bold)).kerning(1.6)
+                .font(.inter(11, .bold)).kerning(1.6)
                 .foregroundStyle(onPhoto ? Color(hex: 0xF2DDA0) : Color(hex: 0xA8861C))
                 .shadow(color: .black.opacity(onPhoto ? 0.4 : 0), radius: 2, y: 1)
                 .lineLimit(1)
@@ -220,7 +224,7 @@ struct HomeLiturgyCard: View {
             Haptics.tap()
             showRecordingsManager = true
         } label: {
-            Icon(.mic, size: 12, color: Color(hex: 0xF2DDA0))
+            Icon(.mic, size: 14, color: Color(hex: 0xF2DDA0))
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.3), in: Circle())
                 .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
@@ -264,13 +268,13 @@ struct HomeLiturgyCard: View {
                 voice.toggle(.recorded(url))
             } label: {
                 HStack(spacing: 6) {
-                    Icon(.volume2, size: 11, color: Color(hex: 0xF2DDA0))
+                    Icon(.volume2, size: 14, color: Color(hex: 0xF2DDA0))
                     Text("A word for this hour — Pastor Moses")
                         .font(.inter(11, .semibold))
                         .foregroundStyle(Color(hex: 0xF2DDA0))
                     if let secs = lit.recordedAudioDurationSec, secs > 0 {
                         Text("\(secs)s")
-                            .font(.inter(10))
+                            .font(.inter(11))
                             .foregroundStyle(Color(hex: 0xF2DDA0).opacity(0.7))
                     }
                 }
@@ -310,7 +314,7 @@ struct HomeLiturgyCard: View {
             Haptics.tap()
             voice.toggle(spokenSource(for: lit))
         } label: {
-            Icon(listenIcon, size: 12, color: Color(hex: 0xF2DDA0))
+            Icon(listenIcon, size: 14, color: Color(hex: 0xF2DDA0))
                 .frame(width: 24, height: 24)
                 .background(Color.black.opacity(0.3), in: Circle())
                 .overlay(Circle().stroke(Color(hex: 0xF2DDA0).opacity(0.35), lineWidth: 1))
@@ -337,9 +341,9 @@ struct CelebrationsRail: View {
                     // double-padded it 20pt deeper than its neighbours (owner
                     // screenshot, 2026-08-25: "these cards are not aligned").
                     HStack(spacing: 6) {
-                        Text("🎉").font(.system(size: 13))
+                        Text("🎉").font(.emoji(13))
                         Text("CELEBRATE THE FAMILY")
-                            .font(.inter(10.5, .bold)).kerning(1.6)
+                            .font(.inter(11, .bold)).kerning(1.6)
                             .foregroundStyle(Nuru.muted)
                     }
                     ScrollView(.horizontal, showsIndicators: false) {
@@ -414,7 +418,7 @@ private struct MomentCard: View {
         let mine = moment.myBlessing == kind
         return Button { onBless(kind) } label: {
             HStack(spacing: 4) {
-                Text(emoji).font(.system(size: 12))
+                Text(emoji).font(.emoji(12))
                 if count > 0 {
                     Text("\(count)").font(.inter(11, .bold))
                         .foregroundStyle(mine ? Nuru.navy : Nuru.muted)

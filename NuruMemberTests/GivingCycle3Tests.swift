@@ -64,7 +64,7 @@ final class GivingCycle3Tests: XCTestCase {
     func testAPromptStillWaitingIsWatchedNotFailed() throws {
         let details = try decode(ErrorDetails.self, #"{"transaction_id":"t9"}"#)
         let waiting = APIError.http(status: 409, code: "GIFT_IN_PROGRESS", message: "A prompt is waiting.", details: details)
-        XCTAssertEqual(GiveRefusal.from(waiting, fallback: "x"), .promptWaiting(transactionId: "t9", message: "A prompt is waiting."))
+        XCTAssertEqual(GiveRefusal.from(waiting, deviceOnline: true), .promptWaiting(transactionId: "t9", message: "A prompt is waiting."))
         XCTAssertTrue(GiveRefusal.gotNoServerAnswer(APIError.offline))
         XCTAssertFalse(GiveRefusal.gotNoServerAnswer(waiting))
     }

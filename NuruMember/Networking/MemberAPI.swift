@@ -301,7 +301,11 @@ extension MemberAPI {
     /// POST /growth/segments/{id}/complete — mark one plan-day segment done.
     @discardableResult
     static func completePlanSegment(_ segmentId: String) async throws -> SegmentCompleteResult {
-        try await APIClient.shared.postEmpty("growth/segments/\(segmentId)/complete", as: SegmentCompleteResult.self)
+        let res = try await APIClient.shared.postEmpty("growth/segments/\(segmentId)/complete", as: SegmentCompleteResult.self)
+        // The streak card's "Today: N of M parts" counts only parts done
+        // today (final walk M6) — this phone notes the day it finished one.
+        PlanPartLog.noteDone(segmentId)
+        return res
     }
 
     // MARK: Prayer journal
@@ -473,7 +477,7 @@ extension MemberAPI {
         try await APIClient.shared.get("me/rsvps", as: Envelope<MyRsvp>.self).data
     }
 
-    // MARK: Event wall ("Who's coming" buzz posts)
+    // MARK: Event wall ("The wall" — buzz posts)
 
     /// GET /events/{id}/posts — the event's buzz posts, newest first.
     static func eventPosts(_ eventId: String) async throws -> [EventPost] {

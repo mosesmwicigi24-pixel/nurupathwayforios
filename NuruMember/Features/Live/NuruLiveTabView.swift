@@ -38,6 +38,8 @@ struct NuruLiveTabView: View {
     @State private var playingRow: LiveMyRecordingRow?
     @State private var confirmDeleteId: String?
     @State private var deletingId: String?
+    /// Why a "Delete forever" didn't delete (§4) — the recording is still listed.
+    @State private var deleteFailureLine: String?
 
     var body: some View {
         Group {
@@ -56,10 +58,14 @@ struct NuruLiveTabView: View {
             LiveViewerPlayerView(item: .myRecording(row), replaysScope: row.scope, replaysCellId: row.cellId)
                 .id(row.recordingId)
         }
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Recording not deleted",
+               isPresented: Binding(get: { deleteFailureLine != nil }, set: { if !$0 { deleteFailureLine = nil } })) {
+            Button("OK") { deleteFailureLine = nil }
+        } message: { Text(deleteFailureLine ?? "") }
+        .alert(
             "Delete this recording?",
-            isPresented: Binding(get: { confirmDeleteId != nil }, set: { if !$0 { confirmDeleteId = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { confirmDeleteId != nil }, set: { if !$0 { confirmDeleteId = nil } })
         ) {
             Button("Delete forever", role: .destructive) {
                 if let id = confirmDeleteId { Haptics.action(); Task { await deleteBroadcast(id) } }
@@ -116,7 +122,7 @@ struct NuruLiveTabView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
+        .padding(.horizontal, Nuru.S.screen).padding(.top, NuruSafeArea.top + 8).padding(.bottom, Nuru.S.lg)   // below the status band (rule 9)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
                 .overlay(alignment: .topTrailing) {
@@ -165,7 +171,7 @@ struct NuruLiveTabView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.title).font(.inter(14, .semibold)).foregroundStyle(Nuru.ink).lineLimit(2)
                         HStack(spacing: 6) {
-                            Text(row.scope == "church" ? "CHURCH" : "CELL").font(.inter(10, .bold)).kerning(0.6)
+                            Text(row.scope == "church" ? "CHURCH" : "CELL").font(.inter(11, .bold)).kerning(0.6)
                                 .foregroundStyle(Nuru.goldChipText)
                                 .padding(.horizontal, 8).padding(.vertical, 2)
                                 .background(Nuru.goldChipBg, in: Capsule())
@@ -198,7 +204,7 @@ struct NuruLiveTabView: View {
                         .frame(width: 30, height: 30)
                 } else {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 16, weight: .semibold))
+                        .font(.symbol(16, weight: .semibold))
                         .foregroundStyle(Nuru.muted)
                         .frame(width: 30, height: 30)
                         .background(Nuru.surface, in: Circle())
@@ -265,7 +271,9 @@ struct NuruLiveTabView: View {
             rows.removeAll { $0.recordingId == id }
             resolvedURLs.removeValue(forKey: id)
         } catch {
+            // The alert closed on the tap; the failure is said, not just felt.
             Haptics.error()
+            deleteFailureLine = NuruStateCopy.deleteFailureLine(error)
         }
         deletingId = nil
         confirmDeleteId = nil

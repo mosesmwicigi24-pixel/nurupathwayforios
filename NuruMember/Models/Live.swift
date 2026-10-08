@@ -135,8 +135,7 @@ enum LiveFormat {
     /// "Jul 20, 2026" — for the Replays list.
     static func dateLabel(_ iso: String) -> String {
         guard let d = parse(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"
-        return f.string(from: d)
+        return NuruDates.day(d)
     }
 }
 

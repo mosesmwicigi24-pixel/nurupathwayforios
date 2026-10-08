@@ -74,9 +74,11 @@ struct DayOpening: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TODAY'S READING").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+            // Not "TODAY'S READING": the day may be read on any day (final
+            // walk M6).
+            Text(PlanDayWords.readingKicker).font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
             if let t = title, !t.isEmpty {
-                Text(t).font(.fraunces(pal.fs(24), .medium)).kerning(-0.5).foregroundStyle(pal.ink)
+                Text(t).font(.fraunces(pal.fs(26), .medium)).kerning(-0.5).foregroundStyle(pal.ink)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(meta).font(.inter(12, .medium)).foregroundStyle(pal.inkDim)
@@ -92,7 +94,7 @@ struct ReaderOrnament: View {
     var body: some View {
         HStack(spacing: 12) {
             Rectangle().fill(pal.border).frame(height: 1)
-            Text("✝").font(.system(size: 12, weight: .medium)).foregroundStyle(pal.gold)
+            Icon(.cross, size: 14, color: pal.gold)   // one icon family (§8.1 rule 7)
             Rectangle().fill(pal.border).frame(height: 1)
         }
         .padding(.vertical, 2)

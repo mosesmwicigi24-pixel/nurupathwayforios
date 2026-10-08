@@ -74,6 +74,11 @@ struct ReadingPlanRow: Codable, Sendable, Identifiable, Hashable {
     let completedDays: [Int]?
     let enrolled: Bool
     let completedAt: String?
+    /// When the member last finished a day of this plan, on ANY phone — the
+    /// moment the last part of a fully-read day was read (ISO-8601, or nil).
+    /// The Plans streak card ticks today from it (EXPERIENCE.md §7.4 #4).
+    /// Absent from an older server: nil.
+    let lastDayFinishedAt: String?
 
     var id: String { planId }
     init(from d: Decoder) throws {
@@ -90,6 +95,7 @@ struct ReadingPlanRow: Codable, Sendable, Identifiable, Hashable {
         completedDays = try? c.decodeIfPresent([Int].self, forKey: .completedDays)
         enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
         completedAt = try? c.decodeIfPresent(String.self, forKey: .completedAt)
+        lastDayFinishedAt = try? c.decodeIfPresent(String.self, forKey: .lastDayFinishedAt)
     }
 }
 
@@ -127,6 +133,10 @@ struct PlanSegment: Codable, Sendable, Identifiable, Hashable {
     let videoUrl: String?
     let imageUrl: String?
     let completed: Bool
+    /// When the member finished it (ISO), from a server that sends it; nil
+    /// otherwise — then only this phone's own note (PlanPartLog) can say a
+    /// part was done today.
+    var completedAt: String? = nil
 
     var id: String { segmentId }
 }
@@ -145,6 +155,7 @@ extension PlanSegment {
         videoUrl = try? c.decodeIfPresent(String.self, forKey: .videoUrl)
         imageUrl = try? c.decodeIfPresent(String.self, forKey: .imageUrl)
         completed = (try? c.decodeIfPresent(Bool.self, forKey: .completed)) ?? false
+        completedAt = (try? c.decodeIfPresent(String.self, forKey: .completedAt)).flatMap { $0.isEmpty ? nil : $0 }
     }
 }
 
@@ -205,6 +216,39 @@ struct ReadingPlanDetail: Codable, Sendable {
         enrolled = (try? c.decodeIfPresent(Bool.self, forKey: .enrolled)) ?? false
         days = (try? c.decodeIfPresent([ReadingPlanDay].self, forKey: .days)) ?? []
         nextDay = try? c.decodeIfPresent(Int.self, forKey: .nextDay)
+    }
+
+    /// The day to open — the first not yet finished, else the first (a
+    /// finished plan reads again from the top). The plan page's Continue
+    /// and Home's YOUR WEEK both land here.
+    var continueDay: ReadingPlanDay? { days.first { $0.completed != true } ?? days.first }
+}
+
+// MARK: - The plan being read (one rule for Plans and Home)
+
+extension ReadingPlanRow {
+    /// The plan the member is reading: the first enrolled, unfinished plan in
+    /// the server's order — the one Plans continues first, the Plans header
+    /// names and Home's YOUR WEEK points to (EXPERIENCE.md §6.1–§6.2). Nil
+    /// when none is: a catalogue plan the member never started is never
+    /// shown as "Day 1 of 10".
+    static func active(in plans: [ReadingPlanRow]) -> ReadingPlanRow? {
+        plans.first { $0.enrolled && $0.completedAt == nil }
+    }
+
+    /// The Plans header's line of what matters now (§6.2): "Rooted: 10 Days
+    /// in the Psalms · Day 1 of 10"; nil when no plan is being read (the
+    /// tagline then stands).
+    static func activeLine(in plans: [ReadingPlanRow]) -> String? {
+        active(in: plans).map { "\($0.title) · \($0.dayLine)" }
+    }
+
+    /// "Day 3 of 10" — the day being read: the server's current day, else
+    /// one past the days done; never before the first or past the last.
+    var dayLine: String {
+        let raw = currentDay ?? ((completedDays?.count ?? 0) + 1)
+        guard dayCount > 0 else { return "Day \(max(1, raw))" }
+        return "Day \(min(max(1, raw), dayCount)) of \(dayCount)"
     }
 }
 
@@ -292,8 +336,9 @@ struct TalkRoute: Hashable {
     let dayNumber: Int
     let planTitle: String
     let prompt: String
-    /// The day's talk segment — visiting the conversation marks it read
-    /// (presence counts; nobody is forced to post publicly).
+    /// The day's talk segment — sealed by posting in the conversation or by
+    /// "I've talked it over"; visiting alone never seals it (nobody is forced
+    /// to post publicly).
     var talkSegmentId: String? = nil
     var talkDone: Bool = false
 }

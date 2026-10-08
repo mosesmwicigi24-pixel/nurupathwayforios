@@ -180,10 +180,10 @@ struct PartnersStatementView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("PARTNERS STATEMENT · \(String(vm.statementYear))")
-                .font(.inter(10, .bold)).kerning(1.8)
+                .font(.inter(11, .bold)).kerning(1.8)
                 .foregroundStyle(Color(hex: 0xE6CA68))
             Text(thankYouLine)
-                .font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                .font(.fraunces(26, .semibold)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
             if let line = standingText {
@@ -310,11 +310,14 @@ struct PartnersStatementView: View {
     @ViewBuilder private func keptAndGiven(_ t: HeroTiles) -> some View {
         if let k = t.kept {
             heroTile("KEPT", a11y: "\(k.kept) of \(k.due) commitments kept\(k.late > 0 ? ", \(k.late) late" : "")") {
+                // Only the big number gives way (26 × 0.6 = 15.6); the words
+                // beside it keep their size — nothing under 11 pt.
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(k.kept)").font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                     Text("of \(k.due)").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1).fixedSize()
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
                 // "9 of 10 · 1 late" — the late ones are kept, and said.
                 tileCaption(k.late > 0 ? "commitments · \(k.late) late" : "commitments")
             }
@@ -323,10 +326,11 @@ struct PartnersStatementView: View {
             let rest = t.givenRest.map { " \($0)" } ?? ""
             heroTile("GIVEN", a11y: "Given \(money(g, t.givenCurrency))\(rest) toward pledges") {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.75))
+                    Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1).fixedSize()
                     Text(Self.compactAmount(g)).font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
                 tileCaption(t.givenRest.map { "toward pledges · \($0)" } ?? "toward pledges")
             }
         }
@@ -346,7 +350,10 @@ struct PartnersStatementView: View {
             }
         case .toward(let toward, let per):
             let ofLine = "\(money(toward, currency)) of \(PartnerFormat.grouped(per / 100))"
-            heroTile("DISCIPLES CARRIED",
+            // Below the first disciple nothing is carried yet: the tile says
+            // what the money is toward — never "carried" beside the server's
+            // "will carry" (owner, 2026-10-08).
+            heroTile(PartnerTierWords.towardKicker,
                      a11y: "\(money(toward, currency)) of \(money(per, currency)) toward carrying one disciple through a level") {
                 GeometryReader { geo in
                     let f = Double(toward) / Double(per)
@@ -359,18 +366,18 @@ struct PartnersStatementView: View {
                 .frame(height: 5)
                 .padding(.top, 6)
                 Text(ofLine).font(.inter(11, .semibold)).foregroundStyle(.white)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
-                tileCaption("toward carrying one disciple through a level")
+                tileCaption(PartnerTierWords.towardCaption)
             }
         }
     }
 
     private func heroTile<V: View>(_ label: String, a11y: String, @ViewBuilder content: () -> V) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.inter(9, .semibold)).kerning(0.8)
+            Text(label).font(.inter(11, .semibold)).kerning(0.8)
                 .foregroundStyle(.white.opacity(0.6))
-                .lineLimit(1).minimumScaleFactor(0.65)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 2)
             content()
         }
@@ -382,7 +389,7 @@ struct PartnersStatementView: View {
     }
 
     private func tileCaption(_ s: String) -> some View {
-        Text(s).font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+        Text(s).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -467,9 +474,9 @@ struct PartnersStatementView: View {
     /// One line per currency in each column (shillings first) — never one
     /// sum across currencies.
     private func summaryCard(_ f: Figures) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
             partnerSummaryColumn("Pledged", f.byCurrency.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
-            partnerSummaryColumn("Paid", f.byCurrency.map { money($0.paidMinor, $0.currency) }, Nuru.successText)
+            partnerSummaryColumn("Paid", f.byCurrency.map { (money($0.paidMinor, $0.currency), PaidTint.color($0.paidMinor)) })
             partnerSummaryColumn("Remaining", f.byCurrency.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
         }
         .partnerCard()
@@ -524,7 +531,7 @@ struct PartnersStatementView: View {
                     Spacer()
                     Text(short.last ?? "Dec")
                 }
-                .font(.inter(9, .medium)).foregroundStyle(Nuru.ink400)
+                .font(.inter(11, .medium)).foregroundStyle(Nuru.ink400)
                 .accessibilityHidden(true)
                 if let line = faithfulnessLine(strip, faithfulness, year: year) {
                     Text(line)
@@ -602,13 +609,9 @@ struct PartnersStatementView: View {
         return candidates.min()
     }
 
-    /// "5 Oct" this year, "5 Jan 2027" when it falls in the next.
-    private static func dayMonth(_ d: Date) -> String {
-        let cal = Calendar.current
-        let f = DateFormatter()
-        f.dateFormat = cal.component(.year, from: d) == cal.component(.year, from: Date()) ? "d MMM" : "d MMM yyyy"
-        return f.string(from: d)
-    }
+    /// "Thu 5 Nov" this year, "Tue 5 Jan 2027" when it falls in the next —
+    /// the one date shape (§8.1 rule 8), beside the page's "by Thu 31 Dec".
+    private static func dayMonth(_ d: Date) -> String { NuruDates.day(d) }
 
     private func stripAccessibility(_ strip: MonthStrip) -> String {
         let full = Self.monthCalendar.monthSymbols
@@ -645,7 +648,7 @@ struct PartnersStatementView: View {
                     Text("Remaining this year").font(.inter(11)).foregroundStyle(Nuru.ink400)
                     Text(remaining)
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                        .lineLimit(1).fixedSize()
                 }
             }
             if pledges.isEmpty {
@@ -686,8 +689,8 @@ struct PartnersStatementView: View {
 
     private func seasonCard(_ sentence: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("SINCE YOU BEGAN").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.gold)
-            Text(sentence).font(.fraunces(17, .medium)).foregroundStyle(.white)
+            Text("SINCE YOU BEGAN").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.gold)
+            Text(sentence).font(.fraunces(18, .medium)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -708,15 +711,14 @@ struct PartnersStatementView: View {
         return VStack(alignment: .leading, spacing: 8) {
             eyebrow("PAYMENTS")
             if rows.isEmpty && pending.isEmpty {
-                Text("No pledge payments in \(String(s.year)).")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
-                    .partnerCard()
+                // The empty year in §4's state card (final walk C16) — not a bare line.
+                NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year)))
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     if !pending.isEmpty {
                         HStack(alignment: .firstTextBaseline) {
                             Text("PROCESSING")
-                                .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.urgentText)
+                                .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Nuru.urgentText)
                             Spacer()
                             Text("not yet counted").font(.inter(11)).foregroundStyle(Nuru.ink400)
                         }
@@ -733,7 +735,7 @@ struct PartnersStatementView: View {
                     ForEach(Array(groups.enumerated()), id: \.element.key) { gi, g in
                         HStack(alignment: .firstTextBaseline) {
                             Text(g.label.uppercased())
-                                .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
+                                .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
                             Spacer()
                             Text(g.subtotal)
                                 .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
@@ -757,7 +759,7 @@ struct PartnersStatementView: View {
                     Divider().overlay(Nuru.navy.opacity(0.35)).padding(.top, 12)
                     HStack(alignment: .firstTextBaseline) {
                         Text("TOTAL PAID \(String(s.year))")
-                            .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
+                            .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
                         Spacer()
                         Text(listTotal)
                             .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
@@ -815,15 +817,17 @@ struct PartnersStatementView: View {
 
     private var actions: some View {
         VStack(spacing: 10) {
+            // The page's one primary (§8.1 rule 4; final walk #38): gold
+            // fill, navy words, radius 14 — it was navy.
             Button { download() } label: {
                 HStack(spacing: 8) {
-                    if downloading { ProgressView().tint(.white).scaleEffect(0.8) }
-                    else { Icon(.download, size: 14, color: .white) }
+                    if downloading { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
+                    else { Icon(.download, size: 14, color: Nuru.navy) }
                     Text(downloading ? "Preparing PDF…" : "Download PDF").font(.inter(14, .bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Nuru.navy, in: Capsule())
+                .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.pressable)
             .disabled(downloading)
@@ -841,12 +845,12 @@ struct PartnersStatementView: View {
             NavigationLink(value: PartnersRoute.statement) {
                 HStack(spacing: 6) {
                     Text("Giving statement").font(.inter(14, .semibold))
-                    Icon(.arrowRight, size: 12, color: Nuru.navy)
+                    Icon(.arrowRight, size: 14, color: Nuru.navy)
                 }
                 .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 48)
                 .background(Nuru.white, in: Capsule())
-                .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
+                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
             }
             .buttonStyle(.pressable)
             .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
@@ -885,12 +889,14 @@ struct PartnersStatementView: View {
         }
     }
 
+    /// Offline only when the phone has no network (§4) — a timeout while it
+    /// has one was ours, and the PDF just isn't available right now.
     private static func downloadMessage(for error: Error) -> String {
-        if let api = error as? APIError {
-            if case let .http(status, _, _, _) = api, status == 404 {
-                return "There's no partners statement for you yet."
-            }
-            if api.isNetwork { return "You appear to be offline — the PDF needs a connection." }
+        if case let .http(status, _, _, _)? = error as? APIError, status == 404 {
+            return "There's no partners statement for you yet."
+        }
+        if NuruStateCopy.failure(error).cause == .offline {
+            return "You're offline — the PDF needs a connection."
         }
         return "The PDF isn't available right now. The statement above is still complete."
     }
@@ -920,8 +926,12 @@ private struct StatementPledgeRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
+                    // A pledge is a content row (§8.1 rule 3: Fraunces 15
+                    // semibold, as on Partners; final walk #38 — it was
+                    // Inter here), wrapping rather than cut (rule 9).
                     Text(pledge.title.isEmpty ? "Pledge" : pledge.title)
-                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                        .font(.nRowTitle).foregroundStyle(Nuru.ink)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(pledgeAmountLine(pledge))
                         .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 }
@@ -935,7 +945,7 @@ private struct StatementPledgeRow: View {
                 // the server sends it for need pledges only.
                 if let pct = pledge.churchProgressPercent {
                     Text("Church raised \(Int(min(100, max(0, pct)).rounded(.down)))%")
-                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldLo)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                         .lineLimit(1)
                 }
             }
@@ -972,7 +982,7 @@ private struct StatementPledgeRow: View {
                 return (Nuru.successBg, Nuru.successText, "On track")
             }
         }()
-        return Text(text).font(.inter(10, .bold)).foregroundStyle(fg)
+        return Text(text).font(.inter(11, .bold)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 3).background(bg, in: Capsule())
     }
 }
@@ -1112,7 +1122,7 @@ struct PendingPledgePaymentRow: View {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
                 HStack(spacing: 6) {
                     Text(chipText)
-                        .font(.inter(10, .bold)).foregroundStyle(Nuru.urgentText)
+                        .font(.inter(11, .bold)).foregroundStyle(Nuru.urgentText)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Nuru.urgentBg, in: Capsule())
                     if giveParseDate(payment.at) != nil {
@@ -1138,4 +1148,18 @@ struct PendingPledgePaymentRow: View {
         default: return "Processing"
         }
     }
+}
+
+/// The statement's empty year, said once in §4's state (final walk C16):
+/// the state's title, never a bare line under PAYMENTS.
+enum PartnerStatementWords {
+    static func noPayments(_ year: Int) -> String { "No pledge payments in \(String(year))" }
+}
+
+/// The statement's words beside the tier (owner, 2026-10-08: the tier says
+/// "will carry" until the partner's money lands). Below the first disciple
+/// the tile names what the money is toward, not "carried".
+enum PartnerTierWords {
+    static let towardKicker = "TOWARD A DISCIPLE"
+    static let towardCaption = "through a level"
 }

@@ -96,9 +96,9 @@ struct CheckInScannerView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("EVENT CHECK-IN")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
                 Text(eventTitle)
-                    .font(.fraunces(20, .semibold)).kerning(-0.4).foregroundStyle(.white)
+                    .font(.fraunces(18, .semibold)).kerning(-0.4).foregroundStyle(.white)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -109,7 +109,7 @@ struct CheckInScannerView: View {
             } label: {
                 ZStack {
                     Circle().fill(Color.white.opacity(0.12)).frame(width: 36, height: 36)
-                    Icon(.x, size: 17, color: .white)
+                    Icon(.x, size: 18, color: .white)
                 }
             }
             .buttonStyle(.pressable)
@@ -126,7 +126,7 @@ struct CheckInScannerView: View {
                 } label: {
                     HStack(spacing: 8) {
                         Image(systemName: camera.torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.symbol(15, weight: .semibold))
                             .foregroundStyle(camera.torchOn ? Nuru.navy : .white)
                         Text(camera.torchOn ? "Torch on" : "Torch")
                             .font(.inter(13, .semibold))
@@ -153,7 +153,7 @@ struct CheckInScannerView: View {
             }
             .gentleEntrance()
             Text("You're checked in ✓")
-                .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(.white)
+                .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(.white)
                 .padding(.top, Nuru.S.lg)
                 .gentleEntrance(delay: 0.08)
             Text(duplicate ? "You were already checked in — all set." : eventTitle)
@@ -184,7 +184,7 @@ struct CheckInScannerView: View {
                 Icon(.qrCode, size: 28, color: Nuru.gold)
             }
             Text("That code didn't work")
-                .font(.fraunces(21, .medium)).kerning(-0.42).foregroundStyle(.white)
+                .font(.fraunces(22, .medium)).kerning(-0.42).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             Text(failureNote.isEmpty
                  ? "It may be the wrong or an expired code. Grab the latest one on the screen and try again."
@@ -231,7 +231,7 @@ struct CheckInScannerView: View {
                 } label: {
                     ZStack {
                         Circle().fill(Color.white.opacity(0.12)).frame(width: 36, height: 36)
-                        Icon(.x, size: 17, color: .white)
+                        Icon(.x, size: 18, color: .white)
                     }
                 }
                 .buttonStyle(.pressable)
@@ -243,7 +243,7 @@ struct CheckInScannerView: View {
                 Icon(.camera, size: 28, color: Nuru.gold)
             }
             Text("Camera access needed")
-                .font(.fraunces(21, .medium)).kerning(-0.42).foregroundStyle(.white)
+                .font(.fraunces(22, .medium)).kerning(-0.42).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             Text("Nuru uses the camera only to scan the event check-in code. Turn it on in Settings and come back.")
                 .font(.inter(13)).foregroundStyle(.white.opacity(0.7))
@@ -287,23 +287,18 @@ struct CheckInScannerView: View {
     }
 
     private func friendlyFailure(_ error: Error) -> String {
-        guard let api = error as? APIError else {
-            return "Something went wrong — try scanning again."
-        }
-        if api.isNetwork {
-            return "You're offline — check-in needs a connection. Reconnect and scan again."
-        }
-        if case .http(_, let code, let message, _) = api {
+        if case .http(_, let code, _, _)? = error as? APIError {
             switch code ?? "" {
             case "VALIDATION_FAILED":
                 return "That code isn't valid for this event — it may have expired. Grab the latest one on the screen and try again."
             case "NOT_FOUND":
                 return "We couldn't find this event — pull the event page down to refresh and try again."
-            default:
-                return message   // e.g. "Check-in has not opened yet for this event"
+            default: break
             }
         }
-        return api.errorDescription ?? "Something went wrong — try scanning again."
+        // §4's words for everything else: the server's own refusal ("Check-in
+        // has not opened yet for this event"), else what really happened.
+        return NuruStateCopy.failureLine("Couldn't check you in.", error)
     }
 }
 

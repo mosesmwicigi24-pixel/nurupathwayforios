@@ -1,11 +1,13 @@
 // Account / Profile — native port of the Figma ProfileTab (current make): who
 // the member IS. Cream header with avatar + gold level chip, then the journey
-// cards: Personal Information (Member ID + live /me fields, all editable via
-// PATCH /me except email §5.8), Achievements (real /me/achievements + /badges
-// catalogue), Growth Scores, Milestones (real enrollment + baptism flag) and
-// Certificates (real GET /certificates + public verify). How the APP BEHAVES
+// cards: Personal Information (live /me fields, all editable via PATCH /me
+// except email §5.8), Achievements (real /me/achievements + /badges
+// catalogue), Growth Scores, Milestones (real enrollment + baptism flag),
+// Certificates (real GET /certificates + public verify), and at the foot
+// "Copy member ID". How the APP BEHAVES
 // (security, notifications, display, language, privacy, help, sign out) moved
-// to SettingsView, pushed from the header's gear button.
+// to SettingsView — inside the You tab, its Settings segment (the header's
+// gear stays only for a Profile shown outside it).
 // The Figma's Connected-accounts / Social-links sections were removed from the
 // current design, so they are gone here too.
 import SwiftUI
@@ -44,12 +46,19 @@ struct ProfileView: View {
     @State private var badges: [PBadgeItem] = []
     @State private var certs: [PCert] = []
     @State private var scores: ScoresSummary?
+    /// The member's journey (§3) — the milestones speak its words.
+    @State private var journey: Journey?
     /// Departments the member actively serves in (GET /me/departments, §4).
     @State private var serving: [DepartmentRow] = []
+    /// The extras' reads have all answered once (final walk, M4's class):
+    /// until then ACHIEVEMENTS and CERTIFICATES hold their loading shape —
+    /// "No badges yet" and "No certificates yet" showed while they loaded.
+    @State private var extrasAnswered = false
     @State private var aiOptOut = false
     /// The consent WRITE failed — the toggle was reverted and the member told.
     /// A consent control must never show a state the server hasn't recorded.
-    @State private var aiConsentSaveFailed = false
+    /// Why the consent switch didn't save, in §4's words.
+    @State private var aiConsentSaveError: String?
     @State private var aiConsentLoaded = false
     @State private var scoreDetailPillar: ScorePillar?
 
@@ -67,6 +76,8 @@ struct ProfileView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: Nuru.S.base) {
                     header
+                    // A saved copy says so (final walk M3).
+                    NuruSavedCopyNotice(hasContent: auth.profile != nil)
                     if isStaff { disciplerEntry }
                     personalInfo
                     achievements
@@ -75,15 +86,29 @@ struct ProfileView: View {
                     aiCompanionSection
                     milestonesSection
                     certificates
+                    memberIdFoot
                 }
+                .scrollsToTopOnReselect(.you)   // a re-tap at the root returns to the top (B10)
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
             .background(Nuru.paper.ignoresSafeArea(edges: .bottom))
             .ignoresSafeArea(edges: .top)
             .toolbar(.hidden, for: .navigationBar)
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(isPresented: $showSettings) { SettingsView() }
             .navigationDestination(isPresented: $showDisciples) { DisciplerRosterView() }
+            // A re-tap on You while Profile shows returns to its top (§7.4 #17):
+            // Profile's only pushes are these two.
+            .onReceive(tabs.reselected) { t in
+                guard t == .you, tabs.youSegmentShown == .profile else { return }
+                if showSettings || showDisciples {
+                    showSettings = false
+                    showDisciples = false
+                } else {
+                    tabs.rootReselected.send(.you)   // at the root: its top (B10)
+                }
+            }
             .task { await loadExtras() }
             .sheet(item: $editingField) { f in
                 EditFieldSheet(field: f, current: currentValue(for: f), rowVersion: p?.rowVersion ?? 1) {
@@ -109,9 +134,19 @@ struct ProfileView: View {
         async let certificates = try? await APIClient.shared.get("certificates", as: Envelope<PCert>.self).data
         async let scoresSummary = try? await MemberAPI.scores()
         async let myDepartments = try? await MemberAPI.myDepartments()
+        async let pathway = try? await MemberAPI.pathway()
 
         let cat = await catalogue ?? []
         let earned = await mine?.badges ?? []
+        let certsNow = await certificates ?? []
+        let scoresNow = await scoresSummary
+        let servingNow = (await myDepartments ?? []).filter(\.isActiveMember)
+        // The journey is told with its level's trail (final walk, M4's class;
+        // Android's journeyToTell): from the summary alone a member at the
+        // exam could read "Continue" — the open exam is the trail's row.
+        let summary = await pathway
+        var trail: [LevelModule]?
+        if let n = summary?.currentLevel { trail = try? await MemberAPI.levelModules(n) }
         let earnedByCode = Dictionary(earned.map { ($0.code, $0) }, uniquingKeysWith: { a, _ in a })
         var merged: [PBadgeItem] = cat.map {
             PBadgeItem(code: $0.code, name: $0.name, description: $0.description,
@@ -122,10 +157,13 @@ struct ProfileView: View {
             merged.append(PBadgeItem(code: e.code, name: e.name, description: e.description,
                                      category: e.category, awardedAt: e.awardedAt ?? ""))
         }
+        // Every read has answered before any of it shows — the page lands whole.
         badges = merged.sorted { ($0.earned ? 0 : 1, $0.name) < ($1.earned ? 0 : 1, $1.name) }
-        certs = await certificates ?? []
-        scores = await scoresSummary
-        serving = (await myDepartments ?? []).filter(\.isActiveMember)
+        certs = certsNow
+        scores = scoresNow
+        serving = servingNow
+        journey = Journey.derive(summary, trail: trail)
+        extrasAnswered = true
     }
 
     // MARK: Avatar upload (PhotosPicker → ~512px JPEG → POST /me/avatar)
@@ -147,7 +185,7 @@ struct ProfileView: View {
             await auth.loadProfile()   // the header re-renders with the new avatar_url
         } catch {
             Haptics.error()
-            avatarError = (error as? APIError)?.errorDescription ?? "Couldn't upload your photo — please try again."
+            avatarError = NuruStateCopy.failureLine("Couldn't upload your photo — please try again.", error)
         }
     }
 
@@ -175,18 +213,24 @@ struct ProfileView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("ACCOUNT").font(.inter(11, .bold)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A))
+                Text("ACCOUNT").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                 Spacer()
-                Button { Haptics.tap(); showSettings = true } label: {
-                    Icon(.settings, size: 18, color: Nuru.navy)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                // Inside the You tab the segment bar's Settings is the one way
+                // in (§6.2) — a second gear here was a second door to it.
+                if !embeddedInYou {
+                    Button { Haptics.tap(); showSettings = true } label: {
+                        Icon(.settings, size: 18, color: Nuru.navy)
+                            .frame(width: 40, height: 40)
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel("Settings")
                 }
-                .buttonStyle(.pressable)
-                .accessibilityLabel("Settings")
             }
-            HStack(spacing: 16) {
+            // The name beside the photo at the everyday sizes; under it at the
+            // largest, where it read "Ada Thri…" (§9.6 #4).
+            NuruAdaptiveStack(spacing: 16) {
                 // Tap anywhere on the avatar (incl. the pencil) to pick a new photo.
                 PhotosPicker(selection: $avatarPick, matching: .images, photoLibrary: .shared()) {
                     ZStack(alignment: .bottomTrailing) {
@@ -202,7 +246,7 @@ struct ProfileView: View {
                             }
                         ZStack {
                             Circle().fill(Nuru.gold).frame(width: 28, height: 28)
-                            Icon(.pencil, size: 11, color: Nuru.navy)
+                            Icon(.pencil, size: 14, color: Nuru.navy)
                         }
                         .overlay(Circle().stroke(Color.white, lineWidth: 2))
                         .offset(x: 3, y: 3)
@@ -211,11 +255,15 @@ struct ProfileView: View {
                 .buttonStyle(.pressable)
                 .disabled(avatarUploading)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(p?.fullName ?? "—").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
-                        .lineLimit(1).minimumScaleFactor(0.8)
+                    Text(p?.fullName ?? "").font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(Nuru.navy)
+                        .nuruLineLimit(1).minimumScaleFactor(0.8)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(p?.fullName ?? "", font: .fraunces(22, .medium), kerning: -0.44)
                     if let email = p?.email {
-                        Text(email).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
-                            .lineLimit(1).truncationMode(.middle)
+                        // Breaks only at "@" or "." (final walk C3).
+                        Text(NuruText.emailBreaks(email)).font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
+                            .nuruLineLimit(1).truncationMode(.middle)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     // Only when there IS a level. This read
                     // `currentLevel ?? 1` and so told every member without an
@@ -226,7 +274,7 @@ struct ProfileView: View {
                     // noticed they were stuck.
                     if let level = auth.me?.enrollment?.currentLevel {
                         HStack(spacing: 4) {
-                            Icon(.award, size: 11, color: Color(hex: 0x9A7A2A))
+                            Icon(.award, size: 14, color: Color(hex: 0x9A7A2A))
                             Text("Level \(level)").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 4)
@@ -269,18 +317,18 @@ struct ProfileView: View {
                         .fill(Nuru.gold.opacity(0.18))
                         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
                         .frame(width: 44, height: 44)
-                    Icon(.users, size: 19, color: Nuru.gold)
+                    Icon(.users, size: 18, color: Nuru.gold)
                 }
                 VStack(alignment: .leading, spacing: 2) {
                     Text("SHEPHERD THE FLOCK")
-                        .font(.inter(9, .bold)).kerning(1.2).foregroundStyle(Nuru.goldHi)
+                        .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldHi)
                     Text("Your disciples")
-                        .font(.fraunces(17, .semibold)).foregroundStyle(.white)
+                        .font(.fraunces(18, .semibold)).foregroundStyle(.white)
                     Text("Roster, journeys & pending reflections")
                         .font(.inter(11)).foregroundStyle(Nuru.onNavyDim)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: Nuru.onNavyFaint)
+                Icon(.chevronRight, size: 18, color: Nuru.onNavyFaint)
             }
             .padding(Nuru.S.base)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -334,22 +382,25 @@ struct ProfileView: View {
 
     private func displayValue(for f: PField) -> String {
         switch f.id {
-        case "name": return p?.fullName ?? "—"
-        case "email": return p?.email ?? "Not set"
-        case "phone": return p?.phoneNumber ?? "Not set"
+        case "name": return p?.fullName ?? "Not set"   // an empty value reads "Not set" (§8.1 rule 8)
+        // An address breaks only at "@" or "." (final walk C3: "student1@de
+        // / v.local" at the largest size).
+        case "email": return p?.email.map(NuruText.emailBreaks) ?? "Not set"
+        // Read the Kenyan way ("0700 000 000"), the same as Give shows it; the
+        // edit sheet and the wire keep E.164.
+        case "phone": return p?.phoneNumber.map { KenyanPhone.display($0) } ?? "Not set"
         case "dob": return formattedDOB
         case "gender":
             guard let g = p?.gender, !g.isEmpty else { return "Not set" }
             return g.replacingOccurrences(of: "_", with: " ").capitalized
         case "country": return countryLabel
         case "city": return p?.city ?? "Not set"
-        default: return "—"
+        default: return "Not set"
         }
     }
 
     private var personalInfo: some View {
         sectionCard("PERSONAL INFORMATION", icon: .user) {
-            memberIdRow
             ForEach(Self.fields) { f in
                 Button { Haptics.tap(); editingField = f } label: {
                     infoRow(f.icon, f.label.uppercased(), displayValue(for: f), editable: true)
@@ -362,58 +413,36 @@ struct ProfileView: View {
         }
     }
 
-    /// Immutable, server-issued identity — the permanent anchor every interaction,
-    /// gift and certificate is tied to (unlike the editable attributes below).
-    private var memberIdRow: some View {
-        HStack(spacing: Nuru.S.md) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.white)
-                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
-                    .frame(width: 36, height: 36)
-                Icon(.fingerprint, size: 16, color: Color(hex: 0xA8861C))
-            }
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 3) {
-                    Text("MEMBER ID").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
-                    Icon(.lock, size: 9, color: Color(hex: 0x74808F))
+    /// The member's ID, at the page's foot as an action (the Cycle 3 walk's
+    /// E13 and the Android walk's A5): Profile opened on a raw "MEMBER ID
+    /// 4e94ac22-…" — 36 characters no one reads (§8.1 rule 8). The ID itself is
+    /// still the real one (see `memberIdLabel`) and still copies whole, for the
+    /// office or support; it is just not shown as a fact to read.
+    @ViewBuilder private var memberIdFoot: some View {
+        if let uid = p?.userId, !uid.isEmpty {
+            Button {
+                UIPasteboard.general.string = uid
+                Haptics.tap()
+                withAnimation { justCopied = true }
+                Task {
+                    try? await Task.sleep(nanoseconds: 1_600_000_000)
+                    withAnimation { justCopied = false }
                 }
-                Text(memberIdLabel)
-                    .font(.system(size: 11, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Nuru.navy)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.8)
-                    .textSelection(.enabled)
-            }
-            Spacer(minLength: 0)
-            // 36 characters is not something anyone retypes, so the whole row
-            // copies. "PERMANENT" becomes "COPIED" for a beat — the label is
-            // the confirmation, so the layout never shifts.
-            Text(justCopied ? "COPIED" : "PERMANENT")
-                .font(.inter(9, .semibold)).kerning(0.9)
-                .foregroundStyle(justCopied ? Color(hex: 0xA8861C) : Color(hex: 0x74808F))
+            } label: {
+                HStack(spacing: 6) {
+                    Icon(justCopied ? .check : .fingerprint, size: 14, color: Nuru.goldChipText)
+                    Text(justCopied ? "Member ID copied" : "Copy member ID")
+                        .font(.nActionLabel).foregroundStyle(Nuru.goldChipText)
+                }
+                .frame(minHeight: 44)
+                .padding(.horizontal, Nuru.S.base)
+                .contentShape(Rectangle())
                 .animation(.easeOut(duration: 0.18), value: justCopied)
-        }
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard let uid = p?.userId else { return }
-            UIPasteboard.general.string = uid
-            Haptics.tap()
-            withAnimation { justCopied = true }
-            Task {
-                try? await Task.sleep(nanoseconds: 1_600_000_000)
-                withAnimation { justCopied = false }
             }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(justCopied ? "Member ID copied" : "Copy member ID")
         }
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Member ID, permanent. Double tap to copy.")
-        .accessibilityValue(memberIdLabel)
-        .padding(10)
-        .background(
-            LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.surface], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.23), lineWidth: 1))
-        .padding(.bottom, Nuru.S.sm)
     }
 
     /// The member's `user_id` — the actual server-issued identifier, in full.
@@ -437,7 +466,7 @@ struct ProfileView: View {
         HStack(spacing: Nuru.S.md) {
             fieldIconTile(.languages)
             VStack(alignment: .leading, spacing: 3) {
-                Text("LANGUAGES SPOKEN").font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                Text("LANGUAGES SPOKEN").font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                 HStack(spacing: 4) { langChip(localeLanguageName, isDefault: true) }
             }
             Spacer(minLength: 0)
@@ -453,7 +482,9 @@ struct ProfileView: View {
         sectionCard("ACHIEVEMENTS", icon: .sparkles,
                     action: badges.isEmpty ? nil : "See all",
                     onAction: { showAllBadges = true }) {
-            if badges.isEmpty {
+            if !extrasAnswered {
+                ProfileSectionSkeleton(height: 92, label: "Your badges, loading")
+            } else if badges.isEmpty {
                 VStack(spacing: Nuru.S.sm) {
                     ZStack { Circle().fill(Nuru.goldTint).frame(width: 56, height: 56)
                         .overlay(Circle().stroke(Nuru.gold, lineWidth: 1.5)); Icon(.award, size: 22, color: Nuru.gold) }
@@ -478,7 +509,7 @@ struct ProfileView: View {
             // Quiet mode — for those who'd rather walk without a visible streak.
             Rectangle().fill(Nuru.border).frame(height: 1).padding(.top, Nuru.S.sm)
             HStack(spacing: 10) {
-                Icon(.moon, size: 15, color: Nuru.gold)
+                Icon(.moon, size: 14, color: Nuru.gold)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Quiet mode").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                     Text("Hide my streak — just walk with God").font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
@@ -507,7 +538,7 @@ struct ProfileView: View {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(d.name).font(.inter(13, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                                 Text(d.isLeaderRole ? "LEADER" : "SERVING")
-                                    .font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                                    .font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                             }
                             Spacer(minLength: 0)
                             Icon(.chevronRight, size: 14, color: Nuru.ink300)
@@ -542,7 +573,7 @@ struct ProfileView: View {
                 set: { on in
                     let previous = aiOptOut
                     aiOptOut = !on
-                    aiConsentSaveFailed = false
+                    aiConsentSaveError = nil
                     Haptics.tap()
                     Task {
                         do { try await MemberAPI.setAiConsent(optOut: !on) }
@@ -550,21 +581,24 @@ struct ProfileView: View {
                             // Consent is the one toggle that must never lie:
                             // if the server didn't record it, don't display it.
                             aiOptOut = previous
-                            aiConsentSaveFailed = true
+                            aiConsentSaveError = NuruStateCopy.saveFailureLine(error)
                             Haptics.error()
                         }
                     }
                 }
             )) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Personal companion & Sunday Letter").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                    // The card's title (§8.1 rule 3: Fraunces 18 semibold;
+                    // final walk #38 — it was Inter).
+                    Text("Personal companion & Sunday Letter").font(.nCardTitle).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text("Nuru remembers your journey to walk with you personally. Your prayer journal is never read — ever. Turn this off and Nuru forgets your story, stops reading your reflections, and pauses your Sunday Letters.")
                         .font(.inter(11)).foregroundStyle(Nuru.muted).lineSpacing(2)
                 }
             }
             .tint(Nuru.gold)
-            if aiConsentSaveFailed {
-                Text("Couldn't save that — check your connection and try again.")
+            if let line = aiConsentSaveError {
+                Text(line)
                     .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
             }
             EmptyView()
@@ -586,6 +620,7 @@ struct ProfileView: View {
                             .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1.5))
                         Text("\(s.overall.score)").font(.fraunces(16, .semibold)).foregroundStyle(Nuru.navy)
                     }
+                    .nuruFixedFigure()
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Overall").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         Text(s.overall.band).font(.inter(11)).foregroundStyle(Color(hex: 0x8A6D18))
@@ -616,7 +651,7 @@ struct ProfileView: View {
                                 }
                                 .frame(height: 5)
                             }
-                            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+                            Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
                         }
                         .padding(.vertical, 8)
                         .contentShape(Rectangle())
@@ -658,7 +693,9 @@ struct ProfileView: View {
             for l in 1..<level {
                 rows.append(PMilestone(id: "lvl\(l)", label: "Level \(l) completed", meta: "Completed", status: .done))
             }
-            rows.append(PMilestone(id: "lvl\(level)", label: "Level \(level) · in progress", meta: "Keep going", status: .active))
+            if let words = ProfileMilestoneWords.current(level: level, journey: journey) {
+                rows.append(PMilestone(id: "lvl\(level)", label: words.label, meta: words.meta, status: .active))
+            }
         } else {
             rows.append(PMilestone(id: "lvl-pending", label: "Your pathway",
                                    meta: "Starting soon — your leader is setting you up",
@@ -683,7 +720,9 @@ struct ProfileView: View {
 
     private var certificates: some View {
         sectionCard("CERTIFICATES", icon: .badgeCheck) {
-            if certs.isEmpty {
+            if !extrasAnswered {
+                ProfileSectionSkeleton(height: 120, label: "Your certificates, loading")
+            } else if certs.isEmpty {
                 VStack(spacing: 6) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.gold.opacity(0.09))
@@ -717,7 +756,7 @@ struct ProfileView: View {
         HStack(spacing: Nuru.S.md) {
             fieldIconTile(icon)
             VStack(alignment: .leading, spacing: 1) {
-                Text(label).font(.inter(10, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+                Text(label).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
                 Text(value).font(.inter(13, .medium)).foregroundStyle(Nuru.navy)
             }
             Spacer(minLength: 0)
@@ -731,7 +770,7 @@ struct ProfileView: View {
         HStack(spacing: 4) {
             Text(text).font(.inter(11, isDefault ? .semibold : .medium))
                 .foregroundStyle(isDefault ? Color(hex: 0x8A6D18) : Nuru.navy)
-            if isDefault { Icon(.check, size: 10, color: Color(hex: 0x8A6D18)) }
+            if isDefault { Icon(.check, size: 14, color: Color(hex: 0x8A6D18)) }
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(isDefault ? Nuru.gold.opacity(0.12) : Nuru.surface, in: Capsule())
@@ -764,7 +803,7 @@ func sectionCard<C: View>(_ title: String, icon: Lucide,
     VStack(alignment: .leading, spacing: Nuru.S.sm) {
         HStack {
             HStack(spacing: 6) {
-                Icon(icon, size: 12, color: Color(hex: 0xA8861C))
+                Icon(icon, size: 14, color: Color(hex: 0xA8861C))
                 Text(title).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xA8861C))
             }
             Spacer()
@@ -783,21 +822,17 @@ func sectionCard<C: View>(_ title: String, icon: Lucide,
     .nuruShadow()
 }
 
-/// Neutral 36pt icon tile (personal-info / notification-pref / privacy rows).
-func fieldIconTile(_ icon: Lucide) -> some View {
-    ZStack {
-        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.surface)
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            .frame(width: 36, height: 36)
-        Icon(icon, size: 15, color: Nuru.navy)
-    }
-}
+/// A row's 36pt icon tile — every row the same (§8.1 rules 1, 7): a
+/// gold-tint tile, the icon in navy at 18. (Settings' rows were indigo,
+/// pink, sky and green; the walk's E17.)
+func fieldIconTile(_ icon: Lucide) -> some View { iconTile(icon) }
 
-/// Tinted 36pt icon tile (security / help rows).
-func iconTile(_ icon: Lucide, tint: Color, color: Color) -> some View {
+func iconTile(_ icon: Lucide) -> some View {
     ZStack {
-        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(tint).frame(width: 36, height: 36)
-        Icon(icon, size: 16, color: color)
+        RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color(hex: Nuru.tileTint))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+            .frame(width: 36, height: 36)
+        Icon(icon, size: 18, color: Color(hex: Nuru.tileIcon))
     }
 }
 
@@ -810,12 +845,13 @@ func nuruLanguageName(_ locale: String?) -> String {
     }
 }
 
-/// "yyyy-MM-dd" (or ISO timestamp) → "18 Apr 1992"-style display date.
+/// "yyyy-MM-dd" (or ISO timestamp) → "Sat 18 Apr 1992": the one date shape,
+/// the calendar day sent — parsed and written in one zone, never shifted
+/// (§8.1 rule 8).
 func formatISODay(_ iso: String) -> String? {
-    let out = DateFormatter(); out.dateFormat = "d MMM yyyy"
     let dayF = DateFormatter(); dayF.dateFormat = "yyyy-MM-dd"
-    if let d = dayF.date(from: String(iso.prefix(10))) { return out.string(from: d) }
-    if let d = ISO8601DateFormatter().date(from: iso) { return out.string(from: d) }
+    if let d = dayF.date(from: String(iso.prefix(10))) { return NuruDates.day(d) }
+    if let d = ISO8601DateFormatter().date(from: iso) { return NuruDates.day(d) }
     return nil
 }
 
@@ -888,15 +924,18 @@ private struct PBadgeItem: Identifiable {
     var id: String { code }
     var earned: Bool { awardedAt != nil }
 
-    /// Category → medallion icon + colors (mirrors the Figma badge palette).
+    /// Category → medallion icon; one colour for every category (§8.1 rule
+    /// 1: gold is the accent — no green, sky or purple medallions).
     var style: (icon: Lucide, color: Color, tint: Color) {
+        let icon: Lucide
         switch category {
-        case "journey": return (.sparkles, Nuru.gold, Color(hex: 0xFFF4DA))
-        case "consistency": return (.flame, Color(hex: 0x16A34A), Color(hex: 0xDCFCE7))
-        case "community": return (.users, Color(hex: 0x0EA5E9), Color(hex: 0xE0F2FE))
-        case "service": return (.handHeart, Color(hex: 0xA855F7), Color(hex: 0xF3E8FF))
-        default: return (.award, Nuru.gold, Nuru.goldTint)
+        case "journey": icon = .sparkles
+        case "consistency": icon = .flame
+        case "community": icon = .users
+        case "service": icon = .handHeart
+        default: icon = .award
         }
+        return (icon, Nuru.gold, Color(hex: Nuru.tileTint))
     }
 }
 
@@ -911,15 +950,18 @@ private struct BadgeMedallion: View {
                     .overlay(Circle().stroke(badge.earned ? badge.style.color : Nuru.border,
                                              lineWidth: badge.earned ? 1.5 : 1))
                     .frame(width: 54, height: 54)
-                Icon(badge.style.icon, size: 20, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
+                Icon(badge.style.icon, size: 22, color: badge.earned ? badge.style.color : Color(hex: 0x74808F))
             }
-            Text(badge.name)
-                .font(.inter(9, badge.earned ? .semibold : .medium))
+            // Its own lines, never broken at the hyphen nor inside a word,
+            // never cut (final walk C3): the medallion is as wide as its
+            // longest line — the rail scrolls sideways.
+            Text(NuruText.badgeLines(badge.name))
+                .font(.inter(11, badge.earned ? .semibold : .medium))
                 .foregroundStyle(badge.earned ? Nuru.navy : Color(hex: 0x74808F))
                 .multilineTextAlignment(.center)
-                .lineLimit(2)
+                .fixedSize()
         }
-        .frame(width: 66)
+        .frame(minWidth: 66)
     }
 }
 
@@ -929,7 +971,7 @@ private struct BadgeDetailSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        PSheetShell(title: "") {
+        PSheetShell(title: "", fitsContent: true) {
             VStack(spacing: Nuru.S.md) {
                 ZStack {
                     if badge.earned {
@@ -944,22 +986,22 @@ private struct BadgeDetailSheet: View {
                 HStack(spacing: 6) {
                     if badge.earned {
                         HStack(spacing: 4) {
-                            Icon(.check, size: 11, color: Color(hex: 0x16A34A))
+                            Icon(.check, size: 14, color: Color(hex: 0x16A34A))
                             Text("Earned" + ((badge.awardedAt.flatMap { $0.isEmpty ? nil : formatISODay($0) }).map { " \($0)" } ?? ""))
-                                .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x16A34A))
+                                .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x16A34A))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Color(hex: 0x16A34A).opacity(0.09), in: Capsule())
                     } else {
                         HStack(spacing: 4) {
-                            Icon(.lock, size: 10, color: Color(hex: 0x74808F))
-                            Text("Locked").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x74808F))
+                            Icon(.lock, size: 14, color: Color(hex: 0x74808F))
+                            Text("Locked").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x74808F))
                         }
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(Color(hex: 0xF3F4F6), in: Capsule())
                     }
                     Text(badge.category.capitalized)
-                        .font(.inter(10, .bold)).foregroundStyle(badge.style.color)
+                        .font(.inter(11, .bold)).foregroundStyle(badge.style.color)
                         .padding(.horizontal, 10).padding(.vertical, 3)
                         .background(badge.style.color.opacity(0.10), in: Capsule())
                 }
@@ -972,7 +1014,6 @@ private struct BadgeDetailSheet: View {
             }
             .frame(maxWidth: .infinity)
         }
-        .presentationDetents([.medium])
     }
 }
 
@@ -980,6 +1021,9 @@ private struct BadgeDetailSheet: View {
 private struct BadgeGallerySheet: View {
     let badges: [PBadgeItem]
     @State private var viewing: PBadgeItem?
+    /// One column at the accessibility sizes: a medallion is as wide as its
+    /// name's longest line, and three across would overlap (final walk C3).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     private var earnedCount: Int { badges.filter(\.earned).count }
 
@@ -988,7 +1032,7 @@ private struct BadgeGallerySheet: View {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("\(earnedCount) of \(badges.count) badges earned")
                     .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xA8861C))
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: typeSize.isAccessibilitySize ? 1 : 3), spacing: 10) {
                     ForEach(badges) { b in
                         Button { Haptics.tap(); viewing = b } label: {
                             VStack(spacing: 6) {
@@ -1003,7 +1047,7 @@ private struct BadgeGallerySheet: View {
                     }
                 }
                 Text("Locked badges unlock as you grow. Keep going.")
-                    .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                    .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x74808F))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             }
         }
@@ -1011,7 +1055,37 @@ private struct BadgeGallerySheet: View {
     }
 }
 
+/// A section's loading shape (§4) while its read is in flight — never its
+/// "none yet" words before the read has answered.
+private struct ProfileSectionSkeleton: View {
+    let height: CGFloat
+    let label: String
+    var body: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Nuru.surface)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShimmer()
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
+    }
+}
+
 // MARK: - Milestones
+
+/// The member's own level on Profile's milestones, in the journey's words
+/// (§3) — the same pill Home and Pathway show ("Exam ready", "3 of 10
+/// modules"). It said "Level 1 · in progress · Keep going" beside every
+/// other screen's "Exam ready" (the Cycle 3 and Cycle 4 walks). Until the
+/// journey is known the row waits: no second story on a guess.
+enum ProfileMilestoneWords {
+    static func current(level: Int, journey: Journey?) -> (label: String, meta: String)? {
+        guard let j = journey, j.levelNumber == level else { return nil }
+        return ("Level \(level) · \(j.pill)", j.title)
+    }
+}
 
 private struct PMilestone: Identifiable {
     enum Status { case done, active, future }
@@ -1106,7 +1180,7 @@ private struct CertificateCardView: View {
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
                         .frame(width: 44, height: 44)
-                    Icon(.award, size: 20, color: Nuru.gold)
+                    Icon(.award, size: 22, color: Nuru.gold)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     Text(cert.title).font(.inter(14, .semibold)).kerning(-0.14).foregroundStyle(Nuru.navy)
@@ -1131,16 +1205,16 @@ private struct CertificateCardView: View {
                 }
             } label: {
                 HStack(spacing: 8) {
-                    Icon(.fingerprint, size: 13, color: Color(hex: 0x74808F))
+                    Icon(.fingerprint, size: 14, color: Color(hex: 0x74808F))
                     Text(cert.verificationCode)
-                        .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                        .font(.inter(12, .semibold).monospacedDigit())
                         .kerning(0.5).foregroundStyle(Nuru.navy)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     HStack(spacing: 4) {
-                        Icon(copied ? .check : .copy, size: 11, color: copied ? Color(hex: 0x16A34A) : Nuru.gold)
+                        Icon(copied ? .check : .copy, size: 14, color: copied ? Color(hex: 0x16A34A) : Nuru.gold)
                         Text(copied ? "Copied" : "Copy")
-                            .font(.inter(10, .bold)).foregroundStyle(copied ? Color(hex: 0x16A34A) : Nuru.gold)
+                            .font(.inter(11, .bold)).foregroundStyle(copied ? Color(hex: 0x16A34A) : Nuru.gold)
                     }
                 }
                 .padding(.horizontal, 10).padding(.vertical, 8)
@@ -1152,8 +1226,8 @@ private struct CertificateCardView: View {
                 // Trust chip → live verification against the public endpoint.
                 Button { Haptics.tap(); onVerify() } label: {
                     HStack(spacing: 4) {
-                        Icon(.shieldCheck, size: 13, color: Color(hex: 0x8A6D18))
-                        Text("Signed · Verify").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
+                        Icon(.shieldCheck, size: 14, color: Color(hex: 0x8A6D18))
+                        Text("Signed · Verify").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
                     }
                     .frame(maxWidth: .infinity).frame(height: 36)
                     .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1171,7 +1245,7 @@ private struct CertificateCardView: View {
                         if downloading {
                             HStack(spacing: 5) {
                                 ProgressView().tint(Nuru.navy).scaleEffect(0.7)
-                                Text("Downloading…").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                                Text("Downloading…").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                             }
                             .frame(maxWidth: .infinity).frame(height: 36)
                             .background(Nuru.gold.opacity(0.10), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1187,7 +1261,7 @@ private struct CertificateCardView: View {
 
             if let downloadError {
                 Text(downloadError)
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0xDC2626))
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0xDC2626))
                     .frame(maxWidth: .infinity).multilineTextAlignment(.center)
             }
         }
@@ -1198,8 +1272,8 @@ private struct CertificateCardView: View {
 
     private func downloadLabel(icon: Lucide, text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 13, color: Nuru.navy)
-            Text(text).font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+            Icon(icon, size: 14, color: Nuru.navy)
+            Text(text).font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity).frame(height: 36)
         .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -1225,7 +1299,7 @@ private struct CertificateCardView: View {
                 if case APIError.http(let status, _, _, _) = error, status == 404 {
                     downloadError = "The PDF isn't ready yet — check back soon."
                 } else {
-                    downloadError = (error as? APIError)?.errorDescription ?? "Couldn't download the certificate."
+                    downloadError = NuruStateCopy.failureLine("Couldn't download the certificate.", error)
                 }
             }
         }
@@ -1265,7 +1339,7 @@ private struct VerifyCertificateSheet: View {
     @State private var failed = false
 
     var body: some View {
-        PSheetShell(title: "Verify certificate") {
+        PSheetShell(title: "Verify certificate", fitsContent: true) {
             if let r = result {
                 let color = r.valid ? Color(hex: 0x16A34A) : Color(hex: 0xDC2626)
                 VStack(spacing: Nuru.S.md) {
@@ -1287,16 +1361,16 @@ private struct VerifyCertificateSheet: View {
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(color.opacity(0.25), lineWidth: 1))
 
                     VStack(spacing: 0) {
-                        verifyRow("Recipient", r.recipientName ?? "—"); Divider()
+                        verifyRow("Recipient", r.recipientName ?? "Not set"); Divider()
                         verifyRow("Certificate", cert.title); Divider()
-                        verifyRow("Issued", r.issuedAt.flatMap(formatISODay) ?? formatISODay(cert.issuedAt) ?? "—"); Divider()
+                        verifyRow("Issued", r.issuedAt.flatMap(formatISODay) ?? formatISODay(cert.issuedAt) ?? "Not set"); Divider()
                         verifyRow("Verification code", r.verificationCode, mono: true)
                     }
 
                     HStack(spacing: 4) {
-                        Icon(.lock, size: 11, color: Color(hex: 0x74808F))
+                        Icon(.lock, size: 14, color: Color(hex: 0x74808F))
                         Text("Anyone can confirm this at pathway.nuruplace.org/v1/verify/\(cert.verificationCode)")
-                            .font(.inter(10)).foregroundStyle(Color(hex: 0x74808F))
+                            .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
                     }
                 }
             } else if failed {
@@ -1313,7 +1387,6 @@ private struct VerifyCertificateSheet: View {
                 .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.xl)
             }
         }
-        .presentationDetents([.medium])
         .task {
             do { result = try await APIClient.shared.get("verify/\(cert.verificationCode)", as: PVerifyResult.self) }
             catch { failed = true }
@@ -1325,7 +1398,7 @@ private struct VerifyCertificateSheet: View {
             Text(label).font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
             Spacer(minLength: Nuru.S.md)
             Text(value)
-                .font(mono ? .system(size: 12, weight: .semibold, design: .monospaced) : .inter(12, .semibold))
+                .font(mono ? .inter(12, .semibold).monospacedDigit() : .inter(12, .semibold))
                 .foregroundStyle(Nuru.navy)
                 .lineLimit(1)
         }
@@ -1347,9 +1420,17 @@ private struct EditFieldSheet: View {
     @State private var date = Date()
     @State private var saving = false
     @State private var error: String?
+    /// The wheel moved — a birthday never set has no value to differ from.
+    @State private var dateTouched = false
+
+    /// Something to save: the value differs from what the profile holds.
+    private var changed: Bool {
+        if field.kind == .date && current.isEmpty { return dateTouched }
+        return newValue != current
+    }
 
     var body: some View {
-        PSheetShell(title: "Edit \(field.label.lowercased())") {
+        PSheetShell(title: "Edit \(field.label.lowercased())", fitsContent: true) {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 switch field.kind {
                 case .select:
@@ -1359,7 +1440,7 @@ private struct EditFieldSheet: View {
                                 HStack {
                                     Text(opt.label).font(.inter(14, .medium)).foregroundStyle(Nuru.navy)
                                     Spacer()
-                                    if selected == opt.value { Icon(.check, size: 16, color: Nuru.gold) }
+                                    if selected == opt.value { Icon(.check, size: 18, color: Nuru.gold) }
                                 }
                                 .padding(12)
                                 .background(selected == opt.value ? Nuru.gold.opacity(0.09) : Nuru.surface,
@@ -1393,10 +1474,12 @@ private struct EditFieldSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                GoldSheetButton(title: "Save changes", busy: saving) { Task { await save() } }
+                // Save waits for a change (the walk's E18: "Save changes" was
+                // live on an untouched field).
+                GoldSheetButton(title: "Save changes", busy: saving, disabled: !changed) { Task { await save() } }
             }
         }
-        .presentationDetents([.medium])
+        .onChange(of: date) { _, _ in dateTouched = true }
         .onAppear {
             text = current
             selected = current
@@ -1440,7 +1523,7 @@ private struct EditFieldSheet: View {
             dismiss()
         } catch {
             Haptics.error()
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
+            self.error = NuruStateCopy.failureLine("Couldn't save — please try again.", error)
         }
     }
 }
@@ -1448,31 +1531,52 @@ private struct EditFieldSheet: View {
 // MARK: - Shared sheet chrome (native port of the Figma SheetShell)
 
 /// Bottom-sheet chrome: grab handle, Fraunces title, X close, scrollable content.
+/// `fitsContent`: the sheet is as tall as what it holds (the Cycle 3 walk's
+/// E18: field edits opened on a half-height sheet whose lower half was empty).
 struct PSheetShell<Content: View>: View {
     let title: String
+    var fitsContent: Bool = false
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
+    @State private var contentHeight: CGFloat = 0
+    /// Handle (10 + 4) and the title row (12 + 32) above the content.
+    private static var chromeHeight: CGFloat { 58 }
 
     var body: some View {
+        if fitsContent {
+            shell.presentationDetents([.height(PSheetFit.height(content: contentHeight, chrome: Self.chromeHeight,
+                                                                screen: UIScreen.main.bounds.height))])
+        } else {
+            shell
+        }
+    }
+
+    private var shell: some View {
         VStack(alignment: .leading, spacing: 0) {
             Capsule().fill(Color(hex: 0x0B1F33).opacity(0.15))
                 .frame(width: 40, height: 4)
                 .frame(maxWidth: .infinity)
                 .padding(.top, 10)
             HStack {
-                Text(title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
+                Text(title).font(.fraunces(18, .medium)).kerning(-0.4).foregroundStyle(Nuru.navy)
                 Spacer()
                 Button { dismiss() } label: {
                     ZStack {
                         Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                        Icon(.x, size: 16, color: Nuru.navy)
+                        Icon(.x, size: 18, color: Nuru.navy)
                     }
                 }.buttonStyle(.plain)
             }
             .padding(.top, 12)
             ScrollView(showsIndicators: false) {
                 content().padding(.top, Nuru.S.base).padding(.bottom, Nuru.S.xl)
+                    .background(GeometryReader { g in
+                        Color.clear
+                            .onAppear { contentHeight = g.size.height }
+                            .onChange(of: g.size.height) { _, h in contentHeight = h }
+                    })
             }
+            .scrollBounceBehavior(.basedOnSize)
         }
         .padding(.horizontal, Nuru.S.screen)
         .background(Color.white.ignoresSafeArea())
@@ -1501,5 +1605,14 @@ struct GoldSheetButton: View {
         .buttonStyle(.pressable)
         .disabled(disabled || busy)
         .animation(.easeInOut(duration: 0.2), value: disabled || busy)
+    }
+}
+
+/// How tall a content-fitted sheet is: its content plus its chrome, never
+/// under a floor that keeps the ✕ and one row in reach, never over 90% of
+/// the screen (the content then scrolls). Pure, so the tests pin it.
+enum PSheetFit {
+    static func height(content: CGFloat, chrome: CGFloat, screen: CGFloat) -> CGFloat {
+        min(max(content + chrome, 200), screen * 0.9)
     }
 }

@@ -46,10 +46,11 @@ private enum RES {
     static func meta(_ kind: String) -> KindMeta {
         switch kind {
         // Outline symbols — the Figma tiles use stroked Lucide icons, not filled.
-        case "audio":   return KindMeta(label: "Audio",   sf: "headphones",     color: gold,                 tint: Color(hex: 0xFFF4DA))
-        case "video":   return KindMeta(label: "Video",   sf: "play.rectangle", color: Color(hex: 0xDC2626), tint: Color(hex: 0xFEE2E2))
-        case "article": return KindMeta(label: "Article", sf: "doc.text",       color: Color(hex: 0x16A34A), tint: Color(hex: 0xDCFCE7))
-        default:        return KindMeta(label: "Book",    sf: "book",           color: Color(hex: 0x6366F1), tint: Color(hex: 0xEEF2FF))
+        // One tile look (§8.1 rules 1, 7) — the kind is its word and icon.
+        case "audio":   return KindMeta(label: "Audio",   sf: "headphones",     color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
+        case "video":   return KindMeta(label: "Video",   sf: "play.rectangle", color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
+        case "article": return KindMeta(label: "Article", sf: "doc.text",       color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
+        default:        return KindMeta(label: "Book",    sf: "book",           color: Color(hex: Nuru.tileIcon), tint: Color(hex: Nuru.tileTint))
         }
     }
     static let filters = ["all", "book", "audio", "video", "article"]
@@ -64,7 +65,7 @@ final class ResourcesViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { items = try await MemberAPI.resources() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load resources." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load resources.", error) }
         loading = false
     }
 }
@@ -112,9 +113,9 @@ struct ResourcesLibraryView: View {
                 Spacer()
                 Color.clear.frame(width: 40, height: 40)
             }
-            Text("Resources").font(.fraunces(24, .medium)).kerning(-0.72).foregroundStyle(RES.navy).padding(.top, 12)
+            Text("Resources").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(RES.navy).padding(.top, 12)
         }
-        .padding(.horizontal, 20).padding(.top, 56).padding(.bottom, 20)
+        .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 20)   // clears the status-bar band (C7 class)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             ZStack(alignment: .topTrailing) {
@@ -128,7 +129,7 @@ struct ResourcesLibraryView: View {
 
     private var searchField: some View {
         HStack(spacing: 8) {
-            Icon(.search, size: 15, color: RES.hint)
+            Icon(.search, size: 14, color: RES.hint)
             TextField("", text: $query, prompt: Text("Search books, audio, sermons…").foregroundColor(RES.hint))
                 .font(.inter(13)).foregroundStyle(RES.navy)
             if !query.isEmpty {
@@ -225,7 +226,7 @@ struct ResourcesLibraryView: View {
             }
         } label: {
             HStack(spacing: 12) {
-                Image(systemName: m.sf).font(.system(size: 18)).foregroundStyle(m.color)
+                Image(systemName: m.sf).font(.symbol(18)).foregroundStyle(m.color)
                     .frame(width: 48, height: 48)
                     .background(m.tint, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {

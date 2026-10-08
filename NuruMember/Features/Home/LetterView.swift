@@ -14,6 +14,10 @@ import SwiftUI
 struct LetterView: View {
     let letter: PastoralLetter
     var onRead: () -> Void = {}
+    /// The member's letters, when the caller already has them (the archive).
+    var archive: [PastoralLetter] = []
+    /// Inside the archive: "Last week" turns to that letter in place.
+    var openEarlier: ((PastoralLetter) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -29,12 +33,20 @@ struct LetterView: View {
         let f = DateFormatter()
         f.dateFormat = "yyyy-MM-dd"
         guard let d = f.date(from: letter.weekOf) else { return letter.weekOf }
-        let out = DateFormatter()
-        out.dateFormat = "d MMMM yyyy"
-        return out.string(from: d)
+        return NuruDates.day(d)   // the one date shape (§8.1 rule 8)
     }
 
+    /// A v3 letter is laid out as board A (owner, 2026-10-07: the editorial
+    /// letter); a v2 letter keeps this stationery exactly as it was.
     var body: some View {
+        if letter.isEditorial {
+            LetterEditorialView(letter: letter, onRead: onRead, archive: archive, openEarlier: openEarlier)
+        } else {
+            classicLetter
+        }
+    }
+
+    private var classicLetter: some View {
         ZStack {
             // Deep navy backdrop lets the paper glow.
             LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x081020)],
@@ -60,7 +72,7 @@ struct LetterView: View {
                     Button {
                         Haptics.tap(); dismiss()
                     } label: {
-                        Icon(.x, size: 15, color: .white)
+                        Icon(.x, size: 14, color: .white)
                             .frame(width: 34, height: 34)
                             .background(Color.white.opacity(0.16), in: Circle())
                     }
@@ -96,10 +108,10 @@ struct LetterView: View {
         ZStack(alignment: .bottomLeading) {
             LetterHero(imageKey: letter.imageKey, height: 240)
             VStack(alignment: .leading, spacing: 6) {
-                Text("THE SUNDAY LETTER").font(.inter(10, .bold)).kerning(2.0)
+                Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(2.0)
                     .foregroundStyle(Color.white.opacity(0.65))
                 Text(letter.title)
-                    .font(.fraunces(24, .semibold))
+                    .font(.fraunces(26, .semibold))
                     .foregroundStyle(.white)
                     .nuruLineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -120,7 +132,7 @@ struct LetterView: View {
                 .frame(width: 68, height: 68)
                 .shadow(color: Color(hex: 0xC9A227).opacity(0.5), radius: 12, y: 5)
             Circle().stroke(Color.white.opacity(0.5), lineWidth: 1.5).frame(width: 54, height: 54)
-            Text("N").font(.fraunces(30, .semibold)).foregroundStyle(Color(hex: 0x1E2A1F))
+            Text("N").font(.fraunces(28, .semibold)).foregroundStyle(Color(hex: 0x1E2A1F))
         }
         .scaleEffect(sealIn || reduceMotion ? 1 : 0.6)
         .opacity(sealIn || reduceMotion ? 1 : 0)
@@ -139,7 +151,7 @@ struct LetterView: View {
             if let ref = letter.scriptureRef { scriptureCard(ref) }
 
             Text(letter.body)
-                .font(.fraunces(17, .regular))
+                .font(.fraunces(16, .regular))
                 .foregroundStyle(Color(hex: 0x2A3441))
                 .nuruLineSpacing(7)
                 .fixedSize(horizontal: false, vertical: true)
@@ -170,9 +182,9 @@ struct LetterView: View {
     /// serif voice, and a book glyph — never a bare inline reference.
     private func scriptureCard(_ ref: String) -> some View {
         HStack(alignment: .top, spacing: 12) {
-            Icon(.bookOpen, size: 16, color: Color(hex: 0xA8861C))
+            Icon(.bookOpen, size: 18, color: Color(hex: 0xA8861C))
             VStack(alignment: .leading, spacing: 2) {
-                Text("SCRIPTURE").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
+                Text("SCRIPTURE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
                 Text(ref).font(.fraunces(16, .semibold)).foregroundStyle(Color(hex: 0x5B4712))
             }
             Spacer(minLength: 0)
@@ -188,7 +200,7 @@ struct LetterView: View {
     /// week never gets a manufactured entry here).
     private var momentsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("THIS WEEK").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
+            Text("THIS WEEK").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(letter.highlights, id: \.self) { moment in
                     HStack(alignment: .top, spacing: 9) {
@@ -230,7 +242,7 @@ struct LetterView: View {
                     .font(.inter(14, .bold))
                     .multilineTextAlignment(.leading)
                 Spacer(minLength: 8)
-                Icon(.arrowRight, size: 15, color: .white)
+                Icon(.arrowRight, size: 14, color: .white)
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 18).padding(.vertical, 16)
@@ -283,7 +295,7 @@ struct LetterView: View {
             } label: {
                 HStack(spacing: 6) {
                     Text("Past letters").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x8A6B1F))
-                    Icon(.chevronRight, size: 12, color: Color(hex: 0x8A6B1F))
+                    Icon(.chevronRight, size: 14, color: Color(hex: 0x8A6B1F))
                 }
             }
         }

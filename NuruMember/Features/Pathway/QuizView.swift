@@ -55,7 +55,7 @@ final class QuizViewModel: ObservableObject {
                 questions = fresh.questions
             }
         }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the quiz." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load the quiz.", error) }
         loading = false
         // Header title — best effort, never blocks the quiz itself.
         if moduleTitle == nil { moduleTitle = try? await MemberAPI.module(moduleId).title }
@@ -111,7 +111,7 @@ final class QuizViewModel: ObservableObject {
                                           title: "Congratulations",
                                           subtitle: "You've finished the test.")
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+            self.error = NuruStateCopy.failureLine("Couldn't submit. Please try again.", error)
             Haptics.error()
         }
     }
@@ -237,7 +237,7 @@ struct QuizView: View {
                         .font(.inter(12, .semibold)).kerning(1)
                         .foregroundStyle(QZ.kicker)
                     Text(q.questionText)
-                        .font(.inter(20, .bold)).kerning(-0.3)
+                        .font(.inter(18, .bold)).kerning(-0.3)
                         .foregroundStyle(QZ.ink)
                         .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
@@ -384,7 +384,7 @@ private struct QuizHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 Button { Haptics.tap(); onBack() } label: {
-                    Icon(.arrowLeft, size: 17, color: .white)
+                    Icon(.arrowLeft, size: 18, color: .white)
                         .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .contentShape(Circle())
@@ -401,7 +401,7 @@ private struct QuizHeader: View {
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Nuru.S.screen)
-            .padding(.top, 52)
+            .padding(.top, NuruSafeArea.top + 8)   // clears the status-bar band (final walk C7 class)
 
             HStack(spacing: 6) {
                 ForEach(0..<count, id: \.self) { i in
@@ -457,7 +457,7 @@ private struct QuizOptionCard: View {
             ZStack {
                 if selected {
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(QZ.navy)
-                    Icon(.check, size: 13, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 } else {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(QZ.radioIdle, lineWidth: 2)
@@ -599,7 +599,7 @@ private struct QuizPassScreen: View {
                     .font(.inter(13, .semibold)).foregroundStyle(QZ.copy)
                     .padding(.top, 20)
                 Text("\(score)%")
-                    .font(.inter(52, .bold)).foregroundStyle(QZ.gold)
+                    .font(.inter(28, .bold)).foregroundStyle(QZ.gold)
                     .padding(.top, 28)
                     .gentleEntrance(delay: 0.1)
                 Text("Module Passed")
@@ -658,7 +658,7 @@ private struct QuizPassScreen: View {
             Circle().stroke(QZ.gold.opacity(0.30), lineWidth: 1).frame(width: 138, height: 138)
             Circle().fill(QZ.gold.opacity(0.09)).frame(width: 110, height: 110)
                 .overlay(Circle().stroke(QZ.gold.opacity(0.45), lineWidth: 1))
-            Text("🏅").font(.system(size: 44))
+            Text("🏅").font(.emoji(44))
             ForEach(0..<6, id: \.self) { i in
                 let a = Double(i) * .pi / 3
                 Circle().fill(QZ.gold).frame(width: 5, height: 5)
@@ -694,12 +694,12 @@ private struct QuizFailScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("📖").font(.system(size: 44)))
+                    .overlay(Text("📖").font(.emoji(44)))
                 Text("You've finished the test.")
                     .font(.inter(13, .semibold)).foregroundStyle(QZ.copy)
                     .padding(.top, 20)
                 Text("\(score)%")
-                    .font(.inter(44, .bold)).foregroundStyle(QZ.ink)
+                    .font(.inter(28, .bold)).foregroundStyle(QZ.ink)
                     .padding(.top, 24)
                 Text("Almost there")
                     .font(.inter(22, .bold)).foregroundStyle(QZ.ink)
@@ -716,7 +716,7 @@ private struct QuizFailScreen: View {
                     // what tripped this attempt, then straight back to the retry.
                     Button { Haptics.action(); showCoach = true } label: {
                         HStack(spacing: 8) {
-                            Icon(.sparkles, size: 17, color: QZ.navy)
+                            Icon(.sparkles, size: 18, color: QZ.navy)
                             Text("Review with Nuru")
                         }
                         .font(.inter(16, .bold)).foregroundStyle(QZ.navy)
@@ -763,7 +763,7 @@ private struct QuizReviewScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("✍️").font(.system(size: 44)))
+                    .overlay(Text("✍️").font(.emoji(44)))
                 Text("Submitted for review")
                     .font(.inter(22, .bold)).foregroundStyle(QZ.ink)
                     .padding(.top, 24)

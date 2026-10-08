@@ -118,7 +118,7 @@ struct ServiceCheckInView: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: camera.torchOn ? "flashlight.on.fill" : "flashlight.off.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.symbol(15, weight: .semibold))
                     .foregroundStyle(camera.torchOn ? Nuru.navy : .white)
                 Text(camera.torchOn ? "Torch on" : "Torch")
                     .font(.inter(13, .semibold))
@@ -202,7 +202,7 @@ struct ServiceCheckInView: View {
                        content: UITextContentType) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(label.uppercased())
-                .font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.gold)
+                .font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.gold)
             TextField("", text: text)
                 .font(.inter(15)).foregroundStyle(.white)
                 .keyboardType(keyboard)
@@ -230,7 +230,7 @@ struct ServiceCheckInView: View {
                 .padding(.top, Nuru.S.xl)
 
                 Text(result?.duplicate == true ? "Already checked in ✓" : "You're checked in ✓")
-                    .font(.fraunces(24, .medium)).kerning(-0.48).foregroundStyle(.white)
+                    .font(.fraunces(26, .medium)).kerning(-0.48).foregroundStyle(.white)
                     .padding(.top, Nuru.S.lg)
                     .gentleEntrance(delay: 0.08)
 
@@ -299,7 +299,7 @@ struct ServiceCheckInView: View {
                 Icon(.camera, size: 28, color: Nuru.gold)
             }
             Text("Camera access needed")
-                .font(.fraunces(21, .medium)).kerning(-0.42).foregroundStyle(.white)
+                .font(.fraunces(22, .medium)).kerning(-0.42).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             Text("Nuru uses the camera only to scan the service check-in code. Turn it on in Settings and come back.")
                 .font(.inter(13)).foregroundStyle(.white.opacity(0.7))
@@ -328,9 +328,9 @@ struct ServiceCheckInView: View {
         HStack(alignment: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(kicker)
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
                 Text(title)
-                    .font(.fraunces(20, .semibold)).kerning(-0.4).foregroundStyle(.white)
+                    .font(.fraunces(18, .semibold)).kerning(-0.4).foregroundStyle(.white)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -347,7 +347,7 @@ struct ServiceCheckInView: View {
         } label: {
             ZStack {
                 Circle().fill(Color.white.opacity(0.12)).frame(width: 36, height: 36)
-                Icon(.x, size: 17, color: .white)
+                Icon(.x, size: 18, color: .white)
             }
         }
         .buttonStyle(.pressable)
@@ -443,13 +443,7 @@ struct ServiceCheckInView: View {
     }
 
     private func friendlyFailure(_ error: Error) -> String {
-        guard let api = error as? APIError else {
-            return "Something went wrong — try again."
-        }
-        if api.isNetwork {
-            return "You're offline — check-in needs a connection. Reconnect and try again."
-        }
-        if case .http(_, let code, let message, _) = api {
+        if case .http(_, let code, _, _)? = error as? APIError {
             switch code ?? "" {
             case "VALIDATION_FAILED":
                 return "That code isn't valid — it may have expired. Grab the latest one on the screen and scan again."
@@ -457,11 +451,13 @@ struct ServiceCheckInView: View {
                 return "We couldn't find that service. Scan the code on the screen again."
             case "FORBIDDEN_SCOPE":
                 return "That code belongs to another congregation."
-            default:
-                return message   // e.g. "Check-in has closed for this service"
+            default: break
             }
         }
-        return api.errorDescription ?? "Something went wrong — try again."
+        // Everything else in §4's words: the server's own refusal as it said
+        // it ("Check-in has closed for this service"), else what really
+        // happened — offline only when the phone is, never raw error text.
+        return NuruStateCopy.failureLine("Couldn't check you in.", error)
     }
 }
 
@@ -474,7 +470,7 @@ struct StreakSummary: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("YOUR ATTENDANCE")
-                .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
+                .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
             HStack(spacing: 8) {
                 tile("Streak", streak.currentStreak)
                 tile("Longest", streak.longestStreak)

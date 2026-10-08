@@ -1,8 +1,8 @@
 // Memory Verses — the native port of the Figma MemoryVerseScreen
 // (PathwayScreens.tsx): a "This week" hero card for the current verse (quoted
 // serif text, week-day goal, gold Practice CTA), then the "YOUR VERSE LIBRARY"
-// section with mastered/week chips. Kept on top: the derived WORD SCORE
-// dashboard and milestone nudge (shipped scoring feature, not in the make).
+// section with mastered/week chips. Kept on top: the WORD SCORE card — the
+// server's own score, the one Home shows (§1.1) — and the milestone nudge.
 // Practicing opens a type-from-memory sheet; the server bumps status on a
 // strong match.
 import SwiftUI
@@ -14,17 +14,30 @@ final class MemoryVerseViewModel: ObservableObject {
     @Published var verses: [MemoryVerseRow] = []
     @Published var loading = true
     @Published var error: String?
+    /// The Word score as the server computes it (GET /me/scores/word) — the
+    /// same score Home's "Your progress" shows. The page used to work out its
+    /// own (mastered ÷ total, with band names of its own), so one member read
+    /// "Word 2" on Home and "0 /100" here (the Cycle 4 walk). Nil until the
+    /// server answers: the card waits rather than guess.
+    @Published var wordScore: WordScoreWords?
 
     func load() async {
         loading = true; error = nil
+        async let score = try? await MemberAPI.scoreDetail(.word)
         do { verses = try await MemberAPI.memoryVerses() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your verses." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your verses.", error) }
+        // A failed refresh keeps the score already shown.
+        if let s = await score { wordScore = WordScoreWords(s) }
         loading = false
     }
 
-    func practice(_ id: String, matchPct: Int) async {
-        try? await MemberAPI.practiceVerse(id, matchPct: matchPct)
+    /// Record a practice. Returns why the server didn't, or nil once it did —
+    /// the sheet closes with its success only then (§7.4 #2).
+    func practice(_ id: String, matchPct: Int) async -> Error? {
+        do { try await MemberAPI.practiceVerse(id, matchPct: matchPct) }
+        catch { return error }
         await load()
+        return nil
     }
 
     // The Figma "This week" hero — first verse still being learned.
@@ -35,29 +48,9 @@ final class MemoryVerseViewModel: ObservableObject {
         verses.filter { $0.memoryVerseId != currentVerse?.memoryVerseId }
     }
 
-    // Derived word-score dashboard (no word-score endpoint exists).
+    // The member's own verses, counted (the milestone nudge — a count, not a score).
     var total: Int { verses.count }
     var mastered: Int { verses.filter { $0.isMastered }.count }
-
-    var score: Int { total == 0 ? 0 : Int((Double(mastered) / Double(total) * 100).rounded()) }
-
-    var band: String {
-        switch score {
-        case ..<25: return "Seedling"
-        case ..<50: return "Sprouting"
-        case ..<75: return "Growing"
-        default:    return "Flourishing"
-        }
-    }
-
-    // Bar values 0…1.
-    var consistency: Double { total == 0 ? 0 : Double(mastered) / Double(total) }
-    var memorization: Double {
-        guard total > 0 else { return 0 }
-        let avg = verses.reduce(0) { $0 + $1.bestMatchPct } / total
-        return Double(avg) / 100
-    }
-    var breadth: Double { min(Double(total) / 10, 1) }
 
     // Next milestone (reach 10 mastered).
     var toNextMilestone: Int { max(0, 10 - mastered) }
@@ -79,18 +72,21 @@ struct MemoryVerseView: View {
                               emptyText: "No memory verses yet.", retry: { Task { await vm.load() } }) {
                     ScrollView {
                         VStack(alignment: .leading, spacing: Nuru.S.md) {
-                            WordScoreCard(score: vm.score, band: vm.band,
-                                          consistency: vm.consistency,
-                                          memorization: vm.memorization,
-                                          breadth: vm.breadth)
+                            if let w = vm.wordScore {
+                                WordScoreCard(score: w.score, band: w.band,
+                                              consistency: w.consistency,
+                                              memorization: w.memorization,
+                                              breadth: w.breadth)
+                            }
                             MilestoneCard(remaining: vm.toNextMilestone, mastered: vm.mastered)
                             if let current = vm.currentVerse {
                                 CurrentVerseCard(verse: current) { practiceTarget = current }
                             }
                             if !vm.libraryVerses.isEmpty {
+                                // A kicker is gold (§8.1 rule 3).
                                 Text("YOUR VERSE LIBRARY")
-                                    .font(.inter(10, .semibold)).tracking(1.8)
-                                    .foregroundStyle(Nuru.muted)
+                                    .font(.nCardKicker).kerning(1.4)
+                                    .foregroundStyle(Nuru.eyebrow)
                                     .padding(.horizontal, Nuru.S.xs)
                                     .padding(.top, Nuru.S.sm)
                                 ForEach(vm.libraryVerses) { v in
@@ -160,6 +156,26 @@ private struct BackButton: View {
 
 // MARK: - Word score card
 
+/// The card's words, from the server's breakdown: its score, its band (the
+/// app's one score vocabulary — "Just beginning", "Growing", …) and its
+/// three parts, each 0–100 on the wire, drawn as 0…1 bars.
+struct WordScoreWords: Equatable {
+    let score: Int
+    let band: String
+    let consistency: Double
+    let memorization: Double
+    let breadth: Double
+
+    init(_ b: ScoreBreakdown) {
+        score = min(max(b.score, 0), 100)
+        band = b.band
+        func part(_ key: String) -> Double { min(max((b.components[key] ?? 0) / 100, 0), 1) }
+        consistency = part("consistency")
+        memorization = part("memorization")
+        breadth = part("breadth")
+    }
+}
+
 private struct WordScoreCard: View {
     let score: Int
     let band: String
@@ -176,9 +192,11 @@ private struct WordScoreCard: View {
                         Text("WORD SCORE")
                             .font(.nCardKicker).kerning(1.4)
                             .foregroundStyle(Nuru.gold)
-                        Text(band)
-                            .font(.nCardTitle)
-                            .foregroundStyle(Nuru.ink)
+                        if !band.isEmpty {
+                            Text(band)
+                                .font(.nCardTitle)
+                                .foregroundStyle(Nuru.ink)
+                        }
                     }
                     VStack(spacing: 6) {
                         Bar(label: "Consistency", value: consistency)
@@ -233,14 +251,15 @@ private struct ScoreRing: View {
                 .rotationEffect(.degrees(-90))
             VStack(spacing: 0) {
                 Text("\(score)")
-                    .font(.fraunces(24, .semibold))
+                    .font(.fraunces(22, .semibold))
                     .foregroundStyle(Nuru.ink)
                 Text("/100")
-                    .font(.inter(10, .medium))
+                    .font(.inter(11, .medium))
                     .foregroundStyle(Nuru.muted)
             }
         }
         .frame(width: 84, height: 84)
+        .nuruFixedFigure()
         .onAppear {
             guard !grown else { return }
             if reduceMotion { grown = true; return }
@@ -274,8 +293,9 @@ private struct MilestoneCard: View {
                 .background(Nuru.goldGlow, in: Circle())
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.inter(13, .semibold))
+                    .font(.nCardTitle)   // a prompt's title is a card title (§8.1 rule 3)
                     .foregroundStyle(Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text(subtitle)
                     .font(.nCardBody)
                     .foregroundStyle(Nuru.muted)
@@ -298,11 +318,11 @@ private struct CurrentVerseCard: View {
     let verse: MemoryVerseRow
     let practice: () -> Void
 
-    /// Monday-based day of the week, the Figma "Day 4 of 7" goal.
-    private var dayOfWeek: Int {
-        let wd = Calendar.current.component(.weekday, from: Date())  // 1 = Sunday
-        return wd == 1 ? 7 : wd - 1
-    }
+    /// The day of the church's week, Sunday first — the week every strip
+    /// in the app draws (§9.1 rule 8; final walk #32: it counted from
+    /// Monday, so a Wednesday read "Day 3 of 7" beside strips starting on
+    /// Sunday).
+    private var dayOfWeek: Int { MemoryWeek.day(Date()) }
 
     var body: some View {
         Card {
@@ -317,7 +337,7 @@ private struct CurrentVerseCard: View {
                         .foregroundStyle(Nuru.muted)
                 }
                 Text("\u{201C}\(verse.verseText)\u{201D}")
-                    .font(.fraunces(20, .medium))
+                    .font(.fraunces(18, .medium))
                     .foregroundStyle(Nuru.navy)
                     .nuruLineSpacing(6)
                     .fixedSize(horizontal: false, vertical: true)
@@ -390,7 +410,7 @@ private struct LibraryVerseRow: View {
 
     private func chipView(_ label: String, bg: Color, fg: Color) -> some View {
         Text(label)
-            .font(.inter(10, .semibold))
+            .font(.inter(11, .semibold))
             .foregroundStyle(fg)
             .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
             .background(bg, in: Capsule())
@@ -401,11 +421,13 @@ private struct LibraryVerseRow: View {
 
 private struct PracticeSheet: View {
     let verse: MemoryVerseRow
-    let onSave: (Int) async -> Void
+    /// Returns why the server didn't record it, or nil once it did.
+    let onSave: (Int) async -> Error?
 
     @Environment(\.dismiss) private var dismiss
     @State private var typed = ""
     @State private var saving = false
+    @State private var saveError: String?
 
     private var matchPct: Int { Self.matchPct(typed: typed, target: verse.verseText) }
 
@@ -418,7 +440,7 @@ private struct PracticeSheet: View {
                         .foregroundStyle(Nuru.navy)
                     Spacer()
                     Button { dismiss() } label: {
-                        Icon(.x, size: 15, color: Nuru.navy)
+                        Icon(.x, size: 14, color: Nuru.navy)
                             .frame(width: 32, height: 32)
                             .background(Nuru.surface, in: Circle())
                     }
@@ -460,7 +482,7 @@ private struct PracticeSheet: View {
                     }
                     .frame(height: 8)
                     Text("\(matchPct)% match")
-                        .font(.inter(10, .regular))
+                        .font(.inter(11, .regular))
                         .foregroundStyle(Nuru.muted)
                         .contentTransition(.numericText())
                         .animation(.default, value: matchPct)
@@ -470,15 +492,30 @@ private struct PracticeSheet: View {
                     if new / 25 != old / 25, new > old { Haptics.selection() }
                 }
 
+                // No success before the server says so (§7.4 #2): the sheet
+                // closes with its haptic only once the practice is recorded;
+                // otherwise it stays, with §4's words for why above the button.
+                if let saveError {
+                    Text(saveError)
+                        .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 PButton(title: "Save practice", variant: .gold, busy: saving,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
+                    guard !saving else { return }
                     Task {
                         Haptics.action()
                         saving = true
-                        await onSave(matchPct)
+                        saveError = nil
+                        let failed = await onSave(matchPct)
                         saving = false
-                        Haptics.success()
-                        dismiss()
+                        if let failed {
+                            saveError = NuruStateCopy.saveFailureLine(failed)
+                            Haptics.error()
+                        } else {
+                            Haptics.success()
+                            dismiss()
+                        }
                     }
                 }
             }
@@ -514,5 +551,15 @@ private struct PracticeSheet: View {
 
         let combined = max(prefixRatio, overlapRatio * 0.9)
         return min(100, Int((combined * 100).rounded()))
+    }
+}
+
+/// Hide His Word's "Day N of 7": the church's week, Sunday first, on the
+/// church's (Nairobi) calendar. Pure, for the tests.
+enum MemoryWeek {
+    static func day(_ now: Date, timeZone: TimeZone = GiveCalendar.nairobi) -> Int {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = timeZone
+        return cal.component(.weekday, from: now)   // 1 = Sunday … 7 = Saturday
     }
 }

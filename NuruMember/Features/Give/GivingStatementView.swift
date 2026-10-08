@@ -51,7 +51,7 @@ final class GivingStatementViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { history = try await MemberAPI.givingHistory() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your statement." }
+        catch { self.error = NuruStateCopy.failure(error).sentence }   // §4, never raw text
         loading = false
     }
 
@@ -66,14 +66,16 @@ final class GivingStatementViewModel: ObservableObject {
     /// row whose timestamp cannot be read trails rather than sorting on its
     /// raw string.
     func records(in year: Int) -> [GivingRecord] {
+        // The year by created_at (the statements' rule); the order, the day
+        // and the time by the one time a gift shows (GiftTime, the walk's B7).
         history.filter { GiveCalendar.year(of: $0.createdAt) == year }
-            .map { ($0, giveParseDate($0.createdAt)) }
+            .map { ($0, giveParseDate($0.shownAt)) }
             .sorted { a, b in
                 switch (a.1, b.1) {
-                case let (x?, y?): return x != y ? x > y : a.0.createdAt > b.0.createdAt
+                case let (x?, y?): return x != y ? x > y : a.0.shownAt > b.0.shownAt
                 case (.some, .none): return true
                 case (.none, .some): return false
-                case (.none, .none): return a.0.createdAt > b.0.createdAt
+                case (.none, .none): return a.0.shownAt > b.0.shownAt
                 }
             }
             .map(\.0)
@@ -132,7 +134,7 @@ final class GivingStatementViewModel: ObservableObject {
         var map: [String: [GivingRecord]] = [:]
         for r in records {
             let key: String
-            if let d = giveParseDate(r.createdAt) {
+            if let d = giveParseDate(r.shownAt) {
                 let c = cal.dateComponents([.year, .month, .day], from: d)
                 key = String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
             } else {
@@ -169,22 +171,21 @@ final class GivingStatementViewModel: ObservableObject {
     private func dayLabel(_ ymd: String) -> String {
         let inF = DateFormatter(); inF.dateFormat = "yyyy-MM-dd"
         guard let d = inF.date(from: ymd) else { return ymd }
-        let out = DateFormatter(); out.dateFormat = "EEE, d MMM yyyy"
-        return out.string(from: d)
+        return NuruDates.day(d)
     }
 }
 
-// MARK: - Fund meta (exact Figma palette; mirrors the Give tab funds)
+// MARK: - Fund meta (one look, as the Give tab's funds: §8.1 rules 1, 7)
 
 private struct FundMeta { let icon: Lucide; let tint: UInt32; let fg: UInt32 }
 private func fundMeta(_ code: String) -> FundMeta {
     switch code.lowercased() {
-    case "tithe":        return FundMeta(icon: .percent,   tint: 0xFFF4DA, fg: 0xC89B3C)
-    case "offering":     return FundMeta(icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626)
-    case "gift":         return FundMeta(icon: .gift,      tint: 0xF3E8FF, fg: 0xA855F7)
-    case "mission":      return FundMeta(icon: .globe,     tint: 0xE0F2FE, fg: 0x0EA5E9)
-    case "discipleship": return FundMeta(icon: .bookOpen,  tint: 0xDCFCE7, fg: 0x16A34A)
-    default:             return FundMeta(icon: .gift,      tint: 0xFFF4DA, fg: 0xC89B3C)
+    case "tithe":        return FundMeta(icon: .percent,   tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "offering":     return FundMeta(icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "gift":         return FundMeta(icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "mission":      return FundMeta(icon: .globe,     tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    case "discipleship": return FundMeta(icon: .bookOpen,  tint: Nuru.tileTint, fg: Nuru.tileIcon)
+    default:             return FundMeta(icon: .gift,      tint: Nuru.tileTint, fg: Nuru.tileIcon)
     }
 }
 
@@ -254,13 +255,15 @@ struct GivingStatementView: View {
                     } else if vm.history.isEmpty {
                         emptyState
                     } else {
-                        fundTotalsCard.gentleEntrance()
+                        if !listed.isEmpty { fundTotalsCard.gentleEntrance() }
                         historyList
                         if hasPledgeRows { partnerPledgesCard }
-                        Text("Statement reflects records held under Finance · receipts emailed per gift.")
-                            .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.top, 2)
+                        if !listed.isEmpty {
+                            Text("Tap a gift to open its receipt.")
+                                .font(.inter(11)).foregroundStyle(Color(hex: 0x74808F))
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.top, 2)
+                        }
                     }
                 }
                 .padding(Nuru.S.screen)
@@ -305,7 +308,7 @@ struct GivingStatementView: View {
         VStack(spacing: Nuru.S.sm) {
             ZStack {
                 Circle().fill(Nuru.gold.opacity(0.1)).frame(width: 48, height: 48)
-                Icon(.handHeart, size: 20, color: Nuru.gold)
+                Icon(.handHeart, size: 22, color: Nuru.gold)
             }
             Text("No gifts yet").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
             Text("When you give, your full record and receipts live here.")
@@ -323,7 +326,7 @@ struct GivingStatementView: View {
                 circleButton(.arrowLeft) { dismiss() }
                 Spacer()
                 Text("GIVING STATEMENT")
-                    .font(.inter(10, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
+                    .font(.inter(11, .bold)).kerning(2.2).foregroundStyle(Nuru.gold)
                 Spacer()
                 circleButton(.download, busy: downloading) {
                     Haptics.action()
@@ -337,13 +340,18 @@ struct GivingStatementView: View {
                 // number, any other currency rides under it ("+ US$ 20.00") —
                 // never one sum. The server's statement when it has answered.
                 let f = figures
-                if hasPledgeMoney {
+                if listed.isEmpty && !hasPledgeMoney {
+                    // Nothing in the period: no "Total given KSh 0" — the page
+                    // says "No gifts …" once, below (§7.4 #9; the walk's E14
+                    // found KSh 0 said four ways).
+                    EmptyView()
+                } else if hasPledgeMoney {
                     // Gifts X is the big number; the pledges and the grand
                     // total sit under it, so X + Y = Total is on screen.
                     let gifts = GiveMoney.headline(f.gifts)
                     Text("Gifts").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
                     Text(gifts.main)
-                        .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
+                        .font(.fraunces(28, .semibold)).kerning(-1).foregroundStyle(.white)
                         .lineLimit(1).minimumScaleFactor(0.6)
                     if let rest = gifts.rest {
                         Text(rest).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
@@ -356,15 +364,17 @@ struct GivingStatementView: View {
                     let total = GiveMoney.headline(f.total)
                     Text("Total given").font(.inter(11)).foregroundStyle(.white.opacity(0.6))
                     Text(total.main)
-                        .font(.fraunces(34, .semibold)).kerning(-1).foregroundStyle(.white)
+                        .font(.fraunces(28, .semibold)).kerning(-1).foregroundStyle(.white)
                         .lineLimit(1).minimumScaleFactor(0.6)
                     if let rest = total.rest {
                         Text(rest).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.8))
                     }
                 }
                 let n = vm.settledCount(listed)
-                Text("\(n) gift\(n == 1 ? "" : "s") · \(periodLabel) · most recent first")
-                    .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
+                if n > 0 {   // no zero counts (§7.4 #9) — the page below says "No gifts …"
+                    Text("\(n) gift\(n == 1 ? "" : "s") · \(periodLabel) · most recent first")
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.55))
+                }
             }
             .padding(.top, Nuru.S.base)
         }
@@ -404,21 +414,20 @@ struct GivingStatementView: View {
                 Circle().fill(Color.white.opacity(0.10)).frame(width: 40, height: 40)
                     .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 if busy { ProgressView().tint(.white).scaleEffect(0.8) }
-                else { Icon(icon, size: 17, color: .white) }
+                else { Icon(icon, size: 18, color: .white) }
             }
         }.buttonStyle(.pressable)
     }
 
     // MARK: Period selector (This year / Last year)
 
+    /// Full pills (§8.1 rule 6; final walk #38): selected navy, unselected
+    /// white with a hairline — not the grey track.
     private var periodSelector: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 8) {
             segment("This year", thisYear)
             segment("Last year", thisYear - 1)
         }
-        .padding(4)
-        .background(Color(hex: 0x0A2540, alpha: 0.06),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 
     private func segment(_ label: String, _ y: Int) -> some View {
@@ -430,11 +439,12 @@ struct GivingStatementView: View {
         } label: {
             Text(label)
                 .font(.inter(13, .semibold))
-                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x5B6472))
+                .foregroundStyle(on ? Color.white : Nuru.ink600)
                 .frame(maxWidth: .infinity).frame(height: 38)
-                .background(on ? Nuru.white : .clear, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .nuruShadow(on ? 0.6 : 0)
+                .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
         }.buttonStyle(.plain)
+        .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
     // MARK: Fund-by-fund totals + ruled grand total
@@ -442,7 +452,7 @@ struct GivingStatementView: View {
     private var fundTotalsCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("BY FUND")
-                .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                 .padding(.bottom, 4)
             let totals = vm.fundTotals(of: listed)
             if totals.isEmpty {
@@ -480,7 +490,7 @@ struct GivingStatementView: View {
         return HStack(spacing: 10) {
             ZStack {
                 Circle().fill(Color(hex: meta.tint)).frame(width: 32, height: 32)
-                Icon(meta.icon, size: 15, color: Color(hex: meta.fg))
+                Icon(meta.icon, size: 14, color: Color(hex: meta.fg))
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(t.fund.capitalized).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -498,8 +508,10 @@ struct GivingStatementView: View {
     @ViewBuilder
     private var historyList: some View {
         if listed.isEmpty {
-            Text("No gifts \(periodLabel).").font(.nBody).foregroundStyle(Nuru.muted)
-                .frame(maxWidth: .infinity).padding(.top, Nuru.S.lg)
+            // The empty period in §4's state card (final walk C16's class) —
+            // not a bare line under the header.
+            NuruStateView(state: .empty(title: "No gifts \(periodLabel)"))
+                .padding(.top, Nuru.S.sm)
         } else {
             ForEach(Array(vm.groups(of: listed).enumerated()), id: \.element.key) { idx, group in
                 VStack(alignment: .leading, spacing: 10) {
@@ -525,16 +537,18 @@ struct GivingStatementView: View {
                 Icon(meta.icon, size: 18, color: Color(hex: meta.fg))
             }
             VStack(alignment: .leading, spacing: 2) {
+                // A gift is a content row (§8.1 rule 3: Fraunces 15 semibold;
+                // final walk #38 — it was Inter).
                 Text(g.fund.capitalized)
-                    .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(Nuru.navy)
-                Text("\(giveTime(g.createdAt)) · \(givingMethodName(g.method))")
+                    .font(.nRowTitle).foregroundStyle(Nuru.navy)
+                Text("\(giveTime(g.shownAt)) · \(givingMethodName(g.method))")
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                 // A pledge payment says so — the complete record still tells
                 // the member which gifts counted toward a pledge (the partners
                 // statement lists only these). Absent on older servers.
                 if let tag = pledgeTag(g) {
                     Text(tag)
-                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(Nuru.goldChipBg, in: Capsule())
                         .lineLimit(1)
@@ -605,7 +619,7 @@ struct GivingStatementView: View {
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text("PARTNER PLEDGES")
-                            .font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                            .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                         // Y and N count the same (settled) rows; a row still
                         // processing or failed is listed inside, and said here.
                         // Y is per currency (Giving Cycle 2).
@@ -614,7 +628,7 @@ struct GivingStatementView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 8)
-                    Icon(pledgesOpen ? .chevronUp : .chevronDown, size: 16, color: Nuru.navy)
+                    Icon(pledgesOpen ? .chevronUp : .chevronDown, size: 18, color: Nuru.navy)
                 }
                 .contentShape(Rectangle())
             }
@@ -662,7 +676,7 @@ struct GivingStatementView: View {
     private var partnersStatementLabel: some View {
         HStack(spacing: 4) {
             Text("Partners statement").font(.inter(13, .semibold))
-            Icon(.arrowRight, size: 12, color: Nuru.gold)
+            Icon(.arrowRight, size: 14, color: Nuru.gold)
         }
         .foregroundStyle(Nuru.gold)
         .frame(maxWidth: .infinity)
@@ -702,9 +716,11 @@ struct GivingStatementView: View {
         }
     }
 
+    /// Offline only when the phone has no network (§4) — a timeout while it
+    /// has one was ours, and the PDF just isn't available right now.
     private static func downloadMessage(for error: Error) -> String {
-        if let api = error as? APIError, api.isNetwork {
-            return "You appear to be offline — the PDF needs a connection."
+        if NuruStateCopy.failure(error).cause == .offline {
+            return "You're offline — the PDF needs a connection."
         }
         return "The PDF isn't available right now. The statement below is still complete."
     }
@@ -738,7 +754,9 @@ func money(_ minor: Int, _ currency: String?) -> String { GiveMoney.format(minor
 func statusChip(_ status: String) -> some View {
     let (bg, fg, label): (Color, Color, String) = {
         switch status {
-        case "succeeded", "settled", "completed": return (Nuru.successBg, Nuru.successText, "Succeeded")
+        // A member's word, not the server's status (§8.1 rule 8; final walk
+        // #38: "Succeeded").
+        case "succeeded", "settled", "completed": return (Nuru.successBg, Nuru.successText, "Received")
         case "processing", "pending", "initiated": return (Nuru.goldChipBg, Nuru.goldChipText, "Processing")
         case "requires_action": return (Nuru.goldChipBg, Nuru.goldChipText, "Waiting for you")
         case "failed", "cancelled", "canceled", "expired": return (Nuru.danger.opacity(0.12), Nuru.danger, "Failed")

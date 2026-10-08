@@ -1,11 +1,14 @@
-// Home — the native port of screens/HomeDashboardScreen.tsx, rebuilt to pixel-match
-// the member dashboard (IMG_1905–1912 — one long scroll). Every card the screenshots
-// show, in order: navy header → continue hero → welcome video → verse of the day →
-// prayer-wall carousel → reading-plan/journal minis → this-week cell → disciplers
-// carousel → featured announcement → continue level → today's rhythm → reflection
-// banner → progress scores → grow grid → upcoming calendar → one-reflection banner →
-// your cohort → announcements list → "Support God's Work" give banner. All sections
-// load concurrently and degrade gracefully (a section hides when its data is empty).
+// Home — the native port of screens/HomeDashboardScreen.tsx, re-ordered by
+// EXPERIENCE.md §6.1 (Cycle 2, information hierarchy): each pillar has one
+// home and Home points to it once. Top to bottom: the live and on-air banners
+// (only while live) → the owner's opening (verse → video → the Sunday letter →
+// what needs you today, or the reflection strip → the liturgy) → YOUR WEEK
+// (Pathway · Plans · Events · Giving · Cell, HomeWeek) → the day (today's
+// rhythm, then today's echo) → the family (prayer wall, celebrations, the
+// featured carousel, the featured gathering) → growing (progress, grow your
+// faith, encouragement) → "Support God's work", only while the week's giving
+// row asks. All sections load concurrently and degrade gracefully (a section
+// hides when its data is empty; a week row falls back to its "none" form).
 import SwiftUI
 
 @MainActor
@@ -13,18 +16,36 @@ final class HomeViewModel: ObservableObject {
     // Core
     @Published var pathway: PathwaySummary?
     @Published var streak = 0
-    @Published var unread = 0
     @Published var greetingLine = "Grace for today's step."
-    @Published var nextAction: NextAction?
     @Published var rhythm = RhythmToday(prayer: false, word: false, reflection: false)
+    /// The rhythm has answered at least once. Until then nothing about today's
+    /// prayer, Word or reflection is said — a failed read used to show three
+    /// "not yet" tiles and "Reflection due today" (§9.4: no fake facts).
+    @Published var rhythmLoaded = false
     @Published var scores: ScoresSummary?
     /// GET /me/home/nudges — "What needs you today". Empty (or a failed
     /// fetch) hands the slot back to the old single reflection strip, so Home
     /// never loses its nudge.
     @Published var nudges: [HomeNudge] = []
-    /// Every plan row from GET /plans — a plan nudge opens its detail with the
-    /// row the Plans stack expects (`plan` below is only the featured one).
+    /// Every plan row from GET /growth/plans — a plan nudge opens its detail
+    /// with the row the Plans stack expects, and YOUR WEEK names the plan
+    /// being read (ReadingPlanRow.active).
     @Published var plans: [ReadingPlanRow] = []
+    /// The plans, the cell summary and the calendar each answered at least
+    /// once (final walk M4): until then a failed read is "Didn't load just
+    /// now" on YOUR WEEK — never "Start a reading plan", "Find your cell ·
+    /// Ask" or "No gatherings this week" for a member who may have all three.
+    /// A later refresh that fails keeps what was shown.
+    @Published var plansLoaded = false
+    @Published var cellLoaded = false
+    @Published var eventsLoaded = false
+    /// The first load's reads have ALL answered — loaded or failed (final
+    /// walk, M4's class; Android's loadedOnce). Until then YOUR WEEK, the
+    /// journey's pill, "What needs you today" (which must never repeat a row
+    /// it can't see yet) and the encouragement hold their loading shapes
+    /// (§4): a row in flight never says "Didn't load just now", and never
+    /// guesses a "none" form. Refreshes keep it true and keep what is shown.
+    @Published var loadedOnce = false
 
     // Verse
     @Published var verse: (text: String, reference: String, version: String)?
@@ -35,21 +56,33 @@ final class HomeViewModel: ObservableObject {
     @Published var verseEncouragement: Encouragement?
     @Published var reactions: VerseReactions?
     @Published var verseSaved = false
+    @Published var verseSaving = false
+    /// Why the verse didn't save, in words (§4; Cycle 4) — nil otherwise.
+    @Published var verseSaveLine: String?
 
     // Rich home cards
     @Published var welcomeVideo: WelcomeVideo?
     @Published var prayerPosts: [PrayerWallPost] = []
-    @Published var plan: ReadingPlanRow?
-    @Published var prayerEntries: [PrayerEntry] = []
-    @Published var featuredCell: FeaturedCell?
-    @Published var disciplers: [Discipler] = []
     @Published var featuredAnnouncement: FeaturedAnnouncement?
     @Published var announcements: [MyAnnouncement] = []
+    /// The member's OWN cell (GET /me/cell-summary) — YOUR WEEK's cell row.
     @Published var cell: CellSummary.Cell?
+    /// When the member asked to be connected to a cell (GET
+    /// /me/cell-connection), on any phone — the row says so (§9.2 #12).
+    @Published var cellAskedAt: String?
     @Published var events: [CalendarOccurrence] = []
-    /// GET /home/events — up to 5 curated, soonest-first rows for the "Upcoming"
-    /// section. Server-capped and pre-sorted; rendered exactly as received.
+    /// GET /home/events — up to 5 curated, soonest-first rows: the featured
+    /// carousel's gatherings and YOUR WEEK's events row. Server-capped and
+    /// pre-sorted; never re-capped or re-sorted here.
     @Published var homeEvents: [HomeEventRow] = []
+    /// GET /me/rsvps — what the member said yes to ("You're going").
+    @Published var rsvps: [MyRsvp]?
+    /// GET /giving/partnership (the DUE list, the pledges) and GET
+    /// /giving/schedules (the recurring gifts) — YOUR WEEK's giving row, by
+    /// the Give code's own rules. Nil when a read failed: the row then asks
+    /// ("Give") rather than guess.
+    @Published var partnership: Partnership?
+    @Published var schedules: [GivingSchedule]?
     /// The radio broadcast that is live RIGHT NOW (nil = off air). The now-playing
     /// endpoint also returns the next scheduled show — that must stay off Home.
     @Published var onAir: RadioProgram?
@@ -62,7 +95,18 @@ final class HomeViewModel: ObservableObject {
     @Published var liveStreams: [LiveStreamSummary] = []
 
     @Published var loading = true
-    @Published var error: String?
+    /// Why the dashboard's pathway didn't load — spoken through the one state
+    /// language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
+    /// The current level's module trail — read only for the journey's next
+    /// step (which module to continue). Nil until it loads.
+    @Published var trail: [LevelModule]?
+    /// The member's journey (EXPERIENCE.md §3): the header pill, the continue
+    /// card and the progress line all read this one derivation.
+    @Published var journey: Journey?
+    /// GET /giving/methods — the giving card names only the rails that work
+    /// here. Nil until the first answer; a failed refresh keeps the last one.
+    @Published var givingMethods: GivingMethods?
     /// The latest Sunday Letter (intelligence layer) — drives the gold
     /// "A letter for you" knock on Home while unread.
     @Published var letter: PastoralLetter?
@@ -73,14 +117,17 @@ final class HomeViewModel: ObservableObject {
     @Published var daySealed = false
     private var lastRhythmDone: Int?
 
-    func load() async {
-        loading = true; error = nil
+    /// `quiet`: the refresh in place (the walk's B5) — no skeleton, no
+    /// `loading` flip, and a refresh that can't reach the server changes
+    /// nothing, so a dropped connection never blanks what the member sees.
+    func load(quiet: Bool = false) async {
+        if !quiet { loading = true; failure = nil }
         async let letter = try? MemberAPI.latestLetter()
-        async let pathway = try? MemberAPI.pathway()
+        async let pathway = Self.attempt { try await MemberAPI.pathway() }
         async let ach = try? MemberAPI.achievements()
+        let unreadTicket = InboxBadge.shared.ticket()
         async let unread = try? MemberAPI.unreadNotifications()
         async let greet = try? MemberAPI.dailyGreeting()
-        async let next = try? MemberAPI.nextAction()
         async let nudges = try? MemberAPI.homeNudges()
         async let rhythm = try? MemberAPI.rhythmToday()
         async let scores = try? MemberAPI.scores()
@@ -89,27 +136,46 @@ final class HomeViewModel: ObservableObject {
         async let video = try? MemberAPI.welcomeVideo()
         async let posts = try? MemberAPI.prayerWallHome()
         async let plans = try? MemberAPI.plans()
-        async let prayers = try? MemberAPI.prayers()
-        async let fcell = try? MemberAPI.featuredCell()
-        async let discs = try? MemberAPI.disciplers()
         async let fann = try? MemberAPI.featuredAnnouncement()
         async let anns = try? MemberAPI.myAnnouncements()
         async let summary = try? MemberAPI.cellSummary()
         async let cal = try? MemberAPI.calendar(from: Self.calFrom, to: Self.calTo)
         async let hev = try? MemberAPI.homeEvents()
+        async let myRsvps = try? MemberAPI.myRsvps()
         async let fev = try? MemberAPI.featuredEvent()
         async let radio = try? MemberAPI.radioNowPlaying()
         async let live = try? MemberAPI.fetchLiveNow()
+        async let methods = try? MemberAPI.givingMethods()
+        async let standing = try? MemberAPI.partnership()
+        async let gifts = try? MemberAPI.schedules()
 
+        let pathwayResult = await pathway
+        if quiet, case .failure = pathwayResult { return }
         self.letter = (await letter) ?? nil
-        self.pathway = await pathway
+        switch pathwayResult {
+        case .success(let p): self.pathway = p; failure = nil
+        case .failure(let e): self.pathway = nil; failure = e
+        }
+        // The journey is told only once the current level's trail has
+        // answered (final walk, M4's class; Android's journeyToTell): from
+        // the summary alone a member at the exam read "Continue" before "Exam
+        // ready" — the open exam is the trail's row — and a new summary beside
+        // the last load's trail could tell a step neither says. So it is
+        // derived once, below, from this load's pair; until then the pill and
+        // YOUR WEEK hold their loading shapes (§4), and a refresh keeps the
+        // last pair's journey on screen.
+        // The current level's trail, started now so it runs beside the rest
+        // of the dashboard rather than after it.
+        let currentLevel = self.pathway?.currentLevel
+        async let trail = Self.levelTrail(currentLevel)
         let achievements = await ach
         self.streak = achievements?.streak?.current ?? 0
-        self.unread = await unread ?? 0
+        // The inbox's count is the bells' one count (§7.2 #4) — landed with
+        // the ticket taken before the read, so a fresher one isn't undone.
+        if let n = await unread { InboxBadge.shared.land(n, ticket: unreadTicket) }
         if let g = await greet, !g.isEmpty { greetingLine = g }
-        self.nextAction = await next ?? nil
         self.nudges = await nudges ?? []
-        if let r = await rhythm { self.rhythm = r }
+        if let r = await rhythm { self.rhythm = r; rhythmLoaded = true }
         // Day sealed — only a WITNESSED completion counts (a count this session
         // below 3 rising to 3). All-done on the very first load stays quiet.
         if let prev = lastRhythmDone, prev < 3, self.rhythm.doneCount == 3 { daySealed = true }
@@ -129,27 +195,59 @@ final class HomeViewModel: ObservableObject {
 
         self.welcomeVideo = await video ?? nil
         self.prayerPosts = await posts ?? []
-        let allPlans = await plans ?? []
-        self.plans = allPlans
-        self.plan = allPlans.first { $0.enrolled } ?? allPlans.first
-        self.prayerEntries = await prayers ?? []
-        self.featuredCell = await fcell ?? nil
-        self.disciplers = await discs ?? []
+        if let p = await plans { self.plans = p; plansLoaded = true }
         self.featuredAnnouncement = await fann ?? nil
         self.announcements = await anns ?? []
-        self.cell = (await summary)?.cell
-        self.events = (await cal ?? []).sorted { $0.startAt < $1.startAt }
+        if let s = await summary { self.cell = s.cell; cellLoaded = true }
+        // Asked to be connected? Only worth asking while there's no cell.
+        if cellLoaded, self.cell == nil, let s = try? await MemberAPI.cellConnection(), !s.inCell {
+            self.cellAskedAt = s.request?.requestedAt
+        }
+        if let c = await cal { self.events = c.sorted { $0.startAt < $1.startAt }; eventsLoaded = true }
         // Rendered exactly as received — the server caps at 5 and orders
         // soonest-first; the client never caps, sorts, or filters.
         self.homeEvents = await hev ?? []
+        self.rsvps = await myRsvps
         self.onAir = Self.liveOnly((await radio) ?? nil)
         self.featuredEvent = (await fev) ?? nil
         self.liveStreams = await live ?? []
+        if let m = await methods { self.givingMethods = m }
+        self.partnership = await standing
+        self.schedules = await gifts
+        self.trail = await trail
+        self.journey = Journey.derive(self.pathway, trail: self.trail)
+        // Every read above has answered — loaded or not. From here a row that
+        // failed may say "Didn't load just now"; before it, nothing is said.
+        loadedOnce = true
 
-        if self.pathway == nil { error = "Couldn't load your dashboard." }
-        loading = false
+        if !quiet { loading = false }
 
         celebrateMilestones(achievements)
+    }
+
+    private var lastQuietRefresh = Date.distantPast
+    /// Home stayed as first loaded for the whole session (the walk's B5: the
+    /// cell read "6 members" for over an hour while the server said 5). It
+    /// now refreshes in place when the tab reappears, when its stack returns
+    /// to the root, and on foreground — within HomeRefresh's guards.
+    func refreshQuietly() async {
+        guard HomeRefresh.should(loading: loading, loaded: pathway != nil,
+                                 online: SyncCoordinator.devicePathOnline, last: lastQuietRefresh) else { return }
+        lastQuietRefresh = Date()
+        await load(quiet: true)
+    }
+
+    /// A call's answer or its failure — the dashboard keeps WHY the pathway
+    /// failed, so its strip can say what really happened.
+    private static func attempt<T>(_ op: () async throws -> T) async -> Result<T, Error> {
+        do { return .success(try await op()) } catch { return .failure(error) }
+    }
+
+    /// The module trail of the member's current level (nil when there is no
+    /// level yet, or the read failed — the journey then speaks from the summary).
+    private static func levelTrail(_ level: Int?) async -> [LevelModule]? {
+        guard let level else { return nil }
+        return try? await MemberAPI.levelModules(level)
     }
 
     // MARK: Celebrations — server-truth milestones only (mirrors Android).
@@ -218,11 +316,22 @@ final class HomeViewModel: ObservableObject {
         do { reactions = try await MemberAPI.setVerseReaction(emoji) }
         catch { reactions = previous }                   // server said no → restore
     }
+    /// "Saved" only on the server's word (§7.4 #2): the heart fills, with its
+    /// haptic, once the verse is kept; a failure is felt and leaves "Save".
     func saveVerse() async {
-        guard !verseSaved, let v = verse else { return }
-        verseSaved = true
-        do { try await MemberAPI.saveVerseQuick(reference: v.reference, version: v.version, text: v.text) }
-        catch { verseSaved = false }
+        guard !verseSaved, !verseSaving, let v = verse else { return }
+        verseSaving = true
+        verseSaveLine = nil
+        defer { verseSaving = false }
+        do {
+            try await MemberAPI.saveVerseQuick(reference: v.reference, version: v.version, text: v.text)
+            verseSaved = true
+            Haptics.success()
+        } catch {
+            // Felt AND said (§4): "Couldn't save that." + why; "Save" stays to retry.
+            Haptics.error()
+            verseSaveLine = NuruStateCopy.saveFailureLine(error)
+        }
     }
 
     // Welcome-video reaction toggle
@@ -310,18 +419,38 @@ private struct GrowTile { let label, sub: String; let icon: Lucide; let tint, fg
 struct HomeView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.scenePhase) private var scenePhase
+    /// False while another tab is shown: the tabs are kept alive behind one
+    /// another (RootView), so onAppear / onDisappear never fire for Home.
+    @Environment(\.screenVisible) private var screenVisible
     @StateObject private var vm = HomeViewModel()
+    /// Whether a discipler is paired (GET /growth/mentor) — the discipler row
+    /// shows only then (Cycle 4, B1).
+    @ObservedObject private var disciplers = DisciplerStore.shared
     // (RadioCenter is observed inside HomeOnAirCard / the RootView island pill —
     // observing it here re-rendered the whole feed on every playback tick.)
     @State private var path = NavigationPath()
     /// Featured-carousel position (auto-advances every 6s; swipes respected).
     @State private var featuredPageIndex = 0
+
+    /// Home is what the member sees (final walk M7): its tab, at its root,
+    /// the app active, nothing full-screen over it. The featured carousel
+    /// turns and the on-air and live polls run only then — they ran on
+    /// behind the other tabs and every page pushed over Home.
+    private var onScreen: Bool {
+        HomeMotion.onScreen(selected: screenVisible, atRoot: path.isEmpty, active: scenePhase == .active,
+                            covered: showServiceScanner || openLiveItem != nil || openedLetter != nil || showLetterArchive)
+    }
     @State private var playingVideo = false
     /// Poster frames cut from videos the server gave no thumbnail for.
     @StateObject private var posters = VideoPosterCache.shared
     @State private var posterTick: UInt8 = 0
+    /// The featured video's own shape, measured and remembered across
+    /// launches (owner, 2026-10-06: the featured video takes its own shape).
+    @StateObject private var shapes = VideoShapeStore.shared
+    /// Each featured video's thumbnail shape, once its picture has loaded.
+    @State private var thumbShapes: [String: CGFloat] = [:]
     @State private var prayPage = 0   // prayer-wall pager position (drives our gold dots)
-    @State private var disciplerPage = 0   // discipler pager position (same gold dots)
     @State private var videoReady = false   // welcome video finished buffering its embed
     /// The partner invitation. Whether it may be shown is decided entirely by
     /// the server; Home's only job is to ask once per appearance and present
@@ -348,6 +477,9 @@ struct HomeView: View {
     @ObservedObject private var broadcast = BroadcastCenter.shared
     @State private var showGoLiveSheet = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The phone's text size: at the accessibility sizes a few rows stack
+    /// rather than squeeze their words (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     // "Day sealed" — one soft gold radial sweep over the rhythm card when the
     // third discipline lands mid-session. Opacity-only, and Reduce Motion never
     // stages it (the haptic + caption still speak).
@@ -359,14 +491,18 @@ struct HomeView: View {
     @State private var feedStaged = false   // rows begin hidden, awaiting the rise
     @State private var feedRisen = false    // the staggered rise has run
 
-    // The five Grow tiles from the fresh Figma GrowGrid (exact tints/labels).
+    // Grow your faith — a 2×2 grid (the fresh Figma GrowGrid's tints and
+    // labels) and the discipler's row below it (§6.1, growing). The reading-
+    // plan tile left with Cycle 2: YOUR WEEK's Plans row and the Plans tab
+    // are where a plan lives. Android's order, tile for tile.
     private var growTiles: [GrowTile] {
         [
-            GrowTile(label: "Devotional", sub: "Today's devotional", icon: .sun, tint: 0xFFF4DA, fg: 0x9A7A2A, dest: GrowDestination.devotional),
-            GrowTile(label: "Reading plan", sub: "Continue your plan", icon: .bookMarked, tint: 0xEEF2FF, fg: 0x6366F1, dest: GrowDestination.readingPlans),
-            GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: 0xFEF3C7, fg: 0xB45309, dest: GrowDestination.memoryVerses),
-            GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: 0xF5E8FF, fg: 0xA855F7, dest: GrowDestination.gifts),
-            GrowTile(label: "My Prayer Room", sub: "Pray with the family", icon: .handHeart, tint: 0xFEE2E2, fg: 0xDC2626, dest: CommunityRoute.prayerWall),
+            // One tile look (§8.1 rules 1, 7): the walk's E17 found a
+            // pink-red Prayer Room and a purple Calling.
+            GrowTile(label: "Devotional", sub: "Today's devotional", icon: .sun, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: GrowDestination.devotional),
+            GrowTile(label: "Hide His Word", sub: "Memorize Scripture", icon: .quote, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: GrowDestination.memoryVerses),
+            GrowTile(label: "My Prayer Room", sub: "Pray with the family", icon: .handHeart, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: CommunityRoute.prayerWall),
+            GrowTile(label: "Your Calling", sub: "Discover your gifts", icon: .sparkles, tint: Nuru.tileTint, fg: Nuru.tileIcon, dest: GrowDestination.gifts),
         ]
     }
 
@@ -376,11 +512,9 @@ struct HomeView: View {
     // (deeply-generic) type is demangled ONE AT A TIME here — in a shallow stack —
     // as its AnyView box is built. `some View` groups and even AnyView-of-6 still
     // forced the runtime to decode several cards' types together and overflowed.
-    // Section order mirrors the fresh Figma HomeTab return block exactly (with the
-    // radio ON AIR hero pinned first whenever a broadcast is live):
-    // Radio ON AIR → LiveNow → Priority → continue hero → rhythm → video → verse → pray →
-    // plans/journal → this week → disciplers → announcement → continue level → Priority
-    // (repeat) → progress → Grow → Upcoming → encouragement → cohort → give.
+    // Section order is EXPERIENCE.md §6.1's (Cycle 2): the live and on-air
+    // banners (only while live) → the owner's opening → YOUR WEEK → the day →
+    // the family → growing → "Support God's work" only while the week asks.
     private var feedSections: [(id: String, view: AnyView)] {
         // TRUE first load only (refreshes keep the live content in place) —
         // shimmering placeholders instead of a blank scroll.
@@ -391,6 +525,16 @@ struct HomeView: View {
         // inserts at the top, every other row must keep its identity — offset
         // keys made SwiftUI tear down and rebuild every card below it.
         var s: [(id: String, view: AnyView)] = []
+        // YOUR WEEK's rows, read first: "What needs you today" (above them)
+        // never repeats one (§9.1 rule 3).
+        let week = weekRows
+        // A first day leads with the path's first step, not a side task
+        // (§9.1 rule 4): the reflection waits; a person waiting never does.
+        let firstDay = vm.journey?.isFirstDay == true
+        // The letter card above the rail is the letter's own place (final
+        // walk C1): its "waiting" nudge is never said again below it.
+        let needs = vm.nudges.filter { !HomeWeek.repeats($0, in: week, letterOnHome: vm.letter?.letterId)
+            && !(firstDay && $0.kind == "reflection_due") }
         // Nuru Live — the church-scope LIVE banner sits at the very TOP of the
         // whole feed, above even the load-error strip: a live broadcast is the
         // most urgent thing on the screen. Hidden entirely when nothing church-
@@ -398,19 +542,23 @@ struct HomeView: View {
         if let live = churchLiveStream {
             s.append(("livebanner", AnyView(liveBannerCard(live))))
         }
-        // The whole dashboard failed (offline / server down) — a quiet retry
-        // strip on top; the sections below degrade gracefully as usual.
-        if vm.error != nil && vm.pathway == nil {
-            s.append(("loaderror", AnyView(HomeLoadErrorCard { Task { await vm.load() } })))
+        // The whole dashboard failed — a quiet strip on top, saying what really
+        // happened (offline, the session ended, our server) in the one state
+        // language; the sections below degrade gracefully as usual.
+        if let f = vm.failure, vm.pathway == nil {
+            s.append(("loaderror", AnyView(NuruStateView(state: .failed(.failure(f)),
+                                                          retry: { Task { await vm.load() } }, compact: true))))
         }
-        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 0a · Radio ON AIR (pinned first, only while live)
-        // Owner's order (2026-08-25, stated exactly): verse for today → featured
-        // video → the Sunday Letter → reflection due → the liturgy. Everything
-        // else stays where it always was — the ONLY move relative to the
-        // original feed is the liturgy stepping BELOW the reflection strip.
-        s.append(("verse", AnyView(verseCard)))                                                    // 0 · Verse of the day (leads the feed)
-        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // 0a2 · Featured video (start here)
-        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // 0b · Live now
+        if let p = vm.onAir { s.append(("onair", AnyView(onAirCard(p)))) }                         // 1 · Radio ON AIR (only while live)
+        // 2 · Owner's order (2026-08-25, stated exactly): verse for today →
+        // featured video → the Sunday Letter → reflection due → the liturgy.
+        // Unchanged by Cycle 2 — the live-gathering card keeps its old slot
+        // after the video, and only while a service is on or about to start.
+        // Verse of the day (leads the feed) — once it loaded: a stand-in verse
+        // under "VERSE FOR TODAY" was not today's verse (§9.4).
+        if vm.verse != nil { s.append(("verse", AnyView(verseCard))) }
+        if let v = vm.welcomeVideo { s.append(("video", AnyView(welcomeVideoCard(v)))) }           // Featured video (start here)
+        if let live = liveNowInfo { s.append(("livenow", AnyView(liveNowCard(live)))) }              // Live now
         if let lt = vm.letter, lt.isUnread {
             s.append(("letter", AnyView(letterKnock(lt))))
         } else if let lt = vm.letter {
@@ -418,41 +566,48 @@ struct HomeView: View {
         } else {
             s.append(("letter", AnyView(letterArrivalCard)))
         }
-        // 1 · "What needs you today" — the server-ranked rail takes the priority
-        // slot. An empty (or failed) fetch falls back to the old single
-        // reflection strip so Home never loses its nudge; the repeat strip
-        // before Progress is gone either way (one place, one ask).
-        if !vm.nudges.isEmpty { s.append(("needsyou", AnyView(needsYouRail))) }
-        else if reflectionDue { s.append(("priority", AnyView(priorityStrip))) }
-        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
-        s.append(("echo", AnyView(HomeEchoCard())))                                               // 0e · Today's echo — the app remembers you (Wave 1)
-        if let a = vm.nextAction { s.append(("hero", AnyView(heroCard(a)))) }                     // 2
-        s.append(("rhythm", AnyView(rhythmCard)))                                                   // 2b · Today's rhythm (right under For-you-today)
-        s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
-        if let rp = resumePlan { s.append(("planresume", AnyView(planResumeBanner(rp)))) }              // 2c · Continue your plan (resume nudge)
-        if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }                // 5
-        s.append(("celebrations", AnyView(CelebrationsRail())))                                           // 5b · Celebrate the family (moments, Phase 4)
-        s.append(("minis", AnyView(minisRow)))                                                     // 6
-        // A card that shows a CELL opens that CELL (owner, 2026-08-26: tapping it
-        // opened an unrelated announcement — the card's own "this week" framing
-        // had been wired to the week's first announcement id).
-        if let c = vm.featuredCell {                                                    // 7
-            s.append(("cell", AnyView(
-                NavigationLink(value: AppRoute.cell) { featuredCellCard(c) }
-                    .buttonStyle(.pressableSubtle)
-            )))
+        // "What needs you today" — the server-ranked rail takes the priority
+        // slot, less any nudge a YOUR WEEK row already asks (§9.1 rule 3: the
+        // row keeps it). An empty (or failed) fetch falls back to the old
+        // single reflection strip so Home never loses its nudge (one place,
+        // one ask); a rail whose every nudge is a row's shows nothing.
+        // Held until the first load has answered: the rows it must not repeat
+        // aren't known before then (the exam a row is about to offer).
+        if vm.loadedOnce {
+            if !needs.isEmpty { s.append(("needsyou", AnyView(HomeNeedsYouRail(nudges: needs) { openNudge($0) }))) }
+            else if vm.nudges.isEmpty, reflectionDue, !firstDay { s.append(("priority", AnyView(priorityStrip))) }
         }
-        if !vm.disciplers.isEmpty { s.append(("disciplers", AnyView(disciplersCard))) }                 // 8
-        if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // 9 · carousel: portal-marked announcements + events
-        s.append(("continuelevel", AnyView(continueLevelCard)))                                            // 10
-        if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }                   // 13
+        s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
+        // 3 · YOUR WEEK — one row per pillar, each pointing to its home once.
+        // It replaced the "For you today" hero, the continue-level card, the
+        // reading-plan/journal minis, the plan banner, both cell cards and the
+        // upcoming list: each told one of these five stories again.
+        // Until its reads first answer, the card holds its shape (§4's loading
+        // state; final walk M4's class) — a row still loading never says
+        // "Didn't load just now", nor guesses its "none" form.
+        s.append(("week", vm.loadedOnce ? AnyView(HomeWeekCard(rows: week) { openWeek($0) })
+                                        : AnyView(HomeWeekSkeleton())))
+        // 4 · The day: today's rhythm, then today's echo.
+        if vm.rhythmLoaded { s.append(("rhythm", AnyView(rhythmCard))) }                          // Today's rhythm — once it is known
+        s.append(("echo", AnyView(HomeEchoCard())))                                               // Today's echo — the app remembers you (Wave 1)
+        s.append(("selah1", AnyView(SelahDivider())))                                               // — selah: a rest for the eye
+        // 5 · The family. (The disciplers carousel left with Cycle 2: the
+        // discipler's one door on Home is grow's "Your discipler" row.)
+        if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }
+        s.append(("celebrations", AnyView(CelebrationsRail())))                                           // Celebrate the family (moments, Phase 4)
+        if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // carousel: portal-marked announcements + events
+        if let fe = vm.featuredEvent, let next = fe.nextStart() {                                   // admin-featured event,
+            s.append(("event", AnyView(featuredGatheringCard(fe, next: next))))                     // only while it meets again (B6)
+        }
+        // 6 · Growing.
+        if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }
         s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
-        s.append(("grow", AnyView(growSection)))                                                  // 14
-        if let fe = vm.featuredEvent { s.append(("event", AnyView(featuredGatheringCard(fe)))) }   // 14b · admin-featured event
-        if !vm.homeEvents.isEmpty { s.append(("upcoming", AnyView(upcomingSection))) }                // 15 · curated rows; empty → whole section (header too) hides
-        s.append(("encourage", AnyView(oneReflectionBanner)))                                          // 16
-        s.append(("cohort", AnyView(cohortSection)))                                                // 17
-        s.append(("give", AnyView(giveBanner)))                                                   // 18
+        s.append(("grow", AnyView(growSection)))
+        // Its line is chosen from the day's facts — none guessed while they load.
+        if vm.loadedOnce { s.append(("encourage", AnyView(oneReflectionBanner))) }
+        // 7 · Support God's work — only while the week's giving row is "Give":
+        // a member already giving isn't asked twice.
+        if HomeWeek.asksToGive(week) { s.append(("give", AnyView(giveBanner))) }
         #if targetEnvironment(simulator) && DEBUG
         // Scripted visual verification: NURU_UITEST_TOP=<row id> hoists that row
         // to the top of the feed so a headless screenshot can behold it.
@@ -461,7 +616,13 @@ struct HomeView: View {
             s.insert(s.remove(at: idx), at: 0)
         }
         #endif
-        return s
+        // Dark cards never touch (owner, 2026-10-07): where a dark card would
+        // sit directly on another, or on a photograph's dark edge — the letter
+        // on the liturgy's photograph on a first day, "Live now" on the letter
+        // — the quiet Selah divider is set between them. Nothing moves.
+        return HomeQuietDivider.parted(s, id: { $0.id }) { upper, lower in
+            (id: HomeQuietDivider.dividerId(upper, lower), view: AnyView(SelahDivider()))
+        }
     }
 
     var body: some View {
@@ -469,6 +630,10 @@ struct HomeView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     header
+                    // A saved copy says so, under the header, for as long as
+                    // it shows (final walk M3) — never over the skeleton.
+                    NuruSavedCopyNotice(hasContent: vm.pathway != nil)
+                        .padding(.horizontal, Nuru.S.base).padding(.top, Nuru.S.base)
                     // Split into opaque `some View` groups. A single VStack with all
                     // ~18 sections compiles to one enormous parameter-pack TupleView
                     // whose mangled type name overflows the Swift metadata demangler
@@ -504,7 +669,12 @@ struct HomeView: View {
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace - 20)  // last row brings its own 20pt skirt
                 }
+                .scrollsToTopOnReselect(.home)   // a re-tap at the root returns to the top (B10)
             }
+            // Home's own cards see whether Home is what the member sees
+            // (final walk M7): their pulses stop behind another tab, a page
+            // pushed over Home, or a cover.
+            .environment(\.screenVisible, onScreen)
             .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -531,8 +701,12 @@ struct HomeView: View {
             }
             // Home root always shows the tab bar (plan screens hide it while inside).
             .onAppear { tabs.chromeHidden = false }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .nuruDestinations()
         }
+        // A re-tap on Home returns to Home's top (§7.4 #17 — a stale "not
+        // found" page stayed in this stack).
+        .popsToRoot(on: .home, path: $path)
         // Tapping one of our iOS notifications lands on the in-app inbox.
         .onReceive(NotificationCenter.default.publisher(for: .nuruOpenNotifications)) { _ in
             tabs.selected = .home
@@ -583,14 +757,10 @@ struct HomeView: View {
         .sheet(isPresented: $showLetterArchive) { LetterArchiveView() }
         .sheet(item: $openedLetter) { lt in
             LetterView(letter: lt) {
-                // Read on the server — clear the knock locally too. Every v2
-                // field carries over unchanged; only readAt flips.
+                // Read on the server — clear the knock locally too. Every
+                // field carries over unchanged (v3's too); only readAt flips.
                 if let cur = vm.letter, cur.letterId == lt.letterId {
-                    vm.letter = PastoralLetter(letterId: cur.letterId, weekOf: cur.weekOf, title: cur.title,
-                                               salutation: cur.salutation, theme: cur.theme, imageKey: cur.imageKey,
-                                               body: cur.body, scriptureRef: cur.scriptureRef, highlights: cur.highlights,
-                                               nextStep: cur.nextStep, shareLine: cur.shareLine, createdAt: cur.createdAt,
-                                               readAt: ISO8601DateFormatter().string(from: Date()))
+                    vm.letter = cur.markedRead(at: ISO8601DateFormatter().string(from: Date()))
                 }
             }
         }
@@ -628,10 +798,25 @@ struct HomeView: View {
             liveDiscovery.ingest(vm.liveStreams)
             deepLinkForScreenshots()
         }
-        // Radio poll — re-check now-playing every 45s while Home is visible so the
-        // ON AIR card appears/disappears as broadcasts start and end. The `.task`
-        // is cancelled automatically when Home leaves the screen.
-        .task {
+        // In place, never a skeleton (the walk's B5): when Home's tab comes
+        // back, when its stack returns to the root (a plan day finished, an
+        // RSVP, a passed exam), and on foreground while Home is shown.
+        .onChange(of: tabs.selected) { _, t in
+            if t == .home { Task { await vm.refreshQuietly() } }
+        }
+        .onChange(of: path.isEmpty) { _, atRoot in
+            if atRoot { Task { await vm.refreshQuietly() } }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active, tabs.selected == .home { Task { await vm.refreshQuietly() } }
+        }
+        // Radio poll — re-check now-playing every 45s while Home is on screen
+        // so the ON AIR card appears/disappears as broadcasts start and end.
+        // Keyed by `onScreen` (final walk M7): the tabs are kept alive behind
+        // one another, so a plain `.task` never ended when another tab, or a
+        // page pushed over Home, covered it.
+        .task(id: onScreen) {
+            guard onScreen else { return }
             while !Task.isCancelled {
                 await vm.refreshOnAir()
                 try? await Task.sleep(nanoseconds: 45_000_000_000)
@@ -646,7 +831,8 @@ struct HomeView: View {
         // wait for a stream to already be known). Every result is folded into
         // the shared LiveDiscoveryCenter, which decides whether to pop the
         // mini-window (a stream_id this session hasn't surfaced yet).
-        .task {
+        .task(id: onScreen) {
+            guard onScreen else { return }
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled else { return }
@@ -687,6 +873,12 @@ struct HomeView: View {
             ]
             path.append(PlanSegmentRef(planTitle: "Rooted: 10 Days in the Psalms", dayNumber: 2, segments: segs, index: 0))
         case "level": path.append(PathwayRoute.level(1))
+        // The exam screen as the server answers it — its refusal, its way out.
+        case "exam": path.append(PathwayRoute.exam(1))
+        // One announcement by id, as the server answers it — e.g. a removed
+        // one's state card (§7.4 #12): NURU_SCREEN=announcement:<uuid>.
+        case let s? where s.hasPrefix("announcement:"):
+            path.append(AppRoute.announcement(String(s.dropFirst("announcement:".count))))
         default: break
         }
         #endif
@@ -702,10 +894,12 @@ struct HomeView: View {
                 // The kicker carries a tiny sky: sunrise, sun, sunset or moon
                 // matching the hour — the same clock that tints the gradient.
                 HStack(spacing: 6) {
-                    Image(systemName: skyGlyph).font(.system(size: 11, weight: .semibold))
+                    Image(systemName: skyGlyph).font(.symbol(11, weight: .semibold))
                         .foregroundStyle(Nuru.gold)
-                    Text(todayKicker()).font(.inter(11, .semibold)).kerning(2.42).foregroundStyle(Color(hex: 0x9A7A2A))
-                        .lineLimit(1).minimumScaleFactor(0.85)
+                    // The kicker role (§8.1 rule 3) — at the old 2.4 tracking
+                    // Sunday's "THE LORD'S DAY" kicker was cut short.
+                    Text(todayKicker()).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 // Church check-in. First in the row because it is the most
@@ -716,29 +910,17 @@ struct HomeView: View {
                     Haptics.tap()
                     showServiceScanner = true
                 } label: {
-                    Icon(.qrCode, size: 18, color: Color(hex: 0xA8861C))
-                        .frame(width: 40, height: 40)
-                        .background(Color(hex: 0xFFF4DA), in: Circle())
-                        .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+                    // The bell's look and size beside it (§8.1 rule 7).
+                    Icon(.qrCode, size: 18, color: Nuru.navy)
+                        .frame(width: 44, height: 44)
+                        .background(Nuru.white, in: Circle())
+                        .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .accessibilityLabel("Scan to check in")
                 .padding(.trailing, 8)
-                NavigationLink(value: AppRoute.notifications) {
-                    ZStack(alignment: .topTrailing) {
-                        Icon(.bell, size: 18, color: Color(hex: 0xA8861C))
-                            .frame(width: 40, height: 40)
-                            .background(Color(hex: 0xFFF4DA), in: Circle())
-                            .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
-                        if vm.unread > 0 {
-                            HomeUnreadBadge(count: vm.unread).offset(x: 5, y: -5)
-                        }
-                    }
-                }
-                .buttonStyle(.pressable)
-                .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
                 // Radio used to sit here. It moved out so the resting header is
-                // three buttons (scan · bell · ring) rather than five — it is
+                // three things (scan · ring · bell) rather than five — it is
                 // still reachable from the On Air card below, the Community hub
                 // and the radio deep link.
                 // Nuru Live header entry (2026-07-31 viewer redesign) — same
@@ -759,12 +941,12 @@ struct HomeView: View {
                             Circle().stroke(Color(hex: 0xDC2626).opacity(0.35), lineWidth: 1)
                             HomeLiveHeaderRing()
                             Image(systemName: "waveform")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(.symbol(13, weight: .semibold))
                                 .foregroundStyle(Color(hex: 0xDC2626))
                         }
                         .frame(width: 40, height: 40)
                     }
-                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .buttonStyle(.pressable).padding(.trailing, 8)
                     .accessibilityLabel("Live now — \(live.title)")
                 }
                 // Nuru Live (L3) — gold "Go Live" affordance, visible ONLY when
@@ -777,19 +959,34 @@ struct HomeView: View {
                         // it rather than minting a second stream on top.
                         if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
                     } label: {
-                        Image(systemName: "video.fill").font(.system(size: 16))
+                        Image(systemName: "video.fill").font(.symbol(16))
                             .foregroundStyle(Nuru.navy).frame(width: 40, height: 40)
                             .background(Nuru.gold, in: Circle())
                             .overlay(Circle().stroke(Nuru.gold.opacity(0.5), lineWidth: 1))
                     }
-                    .buttonStyle(.pressable).padding(.leading, 8)
+                    .buttonStyle(.pressable).padding(.trailing, 8)
                     .accessibilityLabel("Go live")
                 }
-                progressRing.padding(.leading, 8)
+                // The score once there is one (the Android walk's A3: no
+                // fact before it loads; §7.4 #9: no "0" ring) — immediately
+                // left of the bell, 12 pt clear of it for the trend badge.
+                if HomeHeaderWords.showsScore(vm.scores?.overall.score) {
+                    progressRing.padding(.trailing, 12)
+                }
+                // The one bell (§7.2 #4), at the far right as on every tab
+                // (§8.1 rule 2; the Cycle 4 walk saw the ring, Live and "Go
+                // live" right of it): the inbox, and a gold dot only while
+                // something in it is unread (it used to carry a count here).
+                NuruBell()
             }
-            Text("\(greeting), \(firstName).")
+            Text(HomeHeaderWords.greeting(greeting, fullName: auth.profile?.fullName))
                 .font(.fraunces(22, .semibold)).kerning(-0.22).foregroundStyle(Nuru.navy)
-                .lineLimit(1).minimumScaleFactor(0.8)   // long first names shrink, never wrap
+                // Long first names shrink, never wrap — at the everyday sizes;
+                // at the largest it wraps whole ("Good mornin…", §9.6 #4).
+                .nuruLineLimit(1).minimumScaleFactor(0.8)
+                .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords(HomeHeaderWords.greeting(greeting, fullName: auth.profile?.fullName),
+                                font: .fraunces(22, .semibold), kerning: -0.22)
                 .padding(.top, 10)
                 .gentleEntrance()
             // Nuru's daily word — a blessing written for THIS member (grounded in
@@ -797,25 +994,18 @@ struct HomeView: View {
             // more than flat gray: a hanging gold quote and a settled serif voice.
             HomePersonalWord(text: vm.greetingLine)
                 .padding(.top, 6)
-            if let a = active {
-                // The journey jewel — level · modules · streak, ringed in a soft
-                // gold gradient with a lit flame when the streak is alive.
+            if let j = vm.journey {
+                // The journey jewel — the level · where the member stands on it
+                // (the journey's pill: "3 of 10 modules", "Exam ready"…) · the
+                // streak while it is alive, ringed in a soft gold gradient. No
+                // "Begin today" beside a finished level: the pill says the truth.
                 HStack(spacing: 6) {
-                    Text("Level \(a.levelNumber)").font(.inter(12, .bold)).foregroundStyle(Nuru.navy)
+                    Text("Level \(j.levelNumber)").font(.inter(12, .bold)).foregroundStyle(Nuru.navy)
                     Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
-                    Text("\(a.completedModules) of \(a.totalModules) modules")
+                    Text(j.pill)
                         .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    Circle().fill(Nuru.gold.opacity(0.6)).frame(width: 3, height: 3)
-                    if vm.streak > 0 {
-                        HStack(spacing: 3) {
-                            Icon(.flame, size: 11, color: Color(hex: 0xDC6B26))
-                            Text("\(vm.streak)-day").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB4530A))
-                                .contentTransition(.numericText())
-                                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: vm.streak)
-                        }
-                    } else {
-                        Text("Begin today").font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    }
+                    // (The streak is named once on Home — on the rhythm card,
+                    // §9.2 #3; it was "🔥 3-day" here too.)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .background(Color.white, in: Capsule())
@@ -824,6 +1014,10 @@ struct HomeView: View {
                                    startPoint: .leading, endPoint: .trailing), lineWidth: 1))
                 .shadow(color: Nuru.gold.opacity(0.18), radius: 5, y: 2)
                 .padding(.top, 10)
+            } else if !vm.loadedOnce {
+                // The pill's loading shape (§4) while the journey's reads are
+                // in flight — never a stage guessed from the summary alone.
+                HomePillSkeleton().padding(.top, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -849,11 +1043,15 @@ struct HomeView: View {
         .shadow(color: Color(hex: 0x0A2540).opacity(0.07), radius: 10, y: 5)
     }
 
-    /// The sky in the kicker — mirrors headerPalette's hour bands.
+    /// The sky in the kicker — the liturgy card's part of the day, on the
+    /// church's clock (§9.3 rule 3), as the greeting and the header's light.
     private var skyGlyph: String {
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 5 ? "moon.stars.fill" : h < 9 ? "sunrise.fill" : h < 16 ? "sun.max.fill"
-             : h < 19 ? "sunset.fill" : "moon.stars.fill"
+        switch ChurchClock.part() {
+        case .morning: return "sunrise.fill"
+        case .midday: return "sun.max.fill"
+        case .evening: return "sunset.fill"
+        case .night: return "moon.stars.fill"
+        }
     }
 
     /// The member's overall GROWTH score (0–100) — the weighted average of the
@@ -862,37 +1060,51 @@ struct HomeView: View {
     /// This-28-days vs previous-28-days movement, for the ▲/▼ badge.
     private var growthTrend: ScoreTrend? { vm.scores?.trend }
 
+    /// The header ring's side: 42 pt at the everyday size, growing with the
+    /// in-app text size so its figure and badge never meet.
+    static var ringSide: CGFloat { 42 * Nuru.textScale }
+
     // MiniRing (Figma) — 42px, growth ring, with a ▲/▼ 28-day trend badge.
     // The arc sweeps in once on appear and re-tracks smoothly as data lands.
     private var progressRing: some View {
         ZStack {
-            Circle().fill(Color(hex: 0xDCFCE7).opacity(0.6))
-            Circle().stroke(Color(hex: 0x16A34A).opacity(0.15), lineWidth: 3)
+            // A score is progress, and progress is gold (§8.1 rule 1).
+            Circle().fill(Color(hex: Nuru.tileTint).opacity(0.8))
+            Circle().stroke(Nuru.gold.opacity(0.18), lineWidth: 3)
             HomeRingTrim(
                 pct: CGFloat(growthScore) / 100,
-                style: AnyShapeStyle(LinearGradient(colors: [Color(hex: 0x16A34A), Color(hex: 0x4ADE80)],
+                style: AnyShapeStyle(LinearGradient(colors: [Nuru.goldLo, Nuru.goldHi],
                                                     startPoint: .top, endPoint: .bottom)),
                 lineWidth: 3)
-            Text("\(growthScore)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x166534))
+            // A score out of 100 (the growth score), not a percent of anything.
+            // A ring's figure is Fraunces, as every ring's (both apps).
+            Text("\(growthScore)").font(.fraunces(13, .semibold)).foregroundStyle(Nuru.goldChipText)
                 .contentTransition(.numericText())
                 .animation(.spring(response: 0.4, dampingFraction: 0.8), value: growthScore)
         }
-        .frame(width: 42, height: 42)
+        // The ring grows with the member's own text size, as its figure and
+        // badge do (final walk C3: at 1.3 the "↑26" badge covered the "26").
+        .frame(width: Self.ringSide, height: Self.ringSide)
         .overlay(alignment: .bottomTrailing) {
             if let t = growthTrend, t.delta != 0 { trendBadge(t).offset(x: 5, y: 4) }
         }
-        .accessibilityLabel("Growth score \(growthScore) percent")
+        // The figure and its badge keep the everyday size inside the ring
+        // (§9.6 #4 — "↑2(" at the largest size).
+        .nuruFixedFigure()
+        .accessibilityLabel("Growth score \(growthScore) out of 100")
     }
 
     /// A tiny ▲/▼ badge — points earned or lost vs the previous 28 days.
     private func trendBadge(_ t: ScoreTrend) -> some View {
         HStack(spacing: 0.5) {
-            Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.system(size: 7, weight: .black))
-            Text("\(abs(t.delta))").font(.inter(8, .bold)).contentTransition(.numericText())
+            Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.symbol(7, weight: .black))
+            Text("\(abs(t.delta))").font(.inter(11, .bold)).contentTransition(.numericText())
         }
-        .foregroundStyle(.white)
+        // A score's movement is not a state (§8.1 rule 1): one quiet colour,
+        // never "on track" green or "due" amber for a rise or a fall.
+        .foregroundStyle(Nuru.goldChipText)
         .padding(.horizontal, 3.5).padding(.vertical, 1.5)
-        .background(t.isDown ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A), in: Capsule())
+        .background(Nuru.goldChipBg, in: Capsule())
         .overlay(Capsule().stroke(Color.white, lineWidth: 1))
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: t.delta)
     }
@@ -904,6 +1116,12 @@ struct HomeView: View {
     /// real event detail and never shows invented viewer counts.
     private var liveNowInfo: (occ: CalendarOccurrence, startsInMin: Int?)? {
         let now = Date()
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted visual verification: NURU_UITEST_LIVENOW=1 shows the next
+        // service as live now, so a headless screenshot sees "Live now" on Home.
+        if ProcessInfo.processInfo.environment["NURU_UITEST_LIVENOW"] == "1",
+           let occ = vm.events.first(where: { isWorshipish($0) }) { return (occ, nil) }
+        #endif
         for occ in vm.events {
             guard isWorshipish(occ), let start = parseISO(occ.startAt) else { continue }
             let end = parseISO(occ.endAt) ?? start.addingTimeInterval(2 * 3600)
@@ -933,10 +1151,10 @@ struct HomeView: View {
                         .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
-                    Icon(.mail, size: 19, color: Color(hex: 0x1E2A1F))
+                    Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
+                    Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
                         .foregroundStyle(Color(hex: 0xE8CA6C))
                     Text("A letter was written for you").font(.fraunces(16, .semibold)).foregroundStyle(.white)
                     if let ref = lt.scriptureRef {
@@ -961,35 +1179,18 @@ struct HomeView: View {
         .buttonStyle(.pressableSubtle)
     }
 
-    /// 0c (read) — the SAME letter once it's no longer new: a quiet row, not
+    /// 0c (read) — the same letter once it's no longer new: a quiet card, not
     /// a knock, so a member can always find their way back to it (and the
     /// archive one tap further) without Home manufacturing false urgency for
-    /// something they've already read.
+    /// something they've already read. Navy, as every state of the letter is
+    /// (owner, 2026-10-07: colour option A): its own title, its Sunday and
+    /// "Read again".
     private func letterReadRow(_ lt: PastoralLetter) -> some View {
         Button {
             Haptics.tap()
             openedLetter = lt
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.85))
-                        .frame(width: 38, height: 38)
-                    Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
-                        .foregroundStyle(Color(hex: 0xA8861C))
-                    // Ink, not white (owner, 2026-08-24): this quiet row sits
-                    // on the bright page — white type simply vanished into it.
-                    Text(lt.title).font(.fraunces(14, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
-                }
-                Spacer(minLength: 0)
-                Icon(.chevronRight, size: 14, color: Color(hex: 0x8A97AA))
-            }
-            .padding(13)
-            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Nuru.border, lineWidth: 1))
+            HomeLetterQuietCard(title: lt.title, line: HomeLetterWords.readLine(weekOf: lt.weekOf))
         }
         .buttonStyle(.pressableSubtle)
     }
@@ -1006,35 +1207,11 @@ struct HomeView: View {
             Haptics.tap()
             showLetterArchive = true
         } label: {
-            HStack(spacing: 12) {
-                ZStack {
-                    Circle()
-                        .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 44, height: 44)
-                    Icon(.mail, size: 18, color: .white)
-                }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("THE SUNDAY LETTER").font(.inter(9, .bold)).kerning(1.6)
-                        .foregroundStyle(Color(hex: 0xE8CA6C))
-                    Text("Your letter arrives Sunday evening").font(.fraunces(15, .semibold)).foregroundStyle(.white)
-                    Text("Written for your week")
-                        .font(.inter(11)).foregroundStyle(Color(hex: 0xC7D0DC))
-                }
-                Spacer(minLength: 8)
-                Text(Self.sundayLetterCountdown())
-                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x0A1628))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color(hex: 0xC9A227), in: Capsule())
-            }
-            .padding(14)
-            .background(
-                LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                in: RoundedRectangle(cornerRadius: 18, style: .continuous)
-            )
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1))
+            // The read card's quiet navy, with its own words (owner,
+            // 2026-10-07: colour option A); the countdown joins its line — a
+            // fixed gold badge cut "In 4 days" at the largest text size.
+            HomeLetterQuietCard(title: "Your letter arrives Sunday evening",
+                                line: HomeLetterWords.arrivalLine(countdown: Self.sundayLetterCountdown()))
         }
         .buttonStyle(.pressableSubtle)
         .accessibilityHint("Opens your letters.")
@@ -1083,7 +1260,7 @@ struct HomeView: View {
         // kind='reflection'). It has nothing to do with the next module, so
         // the old `nextAction != nil` guard was noise — but never show the
         // strip before the rhythm has actually loaded.
-        !vm.loading && !vm.rhythm.reflection
+        !vm.loading && vm.rhythmLoaded && !vm.rhythm.reflection
     }
 
     private var priorityStrip: some View {
@@ -1102,10 +1279,6 @@ struct HomeView: View {
     }
 
     // MARK: 1 — "What needs you today" (server-ranked nudges; replaces the strip)
-
-    private var needsYouRail: some View {
-        HomeNeedsYouRail(nudges: vm.nudges) { openNudge($0) }
-    }
 
     /// Routes a nudge to the surface that clears it. Content opens INSIDE the
     /// tab that owns it (the TabRouter contract): Pathway for a quiz or a level
@@ -1202,25 +1375,39 @@ struct HomeView: View {
             .onDisappear { if tabs.onAirBarVisible { tabs.onAirBarVisible = false } }
     }
 
-    // MARK: 2 — Next-action hero ("For you today" — real pathway numbers)
+    // MARK: YOUR WEEK (EXPERIENCE.md §6.1) — one row per pillar
 
-    private func heroCard(_ a: NextAction) -> some View {
-        let done = active?.completedModules ?? 0
-        let total = active?.totalModules ?? 0
-        let pct = total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
-        return HomeResumeHero(
-            title: a.title,
-            meta: total > 0 ? "Level \(active?.levelNumber ?? 1) · \(done) of \(total) modules" : a.body,
-            pct: pct,
-            note: a.body,
-            ctaLabel: a.ctaLabel
-        ) {
-            // "For you today" continues the pathway — land on the Pathway tab.
-            if a.route == "module", let m = a.params?.moduleId {
-                tabs.openPathway(.module(m))
-            } else if let lvl = active?.levelNumber {
-                tabs.openPathway(.level(lvl))
-            }
+    /// The five rows from what Home already loaded; HomeWeek decides the
+    /// words (and each row's "none" form when its data didn't come).
+    private var weekRows: [HomeWeekRow] {
+        HomeWeek.rows(journey: vm.journey, enrolledLevel: auth.me?.enrollment?.currentLevel,
+                      plans: vm.plansLoaded ? vm.plans : nil,
+                      calendar: vm.eventsLoaded ? vm.events : nil, homeEvents: vm.homeEvents, rsvps: vm.rsvps,
+                      partnership: vm.partnership, schedules: vm.schedules,
+                      railsLine: GivingMethods.homeGiveLine(vm.givingMethods), cell: vm.cell,
+                      cellLoaded: vm.cellLoaded, cellAskedAt: vm.cellAskedAt,
+                      planSealedHere: PlanDayLog.sealedToday())
+    }
+
+    /// A row lands where its pillar lives (the TabRouter contract): the
+    /// journey's step inside Pathway, the plan's day inside Plans, the
+    /// gathering inside Events, the pledge or the gift on Give, the cell page
+    /// here, Community on You.
+    private func openWeek(_ row: HomeWeekRow) {
+        switch row.destination {
+        case .journey(let d):
+            if let d { tabs.openPathway(d.route) } else { tabs.selected = .pathway }
+        case .planDay(let p): tabs.openPlans(.planDay(p))
+        case .plans: tabs.openPlans(.catalogue)
+        case .event(let occ): tabs.openEvent(occ)
+        case .events: tabs.openEvents()
+        case .pledge(let id): tabs.openPledge(id)
+        case .schedule(let id): tabs.openGive(link: .schedule(scheduleId: id))
+        case .partners: tabs.openPartners()
+        case .give: tabs.openGive()
+        case .cell: path.append(AppRoute.cell)
+        case .cellConnect: path.append(AppRoute.cellConnect)
+        case .community: tabs.openYou(.chat)
         }
     }
 
@@ -1229,23 +1416,44 @@ struct HomeView: View {
     private func welcomeVideoCard(_ v: WelcomeVideo) -> some View {
         let love = v.loveCount ?? (v.reactions?.first { $0.emoji == "❤️" }?.count ?? 0)
         let liked = v.liked ?? false
+        let shape = videoShape(v)
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: Nuru.S.sm) {
-                BrandMark(size: 28)
-                Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                Icon(.badgeCheck, size: 14, color: Nuru.gold)
-                Spacer(minLength: 0)
-                Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
+            Group {
+                if typeSize.isAccessibilitySize {
+                    // The kicker on a line of its own at the largest sizes:
+                    // beside it "Nuru Pathway" broke into "Pathwa / y" (§9.6 #4).
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
+                        HStack(spacing: Nuru.S.sm) {
+                            BrandMark(size: 28)
+                            Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .nuruWholeWords("Nuru Pathway", font: .inter(13, .semibold))
+                            Icon(.badgeCheck, size: 14, color: Nuru.gold)
+                        }
+                    }
+                } else {
+                    HStack(spacing: Nuru.S.sm) {
+                        BrandMark(size: 28)
+                        Text("Nuru Pathway").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        Icon(.badgeCheck, size: 14, color: Nuru.gold)
+                        Spacer(minLength: 0)
+                        Text("FEATURED").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.metaGray)
+                    }
+                }
             }
             .padding(Nuru.S.base)
 
-            // Plays inline, pinned to the card's inset 16:9 box — never opens Safari.
+            // Plays inline — never opens Safari — in a frame of the video's
+            // own shape, across the card's content width: a portrait video
+            // gets a tall frame, a landscape one a wide frame, and the picture
+            // fills it, so the player draws no bars (owner, 2026-10-06).
             Group {
                 if playingVideo {
-                    InlineVideoPlayer(video: v, onReady: {
+                    InlineVideoPlayer(video: v, fill: VideoShape.learnsShape(source: v.videoSource), onReady: {
                         withAnimation(.easeOut(duration: 0.25)) { videoReady = true }
                     })
-                        .aspectRatio(16.0/9.0, contentMode: .fit)
+                        .aspectRatio(shape, contentMode: .fit)
                         .frame(maxWidth: .infinity)
                         .background(Color.black)
                         // Buffering cue INSIDE the card — the black box never sits silent.
@@ -1260,12 +1468,21 @@ struct HomeView: View {
                             }
                         }
                 } else {
-                    Button { Haptics.tap(); playingVideo = true } label: { videoThumb(v) }
+                    Button { Haptics.tap(); playingVideo = true } label: { videoThumb(v, shape: shape) }
                         .buttonStyle(.pressableSubtle)
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .padding(.horizontal, Nuru.S.base)
+            .animation(.easeOut(duration: 0.25), value: shape)
+            // The video's own size, read from its file once a session, and
+            // remembered so the next first paint is already right.
+            .task(id: v.mediaAssetId) { await learnVideoShape(v) }
+            #if targetEnvironment(simulator) && DEBUG
+            // Scripted visual verification: NURU_UITEST_PLAY=1 starts the
+            // video, so a headless screenshot sees it play in its frame.
+            .onAppear { if ProcessInfo.processInfo.environment["NURU_UITEST_PLAY"] == "1" { playingVideo = true } }
+            #endif
 
             VStack(alignment: .leading, spacing: 0) {
                 // Caption + fallback sub-line, never the same words twice: when the
@@ -1297,7 +1514,7 @@ struct HomeView: View {
                 HStack(spacing: 6) {
                     Button { Haptics.love(); Task { await vm.toggleVideoReaction("❤️") } } label: {
                         HStack(spacing: 5) {
-                            Text("❤️").font(.system(size: 15))
+                            Text("❤️").font(.emoji(15))
                             Text("\(love)").font(.inter(11, .bold)).foregroundStyle(liked ? Nuru.danger : Nuru.ink600)
                                 .contentTransition(.numericText())
                         }
@@ -1306,12 +1523,12 @@ struct HomeView: View {
                         .overlay(Capsule().stroke(liked ? Nuru.danger.opacity(0.35) : Nuru.border, lineWidth: 1))
                         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: love)
                     }.buttonStyle(.pressable)
-                    ForEach(videoReactionEmojis, id: \.self) { e in
-                        let count = v.reactions?.first { $0.emoji == e }?.count ?? 0
-                        let mine = v.reactions?.first { $0.emoji == e }?.mine ?? false
-                        Button { Haptics.love(); Task { await vm.toggleVideoReaction(e) } } label: {
+                    ForEach(videoReactionEmojis, id: \.self) { emoji in
+                        let count = v.reactions?.first { $0.emoji == emoji }?.count ?? 0
+                        let mine = v.reactions?.first { $0.emoji == emoji }?.mine ?? false
+                        Button { Haptics.love(); Task { await vm.toggleVideoReaction(emoji) } } label: {
                             HStack(spacing: 4) {
-                                Text(e).font(.system(size: 15))
+                                Text(emoji).font(.emoji(15))
                                 if count > 0 { Text("\(count)").font(.inter(11, .bold)).foregroundStyle(Nuru.ink600) }
                             }
                             .frame(minWidth: 34, minHeight: 34)
@@ -1323,7 +1540,7 @@ struct HomeView: View {
                     Spacer(minLength: 0)
                     Button { Haptics.tap(); sharePayload = SharePayload(text: videoShareText(v)) } label: {
                         HStack(spacing: 5) {
-                            Icon(.share2, size: 13, color: Nuru.ink600)
+                            Icon(.share2, size: 14, color: Nuru.ink600)
                             Text("Share").font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
                         }
                         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -1335,13 +1552,12 @@ struct HomeView: View {
             }
             .padding(Nuru.S.base)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(hex: 0xEEF0F3), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
+        // The standard white card — a hairline, the one soft shadow (owner,
+        // 2026-10-07: colour option A). Its #EEF0F3 fill was off the palette.
+        .cardSurface()
     }
 
-    private func videoThumb(_ v: WelcomeVideo) -> some View {
+    private func videoThumb(_ v: WelcomeVideo, shape: CGFloat) -> some View {
         ZStack {
             Rectangle().fill(Color(hex: 0xD6DADE))
             // No server thumbnail (uploaded videos carry none — no ffmpeg on the
@@ -1359,6 +1575,8 @@ struct HomeView: View {
                     .task(id: play) {
                         await posters.load(play)
                         withAnimation(.easeOut(duration: 0.25)) { posterTick &+= 1 }
+                        // The poster is the thumbnail here: its pixel size is a shape.
+                        noteThumbnail(posters.poster(for: play)?.size, for: v)
                     }
             }
             if let s = v.thumbnailUrl, let u = URL(string: s) {
@@ -1368,7 +1586,11 @@ struct HomeView: View {
                 Color.clear
                     .overlay {
                         CachedAsyncImage(url: u) { phase in
-                            if let img = phase.image { img.resizable().scaledToFill().opacity(0.95) }
+                            if let img = phase.image {
+                                img.resizable().scaledToFill().opacity(0.95)
+                                    // Its pixel size, once loaded, is a shape.
+                                    .onAppear { noteThumbnail(NuruImageCache.shared.image(for: u)?.size, for: v) }
+                            }
                             else { Rectangle().fill(Color(hex: 0xD6DADE)) }
                         }
                     }
@@ -1388,7 +1610,7 @@ struct HomeView: View {
                     Spacer()
                     HStack {
                         Spacer()
-                        Text(durationLabel(d)).font(.inter(10, .semibold)).foregroundStyle(.white)
+                        Text(durationLabel(d)).font(.inter(11, .semibold)).foregroundStyle(.white)
                             .padding(.horizontal, 6).padding(.vertical, 3)
                             .background(Color(hex: 0x0F141E).opacity(0.7), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                             .padding(8)
@@ -1396,9 +1618,29 @@ struct HomeView: View {
                 }
             }
         }
-        .aspectRatio(16.0/9.0, contentMode: .fill)
+        // The video's own shape (owner, 2026-10-06), not a fixed 16:9.
+        .aspectRatio(shape, contentMode: .fit)
         .frame(maxWidth: .infinity)
         .clipped()
+    }
+
+    /// The featured video's frame, width ÷ height (owner, 2026-10-06: the
+    /// featured video takes its own shape). See VideoShape for the order.
+    private func videoShape(_ v: WelcomeVideo) -> CGFloat {
+        guard VideoShape.learnsShape(source: v.videoSource) else { return VideoShape.standard }
+        return VideoShape.resolve(video: shapes.ratio(for: v.mediaAssetId), thumbnail: thumbShapes[v.mediaAssetId])
+    }
+
+    /// A thumbnail's picture has loaded: its pixel size is the next best shape.
+    private func noteThumbnail(_ size: CGSize?, for v: WelcomeVideo) {
+        guard let size, let r = VideoShape.ratio(size), thumbShapes[v.mediaAssetId] != r else { return }
+        thumbShapes[v.mediaAssetId] = r
+    }
+
+    /// Read the video's own size (its track through its turn) and remember it.
+    private func learnVideoShape(_ v: WelcomeVideo) async {
+        guard VideoShape.learnsShape(source: v.videoSource), let play = v.playUrl else { return }
+        await shapes.measure(play, id: v.mediaAssetId)
     }
 
     // MARK: 4 — Verse for today
@@ -1417,11 +1659,11 @@ struct HomeView: View {
             } else {
                 // No art (offline first paint / older backend): the classic cream reading.
                 HStack(spacing: 6) {
-                    Icon(.bookOpen, size: 13, color: Nuru.goldChipText)
+                    Icon(.bookOpen, size: 14, color: Nuru.goldChipText)
                     Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
                     Text((vm.verse?.version ?? "WEB").uppercased())
-                        .font(.inter(10, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
+                        .font(.inter(11, .bold)).kerning(1).foregroundStyle(HomeFig.navy)
                         .padding(.horizontal, 10).padding(.vertical, 4)
                         .background(Nuru.white, in: Capsule())
                         .overlay(Capsule().stroke(Nuru.gold.opacity(0.33), lineWidth: 1))
@@ -1450,8 +1692,8 @@ struct HomeView: View {
                 // season ribbon when the server provides one.
                 VStack(alignment: .leading, spacing: 3) {
                     Text(enc.text)
-                        .font(.fraunces(13.5).italic()).foregroundStyle(Nuru.ink)
-                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                        .font(.fraunces(14).italic()).foregroundStyle(Nuru.ink)
+                        .nuruLineLimit(3).fixedSize(horizontal: false, vertical: true)
                     if !enc.author.isEmpty {
                         Text("— \(enc.author)")
                             .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
@@ -1464,7 +1706,7 @@ struct HomeView: View {
                 // prayers and reactions, so it reads as a personal choosing,
                 // not an algorithm's footnote.
                 HStack(spacing: 6) {
-                    Icon(.sparkles, size: 12, color: Nuru.goldChipText)
+                    Icon(.sparkles, size: 14, color: Nuru.goldChipText)
                     Text("Chosen for your season — \(reason)")
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
@@ -1474,37 +1716,25 @@ struct HomeView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
                 .padding(.top, 8)
             }
-            // One row (Figma): reactions left, Save + Share pushed right.
-            HStack(spacing: 5) {
-                ForEach(verseReactionEmojis, id: \.self) { e in
-                    let count = vm.reactions?.counts[e] ?? 0
-                    let mine = vm.reactions?.mine == e
-                    Button { Haptics.love(); Task { await vm.reactVerse(e) } } label: {
-                        HStack(spacing: 3) {
-                            Text(e).font(.system(size: 14))
-                            if count > 0 {
-                                Text("\(count)").font(.inter(10, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
-                                    .contentTransition(.numericText())
-                            }
-                        }
-                        .padding(.horizontal, 7).padding(.vertical, 6)
-                        .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
-                        .contentShape(Capsule())   // whole chip is tappable, not just the glyph
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
-                    }.buttonStyle(.pressable)
+            // A save that failed says why, above the buttons (§4, §7.4 #2).
+            if let line = vm.verseSaveLine {
+                Text(line).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Nuru.S.md)
+            }
+            // One row (Figma): reactions left, Save + Share pushed right — or,
+            // when they don't fit, two rows, so no label is ever cut ("Shar/e",
+            // the walk's E15; §8.1 rule 9).
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: 5) {
+                    verseReactionChips
+                    Spacer(minLength: 4)
+                    verseSaveShare
                 }
-                Spacer(minLength: 4)
-                Button {
-                    if !vm.verseSaved { Haptics.success() }
-                    Task { await vm.saveVerse() }
-                } label: {
-                    pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
-                        .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
-                }.buttonStyle(.pressable)
-                Button { Haptics.tap(); shareVerseTapped() } label: {
-                    pill(icon: .share2, label: "Share", tint: HomeFig.navy)
-                }.buttonStyle(.pressable)
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 5) { verseReactionChips }
+                    HStack(spacing: 8) { verseSaveShare }
+                }
             }
             .padding(.top, Nuru.S.md)
         }
@@ -1540,11 +1770,46 @@ struct HomeView: View {
         }
     }
 
+    @ViewBuilder private var verseReactionChips: some View {
+        ForEach(verseReactionEmojis, id: \.self) { emoji in
+            let count = vm.reactions?.counts[emoji] ?? 0
+            let mine = vm.reactions?.mine == emoji
+            Button { Haptics.love(); Task { await vm.reactVerse(emoji) } } label: {
+                HStack(spacing: 3) {
+                    Text(emoji).font(.emoji(14))
+                    if count > 0 {
+                        Text("\(count)").font(.inter(11, .bold)).foregroundStyle(mine ? Nuru.goldChipText : Nuru.ink600)
+                            .contentTransition(.numericText())
+                    }
+                }
+                .padding(.horizontal, 7).padding(.vertical, 6)
+                .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
+                .contentShape(Capsule())   // whole chip is tappable, not just the glyph
+                .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
+            }.buttonStyle(.pressable)
+        }
+    }
+
+    @ViewBuilder private var verseSaveShare: some View {
+        Button {
+            Task { await vm.saveVerse() }
+        } label: {
+            pill(icon: .heart, label: vm.verseSaved ? "Saved" : "Save", tint: vm.verseSaved ? Nuru.gold : HomeFig.navy)
+                .animation(.easeInOut(duration: 0.2), value: vm.verseSaved)
+        }.buttonStyle(.pressable)
+        Button { Haptics.tap(); shareVerseTapped() } label: {
+            pill(icon: .share2, label: "Share", tint: HomeFig.navy)
+        }.buttonStyle(.pressable)
+    }
+
     private func pill(icon: Lucide, label: String, tint: Color) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 12, color: tint)
+            Icon(icon, size: 14, color: tint)
             Text(label).font(.inter(11, .semibold)).foregroundStyle(tint)
         }
+        .lineLimit(1)
+        .fixedSize()
         .padding(.horizontal, 10).padding(.vertical, 6)
         .background(Nuru.white, in: Capsule())
         .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
@@ -1556,7 +1821,7 @@ struct HomeView: View {
     private func sectionLink(_ label: String) -> some View {
         HStack(spacing: 3) {
             Text(label).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
-            Icon(.chevronRight, size: 11, color: Nuru.goldChipText)
+            Icon(.chevronRight, size: 14, color: Nuru.goldChipText)
         }
         .padding(.horizontal, 10).padding(.vertical, 5)
         .background(Nuru.goldChipBg, in: Capsule())
@@ -1631,331 +1896,19 @@ struct HomeView: View {
                 .lineSpacing(3)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.top, 6)
-            // Gold-tinted praying pill (Figma).
-            HStack(spacing: 5) {
-                Icon(.handHeart, size: 13, color: Nuru.goldChipText)
-                Text("\(post.prayCount) praying · \(post.commentCount ?? 0) replies")
-                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Nuru.gold.opacity(0.10), in: Capsule())
-            .padding(.top, Nuru.S.md)
-            if inPager { Spacer(minLength: 0) }   // top-align short posts in the pager
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    // MARK: 2c — "Continue your plan" resume banner (a pending-study nudge)
-
-    /// The member's in-progress plan (enrolled, not yet finished), if any.
-    private var resumePlan: ReadingPlanRow? {
-        guard let p = vm.plan, p.enrolled, p.completedAt == nil else { return nil }
-        return p
-    }
-
-    private func planResumeBanner(_ p: ReadingPlanRow) -> some View {
-        let day = p.currentDay ?? 1
-        let done = p.completedDays?.count ?? max(0, day - 1)
-        let pct = p.dayCount > 0 ? min(1, max(0, CGFloat(done) / CGFloat(p.dayCount))) : 0
-        // The plan's own cover, when it has one — the same PLCover the Plans tab
-        // draws — so the card shows THE plan, not a generic book. The progress
-        // ring then gives way to a bar under the text; a plan with no cover
-        // keeps the ring exactly as before.
-        let hasCover = p.imageUrl.flatMap(URL.init) != nil
-        // Plans live on the Plans tab — switch there and land on this plan.
-        return Button { Haptics.tap(); tabs.openPlans(.plan(p)) } label: {
-            HStack(spacing: 14) {
-                if hasCover {
-                    PLCover(plan: p)
-                        .frame(width: 64, height: 64)
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .stroke(Color.white.opacity(0.14), lineWidth: 1))
-                } else {
-                    ZStack {
-                        Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
-                        Circle().trim(from: 0, to: pct)
-                            .stroke(Nuru.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                        Icon(.bookMarked, size: 17, color: .white)
-                    }
-                    .frame(width: 48, height: 48)
-                }
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("CONTINUE YOUR PLAN").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
-                    Text(p.title).font(.fraunces(18, .semibold)).foregroundStyle(.white).lineLimit(1)
-                    Text("Day \(day) of \(p.dayCount) · pick up where you left off")
-                        .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
-                    if hasCover {
-                        // Fixed 4pt height keeps the GeometryReader from making
-                        // the row's height ambiguous (see minisRow below).
-                        GeometryReader { g in
-                            ZStack(alignment: .leading) {
-                                Capsule().fill(Color.white.opacity(0.22))
-                                Capsule().fill(Nuru.gold).frame(width: g.size.width * pct)
-                            }
-                        }
-                        .frame(height: 4)
-                        .padding(.top, 5)
-                    }
-                }
-                Spacer(minLength: 8)
-                Icon(.arrowRight, size: 18, color: Nuru.gold)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity)
-            .background(Nuru.navyGradient, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        }
-        .buttonStyle(.pressable)
-    }
-
-    // MARK: 6 — Reading-plan + Prayer-journal minis
-
-    private var minisRow: some View {
-        // Equal fixed heights + explicit contentShape + clipped: each card's
-        // tap zone is EXACTLY its visible surface. (The GeometryReader inside
-        // the plan card made the row's height ambiguous, letting neighbors'
-        // hit areas bleed — a Prayer Room tap could land on the card below.)
-        HStack(alignment: .top, spacing: Nuru.S.md) {
-            // Resume the plan directly when one is in progress; otherwise open the
-            // catalogue — always on the Plans tab (its home), never inside Home.
-            Button {
-                Haptics.tap()
-                tabs.openPlans(resumePlan.map { .plan($0) } ?? .catalogue)
-            } label: {
-                readingPlanMini
-                    .frame(height: 128)
-                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .clipped()
-            }
-            .buttonStyle(.pressable)
-            NavigationLink(value: GrowDestination.prayerJournal) {
-                prayerJournalMini
-                    .frame(height: 128)
-                    .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .clipped()
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(height: 128)
-    }
-
-    private var readingPlanMini: some View {
-        let p = vm.plan
-        let pct: Int = {
-            guard let p, p.dayCount > 0 else { return 0 }
-            let done = p.completedDays?.count ?? max(0, (p.currentDay ?? 1) - 1)
-            return Int(round(Double(done) / Double(p.dayCount) * 100))
-        }()
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Icon(.bookMarked, size: 17, color: Color(hex: 0x6366F1))
-                    .frame(width: 36, height: 36)
-                    .background(Color(hex: 0xEEF2FF), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                Spacer()
-                Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x6366F1))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color(hex: 0xEEF2FF), in: Capsule())
-            }
-            Text("READING PLAN").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x6366F1)).padding(.top, 10)
-            Text(p?.title ?? "Start a plan").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
-            if let p { Text("Day \(p.currentDay ?? 1) of \(p.dayCount)").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
-            else { Text("Pick a reading plan").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).padding(.top, 2) }
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 4)
-                    Capsule().fill(Color(hex: 0x6366F1)).frame(width: geo.size.width * CGFloat(pct) / 100, height: 4)
-                }
-            }.frame(height: 4).padding(.top, Nuru.S.sm)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
-    private var prayerJournalMini: some View {
-        let answered = vm.prayerEntries.filter { $0.isAnswered }.count
-        let latest = vm.prayerEntries.first
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Icon(.handHeart, size: 17, color: Color(hex: 0xDC2626))
-                    .frame(width: 36, height: 36)
-                    .background(Color(hex: 0xFEE2E2), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                Spacer()
-                // Amber "N answered" chip (Figma).
-                Text("\(answered) answered").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x92400E))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color(hex: 0xFEF3C7), in: Capsule())
-            }
-            Text("MY PRAYER ROOM").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xDC2626)).padding(.top, 10)
-            Text(latest?.title ?? "Your prayers").font(.inter(14, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1).padding(.top, 2)
-            Text(latest?.body ?? "Start journaling your prayers").font(.nCardMeta).foregroundStyle(HomeFig.faintGray).lineLimit(1).padding(.top, 2)
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
-    // MARK: 7 — This week at Nuru (featured cell)
-
-    private func featuredCellCard(_ c: FeaturedCell) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if let s = c.imageUrl, let u = URL(string: s) {
-                ZStack {
-                    Rectangle().fill(Nuru.mutedBg)
-                    CachedAsyncImage(url: u) { phase in
-                        if let img = phase.image { HomeFadeInImage(image: img) }
-                        else { Rectangle().fill(Nuru.mutedBg) }
-                    }
-                }
-                .aspectRatio(16.0/10.0, contentMode: .fill)
-                .frame(maxWidth: .infinity)
-                .clipped()
-                .overlay(alignment: .topLeading) {
-                    // Anticipation cue — soft gold countdown pill (Figma).
-                    HStack(spacing: 4) {
-                        Circle().fill(HomeFig.navy).frame(width: 4, height: 4)
-                        Text("This week").font(.inter(8, .bold)).foregroundStyle(HomeFig.navy)
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
-                    .padding(12)
-                }
-            }
-            VStack(alignment: .leading, spacing: 0) {
-                HStack(spacing: 6) {
-                    Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 11))
-                        .foregroundStyle(HomeFig.eyebrow)
-                    Text("THIS WEEK AT NURU").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
-                    Spacer(minLength: 0)
-                }
-                Text(c.name).font(.nCardTitle).foregroundStyle(HomeFig.navy).padding(.top, 4)
-                if let d = c.disciplerName {
-                    Text("\(d)\(c.disciplerRole.map { " · \($0)" } ?? "")").font(.nCardMeta).foregroundStyle(HomeFig.subGray).padding(.top, 1)
-                }
-                HStack(spacing: 6) {
-                    if let f = c.focus { chip(f) }
-                    if let l = c.levelLabel { chip(l) }
-                }
-                .padding(.top, 10)
-                if let m = c.meets {
-                    HStack(spacing: Nuru.S.sm) {
-                        Icon(.calendarDays, size: 15, color: Nuru.gold)
-                        (Text(m).font(.inter(11, .semibold)).foregroundStyle(HomeFig.navy)
-                         + Text(c.nextSession.map { " · Next: \($0)" } ?? "").font(.nCardMeta).foregroundStyle(HomeFig.faintGray))
-                        Spacer(minLength: 0)
-                    }
-                    .padding(.horizontal, 12).padding(.vertical, 10)
-                    .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
-                    .padding(.top, 10)
-                }
-                HStack {
-                    HStack(spacing: 4) {
-                        Icon(.mapPin, size: 11, color: HomeFig.faintGray)
-                        Text(c.room ?? c.name).font(.nCardMeta).foregroundStyle(HomeFig.faintGray).lineLimit(1)
-                    }
-                    Spacer(minLength: 8)
-                    HStack(spacing: 4) {
-                        Icon(.users, size: 11, color: HomeFig.eyebrow)
-                        Text(c.members > 0 ? "\(c.members) members" : "Be the first to join 🔥")
-                            .font(.inter(10, .bold)).foregroundStyle(HomeFig.eyebrow)
-                    }
-                }
-                .padding(.top, Nuru.S.sm)
-            }
-            .padding(Nuru.S.base)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-        .nuruShadow()
-    }
-
-    private func chip(_ text: String) -> some View {
-        Text(text)
-            .font(.inter(9, .semibold)).foregroundStyle(Nuru.goldChipText)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(Nuru.surface, in: Capsule())
-            .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-    }
-
-    // MARK: 8 — Meet your discipler (carousel)
-
-    private var disciplersCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 6) {
-                Text("MEET YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
-                Spacer(minLength: 0)
-                // Opens the Discipleship Hub — the fuller student home for the
-                // discipleship relationship (backend: GET /me/discipleship).
-                NavigationLink(value: AppRoute.discipleshipHub) {
-                    sectionLink("View")
-                }.buttonStyle(.plain)
-            }
-            // One discipler hugs its content (no pager, no dead band); several
-            // page with OUR gold dots — the system pager dots are WHITE and were
-            // invisible on the white card, leaving what read as an empty card.
-            if vm.disciplers.count == 1, let d = vm.disciplers.first {
-                NavigationLink(value: AppRoute.discipleshipHub) { disciplerView(d) }
-                    .buttonStyle(.pressableSubtle)
-                    .padding(.top, Nuru.S.md)
-            } else {
-                TabView(selection: $disciplerPage) {
-                    ForEach(Array(vm.disciplers.enumerated()), id: \.element.id) { i, d in
-                        NavigationLink(value: AppRoute.discipleshipHub) { disciplerView(d, inPager: true) }
-                            .buttonStyle(.pressableSubtle)
-                            .tag(i)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .frame(height: 190)
-                .padding(.top, Nuru.S.md)
+            // Gold-tinted praying pill (Figma) — only once someone has prayed
+            // or replied: no zero counts (§7.4 #9).
+            if let counts = ZeroCounts.prayerLine(praying: post.prayCount, replies: post.commentCount ?? 0) {
                 HStack(spacing: 5) {
-                    ForEach(0..<vm.disciplers.count, id: \.self) { i in
-                        Capsule().fill(i == disciplerPage ? Nuru.gold : Nuru.gold.opacity(0.22))
-                            .frame(width: i == disciplerPage ? 16 : 6, height: 6)
-                            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: disciplerPage)
-                    }
+                    Icon(.handHeart, size: 14, color: Nuru.goldChipText)
+                    Text(counts)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.top, Nuru.S.sm)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(Nuru.gold.opacity(0.10), in: Capsule())
+                .padding(.top, Nuru.S.md)
             }
-        }
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
-    private func disciplerView(_ d: Discipler, inPager: Bool = false) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: Nuru.S.md) {
-                Avatar(url: d.avatarUrl, name: d.fullName, size: 52)
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(d.fullName).font(.fraunces(17, .semibold)).foregroundStyle(HomeFig.navy)
-                    Text(d.roleLabel.uppercased()).font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.goldLo)
-                }
-                Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: Nuru.ink300)
-            }
-            if let m = d.message, !m.isEmpty {
-                Text("“\(m)”")
-                    .font(.fraunces(14, .regular)).italic()
-                    .foregroundStyle(Color(hex: 0x3A4A5F))
-                    .lineSpacing(4).lineLimit(inPager ? 3 : nil)
-                    .fixedSize(horizontal: false, vertical: !inPager)
-                    .padding(.top, Nuru.S.md)
-            }
-            // The relationship's front door — the hub's hero CTA, previewed here.
-            HStack(spacing: 6) {
-                Icon(.messageCircle, size: 12, color: Nuru.goldChipText)
-                Text("Message · walk together").font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
-            }
-            .padding(.horizontal, 12).padding(.vertical, 6)
-            .background(Nuru.gold.opacity(0.10), in: Capsule())
-            .padding(.top, Nuru.S.md)
-            if inPager { Spacer(minLength: 0) }   // top-align inside the fixed pager
+            if inPager { Spacer(minLength: 0) }   // top-align short posts in the pager
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -1964,19 +1917,19 @@ struct HomeView: View {
 
     // MARK: 9 — Featured carousel (owner's revision, 2026-08-24)
     //
-    // One sliding rail for everything the portal has marked or scheduled: the
-    // featured announcement, the featured gathering, and the next few events.
-    // Auto-advances gently; a swipe is always respected. "View all" opens the
-    // full events list (You ▸ Events), per the owner's spec.
+    // One sliding rail for what the portal has marked or scheduled: the
+    // featured announcement and the next few events. Auto-advances gently; a
+    // swipe is always respected. "View all" opens the full events list (You ▸
+    // Events), per the owner's spec. The featured gathering is NOT a page here
+    // (EXPERIENCE.md §7.2 #9): it has its own card further down Home, and the
+    // carousel showed it beside that card — never twice on one screen.
 
     private enum FeaturedPage: Identifiable {
         case announcement(FeaturedAnnouncement)
-        case event(FeaturedEvent)
         case occurrence(HomeEventRow)
         var id: String {
             switch self {
             case .announcement(let a): return "ann-" + a.announcementId
-            case .event(let e): return "fev-" + e.seriesId
             case .occurrence(let o): return "occ-" + o.occurrenceId
             }
         }
@@ -1985,11 +1938,10 @@ struct HomeView: View {
     private var featuredPages: [FeaturedPage] {
         var pages: [FeaturedPage] = []
         if let a = vm.featuredAnnouncement { pages.append(.announcement(a)) }
-        if let e = vm.featuredEvent { pages.append(.event(e)) }
-        let featuredSeries = vm.featuredEvent?.seriesId
-        for ev in vm.homeEvents.filter({ $0.seriesId != featuredSeries }).prefix(3) {
-            pages.append(.occurrence(ev))
-        }
+        let shownFeatured = vm.featuredEvent.flatMap { $0.nextStart() == nil ? nil : $0.seriesId }
+        let events = HomeFeatured.carouselEvents(vm.homeEvents, featuredSeriesId: shownFeatured,
+                                                 onNowOccurrenceId: liveNowInfo?.occ.occurrenceId)
+        pages += events.map { .occurrence($0) }
         return pages
     }
 
@@ -2004,14 +1956,22 @@ struct HomeView: View {
                 }.buttonStyle(.plain)
             }
             .padding(.horizontal, 4)
-            TabView(selection: $featuredPageIndex) {
-                ForEach(Array(pages.enumerated()), id: \.element.id) { i, page in
-                    featuredPageCard(page).tag(i)
+            if typeSize.isAccessibilitySize {
+                // At the largest sizes the pages stack, each as tall as its
+                // words: a 348 pt pager cut "Welcome to Ablaze Wor…" (§9.6 #4).
+                VStack(spacing: 12) {
+                    ForEach(pages) { page in featuredPageCard(page) }
                 }
+            } else {
+                TabView(selection: $featuredPageIndex) {
+                    ForEach(Array(pages.enumerated()), id: \.element.id) { i, page in
+                        featuredPageCard(page).tag(i)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                .frame(height: 348)
             }
-            .tabViewStyle(.page(indexDisplayMode: .never))
-            .frame(height: 348)
-            if pages.count > 1 {
+            if pages.count > 1, !typeSize.isAccessibilitySize {
                 HStack(spacing: 5) {
                     ForEach(pages.indices, id: \.self) { i in
                         Capsule()
@@ -2023,10 +1983,16 @@ struct HomeView: View {
                 .animation(.easeInOut(duration: 0.25), value: featuredPageIndex)
             }
         }
-        .onReceive(Timer.publish(every: 6, on: .main, in: .common).autoconnect()) { _ in
-            guard pages.count > 1 else { return }
-            withAnimation(.easeInOut(duration: 0.45)) {
-                featuredPageIndex = (featuredPageIndex + 1) % pages.count
+        // Turns every 6 s only while Home is on screen (final walk M7): a
+        // Timer publisher fired on behind the other tabs and pushed pages.
+        .task(id: HomeMotion.turns(onScreen: onScreen, pages: pages.count)) {
+            guard HomeMotion.turns(onScreen: onScreen, pages: pages.count) else { return }
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+                guard !Task.isCancelled, pages.count > 1 else { return }
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    featuredPageIndex = (featuredPageIndex + 1) % pages.count
+                }
             }
         }
     }
@@ -2041,14 +2007,7 @@ struct HomeView: View {
             } label: {
                 featuredPageBody(kicker: "ANNOUNCEMENT", imageUrl: a.primaryImageUrl,
                                  title: a.title, body: a.body,
-                                 meta: a.sentAt.map(shortDate), cta: "Read more")
-            }
-            .buttonStyle(.pressableSubtle)
-        case .event(let e):
-            Button { Haptics.tap(); tabs.openEvents() } label: {
-                featuredPageBody(kicker: "FEATURED GATHERING", imageUrl: e.primaryImageUrl,
-                                 title: e.title, body: e.description ?? (e.location ?? ""),
-                                 meta: e.dtstartLocal.isEmpty ? nil : eventKicker(e.dtstartLocal), cta: "See details")
+                                 meta: a.sentAt.flatMap(NuruDates.parse).map { NuruDates.day($0) }, cta: "Read more")
             }
             .buttonStyle(.pressableSubtle)
         case .occurrence(let o):
@@ -2082,23 +2041,27 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
             .clipped()
             .overlay(alignment: .topLeading) {
-                Text(kicker).font(.inter(9, .bold)).kerning(1.3).foregroundStyle(.white)
+                Text(kicker).font(.inter(11, .bold)).kerning(1.3).foregroundStyle(.white)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(Color.black.opacity(0.45), in: Capsule())
                     .padding(10)
             }
             VStack(alignment: .leading, spacing: 0) {
+                // A title wraps to two lines (rule 9; the walk's "Experie…");
+                // the body yields its second line when the title needs it.
                 Text(title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
-                    .lineLimit(1)
-                Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).lineLimit(2)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(title, font: .nCardTitle)
+                Text(body).font(.nCardBody).foregroundStyle(HomeFig.metaGray).nuruLineLimit(2)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 6)
+                    .layoutPriority(-1)
                 Spacer(minLength: 0)
                 HStack {
                     if let meta { Text(meta).font(.nCardMeta).foregroundStyle(HomeFig.faintGray) }
                     Spacer()
                     HStack(spacing: 3) {
                         Text(cta).font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
-                        Icon(.chevronRight, size: 13, color: Nuru.gold)
+                        Icon(.chevronRight, size: 14, color: Nuru.gold)
                     }
                 }
             }
@@ -2112,88 +2075,50 @@ struct HomeView: View {
     }
 
 
-    // MARK: 10 — Continue · Level n
-
-    private var continueLevelCard: some View {
-        let a = active
-        let done = a?.completedModules ?? 0
-        let total = a?.totalModules ?? 0
-        let pct = total > 0 ? Int(round(Double(done) / Double(total) * 100)) : 0
-        return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .center, spacing: Nuru.S.md) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 44, height: 44)
-                    Icon(.play, size: 18, color: HomeFig.navy).offset(x: 1)
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("CONTINUE · LEVEL \(a?.levelNumber ?? 1)").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
-                    Text(a?.title ?? "Foundations of Faith").font(.nRowTitle).foregroundStyle(HomeFig.navy)
-                    Text("\(done) of \(total) modules").font(.nCardMeta).foregroundStyle(HomeFig.faintGray)
-                }
-                Spacer(minLength: 0)
-            }
-            HStack(spacing: Nuru.S.sm) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 6)
-                        Capsule()
-                            .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * CGFloat(pct) / 100, height: 6)
-                    }
-                }.frame(height: 6)
-                Text("\(pct)% complete").font(.inter(10, .bold)).foregroundStyle(HomeFig.eyebrow)
-            }
-            .padding(.top, Nuru.S.md)
-            // Goal-gradient nudge — momentum grows nearer the finish (Figma).
-            Text(pct >= 60 ? "Almost there — finish strong 🎉" : "Just \(100 - pct)% to your next badge")
-                .font(.inter(11, .semibold)).foregroundStyle(HomeFig.eyebrow)
-                .padding(.top, 6)
-            Button {
-                Haptics.tap()
-                if let m = nextModuleId { tabs.openPathway(.module(m)) }
-                else { tabs.openPathway(.level(a?.levelNumber ?? 1)) }
-            } label: {
-                HStack(spacing: 6) {
-                    Text("Continue").font(.nCardCTA).foregroundStyle(Nuru.gold)
-                    Icon(.chevronRight, size: 15, color: Nuru.gold)
-                }
-                .frame(maxWidth: .infinity, minHeight: 46)
-                .background(HomeFig.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.pressable)
-            .padding(.top, Nuru.S.md)
-        }
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
     // MARK: 11 — Today's rhythm
 
     private var rhythmCard: some View {
         let complete = vm.rhythm.doneCount == 3
-        // Finishing today's rhythm counts today automatically (Figma displayStreak).
-        let displayStreak = vm.streak + (complete ? 1 : 0)
+        // The one streak (§9.2 #3), counted as Plans counts it: today counts
+        // once anything of today's rhythm is done. It read "Start today"
+        // beside a done Word, while Plans said "1-day streak". Named here
+        // alone on Home (the header pill no longer repeats it).
+        let active = vm.rhythm.doneCount > 0
+        let days = StreakWords.days(vm.streak, activeToday: active)
         return VStack(alignment: .leading, spacing: 0) {
             HStack {
+                // A card title (§8.1 rule 3): Fraunces 18.
                 Text(complete ? "Today's rhythm complete 🎉" : "Today's rhythm")
-                    .font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
+                    .font(.nCardTitle).foregroundStyle(HomeFig.navy)
                 Spacer()
-                HStack(spacing: 4) {
-                    Icon(.flame, size: 12, color: Nuru.goldChipText)
-                    Text(displayStreak > 0 ? "\(displayStreak)-day streak" : "Start today")
-                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
-                        .contentTransition(.numericText())
-                        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: displayStreak)
+                if days > 0 {
+                    HStack(spacing: 4) {
+                        Icon(.flame, size: 14, color: Nuru.goldChipText)
+                        Text(StreakWords.title(days))
+                            .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
+                            .contentTransition(.numericText())
+                            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: days)
+                    }
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(Nuru.goldChipBg, in: Capsule())
                 }
-                .padding(.horizontal, 10).padding(.vertical, 5)
-                .background(Nuru.goldChipBg, in: Capsule())
             }
-            HStack(spacing: Nuru.S.sm) {
-                rhythmTile("prayer", "Prayer")
-                rhythmTile("word", "Word")
-                rhythmTile("reflection", "Reflection")
+            // Three across at the everyday sizes; a column at the largest,
+            // where three tiles would break "Reflection" (§9.6 #4).
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(spacing: Nuru.S.sm) {
+                        rhythmTile("prayer", "Prayer")
+                        rhythmTile("word", "Word")
+                        rhythmTile("reflection", "Reflection")
+                    }
+                } else {
+                    HStack(spacing: Nuru.S.sm) {
+                        rhythmTile("prayer", "Prayer")
+                        rhythmTile("word", "Word")
+                        rhythmTile("reflection", "Reflection")
+                    }
+                }
             }
             .padding(.top, Nuru.S.md)
             // The seal — appears when the third discipline lands mid-session
@@ -2205,8 +2130,8 @@ struct HomeView: View {
                     .padding(.top, Nuru.S.md)
                     .transition(.opacity)
             }
-            // Weekly consistency — reflects real completion (today fills when done).
-            HomeWeekChain(streakDays: vm.streak, todayDone: complete)
+            // The streak's week — today fills once today counts.
+            HomeWeekChain(streakDays: days, todayDone: active)
                 .padding(.top, 14)
             if !complete {
                 Text(vm.rhythm.reflection ? "One more to complete today's rhythm." : "Complete reflection to keep your rhythm.")
@@ -2242,10 +2167,12 @@ struct HomeView: View {
         return VStack(spacing: 4) {
             ZStack {
                 Circle().fill(done ? Nuru.successText : Nuru.white).frame(width: 24, height: 24)
-                Icon(done ? .check : .clock, size: 12, color: done ? Nuru.white : Nuru.goldLo)
+                Icon(done ? .check : .clock, size: 14, color: done ? Nuru.white : Nuru.goldLo)
             }
             Text(label).font(.inter(12, .semibold)).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText)
-            Text(done ? "DONE" : "PENDING").font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
+            // Plain words, not a status that reads like data (§8.1 rule 8):
+            // "Prayed", "Read", "Written" — "Not yet" until then. Android's.
+            Text(RhythmTileWords.status(kind, done: done)).font(.nMicro).foregroundStyle(done ? Nuru.successText : Nuru.goldChipText).opacity(0.8)
         }
         .frame(maxWidth: .infinity).padding(.vertical, Nuru.S.md)
         .background(done ? Nuru.successBg : Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -2255,14 +2182,26 @@ struct HomeView: View {
     // MARK: 13 — Your progress (scores)
 
     private func progressCard(_ s: ScoresSummary) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Your progress").font(.inter(16, .semibold)).foregroundStyle(HomeFig.navy)
-                Spacer()
-                Button {
-                    Haptics.tap(); tabs.openPathway(.level(active?.levelNumber ?? 1))
-                } label: {
-                    Text("View pathway").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+        let title = Text("Your progress").font(.nCardTitle).foregroundStyle(HomeFig.navy)   // a card title (§8.1 rule 3)
+        let link = Button {
+            Haptics.tap(); tabs.openPathway(.level(active?.levelNumber ?? 1))
+        } label: {
+            Text("View pathway").font(.inter(12, .semibold)).foregroundStyle(Nuru.gold)
+        }
+        return VStack(alignment: .leading, spacing: 0) {
+            if typeSize.isAccessibilitySize {
+                // The link on a line of its own at the largest sizes: beside it
+                // the title broke "Your progre / ss" (§9.6 #4).
+                VStack(alignment: .leading, spacing: 6) {
+                    title.fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords("Your progress", font: .nCardTitle)
+                    link
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline) {
+                    title
+                    Spacer()
+                    link
                 }
             }
             HStack(spacing: Nuru.S.base) {
@@ -2275,18 +2214,22 @@ struct HomeView: View {
                         Text("\(s.overall.score)").font(.fraunces(18, .semibold)).foregroundStyle(HomeFig.navy)
                             .contentTransition(.numericText())
                             .animation(.spring(response: 0.4, dampingFraction: 0.8), value: s.overall.score)
-                        Text("/100").font(.inter(9, .semibold)).foregroundStyle(HomeFig.faintGray)
+                        Text("/100").font(.inter(11, .semibold)).foregroundStyle(HomeFig.faintGray)
                     }
                 }
                 .frame(width: 64, height: 64)
+                .nuruFixedFigure()
                 VStack(alignment: .leading, spacing: 1) {
                     Text("OVERALL GROWTH").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
+                        .fixedSize(horizontal: false, vertical: true)
                     Text(s.overall.band).font(.nCardTitle).foregroundStyle(HomeFig.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(s.overall.band, font: .nCardTitle)
                     if let t = s.trend {
                         HStack(spacing: 4) {
                             Image(systemName: t.isDown ? "arrow.down.right" : t.isUp ? "arrow.up.right" : "minus")
-                                .font(.system(size: 10, weight: .bold))
-                                .foregroundStyle(t.isDown ? Color(hex: 0xDC6B26) : t.isUp ? Color(hex: 0x16A34A) : HomeFig.metaGray)
+                                .font(.symbol(10, weight: .bold))
+                                .foregroundStyle(HomeFig.metaGray)   // no state colour for a score (§8.1 rule 1)
                             Text(trendCaption(t)).font(.nCardBody).foregroundStyle(HomeFig.metaGray)
                         }
                     } else {
@@ -2296,36 +2239,64 @@ struct HomeView: View {
                 Spacer(minLength: 0)
             }
             .padding(.top, Nuru.S.base)
-            VStack(spacing: 10) {
-                scoreBar("Habits", s.habits.score, Nuru.gold, delta: s.trend?.domains?["habits"])
-                scoreBar("Word", s.word.score, Color(hex: 0x2F6FB0), delta: s.trend?.domains?["word"])
-                scoreBar("Prayer", s.prayer.score, Color(hex: 0xC98A3C), delta: s.trend?.domains?["prayer"])
-                scoreBar("Curriculum", s.curriculum.score, HomeFig.navy, delta: s.trend?.domains?["curriculum"])
-                scoreBar("Attendance", s.attendance.score, Color(hex: 0x16A34A), delta: s.trend?.domains?["attendance"])
+            // Every bar is progress — gold (§8.1 rule 1; Word was blue,
+            // Attendance green).
+            let bars: [(label: String, value: Int, key: String)] = [
+                ("Habits", s.habits.score, "habits"), ("Word", s.word.score, "word"),
+                ("Prayer", s.prayer.score, "prayer"), ("Curriculum", s.curriculum.score, "curriculum"),
+                ("Attendance", s.attendance.score, "attendance")]
+            Group {
+                if typeSize.isAccessibilitySize {
+                    VStack(spacing: 10) {
+                        ForEach(bars, id: \.key) { b in scoreBar(b.label, b.value, Nuru.gold, delta: s.trend?.domains?[b.key]) }
+                    }
+                } else {
+                    // The labels' column is as wide as its widest word, at
+                    // every in-app size (final walk C3): a fixed 72 pt broke
+                    // "Curriculu / m" and "Attendanc / e" at "Large".
+                    Grid(alignment: .leading, horizontalSpacing: Nuru.S.md, verticalSpacing: 10) {
+                        ForEach(bars, id: \.key) { b in
+                            GridRow {
+                                Text(b.label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).fixedSize()
+                                scoreBarLine(b.value, Nuru.gold, delta: s.trend?.domains?[b.key])
+                            }
+                        }
+                    }
+                }
             }
             .padding(.top, Nuru.S.base)
-            if let a = active {
-                let left = max(0, a.totalModules - a.completedModules)
-                HStack(spacing: Nuru.S.sm) {
-                    Icon(.target, size: 16, color: Nuru.goldChipText)
-                        .frame(width: 30, height: 30)
-                        .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    (Text("\(left) modules ").font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
-                     + Text("left before Level \(a.levelNumber + 1)").font(.inter(12)).foregroundStyle(Nuru.muted))
-                    Spacer(minLength: 0)
-                }
-                .padding(Nuru.S.sm)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .padding(.top, Nuru.S.md)
-            }
+            // (The journey's next step was repeated here — "Take the Level 1
+            // exam" under YOUR WEEK's own "Take the Level 1 exam". Home points
+            // to each pillar once, §6; YOUR WEEK's Pathway row holds it, and
+            // "View pathway" is this card's way there. §9.6 #1.)
         }
         .padding(Nuru.S.base)
         .cardSurface()
     }
 
     private func scoreBar(_ label: String, _ value: Int, _ fill: Color, delta: Int? = nil) -> some View {
+        Group {
+            if typeSize.isAccessibilitySize {
+                // The label on its own line at the largest sizes: its 72 pt
+                // column broke "Hab / its", "Wor / d" (§9.6 #4).
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray)
+                        .fixedSize(horizontal: false, vertical: true)
+                    scoreBarLine(value, fill, delta: delta)
+                }
+            } else {
+                HStack(spacing: Nuru.S.md) {
+                    Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).frame(width: 72, alignment: .leading)
+                    scoreBarLine(value, fill, delta: delta)
+                }
+            }
+        }
+    }
+
+    /// The bar, the 28-day movement and the score.
+    @ViewBuilder
+    private func scoreBarLine(_ value: Int, _ fill: Color, delta: Int?) -> some View {
         HStack(spacing: Nuru.S.md) {
-            Text(label).font(.inter(12)).foregroundStyle(HomeFig.metaGray).frame(width: 72, alignment: .leading)
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color(hex: 0xEEF0F3)).frame(height: 8)
@@ -2335,15 +2306,18 @@ struct HomeView: View {
             // A whisper of movement vs the previous 28 days, next to the score.
             if let d = delta, d != 0 {
                 HStack(spacing: 1) {
-                    Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.system(size: 8, weight: .bold))
-                    Text("\(abs(d))").font(.inter(9, .bold))
+                    Image(systemName: d < 0 ? "arrow.down" : "arrow.up").font(.symbol(8, weight: .bold))
+                    Text("\(abs(d))").font(.inter(11, .bold))
                 }
-                .foregroundStyle(d < 0 ? Color(hex: 0xDC6B26) : Color(hex: 0x16A34A))
-                .frame(width: 26, alignment: .trailing)
+                .foregroundStyle(HomeFig.metaGray)   // no state colour for a score (§8.1 rule 1)
+                .fixedSize()
+                .frame(minWidth: 26, alignment: .trailing)   // grows at the largest sizes, never cut
             } else {
                 Spacer().frame(width: 26)
             }
-            Text("\(value)").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy).frame(width: 24, alignment: .trailing)
+            Text("\(value)").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
+                .fixedSize()
+                .frame(minWidth: 24, alignment: .trailing)
         }
     }
 
@@ -2365,36 +2339,64 @@ struct HomeView: View {
 
     private var growCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            // Two across at the everyday sizes; one at the largest, where two
+            // broke "Dev / oti…", "Hide / Hi…" (§9.6 #4).
+            LazyVGrid(columns: typeSize.isAccessibilitySize ? [GridItem(.flexible())]
+                                                           : [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)],
+                      spacing: 10) {
                 ForEach(growTiles.indices, id: \.self) { i in
                     let t = growTiles[i]
                     growTileLink(t)
                         .buttonStyle(.pressable)
-                        // "New today" cue on the devotional — a gentle pull to start.
-                        // (Decoration only — must never intercept the tile's tap.)
+                        // "New today" cue on the devotional — only while
+                        // there is something new: today's reflection is
+                        // still to write (§7.1 rule 8; final walk C10: the
+                        // dot was always drawn). Decoration only — never
+                        // intercepts the tile's tap.
                         .overlay(alignment: .topTrailing) {
-                            if i == 0 {
+                            if i == 0 && reflectionDue {
                                 HomePulseDot().offset(x: 2, y: -2).allowsHitTesting(false)
                             }
                         }
                 }
             }
+            // Only for a discipler the server names (Cycle 4, B1): "Meet your
+            // discipler" opened onto "No discipler yet" for members with none.
+            if let mentor = disciplers.mentor {
             NavigationLink(value: AppRoute.mentor) {
                 HStack(spacing: Nuru.S.md) {
-                    Circle()
-                        .fill(LinearGradient(colors: [Nuru.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 36, height: 36)
+                    Avatar(url: mentor.avatarUrl, name: mentor.fullName, size: 36)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("YOUR DISCIPLER").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
-                        Text("Meet your discipler").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        Text(mentor.fullName.isEmpty ? "Your discipler" : mentor.fullName)
+                            .font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     }
                     Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: HomeFig.faintGray)
+                    Icon(.chevronRight, size: 18, color: HomeFig.faintGray)
                 }
                 .padding(Nuru.S.md)
                 .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
             }.buttonStyle(.pressable)
+            } else if disciplers.known {
+                // With none, it's said once, here (§9.2 #8) — nothing to tap,
+                // no door onto an empty page. Only once the server has
+                // answered: never a fact before it is true.
+                HStack(spacing: Nuru.S.md) {
+                    Icon(.heartHandshake, size: 18, color: Nuru.navy)
+                        .frame(width: 36, height: 36)
+                        .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    Text(DisciplerStore.noneLine)
+                        .font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .padding(Nuru.S.md)
+                .background(Nuru.verseBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
+                .accessibilityElement(children: .combine)
+            }
         }
         .padding(Nuru.S.md)
         .cardSurface()
@@ -2407,12 +2409,7 @@ struct HomeView: View {
     @ViewBuilder
     private func growTileLink(_ t: GrowTile) -> some View {
         if let g = t.dest as? GrowDestination {
-            if g == .readingPlans {
-                // The plan catalogue is the Plans TAB — switch, don't push a copy.
-                Button { Haptics.tap(); tabs.openPlans(.catalogue) } label: { growTileView(t) }
-            } else {
-                NavigationLink(value: g) { growTileView(t) }
-            }
+            NavigationLink(value: g) { growTileView(t) }
         } else if let c = t.dest as? CommunityRoute {
             NavigationLink(value: c) { growTileView(t) }
         } else {
@@ -2422,32 +2419,31 @@ struct HomeView: View {
 
     private func growTileView(_ t: GrowTile) -> some View {
         HStack(spacing: 10) {
-            Icon(t.icon, size: 16, color: Color(hex: t.fg))
+            Icon(t.icon, size: 18, color: Color(hex: t.fg))
                 .frame(width: 36, height: 36)
                 .background(Color(hex: t.tint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            // Words wrap to two lines, never cut (§8.1 rule 9; the walk's E15:
+            // "Hide His W…", "My Prayer R…", "Discover your…").
             VStack(alignment: .leading, spacing: 0) {
-                Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
-                Text(t.sub).font(.nCardMeta).foregroundStyle(HomeFig.metaGray).lineLimit(1)
+                Text(t.label).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(t.label, font: .inter(13, .semibold))
+                Text(t.sub).font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
+        .frame(minHeight: 44)
         .padding(Nuru.S.md)
         .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: 15 — Upcoming (label outside; up to 5 curated event rows)
-
-    private var upcomingSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HomeSectionLabel(text: "Upcoming")
-            upcomingCard
-        }
-    }
+    // MARK: 15 — Featured gathering (the family)
 
     // The ONE admin-featured event (portal "feature on homepage" toggle) —
     // GET /home/featured-event was declared but rendered by no client until now.
-    private func featuredGatheringCard(_ fe: FeaturedEvent) -> some View {
+    private func featuredGatheringCard(_ fe: FeaturedEvent, next: Date) -> some View {
         Button {
             Haptics.selection(); tabs.openEvents()
         } label: {
@@ -2463,7 +2459,7 @@ struct HomeView: View {
                         Text(d).font(.nCaption).foregroundStyle(Nuru.ink600)
                             .lineLimit(2).multilineTextAlignment(.leading)
                     }
-                    Text([featuredWhen(fe.dtstartLocal), fe.location].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "  ·  "))
+                    Text([NuruDates.dayTime(next), fe.location].compactMap { $0?.isEmpty == false ? $0 : nil }.joined(separator: "  ·  "))
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldChipText)
                 }
                 .padding(Nuru.S.base)
@@ -2474,58 +2470,14 @@ struct HomeView: View {
         .buttonStyle(.pressableSubtle)
     }
 
-    private func featuredWhen(_ dtstartLocal: String) -> String {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
-        guard let d = f.date(from: String(dtstartLocal.prefix(19))) else { return dtstartLocal }
-        let out = DateFormatter(); out.dateFormat = "EEE, MMM d · h:mm a"
-        return out.string(from: d)
-    }
-
-    // The curated rows (GET /home/events): the month grid that used to live here
-    // is gone (owner ask) — the Events tab keeps the full calendar. Up to 5 rows,
-    // exactly as the server sent them (soonest-first, server-capped): thumb, gold
-    // relative-time kicker, title, venue, and the member's RSVP state (or the
-    // RSVP call-to-action). Each row pushes the SAME event-detail destination the
-    // RSVP/QR flows use (CalendarOccurrence by occurrence_id).
-    private var upcomingCard: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
-            HStack {
-                Text("GATHERINGS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
-                Spacer()
-                Button { Haptics.selection(); tabs.openEvents() } label: {
-                    Text("See all").font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
-                }.buttonStyle(.pressable)
-            }
-            ForEach(vm.homeEvents) { e in
-                Button { Haptics.tap(); path.append(CalendarOccurrence(homeEvent: e)) } label: {
-                    HomeUpcomingEventRow(
-                        kicker: eventKicker(e.startsAt),
-                        soon: eventSoon(e.startsAt),
-                        title: e.title,
-                        sub: (e.venue?.isEmpty == false ? e.venue! : "Next gathering"),
-                        subHighlight: false,
-                        imageUrl: e.primaryImageUrl,
-                        rsvpStatus: e.myRsvp)
-                }.buttonStyle(.pressable)
-            }
-        }
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
     private func eventKicker(_ startAt: String) -> String {
-        guard let d = parseISO(startAt) else { return timeLine(startAt) }
+        guard let d = parseISO(startAt) else { return "" }
         let cal = Calendar.current
         let day: String
         if cal.isDateInToday(d) { day = "Today" }
         else if cal.isDateInTomorrow(d) { day = "Tomorrow" }
-        else { let f = DateFormatter(); f.dateFormat = "EEE, MMM d"; day = f.string(from: d) }
-        return "\(day) · \(timeLine(startAt))"
-    }
-
-    private func eventSoon(_ startAt: String) -> Bool {
-        guard let d = parseISO(startAt) else { return false }
-        return d.timeIntervalSinceNow < 48 * 3600
+        else { day = NuruDates.day(d) }
+        return "\(day) · \(NuruDates.time(d))"
     }
 
     // MARK: 16 — Encouragement ("one reflection away" / "beautifully done")
@@ -2537,86 +2489,21 @@ struct HomeView: View {
             rhythmDone: vm.rhythm.doneCount,
             wordDone: vm.rhythm.word,
             prayerDone: vm.rhythm.prayer,
-            modulesLeft: active.map { max(0, $0.totalModules - $0.completedModules) },
-            levelNumber: active?.levelNumber,
+            // Modules still to walk — only while the member is walking them
+            // (the journey's learning stage); an exam left is not "a module".
+            modulesLeft: vm.journey.flatMap { $0.stage == .learning ? max(0, $0.totalModules - $0.completedModules) : nil },
+            levelNumber: vm.journey?.levelNumber,
             cellPrayerCount: vm.prayerPosts.count
         )
-    }
-
-    // MARK: 17 — Your cohort (label outside; belonging cue when not in a cell)
-
-    private var cohortSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HomeSectionLabel(text: "Your cell")
-            cohortCard
-        }
-    }
-
-    private var cohortCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text(vm.cell?.name ?? "Your discipleship cell").font(.nCardMeta).foregroundStyle(HomeFig.faintGray)
-            if vm.cell == nil {
-                // Cold-start belonging cue — being known is the hook (Figma).
-                NavigationLink(value: AppRoute.cell) { HomeCohortColdStart() }
-                    .buttonStyle(.pressable)
-                    .padding(.top, 10)
-            }
-            LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
-                cohortStat(.users, "Leader", vm.cell?.leader?.name ?? "Not assigned")
-                cohortStat(.calendarDays, "Next gathering", nextGatheringText)
-                cohortStat(.users, "Members", vm.cell.map { "\($0.members)" } ?? "—")
-                cohortStat(.target, "Attendance", attendanceText)
-            }
-            .padding(.top, 10)
-            NavigationLink(value: AppRoute.cell) {
-                // Says what it opens: this link goes to the CELL, not community.
-                Text("Open your cell →").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
-                    .frame(maxWidth: .infinity, minHeight: 42)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-            .padding(.top, Nuru.S.md)
-        }
-        .padding(Nuru.S.base)
-        .cardSurface()
-    }
-
-    private func cohortStat(_ icon: Lucide, _ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 5) {
-                Icon(icon, size: 11, color: Nuru.gold)
-                Text(label.uppercased()).font(.inter(9, .semibold)).kerning(0.9).foregroundStyle(HomeFig.faintGray)
-            }
-            Text(value).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(Nuru.S.md)
-        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private var nextGatheringText: String {
-        guard let n = vm.cell?.next else { return "TBA" }
-        return shortDateTime(n.startAt)
-    }
-    private var attendanceText: String {
-        guard let a = vm.cell?.attendance, a.expected > 0 else { return "—" }
-        return "\(a.attended)/\(a.expected)"
     }
 
     // MARK: 18 — Support God's work (give panel — centered ceremony layout)
 
     private var giveBanner: some View {
-        HomeGiveCard { tabs.openGive() }
+        HomeGiveCard(railsLine: GivingMethods.homeGiveLine(vm.givingMethods)) { tabs.openGive() }
     }
 
     // MARK: derived / helpers
-
-    /// The specific next lesson to resume, when the next-action CTA is a module.
-    private var nextModuleId: String? {
-        guard let a = vm.nextAction, a.route == "module" else { return nil }
-        return a.params?.moduleId
-    }
 
     private func verseShareText() -> String {
         let text = vm.verse?.text ?? "“Your word is a lamp to my feet, and a light for my path.”"
@@ -2638,30 +2525,31 @@ struct HomeView: View {
     }
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
     private var isSunday: Bool { Calendar.current.component(.weekday, from: Date()) == 1 }
+    /// On the church's clock — the one the liturgy card keeps — so the two
+    /// say the same part of the day (§9.3 rule 3): Ben read "Good afternoon"
+    /// over an "EVENING" card at 16:32, and "Good morning" over "NIGHT" after
+    /// midnight. Android's HomeGreeting, the same bands.
     private var greeting: String {
-        if isSunday { return "Happy Lord's Day" }
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : h < 21 ? "Good evening" : "Rest well"
+        HomeHeaderWords.timeGreeting(hour: ChurchClock.hour(), sunday: ChurchClock.isSunday())
     }
     private func todayKicker() -> String {
-        if isSunday {
-            let f = DateFormatter(); f.dateFormat = "MMM d"
-            return "SUNDAY · THE LORD'S DAY · \(f.string(from: Date()).uppercased())"
-        }
-        let f = DateFormatter(); f.dateFormat = "EEEE · MMM d"
-        return f.string(from: Date()).uppercased() + " · EAT"
+        // The one date shape (§8.1 rule 8), and no "EAT" — it is the phone's
+        // own day, wherever the member is.
+        if isSunday { return "THE LORD'S DAY · \(NuruDates.day(Date()).uppercased())" }
+        return NuruDates.day(Date()).uppercased()
     }
     /// The header breathes with the day — dawn rose-gold, plain daylight cream,
     /// a deeper golden hour, and a quieter dusk. Same palette family as the
     /// Figma header, just tilted by the hour; Sundays glow a touch warmer.
+    /// The header's light by the same part of the day (§9.3 rule 3).
     private var headerPalette: (top: Color, bottom: Color, glow: Double) {
-        let h = Calendar.current.component(.hour, from: Date())
-        let base: (UInt32, UInt32, Double) =
-            h < 5  ? (0xEFEDEA, 0xE5E0D6, 0.16) :   // deep night — quiet
-            h < 9  ? (0xF9F1E7, 0xF3E3CC, 0.34) :   // dawn — rose-gold
-            h < 16 ? (0xF6F4EF, 0xEFE8DA, 0.27) :   // daylight — the Figma cream
-            h < 19 ? (0xF7EFDD, 0xEEDFC2, 0.40) :   // golden hour
-                     (0xF1EEE8, 0xE7E1D4, 0.20)     // dusk
+        let base: (UInt32, UInt32, Double)
+        switch ChurchClock.part() {
+        case .morning: base = (0xF9F1E7, 0xF3E3CC, 0.34)   // dawn — rose-gold
+        case .midday:  base = (0xF6F4EF, 0xEFE8DA, 0.27)   // daylight — the Figma cream
+        case .evening: base = (0xF7EFDD, 0xEEDFC2, 0.40)   // golden hour
+        case .night:   base = (0xF1EEE8, 0xE7E1D4, 0.20)   // dusk into night — quiet
+        }
         return (Color(hex: base.0), Color(hex: base.1), base.2 + (isSunday ? 0.08 : 0))
     }
     private func durationLabel(_ sec: Int) -> String {
@@ -2671,18 +2559,6 @@ struct HomeView: View {
     /// Parse an ISO timestamp tolerantly.
     private func parseISO(_ iso: String) -> Date? {
         ISO8601DateFormatter.nuru.date(from: iso) ?? ISO8601DateFormatter().date(from: iso)
-    }
-    private func shortDate(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "MMM d"; return f.string(from: d)
-    }
-    private func shortDateTime(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "TBA" }
-        let f = DateFormatter(); f.dateFormat = "MMM d, h:mm a"; return f.string(from: d)
-    }
-    private func timeLine(_ iso: String) -> String {
-        guard let d = parseISO(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "h:mm a"; return f.string(from: d)
     }
 }
 
@@ -2700,17 +2576,14 @@ private extension View {
 
 /// Shown ONLY on the true first load (`loading && pathway == nil`) — pull-to-
 /// refresh keeps the live content in place. Mirrors the top of the feed:
-/// hero → video → verse → minis.
+/// verse → video → letter → the week.
 private struct HomeFeedSkeleton: View {
     var body: some View {
         VStack(spacing: Nuru.S.base) {
-            ghost(height: 190)
             ghost(height: 240)
-            ghost(height: 150)
-            HStack(spacing: Nuru.S.sm) {
-                ghost(height: 128)
-                ghost(height: 128)
-            }
+            ghost(height: 190)
+            ghost(height: 72)
+            ghost(height: 290)
         }
     }
     private func ghost(height: CGFloat) -> some View {
@@ -2720,35 +2593,6 @@ private struct HomeFeedSkeleton: View {
             .frame(height: height)
             .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             .nuruShimmer()
-    }
-}
-
-// MARK: - Dashboard-failed strip (quiet retry; the rest degrades gracefully)
-
-private struct HomeLoadErrorCard: View {
-    let retry: () -> Void
-    var body: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "wifi.slash")
-                .font(.system(size: 15, weight: .semibold)).foregroundStyle(HomeFig.metaGray)
-                .frame(width: 36, height: 36)
-                .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                Text("Couldn't load your dashboard").font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                Text("Check your connection and try again.").font(.nCardMeta).foregroundStyle(HomeFig.metaGray)
-            }
-            Spacer(minLength: 8)
-            Button { Haptics.tap(); retry() } label: {
-                Text("Retry")
-                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.gold)
-                    .padding(.horizontal, 14).padding(.vertical, 7)
-                    .background(HomeFig.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .padding(12)
-        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }
 
@@ -2765,33 +2609,8 @@ private struct HomeLiveHeaderRing: View {
             .stroke(Color(hex: 0xDC2626), lineWidth: 1.5)
             .scaleEffect(expand ? 1.28 : 1)
             .opacity(expand ? 0 : 0.8)
-            .onAppear {
-                guard !reduceMotion else { return }
-                withAnimation(.easeOut(duration: 1.3).repeatForever(autoreverses: false)) { expand = true }
-            }
-    }
-}
-
-// MARK: - Unread bell badge (pops in once, counts roll numerically)
-
-private struct HomeUnreadBadge: View {
-    let count: Int
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var shown = false
-    var body: some View {
-        Text(count > 9 ? "9+" : "\(count)")
-            .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
-            .frame(minWidth: 16, minHeight: 16).padding(.horizontal, 2)
-            .background(Nuru.gold, in: Capsule())
-            .contentTransition(.numericText())
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
-            .scaleEffect(shown || reduceMotion ? 1 : 0.4)
-            .opacity(shown || reduceMotion ? 1 : 0)
-            .onAppear {
-                guard !shown else { return }
-                // One springy arrival beat — attention without a looping pulse.
-                withAnimation(.spring(response: 0.35, dampingFraction: 0.6).delay(0.35)) { shown = true }
-            }
+            // Pulses only while Home is seen (final walk M7).
+            .nuruPulse($expand, .easeOut(duration: 1.3).repeatForever(autoreverses: false))
     }
 }
 
@@ -2815,4 +2634,105 @@ private struct HomeRingTrim: View {
                 else { withAnimation(.spring(response: 0.8, dampingFraction: 0.85).delay(0.2)) { shown = true } }
             }
     }
+}
+
+// MARK: - The featured carousel's events (EXPERIENCE.md §7.2 #9)
+
+/// Never twice on one screen: the carousel's upcoming events skip any that has
+/// its own card on Home — the featured gathering's series (its card stands
+/// below the carousel; the carousel used to show it again beside it) and the
+/// gathering happening now (the live-now card). Up to three, in the server's
+/// order. Pure — pinned by tests.
+enum HomeFeatured {
+    /// One card per series, at its next date (the walk's E10: "Welcome to
+    /// Ablaze" three times — 25 Oct, 25 Nov, 25 Dec; §7.2 #9, never twice on
+    /// one screen). Rows arrive soonest first, so the first of a series is its
+    /// next meeting. A row without a series stands for itself.
+    static func carouselEvents(_ rows: [HomeEventRow], featuredSeriesId: String?,
+                               onNowOccurrenceId: String?) -> [HomeEventRow] {
+        let featured = featuredSeriesId.flatMap { $0.isEmpty ? nil : $0 }
+        var seen = Set<String>()
+        return Array(rows.filter { row in
+            guard !(featured != nil && row.seriesId == featured), row.occurrenceId != onNowOccurrenceId else { return false }
+            return seen.insert(row.seriesId.isEmpty ? "occ:" + row.occurrenceId : row.seriesId).inserted
+        }.prefix(3))
+    }
+}
+
+
+/// When Home refreshes in place (the walk's B5; §7.1 rule 5: a refresh
+/// updates in place). Pure, so the tests pin it.
+enum HomeRefresh {
+    static let minimumGap: TimeInterval = 30
+    static func should(loading: Bool, loaded: Bool, online: Bool?, last: Date, now: Date = Date()) -> Bool {
+        loaded && !loading && online != false && now.timeIntervalSince(last) >= minimumGap
+    }
+}
+
+/// What Home's header says before it knows (the Android walk's A3: a fact
+/// shown while loading is a fact made up). No name until the profile names
+/// the member — "Good evening." not "Good evening, Friend." — and no growth
+/// ring until a score has come back above zero.
+/// The church's clock (Nairobi) — the one the liturgy card is chosen by
+/// (the server's partOf): morning from 4, midday from 11, evening from 16,
+/// night from 21 until 4. Home's greeting, its sky and its light read it, so
+/// the greeting, the liturgy card and the header say the same part of the
+/// day (EXPERIENCE.md §9.3 rule 3).
+enum ChurchClock {
+    enum Part: Equatable { case morning, midday, evening, night }
+
+    private static var calendar: Calendar {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = GiveCalendar.nairobi
+        return cal
+    }
+    static func hour(_ now: Date = Date()) -> Int { calendar.component(.hour, from: now) }
+    static func isSunday(_ now: Date = Date()) -> Bool { calendar.component(.weekday, from: now) == 1 }
+    static func part(_ now: Date = Date()) -> Part { part(hour: hour(now)) }
+    static func part(hour h: Int) -> Part {
+        switch h {
+        case 4..<11: return .morning
+        case 11..<16: return .midday
+        case 16..<21: return .evening
+        default: return .night
+        }
+    }
+}
+
+/// Each rhythm tile in plain words (EXPERIENCE.md §8.1 rule 8, §8.2 #20): what
+/// the day holds — "Prayed", "Read", "Written" once it is done, "Not yet"
+/// until then; never "PENDING" / "DONE". Android's RhythmTileWords.
+enum RhythmTileWords {
+    static let notYet = "Not yet"
+    static func status(_ kind: String, done: Bool) -> String {
+        guard done else { return notYet }
+        switch kind {
+        case "prayer": return "Prayed"
+        case "word": return "Read"
+        case "reflection": return "Written"
+        default: return "Done"
+        }
+    }
+}
+
+enum HomeHeaderWords {
+    /// "Happy Lord's Day" on a Sunday; otherwise by the church's hour, in the
+    /// liturgy's bands: "Good afternoon" ends at 16, when the card turns to
+    /// EVENING; "Rest well" from 21 until 4, when it is NIGHT.
+    static func timeGreeting(hour h: Int, sunday: Bool) -> String {
+        if sunday { return "Happy Lord's Day" }
+        switch h {
+        case 0..<4: return "Rest well"
+        case 4..<12: return "Good morning"
+        case 12..<16: return "Good afternoon"
+        case 16..<21: return "Good evening"
+        default: return "Rest well"
+        }
+    }
+
+    static func greeting(_ greeting: String, fullName: String?) -> String {
+        guard let first = fullName?.split(separator: " ").first, !first.isEmpty else { return "\(greeting)." }
+        return "\(greeting), \(first)."
+    }
+    static func showsScore(_ score: Int?) -> Bool { (score ?? 0) > 0 }
 }

@@ -10,6 +10,20 @@
 // share ONE refresh — the first 401 spends the token, the rest await it.
 import Foundation
 
+/// Scripted visual verification only (a DEBUG build on the simulator):
+/// NURU_UITEST_OFFLINE=1 makes the phone read as having no network, so every
+/// tab's offline state can be captured (EXPERIENCE.md §9.4). Always false in
+/// a release build and on a device.
+enum UITestHooks {
+    static let offline: Bool = {
+        #if DEBUG && targetEnvironment(simulator)
+        return ProcessInfo.processInfo.environment["NURU_UITEST_OFFLINE"] == "1"
+        #else
+        return false
+        #endif
+    }()
+}
+
 enum APIError: LocalizedError {
     case http(status: Int, code: String?, message: String, details: ErrorDetails? = nil)
     case decoding(String)
@@ -289,6 +303,10 @@ actor APIClient {
         let keepCopy = Self.keepsLastGoodCopy(method, trimmed)
         var data: Data, response: URLResponse
         do {
+            // Scripted state captures (EXPERIENCE.md §9.4): a debug simulator
+            // run with NURU_UITEST_OFFLINE=1 fails every call the way a phone
+            // with no network does — through the same path below.
+            if UITestHooks.offline { throw URLError(.notConnectedToInternet) }
             (data, response) = try await Self.session.data(for: req)
         } catch let urlErr as URLError {
             // The wire failed. For a read we keep copies of, the last good copy
@@ -340,6 +358,57 @@ actor APIClient {
     /// POST returning the raw response bytes (no Codable key conversion).
     func postRaw<B: Encodable>(_ path: String, body: B) async throws -> Data {
         try await send(path, method: "POST", body: body, as: RawJSON.self).data
+    }
+
+    /// Where a path the server hands out points. One that starts with "/"
+    /// is from the server's root and already carries its version — the
+    /// letter's `pdf_url` is "/v1/me/letters/{id}/pdf" — so it resolves
+    /// against the API's origin, never its base (that would read
+    /// "/v1/v1/…"). A full URL stands as it is; any other path is under the
+    /// API base, as `send` reads one.
+    static func serverURL(_ path: String, base: URL) -> URL? {
+        let p = path.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !p.isEmpty else { return nil }
+        if let u = URL(string: p), let scheme = u.scheme?.lowercased(), scheme == "https" || scheme == "http" { return u }
+        if p.hasPrefix("/") {
+            let origin = base.lastPathComponent == "v1" ? base.deletingLastPathComponent() : base
+            return URL(string: p, relativeTo: origin)?.absoluteURL
+        }
+        return base.appendingPathComponent(p)
+    }
+
+    /// GET a file the server hands out by path (the letter's PDF), with the
+    /// session's bearer token: its bytes. A 401 refreshes once, as `send`;
+    /// a failure says what happened in the same terms.
+    func download(serverPath path: String, isRetry: Bool = false) async throws -> Data {
+        guard let url = Self.serverURL(path, base: baseURL) else { throw APIError.transport("Couldn't form the request URL.") }
+        var req = URLRequest(url: url)
+        req.httpMethod = "GET"
+        req.timeoutInterval = 30
+        if let token = accessToken { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        let data: Data, response: URLResponse
+        do {
+            if UITestHooks.offline { throw URLError(.notConnectedToInternet) }
+            (data, response) = try await Self.session.data(for: req)
+        } catch let urlErr as URLError {
+            if urlErr.code == .notConnectedToInternet || urlErr.code == .timedOut || urlErr.code == .cannotConnectToHost {
+                throw APIError.offline
+            }
+            throw APIError.transport(urlErr.localizedDescription)
+        }
+        guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response.") }
+        if http.statusCode == 401, !isRetry, refreshToken != nil {
+            if await refreshSession() { return try await download(serverPath: path, isRetry: true) }
+            onSessionExpired?()
+            throw APIError.unauthorized
+        }
+        guard (200..<300).contains(http.statusCode) else {
+            let env = try? decoder.decode(ErrorEnvelope.self, from: data)
+            throw APIError.http(status: http.statusCode, code: env?.code,
+                                message: env?.text ?? HTTPURLResponse.localizedString(forStatusCode: http.statusCode),
+                                details: env?.details)
+        }
+        return data
     }
 
     // MARK: Login (single endpoint that may return a 2FA challenge)

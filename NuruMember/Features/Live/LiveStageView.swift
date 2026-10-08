@@ -168,14 +168,18 @@ struct LiveStageView: View {
     private func guestFailureOverlay(message: String, subscriber: WhepSubscriber, compact: Bool) -> some View {
         VStack(spacing: compact ? 3 : 8) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: compact ? 13 : 22)).foregroundStyle(Nuru.gold.opacity(0.9))
-            Text(message).font(.inter(compact ? 7 : 12, .semibold)).foregroundStyle(.white.opacity(0.85))
-                .multilineTextAlignment(.center).lineLimit(compact ? 3 : 4)
-                .padding(.horizontal, compact ? 5 : 24)
+                .font(.symbol(compact ? 13 : 22)).foregroundStyle(Nuru.gold.opacity(0.9))
+            // Nothing under 11 pt (§8.1 rule 3): a compact tile is too small for
+            // the words, so it keeps the icon and Retry.
+            if !compact {
+                Text(message).font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.85))
+                    .multilineTextAlignment(.center).lineLimit(4)
+                    .padding(.horizontal, 24)
+            }
             Button {
                 Task { await subscriber.retry() }
             } label: {
-                Text("Retry").font(.inter(compact ? 7 : 13, .bold)).foregroundStyle(Nuru.gold)
+                Text("Retry").font(.inter(compact ? 11 : 13, .bold)).foregroundStyle(Nuru.gold)
                     .padding(.horizontal, compact ? 8 : 16).padding(.vertical, compact ? 3 : 8)
                     .background(Capsule().fill(Color.white.opacity(0.15)))
             }
@@ -191,9 +195,9 @@ struct LiveStageView: View {
     private func railChrome(name: String, isMuted: Bool) -> some View {
         HStack(spacing: 4) {
             if isMuted {
-                Image(systemName: "mic.slash.fill").font(.system(size: 9, weight: .bold)).foregroundStyle(.white)
+                Image(systemName: "mic.slash.fill").font(.symbol(9, weight: .bold)).foregroundStyle(.white)
             }
-            Text(name).font(.inter(9, .bold)).foregroundStyle(.white).lineLimit(1)
+            Text(name).font(.inter(11, .bold)).foregroundStyle(.white).lineLimit(1)
         }
         .padding(.horizontal, 6).padding(.vertical, 5)
         .frame(maxWidth: .infinity, alignment: .leading)

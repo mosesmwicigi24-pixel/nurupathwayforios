@@ -558,6 +558,11 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
     /// pledge, one not active, fully paid or past its date, and on older
     /// servers.
     let pace: Pace?
+    /// Money the member said they paid another way that the office is still
+    /// checking, in the pledge's own currency (pathway#516). Shown — "KSh
+    /// 2,000 is being checked by the office" — never subtracted: it counts
+    /// once the office confirms it. 0 on older servers.
+    let pendingClaimMinor: Int
     var id: String { pledgeId }
 
     struct Pace: Codable, Sendable, Hashable {
@@ -643,9 +648,15 @@ struct Pledge: Codable, Sendable, Identifiable, Hashable {
         startsOn = (try? c.decodeIfPresent(String.self, forKey: .startsOn)).flatMap { $0.isEmpty ? nil : $0 }
         untilOn = (try? c.decodeIfPresent(String.self, forKey: .untilOn)).flatMap { $0.isEmpty ? nil : $0 }
         pace = try? c.decodeIfPresent(Pace.self, forKey: .pace)
+        pendingClaimMinor = max(0, c.flexInt(.pendingClaimMinor) ?? 0)
     }
 
-    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle }
+    static func == (a: Pledge, b: Pledge) -> Bool { a.pledgeId == b.pledgeId && a.status == b.status && a.progress == b.progress && a.remindersEnabled == b.remindersEnabled && a.amountMinor == b.amountMinor && a.dueDay == b.dueDay && a.title == b.title && a.customTitle == b.customTitle && a.pendingClaimMinor == b.pendingClaimMinor }
+
+    /// "US$ 50.00 is being checked by the office" while a claim waits — the
+    /// pledge's row and its page lead with it (final walk M1: a member must
+    /// never be invited to pay twice). Nil when nothing waits.
+    var claimLine: String? { PledgeChecking.line(pendingClaimMinor, currency) }
     func hash(into h: inout Hasher) { h.combine(pledgeId) }
 
     var isMonthly: Bool { shape == "monthly" }
@@ -730,6 +741,20 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
     /// "2 overdue since 10 Aug".
     let overdueCount: Int
     let overdueSince: String?
+    /// kind "pledge": what the office is checking toward it — the member's
+    /// pending "I paid another way" claims, in the pledge's currency (pathway
+    /// 563185e). Said beside the row, never subtracted: a claim counts once
+    /// the office confirms it (GIVING.md). 0 when none, or from an older server.
+    let pendingClaimMinor: Int
+
+    /// "KSh 2,000 is being checked by the office" — what is already happening
+    /// is said first, so nobody pays twice (EXPERIENCE.md §9.3 rule 1). Nil
+    /// with nothing being checked.
+    var claimLine: String? {
+        guard kind == "pledge", pendingClaimMinor > 0 else { return nil }
+        return "\(GiveMoney.format(pendingClaimMinor, currency)) is being checked by the office"
+    }
+
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         kind = (try? c.decodeIfPresent(String.self, forKey: .kind)) ?? "pledge"
@@ -743,6 +768,7 @@ struct DueItem: Codable, Sendable, Identifiable, Hashable {
         pendingMinor = max(0, c.flexInt(.pendingMinor) ?? 0)
         overdueCount = max(0, c.flexInt(.overdueCount) ?? 0)
         overdueSince = (try? c.decodeIfPresent(String.self, forKey: .overdueSince)).flatMap { $0.isEmpty ? nil : $0 }
+        pendingClaimMinor = max(0, c.flexInt(.pendingClaimMinor) ?? 0)
     }
 }
 
@@ -1290,5 +1316,46 @@ struct PartnerInvite: Codable, Sendable {
         let disciplesPerYear: Int
         let meaning: String
         var id: Int { amountMinor }
+    }
+}
+
+/// The one time a gift shows (the Cycle 3 walk's B7): the statement said
+/// "Tithe · 11:58 AM" (created_at) while the receipt said 11:59 AM
+/// (settled_at), for the same KSh 200. A settled gift shows when it settled;
+/// any other shows when it was given. Which church year a gift counts in is
+/// not this — that stays created_at, the statements' own year rule.
+enum GiftTime {
+    static func shown(settledAt: String?, createdAt: String) -> String {
+        if let s = settledAt, !s.isEmpty { return s }
+        return createdAt
+    }
+}
+
+extension GivingRecord {
+    var shownAt: String { GiftTime.shown(settledAt: settledAt, createdAt: createdAt) }
+}
+
+extension GivingDetail {
+    var shownAt: String { GiftTime.shown(settledAt: settledAt, createdAt: createdAt) }
+}
+
+/// What the office is still checking toward one pledge (final walk M1),
+/// whichever read knows: the pledge rows' `pending_claim_minor` (the list
+/// and Partners carry it; the single-pledge read does not) or the pending
+/// claims the pledge's page reads itself, in the pledge's currency. Shown,
+/// never subtracted.
+enum PledgeChecking {
+    static func minor(rows: [Pledge?], claims: [PledgeClaim]?, currency: String) -> Int {
+        let fromRows = rows.compactMap { $0?.pendingClaimMinor }.max() ?? 0
+        let code = currency.uppercased()
+        let fromClaims = (claims ?? [])
+            .filter { $0.status == "pending" && $0.currency.uppercased() == code }
+            .reduce(0) { $0 + max(0, $1.amountMinor) }
+        return max(fromRows, fromClaims)
+    }
+
+    static func line(_ minor: Int, _ currency: String) -> String? {
+        guard minor > 0 else { return nil }
+        return "\(GiveMoney.format(minor, currency)) is being checked by the office"
     }
 }

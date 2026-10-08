@@ -91,7 +91,7 @@ struct LiveMiniPopup: View {
                     MutedPreviewSurface(player: p)
                         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 } else {
-                    Icon(stream.isAudio ? .audioLines : .camera, size: 20, color: Nuru.gold)
+                    Icon(stream.isAudio ? .audioLines : .camera, size: 22, color: Nuru.gold)
                 }
             }
             .frame(width: 56, height: 56)
@@ -99,7 +99,7 @@ struct LiveMiniPopup: View {
             VStack(alignment: .leading, spacing: 5) {
                 HStack(spacing: 5) {
                     DiscoveryPulseDot()
-                    Text("LIVE").font(.inter(9, .bold)).kerning(1.4).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 7).padding(.vertical, 3)
                 .background(Color(hex: 0xDC2626), in: Capsule())
@@ -163,5 +163,64 @@ struct AppLiveBar: View {
         }
         .buttonStyle(.pressableSubtle)
         .overlay(alignment: .top) { Rectangle().fill(Nuru.gold.opacity(0.4)).frame(height: 1) }
+    }
+}
+
+// MARK: - A Live notice whose stream is over
+
+/// "This Live has ended" (EXPERIENCE.md §7.2 #3, §7.3) — what a Live notice
+/// opens, from a banner or the inbox, once its stream is over: calm, in the
+/// player's own ended look, naming the stream, and one way out — "Go back",
+/// the same action as §4's "This isn't here any more" (both apps). It
+/// replaced a tap that landed on Home without a word (a banner) or in a
+/// greeting sheet (the inbox). When /live/now didn't answer, it says why in
+/// the one state language instead — "ended" is never a guess.
+struct LiveEndedView: View {
+    let notice: LiveEndedNotice
+    let onBack: () -> Void
+
+    private var title: String { notice.failure?.title ?? "This Live has ended" }
+    private var line: String? { notice.failure?.line ?? notice.title }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Image(systemName: notice.failure == nil ? "antenna.radiowaves.left.and.right.slash" : "wifi.slash")
+                .font(.symbol(36)).foregroundStyle(Nuru.gold.opacity(0.85))
+            VStack(spacing: 6) {
+                Text(title)
+                    .font(.fraunces(22, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.center)
+                if let line {
+                    Text(line).font(.inter(13)).foregroundStyle(.white.opacity(0.6))
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Button { Haptics.tap(); onBack() } label: {
+                Text("Go back").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
+                    .padding(.horizontal, 28).padding(.vertical, 12)
+                    .background(Nuru.gold, in: Capsule())
+            }
+            .buttonStyle(.pressable)
+            .padding(.top, 6)
+        }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            LinearGradient(colors: [Nuru.navy, Nuru.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+                .ignoresSafeArea()
+        )
+        // The way back at the top too — every full-screen state has one (§7.1 rule 3).
+        .overlay(alignment: .topLeading) {
+            Button { Haptics.tap(); onBack() } label: {
+                Icon(.arrowLeft, size: 18, color: .white)
+                    .frame(width: 38, height: 38)
+                    .background(Color.white.opacity(0.18), in: Circle())
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Go back")
+            .padding(.horizontal, 16).padding(.top, 10)
+        }
+        .preferredColorScheme(.dark)
     }
 }

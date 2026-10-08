@@ -31,7 +31,9 @@ enum CellRosterMessageState: Equatable {
 final class CellRosterViewModel: ObservableObject {
     @Published var roster: CellRoster?
     @Published var loading = true
-    @Published var error: String?
+    /// Why the roster didn't come, said in §4's words (it read "Check your
+    /// connection and try again" whatever the cause).
+    @Published var loadFailure: Error?
 
     // The chat module's state, read-only — what makes the "…" menu honest.
     @Published private(set) var conversations: [ChatConversation] = []
@@ -77,21 +79,19 @@ final class CellRosterViewModel: ObservableObject {
     }
 
     func load() async {
-        loading = true; error = nil
+        loading = true; loadFailure = nil
         // The roster is the screen; the four chat reads are best-effort colour
         // for the "…" menu and must never fail the load.
-        async let rosterReq = try? MemberAPI.cellRoster()
         async let inboxReq = try? MemberAPI.chatInbox()
         async let connectionsReq = try? MemberAPI.listConnections()
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
         async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
 
-        roster = await rosterReq
+        do { roster = try await MemberAPI.cellRoster() } catch { loadFailure = error }
         conversations = (await inboxReq)?.conversations ?? []
         connections = await connectionsReq ?? []
         outgoingRequests = await outgoingReq ?? []
         incomingRequests = await incomingReq ?? []
-        if roster == nil { error = "Couldn't load your cell roster." }
         loading = false
     }
 
@@ -322,7 +322,7 @@ struct CellRosterView: View {
 
     private var leaderChip: some View {
         Text("LEADER")
-            .font(.inter(9, .bold)).kerning(0.7).foregroundStyle(Nuru.goldChipText)
+            .font(.inter(11, .bold)).kerning(0.7).foregroundStyle(Nuru.goldChipText)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Nuru.goldChipBg, in: Capsule())
             .overlay(Capsule().stroke(Nuru.gold.opacity(0.4), lineWidth: 1))
@@ -330,7 +330,7 @@ struct CellRosterView: View {
 
     private var youChip: some View {
         Text("You")
-            .font(.inter(9, .bold)).foregroundStyle(Nuru.navyMid)
+            .font(.inter(11, .bold)).foregroundStyle(Nuru.navyMid)
             .padding(.horizontal, 7).padding(.vertical, 2)
             .background(Nuru.tintBlue, in: Capsule())
     }
@@ -356,7 +356,7 @@ struct CellRosterView: View {
     private func bandPill(_ band: String) -> some View {
         let color = Nuru.bandColor(band)
         return Text(DisciplerRosterView.bandLabel(band))
-            .font(.inter(10, .bold)).foregroundStyle(color)
+            .font(.inter(11, .bold)).foregroundStyle(color)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(color.opacity(0.12), in: Capsule())
             .overlay(Capsule().stroke(color.opacity(0.25), lineWidth: 1))
@@ -381,10 +381,11 @@ struct CellRosterView: View {
         }
     }
 
-    /// "5 of 8" over the gatherings this cell actually held; "—" before it has
-    /// met at all (the shepherd note above says why).
+    /// "5 of 8" over the gatherings this cell actually held; "Not yet" before
+    /// it has met at all (the shepherd note above says why) — words, not a
+    /// dash that looks like missing data (§8.1 rule 8).
     private func attendanceLabel(_ m: CellRosterMember) -> String {
-        guard let a = m.attendance, a.of > 0 else { return "—" }
+        guard let a = m.attendance, a.of > 0 else { return "Not yet" }
         return "\(a.present) of \(a.of)"
     }
 
@@ -420,7 +421,7 @@ struct CellRosterView: View {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.7)
                 } else {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 15, weight: .bold)).foregroundStyle(Nuru.navy)
+                        .font(.symbol(15, weight: .bold)).foregroundStyle(Nuru.navy)
                 }
             }
             .frame(width: 34, height: 34)
@@ -447,11 +448,10 @@ struct CellRosterView: View {
                 Icon(.users, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text(vm.error == nil ? "No one here yet" : "Couldn't load the roster")
-                    .font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
-                Text(vm.error == nil
-                     ? "When your leader adds people to this cell, they'll appear here."
-                     : "Check your connection and try again.")
+                Text(vm.loadFailure.map { NuruStateCopy.failure($0).title } ?? "No one here yet")
+                    .font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
+                Text(vm.loadFailure.map { NuruStateCopy.failure($0).line ?? "" }
+                     ?? "When your leader adds people to this cell, they'll appear here.")
                     .font(.nCaption).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }

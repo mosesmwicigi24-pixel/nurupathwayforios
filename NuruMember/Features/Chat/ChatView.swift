@@ -1,11 +1,11 @@
 // Chat — "Nuru Connect" inbox, the native port of the Figma ChatTab. A cream
-// header (time-based greeting overline, serif title, bell → notifications), a
-// white search bar, the "Quick help from Nuru" AI launcher (gradient ring, orb,
-// live dot), the italic "Verse for today" ribbon, and a capsule segment control
+// header (COMMUNITY kicker, serif title, bell → notifications — §8.1 rule 2), a
+// white search bar, the "Quick help from Nuru" AI launcher (a paper card with
+// a gold-tint tile), the italic "Verse for today" ribbon, and a capsule segment control
 // (#My Space · DM · My Groups with counts). Each segment renders one grouped
 // white card of rows: spaces (# avatar, author preview, member dots, Active
 // pill), DMs (stories row, real-or-initials avatars, unread badges, read ticks)
-// and groups. A gold pen FAB opens the "Start something" compose sheet.
+// and groups. The pen beside the bell opens the "Start something" compose sheet.
 import PhotosUI
 import SwiftUI
 import UIKit
@@ -15,9 +15,10 @@ import UniformTypeIdentifiers
 final class ChatInboxViewModel: ObservableObject {
     @Published var inbox: ChatInbox?
     @Published var people: [ChatPerson] = []
-    @Published var verse: (text: String, reference: String, version: String)?
     @Published var loading = true
     @Published var error: String?
+    /// Why the inbox didn't load — said in the one state language (§4).
+    @Published var loadFailure: Error?
     @Published var busyPersonId: String?    // person whose DM is being created
     @Published var joiningSpaceId: String?  // discover space being followed
 
@@ -67,6 +68,20 @@ final class ChatInboxViewModel: ObservableObject {
     var groups: [ChatConversation] { conversations.filter { $0.kind == "group" } }
     var discover: [DiscoverSpace] { inbox?.discoverSpaces ?? [] }
     var totalUnread: Int { conversations.reduce(0) { $0 + $1.unread } }
+
+    /// The header's line says what it counts (§7.4 #15): messages — "No new
+    /// messages" / "1 new message" / "N new messages". It said "You're all
+    /// caught up" beside a bell whose dot counts the inbox's notices, which
+    /// read as a contradiction. Nil until the inbox has answered: no count
+    /// that isn't true yet (§7.1 rule 5). Pure.
+    nonisolated static func headerLine(unread: Int?) -> String? {
+        guard let unread else { return nil }
+        switch unread {
+        case ..<1: return "No new messages"
+        case 1: return "1 new message"
+        default: return "\(unread) new messages"
+        }
+    }
     /// Pending asks from someone else — the number the Chat segment badge and
     /// the bell dot both surface prominently.
     var pendingIncomingCount: Int { incomingRequests.count }
@@ -83,25 +98,35 @@ final class ChatInboxViewModel: ObservableObject {
 
     func load() async {
         loading = true; error = nil
-        async let inboxReq = try? MemberAPI.chatInbox()
+        async let inboxReq = MemberAPI.chatInbox()
         async let peopleReq = try? MemberAPI.chatPeople()
-        async let verseReq = try? MemberAPI.homeVerse()
         async let connectionsReq = try? MemberAPI.listConnections()
         async let incomingReq = try? MemberAPI.listConnectionRequests(direction: "incoming")
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
         async let discipleshipReq = try? MemberAPI.discipleship()
 
-        if let i = await inboxReq { inbox = i } else { error = "Couldn't load your chats." }
-        if let p = await peopleReq { people = p }
-        if let v = await verseReq {
-            if let t = v.text, !t.isEmpty { verse = (t, v.reference, v.version) }
-            else { verse = (defaultVerseText, v.reference, v.version) }
+        let inboxRead: Result<ChatInbox, Error>
+        do { inboxRead = .success(try await inboxReq) } catch { inboxRead = .failure(error) }
+        let p = await peopleReq
+        let c = await connectionsReq
+        let inc = await incomingReq
+        let out = await outgoingReq
+        let d = await discipleshipReq
+        let pastor = await PastorEligibility.isPastor()
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the inbox once painted first, and My Discipler said "A
+        // discipler has not yet been assigned to you" while that read was
+        // still on its way. Now the page lands whole.
+        switch inboxRead {
+        case .success(let i): inbox = i; loadFailure = nil
+        case .failure(let e): self.error = "Couldn't load your chats."; loadFailure = e
         }
-        if let c = await connectionsReq { connections = c }
-        if let inc = await incomingReq { incomingRequests = inc }
-        if let out = await outgoingReq { outgoingRequests = out }
-        if let d = await discipleshipReq { discipleship = d }
-        isPastor = await PastorEligibility.isPastor()
+        if let p { people = p }
+        if let c { connections = c }
+        if let inc { incomingRequests = inc }
+        if let out { outgoingRequests = out }
+        if let d { discipleship = d }
+        isPastor = pastor
         // The server is the source of truth for mute now (Chat Redesign C4) —
         // sync the local optimistic flag from whichever row the inbox resolves
         // as the pastoral thread, so a mute set elsewhere (or by this device in
@@ -289,8 +314,6 @@ final class ChatInboxViewModel: ObservableObject {
             }
         } catch { /* offline etc. — the button simply stays */ }
     }
-
-    private let defaultVerseText = "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”"
 }
 
 // C3b four-tab restructure: My Space (spaces + the cell/group rooms, merged —
@@ -298,15 +321,17 @@ final class ChatInboxViewModel: ObservableObject {
 // DM segment, renamed) · My Discipler · Talk with My Pastor. SuperAdmin keeps
 // Broadcast appended, unchanged.
 private enum ChatSegment: Int, CaseIterable { case space, dm, discipler, pastor, broadcast }
-private enum ChatDest: Hashable { case notifications }
 
-// Figma STORY_RING — the warm gold gradient used for rings, badges and the FAB.
+// Figma STORY_RING — the warm gold gradient used for rings and badges.
 private let storyRing = LinearGradient(
     colors: [Color(hex: 0xE6C068), Color(hex: 0xC89B3C), Color(hex: 0xB07D2E)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
 // Per-row tint cycle (backend sends no space colour) — mirrors the mock palette.
-private let rowTints: [UInt32] = [0xC89B3C, 0x6366F1, 0x0EA5E9, 0x16A34A, 0xDB2777, 0x0D9488]
+// Navy or gold only (§8.1 rule 1) — no indigo, sky, green, pink or teal rows.
+// Gold and navy only (§8.1 rule 1; final walk C4: the cell room's tile was
+// the hero's mid-blue #315F8C, a hue no role has).
+private let rowTints: [UInt32] = [0xC89B3C, 0x143559, 0xA87F2E, 0x0B1F33]
 private func rowTint(_ index: Int) -> Color { Color(hex: rowTints[index % rowTints.count]) }
 
 // "9:42 AM" today · "Yesterday" · "Tue" within the week · "4 Jun" beyond.
@@ -319,7 +344,7 @@ private func chatTime(_ iso: String?) -> String {
     if cal.isDateInToday(d) { f.dateFormat = "h:mm a" }
     else if cal.isDateInYesterday(d) { return "Yesterday" }
     else if let days = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: Date())).day, days < 7 { f.dateFormat = "EEE" }
-    else { f.dateFormat = "d MMM" }
+    else { return NuruDates.day(d) }
     return f.string(from: d)
 }
 
@@ -333,6 +358,9 @@ struct ChatView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = ChatInboxViewModel()
+    /// Whether a discipler is paired (GET /growth/mentor) — the My Discipler
+    /// chip shows only then (Cycle 4, B1).
+    @ObservedObject private var disciplers = DisciplerStore.shared
     @State private var path = NavigationPath()
     @State private var segment: ChatSegment = .space
     @State private var query = ""
@@ -346,11 +374,18 @@ struct ChatView: View {
                     VStack(spacing: 0) {
                         header
                         VStack(spacing: Nuru.S.screen) {
+                            // A saved copy says so (final walk M3) — never
+                            // over the skeleton or the failed card.
+                            NuruSavedCopyNotice(hasContent: vm.inbox != nil)
                             // Broadcast is a focused composer — drop the AI/verse
                             // cards there so "Send to all" stays above the fold.
                             if segment != .broadcast {
                                 aiCard
-                                if query.isEmpty { verseCard }
+                                // Pray is a door inside Community (§9.2 #13),
+                                // where Home's verse was repeated: the verse is
+                                // Home's alone, and the Talk | Pray switch above
+                                // is gone — the chips below are the one switcher.
+                                if query.isEmpty { prayerRoomRow }
                             }
                             segmentControl
                             segmentBody
@@ -361,23 +396,39 @@ struct ChatView: View {
                         // Skeleton hands off to real rows with a soft cross-fade.
                         .animation(.easeOut(duration: 0.22), value: vm.loading)
                     }
+                    .scrollsToTopOnReselect(.you)   // a re-tap at the root returns to the top (B10)
                 }
                 .ignoresSafeArea(edges: .top)
                 .background(Nuru.paper.ignoresSafeArea())
                 .scrollDismissesKeyboard(.interactively)
-                if segment != .broadcast { fab }   // the DM-compose FAB would sit on the Send button
                 if composeOpen { composeSheet }
             }
             .animation(.spring(response: 0.35, dampingFraction: 0.85), value: composeOpen)
+            // A pairing that ends while its chip is open leaves for My Space.
+            .onChange(of: disciplers.hasDiscipler) { _, has in
+                if !has, segment == .discipler { segment = .space }
+            }
             .toolbar(.hidden, for: .navigationBar)
             .fullScreenCover(isPresented: $showNuru) { NuruAssistantView() }
             .refreshable { await vm.load() }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: ChatConversation.self) { ChatThreadView(conversation: $0) }
             // Threads opened WITH a known privacy context (My Discipler /
             // Talk with My Pastor tabs) carry it into the thread screen.
             .navigationDestination(for: ThreadRoute.self) { ChatThreadView(conversation: $0.conversation, context: $0.context) }
-            .navigationDestination(for: ChatDest.self) { _ in NotificationsView() }
+            // The bell's inbox, and the announcement a row of it opens.
+            .inboxDestinations()
             .navigationDestination(for: Broadcast.self) { BroadcastDetailView(broadcast: $0) }
+            // The Prayer Room's own page — the same one Home's "My Prayer
+            // Room" tile opens (one way to each thing) — and a prayer in it.
+            .navigationDestination(for: CommunityRoute.self) { r in
+                switch r {
+                case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)
+                case .prayer(let id): PrayerWallDetailView(postId: id)
+                case .discussions: DiscussionsView()
+                case .discussion(let id): DiscussionThreadView(threadId: id)
+                }
+            }
         }
         // Coming back from a thread refreshes the inbox, so a conversation just
         // opened stops counting: the thread marked itself read on the server the
@@ -386,6 +437,8 @@ struct ChatView: View {
         .onChange(of: path.count) { old, new in
             if new < old { Task { await vm.load() } }
         }
+        // A re-tap on You while Community shows returns to its top (§7.4 #17).
+        .popsToRoot(on: .you, path: $path, when: { tabs.youSegmentShown == .chat })
         // Cross-tab deep link (a Home "chat_unread" nudge, the Read-with-a-
         // Friend "Open chat" toast): push THAT thread with the inbox as the
         // back stop. The real inbox row is preferred (title, avatar, unread);
@@ -437,21 +490,19 @@ struct ChatView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(spacing: 6) {
-                        Icon(.sparkle, size: 12, color: Color(hex: 0x9A7A2A))
-                        Text("\(greeting.uppercased()) · \(firstName.uppercased())")
-                            .font(.inter(11, .semibold)).kerning(2.4).foregroundStyle(Color(hex: 0x9A7A2A))
-                    }
-                    Text("Nuru Connect")
-                        .font(.fraunces(30, .semibold)).kerning(-0.6).foregroundStyle(Nuru.navy)
-                        .padding(.top, Nuru.S.md)
-                    Text(vm.totalUnread > 0 ? "\(vm.totalUnread) unread · \(vm.spaces.count) spaces" : "You’re all caught up")
-                        .font(.inter(13)).foregroundStyle(Color(hex: 0x59667C))
-                        .padding(.top, 6)
-                }
+                // One header (EXPERIENCE.md §8.1 rule 2): the kicker names the
+                // tab — the greeting belongs to Home alone.
+                NuruHeaderText(kicker: "Community", title: "Nuru Connect",
+                               line: ChatInboxViewModel.headerLine(unread: vm.inbox == nil ? nil : vm.totalUnread))
                 Spacer(minLength: 0)
-                bellButton
+                // Compose lives in the header, beside the bell (the bell stays
+                // rightmost, §8.1 rule 2): as a floating button it always sat on
+                // something — the empty state's words, a row's time and unread
+                // chip — and a floating button never hides content (rule 9).
+                HStack(spacing: Nuru.S.sm) {
+                    if segment != .broadcast { composeButton }
+                    bellButton
+                }
             }
             searchBar.padding(.top, Nuru.S.lg)
         }
@@ -469,33 +520,18 @@ struct ChatView: View {
         .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
     }
 
-    // White tile bell → NotificationsView; glowing gold dot when anything is unread.
+    // The one bell (EXPERIENCE.md §7.2 #4) → the inbox, its gold dot only
+    // while the inbox has something unread. It used to light for unread chat
+    // messages and pending connection requests too — those are counted where
+    // they live (the You tab's badge and the Community chip, ChatBadge); a
+    // connection request is also an inbox notice, so the inbox counts it.
     private var bellButton: some View {
-        Button {
-            Haptics.tap()
-            path.append(ChatDest.notifications)
-        } label: {
-            Icon(.bell, size: 19, color: Nuru.navy)
-                .frame(width: 44, height: 44)
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .overlay(alignment: .topTrailing) {
-                    // Also lights up for a pending "wants to connect" ask — a
-                    // connection request is as much "needs you" as an unread.
-                    if vm.totalUnread > 0 || vm.pendingIncomingCount > 0 {
-                        Circle().fill(Nuru.gold)
-                            .frame(width: 8, height: 8)
-                            .shadow(color: Nuru.gold.opacity(0.9), radius: 4)
-                            .padding(10)
-                    }
-                }
-        }
-        .buttonStyle(.pressable)
+        NuruBell()
     }
 
     private var searchBar: some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(.search, size: 16, color: Color(hex: 0x74808F))
+            Icon(.search, size: 18, color: Color(hex: 0x74808F))
             TextField("", text: $query, prompt: Text("Search spaces, people, messages").foregroundColor(Color(hex: 0x74808F)))
                 .font(.inter(14)).foregroundStyle(Nuru.navy)
                 .textInputAutocapitalization(.never)
@@ -519,88 +555,75 @@ struct ChatView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
-    // MARK: AI card ("Quick help from Nuru" — gradient ring, glows, orb, live dot)
+    // MARK: AI card ("Quick help from Nuru")
 
+    // A paper card (owner, 2026-10-08, §8.1 rule 1: navy is the church's
+    // voice and each tab's next step — the assistant is neither): white, the
+    // hairline, the gold-tint tile, navy words. It was navy (§8.2 #3, which
+    // this supersedes), and before that a purple-and-green gradient.
     private var aiCard: some View {
         Button {
             Haptics.tap()
             showNuru = true
         } label: {
             HStack(spacing: 14) {
-                ZStack(alignment: .topTrailing) {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous)
-                        .fill(RadialGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-                                             center: UnitPoint(x: 0.32, y: 0.28), startRadius: 2, endRadius: 46))
-                        .frame(width: 48, height: 48)
-                        .overlay(Icon(.sparkles, size: 20, color: .white))
-                        .shadow(color: Color(hex: 0x7C3AED).opacity(0.65), radius: 8, y: 5)
-                    Circle().fill(Color(hex: 0x34D399)).frame(width: 12, height: 12)
-                        .overlay(Circle().stroke(Color(hex: 0x0A1628), lineWidth: 2))
-                        .shadow(color: Color(hex: 0x34D399).opacity(0.9), radius: 4)
-                        .offset(x: 2, y: -2)
-                }
+                RoundedRectangle(cornerRadius: 16, style: .continuous)
+                    .fill(Color(hex: Nuru.tileTint))
+                    .frame(width: 48, height: 48)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+                    .overlay(Icon(.sparkles, size: 22, color: Nuru.navy))
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text("Quick help from Nuru")
-                            .font(.nRowTitle).kerning(-0.16).foregroundStyle(.white)
-                        Text("AI").font(.inter(8, .heavy)).kerning(1.1).foregroundStyle(Color(hex: 0x0A1628))
+                            .font(.nRowTitle).kerning(-0.16).foregroundStyle(Nuru.navy)
+                        Text("AI").font(.inter(11, .heavy)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0x34D399)],
-                                                       startPoint: .topLeading, endPoint: .bottomTrailing), in: Capsule())
+                            .background(Nuru.goldChipBg, in: Capsule())
                     }
-                    Text("The AI assistant · \(vm.totalUnread) updates across \(vm.spaces.count) spaces")
-                        .font(.nCardMeta).foregroundStyle(.white.opacity(0.6)).lineLimit(1)
+                    // Whole, never cut (§8.1 rule 9).
+                    // No zero counts (§7.4 #9): "0 updates across 0 spaces" said nothing.
+                    Text(ZeroCounts.assistantLine(unread: vm.totalUnread, spaces: vm.spaces.count))
+                        .font(.nCardMeta).foregroundStyle(Nuru.ink600)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: .white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.10), in: Circle())
-                    .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
             .padding(Nuru.S.base)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(colors: [Color(hex: 0x2A1259), Color(hex: 0x0A1628), Color(hex: 0x053F30)],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                    .overlay(alignment: .topLeading) {
-                        Circle().fill(Color(hex: 0x7C3AED).opacity(0.5)).frame(width: 160, height: 160).blur(radius: 40).offset(x: -40, y: -48)
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        Circle().fill(Color(hex: 0x10B981).opacity(0.4)).frame(width: 160, height: 160).blur(radius: 40).offset(x: 8, y: 56)
-                    }
-            )
-            .clipShape(RoundedRectangle(cornerRadius: 24.5, style: .continuous))
-            .padding(1.5)
-            .background(LinearGradient(colors: [Color(hex: 0xA78BFA), Color(hex: 0xC89B3C), Color(hex: 0x34D399)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 26, style: .continuous))
-            .shadow(color: Color(hex: 0x4C1D95).opacity(0.45), radius: 18, y: 10)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
         }
         .buttonStyle(.pressableSubtle)
     }
 
-    // MARK: Verse for today (gold ribbon, italic serif verse)
+    // MARK: My Prayer Room (EXPERIENCE.md §9.2 #13) — a door, not a switch
 
-    private var verseCard: some View {
-        HStack(alignment: .top, spacing: Nuru.S.md) {
-            Icon(.quote, size: 15, color: Nuru.gold)
-                .frame(width: 32, height: 32)
-                .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text("VERSE FOR TODAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
-                Text(vm.verse?.text ?? "“Carry each other’s burdens, and in this way you will fulfill the law of Christ.”")
-                    .font(.fraunces(13).italic()).foregroundStyle(Nuru.navy).lineSpacing(4)
-                Text(vm.verse?.reference ?? "Galatians 6:2")
-                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+    /// "My Prayer Room · Pray with the family" — Community's prayer, one tap
+    /// from its talk, with its own page and tabs. It was a Talk | Pray switch
+    /// stacked on You's segment bar and the inbox's chips (three switchers),
+    /// and the verse card here repeated Home's verse of the day.
+    private var prayerRoomRow: some View {
+        NavigationLink(value: CommunityRoute.prayerWall) {
+            HStack(spacing: Nuru.S.md) {
+                Icon(.handHeart, size: 18, color: Nuru.navy)
+                    .frame(width: 36, height: 36)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("My Prayer Room").font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    Text("Pray with the family").font(.nCardMeta).foregroundStyle(Nuru.ink600)
+                }
+                Spacer(minLength: 0)
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
-            Spacer(minLength: 0)
+            .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
         }
-        .padding(.horizontal, Nuru.S.base).padding(.vertical, Nuru.S.md)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: [Nuru.gold.opacity(0.08), Nuru.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.gold.opacity(0.2), lineWidth: 1))
+        .buttonStyle(.pressable)
+        .accessibilityHint("Opens My Prayer Room")
     }
 
     // MARK: Segmented control (capsule pills, navy gradient active)
@@ -619,7 +642,11 @@ struct ChatView: View {
                 // both are "things waiting on you in this tab".
                 segmentButton(.dm, "Chat", icon: .messageCircle,
                               vm.dms.reduce(0) { $0 + $1.unread } + vm.pendingIncomingCount)
-                segmentButton(.discipler, "My Discipler", icon: .users, vm.disciplerUnread)
+                // Only for a discipler the server names (Cycle 4, B1): with none it
+                // opened onto "A discipler has not yet been assigned to you."
+                if disciplers.hasDiscipler {
+                    segmentButton(.discipler, "My Discipler", icon: .users, vm.disciplerUnread)
+                }
                 segmentButton(.pastor, "My Pastor", icon: .heartHandshake, vm.pastoralUnread)
                 if isStaff { broadcastSegmentButton }
             }
@@ -650,7 +677,7 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.15)) { segment = .broadcast }
         } label: {
             HStack(spacing: 5) {
-                Icon(.megaphone, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C))
+                Icon(.megaphone, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C))
                 Text("Broadcast").font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
             }
             .padding(.horizontal, 14)
@@ -673,12 +700,12 @@ struct ChatView: View {
             withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
         } label: {
             HStack(spacing: 5) {
-                if let icon { Icon(icon, size: 12, color: selected ? Nuru.gold : Color(hex: 0x59667C)) }
+                if let icon { Icon(icon, size: 14, color: selected ? Nuru.gold : Color(hex: 0x59667C)) }
                 Text(label).font(.inter(12, .semibold)).foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
                 // Unread only. All read → no number at all; the quiet chip IS the
                 // "nothing waiting" signal.
                 if count > 0 {
-                    Text("\(count)").font(.inter(10, .bold))
+                    Text("\(count)").font(.inter(11, .bold))
                         .foregroundStyle(selected ? Nuru.navy : Color(hex: 0x6A7686))
                         .padding(.horizontal, 6).padding(.vertical, 1)
                         .frame(minWidth: 18)
@@ -746,27 +773,13 @@ struct ChatView: View {
         .nuruShimmer()
     }
 
-    // Inbox failed to load — warm copy + a real retry, not a dead-end line.
+    // Inbox failed to load — what really happened, in the one state language
+    // (§4: offline, our side, an ended session), with a real retry. It said
+    // "Couldn't load your chats." whatever the cause.
     private var loadFailedCard: some View {
-        VStack(spacing: Nuru.S.md) {
-            Icon(.messageCircle, size: 22, color: Color(hex: 0x74808F))
-            Text(vm.error ?? "Couldn't load your chats.")
-                .font(.nCardBody).foregroundStyle(Color(hex: 0x74808F))
-                .multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, Nuru.S.lg).padding(.vertical, 9)
-                    .background(storyRing, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
+        NuruStateView(state: .failed(vm.loadFailure.map { NuruStateCopy.failure($0) } ?? .serverSide),
+                      retry: { Task { await vm.load() } })
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 32).padding(.horizontal, Nuru.S.base)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     private func matches(_ c: ChatConversation) -> Bool {
@@ -784,11 +797,12 @@ struct ChatView: View {
         let groupItems = vm.groups.filter(matches)
         let discoverable = filteredDiscover
         return VStack(alignment: .leading, spacing: 10) {
-            sectionLabel(hash: true, "YOUR SPACES")
+            // A Lucide glyph, not a typed "#" (§8.1 rule 7; final walk C4).
+            sectionLabel(icon: .messageSquareText, "YOUR SPACES")
             if items.isEmpty {
                 emptyCard(icon: query.isEmpty ? .sparkles : .search,
                           query.isEmpty
-                    ? "No spaces yet — follow one below to get started."
+                    ? SpaceWords.none(canFollow: !discoverable.isEmpty)
                     : "No spaces match your search.")
             } else {
                 groupedCard {
@@ -806,7 +820,7 @@ struct ChatView: View {
                 }
             }
             if !discoverable.isEmpty {
-                sectionLabel(hash: true, "DISCOVER SPACES").padding(.top, 6)
+                sectionLabel(icon: .messageSquareText, "DISCOVER SPACES").padding(.top, 6)
                 groupedCard {
                     ForEach(Array(discoverable.enumerated()), id: \.element.id) { idx, s in
                         DiscoverSpaceRow(space: s, index: idx, divider: idx > 0,
@@ -1023,13 +1037,13 @@ struct ChatView: View {
                             Text(myInitials).font(.inter(14, .semibold)).foregroundStyle(.white)
                         }
                         .frame(width: 58, height: 58)
-                        ZStack { Circle().fill(storyRing); Icon(.plus, size: 13, color: .white) }
+                        ZStack { Circle().fill(storyRing); Icon(.plus, size: 14, color: .white) }
                             .frame(width: 24, height: 24)
                             .overlay(Circle().stroke(Nuru.paper, lineWidth: 3))
                             .shadow(color: Nuru.gold.opacity(0.5), radius: 5, y: 2)
                             .offset(x: 2, y: 2)
                     }
-                    Text("Your note").font(.inter(10, .medium)).foregroundStyle(Color(hex: 0x6A7686))
+                    Text("Your note").font(.inter(11, .medium)).foregroundStyle(Color(hex: 0x6A7686))
                 }
                 .frame(width: 60)
                 ForEach(vm.dms) { c in
@@ -1040,7 +1054,7 @@ struct ChatView: View {
                                 .background(Circle().fill(Nuru.paper))
                                 .padding(2.5)
                                 .background(storyRing, in: Circle())
-                            Text(firstWord(c.title)).font(.inter(10, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
+                            Text(firstWord(c.title)).font(.inter(11, .medium)).foregroundStyle(Nuru.navy).lineLimit(1)
                         }
                         .frame(width: 60)
                     }.buttonStyle(.pressable)
@@ -1050,22 +1064,21 @@ struct ChatView: View {
         }
     }
 
-    // MARK: FAB + compose sheet
+    // MARK: Compose + compose sheet
 
-    private var fab: some View {
+    /// "Start something" — the bell's tile, with the pen (§8.1 rule 7: 18).
+    private var composeButton: some View {
         Button {
             Haptics.tap()
             composeOpen = true
         } label: {
-            Icon(.pencil, size: 22, color: .white)
-                .frame(width: 56, height: 56)
-                .background(storyRing, in: Circle())
-                .shadow(color: Nuru.gold.opacity(0.55), radius: 12, y: 8)
-                .shadow(color: Color(hex: 0x0B1F33, alpha: 0.25), radius: 5, y: 3)
+            Icon(.pencil, size: 18, color: Nuru.navy)
+                .frame(width: 44, height: 44)
+                .background(Color.white, in: Circle())   // the bell's circle beside it
+                .overlay(Circle().stroke(Nuru.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
-        .padding(.trailing, Nuru.S.screen)
-        .padding(.bottom, Nuru.tabBarSpace - 18)
+        .accessibilityLabel("Start something")
     }
 
     // Figma ComposeSheet — dark scrim, "Start something", three segment shortcuts.
@@ -1076,36 +1089,42 @@ struct ChatView: View {
             Color(hex: 0x0B1F33, alpha: 0.45)
                 .ignoresSafeArea()
                 .onTapGesture { composeOpen = false }
-            VStack(spacing: 8) {
+            VStack(spacing: 0) {
+                // The title rides in the card: over the scrim it floated on
+                // whatever lay behind it and read poorly.
                 HStack {
-                    Text("Start something").font(.nCardTitle).foregroundStyle(.white)
+                    Text("Start something").font(.nCardTitle).foregroundStyle(Nuru.navy)
                     Spacer(minLength: 0)
                     Button { composeOpen = false } label: {
-                        Icon(.x, size: 16, color: .white)
+                        Icon(.x, size: 14, color: Nuru.navy)
                             .frame(width: 32, height: 32)
-                            .background(Color.white.opacity(0.15), in: Circle())
+                            .background(Nuru.mutedBg, in: Circle())
                             .frame(width: 44, height: 44)     // full-size hit target
                             .contentShape(Rectangle())
-                    }.buttonStyle(.plain)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Close")
                 }
-                .padding(.horizontal, 8)
+                .padding(.leading, Nuru.S.base).padding(.trailing, Nuru.S.xs).padding(.top, Nuru.S.xs)
                 VStack(spacing: 0) {
-                    composeAction("New direct message", "Message a person 1:1", divider: false) {
-                        Icon(.pencil, size: 19, color: Nuru.gold)
+                    composeAction("New direct message", "Message a person 1:1", divider: true) {
+                        Icon(.pencil, size: 18, color: Nuru.gold)
                     } action: { segment = .dm }
                     composeAction("New group", "Your cell & group rooms live in My Space", divider: true) {
-                        Icon(.users, size: 19, color: Nuru.gold)
+                        Icon(.users, size: 18, color: Nuru.gold)
                     } action: { segment = .space }
                     composeAction("Browse spaces", "Find & join a community space", divider: true) {
-                        Image(systemName: "safari").font(.system(size: 18)).foregroundStyle(Nuru.gold)
+                        Icon(.compass, size: 18, color: Nuru.gold)
                     } action: { segment = .space }
                 }
-                .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                .nuruShadow()
             }
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
             .padding(.horizontal, Nuru.S.md)
-            .padding(.bottom, Nuru.S.md)
+            // Above the tab bar — its last action ("Browse spaces") sat under it
+            // (§7.1 rule 3: the last button never sits under the tab bar).
+            .padding(.bottom, Nuru.tabBarSpace)
             .transition(.move(edge: .bottom).combined(with: .opacity))
         }
         .zIndex(2)
@@ -1127,7 +1146,7 @@ struct ChatView: View {
                     Text(sub).font(.nCardMeta).foregroundStyle(Color(hex: 0x9AA3AF))
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: Color(hex: 0xCBD5E1))
+                Icon(.chevronRight, size: 18, color: Color(hex: 0xCBD5E1))
             }
             .padding(Nuru.S.base)
             .overlay(alignment: .top) { if divider { Rectangle().fill(Nuru.border).frame(height: 1) } }
@@ -1140,7 +1159,7 @@ struct ChatView: View {
     private func sectionLabel(hash: Bool = false, icon: Lucide? = nil, _ text: String) -> some View {
         HStack(spacing: 6) {
             if hash { Text("#").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0xB08A1E)) }
-            else if let icon { Icon(icon, size: 12, color: Color(hex: 0xB08A1E)) }
+            else if let icon { Icon(icon, size: 14, color: Color(hex: 0xB08A1E)) }
             Text(text).font(.nCardKicker).kerning(1.4).foregroundStyle(Color(hex: 0xB08A1E))
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1172,16 +1191,11 @@ struct ChatView: View {
 
     // MARK: Derived
 
-    private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
     private var myInitials: String {
         let parts = (auth.profile?.fullName ?? "").split(separator: " ")
         guard let f = parts.first?.first else { return "ME" }
         if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
         return String(f).uppercased()
-    }
-    private var greeting: String {
-        let h = Calendar.current.component(.hour, from: Date())
-        return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening"
     }
     private func firstWord(_ s: String?) -> String { (s ?? "—").split(separator: " ").first.map(String.init) ?? "—" }
 }
@@ -1192,8 +1206,8 @@ struct ChatView: View {
 private struct DoubleCheck: View {
     var body: some View {
         ZStack {
-            Icon(.check, size: 12, color: Color(hex: 0xBCC4CE)).offset(x: -3)
-            Icon(.check, size: 12, color: Color(hex: 0xBCC4CE)).offset(x: 3)
+            Icon(.check, size: 14, color: Color(hex: 0xBCC4CE)).offset(x: -3)
+            Icon(.check, size: 14, color: Color(hex: 0xBCC4CE)).offset(x: 3)
         }
         .frame(width: 20, height: 14)
     }
@@ -1203,7 +1217,7 @@ private struct DoubleCheck: View {
 private struct UnreadBadge: View {
     let count: Int
     var body: some View {
-        Text("\(count)").font(.inter(9, .bold)).foregroundStyle(.white)
+        Text("\(count)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)   // navy on gold (§8.1 rule 4)
             .padding(.horizontal, 5)
             .frame(minWidth: 17, minHeight: 17)
             .background(storyRing, in: Capsule())
@@ -1252,7 +1266,7 @@ private struct MemberStack: View {
                 circle(i).zIndex(Double(i))
             }
             Text(count > 999 ? String(format: "%.1fk", Double(count) / 1000) : "\(count)")
-                .font(.inter(9, .bold)).foregroundStyle(Nuru.navy)
+                .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 7)
                 .frame(height: 20)
                 .background(Color.white, in: Capsule())
@@ -1282,7 +1296,7 @@ private struct MemberStack: View {
 
     private var initial: some View {
         Text(String((title ?? "#").trimmingCharacters(in: .whitespaces).prefix(1)).uppercased())
-            .font(.inter(8, .bold)).foregroundStyle(.white)
+            .font(.inter(11, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -1290,23 +1304,27 @@ private struct MemberStack: View {
 private struct RowPreview: View {
     let c: ChatConversation
     let showAuthor: Bool
+    /// One line at the everyday sizes; two at the largest, where one cut even
+    /// "No messages yet" to "No message…" (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     private var unread: Bool { c.unread > 0 }
     var body: some View {
         HStack(spacing: 4) {
             if c.lastType == "voice" {
-                Icon(.mic, size: 11, color: Nuru.gold)
+                Icon(.mic, size: 14, color: Nuru.gold)
                 // Android parity: surface the note's length in the preview.
                 Text(c.lastDuration.map { String(format: "Voice message · %d:%02d", $0 / 60, $0 % 60) } ?? "Voice message")
-                    .font(.inter(10)).foregroundStyle(bodyColor)
+                    .font(.inter(11)).foregroundStyle(bodyColor)
             } else if c.lastType == "image" {
-                Icon(.image, size: 11, color: Nuru.gold)
-                Text("Photo").font(.inter(10)).foregroundStyle(bodyColor)
+                Icon(.image, size: 14, color: Nuru.gold)
+                Text("Photo").font(.inter(11)).foregroundStyle(bodyColor)
             } else {
                 (authorText + Text(c.lastBody ?? "No messages yet"))
-                    .font(.inter(10)).foregroundStyle(bodyColor)
+                    .font(.inter(11)).foregroundStyle(bodyColor)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .lineLimit(1)
+        .lineLimit(typeSize.isAccessibilitySize ? 2 : 1)
     }
     private var authorText: Text {
         guard showAuthor, let a = c.lastAuthor, !a.isEmpty else { return Text("") }
@@ -1362,7 +1380,7 @@ private struct SpaceRow: View {
     private var activePill: some View {
         HStack(spacing: 5) {
             Circle().fill(Color(hex: 0x16A34A)).frame(width: 6, height: 6)
-            Text("Active").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+            Text("Active").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
         .background(Color(hex: 0x16A34A, alpha: 0.09), in: Capsule())
@@ -1383,7 +1401,7 @@ private struct ConversationRow: View {
             if c.kind == "dm" {
                 SquircleAvatar(url: c.avatarUrl, name: c.title ?? "?", tint: tint)
             } else {
-                Icon(.users, size: 21, color: .white)
+                Icon(.users, size: 22, color: .white)
                     .frame(width: 52, height: 52)
                     .background(
                         LinearGradient(colors: [tint, tint.opacity(0.71)], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1392,7 +1410,7 @@ private struct ConversationRow: View {
             }
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(c.title ?? "Conversation")
+                    Text(c.shownTitle ?? "Conversation")
                         .font(.inter(12, unread ? .semibold : .medium)).kerning(-0.12)
                         .foregroundStyle(Nuru.navy).lineLimit(1)
                     if c.muted { MutedGlyph() }
@@ -1404,7 +1422,9 @@ private struct ConversationRow: View {
                 HStack(spacing: 8) {
                     RowPreview(c: c, showAuthor: c.kind != "dm")
                     Spacer(minLength: 4)
-                    if unread { UnreadBadge(count: c.unread) } else { DoubleCheck() }
+                    // A read mark only beside a message (§8.1 rule 8: "✓✓"
+                    // sat beside "No messages yet").
+                    if unread { UnreadBadge(count: c.unread) } else if c.lastAt != nil { DoubleCheck() }
                 }
             }
         }
@@ -1417,7 +1437,7 @@ private struct ConversationRow: View {
 private struct MutedGlyph: View {
     var body: some View {
         Image(systemName: "bell.slash.fill")
-            .font(.system(size: 10))
+            .font(.symbol(10))
             .foregroundStyle(Color(hex: 0x9AA3AF))
     }
 }
@@ -1459,8 +1479,10 @@ private struct PersonRow: View {
                         badgeMedallions
                         certSeal
                     }
-                    Text(subtitle)
-                        .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                    if let subtitle {
+                        Text(subtitle)
+                            .font(.nCardMeta).foregroundStyle(Color(hex: 0x6A7686)).lineLimit(1)
+                    }
                 }
                 Spacer(minLength: 4)
                 if busy {
@@ -1482,41 +1504,41 @@ private struct PersonRow: View {
     @ViewBuilder private var stateAffordance: some View {
         switch state {
         case .connected:
-            Icon(.messageCircle, size: 15, color: Nuru.gold)
+            Icon(.messageCircle, size: 14, color: Nuru.gold)
                 .frame(width: 32, height: 32)
                 .background(Nuru.gold.opacity(0.10), in: Circle())
         case .notConnected:
             HStack(spacing: 4) {
-                Image(systemName: "person.badge.plus").font(.system(size: 10, weight: .bold))
+                Image(systemName: "person.badge.plus").font(.symbol(10, weight: .bold))
                 Text("Connect").font(.inter(11, .bold))
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 10).frame(height: 28)
-            .background(storyRing, in: Capsule())
+            // A compact in-row action is a navy pill (§8.1 rule 4) — a list of
+            // gold "Connect"s was a column of primaries.
+            .background(Nuru.navy, in: Capsule())
         case .requestSent:
             HStack(spacing: 4) {
-                Text("Request sent").font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
-                Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundStyle(Color(hex: 0xCBD5E1))
+                Text("Request sent").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9AA3AF))
+                Image(systemName: "xmark.circle.fill").font(.symbol(14)).foregroundStyle(Color(hex: 0xCBD5E1))
             }
             .padding(.horizontal, 10).frame(height: 28)
             .background(Nuru.surface, in: Capsule())
         case .requestReceived:
             HStack(spacing: 4) {
-                Image(systemName: "hand.wave.fill").font(.system(size: 10)).foregroundStyle(Nuru.gold)
-                Text("Wants to connect").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                Image(systemName: "hand.wave.fill").font(.symbol(10)).foregroundStyle(Nuru.gold)
+                Text("Wants to connect").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
             }
             .padding(.horizontal, 10).frame(height: 28)
             .background(Nuru.gold.opacity(0.14), in: Capsule())
         case .blocked:
-            Image(systemName: "hand.raised.fill").font(.system(size: 13)).foregroundStyle(Color(hex: 0x9AA3AF))
+            Image(systemName: "hand.raised.fill").font(.symbol(13)).foregroundStyle(Color(hex: 0x9AA3AF))
                 .frame(width: 32, height: 32)
         }
     }
 
-    private var subtitle: String {
-        let role = (person.role?.isEmpty == false) ? person.role! : "Member"
-        if let c = person.congregation, !c.isEmpty { return "\(role) · \(c)" }
-        return role
+    private var subtitle: String? {
+        PersonWords.subtitle(role: person.role, congregation: person.congregation)
     }
 
     // MARK: Achievement flair — public aggregates only; every piece disappears
@@ -1526,7 +1548,7 @@ private struct PersonRow: View {
     @ViewBuilder private var levelChip: some View {
         if let lvl = person.level, lvl > 0 {
             Text("L\(lvl)")
-                .font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 4.5).padding(.vertical, 1.5)
                 .background(
                     LinearGradient(colors: [Nuru.goldHi, Nuru.goldLo],
@@ -1541,20 +1563,24 @@ private struct PersonRow: View {
     /// Up to 3 overlapping badge medallions + a "+N" mini chip for the rest.
     @ViewBuilder private var badgeMedallions: some View {
         if let count = person.badgeCount, count > 0 {
-            let icons = Array((person.badgeIcons ?? []).prefix(3))
+            let emojis = Array((person.badgeIcons ?? []).prefix(3))
             HStack(spacing: -4) {
-                ForEach(icons.indices, id: \.self) { i in
-                    Text(icons[i]).font(.system(size: 10)).lineLimit(1)
+                ForEach(emojis.indices, id: \.self) { i in
+                    Text(emojis[i]).font(.emoji(11)).lineLimit(1)
                         .frame(width: 16, height: 16)
                         .background(Circle().fill(.white))
                         .overlay(Circle().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
                 }
-                if count > icons.count {
-                    Text("+\(count - icons.count)")
-                        .font(.inter(7, .semibold)).foregroundStyle(Color(hex: 0xA8761A))
-                        .frame(width: 16, height: 16)
-                        .background(Circle().fill(Nuru.goldTint))
-                        .overlay(Circle().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
+                if count > emojis.count {
+                    // At the 11 pt floor "+12" is wider than the medallions, so
+                    // the chip grows into a capsule rather than cutting it.
+                    Text("+\(count - emojis.count)")
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0xA8761A))
+                        .fixedSize()
+                        .padding(.horizontal, 3)
+                        .frame(minWidth: 16, minHeight: 16)
+                        .background(Capsule().fill(Nuru.goldTint))
+                        .overlay(Capsule().strokeBorder(Nuru.gold.opacity(0.5), lineWidth: 0.5))
                 }
             }
             .fixedSize()
@@ -1566,7 +1592,7 @@ private struct PersonRow: View {
         if let certs = person.certCount, certs > 0 {
             ZStack {
                 Circle().fill(Nuru.goldTint).frame(width: 16, height: 16)
-                Icon(.award, size: 9, color: Nuru.gold)
+                Icon(.award, size: 14, color: Nuru.gold)
             }
             .fixedSize()
         }
@@ -1595,12 +1621,12 @@ private struct IncomingRequestRow: View {
             } else {
                 HStack(spacing: 8) {
                     Button(action: onDecline) {
-                        Icon(.x, size: 13, color: Color(hex: 0x59667C))
+                        Icon(.x, size: 14, color: Color(hex: 0x59667C))
                             .frame(width: 30, height: 30)
                             .background(Nuru.surface, in: Circle())
                     }.buttonStyle(.pressable)
                     Button(action: onAccept) {
-                        Icon(.check, size: 13, color: .white)
+                        Icon(.check, size: 14, color: .white)
                             .frame(width: 30, height: 30)
                             .background(storyRing, in: Circle())
                     }.buttonStyle(.pressable)
@@ -1673,7 +1699,7 @@ private struct DiscoverSpaceRow: View {
             Spacer(minLength: 4)
             if pending {
                 HStack(spacing: 4) {
-                    Image(systemName: "hourglass").font(.system(size: 10, weight: .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Image(systemName: "hourglass").font(.symbol(10, weight: .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     Text("Requested").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 .padding(.horizontal, 12)
@@ -1686,7 +1712,7 @@ private struct DiscoverSpaceRow: View {
                             ProgressView().tint(.white).scaleEffect(0.7)
                         } else {
                             HStack(spacing: 4) {
-                                Icon(.plus, size: 11, color: .white)
+                                Icon(.plus, size: 14, color: .white)
                                 Text("Follow").font(.inter(11, .bold)).foregroundStyle(.white)
                             }
                         }
@@ -1694,8 +1720,7 @@ private struct DiscoverSpaceRow: View {
                     .padding(.horizontal, 12)
                     .frame(height: 30)
                     .frame(minWidth: 44)   // spinner state stays a comfortable target
-                    .background(storyRing, in: Capsule())
-                    .shadow(color: Nuru.gold.opacity(0.45), radius: 5, y: 3)
+                    .background(Nuru.navy, in: Capsule())   // a compact in-row action (§8.1 rule 4)
                 }
                 .buttonStyle(.pressable)
                 .disabled(joining)
@@ -1726,7 +1751,7 @@ struct BroadcastSentCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Icon(.megaphone, size: 11, color: Nuru.goldChipText)
+                Icon(.megaphone, size: 14, color: Nuru.goldChipText)
                 Text("SENT TO EVERYONE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
                 Text(reach).font(.nCardMeta).foregroundStyle(Nuru.ink600)
@@ -1773,7 +1798,7 @@ struct BroadcastComposer: View {
         VStack(alignment: .leading, spacing: 14) {
             // Navy explainer card — sets expectations before the composer.
             HStack(alignment: .top, spacing: 14) {
-                Icon(.megaphone, size: 20, color: Color(hex: 0xE6C068))
+                Icon(.megaphone, size: 22, color: Color(hex: 0xE6C068))
                     .frame(width: 40, height: 40)
                     .background(Nuru.gold.opacity(0.18), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
@@ -1809,18 +1834,18 @@ struct BroadcastComposer: View {
                     // ✨ Ask Nuru to polish (or write) the draft.
                     Button { Task { await aiAssist() } } label: {
                         Group {
-                            if aiDrafting { ProgressView().tint(Color(hex: 0x7C3AED)).scaleEffect(0.7) }
-                            else { Icon(.sparkles, size: 15, color: Color(hex: 0x7C3AED)) }
+                            if aiDrafting { ProgressView().tint(Nuru.navy).scaleEffect(0.7) }
+                            else { Icon(.sparkles, size: 14, color: Nuru.navy) }
                         }
                         .frame(width: 38, height: 38)
-                        .background(Color(hex: 0x7C3AED, alpha: 0.1), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color(hex: 0x7C3AED, alpha: 0.25), lineWidth: 1))
+                        .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .disabled(aiDrafting || sending)
                     // 🖼️ Attach a photo — uploaded straight to Cloudinary.
                     PhotosPicker(selection: $photoItem, matching: .images) {
-                        Icon(.image, size: 15, color: Color(hex: 0x9A7A2A))
+                        Icon(.image, size: 14, color: Color(hex: 0x9A7A2A))
                             .frame(width: 38, height: 38)
                             .background(Nuru.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
@@ -1862,7 +1887,7 @@ struct BroadcastComposer: View {
                         ProgressView().tint(.white)
                     } else {
                         HStack(spacing: 6) {
-                            Icon(.send, size: 13, color: .white)
+                            Icon(.send, size: 14, color: .white)
                             Text("Send to everyone").font(.nCardCTA).foregroundStyle(.white)
                         }
                     }
@@ -1930,7 +1955,8 @@ struct BroadcastComposer: View {
             Haptics.tap()
             askingPassword = true
         } catch {
-            errorText = "Couldn’t send the broadcast — please try again."
+            // The draft and photo stay; the line says why (§4).
+            errorText = NuruStateCopy.sendFailureLine(error)
             Haptics.error()
         }
     }
@@ -2016,7 +2042,7 @@ private struct BroadcastAttachmentThumb: View {
                     Haptics.tap()
                     onRemove()
                 } label: {
-                    Icon(.x, size: 12, color: Color(hex: 0x64748B))
+                    Icon(.x, size: 14, color: Color(hex: 0x64748B))
                         .frame(width: 26, height: 26)
                         .background(Color(hex: 0x0B1F33, alpha: 0.06), in: Circle())
                         .frame(width: 44, height: 44)     // full-size hit target
@@ -2058,5 +2084,52 @@ private struct SquircleAvatar: View {
         guard let f = parts.first?.first else { return "?" }
         if parts.count > 1, let l = parts.last?.first { return "\(f)\(l)".uppercased() }
         return String(name.prefix(2)).uppercased()
+    }
+}
+
+/// A person's line in the people list (§8.1 rule 8): never a raw role
+/// ("Student · …" read like data). A member's line is their congregation,
+/// or nothing — never the word "Member" (Android's round 2 settled it; the
+/// level is already on the avatar's badge). The church's staff read as
+/// what they are to a member, with the congregation when there is one.
+enum PersonWords {
+    static func subtitle(role: String?, congregation: String?) -> String? {
+        let c = congregation.flatMap { $0.isEmpty ? nil : $0 }
+        let who: String?
+        switch (role ?? "").lowercased() {
+        case "instructor": who = "Teacher"
+        case "admin", "superadmin": who = "Church staff"
+        default: who = nil
+        }
+        switch (who, c) {
+        case let (w?, c?): return "\(w) · \(c)"
+        case let (w?, nil): return w
+        case let (nil, c?): return c
+        default: return nil
+        }
+    }
+}
+
+/// Your spaces' words when there are none (final walk C4): "follow one
+/// below" only while there is one below to follow.
+enum SpaceWords {
+    static func none(canFollow: Bool) -> String {
+        canFollow ? "No spaces yet — follow one below to get started."
+                  : "No spaces yet. When the church opens one, you can follow it here."
+    }
+}
+
+extension ChatConversation {
+    /// The room's name as a member reads it (§8.1 rule 8; final walk C4): the
+    /// server names a cell's room "<cell> cell", which read "Dev Cell A cell"
+    /// for a cell already called a Cell. The doubled word goes.
+    var shownTitle: String? { title.map(Self.shownTitle) }
+
+    static func shownTitle(_ raw: String) -> String {
+        let t = raw.trimmingCharacters(in: .whitespaces)
+        guard t.lowercased().hasSuffix(" cell") else { return t }
+        let head = String(t.dropLast(5))
+        let words = head.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return words.contains("cell") ? head : t
     }
 }

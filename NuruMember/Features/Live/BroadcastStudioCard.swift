@@ -32,8 +32,8 @@ struct BroadcastStudioCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("BROADCAST").font(.inter(10, .bold)).kerning(2.4).foregroundStyle(Nuru.gold.opacity(0.85))
-                Text("Nuru Live").font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                Text("BROADCAST").font(.inter(11, .bold)).kerning(2.4).foregroundStyle(Nuru.gold.opacity(0.85))
+                Text("Nuru Live").font(.fraunces(22, .semibold)).foregroundStyle(.white)
                 Text("Bring the family together, wherever they are.")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.65))
             }
@@ -47,7 +47,7 @@ struct BroadcastStudioCard: View {
                     Haptics.tap(); onMyBroadcasts()
                 } label: {
                     HStack(spacing: 10) {
-                        Icon(.playCircle, size: 16, color: Nuru.gold)
+                        Icon(.playCircle, size: 18, color: Nuru.gold)
                         Text("My Broadcasts").font(.inter(13, .semibold)).foregroundStyle(.white)
                         Spacer(minLength: 0)
                         Icon(.chevronRight, size: 14, color: .white.opacity(0.6))
@@ -85,13 +85,13 @@ struct BroadcastStudioCard: View {
                         .scaleEffect(breathe ? 1.4 : 1)
                         .opacity(breathe ? 0 : 0.85)
                     Circle().fill(live ? Color.white.opacity(0.16) : Nuru.gold).frame(width: 40, height: 40)
-                    Image(systemName: "video.fill").font(.system(size: 16, weight: .semibold))
+                    Image(systemName: "video.fill").font(.symbol(16, weight: .semibold))
                         .foregroundStyle(live ? .white : Nuru.navy)
                 }
                 Text(live ? "You're live — tap to return" : "Go Live")
                     .font(.inter(15, .bold)).foregroundStyle(live ? .white : Nuru.navy)
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: live ? .white.opacity(0.7) : Nuru.navy.opacity(0.55))
+                Icon(.chevronRight, size: 14, color: live ? .white.opacity(0.7) : Nuru.navy.opacity(0.55))
             }
             .padding(.horizontal, 14)
             .frame(height: 60)
@@ -114,7 +114,7 @@ struct BroadcastStudioCard: View {
             HStack(spacing: 12) {
                 HStack(spacing: 5) {
                     Circle().fill(Color(hex: 0xDC2626)).frame(width: 6, height: 6)
-                    Text("LIVE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(.white)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
                 .background(Color(hex: 0xDC2626), in: Capsule())

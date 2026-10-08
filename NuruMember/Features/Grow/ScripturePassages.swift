@@ -170,11 +170,17 @@ final class ScripturePassageLoader: ObservableObject {
     @Published var passage: ScripturePassage?
     @Published var loading = false
     @Published var failed = false
+    /// Why the passage didn't come, in §4's words (it said "check your
+    /// connection" whatever the cause).
+    @Published private(set) var failureLine = "Couldn't load this passage."
 
     func load(_ ref: String) async {
         guard passage == nil, !loading else { return }
         loading = true; failed = false
-        do { passage = try await ScripturePassageStore.shared.passage(ref) } catch { failed = true }
+        do { passage = try await ScripturePassageStore.shared.passage(ref) } catch {
+            failed = true
+            failureLine = NuruStateCopy.failureLine("Couldn't load this passage.", error)
+        }
         loading = false
     }
 }
@@ -197,7 +203,6 @@ struct ScripturePassageText: View {
     /// saved under "Book C:V" built from these. Nil disables saving.
     var reference: String? = nil
     var version: String? = nil
-    var size: CGFloat = 16
     @Environment(\.readerPalette) private var pal
     @State private var note: String?
 
@@ -277,11 +282,11 @@ struct ScripturePassageText: View {
 
     private func attributed(_ v: Verse) -> AttributedString {
         var attr = AttributedString(v.body)
-        attr.font = .fraunces(pal.fs(size), .regular)
+        attr.font = .fraunces(pal.fs(16), .regular)   // the 16 reading body
         attr.foregroundColor = pal.ink
         guard let n = v.number else { return attr }
         var num = AttributedString(n + " ")
-        num.font = .inter(pal.fs(10), .bold)
+        num.font = .inter(pal.fs(11), .bold)
         num.foregroundColor = pal.gold
         num.baselineOffset = 5
         return num + attr
@@ -310,7 +315,7 @@ struct ScripturePassageText: View {
                 flash("Saved to your verses")
             } catch {
                 Haptics.error()
-                flash("Couldn't save — try again")
+                flash(NuruStateCopy.saveFailureLine(error))
             }
         }
     }
@@ -347,14 +352,14 @@ struct ScriptureRefCard: View {
                 if open { Task { await loader.load(reference) } }
             } label: {
                 HStack(spacing: 10) {
-                    Icon(.bookOpen, size: 15, color: pal.goldDeep)
-                    Text(reference).font(.inter(pal.fs(13.5), .semibold)).foregroundStyle(pal.ink)
+                    Icon(.bookOpen, size: 14, color: pal.goldDeep)
+                    Text(reference).font(.inter(pal.fs(14), .semibold)).foregroundStyle(pal.ink)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
                     if loader.loading {
                         ProgressView().tint(pal.goldDeep).scaleEffect(0.8)
                     } else {
-                        Icon(open ? .chevronUp : .chevronDown, size: 15, color: pal.inkDim)
+                        Icon(open ? .chevronUp : .chevronDown, size: 14, color: pal.inkDim)
                     }
                 }
                 .padding(14)
@@ -368,9 +373,9 @@ struct ScriptureRefCard: View {
                     HStack(alignment: .top, spacing: 12) {
                         RoundedRectangle(cornerRadius: 2).fill(pal.gold).frame(width: 3)
                         VStack(alignment: .leading, spacing: 8) {
-                            ScripturePassageText(text: p.text, reference: reference, version: p.version, size: 16)
+                            ScripturePassageText(text: p.text, reference: reference, version: p.version)
                             Text(passageCaption(p).uppercased())
-                                .font(.inter(10.5, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
+                                .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
                     }
                     .padding(.horizontal, 14).padding(.bottom, 14)
@@ -379,7 +384,7 @@ struct ScriptureRefCard: View {
                     Button {
                         Task { await loader.load(reference) }
                     } label: {
-                        Text("Couldn't load this passage — tap to try again.")
+                        Text(loader.failureLine)
                             .font(.inter(12, .medium)).foregroundStyle(pal.inkDim)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 14).padding(.bottom, 14)
@@ -434,16 +439,16 @@ struct ScripturePassageSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 12) {
-                Icon(.bookOpen, size: 16, color: PL.gold)
+                Icon(.bookOpen, size: 18, color: PL.gold)
                     .frame(width: 36, height: 36)
                     .background(PL.gold.opacity(0.14), in: Circle())
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("SCRIPTURE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
-                    Text(reference).font(.fraunces(pal.fs(20), .medium)).kerning(-0.4).foregroundStyle(pal.ink)
+                    Text("SCRIPTURE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(pal.goldDeep)
+                    Text(reference).font(.fraunces(pal.fs(18), .medium)).kerning(-0.4).foregroundStyle(pal.ink)
                 }
                 Spacer(minLength: 8)
                 Button { dismiss() } label: {
-                    Icon(.x, size: 16, color: pal.ink)
+                    Icon(.x, size: 18, color: pal.ink)
                         .frame(width: 34, height: 34)
                         .background(pal.ink.opacity(0.06), in: Circle())
                 }
@@ -456,14 +461,14 @@ struct ScripturePassageSheet: View {
                     if let p = loader.passage {
                         HStack(alignment: .top, spacing: 12) {
                             RoundedRectangle(cornerRadius: 2).fill(pal.gold).frame(width: 3)
-                            ScripturePassageText(text: p.text, reference: reference, version: p.version, size: 17)
+                            ScripturePassageText(text: p.text, reference: reference, version: p.version)
                         }
                         if !p.version.isEmpty {
                             Text(p.version.uppercased())
-                                .font(.inter(10.5, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
+                                .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(pal.inkDim)
                         }
                     } else if loader.failed {
-                        Text("Couldn't load this passage — check your connection and try again.")
+                        Text(loader.failureLine)
                             .font(.inter(13)).foregroundStyle(pal.inkDim)
                             .fixedSize(horizontal: false, vertical: true)
                         Button { Task { await loader.load(reference) } } label: {
@@ -491,7 +496,6 @@ struct ScripturePassageSheet: View {
 /// link. The parent's `openURL` handler decides what a tap opens.
 struct ScriptureLinkedText: View {
     let text: String
-    var size: CGFloat = 16
     @Environment(\.readerPalette) private var pal
 
     var body: some View {
@@ -504,12 +508,12 @@ struct ScriptureLinkedText: View {
 
     private var attributed: AttributedString {
         var attr = AttributedString(text)
-        attr.font = .inter(pal.fs(size), .medium)
+        attr.font = .inter(pal.fs(16), .medium)   // the 16 reading body
         attr.foregroundColor = pal.ink
         for m in ScriptureRefs.detect(in: text) {
             guard let ar = Range(m.nsRange, in: attr), let url = ScriptureRefs.url(for: m.reference) else { continue }
             attr[ar].link = url
-            attr[ar].font = .inter(pal.fs(size), .semibold)
+            attr[ar].font = .inter(pal.fs(16), .semibold)
             attr[ar].foregroundColor = pal.goldDeep
             attr[ar].underlineStyle = .single
         }

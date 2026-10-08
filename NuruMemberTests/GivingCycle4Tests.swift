@@ -91,14 +91,17 @@ final class GivingCycle4Tests: XCTestCase {
                        "\(amount) now, then every Saturday")
         XCTAssertEqual(ScheduleRhythm.startNowLine(amountLabel: amount, frequency: "monthly", now: saturday31),
                        "\(amount) now, then every month on the 31st")
+        // The one date shape (§8.1 rule 8; final walk C2): no current year.
         XCTAssertEqual(ScheduleRhythm.nothingTodayLine(frequency: "weekly", now: saturday31),
-                       "Nothing is taken today — the first prompt comes on 7 Nov 2026.")
+                       "Nothing is taken today — the first prompt comes on Sat 7 Nov.")
         XCTAssertEqual(ScheduleRhythm.nothingTodayLine(frequency: "monthly", now: saturday31),
-                       "Nothing is taken today — the first prompt comes on 30 Nov 2026.", "the 31st clamps into November")
-        XCTAssertEqual(ScheduleRhythm.nothingTodayLine(firstPromptISO: "2026-11-30T06:00:00Z"),
-                       "Nothing is taken today — the first prompt comes on 30 Nov 2026.")
-        XCTAssertEqual(ScheduleRhythm.setUpLine(frequency: "weekly", firstPromptISO: "2026-10-11T06:00:00Z"),
-                       "Your weekly gift is set up — the first prompt comes on 11 Oct 2026.")
+                       "Nothing is taken today — the first prompt comes on Mon 30 Nov.", "the 31st clamps into November")
+        XCTAssertEqual(ScheduleRhythm.nothingTodayLine(firstPromptISO: "2026-11-30T06:00:00Z", now: saturday31),
+                       "Nothing is taken today — the first prompt comes on Mon 30 Nov.")
+        XCTAssertEqual(ScheduleRhythm.setUpLine(frequency: "weekly", firstPromptISO: "2026-10-11T06:00:00Z", now: saturday31),
+                       "Your weekly gift is set up — the first prompt comes on Sun 11 Oct.")
+        XCTAssertEqual(ScheduleRhythm.setUpLine(frequency: "weekly", firstPromptISO: "2027-01-03T06:00:00Z", now: saturday31),
+                       "Your weekly gift is set up — the first prompt comes on Sun 3 Jan 2027.", "another year says which")
         XCTAssertEqual(ScheduleRhythm.setUpLine(frequency: "monthly", firstPromptISO: ""), "Your monthly gift is set up.")
     }
 
@@ -215,15 +218,18 @@ final class GivingCycle4Tests: XCTestCase {
     // MARK: Pause-reason copy
 
     func testWhyAGiftIsPaused() throws {
+        // Fixed clock: Mon 28 Sep 2026 in Nairobi.
+        let now = date("2026-09-28T09:00:00Z")
         let failures = try schedule(#""frequency":"weekly","status":"paused","pause_reason":"failures""#)
         XCTAssertEqual(PauseCopy.line(for: failures), "Paused after 3 prompts didn't go through")
         XCTAssertTrue(PauseCopy.canResume(failures))
-        XCTAssertEqual(PauseCopy.cardLine(for: failures), "Nothing is owed")
+        // Whether and when it resumes (final walk C11): it waits for the member.
+        XCTAssertEqual(PauseCopy.cardLine(for: failures, now: now), "Nothing is owed — it won't prompt again until you resume it")
 
         let until = try schedule(#""frequency":"weekly","status":"paused","pause_reason":"member","resume_on":"2026-10-05""#)
-        XCTAssertEqual(PauseCopy.line(for: until), "Paused until 5 Oct 2026")
+        XCTAssertEqual(PauseCopy.line(for: until, now: now), "Paused until Mon 5 Oct", "the one date shape (final walk C2)")
         XCTAssertTrue(PauseCopy.canResume(until))
-        XCTAssertEqual(PauseCopy.cardLine(for: until), "Resumes 5 Oct")
+        XCTAssertEqual(PauseCopy.cardLine(for: until, now: now), "Resumes Mon 5 Oct")
 
         let member = try schedule(#""frequency":"weekly","status":"paused","pause_reason":"member","resume_on":null"#)
         XCTAssertEqual(PauseCopy.line(for: member), "Paused")

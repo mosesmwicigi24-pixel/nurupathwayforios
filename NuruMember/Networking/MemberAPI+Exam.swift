@@ -10,20 +10,25 @@ import Foundation
 
 // MARK: - Models
 
-/// GET /levels/{n}/exam → { level_number, question_count, questions }. The rows
-/// carry question_id / q_type / question_text / answer_options (stripped), the
-/// same wire shape as a module quiz, so they decode as `QuizQuestion`.
+/// GET /levels/{n}/exam → { level_number, question_count, pass_mark, questions }.
+/// The rows carry question_id / q_type / question_text / answer_options
+/// (stripped), the same wire shape as a module quiz, so they decode as
+/// `QuizQuestion`. `pass_mark` (percent, pathway d230e35) is for the exam's
+/// front door (EXPERIENCE.md §9.1 rule 2) — nil from an older server, and
+/// tolerant of Postgres NUMERIC's "80.00".
 struct AssembledExam: Decodable, Sendable {
     let levelNumber: Int
     let questionCount: Int
+    let passMark: Int?
     let questions: [QuizQuestion]
 
-    private enum CodingKeys: String, CodingKey { case levelNumber, questionCount, questions }
+    private enum CodingKeys: String, CodingKey { case levelNumber, questionCount, passMark, questions }
 
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         levelNumber = (try? c.decodeIfPresent(Int.self, forKey: .levelNumber)) ?? 0
         questionCount = (try? c.decodeIfPresent(Int.self, forKey: .questionCount)) ?? 0
+        passMark = (try? c.decodeIfPresent(FlexInt.self, forKey: .passMark))?.wrappedValue
         questions = (try? c.decodeIfPresent([QuizQuestion].self, forKey: .questions)) ?? []
     }
 }

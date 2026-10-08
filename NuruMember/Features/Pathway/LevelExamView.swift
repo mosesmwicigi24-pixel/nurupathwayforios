@@ -9,16 +9,28 @@
 // against levels.required_exam_pass_mark and the client renders ONLY the
 // server's verdict — never grades locally, never reveals answers. Attempts are
 // idempotent on a stable client_mutation_id (§2.1/§3.6); "Retry Exam" mints a
-// fresh id. If the server says the gate isn't open (GATE_LOCKED — modules
-// remaining or a locked level) that answer is surfaced honestly, not hidden.
+// fresh id. If the server refuses the exam (GATE_LOCKED — modules remaining
+// or a locked level; UNPROCESSABLE — no questions yet) its own words fill §4's
+// one state card, with Go back — never Try again, which would only be refused
+// again (EXPERIENCE.md §7.2 #1, §8.2 #16). Every state has a back at the top, and every
+// bottom button sits clear of the tab bar (§7.1 rule 3).
 import SwiftUI
 
 @MainActor
 final class LevelExamViewModel: ObservableObject {
     @Published var exam: AssembledExam?
     @Published var levelTitle: String?
+    /// The pathway, read best-effort beside the exam — what a pass opens
+    /// (the front door, the pass screen). Nil when it didn't come.
+    @Published var summary: PathwaySummary?
     @Published var loading = true
-    @Published var notEligible: String?   // the server's own GATE_LOCKED/UNPROCESSABLE explanation
+    /// The server refused the exam — its own words (GATE_LOCKED /
+    /// UNPROCESSABLE, any refusal in §4's sense), shown with Go back only.
+    @Published var notEligible: String?
+    /// The exam didn't load for another reason — offline, our server, a
+    /// session that ended — in the one state language (§4).
+    @Published var loadFailure: NuruStateCopy?
+    /// A submit that didn't land (the CTA bar's line).
     @Published var error: String?
     @Published var submitting = false
     @Published var result: ExamResult?
@@ -42,7 +54,14 @@ final class LevelExamViewModel: ObservableObject {
     init(levelNumber: Int) { self.levelNumber = levelNumber }
 
     func load() async {
-        loading = true; error = nil; notEligible = nil
+        loading = true; error = nil; notEligible = nil; loadFailure = nil
+        #if targetEnvironment(simulator) && DEBUG
+        // Scripted visual verification: NURU_UITEST_EXAM_REFUSAL=<the server's
+        // words> shows the refusal without changing what the server holds.
+        if let words = ProcessInfo.processInfo.environment["NURU_UITEST_EXAM_REFUSAL"], !words.isEmpty {
+            notEligible = words; loading = false; return
+        }
+        #endif
         do {
             let fresh = try await MemberAPI.levelExam(levelNumber)
             exam = fresh
@@ -58,22 +77,32 @@ final class LevelExamViewModel: ObservableObject {
         }
         catch { classify(error) }
         loading = false
-        // Header title — best effort, never blocks the exam itself.
-        if levelTitle == nil {
-            levelTitle = (try? await MemberAPI.pathway())?.levels.first { $0.levelNumber == levelNumber }?.title
+        // Header title and what a pass opens — best effort, never blocks
+        // the exam itself.
+        if summary == nil, let s = try? await MemberAPI.pathway() {
+            summary = s
+            levelTitle = s.levels.first { $0.levelNumber == levelNumber }?.title
         }
     }
 
-    /// GATE_LOCKED ("finish every module…" / "level is locked") and UNPROCESSABLE
-    /// ("no exam questions yet" / "no active enrollment") are honest server states,
-    /// not failures — everything else is a genuine load error worth retrying.
+    /// A refusal — GATE_LOCKED ("Finish every module…" / "Level is locked"),
+    /// UNPROCESSABLE ("Your Level N exam isn't ready yet…" / "No active
+    /// enrollment"), any 4xx in our own words — is an honest server state,
+    /// not a failure: its words, and Go back. Everything else (offline, our
+    /// server, an ended session) speaks the one state language (§4).
     private func classify(_ error: Error) {
-        if case let APIError.http(_, code, message, _) = error,
-           code == "GATE_LOCKED" || code == "UNPROCESSABLE" {
-            notEligible = message
+        if let words = Self.refusal(error) {
+            notEligible = words
         } else {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the exam."
+            loadFailure = NuruStateCopy.failure(error)
         }
+    }
+
+    /// The server's own words when it refused the exam (§4: a member-facing
+    /// 4xx keeps its words); nil for any other failure. Pure — pinned by tests.
+    nonisolated static func refusal(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> String? {
+        let copy = NuruStateCopy.failure(error, deviceOnline: deviceOnline)
+        return copy.cause == .refusal ? copy.title : nil
     }
 
     func toggleCheck(_ qid: String, _ choiceId: String) {
@@ -93,6 +122,16 @@ final class LevelExamViewModel: ObservableObject {
         default:
             return !(text[q.questionId] ?? "").isEmpty
         }
+    }
+
+    /// The exam's front door (EXPERIENCE.md §9.1 rule 2), from what the
+    /// server sent: its count, its pass mark, and what a pass opens.
+    var door: ExamWords.Door? {
+        guard let exam else { return nil }
+        let last = summary.map { s in s.levels.map(\.levelNumber).max() == levelNumber } ?? false
+        return ExamWords.frontDoor(levelNumber: levelNumber,
+                                   questionCount: exam.questionCount > 0 ? exam.questionCount : questions.count,
+                                   passMark: exam.passMark, isLastLevel: last)
     }
 
     func submit() async {
@@ -118,10 +157,13 @@ final class LevelExamViewModel: ObservableObject {
                                           title: "Congratulations",
                                           subtitle: "You've finished the exam.")
         } catch {
-            if case let APIError.http(_, code, message, _) = error, code == "GATE_LOCKED" {
-                notEligible = message   // the gate closed between assemble and submit
+            if let words = Self.refusal(error) {
+                // The gate closed between assemble and submit, or the exam
+                // lost its questions: the server's words, and Go back. (The
+                // answers stay in the draft for when it opens again.)
+                notEligible = words
             } else {
-                self.error = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+                self.error = NuruStateCopy.failureLine("Couldn't submit. Please try again.", error)
                 Haptics.error()
             }
         }
@@ -143,7 +185,7 @@ private enum EX {
     static let navyDeep    = Color(hex: 0x060F1C)   // pass-screen canvas
     static let gold        = Color(hex: 0xC9A227)
     static let goldLight   = Color(hex: 0xE6C068)
-    static let bg          = Color(hex: 0xF7F9FC)   // question canvas
+    static let bg          = Nuru.paper              // the page is paper (§8.1 rule 1), not cool blue-white
     static let ink         = Color(hex: 0x0B0B0C)
     static let kicker      = Color(hex: 0xB0B5BF)   // "QUESTION n OF m"
     static let copy        = Color(hex: 0x5B6472)   // result body copy
@@ -157,6 +199,37 @@ private let examGoldGradient = LinearGradient(
     colors: [Color(hex: 0xC9A227), Color(hex: 0xB6862F)],
     startPoint: .topLeading, endPoint: .bottomTrailing)
 
+/// Where the exam's chrome sits (EXPERIENCE.md §7.1 rule 3). The exam is
+/// pushed on a tab's stack under the shell's own overlays: a paper stripe
+/// over the status bar, and the tab bar over the bottom 52pt of the safe
+/// area (NuruTabBar: 6 + 44 + 2). The back sits below the one; every bottom
+/// button clears the other ("Back to Level" used to sit under it).
+private enum ExamLayout {
+    static var backTop: CGFloat { NuruSafeArea.top + 8 }
+    static let bottomClearance: CGFloat = 52 + Nuru.S.base
+}
+
+/// The back at the top-left that every state of the exam carries — the
+/// question flow's header has its own; this one is for every other state.
+private struct ExamTopBack: View {
+    /// White on the navy states (the first load, the pass ceremony).
+    var onDark = false
+    let action: () -> Void
+
+    var body: some View {
+        Button { Haptics.tap(); action() } label: {
+            Icon(.arrowLeft, size: 18, color: onDark ? .white : EX.navy)
+                .frame(width: 40, height: 40)
+                .background(onDark ? Color.white.opacity(0.10) : Color(hex: 0x0A2540, alpha: 0.06), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel("Back")
+        .padding(.leading, Nuru.S.screen)
+        .padding(.top, ExamLayout.backTop)
+    }
+}
+
 struct LevelExamView: View {
     let levelNumber: Int
     /// Passed from PathwayView — advances into the next module after a pass.
@@ -166,6 +239,9 @@ struct LevelExamView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var idx = 0   // current question
+    /// Past the front door. A member coming back to answers already given
+    /// (a draft) goes straight to their question.
+    @State private var begun = false
 
     init(levelNumber: Int, onPassContinue: (() -> Void)? = nil) {
         self.levelNumber = levelNumber
@@ -178,15 +254,22 @@ struct LevelExamView: View {
             EX.bg.ignoresSafeArea()
             if let result = vm.result {
                 ExamResultScreen(levelNumber: levelNumber, result: result,
+                                 nextPreparing: UsherWords.nextPreparing(after: levelNumber, in: vm.summary),
                                  onDone: { dismiss() },
                                  onPassContinue: { (onPassContinue ?? { dismiss() })() },
                                  onRetry: { vm.retry(); idx = 0 })
             } else if vm.loading && vm.exam == nil {
                 examSkeleton
             } else if let reason = vm.notEligible {
-                ExamNotEligibleScreen(levelNumber: levelNumber, reason: reason) { dismiss() }
+                notEligible(reason)
             } else if let exam = vm.exam, !vm.questions.isEmpty {
-                flow(exam)
+                if begun || vm.resumedAt != nil || vm.door == nil {
+                    flow(exam)
+                } else if let door = vm.door {
+                    ExamFrontDoor(door: door, levelTitle: vm.levelTitle,
+                                  onBegin: { withAnimation(.easeInOut(duration: 0.25)) { begun = true } },
+                                  onBack: { dismiss() })
+                }
             } else {
                 loadFailed
             }
@@ -217,10 +300,10 @@ struct LevelExamView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text("QUESTION \(safeIdx + 1) OF \(count)")
-                        .font(.inter(12, .semibold)).kerning(1)
-                        .foregroundStyle(EX.kicker)
+                        .font(.nCardKicker).kerning(1.4)
+                        .foregroundStyle(Nuru.eyebrow)
                     Text(q.questionText)
-                        .font(.inter(20, .bold)).kerning(-0.3)
+                        .font(.inter(18, .bold)).kerning(-0.3)
                         .foregroundStyle(EX.ink)
                         .lineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
@@ -283,28 +366,38 @@ struct LevelExamView: View {
         }
         .nuruShimmer()
         .accessibilityLabel("Loading the exam")
+        // A slow first load is never a trap: the way back is there from the start.
+        .overlay(alignment: .topLeading) { ExamTopBack(onDark: true) { dismiss() } }
     }
 
+    /// The server refused the exam — its own words (§4: "Your Level 1 exam
+    /// isn't ready yet — we'll let you know when it opens.", "Finish every
+    /// module in this level before the exam") in the one state card, as
+    /// Android (EXPERIENCE.md §8.2 #16; it was a screen of its own), with one
+    /// way out, Go back — never Try again, which would only be refused again —
+    /// and the way back at the top.
+    private func notEligible(_ reason: String) -> some View {
+        NuruStateView(state: .failed(Self.refusalCopy(reason)), back: { dismiss() })
+            .padding(.horizontal, Nuru.S.screen)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) { ExamTopBack { dismiss() } }
+    }
+
+    /// A refusal's card: the server's words, Go back. Pure — pinned by tests.
+    static func refusalCopy(_ reason: String) -> NuruStateCopy {
+        NuruStateCopy(cause: .refusal, title: reason, line: nil, action: .goBack)
+    }
+
+    /// The exam didn't come for a reason that isn't a refusal — offline, our
+    /// server, an ended session — in the one state language (§4), with the
+    /// way back at the top. (An exam that came with no questions is ours.)
     private var loadFailed: some View {
-        VStack(spacing: Nuru.S.md) {
-            Text(vm.error ?? "Couldn't load the exam.")
-                .font(.inter(14)).foregroundStyle(EX.copy).multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                Text("Try again").font(.inter(13, .semibold)).foregroundStyle(EX.navy)
-                    .padding(.horizontal, 20).padding(.vertical, 10)
-                    .background(examGoldGradient, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-            Button { Haptics.tap(); dismiss() } label: {
-                Text("Back").font(.inter(13, .semibold)).foregroundStyle(EX.copy)
-                    .padding(.horizontal, 20).padding(.vertical, 10)
-            }
-            .buttonStyle(.pressable)
-        }
-        .padding(Nuru.S.screen)
+        NuruStateView(state: .failed(vm.loadFailure ?? .serverSide),
+                      retry: { Task { await vm.load() } },
+                      back: { dismiss() })
+            .padding(.horizontal, Nuru.S.screen)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .overlay(alignment: .topLeading) { ExamTopBack { dismiss() } }
     }
 
     // MARK: - Answer renderers (same white-card language as the quiz)
@@ -374,6 +467,80 @@ struct LevelExamView: View {
     }
 }
 
+// MARK: - The front door (EXPERIENCE.md §9.1 rule 2)
+
+/// Before question 1: what the exam is, what it asks, what happens after —
+/// "The Level 1 exam · 91 questions · pass mark 80% · your answers are kept
+/// if you leave · a pass opens the way to Level 2 · Begin". A pushed page in
+/// the grammar (§8.1): paper, back · kicker · title, a white card, one gold
+/// primary above the tab bar.
+private struct ExamFrontDoor: View {
+    let door: ExamWords.Door
+    let levelTitle: String?
+    let onBegin: () -> Void
+    let onBack: () -> Void
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    if let levelTitle, !levelTitle.isEmpty {
+                        Text(levelTitle.uppercased())
+                            .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .nuruWholeWords(levelTitle.uppercased(), font: .nCardKicker, kerning: 1.4)
+                    }
+                    Text(door.title)
+                        .font(.fraunces(28, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 6)
+                    Text(door.facts)
+                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 10)
+                    VStack(alignment: .leading, spacing: 14) {
+                        ForEach(Array(door.lines.enumerated()), id: \.offset) { i, line in
+                            HStack(alignment: .top, spacing: 12) {
+                                Icon(i == 0 ? .bookmark : .flag, size: 18, color: Nuru.navy)
+                                    .frame(width: 36, height: 36)
+                                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                Text(line)
+                                    .font(.nBody).foregroundStyle(Nuru.ink600)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .padding(.top, 8)
+                                Spacer(minLength: 0)
+                            }
+                        }
+                    }
+                    .padding(Nuru.S.base)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                    .nuruShadow()
+                    .padding(.top, Nuru.S.lg)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, Nuru.S.screen)
+                .padding(.top, ExamLayout.backTop + 56)
+                .padding(.bottom, Nuru.S.lg)
+            }
+            Button { Haptics.action(); onBegin() } label: {
+                Text(door.begin)
+                    .font(.inter(16, .bold)).foregroundStyle(EX.navy)
+                    .frame(maxWidth: .infinity, minHeight: 56)
+                    .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+            .buttonStyle(.pressable)
+            .padding(.horizontal, Nuru.S.lg)
+            .padding(.top, Nuru.S.base)
+            .padding(.bottom, ExamLayout.bottomClearance)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onBack) }
+        .accessibilityElement(children: .contain)
+    }
+}
+
 // MARK: - Navy header (back · gold seal · overline · title · continuous progress)
 // The exam spans the level's whole pool (often 15–30 questions), so the quiz's
 // per-question pills would overflow — a single gold bar carries the progress.
@@ -389,7 +556,7 @@ private struct ExamHeader: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 14) {
                 Button { Haptics.tap(); onBack() } label: {
-                    Icon(.arrowLeft, size: 17, color: .white)
+                    Icon(.arrowLeft, size: 18, color: .white)
                         .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .contentShape(Circle())
@@ -397,19 +564,22 @@ private struct ExamHeader: View {
                 .buttonStyle(.pressable)
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
-                        Icon(.award, size: 11, color: EX.gold)
-                        Text("LEVEL \(levelNumber) EXAM")
-                            .font(.inter(11, .semibold)).kerning(0.9)
+                        Icon(.award, size: 14, color: EX.gold)
+                        Text(ExamWords.name(levelNumber).uppercased())
+                            .font(.nCardKicker).kerning(1.4)
                             .foregroundStyle(EX.goldLight.opacity(0.85))
                     }
+                    // A title (§8.1 rule 3) that wraps rather than cut (rule 9).
                     Text(title ?? "Level \(levelNumber)")
-                        .font(.inter(16, .semibold)).foregroundStyle(.white)
-                        .lineLimit(1)
+                        .font(.fraunces(22, .semibold)).foregroundStyle(.white)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Nuru.S.screen)
-            .padding(.top, 52)
+            // Below the shell's paper stripe — at a fixed 52 the stripe
+            // covered the back's top edge on a Dynamic Island phone.
+            .padding(.top, ExamLayout.backTop)
 
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -467,7 +637,7 @@ private struct ExamOptionCard: View {
             ZStack {
                 if selected {
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(EX.navy)
-                    Icon(.check, size: 13, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 } else {
                     RoundedRectangle(cornerRadius: 6, style: .continuous)
                         .stroke(EX.radioIdle, lineWidth: 2)
@@ -540,7 +710,7 @@ private struct ExamCTABar: View {
         .animation(.easeInOut(duration: 0.2), value: error != nil)
         .padding(.top, 16)
         .padding(.horizontal, Nuru.S.lg)
-        .padding(.bottom, Nuru.S.md)
+        .padding(.bottom, ExamLayout.bottomClearance)   // clear of the tab bar
         .background(
             Color.white
                 .overlay(Rectangle().fill(EX.ctaHairline).frame(height: 1), alignment: .top)
@@ -549,54 +719,12 @@ private struct ExamCTABar: View {
     }
 }
 
-// MARK: - Not eligible (the server said the gate isn't open — honest, kind)
-
-private struct ExamNotEligibleScreen: View {
-    let levelNumber: Int
-    let reason: String
-    let onBack: () -> Void
-
-    var body: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
-                .frame(width: 100, height: 100)
-                .overlay(Icon(.lock, size: 36, color: EX.copy))
-            Text("The gate isn't open yet")
-                .font(.inter(22, .bold)).foregroundStyle(EX.ink)
-                .padding(.top, 24)
-            Text(reason)
-                .font(.inter(16)).foregroundStyle(EX.copy)
-                .multilineTextAlignment(.center)
-                .lineSpacing(4)
-                .padding(.top, 10)
-                .padding(.horizontal, 36)
-            Text("Finish every module in Level \(levelNumber), then come back — the exam will be waiting.")
-                .font(.inter(13)).foregroundStyle(EX.kicker)
-                .multilineTextAlignment(.center)
-                .lineSpacing(3)
-                .padding(.top, 12)
-                .padding(.horizontal, 44)
-            Spacer()
-            Button { Haptics.tap(); onBack() } label: {
-                Text("Back to Level")
-                    .font(.inter(16, .semibold)).foregroundStyle(.white)
-                    .frame(maxWidth: .infinity, minHeight: 56)
-                    .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-            .buttonStyle(.pressable)
-            .padding(.horizontal, Nuru.S.lg)
-            .padding(.bottom, Nuru.S.lg)
-        }
-        .gentleEntrance()
-    }
-}
-
 // MARK: - Result screens (server-scored — the verdict is rendered, never computed)
 
 private struct ExamResultScreen: View {
     let levelNumber: Int
     let result: ExamResult
+    var nextPreparing: Bool = false
     let onDone: () -> Void
     let onPassContinue: () -> Void
     let onRetry: () -> Void
@@ -606,9 +734,10 @@ private struct ExamResultScreen: View {
             ExamPassScreen(levelNumber: levelNumber,
                            score: result.scoreAchieved,
                            mentorReview: result.requiresManualReview,
+                           nextPreparing: nextPreparing,
                            onContinue: onPassContinue)
         } else if result.requiresManualReview {
-            ExamReviewScreen(onDone: onDone)
+            ExamReviewScreen(levelNumber: levelNumber, onDone: onDone)
         } else {
             ExamFailScreen(levelNumber: levelNumber,
                            score: result.scoreAchieved,
@@ -627,6 +756,7 @@ private struct ExamPassScreen: View {
     let levelNumber: Int
     let score: Int
     let mentorReview: Bool
+    var nextPreparing: Bool = false
     let onContinue: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var bloomed = false
@@ -648,18 +778,23 @@ private struct ExamPassScreen: View {
                     .padding(.top, 26)
                     .gentleEntrance(delay: 0.06)
                 Text("\(score)%")
-                    .font(.inter(56, .bold)).foregroundStyle(EX.gold)
+                    .font(.inter(28, .bold)).foregroundStyle(EX.gold)
                     .padding(.top, 4)
                     .gentleEntrance(delay: 0.1)
-                Text("Level \(levelNumber) Complete")
-                    .font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                Text(ExamWords.passedTitle(levelNumber))
+                    .font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                    .multilineTextAlignment(.center).padding(.horizontal, Nuru.S.lg)
                     .padding(.top, 6)
                     .gentleEntrance(delay: 0.18)
                 // §1.9 (new): passing no longer auto-advances — the member now waits
                 // to be ushered by a discipler. The copy is a dignified handoff.
-                Text(mentorReview
-                     ? "A true milestone. Some written answers went to your mentor to read — and your discipler will usher you onward. 🌿"
-                     : "A true milestone. Awaiting your discipler's blessing to continue to the next level. 🌿")
+                // Who opens the next level, in §3's one word — "your leader"
+                // (E2, Cycle 4 B1): a member with no discipler read "your
+                // discipler's blessing" as untrue.
+                // While Level N+1 has no lessons, nobody is promised to open
+                // it (§9.2 #7): "we'll let you know when Level 2 opens."
+                Text((mentorReview ? "Your leader will read your written answers. " : "")
+                     + UsherWords.line(passed: levelNumber, nextPreparing: nextPreparing))
                     .font(.inter(15)).foregroundStyle(Color.white.opacity(0.55))
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
@@ -675,10 +810,8 @@ private struct ExamPassScreen: View {
                 divider.padding(.top, 24)
                 Spacer()
                 Button {
-                    guard !advancing else { return }
-                    advancing = true
-                    Haptics.tap()
-                    onContinue()   // refresh the pathway + return to the hub (no jump)
+                    if !advancing { Haptics.tap() }
+                    advance()
                 } label: {
                     Group {
                         if advancing {
@@ -695,11 +828,14 @@ private struct ExamPassScreen: View {
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
-                .padding(.bottom, Nuru.S.lg)
+                .padding(.bottom, ExamLayout.bottomClearance)
             }
             // Confetti over the whole ceremony — fires on arrival, once.
             CelebrationConfetti().allowsHitTesting(false)
         }
+        // The back at the top goes the same way as the button — the pathway
+        // refreshed, so it shows the passed level as it now stands.
+        .overlay(alignment: .topLeading) { ExamTopBack(onDark: true) { advance() } }
         .onAppear {
             Haptics.success()
             guard !bloomed else { return }
@@ -712,6 +848,14 @@ private struct ExamPassScreen: View {
         }
     }
 
+    /// Back to the pathway — once, however it is asked for (the button or
+    /// the back at the top): the hub refreshes, then the exam pops.
+    private func advance() {
+        guard !advancing else { return }
+        advancing = true
+        onContinue()   // refresh the pathway + return to the hub (no jump)
+    }
+
     // Concentric rings (190/154/122) with the trophy, laurelled by eight gold
     // dots that arrive one after another — the exam's bigger bloom.
     private var rings: some View {
@@ -720,7 +864,7 @@ private struct ExamPassScreen: View {
             Circle().stroke(EX.gold.opacity(0.30), lineWidth: 1).frame(width: 154, height: 154)
             Circle().fill(EX.gold.opacity(0.09)).frame(width: 122, height: 122)
                 .overlay(Circle().stroke(EX.gold.opacity(0.45), lineWidth: 1))
-            Text("🏆").font(.system(size: 50))
+            Text("🏆").font(.emoji(50))
             ForEach(0..<8, id: \.self) { i in
                 let a = Double(i) * .pi / 4
                 Circle().fill(EX.gold).frame(width: 5, height: 5)
@@ -750,10 +894,10 @@ private struct ExamScoreBreakdown: View {
     var body: some View {
         VStack(spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("YOUR LEVEL SCORE").font(.inter(10.5, .bold)).kerning(1.6)
+                Text("YOUR LEVEL SCORE").font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(EX.gold.opacity(0.7))
                 Spacer(minLength: 0)
-                Text("\(score.total)").font(.fraunces(20, .semibold)).foregroundStyle(EX.gold)
+                Text("\(score.total)").font(.fraunces(22, .semibold)).foregroundStyle(EX.gold)
                 Text("/ 100").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.5))
             }
             row("Exam", score.exam.score, score.exam.of)
@@ -769,7 +913,7 @@ private struct ExamScoreBreakdown: View {
     private func row(_ label: String, _ got: Int, _ of: Int) -> some View {
         VStack(spacing: 5) {
             HStack {
-                Text(label).font(.inter(12.5, .semibold)).foregroundStyle(.white.opacity(0.8))
+                Text(label).font(.inter(13, .semibold)).foregroundStyle(.white.opacity(0.8))
                 Spacer(minLength: 0)
                 Text("\(got) / \(of)").font(.inter(12, .bold)).foregroundStyle(EX.goldLight)
             }
@@ -800,18 +944,18 @@ private struct ExamFailScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("📖").font(.system(size: 44)))
+                    .overlay(Text("📖").font(.emoji(44)))
                 Text("MARKS SCORED")
                     .font(.inter(11, .bold)).kerning(2)
                     .foregroundStyle(EX.copy)
                     .padding(.top, 22)
                 Text("\(score)%")
-                    .font(.inter(44, .bold)).foregroundStyle(EX.ink)
+                    .font(.inter(28, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 4)
                 Text("Not yet — and that's okay")
                     .font(.inter(22, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 6)
-                Text("You need \(passMark)% to pass the Level \(levelNumber) exam. It draws from the whole level, so revisit the modules and come back when you're ready — you can retake it.")
+                Text(ExamWords.failLine(levelNumber, passMark: passMark))
                     .font(.inter(16)).foregroundStyle(EX.copy)
                     .multilineTextAlignment(.center)
                     .lineSpacing(4)
@@ -819,33 +963,37 @@ private struct ExamFailScreen: View {
                     .padding(.horizontal, 36)
                 Spacer()
                 VStack(spacing: 10) {
+                    // One primary (§8.1 rule 4): back to the level's lessons,
+                    // then the exam again — Android's words.
                     Button { Haptics.tap(); onReview() } label: {
-                        Text("Review Modules")
-                            .font(.inter(16, .semibold)).foregroundStyle(.white)
+                        Text("Back to Level \(levelNumber)")
+                            .font(.inter(16, .bold)).foregroundStyle(EX.navy)
                             .frame(maxWidth: .infinity, minHeight: 56)
-                            .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }
                     .buttonStyle(.pressable)
                     Button { Haptics.action(); onRetry() } label: {
-                        Text("Retry Exam")
+                        Text("Try the exam again")
                             .font(.inter(16, .semibold)).foregroundStyle(EX.navy)
                             .frame(maxWidth: .infinity, minHeight: 56)
-                            .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(Color(hex: 0x0A2540, alpha: 0.15), lineWidth: 1.5))
+                                .stroke(Nuru.border, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                 }
                 .padding(.horizontal, Nuru.S.lg)
-                .padding(.bottom, Nuru.S.lg)
+                .padding(.bottom, ExamLayout.bottomClearance)
             }
         }
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onReview) }
         .onAppear { Haptics.error() }   // kind copy stays; the hand hears "not yet"
     }
 }
 
 /// Manual review — written answers went to a mentor; no instant pass/fail.
 private struct ExamReviewScreen: View {
+    let levelNumber: Int
     let onDone: () -> Void
 
     var body: some View {
@@ -855,7 +1003,7 @@ private struct ExamReviewScreen: View {
                 Spacer()
                 Circle().fill(Color(hex: 0x0A2540, alpha: 0.07))
                     .frame(width: 100, height: 100)
-                    .overlay(Text("✍️").font(.system(size: 44)))
+                    .overlay(Text("✍️").font(.emoji(44)))
                 Text("Submitted for review")
                     .font(.inter(22, .bold)).foregroundStyle(EX.ink)
                     .padding(.top, 24)
@@ -867,16 +1015,17 @@ private struct ExamReviewScreen: View {
                     .padding(.horizontal, 36)
                 Spacer()
                 Button { Haptics.tap(); onDone() } label: {
-                    Text("Back to Level")
-                        .font(.inter(16, .semibold)).foregroundStyle(.white)
+                    Text("Back to Level \(levelNumber)")
+                        .font(.inter(16, .bold)).foregroundStyle(EX.navy)
                         .frame(maxWidth: .infinity, minHeight: 56)
-                        .background(EX.navy, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .background(examGoldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 }
                 .buttonStyle(.pressable)
                 .padding(.horizontal, Nuru.S.lg)
-                .padding(.bottom, Nuru.S.lg)
+                .padding(.bottom, ExamLayout.bottomClearance)
             }
         }
+        .overlay(alignment: .topLeading) { ExamTopBack(action: onDone) }
         .onAppear { Haptics.success() }   // the submission itself landed safely
     }
 }

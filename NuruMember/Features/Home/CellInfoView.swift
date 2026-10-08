@@ -4,8 +4,8 @@
 // rhythm, next gathering, roster faces, honest cell-wide turnout, level/focus,
 // and the leader-only shepherd's note. It deliberately does NOT touch
 // GET /home/featured-cell: that payload describes the congregation-wide
-// featured cell, not necessarily this member's. Navy rounded-bottom header
-// (no hero image), matching MentorView.
+// featured cell, not necessarily this member's. The one pushed-page header
+// (NuruPushedHeader, §8.1 rule 2).
 import SwiftUI
 
 @MainActor
@@ -79,11 +79,15 @@ struct CellInfoView: View {
                             if let live = vm.liveStream { cellLiveCard(live) }
                             if LiveBroadcastEligibility.showCellEntryPoint(auth.profile) { goLiveButton }
                             leaderCard
-                            if hasRhythm { rhythmCard }
+                            // When it meets, always said (final walk C4): with
+                            // nothing set, "No gathering set yet" — the page
+                            // said nothing at all.
+                            rhythmCard
                             if let n = vm.cell?.next { nextGatheringCard(n) }
                             if let lv = vm.cell?.leaderView, lv.count > 0 { shepherdsNoteCard(lv) }
                             membersCard
-                            statsGrid
+                            attendanceCard
+                            if vm.cell?.levelLabel != nil || vm.cell?.focus != nil { statsGrid }
                             watchReplaysButton
                             openCommunityButton
                         }
@@ -93,6 +97,8 @@ struct CellInfoView: View {
                 }
                 .refreshable { await vm.load() }
             }
+            // The header runs under the status band and pads past it itself.
+            .ignoresSafeArea(edges: .top)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -126,13 +132,13 @@ struct CellInfoView: View {
             if broadcast.controller != nil { broadcast.restore() } else { showGoLiveSheet = true }
         } label: {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.megaphone, size: 15, color: Nuru.navy)
+                Icon(.megaphone, size: 14, color: Nuru.navy)
                     .frame(width: 32, height: 32)
                     .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text(broadcast.controller != nil ? "You're live — tap to return" : "Go live to your cell")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: Nuru.navy.opacity(0.6))
+                Icon(.chevronRight, size: 14, color: Nuru.navy.opacity(0.6))
             }
         }
         .buttonStyle(.pressable)
@@ -154,12 +160,12 @@ struct CellInfoView: View {
     private var watchReplaysButton: some View {
         Button { Haptics.tap(); openReplays = true } label: {
             HStack(spacing: Nuru.S.sm) {
-                Icon(.calendarClock, size: 15, color: Nuru.goldChipText)
+                Icon(.calendarClock, size: 14, color: Nuru.goldChipText)
                     .frame(width: 32, height: 32)
                     .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 Text("Watch replays").font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: Nuru.faint)
+                Icon(.chevronRight, size: 14, color: Nuru.faint)
             }
         }
         .buttonStyle(.pressable)
@@ -177,38 +183,11 @@ struct CellInfoView: View {
             .nuruShimmer()
     }
 
-    // Navy header with rounded bottom, circular back button, gold overline, serif title.
+    // The one pushed-page header (§8.1 rule 2): back · kicker · title · one
+    // line, on paper — it was a navy band, and navy is the church's voice
+    // and the next step (Android, the same).
     private var header: some View {
-        VStack(alignment: .leading, spacing: Nuru.S.md) {
-            Button { Haptics.tap(); dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.onNavy)
-                    .frame(width: 38, height: 38)
-                    .background(Nuru.navyDeep, in: Circle())
-            }
-            .buttonStyle(.pressable)
-
-            VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("YOUR CELL")
-                    .font(.inter(11, .bold)).tracking(1.4)
-                    .foregroundStyle(Nuru.gold)
-                Text(vm.name)
-                    .font(.fraunces(26, .semibold))
-                    .foregroundStyle(Nuru.white)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let f = vm.cell?.focus {
-                    Text(f).font(.nCaption).foregroundStyle(Nuru.onNavyFaint)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, Nuru.S.sm)
-        .padding(.bottom, Nuru.S.lg)
-        .background(
-            UnevenRoundedRectangle(bottomLeadingRadius: 28, bottomTrailingRadius: 28, style: .continuous)
-                .fill(Nuru.navy)
-                .ignoresSafeArea(edges: .top)
-        )
+        NuruPushedHeader(kicker: "Your cell", title: vm.name, line: vm.cell?.focus)
     }
 
     // MARK: Leader / discipler
@@ -218,11 +197,22 @@ struct CellInfoView: View {
 
     private var leaderCard: some View {
         HStack(spacing: Nuru.S.base) {
-            Avatar(url: vm.cell?.leader?.avatarUrl, name: leaderName ?? vm.name, size: 56)
+            if let name = leaderName {
+                Avatar(url: vm.cell?.leader?.avatarUrl, name: name, size: 56)
+            } else {
+                // An empty seat, not a person (the walk's E18: the cell's own
+                // initials "DC" sat in a person's avatar beside "Not assigned yet").
+                Icon(.armchair, size: 22, color: Nuru.ink400)
+                    .frame(width: 56, height: 56)
+                    .background(Nuru.surface, in: Circle())
+                    .overlay(Circle().stroke(Nuru.border, style: StrokeStyle(lineWidth: 1, dash: [4, 3])))
+                    .accessibilityHidden(true)
+            }
             VStack(alignment: .leading, spacing: 3) {
                 Text("CELL LEADER").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
-                Text(leaderName ?? "Not assigned yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
-                if let r = leaderRole { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
+                Text(leaderName ?? "Not assigned yet").font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
+                // Never a raw role (§8.1 rule 8).
+                if let r = CellLeaderWords.role(leaderRole) { Text(r).font(.nCaption).foregroundStyle(Nuru.muted) }
             }
             Spacer(minLength: 0)
         }
@@ -235,11 +225,6 @@ struct CellInfoView: View {
 
     // MARK: Meeting rhythm (own cell, from cell-summary)
 
-    private var hasRhythm: Bool {
-        guard let c = vm.cell else { return false }
-        return c.meets != nil || c.room != nil || c.next != nil || c.rhythmSource != nil
-    }
-
     private var rhythmCard: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             Text("MEETING RHYTHM").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.muted)
@@ -249,7 +234,7 @@ struct CellInfoView: View {
             } else if vm.cell?.rhythmSource != "series" {
                 // No occurrence on the books and no series to imply one —
                 // say so honestly instead of borrowing a date.
-                rhythmRow(.calendarDays, "Next session", "Not scheduled yet", muted: true)
+                rhythmRow(.calendarDays, "Next gathering", CellRhythmWords.noneSet, muted: true)
             }
             if let r = vm.cell?.room { rhythmRow(.mapPin, "Where", r) }
         }
@@ -262,7 +247,7 @@ struct CellInfoView: View {
 
     private func rhythmRow(_ icon: Lucide, _ label: String, _ value: String, muted: Bool = false) -> some View {
         HStack(spacing: Nuru.S.md) {
-            Icon(icon, size: 16, color: Nuru.goldChipText)
+            Icon(icon, size: 18, color: Nuru.goldChipText)
                 .frame(width: 34, height: 34)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
@@ -280,7 +265,7 @@ struct CellInfoView: View {
         HStack(spacing: Nuru.S.md) {
             ZStack {
                 RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.goldTint).frame(width: 44, height: 44)
-                Icon(.calendarClock, size: 20, color: Nuru.gold)
+                Icon(.calendarClock, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("NEXT GATHERING").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.gold)
@@ -301,7 +286,7 @@ struct CellInfoView: View {
         HStack(spacing: Nuru.S.md) {
             ZStack {
                 RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous).fill(Nuru.white).frame(width: 44, height: 44)
-                Icon(.handHeart, size: 20, color: Nuru.gold)
+                Icon(.handHeart, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text("SHEPHERD'S NOTE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
@@ -343,7 +328,7 @@ struct CellInfoView: View {
         let overflow = (roster?.count ?? 0) - faces.count
         return HStack(spacing: Nuru.S.sm) {
             if faces.isEmpty {
-                Icon(.users, size: 15, color: Nuru.goldChipText)
+                Icon(.users, size: 14, color: Nuru.goldChipText)
                     .frame(width: 32, height: 32)
                     .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             } else {
@@ -353,7 +338,7 @@ struct CellInfoView: View {
                             .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
                     }
                     if overflow > 0 {
-                        Text("+\(overflow)").font(.inter(8, .bold)).foregroundStyle(Nuru.navy)
+                        Text("+\(overflow)").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                             .frame(width: 26, height: 26)
                             .background(Nuru.surface, in: Circle())
                             .overlay(Circle().stroke(Nuru.white, lineWidth: 2))
@@ -363,7 +348,7 @@ struct CellInfoView: View {
             Text(total > 0 ? "\(total) members" : "Members")
                 .font(.inter(14, .bold)).foregroundStyle(Nuru.ink)
             Spacer(minLength: 0)
-            Icon(.chevronRight, size: 15, color: Nuru.faint)
+            Icon(.chevronRight, size: 14, color: Nuru.faint)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(Nuru.S.sm)
@@ -373,30 +358,47 @@ struct CellInfoView: View {
 
     private var statsGrid: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: Nuru.S.sm), GridItem(.flexible(), spacing: Nuru.S.sm)], spacing: Nuru.S.sm) {
-            attendanceTile
             if let l = vm.cell?.levelLabel { statTile(.award, "Level", l) }
             if let f = vm.cell?.focus { statTile(.target, "Focus", f) }
         }
     }
 
-    /// Honest attendance: cell-wide turnout over recent meetings when the
-    /// server has it; else the member's own month; else a dash.
-    @ViewBuilder private var attendanceTile: some View {
-        if let t = vm.cell?.turnout {
-            statTile(.percent, "Attendance", "\(Int((t.rate * 100).rounded()))%",
-                     caption: "last \(t.meetings) meeting\(t.meetings == 1 ? "" : "s")",
-                     trend: t.trend)
-        } else if let a = vm.cell?.attendance, a.expected > 0 {
-            statTile(.percent, "Attendance", "\(a.attended)/\(a.expected)", caption: "you, this month")
-        } else {
-            statTile(.percent, "Attendance", "—")
+    /// Attendance with the server's meaning (§7.4 #16), the same words as
+    /// Android: the member's part in the cell's real recent meetings ("You:
+    /// 3 of the last 8 meetings") and the cell's turnout over them ("The
+    /// cell: 48% · last 8 meetings") — or "Your cell hasn't met yet". The old
+    /// "0/8 · you, this month" set the member against a scoring baseline (8
+    /// expected check-ins) no weekly cell meets.
+    private var attendanceCard: some View {
+        let lines = CellAttendanceWords.lines(you: vm.cell?.attendance.you, turnout: vm.cell?.turnout)
+        let met = CellAttendanceWords.hasMet(you: vm.cell?.attendance.you, turnout: vm.cell?.turnout)
+        return HStack(alignment: .top, spacing: Nuru.S.sm) {
+            Icon(.percent, size: 14, color: Nuru.goldChipText)
+                .frame(width: 32, height: 32)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Attendance").font(.nMicro).foregroundStyle(Nuru.faint)
+                ForEach(lines, id: \.self) { line in
+                    Text(line).font(.inter(14, met ? .bold : .semibold))
+                        .foregroundStyle(met ? Nuru.ink : Nuru.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            Spacer(minLength: 0)
+            if let trend = vm.cell?.turnout?.trend, let (glyph, color) = Self.trendGlyph(trend) {
+                Icon(glyph, size: 14, color: color).padding(.top, 2)
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(Nuru.S.sm)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 
     private func statTile(_ icon: Lucide, _ label: String, _ value: String,
                           caption: String? = nil, trend: String? = nil) -> some View {
         HStack(spacing: Nuru.S.sm) {
-            Icon(icon, size: 15, color: Nuru.goldChipText)
+            Icon(icon, size: 14, color: Nuru.goldChipText)
                 .frame(width: 32, height: 32)
                 .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 1) {
@@ -404,7 +406,7 @@ struct CellInfoView: View {
                 HStack(spacing: 3) {
                     Text(value).font(.inter(14, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
                     if let trend, let (glyph, color) = Self.trendGlyph(trend) {
-                        Icon(glyph, size: 12, color: color)
+                        Icon(glyph, size: 14, color: color)
                     }
                 }
                 if let caption {
@@ -436,11 +438,12 @@ struct CellInfoView: View {
         NavigationLink(value: CommunityRoute.discussions) {
             HStack {
                 Spacer()
-                Text("Open community ›").font(.nCardCTA).foregroundStyle(Nuru.white)
+                // The page's one primary: gold, navy text (§8.1 rule 4).
+                Text("Open community ›").font(.nCardCTA).foregroundStyle(Nuru.navy)
                 Spacer()
             }
             .frame(maxWidth: .infinity, minHeight: 48)
-            .background(Nuru.navyDeep, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(.pressable)
         .padding(.top, Nuru.S.xs)
@@ -455,7 +458,7 @@ struct CellInfoView: View {
                 Icon(.users, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("No cell yet").font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text("No cell yet").font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 Text("When your leader adds you to a discipleship cell, you'll see your leader, meeting rhythm and gatherings here.")
                     .font(.nCaption).foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -481,6 +484,55 @@ struct CellInfoView: View {
     }
     private static func longDate(_ iso: String) -> String {
         guard let d = parse(iso) else { return iso }
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"; return f.string(from: d)
+        return NuruDates.dayTime(d)
     }
+}
+
+/// The cell page's attendance words (EXPERIENCE.md §7.4 #16) — both apps say
+/// these. `you` and `turnout` count the same real recent meetings
+/// (GET /me/cell-summary); `attendance.expected` is a scoring baseline and is
+/// never shown. Pure.
+enum CellAttendanceWords {
+    /// "You: 3 of the last 8 meetings" · "You: 1 of 1 meeting".
+    static func you(_ y: CellSummary.Cell.Attendance.You) -> String? {
+        guard y.meetings > 0 else { return nil }
+        let attended = min(max(0, y.attended), y.meetings)
+        return y.meetings == 1 ? "You: \(attended) of 1 meeting" : "You: \(attended) of the last \(y.meetings) meetings"
+    }
+
+    /// "The cell: 48% · last 8 meetings" · "The cell: 100% · 1 meeting".
+    static func cell(_ t: CellSummary.Cell.Turnout) -> String? {
+        guard t.meetings > 0 else { return nil }
+        let pct = min(max(0, Int((t.rate * 100).rounded())), 100)
+        return "The cell: \(pct)% · " + (t.meetings == 1 ? "1 meeting" : "last \(t.meetings) meetings")
+    }
+
+    static func hasMet(you: CellSummary.Cell.Attendance.You?, turnout: CellSummary.Cell.Turnout?) -> Bool {
+        (you.flatMap(Self.you) ?? turnout.flatMap(Self.cell)) != nil
+    }
+
+    /// The member's line, then the cell's — or "Your cell hasn't met yet".
+    static func lines(you: CellSummary.Cell.Attendance.You?, turnout: CellSummary.Cell.Turnout?) -> [String] {
+        let out = [you.flatMap(Self.you), turnout.flatMap(Self.cell)].compactMap { $0 }
+        return out.isEmpty ? ["Your cell hasn't met yet"] : out
+    }
+}
+
+/// A cell leader's role in a member's words (§8.1 rule 8) — nil for a plain
+/// member's role, which says nothing the kicker doesn't.
+enum CellLeaderWords {
+    static func role(_ raw: String?) -> String? {
+        switch (raw ?? "").lowercased() {
+        case "instructor": return "Teacher"
+        case "admin", "superadmin": return "Church staff"
+        case "", "student", "member": return nil
+        default: return raw
+        }
+    }
+}
+
+/// The cell page's words for a cell with no gathering on the books (final
+/// walk C4) — Android says the same.
+enum CellRhythmWords {
+    static let noneSet = "No gathering set yet"
 }

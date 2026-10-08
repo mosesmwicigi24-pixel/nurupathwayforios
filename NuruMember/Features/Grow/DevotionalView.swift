@@ -24,7 +24,7 @@ final class DevotionalViewModel: ObservableObject {
             let d = try await MemberAPI.devotional()
             devotional = d
             reflection = d.myReflection ?? ""
-        } catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load today's devotional." }
+        } catch { self.error = NuruStateCopy.failureLine("Couldn't load today's devotional.", error) }
         loading = false
     }
 
@@ -118,7 +118,7 @@ struct DevotionalView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        .padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -160,7 +160,7 @@ private struct VerseCard: View {
                 .frame(width: 3)
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 6) {
-                    Icon(.quote, size: 12, color: Nuru.gold)
+                    Icon(.quote, size: 14, color: Nuru.gold)
                     Text(reference.uppercased())
                         .font(.nCardKicker).kerning(1.4)
                         .foregroundStyle(Color(hex: 0xA8861C))
@@ -181,7 +181,7 @@ private struct VerseCard: View {
     }
 }
 
-// MARK: - Body paragraphs (Figma: 14pt ink on 24pt lines, split on blank lines)
+// MARK: - Body paragraphs (the one 16 pt reading body, §8.2 #21; split on blank lines)
 
 private struct BodyParagraphs: View {
     let text: String
@@ -196,7 +196,7 @@ private struct BodyParagraphs: View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
             ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, p in
                 Text(p)
-                    .font(.inter(14, .regular))
+                    .font(.nBodyLg)   // long reading: the one 16 pt body
                     .foregroundStyle(Nuru.ink)
                     .nuruLineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
@@ -231,8 +231,8 @@ private struct ReflectionCard: View {
                     Spacer()
                     if saved {
                         HStack(spacing: 4) {
-                            Icon(.check, size: 10, color: Nuru.gold)
-                            Text("Submitted").font(.inter(10, .bold)).foregroundStyle(Nuru.gold)
+                            Icon(.check, size: 14, color: Nuru.gold)
+                            Text("Submitted").font(.inter(11, .bold)).foregroundStyle(Nuru.gold)
                         }
                         .transition(.scale(scale: 0.6).combined(with: .opacity))
                     }
@@ -310,7 +310,10 @@ private struct ReflectionCard: View {
 
 private struct FooterActions: View {
     let devotional: Devotional
-    @State private var loved = false   // local, like the Figma bookmark state
+    /// A quiet like, on this screen only — nothing is saved anywhere, so the
+    /// heart never says "Saved" (owner decision, EXPERIENCE.md §7.4) until
+    /// real saving exists as its own feature.
+    @State private var loved = false
 
     var body: some View {
         HStack(spacing: 0) {
@@ -318,11 +321,11 @@ private struct FooterActions: View {
                 loved.toggle()
                 Haptics.love()
             } label: {
-                column(icon: .heart, label: loved ? "Saved" : "Save",
-                       color: loved ? Nuru.gold : Nuru.navy)
+                column(icon: .heart, label: HeartWords.label, color: loved ? Nuru.gold : Nuru.navy)
             }
             .buttonStyle(.pressable)
             .animation(.spring(response: 0.3, dampingFraction: 0.7), value: loved)
+            .accessibilityValue(loved ? "Liked" : "")
 
             ShareLink(item: shareText) {
                 column(icon: .share2, label: "Share", color: Nuru.navy)
@@ -340,8 +343,8 @@ private struct FooterActions: View {
 
     private func column(icon: Lucide, label: String, color: Color) -> some View {
         VStack(spacing: 2) {
-            Icon(icon, size: 16, color: color)
-            Text(label).font(.inter(10, .medium)).foregroundStyle(color)
+            Icon(icon, size: 18, color: color)
+            Text(label).font(.inter(11, .medium)).foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, minHeight: 44)
         .contentShape(Rectangle())
@@ -363,7 +366,7 @@ private struct FooterActions: View {
 private struct EncouragementStrip: View {
     var body: some View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
-            Icon(.handHeart, size: 16, color: Nuru.gold)
+            Icon(.handHeart, size: 18, color: Nuru.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
                 .font(.nCardBody)
                 .foregroundStyle(Nuru.navy)
@@ -374,4 +377,10 @@ private struct EncouragementStrip: View {
         .padding(Nuru.S.md)
         .background(Nuru.gold.opacity(0.08), in: RoundedRectangle(cornerRadius: Nuru.R.control, style: .continuous))
     }
+}
+
+/// The heart's one word (owner decision, §7.4): "Like" — never "Save" or
+/// "Saved", because a heart on these pages keeps nothing anywhere.
+enum HeartWords {
+    static let label = "Like"
 }

@@ -57,19 +57,19 @@ final class GivingCycle9Tests: XCTestCase {
         let p = try paced()
         XCTAssertEqual(p.pace, Pledge.Pace(perMonthMinor: 500_000, collectionsLeft: 4, by: "2026-12-31"))
         XCTAssertEqual(PledgePace.line(p, today: "2026-09-28"),
-                       "To reach KSh \(grouped(20000)) by 31 Dec: KSh \(grouped(5000)) a month — 4 collections")
+                       "To reach KSh \(grouped(20000)) by Thu 31 Dec: KSh \(grouped(5000)) a month — 4 collections")
 
         let last = try decode(Pledge.self, #"{"pledge_id":"p1","shape":"total","target_minor":2000000,"currency":"KES","status":"active","pace":{"per_month_minor":2000000,"collections_left":1,"by":"2026-09-28"}}"#)
         XCTAssertEqual(PledgePace.line(last, today: "2026-09-28"),
-                       "To reach KSh \(grouped(20000)) by 28 Sep: KSh \(grouped(20000)) a month — 1 collection", "one collection, singular")
+                       "To reach KSh \(grouped(20000)) by Mon 28 Sep: KSh \(grouped(20000)) a month — 1 collection", "one collection, singular")
 
         let dollars = try decode(Pledge.self, #"{"pledge_id":"p2","shape":"total","target_minor":10001,"currency":"USD","status":"active","pace":{"per_month_minor":2501,"collections_left":4,"by":"2026-12-31"}}"#)
         XCTAssertEqual(PledgePace.line(dollars, today: "2026-09-28"),
-                       "To reach US$ 100.01 by 31 Dec: US$ 25.01 a month — 4 collections", "cents stay cents")
+                       "To reach US$ 100.01 by Thu 31 Dec: US$ 25.01 a month — 4 collections", "cents stay cents")
 
         let nextYear = try decode(Pledge.self, #"{"pledge_id":"p3","shape":"total","target_minor":900000,"currency":"KES","status":"active","pace":{"per_month_minor":300000,"collections_left":3,"by":"2027-01-31"}}"#)
         XCTAssertEqual(PledgePace.line(nextYear, today: "2026-12-10"),
-                       "To reach KSh \(grouped(9000)) by 31 Jan 2027: KSh \(grouped(3000)) a month — 3 collections", "another year says which")
+                       "To reach KSh \(grouped(9000)) by Sun 31 Jan 2027: KSh \(grouped(3000)) a month — 3 collections", "another year says which")
     }
 
     func testNoPaceIsNoLine() throws {
@@ -118,7 +118,7 @@ final class GivingCycle9Tests: XCTestCase {
         let p = try paced()
         let sept28 = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-28T09:00:00Z"))
         XCTAssertEqual(PledgePace.offer(for: p, methods: methods(), schedules: [try schedule("s-1", pledge: "p-roof")], now: sept28),
-                       .collected(scheduleId: "s-1", line: "Collected automatically — next KSh \(grouped(5000)) on 28 Oct"))
+                       .collected(scheduleId: "s-1", line: "Collected automatically — next KSh \(grouped(5000)) on Wed 28 Oct"))
         // Shown whatever the rails say — it is already there.
         if case .collected = PledgePace.offer(for: p, methods: nil, schedules: [try schedule("s-1", pledge: "p-roof")]) {} else {
             XCTFail("the gift collecting it is shown even before the rails are known")
@@ -133,16 +133,16 @@ final class GivingCycle9Tests: XCTestCase {
     func testTheCollectedRowSaysWhatTheNextPromptAsks() throws {
         let sept28 = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-09-28T09:00:00Z"))
         XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "300000"), now: sept28),
-                       "Collected automatically — next KSh \(grouped(3000)) on 28 Oct", "only what's left")
+                       "Collected automatically — next KSh \(grouped(3000)) on Wed 28 Oct", "only what's left")
         XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "0"), now: sept28),
                        "Collected automatically — nothing to pay next time")
         XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "null"), now: sept28),
                        "Collected automatically", "no prompt coming: no next")
         XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "500000", nextRunAt: "2026-10-27T22:30:00Z"), now: sept28),
-                       "Collected automatically — next KSh \(grouped(5000)) on 28 Oct", "the church's day: 01:30 on the 28th in Nairobi")
+                       "Collected automatically — next KSh \(grouped(5000)) on Wed 28 Oct", "the church's day: 01:30 on the 28th in Nairobi")
         // Another year's prompt names its year (the Android parity pass).
         XCTAssertEqual(PledgePace.collectedLine(try schedule("s", pledge: "p", next: "500000", nextRunAt: "2027-01-05T06:00:00Z"), now: sept28),
-                       "Collected automatically — next KSh \(grouped(5000)) on 5 Jan 2027")
+                       "Collected automatically — next KSh \(grouped(5000)) on Tue 5 Jan 2027")
     }
 
     // MARK: What "Collect it automatically at this pace" sends

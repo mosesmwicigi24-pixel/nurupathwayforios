@@ -23,7 +23,7 @@ final class MentorViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { info = try await MemberAPI.mentor() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your mentorship." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your mentorship.", error) }
         loading = false
 
         if let mentor = info?.mentor,
@@ -147,7 +147,7 @@ struct MentorView: View {
         HStack(spacing: Nuru.S.base) {
             Avatar(url: m.avatarUrl, name: m.fullName, size: 56)
             VStack(alignment: .leading, spacing: 3) {
-                Text(m.fullName).font(.inter(17, .bold)).foregroundStyle(Nuru.ink)
+                Text(m.fullName).font(.inter(18, .bold)).foregroundStyle(Nuru.ink)
                 if let cell = m.cellName {
                     Text(cell).font(.nCaption).foregroundStyle(Nuru.muted)
                 }
@@ -170,7 +170,7 @@ struct MentorView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("NEXT MEETING")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
 
                 HStack(spacing: Nuru.S.md) {
@@ -247,7 +247,7 @@ struct MentorView: View {
             if busy {
                 ProgressView().tint(Nuru.navy).scaleEffect(0.8)
             } else {
-                Icon(.messageCircle, size: 15, color: Nuru.navy)
+                Icon(.messageCircle, size: 14, color: Nuru.navy)
             }
             Text("Message").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
         }
@@ -267,7 +267,7 @@ struct MentorView: View {
         return Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("CONVERSATION HISTORY")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 if notes.isEmpty {
                     Text("Your discipler's meeting notes will appear here after your first session.")
@@ -293,7 +293,7 @@ struct MentorView: View {
                     .font(.inter(12, .semibold)).foregroundStyle(Nuru.ink)
                 Spacer(minLength: Nuru.S.sm)
                 if let met = note.metAt.flatMap(Self.shortDate) {
-                    Text(met).font(.inter(10, .regular)).foregroundStyle(Nuru.faint)
+                    Text(met).font(.inter(11, .regular)).foregroundStyle(Nuru.faint)
                 }
             }
             Text(note.note)
@@ -302,7 +302,7 @@ struct MentorView: View {
                 .fixedSize(horizontal: false, vertical: true)
             if let next = note.nextMeetingAt.flatMap(Self.shortDate) {
                 HStack(spacing: 4) {
-                    Icon(.calendar, size: 11, color: Nuru.faint)
+                    Icon(.calendar, size: 14, color: Nuru.faint)
                     Text("Next: \(next)").font(.nMicro).foregroundStyle(Nuru.faint)
                 }
             }
@@ -316,13 +316,13 @@ struct MentorView: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("YOUR CELL")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 Text(m.cellName ?? "")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.ink)
                 NavigationLink(value: AppRoute.cell) {
                     HStack(spacing: Nuru.S.sm) {
-                        Icon(.users, size: 15, color: Nuru.navy)
+                        Icon(.users, size: 14, color: Nuru.navy)
                         Text("Open community").font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
@@ -396,10 +396,11 @@ struct MentorView: View {
                 Icon(.heartHandshake, size: 22, color: Nuru.gold)
             }
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
-                Text("No discipler yet")
-                    .font(.inter(17, .bold))
+                Text(DisciplerStore.noneLine)
+                    .font(.nCardTitle)
                     .foregroundStyle(Nuru.ink)
-                Text("When your leader pairs you with a discipler, you'll see your meetings and notes here.")
+                    .fixedSize(horizontal: false, vertical: true)
+                Text("Your meetings, notes and feedback will live here.")
                     .font(.nCaption)
                     .foregroundStyle(Nuru.muted)
                     .fixedSize(horizontal: false, vertical: true)
@@ -426,10 +427,10 @@ struct MentorView: View {
     }
     private static func longDate(_ iso: String) -> String {
         guard let d = parse(iso) else { return "" }
-        let f = DateFormatter(); f.dateFormat = "EEE, MMM d · h:mm a"; return f.string(from: d)
+        return NuruDates.dayTime(d)
     }
     private static func shortDate(_ iso: String) -> String? {
         guard let d = parse(iso) else { return nil }
-        let f = DateFormatter(); f.dateFormat = "MMM d, yyyy"; return f.string(from: d)
+        return NuruDates.day(d)
     }
 }

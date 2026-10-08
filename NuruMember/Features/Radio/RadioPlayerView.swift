@@ -130,8 +130,9 @@ private enum RadioUX {
     static let red     = Color(hex: 0xEF4444)
     static let redDeep = Color(hex: 0xDC2626)
     static let redSoft = Color(hex: 0xFCA5A5)
-    static let indigo     = Color(hex: 0x4338CA)
-    static let indigoSoft = Color(hex: 0x818CF8)
+    // Navy and gold for what was indigo (§8.1 rule 1).
+    static let indigo     = Color(hex: 0x143559)
+    static let indigoSoft = Color(hex: 0xE0B85E)
     static let green = Color(hex: 0x16A34A)
 
     /// The design's ON AIR neon photograph — centerpiece fallback artwork.
@@ -144,9 +145,9 @@ private enum RadioUX {
 
     /// Stable 2-color monogram gradients (the design's palette pairs).
     static let monogramPairs: [(Color, Color)] = [
-        (Color(hex: 0x6366F1), Color(hex: 0x4338CA)),   // indigo
-        (Color(hex: 0x16A34A), Color(hex: 0x15803D)),   // green
-        (Color(hex: 0xDC2626), Color(hex: 0x991B1B)),   // red
+        // Navy and gold only (§8.1 rule 1).
+        (Color(hex: 0x143559), Color(hex: 0x0B1F33)),   // navy
+        (Color(hex: 0x315F8C), Color(hex: 0x143559)),   // navy mid
         (Color(hex: 0xC89B3C), Color(hex: 0x8A6711)),   // gold (also "mine")
     ]
 
@@ -401,7 +402,7 @@ struct ReactionBurstLayer: View {
         let scale = p.scale * (0.6 + 0.4 * min(1, t / 0.18))    // small → full
 
         Text(p.emoji)
-            .font(.system(size: 30))
+            .font(.emoji(30))
             .scaleEffect(scale)
             .rotationEffect(.degrees(p.rotation * t))
             .opacity(opacity)
@@ -421,13 +422,13 @@ struct LiveReactionCounter: View {
 
     var body: some View {
         HStack(spacing: 7) {
-            Icon(.heart, size: 13, color: RadioUX.redSoft)
+            Icon(.heart, size: 14, color: RadioUX.redSoft)
             Text(abbreviate(total))
                 .font(.inter(15, .bold)).monospacedDigit()
                 .foregroundStyle(.white)
                 .contentTransition(.numericText(value: Double(total)))
             Text("reactions")
-                .font(.inter(10, .semibold)).kerning(0.6)
+                .font(.inter(11, .semibold)).kerning(0.6)
                 .foregroundStyle(.white.opacity(0.5))
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
@@ -550,7 +551,7 @@ struct RadioPlayerView: View {
 
     private var header: some View {
         HStack {
-            GlassSquareButton(sfSymbol: nil, lucide: .chevronLeft) {
+            GlassSquareButton(sfSymbol: nil, lucide: .arrowLeft, iconSize: 18) {
                 Haptics.tap()
                 dismiss()
             }
@@ -616,8 +617,8 @@ struct RadioPlayerView: View {
     private func offAirError(_ message: String) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 40)).foregroundStyle(RadioUX.gold.opacity(0.7))
-            Text("Couldn't tune in").font(.fraunces(20, .semibold)).foregroundStyle(.white)
+                .font(.symbol(40)).foregroundStyle(RadioUX.gold.opacity(0.7))
+            Text("Couldn't tune in").font(.fraunces(18, .semibold)).foregroundStyle(.white)
             Text(message).font(.inter(12)).foregroundStyle(.white.opacity(0.55))
                 .multilineTextAlignment(.center).padding(.horizontal, 48)
             Button {
@@ -637,11 +638,11 @@ struct RadioPlayerView: View {
     private var titles: some View {
         VStack(spacing: 0) {
             Text(kickerText)
-                .font(.inter(9, .bold)).kerning(2.0)
+                .font(.inter(11, .bold)).kerning(2.0)
                 .foregroundStyle(RadioUX.goldLight)
                 .padding(.top, 24)
             Text(titleText)
-                .font(.fraunces(24, .semibold)).kerning(-0.48)
+                .font(.fraunces(26, .semibold)).kerning(-0.48)
                 .foregroundStyle(.white)
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
@@ -857,7 +858,7 @@ private struct GlassSquareButton: View {
                         Icon(lucide, size: iconSize, color: .white)
                     } else if let sfSymbol {
                         Image(systemName: sfSymbol)
-                            .font(.system(size: iconSize - 2, weight: .semibold))
+                            .font(.symbol(iconSize - 2, weight: .semibold))
                             .foregroundStyle(.white)
                     }
                 }
@@ -939,7 +940,7 @@ private struct LiveCenterpiece: View {
                                            startPoint: .topLeading, endPoint: .bottomTrailing)
                                 .overlay {
                                     Image(systemName: "dot.radiowaves.left.and.right")
-                                        .font(.system(size: 44)).foregroundStyle(RadioUX.gold.opacity(0.8))
+                                        .font(.symbol(44)).foregroundStyle(RadioUX.gold.opacity(0.8))
                                 }
                         }
                     }
@@ -952,7 +953,7 @@ private struct LiveCenterpiece: View {
 
             if !live {
                 Text("OFF AIR")
-                    .font(.inter(10, .bold)).kerning(2.2)
+                    .font(.inter(11, .bold)).kerning(2.2)
                     .foregroundStyle(.white)
                     .padding(.horizontal, 12).padding(.vertical, 4)
                     .background(RadioUX.navyDeep.opacity(0.7), in: Capsule())
@@ -1002,13 +1003,13 @@ private struct LiveSweepLine: View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
                 Circle().fill(RadioUX.redDeep).frame(width: 6, height: 6)
-                Text("LIVE").font(.inter(10, .bold)).kerning(1.4)
+                Text("LIVE").font(.inter(11, .bold)).kerning(1.4)
                     .foregroundStyle(RadioUX.redSoft)
             }
             waveBar
             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                 Text(fmtElapsed(tunedAt.map { ctx.date.timeIntervalSince($0) } ?? 0))
-                    .font(.inter(10)).monospacedDigit()
+                    .font(.inter(11)).monospacedDigit()
                     .foregroundStyle(.white.opacity(0.55))
             }
         }
@@ -1099,7 +1100,7 @@ private struct RecordingProgressLine: View {
                 Spacer()
                 Text(fmtClock(center.duration))
             }
-            .font(.inter(10)).monospacedDigit()
+            .font(.inter(11)).monospacedDigit()
             .foregroundStyle(.white.opacity(0.55))
         }
         .accessibilityElement(children: .combine)
@@ -1125,7 +1126,7 @@ private struct LiveTransportRow: View {
                 center.toggleMute()
             } content: {
                 Image(systemName: center.muted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.symbol(18, weight: .semibold))
             }
             .accessibilityLabel(center.muted ? "Unmute" : "Mute")
 
@@ -1135,7 +1136,7 @@ private struct LiveTransportRow: View {
                 Haptics.tap()
                 showSleep = true
             } content: {
-                Icon(.moon, size: 20, color: center.sleepAt != nil ? RadioUX.goldLight : .white)
+                Icon(.moon, size: 22, color: center.sleepAt != nil ? RadioUX.goldLight : .white)
             }
             .accessibilityLabel("Sleep timer")
             .confirmationDialog("Sleep timer", isPresented: $showSleep, titleVisibility: .visible) {
@@ -1166,7 +1167,7 @@ private struct LiveTransportRow: View {
                     .frame(width: 78, height: 78)
                     .shadow(color: RadioUX.gold.opacity(0.8), radius: 22, y: 12)
                 Image(systemName: spinning ? "pause.fill" : "play.fill")
-                    .font(.system(size: 26))
+                    .font(.symbol(26))
                     .foregroundStyle(Nuru.navy)
                     .contentTransition(.symbolEffect(.replace))
                     .offset(x: spinning ? 0 : 2)
@@ -1233,6 +1234,10 @@ private struct GlassCircleButton<Content: View>: View {
 private struct RemindMeCTA: View {
     let next: RadioProgram
     @State private var notified = false
+    /// "Allow notifications?" — the one line saying why, before the phone
+    /// asks (EXPERIENCE.md §7.2 #12).
+    @State private var ask: NotificationAsk?
+    static let why = "So we can tell you when Nuru Radio goes live."
 
     private var key: String { "nuru.radio.remind.\(next.id)" }
 
@@ -1242,7 +1247,7 @@ private struct RemindMeCTA: View {
         } label: {
             HStack(spacing: 8) {
                 Image(systemName: "bell.and.waves.left.and.right")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.symbol(15, weight: .semibold))
                 Text(notified ? "We'll notify you 🔔" : "Remind me when we're live")
                     .font(.inter(14, notified ? .semibold : .bold))
             }
@@ -1269,6 +1274,9 @@ private struct RemindMeCTA: View {
         .onChange(of: next.id) { _, _ in
             notified = UserDefaults.standard.bool(forKey: key)
         }
+        .notificationAsk($ask) { allowed in
+            if allowed { Task { await remind() } } else { Haptics.error() }
+        }
     }
 
     private func toggle() async {
@@ -1280,17 +1288,28 @@ private struct RemindMeCTA: View {
             Haptics.tap()
             return
         }
+        // The member asked to be reminded: the phone is asked now, with its
+        // one line — or not at all when it already allows (§7.2 #12).
+        if let a = await NotificationPermission.askIfNeeded(why: Self.why) { ask = a; return }
+        await remind()
+    }
+
+    private func remind() async {
         guard let date = radioISODate(next.scheduledAt) else { return }
         let centre = UNUserNotificationCenter.current()
-        let granted = (try? await centre.requestAuthorization(options: [.alert, .sound])) ?? false
-        guard granted else { Haptics.error(); return }
         let content = UNMutableNotificationContent()
         content.title = "Nuru Radio is live"
         content.body = "\(next.title) is starting — tune in now."
         content.sound = .default
         let trigger = UNTimeIntervalNotificationTrigger(
             timeInterval: max(1, date.timeIntervalSinceNow), repeats: false)
-        try? await centre.add(UNNotificationRequest(identifier: key, content: content, trigger: trigger))
+        // "Reminder set" only once the phone has actually scheduled it.
+        do {
+            try await centre.add(UNNotificationRequest(identifier: key, content: content, trigger: trigger))
+        } catch {
+            Haptics.error()
+            return
+        }
         UserDefaults.standard.set(true, forKey: key)
         withAnimation(.easeOut(duration: 0.2)) { notified = true }
         Haptics.success()
@@ -1306,9 +1325,9 @@ private struct StatChip: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Icon(lucide, size: 12, color: RadioUX.goldLight)
+            Icon(lucide, size: 14, color: RadioUX.goldLight)
             Text(value).font(.inter(11, .bold)).foregroundStyle(.white)
-            Text(label).font(.inter(9, .semibold)).kerning(0.9)
+            Text(label).font(.inter(11, .semibold)).kerning(0.9)
                 .foregroundStyle(.white.opacity(0.45))
         }
         .padding(.horizontal, 12).padding(.vertical, 6)
@@ -1353,13 +1372,13 @@ private struct LiveTabView: View {
     private var reactionRow: some View {
         HStack(spacing: 12) {
             ReactionButton(tint: RadioUX.redDeep) {
-                Icon(.heart, size: 20, color: .white)
+                Icon(.heart, size: 22, color: .white)
             } action: { fire("heart", emoji: "❤️") }
             ReactionButton(tint: RadioUX.gold) {
-                Icon(.handHeart, size: 20, color: .white)
+                Icon(.handHeart, size: 22, color: .white)
             } action: { fire("amen", emoji: "🙏") }
             ReactionButton(tint: RadioUX.indigoSoft) {
-                Text("🙌").font(.system(size: 19))
+                Text("🙌").font(.emoji(18))
             } action: { fire("fire", emoji: "🙌") }
         }
         .frame(maxWidth: .infinity)
@@ -1497,7 +1516,7 @@ private struct LiveChatRow: View {
 
     private var initialsText: some View {
         Text(radioInitials(mine ? "Me" : displayName))
-            .font(.inter(9, .bold)).foregroundStyle(.white)
+            .font(.inter(11, .bold)).foregroundStyle(.white)
     }
 }
 
@@ -1580,12 +1599,12 @@ private struct RecordingRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
                     Text(program.category.uppercased())
-                        .font(.inter(8, .bold)).kerning(0.8)
+                        .font(.inter(11, .bold)).kerning(0.8)
                         .foregroundStyle(.white)
                         .padding(.horizontal, 6).padding(.vertical, 2)
                         .background(RadioUX.gold.opacity(0.2), in: Capsule())
                     if let date = radioDayLabel(program.scheduledAt) {
-                        Text(date).font(.inter(10)).foregroundStyle(.white.opacity(0.45))
+                        Text(date).font(.inter(11)).foregroundStyle(.white.opacity(0.45))
                     }
                 }
                 Text(program.title)
@@ -1596,12 +1615,12 @@ private struct RecordingRow: View {
                         RadioMiniWave(playing: playing, count: 12, height: 12,
                                       color: RadioUX.goldLight)
                         Text("\(fmtClock(center.currentTime)) / \(fmtClock(center.duration))")
-                            .font(.inter(9)).monospacedDigit()
+                            .font(.inter(11)).monospacedDigit()
                             .foregroundStyle(.white.opacity(0.5))
                     }
                     .padding(.top, 4)
                 } else if let sub = subtitle {
-                    Text(sub).font(.inter(10)).foregroundStyle(.white.opacity(0.55))
+                    Text(sub).font(.inter(11)).foregroundStyle(.white.opacity(0.55))
                         .lineLimit(1)
                 }
             }
@@ -1642,7 +1661,7 @@ private struct RecordingRow: View {
                 ZStack {
                     RadioUX.navyDeep.opacity(0.4)
                     Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.symbol(13, weight: .bold))
                         .foregroundStyle(Nuru.navy)
                         .contentTransition(.symbolEffect(.replace))
                         .offset(x: playing ? 0 : 1)
@@ -1659,7 +1678,7 @@ private struct RecordingRow: View {
 
     private var coverGlyph: some View {
         Image(systemName: "dot.radiowaves.left.and.right")
-            .font(.system(size: 18)).foregroundStyle(RadioUX.gold.opacity(0.8))
+            .font(.symbol(18)).foregroundStyle(RadioUX.gold.opacity(0.8))
     }
 
     private var downloadButton: some View {
@@ -1668,7 +1687,7 @@ private struct RecordingRow: View {
                 if downloading {
                     ProgressView().tint(.white).scaleEffect(0.7)
                 } else {
-                    Icon(.download, size: 15, color: .white)
+                    Icon(.download, size: 14, color: .white)
                 }
             }
             .frame(width: 36, height: 36)
@@ -1746,7 +1765,7 @@ private struct ScheduleTabView: View {
                         .lineLimit(1)
                     Text([program.speaker, program.category].compactMap { $0 }
                         .filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.inter(10)).foregroundStyle(.white.opacity(0.5))
+                        .font(.inter(11)).foregroundStyle(.white.opacity(0.5))
                         .lineLimit(1)
                 }
                 Spacer(minLength: 8)
@@ -1765,7 +1784,7 @@ private struct ScheduleTabView: View {
                     .font(.inter(13, .bold)).kerning(-0.26)
                     .foregroundStyle(.white)
                 Text(radioTimeParts(program.scheduledAt)?.1 ?? "")
-                    .font(.inter(8, .bold))
+                    .font(.inter(11, .bold))
                     .foregroundStyle(.white.opacity(0.45))
             }
             .frame(width: 48)
@@ -1776,20 +1795,20 @@ private struct ScheduleTabView: View {
             case .live:
                 HStack(spacing: 4) {
                     Circle().fill(.white).frame(width: 4, height: 4)
-                    Text("LIVE").font(.inter(8, .bold)).kerning(0.8)
+                    Text("LIVE").font(.inter(11, .bold)).kerning(0.8)
                 }
                 .foregroundStyle(.white)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(RadioUX.redDeep, in: Capsule())
             case .next:
-                Text("NEXT").font(.inter(8, .bold)).kerning(0.8)
+                Text("NEXT").font(.inter(11, .bold)).kerning(0.8)
                     .foregroundStyle(RadioUX.goldLight)
                     .padding(.horizontal, 8).padding(.vertical, 3)
                     .background(RadioUX.gold.opacity(0.2), in: Capsule())
             case .upcoming:
-                Icon(.clock, size: 13, color: .white.opacity(0.35))
+                Icon(.clock, size: 14, color: .white.opacity(0.35))
             case .done:
-                Text("Aired").font(.inter(9, .bold))
+                Text("Aired").font(.inter(11, .bold))
                     .foregroundStyle(.white.opacity(0.35))
             }
         }
@@ -1806,9 +1825,6 @@ private let radioTimeShortFormatter: DateFormatter = {
 }()
 private let radioAmPmFormatter: DateFormatter = {
     let f = DateFormatter(); f.dateFormat = "a"; return f
-}()
-private let radioDayFormatter: DateFormatter = {
-    let f = DateFormatter(); f.dateFormat = "MMM d"; return f
 }()
 private let radioDayTimeFormatter: DateFormatter = {
     let f = DateFormatter(); f.dateFormat = "EEE h:mm a"; return f
@@ -1840,7 +1856,7 @@ private func radioTimeParts(_ iso: String?) -> (String, String)? {
 
 /// Recording row date — "Jun 29".
 private func radioDayLabel(_ iso: String?) -> String? {
-    radioISODate(iso).map { radioDayFormatter.string(from: $0) }
+    radioISODate(iso).map { NuruDates.day($0) }
 }
 
 /// m:ss (the design's fmtClock — minutes uncapped, e.g. "72:40").

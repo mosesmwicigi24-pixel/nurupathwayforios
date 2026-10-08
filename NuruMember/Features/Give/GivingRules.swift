@@ -115,6 +115,27 @@ enum GivingRails {
         for k in server where seen.insert(k).inserted { out.append(k) }
         return out
     }
+
+    /// The rails Give lists (the Cycle 3 walk's E7; §2): only those that can
+    /// take this gift — enabled on the server, completable by this build, in
+    /// the pledge's currency when paying one. Never a "SOON" row.
+    static func listed(_ m: GivingMethods, onlyCurrency: String? = nil) -> [String] {
+        m.offered(onlyCurrency: onlyCurrency).map(\.key).filter { m.isSelectable($0, onlyCurrency: onlyCurrency) }
+    }
+
+    /// `order` with the listed rail at `index` moved one place past its listed
+    /// neighbour; unlisted rails keep their place, unseen.
+    static func moved(_ order: [String], listed: [String], from index: Int, by delta: Int) -> [String] {
+        let to = index + delta
+        guard listed.indices.contains(index), listed.indices.contains(to) else { return order }
+        let key = listed[index], neighbour = listed[to]
+        var arr = order
+        guard let from = arr.firstIndex(of: key) else { return order }
+        arr.remove(at: from)
+        guard let n = arr.firstIndex(of: neighbour) else { return order }
+        arr.insert(key, at: delta > 0 ? n + 1 : n)
+        return arr
+    }
 }
 
 extension GivingMethods {
@@ -176,6 +197,21 @@ extension GivingMethods {
                              : "Secure · \(names.joined(separator: " & ")) · Receipt sent instantly"
     }
 
+    /// The rails a gift can go through here, by name — the server says they
+    /// take money AND this build can carry a gift through them (`isSelectable`).
+    func selectableNames() -> [String] {
+        methods.filter { isSelectable($0.key) }
+            .map { $0.label.isEmpty ? givingMethodName($0.key) : $0.label }
+    }
+
+    /// Home's giving card line (EXPERIENCE.md §2, promise only what works):
+    /// "Tithe & offering · M-Pesa" — only the rails that work here; just
+    /// "Tithe & offering" until the methods have loaded, or when none does.
+    static func homeGiveLine(_ methods: GivingMethods?) -> String {
+        let names = methods?.selectableNames() ?? []
+        return names.isEmpty ? "Tithe & offering" : "Tithe & offering · " + names.joined(separator: ", ")
+    }
+
     /// The chip on a rail that cannot be picked: SOON for one that is coming
     /// (the server's `coming_soon`, or one this build cannot complete yet),
     /// UNAVAILABLE for one switched off on this server. Nil when selectable.
@@ -215,22 +251,25 @@ enum GiveRefusal: Equatable {
     /// 409 GIFT_IN_PROGRESS: the member's prompt from a moment ago is still on
     /// their phone, and a second would fail as "busy" — watch THAT one.
     case promptWaiting(transactionId: String, message: String)
-    /// Anything else: the server's member-facing `message` as-is (the 422
-    /// METHOD_UNAVAILABLE / METHOD_CURRENCY / AMOUNT_OUT_OF_RANGE /
-    /// PHONE_REQUIRED and 409 SCHEDULE_EXISTS among them), else `fallback`.
-    /// Giving Cycle 6: 429 RATE_LIMITED — several prompts to a number that is
-    /// not the member's own just now; its words name the minutes — and 409
-    /// CONFLICT, a request key another gift holds. Neither is ever sent again
-    /// by itself: the answer spends the key, and only a tap sends anything.
+    /// Anything else, in the one state language (EXPERIENCE.md §4, §7.3): a
+    /// refusal in our own words keeps them — the 422 METHOD_UNAVAILABLE /
+    /// METHOD_CURRENCY / AMOUNT_OUT_OF_RANGE / PHONE_REQUIRED and 409
+    /// SCHEDULE_EXISTS among them; Giving Cycle 6's 429 RATE_LIMITED (several
+    /// prompts to a number not the member's own; its words name the minutes)
+    /// and 409 CONFLICT (a request key another gift holds), neither ever sent
+    /// again by itself. A 5xx, a dropped or unreadable answer, the generic
+    /// body-parse refusal — never the server's raw text ("Internal server
+    /// error" reached Give's failed screen) — read as §4 says: "Something
+    /// went wrong on our side. It isn't you — please try again in a moment.",
+    /// or "You're offline…" only when the phone has no network.
     case message(String)
 
-    static func from(_ error: Error, fallback: String) -> GiveRefusal {
-        guard let api = error as? APIError else { return .message(fallback) }
-        if case let .http(_, code, message, details) = api, code == "GIFT_IN_PROGRESS",
+    static func from(_ error: Error, deviceOnline: Bool? = SyncCoordinator.devicePathOnline) -> GiveRefusal {
+        if case let .http(_, code, message, details)? = error as? APIError, code == "GIFT_IN_PROGRESS",
            let tx = details?.transactionId {
             return .promptWaiting(transactionId: tx, message: message)
         }
-        return .message(api.errorDescription ?? fallback)
+        return .message(NuruStateCopy.failure(error, deviceOnline: deviceOnline).sentence)
     }
 
     /// The words to show the member, whichever it is.
@@ -317,6 +356,51 @@ enum GiveRetry {
     static func key(after error: Error?, current: String, fresh: () -> String = GiveKey.fresh) -> String {
         if let error, GiveRefusal.gotNoServerAnswer(error) { return current }
         return fresh()
+    }
+}
+
+// MARK: - The M-Pesa wait (EXPERIENCE.md §7.2 #5)
+
+/// How "Check your phone" watches a gift while it is on screen. It used to
+/// give up after 20 looks 3 s apart: a prompt answered at 70 s never landed,
+/// and with no button the member had to quit the app. Now: every 3 s for the
+/// first minute (most prompts are answered in seconds), then every 10 s up to
+/// five minutes, so a late answer still lands. Past the minute the line says
+/// it is still processing and "Done" becomes the primary; a quiet "Close"
+/// is there from the start. Closing never cancels or changes the gift —
+/// Give's reload shows how it ended. Pure; Android uses the same line.
+enum StkWatch {
+    /// When the wait turns late: the line changes, Done leads.
+    static let lateAfter: TimeInterval = 60
+    /// How long the stage keeps looking while it is on screen.
+    static let watchFor: TimeInterval = 300
+    static let lateLine = "Still processing — it will show in Recent giving once it clears."
+
+    /// Seconds before the next look, `elapsed` seconds into the wait — nil
+    /// once the watch is over.
+    static func nextDelay(elapsed: TimeInterval) -> TimeInterval? {
+        guard elapsed < watchFor else { return nil }
+        return elapsed < lateAfter ? 3 : 10
+    }
+
+    /// Past the minute: the late line, and Done as the primary.
+    static func isLate(elapsed: TimeInterval) -> Bool { elapsed >= lateAfter }
+}
+
+// MARK: - The last tap before money moves (EXPERIENCE.md §7.2 #6)
+
+enum GiveButton {
+    /// The M-Pesa / Airtel number sheet's button names the money it sends
+    /// (§7.1 rule 7): "Give KSh 1,000" — the form's total, in its own
+    /// currency, exactly what the intent carries. A recurring start keeps
+    /// "Start Monthly Gift" / "Start Weekly Gift" (it names its money on the
+    /// line above). "Give Now" only if the amount is somehow unknown.
+    static func mobileMoneyLabel(amountLabel: String, frequency: String?) -> String {
+        if let frequency {
+            return "Start \(ScheduleRhythm.isWeekly(frequency) ? "Weekly" : "Monthly") Gift"
+        }
+        let amount = amountLabel.trimmingCharacters(in: .whitespaces)
+        return amount.isEmpty ? "Give Now" : "Give \(amount)"
     }
 }
 

@@ -1,9 +1,9 @@
 // Nuru Live discovery — "invite loudly, never hijack" (owner's design). This is
 // the ONE app-wide source of truth for "what's watchable right now" that feeds
 // three surfaces:
-//   1. A tapped `live_stream_started` push routes straight into the player (or
-//      Home if the stream already ended by the time the tap lands) — see
-//      RootView's `.onReceive(.nuruNotificationTap)`.
+//   1. A tapped Live notice — a banner or an inbox row, the same way
+//      (NoticeRouter, EXPERIENCE.md §7.2 #3) — routes straight into the
+//      player, or to a calm "This Live has ended" once the stream is over.
 //   2. Home's mini-window pop-up for a stream this session hasn't seen yet.
 //   3. The app-wide LIVE bar shown on every tab except Home while a stream is
 //      live and the player isn't already open.
@@ -12,6 +12,18 @@
 // server-authoritative call; this only remembers, this session, which
 // stream_ids have already been surfaced so they don't re-interrupt.
 import Foundation
+
+/// A Live notice tapped after its stream ended — RootView shows "This Live
+/// has ended" with the stream's name, instead of an error, a blank player or
+/// a silent jump to Home.
+struct LiveEndedNotice: Identifiable, Equatable {
+    let id = UUID()
+    /// The notice's own title for the stream ("Ring check"); nil when it had none.
+    let title: String?
+    /// Set when /live/now didn't answer — whether it's still live isn't
+    /// known, so the screen says why (§4) instead of "ended".
+    var failure: NuruStateCopy? = nil
+}
 
 @MainActor
 final class LiveDiscoveryCenter: ObservableObject {
@@ -29,6 +41,9 @@ final class LiveDiscoveryCenter: ObservableObject {
     /// app-wide bar tap, a routed notification tap). The bar hides while this
     /// is non-nil; `nil` again on dismiss.
     @Published var requestedItem: LivePlayableItem?
+    /// A tapped Live notice whose stream is over — RootView presents "This
+    /// Live has ended"; nil again on Close.
+    @Published var endedNotice: LiveEndedNotice?
 
     /// stream_ids this session has already surfaced (popped up, tapped, or
     /// routed to) — never shown again as a fresh interruption this launch.
@@ -41,10 +56,47 @@ final class LiveDiscoveryCenter: ObservableObject {
     var newestWatchable: LiveStreamSummary? { streams.first }
 
     /// Re-fetch GET /live/now and fold the result in. Best-effort: a failed
-    /// fetch just leaves the previous rows in place rather than clearing them.
-    func refresh() async {
-        guard let rows = try? await MemberAPI.fetchLiveNow() else { return }
-        ingest(rows)
+    /// fetch just leaves the previous rows in place rather than clearing them
+    /// (and says why, for a caller that must not guess).
+    @discardableResult
+    func refresh() async -> Error? {
+        do {
+            ingest(try await MemberAPI.fetchLiveNow())
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// A tapped Live notice (`live_stream_started`, `live_guest_invite`) —
+    /// from a banner or the inbox, one way (EXPERIENCE.md §7.2 #3): re-check
+    /// /live/now (the stream may have ended by the time the tap lands), then
+    /// the player for the stream it names — a guest invite's own card waits
+    /// inside — or, once that stream is over, "This Live has ended". Never
+    /// some other stream in its place. A notice from this phone's own
+    /// broadcast brings the broadcast back.
+    func openNotice(streamId: String?, title: String?) async {
+        if let own = BroadcastCenter.shared.controller?.session.stream.streamId, own == streamId {
+            BroadcastCenter.shared.restore()
+            return
+        }
+        let failure = await refresh()
+        if let stream = Self.noticeTarget(in: streams, named: streamId) {
+            markSeen(stream.streamId)
+            requestedItem = .live(stream)
+        } else {
+            // Not live — or, when /live/now didn't answer, not known: that
+            // is said in the one state language, never guessed as "ended".
+            endedNotice = LiveEndedNotice(title: title, failure: failure.map { NuruStateCopy.failure($0) })
+        }
+    }
+
+    /// The stream a Live notice opens, from the watchable rows: exactly the
+    /// one it names (nil once that one is over — never another in its
+    /// place), or the newest when it names none (an older notice). Pure.
+    nonisolated static func noticeTarget(in rows: [LiveStreamSummary], named streamId: String?) -> LiveStreamSummary? {
+        guard let streamId, !streamId.isEmpty else { return rows.first }
+        return rows.first { $0.streamId == streamId }
     }
 
     /// Fold a fresh `/live/now` result (however it was fetched — Home's own

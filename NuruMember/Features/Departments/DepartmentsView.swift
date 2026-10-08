@@ -20,13 +20,15 @@ enum DepartmentRoute: Hashable {
 @MainActor final class DepartmentsModel: ObservableObject {
     @Published var rows: [DepartmentRow] = []
     @Published var loading = false
-    @Published var error: String?
+    /// Why the list didn't load (nothing to show yet) — spoken through the one
+    /// state language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
 
     func load() async {
         loading = rows.isEmpty
-        error = nil
+        failure = nil
         do { rows = try await MemberAPI.departments() }
-        catch { if rows.isEmpty { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load the departments just now." } }
+        catch { if rows.isEmpty { failure = error } }
         loading = false
     }
 
@@ -43,6 +45,7 @@ struct DepartmentsView: View {
     var body: some View {
         NavigationStack(path: $path) {
             content
+                .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
                 .toolbar(.hidden, for: .navigationBar)
                 .navigationDestination(for: DepartmentRoute.self) { route in
                     switch route {
@@ -65,6 +68,7 @@ struct DepartmentsView: View {
             path.append(DepartmentRoute.department(id))
             DispatchQueue.main.async { tabs.departmentLink = nil }
         }
+        .popsToRoot(on: .you, path: $path, when: { tabs.youSegmentShown == .departments })
     }
 
     private var content: some View {
@@ -72,10 +76,12 @@ struct DepartmentsView: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                 VStack(alignment: .leading, spacing: Nuru.S.lg) {
+                    // A saved copy says so (final walk M3).
+                    NuruSavedCopyNotice(hasContent: !vm.rows.isEmpty)
                     if vm.loading && vm.rows.isEmpty {
                         skeleton
-                    } else if let e = vm.error, vm.rows.isEmpty {
-                        errorState(e)
+                    } else if let f = vm.failure, vm.rows.isEmpty {
+                        NuruStateView(state: .failed(.failure(f)), retry: { Task { await vm.load() } })
                     } else if vm.rows.isEmpty {
                         emptyState
                     } else {
@@ -95,15 +101,9 @@ struct DepartmentsView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("DEPARTMENTS")
-                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(Color(hex: 0x9A7A2A))
-            Text("Where to serve")
-                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-                .padding(.top, 4)
-            Text("The teams that carry this church — what they do, what they need, and where you'd fit.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 4)
-                .fixedSize(horizontal: false, vertical: true)
+            // The one header's words (§8.1 rules 2–3).
+            NuruHeaderText(kicker: "Departments", title: "Where to serve",
+                           line: "The teams that carry this church — what they do, what they need, and where you'd fit.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -167,6 +167,10 @@ struct DepartmentsView: View {
             }
             Text("No departments yet")
                 .font(.fraunces(22, .semibold)).foregroundStyle(Nuru.navy)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                // "departme / nts" at the largest size (§9.6 #4).
+                .nuruWholeWords("No departments yet", font: .fraunces(22, .semibold))
             Text("When the church sets up its serving teams, they'll appear here — what they do, what they need, and how to join one.")
                 .font(.nBody).foregroundStyle(Nuru.ink600)
                 .multilineTextAlignment(.center)
@@ -177,21 +181,6 @@ struct DepartmentsView: View {
         .padding(.horizontal, Nuru.S.lg)
         .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-    }
-
-    private func errorState(_ message: String) -> some View {
-        VStack(spacing: Nuru.S.sm) {
-            Icon(.circleHelp, size: 24, color: Nuru.ink400)
-            Text(message).font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                .fixedSize(horizontal: false, vertical: true)
-            Button { Haptics.tap(); Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(11, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 8)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
     }
 }
 
@@ -221,7 +210,7 @@ struct DepartmentCard: View {
                         Text(leader).font(.nLabel).foregroundStyle(Nuru.ink).lineLimit(1)
                         Text("·").font(.nCaption).foregroundStyle(Nuru.ink300)
                     }
-                    Icon(.users, size: 12, color: Nuru.ink400)
+                    Icon(.users, size: 14, color: Nuru.ink400)
                     Text(row.memberCount == 1 ? "1 serving" : "\(row.memberCount) serving")
                         .font(.nCaption).foregroundStyle(Nuru.ink600)
                 }
@@ -238,7 +227,7 @@ struct DepartmentCard: View {
 
                 if let post = row.latestPost, !post.isEmpty {
                     HStack(alignment: .top, spacing: 8) {
-                        Icon(.quote, size: 12, color: Nuru.gold)
+                        Icon(.quote, size: 14, color: Nuru.gold)
                             .padding(.top, 2)
                         VStack(alignment: .leading, spacing: 2) {
                             Text(post).font(.nCardBody).foregroundStyle(Nuru.ink).lineLimit(2)
@@ -294,7 +283,7 @@ struct DepartmentPhoto: View {
                 .blur(radius: 30).offset(x: height * 0.6, y: -height * 0.4)
             HStack(spacing: 10) {
                 Icon(.heartHandshake, size: 26, color: .white.opacity(0.9))
-                Text(Avatar.initials(name)).font(.fraunces(30, .semibold)).foregroundStyle(.white)
+                Text(Avatar.initials(name)).font(.fraunces(28, .semibold)).foregroundStyle(.white)
             }
         }
     }
@@ -337,7 +326,7 @@ struct DeptChip: View {
     var fg: Color = Nuru.ink600
     var body: some View {
         HStack(spacing: 4) {
-            if let icon { Icon(icon, size: 10, color: fg) }
+            if let icon { Icon(icon, size: 14, color: fg) }
             Text(text).font(.inter(11, .semibold)).foregroundStyle(fg).lineLimit(1)
         }
         .padding(.horizontal, 9).padding(.vertical, 5)

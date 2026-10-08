@@ -65,7 +65,7 @@ final class GivingCycle5Tests: XCTestCase {
         let refusal = APIError.http(status: 422, code: "UNPROCESSABLE",
                                     message: "This gift collects your pledge \u{201C}Kenya trip\u{201D}. Change the pledge's amount and this gift follows it.",
                                     details: details)
-        XCTAssertEqual(GiveRefusal.from(refusal, fallback: "x").message,
+        XCTAssertEqual(GiveRefusal.from(refusal, deviceOnline: true).message,
                        "This gift collects your pledge \u{201C}Kenya trip\u{201D}. Change the pledge's amount and this gift follows it.")
     }
 
@@ -99,7 +99,7 @@ final class GivingCycle5Tests: XCTestCase {
                        "Gifts toward this are in EUR, and there's no way to give in EUR here yet.")
         let mismatch = APIError.http(status: 422, code: "CURRENCY_MISMATCH",
                                      message: "This pledge is in USD. Give toward it in USD.", details: nil)
-        XCTAssertEqual(GiveRefusal.from(mismatch, fallback: "x").message, "This pledge is in USD. Give toward it in USD.",
+        XCTAssertEqual(GiveRefusal.from(mismatch, deviceOnline: true).message, "This pledge is in USD. Give toward it in USD.",
                        "the server's words when it refuses another currency")
     }
 

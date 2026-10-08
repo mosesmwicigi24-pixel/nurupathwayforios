@@ -7,14 +7,31 @@
 import SwiftUI
 
 struct LetterArchiveView: View {
-    @State private var letters: [PastoralLetter] = []
-    @State private var loading = true
-    @State private var loadFailed = false
-    @State private var selected: PastoralLetter?
+    @State private var letters: [PastoralLetter]
+    @State private var loading: Bool
+    /// Why the letters didn't come, said in §4's words (it read "Check
+    /// your connection" whatever the cause).
+    @State private var loadFailure: Error?
+    /// The letters open over the list, oldest last: each letter's "Last
+    /// week" turns to the one before it in place, and back returns, letter
+    /// by letter, to the list (owner, 2026-10-07; Android's archive).
+    @State private var path: [LetterRoute]
+    /// A letter the archive opened on, until the list has it.
+    private let opening: PastoralLetter?
     @Environment(\.dismiss) private var dismiss
 
+    /// The archive, or — `opening` a letter, from the editorial letter's
+    /// "Last week" — that letter, with the list behind it. `known`: the
+    /// letters the caller already has, so the list shows at once.
+    init(opening: PastoralLetter? = nil, known: [PastoralLetter] = []) {
+        self.opening = opening
+        _letters = State(initialValue: known)
+        _loading = State(initialValue: known.isEmpty)
+        _path = State(initialValue: opening.map { [LetterRoute(id: $0.letterId)] } ?? [])
+    }
+
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ZStack {
                 LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x081020)],
                                startPoint: .top, endPoint: .bottom)
@@ -30,7 +47,7 @@ struct LetterArchiveView: View {
                             ForEach(letters) { lt in
                                 Button {
                                     Haptics.tap()
-                                    selected = lt
+                                    path.append(LetterRoute(id: lt.letterId))
                                 } label: {
                                     row(lt)
                                 }
@@ -52,19 +69,28 @@ struct LetterArchiveView: View {
                         .tint(.white)
                 }
             }
+            .navigationDestination(for: LetterRoute.self) { route in letterPage(route.id) }
         }
         .task { await load() }
-        .sheet(item: $selected) { lt in LetterView(letter: lt) }
+    }
+
+    /// One letter, full page, over the list: its close and the edge swipe go
+    /// back; its "Last week" opens the letter before it here.
+    @ViewBuilder private func letterPage(_ id: String) -> some View {
+        if let lt = letters.first(where: { $0.letterId == id }) ?? opening.flatMap({ $0.letterId == id ? $0 : nil }) {
+            LetterView(letter: lt, archive: letters, openEarlier: { path.append(LetterRoute(id: $0.letterId)) })
+                .toolbar(.hidden, for: .navigationBar)
+                .nuruEdgeSwipeBack()
+        }
     }
 
     private var emptyState: some View {
         VStack(spacing: 10) {
             Icon(.mail, size: 30, color: Color(hex: 0x6B7A8F))
-            Text(loadFailed ? "Couldn't load your letters" : "No letters yet")
-                .font(.fraunces(17, .semibold)).foregroundStyle(.white)
-            Text(loadFailed
-                 ? "Check your connection and try again."
-                 : "One arrives every Sunday evening, written from your own week.")
+            Text(loadFailure.map { NuruStateCopy.failure($0).title } ?? "No letters yet")
+                .font(.fraunces(18, .semibold)).foregroundStyle(.white)
+            Text(loadFailure.map { NuruStateCopy.failure($0).line ?? "" }
+                 ?? "One arrives every Sunday evening, written from your own week.")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x9AA8BC))
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
@@ -76,7 +102,7 @@ struct LetterArchiveView: View {
             ZStack {
                 Circle().fill(LetterTheme.resolve(lt.imageKey).accentColor.opacity(0.9))
                     .frame(width: 40, height: 40)
-                Icon(.mail, size: 16, color: Color(hex: 0x1E2A1F))
+                Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(lt.title).font(.fraunces(15, .semibold)).foregroundStyle(.white).lineLimit(1)
@@ -96,16 +122,21 @@ struct LetterArchiveView: View {
     private func weekLabel(_ raw: String) -> String {
         let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
         guard let d = f.date(from: raw) else { return raw }
-        let out = DateFormatter(); out.dateFormat = "d MMMM yyyy"
-        return "Week of \(out.string(from: d))"
+        return "Week of \(NuruDates.day(d))"   // the one date shape (§8.1 rule 8)
     }
 
     private func load() async {
         do {
             letters = try await MemberAPI.letters()
         } catch {
-            loadFailed = true
+            // The letters the caller handed over still stand.
+            if letters.isEmpty { loadFailure = error }
         }
         loading = false
     }
+}
+
+/// A letter on the archive's stack, by id.
+struct LetterRoute: Hashable {
+    let id: String
 }

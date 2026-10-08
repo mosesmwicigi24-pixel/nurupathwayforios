@@ -42,7 +42,7 @@ final class ReadWithFriendHubViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { groups = try await MemberAPI.myReadingGroups() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your shared plans." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your shared plans.", error) }
         loading = false
     }
 }
@@ -89,14 +89,15 @@ struct ReadWithFriendHubView: View {
     private var header: some View {
         HStack(spacing: 12) {
             Button { Haptics.tap(); dismiss() } label: {
-                Icon(.chevronLeft, size: 18, color: PL.navy)
+                Icon(.arrowLeft, size: 18, color: PL.navy)
                     .frame(width: 40, height: 40)
                     .background(Color.white, in: Circle())
                     .overlay(Circle().stroke(PL.border, lineWidth: 1))
             }
             .buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             VStack(alignment: .leading, spacing: 2) {
-                Text("READ WITH A FRIEND").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(PL.catText)
+                Text("READ WITH A FRIEND").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.catText)
                 Text("Your shared plans").font(.fraunces(22, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
             }
             Spacer(minLength: 0)
@@ -159,7 +160,7 @@ struct ReadingGroupCard: View {
                     }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 15, color: PL.ink3)
+                Icon(.chevronRight, size: 14, color: PL.ink3)
             }
             if !others.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {
@@ -227,7 +228,7 @@ final class ReadingGroupDetailViewModel: ObservableObject {
             group = try await MemberAPI.readingGroup(groupId)
             pendingInvites = (try? await MemberAPI.listReadingInvites(groupId: groupId))?.filter(\.isPending) ?? []
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this shared plan."
+            self.error = NuruStateCopy.failureLine("Couldn't load this shared plan.", error)
         }
         loading = false
     }
@@ -240,7 +241,7 @@ final class ReadingGroupDetailViewModel: ObservableObject {
             await load()
         } catch {
             Haptics.error()
-            toast = (error as? APIError)?.errorDescription ?? "Couldn't send that invite."
+            toast = NuruStateCopy.failureLine("Couldn't send that invite.", error)
         }
     }
 
@@ -256,26 +257,26 @@ final class ReadingGroupDetailViewModel: ObservableObject {
             presentSystemShareSheet([message])
         } catch {
             Haptics.error()
-            toast = (error as? APIError)?.errorDescription ?? "Couldn't create a share link."
+            toast = NuruStateCopy.failureLine("Couldn't create a share link.", error)
         }
     }
 
     func revoke(_ invite: ReadingInviteRow) async {
         do { try await MemberAPI.revokeReadingInvite(groupId: groupId, inviteId: invite.inviteId); await load() }
-        catch { toast = (error as? APIError)?.errorDescription ?? "Couldn't revoke that invite." }
+        catch { toast = NuruStateCopy.failureLine("Couldn't revoke that invite.", error) }
     }
 
     @discardableResult
     func leave() async -> Bool {
         busy = true; defer { busy = false }
         do { try await MemberAPI.leaveReadingGroup(groupId); return true }
-        catch { toast = (error as? APIError)?.errorDescription ?? "Couldn't leave — try again."; return false }
+        catch { toast = NuruStateCopy.failureLine("Couldn't leave — try again.", error); return false }
     }
 
     func archive() async {
         busy = true; defer { busy = false }
         do { try await MemberAPI.archiveReadingGroup(groupId); await load() }
-        catch { toast = (error as? APIError)?.errorDescription ?? "Couldn't end this shared plan." }
+        catch { toast = NuruStateCopy.failureLine("Couldn't end this shared plan.", error) }
     }
 }
 
@@ -349,7 +350,8 @@ struct ReadingGroupDetailView: View {
                 onPick: { friend in Task { await vm.inviteFriend(friend) } },
                 onShareAnotherWay: { shareAfterPicker = true })
         }
-        .confirmationDialog("Leave this shared plan?", isPresented: $showLeaveConfirm, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Leave this shared plan?", isPresented: $showLeaveConfirm) {
             Button("Leave", role: .destructive) {
                 Task { if await vm.leave() { dismiss() } }
             }
@@ -390,12 +392,13 @@ struct ReadingGroupDetailView: View {
     private var headerBar: some View {
         HStack {
             Button { Haptics.tap(); dismiss() } label: {
-                Icon(.chevronLeft, size: 18, color: PL.navy)
+                Icon(.arrowLeft, size: 18, color: PL.navy)
                     .frame(width: 40, height: 40)
                     .background(Color.white, in: Circle())
                     .overlay(Circle().stroke(PL.border, lineWidth: 1))
             }
             .buttonStyle(.pressable)
+            .accessibilityLabel("Back")
             Spacer(minLength: 0)
         }
         .padding(.top, 24)
@@ -416,9 +419,10 @@ struct ReadingGroupDetailView: View {
             .frame(height: 140).frame(maxWidth: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             VStack(alignment: .leading, spacing: 4) {
-                Text("READING TOGETHER").font(.inter(9, .bold)).kerning(1.5).foregroundStyle(PL.goldDeep)
-                Text(g.plan.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
-                Text("\(g.plan.dayCount)-day plan · \(g.members.filter(\.isActive).count) reading together")
+                Text("READING TOGETHER").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(PL.goldDeep)
+                Text(g.plan.title).font(.fraunces(18, .medium)).kerning(-0.4).foregroundStyle(PL.navy)
+                Text(ZeroCounts.count(g.members.filter(\.isActive).count, "reading together", "reading together")
+                        .map { "\(g.plan.dayCount)-day plan · \($0)" } ?? "\(g.plan.dayCount)-day plan")
                     .font(.inter(12)).foregroundStyle(PL.ink3)
             }
         }
@@ -508,7 +512,7 @@ struct ReadingGroupDetailView: View {
 
     private func actionRow(_ icon: Lucide, _ label: String, tint: Color) -> some View {
         HStack(spacing: 10) {
-            Icon(icon, size: 16, color: tint)
+            Icon(icon, size: 18, color: tint)
             Text(label).font(.inter(13, .semibold)).foregroundStyle(tint)
             Spacer(minLength: 0)
         }
@@ -580,7 +584,7 @@ struct FriendPickerSheet: View {
                         if let onShareAnotherWay, query.isEmpty {
                             Button { Haptics.tap(); onShareAnotherWay(); dismiss() } label: {
                                 HStack(spacing: 12) {
-                                    Icon(.share2, size: 15, color: PL.ink2)
+                                    Icon(.share2, size: 14, color: PL.ink2)
                                         .frame(width: 36, height: 36)
                                         .background(PL.surface, in: Circle())
                                     VStack(alignment: .leading, spacing: 1) {
@@ -623,7 +627,7 @@ struct FriendPickerSheet: View {
             if let onShareAnotherWay {
                 Button { Haptics.tap(); onShareAnotherWay(); dismiss() } label: {
                     HStack(spacing: 8) {
-                        Icon(.share2, size: 15, color: PL.navy)
+                        Icon(.share2, size: 14, color: PL.navy)
                         Text("Share another way").font(.inter(13, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 46)
@@ -654,7 +658,7 @@ struct InviteSentToastView: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            Icon(.check, size: 13, color: PL.goldLight)
+            Icon(.check, size: 14, color: PL.goldLight)
             Text("Sent to \(toast.name) in chat").font(.inter(12, .semibold)).foregroundStyle(.white).lineLimit(1)
             Button { Haptics.tap(); onOpenChat() } label: {
                 Text("Open chat").font(.inter(11, .bold)).foregroundStyle(PL.navy)
@@ -701,20 +705,20 @@ final class ReadingInvitePreviewViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { preview = try await MemberAPI.readingInvitePreview(token) }
-        catch let err { error = (err as? APIError)?.errorDescription ?? "This invite link isn't available." }
+        catch let err { error = NuruStateCopy.failureLine("This invite link isn't available.", err) }
         loading = false
     }
 
     func accept() async {
         busy = true; defer { busy = false }
         do { result = try await MemberAPI.acceptReadingInvite(token); Haptics.success() }
-        catch let err { Haptics.error(); error = (err as? APIError)?.errorDescription ?? "Couldn't join — try again." }
+        catch let err { Haptics.error(); error = NuruStateCopy.failureLine("Couldn't join — try again.", err) }
     }
 
     func decline() async {
         busy = true; defer { busy = false }
         do { try await MemberAPI.declineReadingInvite(token); declined = true }
-        catch let err { error = (err as? APIError)?.errorDescription ?? "Couldn't decline — try again." }
+        catch let err { error = NuruStateCopy.failureLine("Couldn't decline — try again.", err) }
     }
 }
 
@@ -786,7 +790,7 @@ struct ReadingInvitePreviewView: View {
                     VStack(spacing: 6) {
                         Text("\(p.inviter.fullName.split(separator: " ").first.map(String.init) ?? p.inviter.fullName) invited you to read")
                             .font(.inter(13, .semibold)).foregroundStyle(PL.ink2)
-                        Text(p.plan.title).font(.fraunces(24, .medium)).kerning(-0.5)
+                        Text(p.plan.title).font(.fraunces(26, .medium)).kerning(-0.5)
                             .foregroundStyle(PL.navy).multilineTextAlignment(.center)
                         HStack(spacing: 16) {
                             metaChip(.clock, "\(p.plan.dayCount) days")
@@ -814,7 +818,7 @@ struct ReadingInvitePreviewView: View {
                     Haptics.action(); Task { await vm.accept() }
                 } label: {
                     HStack(spacing: 8) {
-                        if vm.busy { ProgressView().tint(PL.navy) } else { Icon(.bookOpen, size: 16, color: PL.navy) }
+                        if vm.busy { ProgressView().tint(PL.navy) } else { Icon(.bookOpen, size: 18, color: PL.navy) }
                         Text("Join & start reading").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -837,7 +841,7 @@ struct ReadingInvitePreviewView: View {
 
     private func metaChip(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 12, color: PL.goldDeep)
+            Icon(icon, size: 14, color: PL.goldDeep)
             Text(text).font(.inter(11, .semibold)).foregroundStyle(PL.ink2)
         }
     }
