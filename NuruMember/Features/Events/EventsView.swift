@@ -163,16 +163,26 @@ final class EventsViewModel: ObservableObject {
         async let rs = try? MemberAPI.myRsvps()
         // The gatherings are the calendar's — keep WHY it failed, so the list
         // can say what really happened (the rest stays best-effort).
-        do {
-            occurrences = try await occ.sorted { Ev.date($0.startAt) < Ev.date($1.startAt) }
-        } catch {
-            occurrences = []
-            failure = error
+        let gatherings: Result<[CalendarOccurrence], Error>
+        do { gatherings = .success(try await occ) } catch { gatherings = .failure(error) }
+        let followed = await ser ?? []
+        let notices = await ann ?? []
+        let mine = await rs
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the list once appeared with the calendar alone — each card
+        // offering "RSVP" to a member already going, and on Today's empty day
+        // until the opening tab was chosen. Now the list, its RSVPs and its
+        // tab land together; the skeleton holds until then.
+        switch gatherings {
+        case .success(let o): occurrences = o.sorted { Ev.date($0.startAt) < Ev.date($1.startAt) }
+        case .failure(let e): occurrences = []; failure = e
         }
-        series = await ser ?? []
-        announcements = await ann ?? []
-        quickRsvps = Dictionary((await rs ?? []).map { ($0.eventId, $0.status) },
-                                uniquingKeysWith: { a, _ in a })
+        series = followed
+        announcements = notices
+        // A failed read keeps what was shown — never "not going" for all.
+        if let mine {
+            quickRsvps = Dictionary(mine.map { ($0.eventId, $0.status) }, uniquingKeysWith: { a, _ in a })
+        }
         // Open on the first tab that has something (§7.4 #6) — not on an
         // empty "Today (0)" with the gatherings waiting under Upcoming.
         if !segmentChosen {

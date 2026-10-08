@@ -98,17 +98,29 @@ final class PathwayViewModel: ObservableObject {
     /// (NuruStateCopy), never as the server's raw text.
     @Published var failure: Error?
 
-    func load() async {
+    /// The summary and its level's trail land TOGETHER (final walk, M4's
+    /// class): the hero, the ring and the rail read one journey, and from the
+    /// summary alone a member at the exam read "Continue" for a moment before
+    /// "Exam ready" — the open exam is the trail's row. So the first load
+    /// holds the skeleton (§4) until both have answered, and a refresh keeps
+    /// the last pair on screen until the new pair is in: a new summary beside
+    /// the old trail could tell a step neither says. A trail that fails reads
+    /// as none — the journey then speaks from the summary, as it always has.
+    /// (The reads are parameters only so the tests can hold one in flight.)
+    func load(pathway: () async throws -> PathwaySummary = { try await MemberAPI.pathway() },
+              trail: (Int) async throws -> [LevelModule] = { try await MemberAPI.levelModules($0) }) async {
         loading = true; failure = nil
         do {
-            summary = try await MemberAPI.pathway()
+            let s = try await pathway()
+            // The current level's trail is re-read on every load (pull-to-refresh
+            // included): the journey's next step is read from it.
+            let mods = (try? await trail(s.currentLevel)) ?? []
+            modulesByLevel[s.currentLevel] = mods
+            summary = s
         } catch {
             summary = nil
             failure = error
         }
-        // The current level's trail is re-read on every load (pull-to-refresh
-        // included): the journey's next step is read from it.
-        if let current = summary?.currentLevel { await fetchModules(current, force: true) }
         loading = false
     }
 

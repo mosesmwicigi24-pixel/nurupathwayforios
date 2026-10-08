@@ -156,18 +156,24 @@ enum GivingSignal {
         // Beside the partnership, so the DUE list renders once with both —
         // never Pay first, then a chip a moment later.
         async let gifts = try? MemberAPI.schedules()
-        do {
-            let p = try await MemberAPI.partnership()
+        // Both answer before either shows (final walk, M4's class): assigned
+        // between the two awaits, the partnership could paint its DUE rows
+        // with no gifts beside them — Pay, then the chip a moment later.
+        let read: Result<Partnership, Error>
+        do { read = .success(try await MemberAPI.partnership()) } catch { read = .failure(error) }
+        let g = await gifts
+        switch read {
+        case .success(let p):
             if seq > partnershipApplied {
                 partnershipApplied = seq
                 partnership = p
             }
             partnershipRefreshFailed = false
-        } catch {
+        case .failure(let error):
             if partnership == nil { failure = error }
             else { partnershipRefreshFailed = true }
         }
-        if let g = await gifts { schedules = g }
+        if let g { schedules = g }
         loading = false
     }
 

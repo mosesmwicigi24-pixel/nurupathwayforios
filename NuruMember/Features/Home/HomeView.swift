@@ -39,6 +39,13 @@ final class HomeViewModel: ObservableObject {
     @Published var plansLoaded = false
     @Published var cellLoaded = false
     @Published var eventsLoaded = false
+    /// The first load's reads have ALL answered — loaded or failed (final
+    /// walk, M4's class; Android's loadedOnce). Until then YOUR WEEK, the
+    /// journey's pill, "What needs you today" (which must never repeat a row
+    /// it can't see yet) and the encouragement hold their loading shapes
+    /// (§4): a row in flight never says "Didn't load just now", and never
+    /// guesses a "none" form. Refreshes keep it true and keep what is shown.
+    @Published var loadedOnce = false
 
     // Verse
     @Published var verse: (text: String, reference: String, version: String)?
@@ -149,9 +156,14 @@ final class HomeViewModel: ObservableObject {
         case .success(let p): self.pathway = p; failure = nil
         case .failure(let e): self.pathway = nil; failure = e
         }
-        // The journey speaks as soon as the summary lands (the pill's words
-        // need nothing more); the trail below only names the module to continue.
-        self.journey = Journey.derive(self.pathway, trail: self.trail)
+        // The journey is told only once the current level's trail has
+        // answered (final walk, M4's class; Android's journeyToTell): from
+        // the summary alone a member at the exam read "Continue" before "Exam
+        // ready" — the open exam is the trail's row — and a new summary beside
+        // the last load's trail could tell a step neither says. So it is
+        // derived once, below, from this load's pair; until then the pill and
+        // YOUR WEEK hold their loading shapes (§4), and a refresh keeps the
+        // last pair's journey on screen.
         // The current level's trail, started now so it runs beside the rest
         // of the dashboard rather than after it.
         let currentLevel = self.pathway?.currentLevel
@@ -204,6 +216,9 @@ final class HomeViewModel: ObservableObject {
         self.schedules = await gifts
         self.trail = await trail
         self.journey = Journey.derive(self.pathway, trail: self.trail)
+        // Every read above has answered — loaded or not. From here a row that
+        // failed may say "Didn't load just now"; before it, nothing is said.
+        loadedOnce = true
 
         if !quiet { loading = false }
 
@@ -556,14 +571,22 @@ struct HomeView: View {
         // row keeps it). An empty (or failed) fetch falls back to the old
         // single reflection strip so Home never loses its nudge (one place,
         // one ask); a rail whose every nudge is a row's shows nothing.
-        if !needs.isEmpty { s.append(("needsyou", AnyView(HomeNeedsYouRail(nudges: needs) { openNudge($0) }))) }
-        else if vm.nudges.isEmpty, reflectionDue, !firstDay { s.append(("priority", AnyView(priorityStrip))) }
+        // Held until the first load has answered: the rows it must not repeat
+        // aren't known before then (the exam a row is about to offer).
+        if vm.loadedOnce {
+            if !needs.isEmpty { s.append(("needsyou", AnyView(HomeNeedsYouRail(nudges: needs) { openNudge($0) }))) }
+            else if vm.nudges.isEmpty, reflectionDue, !firstDay { s.append(("priority", AnyView(priorityStrip))) }
+        }
         s.append(("liturgy", AnyView(HomeLiturgyCard())))                                            // The hour's prayer — below the reflection strip (owner)
         // 3 · YOUR WEEK — one row per pillar, each pointing to its home once.
         // It replaced the "For you today" hero, the continue-level card, the
         // reading-plan/journal minis, the plan banner, both cell cards and the
         // upcoming list: each told one of these five stories again.
-        s.append(("week", AnyView(HomeWeekCard(rows: week) { openWeek($0) })))
+        // Until its reads first answer, the card holds its shape (§4's loading
+        // state; final walk M4's class) — a row still loading never says
+        // "Didn't load just now", nor guesses its "none" form.
+        s.append(("week", vm.loadedOnce ? AnyView(HomeWeekCard(rows: week) { openWeek($0) })
+                                        : AnyView(HomeWeekSkeleton())))
         // 4 · The day: today's rhythm, then today's echo.
         if vm.rhythmLoaded { s.append(("rhythm", AnyView(rhythmCard))) }                          // Today's rhythm — once it is known
         s.append(("echo", AnyView(HomeEchoCard())))                                               // Today's echo — the app remembers you (Wave 1)
@@ -580,7 +603,8 @@ struct HomeView: View {
         if let sc = vm.scores { s.append(("progress", AnyView(progressCard(sc)))) }
         s.append(("selah2", AnyView(SelahDivider())))                                               // — selah: a rest before Grow
         s.append(("grow", AnyView(growSection)))
-        s.append(("encourage", AnyView(oneReflectionBanner)))
+        // Its line is chosen from the day's facts — none guessed while they load.
+        if vm.loadedOnce { s.append(("encourage", AnyView(oneReflectionBanner))) }
         // 7 · Support God's work — only while the week's giving row is "Give":
         // a member already giving isn't asked twice.
         if HomeWeek.asksToGive(week) { s.append(("give", AnyView(giveBanner))) }
@@ -990,6 +1014,10 @@ struct HomeView: View {
                                    startPoint: .leading, endPoint: .trailing), lineWidth: 1))
                 .shadow(color: Nuru.gold.opacity(0.18), radius: 5, y: 2)
                 .padding(.top, 10)
+            } else if !vm.loadedOnce {
+                // The pill's loading shape (§4) while the journey's reads are
+                // in flight — never a stage guessed from the summary alone.
+                HomePillSkeleton().padding(.top, 10)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)

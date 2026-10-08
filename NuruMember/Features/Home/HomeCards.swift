@@ -840,7 +840,57 @@ struct HomeWeekCard: View {
     }
 }
 
-// MARK: - "Support God's work" give panel (centered ceremony layout)
+/// YOUR WEEK while its reads are in flight (§4's loading state; final walk
+/// M4's class): the card's own shape — its kicker, five rows of shimmer —
+/// so nothing is said about a pillar before its read answers, and nothing
+/// jumps when the rows land. Android's YourWeekSkeleton.
+struct HomeWeekSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("YOUR WEEK").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
+                .padding(.bottom, 4)
+            ForEach(0..<5, id: \.self) { i in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.surface)
+                        .frame(width: 36, height: 36)
+                    VStack(alignment: .leading, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Nuru.surface)
+                            .frame(width: 168, height: 13)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Nuru.surface)
+                            .frame(width: 112, height: 10)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 10)
+                .nuruShimmer()
+                if i < 4 { Rectangle().fill(Nuru.border).frame(height: 1).padding(.leading, 48) }
+            }
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Your week, loading")
+    }
+}
+
+/// The header's journey pill while its reads are in flight (§4): the pill's
+/// own capsule, shimmering — no level or stage until the trail answers.
+struct HomePillSkeleton: View {
+    var body: some View {
+        Capsule().fill(Nuru.surface)
+            .frame(width: 168, height: 28)
+            .nuruShimmer()
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Your level, loading")
+    }
+}
+
+// MARK: - "Support God's work" — a gentle prompt on gold tint
 
 /// Shown only while the week's giving row is "Give" (HomeWeek.asksToGive).
 /// A paper card, gold tint (owner, 2026-10-08, §8.1 rules 1 and 5: navy is

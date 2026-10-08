@@ -50,6 +50,10 @@ struct ProfileView: View {
     @State private var journey: Journey?
     /// Departments the member actively serves in (GET /me/departments, §4).
     @State private var serving: [DepartmentRow] = []
+    /// The extras' reads have all answered once (final walk, M4's class):
+    /// until then ACHIEVEMENTS and CERTIFICATES hold their loading shape —
+    /// "No badges yet" and "No certificates yet" showed while they loaded.
+    @State private var extrasAnswered = false
     @State private var aiOptOut = false
     /// The consent WRITE failed — the toggle was reverted and the member told.
     /// A consent control must never show a state the server hasn't recorded.
@@ -134,6 +138,15 @@ struct ProfileView: View {
 
         let cat = await catalogue ?? []
         let earned = await mine?.badges ?? []
+        let certsNow = await certificates ?? []
+        let scoresNow = await scoresSummary
+        let servingNow = (await myDepartments ?? []).filter(\.isActiveMember)
+        // The journey is told with its level's trail (final walk, M4's class;
+        // Android's journeyToTell): from the summary alone a member at the
+        // exam could read "Continue" — the open exam is the trail's row.
+        let summary = await pathway
+        var trail: [LevelModule]?
+        if let n = summary?.currentLevel { trail = try? await MemberAPI.levelModules(n) }
         let earnedByCode = Dictionary(earned.map { ($0.code, $0) }, uniquingKeysWith: { a, _ in a })
         var merged: [PBadgeItem] = cat.map {
             PBadgeItem(code: $0.code, name: $0.name, description: $0.description,
@@ -144,11 +157,13 @@ struct ProfileView: View {
             merged.append(PBadgeItem(code: e.code, name: e.name, description: e.description,
                                      category: e.category, awardedAt: e.awardedAt ?? ""))
         }
+        // Every read has answered before any of it shows — the page lands whole.
         badges = merged.sorted { ($0.earned ? 0 : 1, $0.name) < ($1.earned ? 0 : 1, $1.name) }
-        certs = await certificates ?? []
-        scores = await scoresSummary
-        serving = (await myDepartments ?? []).filter(\.isActiveMember)
-        journey = Journey.derive(await pathway)
+        certs = certsNow
+        scores = scoresNow
+        serving = servingNow
+        journey = Journey.derive(summary, trail: trail)
+        extrasAnswered = true
     }
 
     // MARK: Avatar upload (PhotosPicker → ~512px JPEG → POST /me/avatar)
@@ -467,7 +482,9 @@ struct ProfileView: View {
         sectionCard("ACHIEVEMENTS", icon: .sparkles,
                     action: badges.isEmpty ? nil : "See all",
                     onAction: { showAllBadges = true }) {
-            if badges.isEmpty {
+            if !extrasAnswered {
+                ProfileSectionSkeleton(height: 92, label: "Your badges, loading")
+            } else if badges.isEmpty {
                 VStack(spacing: Nuru.S.sm) {
                     ZStack { Circle().fill(Nuru.goldTint).frame(width: 56, height: 56)
                         .overlay(Circle().stroke(Nuru.gold, lineWidth: 1.5)); Icon(.award, size: 22, color: Nuru.gold) }
@@ -703,7 +720,9 @@ struct ProfileView: View {
 
     private var certificates: some View {
         sectionCard("CERTIFICATES", icon: .badgeCheck) {
-            if certs.isEmpty {
+            if !extrasAnswered {
+                ProfileSectionSkeleton(height: 120, label: "Your certificates, loading")
+            } else if certs.isEmpty {
                 VStack(spacing: 6) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.gold.opacity(0.09))
@@ -1033,6 +1052,24 @@ private struct BadgeGallerySheet: View {
             }
         }
         .sheet(item: $viewing) { b in BadgeDetailSheet(badge: b) }
+    }
+}
+
+/// A section's loading shape (§4) while its read is in flight — never its
+/// "none yet" words before the read has answered.
+private struct ProfileSectionSkeleton: View {
+    let height: CGFloat
+    let label: String
+    var body: some View {
+        RoundedRectangle(cornerRadius: 16, style: .continuous)
+            .fill(Nuru.surface)
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShimmer()
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(label)
     }
 }
 

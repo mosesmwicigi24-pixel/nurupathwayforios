@@ -125,30 +125,40 @@ final class ReadingPlansViewModel: ObservableObject {
         // Best-effort and in parallel: a promo failure (offline, older server)
         // must leave today's page exactly as it was.
         async let promoList = try? MemberAPI.planPromos()
-        do { plans = try await MemberAPI.plans() }
-        catch { failure = error }
+        let read: [ReadingPlanRow]?
+        do { read = try await MemberAPI.plans() }
+        catch { read = nil; failure = error }
         // Today's day needs the plan being read — read it while the
         // achievements and promos are still on their way.
-        await loadToday()
-        streak = (await ach)?.streak?.current ?? 0
-        if let r = await rhythm { activeToday = r.doneCount > 0 }
-        promos = (await promoList) ?? []
+        let today = await Self.today(of: read ?? plans)
+        let achievements = await ach
+        let rhythmNow = await rhythm
+        let promosNow = (await promoList) ?? []
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the plans once painted the streak card with no streak and
+        // no day yet — "start your streak" for a member on day 12, then the
+        // truth a moment later. Now the page lands whole.
+        if let read { plans = read }
+        todaySealed = today.sealed
+        todayLine = today.line
+        streak = achievements?.streak?.current ?? 0
+        if let rhythmNow { activeToday = rhythmNow.doneCount > 0 }
+        promos = promosNow
         loading = false
     }
 
     /// Today's day of the plan being read — its parts as the plan's own page
     /// counts them (PlanDayParts). Best-effort: no plan, a failed read or a
     /// day not begun leaves the card's invitation.
-    private func loadToday() async {
-        todaySealed = StreakToday.done(plans: plans, sealedHere: PlanDayLog.sealedToday())
+    private static func today(of plans: [ReadingPlanRow]) async -> (sealed: Bool, line: String?) {
+        let sealed = StreakToday.done(plans: plans, sealedHere: PlanDayLog.sealedToday())
         guard let active = ReadingPlanRow.active(in: plans),
               let d = try? await MemberAPI.plan(active.planId),
               let day = d.continueDay, day.completed != true, !day.locked else {
-            todayLine = nil
-            return
+            return (sealed, nil)
         }
         // Only the parts finished today count as today's (final walk M6).
-        todayLine = PlanDayParts.todayLine(day.segments ?? [])
+        return (sealed, PlanDayParts.todayLine(day.segments ?? []))
     }
 }
 

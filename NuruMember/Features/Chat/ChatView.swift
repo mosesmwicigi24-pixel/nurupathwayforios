@@ -105,14 +105,28 @@ final class ChatInboxViewModel: ObservableObject {
         async let outgoingReq = try? MemberAPI.listConnectionRequests(direction: "outgoing")
         async let discipleshipReq = try? MemberAPI.discipleship()
 
-        do { inbox = try await inboxReq; loadFailure = nil }
-        catch { self.error = "Couldn't load your chats."; loadFailure = error }
-        if let p = await peopleReq { people = p }
-        if let c = await connectionsReq { connections = c }
-        if let inc = await incomingReq { incomingRequests = inc }
-        if let out = await outgoingReq { outgoingRequests = out }
-        if let d = await discipleshipReq { discipleship = d }
-        isPastor = await PastorEligibility.isPastor()
+        let inboxRead: Result<ChatInbox, Error>
+        do { inboxRead = .success(try await inboxReq) } catch { inboxRead = .failure(error) }
+        let p = await peopleReq
+        let c = await connectionsReq
+        let inc = await incomingReq
+        let out = await outgoingReq
+        let d = await discipleshipReq
+        let pastor = await PastorEligibility.isPastor()
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the inbox once painted first, and My Discipler said "A
+        // discipler has not yet been assigned to you" while that read was
+        // still on its way. Now the page lands whole.
+        switch inboxRead {
+        case .success(let i): inbox = i; loadFailure = nil
+        case .failure(let e): self.error = "Couldn't load your chats."; loadFailure = e
+        }
+        if let p { people = p }
+        if let c { connections = c }
+        if let inc { incomingRequests = inc }
+        if let out { outgoingRequests = out }
+        if let d { discipleship = d }
+        isPastor = pastor
         // The server is the source of truth for mute now (Chat Redesign C4) —
         // sync the local optimistic flag from whichever row the inbox resolves
         // as the pastoral thread, so a mute set elsewhere (or by this device in

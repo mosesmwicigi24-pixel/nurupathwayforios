@@ -215,25 +215,34 @@ final class GivingViewModel: ObservableObject {
         async let s = MemberAPI.schedules()
         async let m = MemberAPI.givingMethods()
         async let t = MemberAPI.givingStatements(year: year)
+        // Every read answers before any of it shows (final walk, M4's class):
+        // the year pill once summed the history a moment before the
+        // statement's own total landed, and the recurring gifts that lead the
+        // page arrived after the form below them. Now they land together.
+        let readHistory: Result<[GivingRecord], Error>
+        do { readHistory = .success(try await h) } catch { readHistory = .failure(error) }
+        let readGifts = try? await s
+        let readRails = try? await m
+        let readTotals = try? await t
         // A failed refetch keeps what is on screen (stale-while-revalidate)
         // rather than blanking the year pill and Recent giving.
-        do {
-            let v = try await h
+        switch readHistory {
+        case .success(let v):
             if seq > appliedHistorySeq { appliedHistorySeq = seq; history = v; loadFailure = nil }
-        } catch {
+        case .failure(let error):
             // Said only while nothing was ever shown — a failed refetch keeps
             // what is on screen.
             if appliedHistorySeq == 0 { loadFailure = error }
         }
-        if let v = try? await s, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
+        if let v = readGifts, seq > appliedSchedulesSeq { appliedSchedulesSeq = seq; schedules = v }
         // Methods too: a failed call keeps the last answer (M-Pesa alone if
         // there never was one); an answer with no rails in it is no answer.
-        if let v = try? await m, seq > appliedMethodsSeq {
+        if let v = readRails, seq > appliedMethodsSeq {
             appliedMethodsSeq = seq
             let next = v.methods.isEmpty ? GivingMethods.fallback(phoneOnFile: v.phoneOnFile) : v
             if next != methods { methods = next }
         }
-        if let v = try? await t, v.year == year, seq > appliedTotalsSeq {
+        if let v = readTotals, v.year == year, seq > appliedTotalsSeq {
             appliedTotalsSeq = seq
             serverYearTotals = v.totals
             serverTotalsYear = year

@@ -66,7 +66,15 @@ final class LevelDetailViewModel: ObservableObject {
         async let score = try? MemberAPI.levelScore(levelNumber)
         async let ach = try? MemberAPI.achievements()
         let loaded = await mods
-        if let summary = await path {
+        let summaryNow = await path
+        let encNow = await enc
+        let infoNow = await mentorInfo
+        let scoreNow = await score
+        let achNow = await ach
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the trail and its gate once painted beside a stats card
+        // with no streak or score yet, and the encouragements wove in after.
+        if let summary = summaryNow {
             level = summary.levels.first { $0.levelNumber == levelNumber }
             totalLevels = summary.levels.count
             nextPreparing = UsherWords.nextPreparing(after: levelNumber, in: summary)
@@ -75,13 +83,13 @@ final class LevelDetailViewModel: ObservableObject {
         if let loaded { modules = loaded }
         else if level == nil { error = "Couldn't load this level." }
         // Best-effort: no encouragements (unauthored or failed fetch) renders nothing.
-        encouragements = (await enc) ?? []
-        if let info = await mentorInfo {
+        encouragements = encNow ?? []
+        if let info = infoNow {
             mentor = info.mentor
             DisciplerStore.shared.record(info.mentor)
         }
-        levelScore = await score
-        streak = (await ach)?.streak?.current ?? 0
+        levelScore = scoreNow
+        streak = achNow?.streak?.current ?? 0
         loading = false
     }
 
