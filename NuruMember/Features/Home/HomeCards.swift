@@ -842,6 +842,11 @@ struct HomeWeekCard: View {
 
 // MARK: - "Support God's work" give panel (centered ceremony layout)
 
+/// Shown only while the week's giving row is "Give" (HomeWeek.asksToGive).
+/// A paper card, gold tint (owner, 2026-10-08, §8.1 rules 1 and 5: navy is
+/// the church's voice and each tab's next step — an invitation to give is a
+/// gentle prompt). Its way on is a gold text action, "Give now ›" (rule 4):
+/// the screen's one primary is YOUR WEEK's.
 struct HomeGiveCard: View {
     /// "Tithe & offering · M-Pesa" — names only the rails that can take a gift
     /// here (GivingMethods.homeGiveLine); never a rail the member can't use.
@@ -849,61 +854,41 @@ struct HomeGiveCard: View {
     let action: () -> Void
     var body: some View {
         Button { Haptics.tap(); action() } label: {
-            ZStack(alignment: .topTrailing) {
-                LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                Circle()
-                    .fill(RadialGradient(colors: [HomeFig.gold.opacity(0.4), .clear],
-                                         center: .center, startRadius: 0, endRadius: 90))
-                    .frame(width: 176, height: 176)
-                    .offset(x: 48, y: -56)
-                    .blur(radius: 26)
-                VStack(spacing: 0) {
-                    ZStack {
-                        Circle()
-                            .fill(RadialGradient(colors: [HomeFig.gold.opacity(0.2), .clear],
-                                                 center: .center, startRadius: 0, endRadius: 32))
-                            .frame(width: 64, height: 64)
-                        Circle()
-                            .fill(LinearGradient(colors: [HomeFig.gold, Color(hex: 0xA87F29)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 48, height: 48)
-                            .shadow(color: HomeFig.gold.opacity(0.6), radius: 10, y: 6)
-                        Icon(.handHeart, size: 24, color: HomeFig.navy)
-                    }
-                    Text("SUPPORT GOD'S WORK")
-                        .font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.gold)
-                        .padding(.top, 12)
-                    Text("Sow into something eternal")
-                        .font(.fraunces(18, .semibold)).foregroundStyle(.white)
-                        .padding(.top, 4)
-                    Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
-                        .font(.nCardBody).foregroundStyle(.white.opacity(0.65))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 280)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 6)
-                    HStack(spacing: 8) {
-                        Icon(.handHeart, size: 18, color: HomeFig.navy)
-                        Text("Give now").font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                        Icon(.chevronRight, size: 18, color: HomeFig.navy)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.top, 16)
-                    Text(railsLine)
-                        .font(.nCardMeta).foregroundStyle(.white.opacity(0.45))
-                        .padding(.top, 10)
+            VStack(spacing: 0) {
+                Icon(.handHeart, size: 22, color: Nuru.goldChipText)
+                    .frame(width: 48, height: 48)
+                    .background(Nuru.goldChipBg, in: Circle())
+                    .overlay(Circle().stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+                Text("SUPPORT GOD'S WORK")
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                    .padding(.top, 12)
+                Text("Sow into something eternal")
+                    .font(.nCardTitle).foregroundStyle(Nuru.navy)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+                Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+                HStack(spacing: 4) {
+                    Text("Give now").font(.nCardCTA).foregroundStyle(Nuru.gold)
+                    Icon(.chevronRight, size: 14, color: Nuru.gold)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(20)
+                .padding(.top, 14)
+                Text(railsLine)
+                    .font(.nCardMeta).foregroundStyle(Nuru.ink400)
+                    .padding(.top, 6)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .nuruShadow()
+            .frame(maxWidth: .infinity)
+            .padding(20)
+            .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
         }
         .buttonStyle(.pressableSubtle)
+        .accessibilityHint("Opens Give")
     }
 }
 

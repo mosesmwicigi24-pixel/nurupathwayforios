@@ -158,9 +158,10 @@ enum HomeQuietDivider {
     /// seam is not.
     static func edges(of id: String) -> (top: Edge, bottom: Edge) {
         switch id {
-        // Navy cards, edge to edge: Nuru Live, Radio on air, Live now, the
-        // Sunday Letter in every state, and "Support God's work".
-        case "livebanner", "onair", "livenow", "letter", "give":
+        // Navy cards, edge to edge: Nuru Live, Radio on air, Live now, and
+        // the Sunday Letter in every state. ("Support God's work" is a paper
+        // card since the owner's 2026-10-08 decision.)
+        case "livebanner", "onair", "livenow", "letter":
             return (.dark, .dark)
         // A photograph above a light caption: the verse's tableau, the
         // liturgy's hour, a featured gathering's poster.

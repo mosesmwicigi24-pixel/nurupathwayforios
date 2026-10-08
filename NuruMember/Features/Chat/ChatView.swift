@@ -1,7 +1,7 @@
 // Chat — "Nuru Connect" inbox, the native port of the Figma ChatTab. A cream
 // header (COMMUNITY kicker, serif title, bell → notifications — §8.1 rule 2), a
-// white search bar, the "Quick help from Nuru" AI launcher (navy with a gold
-// orb), the italic "Verse for today" ribbon, and a capsule segment control
+// white search bar, the "Quick help from Nuru" AI launcher (a paper card with
+// a gold-tint tile), the italic "Verse for today" ribbon, and a capsule segment control
 // (#My Space · DM · My Groups with counts). Each segment renders one grouped
 // white card of rows: spaces (# avatar, author preview, member dots, Active
 // pill), DMs (stories row, real-or-initials avatars, unread badges, read ticks)
@@ -543,10 +543,10 @@ struct ChatView: View {
 
     // MARK: AI card ("Quick help from Nuru")
 
-    // Navy with gold (EXPERIENCE.md §8.1 rule 1, §8.2 #3): the tab's one dark
-    // feature card, a gold orb, gold accents. It was a purple-and-green
-    // gradient with a green "online" dot — hues the grammar keeps for state,
-    // and a dot that was always on, tied to nothing (§7.1 rule 8).
+    // A paper card (owner, 2026-10-08, §8.1 rule 1: navy is the church's
+    // voice and each tab's next step — the assistant is neither): white, the
+    // hairline, the gold-tint tile, navy words. It was navy (§8.2 #3, which
+    // this supersedes), and before that a purple-and-green gradient.
     private var aiCard: some View {
         Button {
             Haptics.tap()
@@ -554,42 +554,32 @@ struct ChatView: View {
         } label: {
             HStack(spacing: 14) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(LinearGradient(colors: [Nuru.goldHi, Nuru.gold, Nuru.goldLo],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .fill(Color(hex: Nuru.tileTint))
                     .frame(width: 48, height: 48)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
                     .overlay(Icon(.sparkles, size: 22, color: Nuru.navy))
-                    .shadow(color: Nuru.gold.opacity(0.45), radius: 8, y: 4)
                 VStack(alignment: .leading, spacing: 2) {
                     HStack(spacing: 6) {
                         Text("Quick help from Nuru")
-                            .font(.nRowTitle).kerning(-0.16).foregroundStyle(.white)
-                        Text("AI").font(.inter(11, .heavy)).kerning(1.1).foregroundStyle(Nuru.navy)
+                            .font(.nRowTitle).kerning(-0.16).foregroundStyle(Nuru.navy)
+                        Text("AI").font(.inter(11, .heavy)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
                             .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Nuru.goldGlow, in: Capsule())
+                            .background(Nuru.goldChipBg, in: Capsule())
                     }
                     // Whole, never cut (§8.1 rule 9).
                     // No zero counts (§7.4 #9): "0 updates across 0 spaces" said nothing.
                     Text(ZeroCounts.assistantLine(unread: vm.totalUnread, spaces: vm.spaces.count))
-                        .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
+                        .font(.nCardMeta).foregroundStyle(Nuru.ink600)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: Nuru.goldGlow)
-                    .frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.08), in: Circle())
-                    .overlay(Circle().stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
             .padding(Nuru.S.base)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                Nuru.navyGradient
-                    .overlay(alignment: .topTrailing) {
-                        Circle().fill(Nuru.gold.opacity(0.22)).frame(width: 160, height: 160).blur(radius: 44).offset(x: 48, y: -64)
-                    }
-            )
-            .clipShape(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.35), lineWidth: 1))
-            .shadow(color: Nuru.navy.opacity(0.22), radius: 14, y: 8)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
         }
         .buttonStyle(.pressableSubtle)
     }

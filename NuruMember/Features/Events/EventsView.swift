@@ -631,39 +631,35 @@ struct EventsView: View {
     // MARK: 3b — church attendance card
 
     /// Scan into today's service, and the streak that comes out of showing up.
-    /// The tab's one navy feature card (§8.1 rule 1): on a Sunday morning
-    /// this is the reason to open the app.
+    /// A paper card — white, the hairline, a gold-tint tile (owner,
+    /// 2026-10-08, §8.1 rule 1: navy is the church's voice and each tab's
+    /// next step; checking in is neither — it opens only during a service).
     private var attendanceLink: some View {
         NavigationLink(value: EventsNav.attendance) {
             HStack(spacing: Nuru.S.md) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Nuru.goldGradient).frame(width: 48, height: 48)
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color(hex: Nuru.tileTint)).frame(width: 48, height: 48)
+                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
                     Icon(.qrCode, size: 22, color: Nuru.navy)
                 }
                 VStack(alignment: .leading, spacing: 1) {
                     // Whole at the largest size: "ATTENDANC / E", "Check in to a serv…" (§9.6 #4).
-                    Text("CHURCH ATTENDANCE").font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                    Text("CHURCH ATTENDANCE").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                         .fixedSize(horizontal: false, vertical: true)
-                        .nuruWholeWords("CHURCH ATTENDANCE", font: .inter(11, .bold), kerning: 1.5)
-                    Text("Check in to a service").font(.nRowTitle).foregroundStyle(Nuru.onNavy)
+                        .nuruWholeWords("CHURCH ATTENDANCE", font: .nCardKicker, kerning: 1.4)
+                    Text("Check in to a service").font(.nRowTitle).foregroundStyle(Nuru.navy)
                         .fixedSize(horizontal: false, vertical: true)
                     Text("Scan the QR at church · see your streak")
-                        .font(.nCardMeta).foregroundStyle(Nuru.onNavyDim)
+                        .font(.nCardMeta).foregroundStyle(Nuru.ink600)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: .white)
-                    .frame(width: 36, height: 36)
-                    .background(Color.white.opacity(0.12), in: Circle())
+                Icon(.chevronRight, size: 18, color: Nuru.ink300)
             }
             .padding(Nuru.S.base)
-            .background {
-                ZStack(alignment: .topTrailing) {
-                    LinearGradient(colors: [Nuru.navy, Color(hex: 0x060F1C)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                    Circle().fill(Nuru.gold.opacity(0.33)).frame(width: 144, height: 144).blur(radius: 36).offset(x: 40, y: -48)
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+            .nuruShadow()
         }
         .buttonStyle(.pressableSubtle)
     }
