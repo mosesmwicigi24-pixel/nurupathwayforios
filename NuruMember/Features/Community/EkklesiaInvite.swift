@@ -74,13 +74,12 @@ struct EkklesiaInvite: View {
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .background(
-            Group {
-                if member {
-                    LinearGradient(colors: [Color(hex: 0x0A1628), Color(hex: 0x16273F)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                } else {
-                    LinearGradient(colors: [Nuru.goldTint.opacity(0.55), Nuru.goldTint.opacity(0.35)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                }
-            },
+            LinearGradient(
+                colors: member
+                    ? [Color(hex: 0x0A1628), Color(hex: 0x16273F)]
+                    : [Nuru.goldTint.opacity(0.55), Nuru.goldTint.opacity(0.35)],
+                startPoint: .topLeading, endPoint: .bottomTrailing
+            ),
             in: RoundedRectangle(cornerRadius: 20, style: .continuous)
         )
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(member ? Color.white.opacity(0.10) : Nuru.gold.opacity(0.30), lineWidth: 1))
