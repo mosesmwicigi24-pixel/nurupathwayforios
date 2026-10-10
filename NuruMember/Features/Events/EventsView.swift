@@ -393,6 +393,7 @@ struct EventsView: View {
                 VStack(spacing: 0) {
                     header
                     VStack(spacing: Nuru.S.base) {
+                        EkklesiaInvite()   // Ekklesia's invitation to intercede, under the gatherings' head
                         // A saved copy says so (final walk M3).
                         NuruSavedCopyNotice(hasContent: !vm.occurrences.isEmpty || !vm.series.isEmpty || !vm.announcements.isEmpty)
                         // Broadcasters only (PARTNERS_PROGRAMME §0): the old

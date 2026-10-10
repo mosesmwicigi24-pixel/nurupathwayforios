@@ -100,6 +100,8 @@ enum NoticeRoute: Equatable {
     case departments
     /// The Events tab.
     case events
+    /// Ekklesia — the intercessory watch (the Prayer Room on its tab).
+    case ekklesia
     /// Give ▸ Partners.
     case partners
     /// Give.
@@ -133,6 +135,7 @@ enum NoticeRouter {
         if tpl.hasPrefix("serve_request") || tpl.hasPrefix("department") {
             return filled(t.departmentId).map { .department($0) } ?? .departments
         }
+        if tpl.hasPrefix("ekklesia") { return .ekklesia }   // ekklesia_request (modules/ekklesia)
         if tpl.hasPrefix("event") { return .events }
         if tpl.hasPrefix("pledge") { return .partners }   // pledge_due_soon / _overdue / _fulfilled (§3), no id
         if tpl.hasPrefix("giving") || tpl.hasPrefix("payment") { return .give }
@@ -168,6 +171,7 @@ extension NoticeRouter {
         case .department(let id): tabs.openDepartment(id)
         case .departments: tabs.openYou(.departments)
         case .events: tabs.openEvents()
+        case .ekklesia: tabs.openEkklesia()
         case .partners: tabs.openPartners()
         case .give: tabs.openGive()
         case .profile: tabs.openYou(.profile)

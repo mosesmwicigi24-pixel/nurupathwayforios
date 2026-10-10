@@ -69,6 +69,7 @@ final class AuthStore: ObservableObject {
     }
 
     func signOut() {
+        Task { @MainActor in EkklesiaPulse.shared.clear() }
         Task { await APIClient.shared.clearSession() }
         // Seal + forget the device-local pastoral privacy state (C3b): the
         // next account on this phone must not inherit the previous member's

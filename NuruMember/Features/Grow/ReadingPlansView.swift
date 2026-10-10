@@ -289,6 +289,7 @@ struct ReadingPlansView: View {
                         categoriesSection
                         if searching { filteredResults } else { collectionsSections }
                         if !searching { invitationCard }
+                        if !searching { EkklesiaInvite() }   // Ekklesia's invitation to intercede
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 20)

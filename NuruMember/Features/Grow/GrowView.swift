@@ -69,6 +69,8 @@ extension View {
                 // screen directly — deep links keep working unchanged.
                 case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)
                 case .prayer(let id): PrayerWallDetailView(postId: id)
+                case .ekklesia: PrayerRoomView(initialTab: .ekklesia)
+                case .ekklesiaRequest(let id): EkklesiaRequestView(requestId: id)
                 case .discussions: DiscussionsView()
                 case .discussion(let id): DiscussionThreadView(threadId: id)
                 }

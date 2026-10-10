@@ -195,6 +195,8 @@ final class HomeViewModel: ObservableObject {
 
         self.welcomeVideo = await video ?? nil
         self.prayerPosts = await posts ?? []
+        // Ekklesia — the Home card and the invitations share one small read.
+        await EkklesiaPulse.shared.refresh(force: true)
         if let p = await plans { self.plans = p; plansLoaded = true }
         self.featuredAnnouncement = await fann ?? nil
         self.announcements = await anns ?? []
@@ -475,6 +477,8 @@ struct HomeView: View {
     // controller itself lives in BroadcastCenter (app-wide), not here — see
     // RootView for the single fullScreenCover presentation + floating island.
     @ObservedObject private var broadcast = BroadcastCenter.shared
+    /// Ekklesia's pulse — the one summary the Home card and the invitations share.
+    @ObservedObject private var ekklesia = EkklesiaPulse.shared
     @State private var showGoLiveSheet = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// The phone's text size: at the accessibility sizes a few rows stack
@@ -594,6 +598,7 @@ struct HomeView: View {
         // 5 · The family. (The disciplers carousel left with Cycle 2: the
         // discipler's one door on Home is grow's "Your discipler" row.)
         if !vm.prayerPosts.isEmpty { s.append(("prayerwall", AnyView(prayerWallCard))) }
+        if let ek = ekklesia.summary { s.append(("ekklesia", AnyView(ekklesiaCard(ek)))) }       // Ekklesia — the watch: today's needs, or the door in
         s.append(("celebrations", AnyView(CelebrationsRail())))                                           // Celebrate the family (moments, Phase 4)
         if !featuredPages.isEmpty { s.append(("announcement", AnyView(featuredCarousel))) }             // carousel: portal-marked announcements + events
         if let fe = vm.featuredEvent, let next = fe.nextStart() {                                   // admin-featured event,
@@ -720,6 +725,14 @@ struct HomeView: View {
             path.append(AppRoute.announcement(id))
             Task { await vm.openAnnouncement(id) }
             DispatchQueue.main.async { tabs.announcementLink = nil }
+        }
+        // Ekklesia — an invitation on another tab, or an ekklesia_* push: the
+        // Prayer Room on its Ekklesia tab, on Home's own stack.
+        .onReceive(tabs.$ekklesiaLink) { go in
+            guard go else { return }
+            if !path.isEmpty { path = NavigationPath() }
+            path.append(CommunityRoute.ekklesia)
+            DispatchQueue.main.async { tabs.ekklesiaLink = false }
         }
         .sheet(item: $sharePayload) { ShareToChatSheet(text: $0.text) }
         // The partner invitation. Presented only when the server said to, and
@@ -1312,13 +1325,16 @@ struct HomeView: View {
             // A pledge due / behind (PARTNERS_PROGRAMME §3) — the pledge card
             // with its Pay now lives in the Partners portal.
             tabs.openPartners()
+        case "ekklesia":
+            // An intercessor's needs for today — the watch, on Home's own stack.
+            path.append(CommunityRoute.ekklesia)
         default:
             break   // an unroutable nudge is a server bug — never a crash, never a wrong screen
         }
     }
 
     private static let nudgeRoutes: Set<String> =
-        ["devotional", "quiz", "level_exam", "letter", "cell", "plan", "reading_invite", "chat", "partners"]
+        ["devotional", "quiz", "level_exam", "letter", "cell", "plan", "reading_invite", "chat", "partners", "ekklesia"]
 
     private static func defaultNudgeRoute(forKind kind: String) -> String {
         switch kind {
@@ -1330,6 +1346,7 @@ struct HomeView: View {
         case "plan_day_due":     return "plan"
         case "reading_invite":   return "reading_invite"
         case "chat_unread":      return "chat"
+        case "ekklesia_watch":   return "ekklesia"
         default:                 return ""
         }
     }
@@ -1829,6 +1846,54 @@ struct HomeView: View {
     }
 
     // MARK: 5 — Pray for one another (carousel)
+
+    /// Ekklesia on Home — the watch in one card: for an intercessor, what waits
+    /// on them today and the newest need; for everyone else, the day's
+    /// invitation and who already stands. Both open the Prayer Room's tab.
+    private func ekklesiaCard(_ s: EkklesiaSummary) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text(s.isMember ? "EKKLESIA · THE WATCH" : "EKKLESIA · INTERCESSORS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.goldChipText)
+                Spacer()
+                Button { Haptics.tap(); path.append(CommunityRoute.ekklesia) } label: { sectionLink(s.isMember ? "Open the watch" : "Join") }.buttonStyle(.plain)
+            }
+            Button { Haptics.tap(); path.append(CommunityRoute.ekklesia) } label: {
+                HStack(spacing: Nuru.S.sm) {
+                    ZStack { Circle().fill(Nuru.goldChipBg).frame(width: 40, height: 40); Icon(.flame, size: 18, color: Nuru.goldChipText) }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(s.isMember ? EkklesiaWords.memberLine(needsMeToday: s.needsMeToday, urgent: s.urgentCount)
+                                        : EkklesiaWords.invitation(dayOfYear: Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
+                            .font(.nRowTitle).foregroundStyle(Nuru.ink).multilineTextAlignment(.leading)
+                        if let under = ekklesiaUnderline(s) {
+                            Text(under).font(.nCaption).foregroundStyle(Nuru.ink600).nuruLineLimit(2).multilineTextAlignment(.leading)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.top, Nuru.S.sm)
+            }.buttonStyle(.pressableSubtle)
+            if !s.isMember {
+                Button { Haptics.tap(); path.append(CommunityRoute.ekklesia) } label: {
+                    Text("Stand in the gap").font(.nMicro.weight(.bold)).foregroundStyle(Nuru.navyDeep)
+                        .padding(.horizontal, 14).padding(.vertical, 8).background(Nuru.gold, in: Capsule())
+                }.buttonStyle(.plain).padding(.top, Nuru.S.sm)
+            }
+        }
+        .padding(Nuru.S.base)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+    }
+
+    private func ekklesiaUnderline(_ s: EkklesiaSummary) -> String? {
+        if s.isMember {
+            if let l = s.latest.first {
+                if let w = l.forWhom, !w.isEmpty { return "Newest: \(l.title) · for \(w)" }
+                return "Newest: \(l.title)"
+            }
+            return s.memberCount > 1 ? "\(s.memberCount) intercessors on the watch" : nil
+        }
+        return EkklesiaWords.standing(memberCount: s.memberCount) ?? s.mission
+    }
 
     private var prayerWallCard: some View {
         VStack(alignment: .leading, spacing: 0) {
