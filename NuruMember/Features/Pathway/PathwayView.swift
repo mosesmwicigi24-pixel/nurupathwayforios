@@ -304,6 +304,8 @@ struct PathwayView: View {
                 // Studying together, apart (Wave 2): who from your cell opened
                 // a lesson this week. Renders nothing when nobody has.
                 CellPresenceLine().gentleEntrance()
+                // Ekklesia's invitation to intercede — one quiet row (the Prayer Room's tab).
+                EkklesiaInvite().gentleEntrance()
 
                 PathwayJourneyRail(
                     levels: s.levels, current: journey?.levelNumber,

@@ -1,5 +1,5 @@
 // My Prayer Room — the single destination that replaces the old separate
-// "Prayer Wall" and "Prayer Journal" entries. FOUR tabs over one screen:
+// "Prayer Wall" and "Prayer Journal" entries. FIVE tabs over one screen:
 // Private Prayer (the member's own journal, PrayerJournalView, embedded),
 // Corporate Prayer (the congregation's wall, PrayerWallView, embedded), Selah
 // (My Thoughts — a private rich-text + pen journal, SelahView), and Prayer
@@ -17,6 +17,8 @@ import SwiftUI
 enum PrayerRoomTab: Hashable {
     case privatePrayer
     case corporatePrayer
+    /// Ekklesia (2026-10-10): the church's intercessory watch, beside Corporate.
+    case ekklesia
     case selah
     case prayerPoints
 }
@@ -40,6 +42,7 @@ struct PrayerRoomView: View {
                 switch tab {
                 case .privatePrayer: PrayerJournalView(embedded: true)
                 case .corporatePrayer: PrayerWallView(embedded: true)
+                case .ekklesia: EkklesiaView()
                 case .selah: SelahView()
                 case .prayerPoints: PrayerPointsView()
                 }
@@ -108,6 +111,7 @@ struct PrayerRoomView: View {
             HStack(spacing: 4) {
                 segmentButton(.privatePrayer, "Private")
                 segmentButton(.corporatePrayer, "Corporate")
+                segmentButton(.ekklesia, "Ekklesia")
                 segmentButton(.selah, "Selah")
                 segmentButton(.prayerPoints, "Prayer Points")
             }

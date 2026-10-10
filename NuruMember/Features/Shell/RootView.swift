@@ -226,6 +226,9 @@ final class TabRouter: ObservableObject {
     @Published var eventLink: CalendarOccurrence?
     /// Announcement to open on the Home stack (from a tapped iOS notification).
     @Published var announcementLink: String?
+    /// Ekklesia (the intercessory watch): an invitation on another tab, or a
+    /// push, lands on Home's stack at the Prayer Room's Ekklesia tab.
+    @Published var ekklesiaLink = false
     /// A "Read with a Friend" invite token to open on the Plans stack — set by
     /// a nuru://join/{token} deep link (RootView.onOpenURL) or a
     /// plan_group_invite_received notification tap.
@@ -296,6 +299,7 @@ final class TabRouter: ObservableObject {
     /// Partners, opening one pledge.
     func openPledge(_ id: String) { pledgeLink = id; openPartners() }
     func openPartners() { giveSegment = .partners; selected = .give }
+    func openEkklesia() { ekklesiaLink = true; selected = .home }
 }
 
 struct RootView: View {

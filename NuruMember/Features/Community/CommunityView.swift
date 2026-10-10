@@ -16,6 +16,9 @@ import SwiftUI
 enum CommunityRoute: Hashable {
     case prayerWall
     case prayer(String)      // postId
+    /// Ekklesia — the intercessory watch (the Prayer Room on its tab), and one of its needs.
+    case ekklesia
+    case ekklesiaRequest(String)
     case discussions
     case discussion(String)  // threadId
 }
