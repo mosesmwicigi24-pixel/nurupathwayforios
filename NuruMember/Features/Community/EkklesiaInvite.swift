@@ -58,7 +58,7 @@ struct EkklesiaInvite: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(member ? "EKKLESIA · THE WATCH" : "EKKLESIA · INTERCESSORS")
-                    .font(.inter(10, .semibold)).kerning(1.6)
+                    .font(.inter(11, .semibold)).kerning(1.6)
                     .foregroundStyle(member ? Nuru.gold : Nuru.goldChipText)
                 Text(member ? EkklesiaWords.memberLine(needsMeToday: s.needsMeToday, urgent: s.urgentCount)
                             : EkklesiaWords.invitation(dayOfYear: Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
@@ -92,6 +92,13 @@ struct EkklesiaFaceView: View {
     let url: String?
     var size: CGFloat = 32
     var ring: Bool = false
+
+    /// Initials sized to the face, from the scale: 13 on a 36 pt face, 12 on 32, 11 below.
+    private var initialsFont: Font {
+        if size >= 36 { return .inter(13, .semibold) }
+        if size >= 32 { return .inter(12, .semibold) }
+        return .inter(11, .semibold)
+    }
     var body: some View {
         ZStack {
             Circle().fill(Nuru.goldChipBg)
@@ -108,6 +115,6 @@ struct EkklesiaFaceView: View {
     private var initials: some View {
         let parts = name.split(separator: " ").prefix(2).compactMap { $0.first.map(String.init) }
         return Text(parts.isEmpty ? "?" : parts.joined().uppercased())
-            .font(.inter(size * 0.36, .semibold)).foregroundStyle(Nuru.navy)
+            .font(initialsFont).foregroundStyle(Nuru.navy)
     }
 }

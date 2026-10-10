@@ -91,7 +91,7 @@ struct EkklesiaView: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("EKKLESIA · INTERCESSORS").font(.inter(10, .semibold)).kerning(1.8).foregroundStyle(Nuru.gold)
+                    Text("EKKLESIA · INTERCESSORS").font(.inter(11, .semibold)).kerning(1.8).foregroundStyle(Nuru.gold)
                     Text(g.mission).font(.fraunces(22, .semibold)).foregroundStyle(.white)
                 }
                 Spacer(minLength: 0)
@@ -184,7 +184,7 @@ struct EkklesiaView: View {
             HStack(spacing: 6) {
                 Text(label).font(.inter(12, .bold)).foregroundStyle(on ? .white : Nuru.ink600)
                 if count > 0 {
-                    Text("\(count)").font(.inter(10, .bold)).foregroundStyle(on ? Nuru.navyDeep : Nuru.goldChipText)
+                    Text("\(count)").font(.inter(11, .bold)).foregroundStyle(on ? Nuru.navyDeep : Nuru.goldChipText)
                         .padding(.horizontal, 7).padding(.vertical, 1).background(on ? Nuru.gold : Nuru.goldChipBg, in: Capsule())
                 }
             }
@@ -199,7 +199,7 @@ struct EkklesiaView: View {
             EkklesiaChips(urgent: p.urgency == "urgent", pinned: false)
             Text(p.title).font(.fraunces(16, .semibold)).foregroundStyle(Nuru.ink)
             HStack(spacing: 6) {
-                Icon(.lock, size: 12, color: Nuru.ink400)
+                Icon(.lock, size: 14, color: Nuru.ink400)
                 Text((EkklesiaWords.countsLine(intercessors: p.intercessorCount, prayers: 0, updates: 0).map { "\($0) · " } ?? "") + timeAgo(p.createdAt))
                     .font(.inter(11, .regular)).foregroundStyle(Nuru.ink400)
             }
@@ -217,11 +217,11 @@ struct EkklesiaChips: View {
     var body: some View {
         HStack(spacing: 6) {
             if pinned {
-                Text("PINNED").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
+                Text("PINNED").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText)
                     .padding(.horizontal, 8).padding(.vertical, 3).background(Nuru.goldChipBg, in: Capsule())
             }
             if urgent {
-                Text("URGENT").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(Nuru.warning)
+                Text("URGENT").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.warning)
                     .padding(.horizontal, 8).padding(.vertical, 3).background(Nuru.warning.opacity(0.12), in: Capsule())
             }
         }
@@ -260,7 +260,7 @@ struct EkklesiaRequestCard: View {
             HStack(spacing: 8) {
                 EkklesiaFaceView(name: r.authorName, url: r.authorAvatar, size: 32)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(r.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                    Text(r.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink).nuruLineLimit(1)
                     Text(timeAgo(r.createdAt)).font(.inter(11, .regular)).foregroundStyle(Nuru.ink400)
                 }
                 Spacer(minLength: 0)
@@ -271,18 +271,18 @@ struct EkklesiaRequestCard: View {
                     EkklesiaChips(urgent: r.isUrgent, pinned: r.isPinned)
                 }
             }
-            Text(r.title).font(.fraunces(17, .semibold)).foregroundStyle(Nuru.ink).padding(.top, 10).multilineTextAlignment(.leading)
+            Text(r.title).font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink).padding(.top, 10).multilineTextAlignment(.leading)
             if let w = r.forWhom, !w.isEmpty {
                 Text("For \(w)").font(.inter(12, .medium)).foregroundStyle(Nuru.goldChipText).padding(.top, 2)
             }
-            Text(r.body).font(.inter(13, .regular)).foregroundStyle(Nuru.ink600).lineSpacing(3).lineLimit(3).padding(.top, 6).multilineTextAlignment(.leading)
+            Text(r.body).font(.inter(13, .regular)).foregroundStyle(Nuru.ink600).lineSpacing(3).nuruLineLimit(3).padding(.top, 6).multilineTextAlignment(.leading)
             if let n = r.answeredNote, !n.isEmpty {
                 Text("“\(n)”").font(.inter(12, .regular)).foregroundStyle(Nuru.successText).padding(.top, 6)
             }
             HStack(spacing: 10) {
                 if !r.isAnswered { EkklesiaIntercedeButton(r: r, onIntercede: onIntercede) }
                 if let c = EkklesiaWords.countsLine(intercessors: r.intercessorCount, prayers: r.prayerCount, updates: r.updateCount) {
-                    Text(c).font(.inter(11, .regular)).foregroundStyle(Nuru.ink400).lineLimit(1)
+                    Text(c).font(.inter(11, .regular)).foregroundStyle(Nuru.ink400).nuruLineLimit(1)
                 }
                 Spacer(minLength: 0)
             }
@@ -360,7 +360,7 @@ struct EkklesiaBringSheet: View {
 
     private func field(_ text: Binding<String>, _ hint: String, lines: Int = 1) -> some View {
         TextField(hint, text: text, axis: .vertical)
-            .lineLimit(lines...)
+            .frame(minHeight: CGFloat(lines) * 22, alignment: .top)
             .font(.inter(14, .regular)).foregroundStyle(Nuru.ink)
             .padding(12)
             .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))

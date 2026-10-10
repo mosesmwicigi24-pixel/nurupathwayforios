@@ -1048,7 +1048,7 @@ final class ExperienceCycle5Tests: XCTestCase {
         // "Support God's work" is a paper card since the owner's 2026-10-08 decision (D2).
         let dark: Set = ["livebanner", "onair", "livenow", "letter", "verse", "liturgy", "event"]
         let light: Set = ["loaderror", "video", "needsyou", "priority", "week", "rhythm", "echo", "selah1", "prayerwall",
-                          "celebrations", "announcement", "progress", "selah2", "grow", "encourage", "give"]
+                          "celebrations", "announcement", "progress", "selah2", "grow", "encourage", "give", "ekklesia"]
         XCTAssertEqual(appended, dark.union(light), "a new Home row: name its edges in HomeQuietDivider.edges(of:)")
         for id in dark {
             let e = HomeQuietDivider.edges(of: id)

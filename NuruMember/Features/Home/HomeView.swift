@@ -1865,7 +1865,7 @@ struct HomeView: View {
                                         : EkklesiaWords.invitation(dayOfYear: Calendar.current.ordinality(of: .day, in: .year, for: Date()) ?? 0))
                             .font(.nRowTitle).foregroundStyle(Nuru.ink).multilineTextAlignment(.leading)
                         if let under = ekklesiaUnderline(s) {
-                            Text(under).font(.nCaption).foregroundStyle(Nuru.ink600).lineLimit(2).multilineTextAlignment(.leading)
+                            Text(under).font(.nCaption).foregroundStyle(Nuru.ink600).nuruLineLimit(2).multilineTextAlignment(.leading)
                         }
                     }
                     Spacer(minLength: 0)

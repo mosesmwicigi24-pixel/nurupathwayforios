@@ -47,7 +47,7 @@ struct EkklesiaRequestView: View {
                         .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }.buttonStyle(.plain)
-                Text("EKKLESIA · THE WATCH").font(.inter(10, .semibold)).kerning(1.8).foregroundStyle(Nuru.goldChipText)
+                Text("EKKLESIA · THE WATCH").font(.inter(11, .semibold)).kerning(1.8).foregroundStyle(Nuru.goldChipText)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, Nuru.S.screen).padding(.vertical, 12)
@@ -106,7 +106,7 @@ struct EkklesiaRequestView: View {
             Text(r.body).font(.inter(14, .regular)).foregroundStyle(Nuru.ink).lineSpacing(5).padding(.top, 10)
             if r.isAnswered {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("ANSWERED" + (r.answeredAt.map { " · \(timeAgo($0))" } ?? "")).font(.inter(10, .bold)).kerning(1.4).foregroundStyle(Nuru.successText)
+                    Text("ANSWERED" + (r.answeredAt.map { " · \(timeAgo($0))" } ?? "")).font(.inter(11, .bold)).kerning(1.4).foregroundStyle(Nuru.successText)
                     if let n = r.answeredNote, !n.isEmpty { Text("“\(n)”").font(.inter(13, .regular)).foregroundStyle(Nuru.successText).lineSpacing(4) }
                 }
                 .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -120,7 +120,7 @@ struct EkklesiaRequestView: View {
 
     private func standing(_ d: EkklesiaRequestDetail) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("STANDING ON THIS NEED").font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Nuru.eyebrow)
+            Text("STANDING ON THIS NEED").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.eyebrow)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(d.intercessors.prefix(12)) { i in
                     HStack(spacing: 10) {
@@ -142,7 +142,7 @@ struct EkklesiaRequestView: View {
 
     private func updates(_ list: [EkklesiaUpdate]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("WORD BACK TO THE WATCH").font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(Nuru.eyebrow)
+            Text("WORD BACK TO THE WATCH").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.eyebrow)
             ForEach(list) { u in
                 let t = u.kind == "testimony"
                 VStack(alignment: .leading, spacing: 6) {
@@ -150,7 +150,7 @@ struct EkklesiaRequestView: View {
                         EkklesiaFaceView(name: u.authorName, url: u.authorAvatar, size: 26)
                         Text(u.mine ? "You" : u.authorName).font(.inter(12, .bold)).foregroundStyle(Nuru.ink)
                         Spacer(minLength: 0)
-                        if t { Text("TESTIMONY").font(.inter(9, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText) }
+                        if t { Text("TESTIMONY").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.goldChipText) }
                         Text(timeAgo(u.createdAt)).font(.inter(11, .regular)).foregroundStyle(Nuru.ink400)
                     }
                     Text(u.body).font(.inter(13, .regular)).foregroundStyle(Nuru.ink).lineSpacing(4)
@@ -166,7 +166,7 @@ struct EkklesiaRequestView: View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Write back to the watch").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
             TextField(testimony ? "What God did…" : "How it is going, what to pray now…", text: $text, axis: .vertical)
-                .lineLimit(2...)
+                .frame(minHeight: 48, alignment: .top)
                 .font(.inter(14, .regular)).foregroundStyle(Nuru.ink).padding(12)
                 .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -244,7 +244,7 @@ struct EkklesiaAnsweredSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Answered").font(.fraunces(18, .semibold)).foregroundStyle(Nuru.navy)
             Text("A word of testimony for everyone who stood on this need. The watch keeps it.").font(.inter(12, .regular)).foregroundStyle(Nuru.ink600)
-            TextField("What God did (optional)", text: $note, axis: .vertical).lineLimit(3...)
+            TextField("What God did (optional)", text: $note, axis: .vertical).frame(minHeight: 68, alignment: .top)
                 .font(.inter(14, .regular)).foregroundStyle(Nuru.ink).padding(12)
                 .background(Nuru.coolPaper, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
