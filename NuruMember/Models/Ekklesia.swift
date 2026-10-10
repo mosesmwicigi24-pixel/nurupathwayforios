@@ -248,7 +248,9 @@ struct EkklesiaRequestDetail: Codable, Sendable {
     }
 }
 
-struct EkklesiaJoinRes: Decodable, Sendable { var joined = false; var memberCount = 0; var firstTime = false
+struct EkklesiaJoinRes: Decodable, Sendable {
+    var joined = false; var memberCount = 0; var firstTime = false
+    enum CodingKeys: String, CodingKey { case joined, memberCount, firstTime }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         joined = (try? c.decodeIfPresent(Bool.self, forKey: .joined)) ?? false
@@ -259,6 +261,7 @@ struct EkklesiaJoinRes: Decodable, Sendable { var joined = false; var memberCoun
 
 struct EkklesiaIntercedeRes: Decodable, Sendable {
     var prayedToday = false; var firstToday = false; var prayerCount = 0; var intercessorCount = 0; var myPrayerDays = 0
+    enum CodingKeys: String, CodingKey { case prayedToday, firstToday, prayerCount, intercessorCount, myPrayerDays }
     init(from d: Decoder) throws {
         let c = try d.container(keyedBy: CodingKeys.self)
         prayedToday = (try? c.decodeIfPresent(Bool.self, forKey: .prayedToday)) ?? false
