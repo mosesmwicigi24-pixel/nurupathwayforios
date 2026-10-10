@@ -254,6 +254,41 @@ final class StatementV2DecodingTests: XCTestCase {
         XCTAssertNil(vm.lastGift, "no ordinary gift → no Repeat card")
     }
 
+    /// Giving Cycle 10: a member whose only gift failed saw "Repeat last gift ·
+    /// KSh 1,000 · Tithe" beside Recent giving's "No gifts yet". Only a gift
+    /// that went through is offered again.
+    @MainActor
+    func testRepeatLastGiftOffersOnlyAGiftThatWentThrough() throws {
+        let d = JSONDecoder()
+        d.keyDecodingStrategy = .convertFromSnakeCase
+        let rows = try d.decode([GivingRecord].self, from: Data("""
+        [{"transaction_id":"t4","amount_minor":100000,"status":"failed","fund":"tithe","created_at":"2026-09-28T08:00:00Z"},
+         {"transaction_id":"t3","amount_minor":70000,"status":"processing","fund":"tithe","created_at":"2026-09-27T08:00:00Z"},
+         {"transaction_id":"t2","amount_minor":60000,"status":"cancelled","fund":"offering","created_at":"2026-09-26T08:00:00Z"},
+         {"transaction_id":"t1","amount_minor":20000,"status":"succeeded","fund":"tithe","created_at":"2026-09-20T08:00:00Z"}]
+        """.utf8))
+        let vm = GivingViewModel()
+        vm.history = rows
+        XCTAssertEqual(vm.lastGift?.transactionId, "t1", "failed, waiting and cancelled gifts are skipped")
+        vm.history = Array(rows.prefix(3))
+        XCTAssertNil(vm.lastGift, "nothing went through → no Repeat card")
+        XCTAssertTrue(GiveMoney.isSettled("succeeded"))
+        XCTAssertTrue(GiveMoney.isSettled("completed"))
+        XCTAssertFalse(GiveMoney.isSettled("failed"))
+        XCTAssertFalse(GiveMoney.isSettled("requires_action"))
+    }
+
+    /// "KSh 0 paid · 20,000 to go" — the figures without the prefix, and a
+    /// dollar pledge keeps its cents (they were dropped). The Partners
+    /// statement's Given tile says "US$" like every other dollar amount.
+    func testToGoKeepsTheCurrencysOwnFigures() {
+        XCTAssertEqual(GiveMoney.figures(2_000_000, "KES"), "20,000")
+        XCTAssertEqual(GiveMoney.figures(123_450, "KES"), "1,234.50")
+        XCTAssertEqual(GiveMoney.figures(50_050, "USD"), "500.50")
+        XCTAssertEqual(PartnersStatementView.currencyPrefix("USD"), "US$")
+        XCTAssertEqual(PartnersStatementView.currencyPrefix("KES"), "KSh")
+    }
+
     func testCompactAmountRoundsDownAndNeverOverstates() {
         XCTAssertEqual(PartnersStatementView.compactAmount(85_000), "850")
         XCTAssertEqual(PartnersStatementView.compactAmount(250_000), "2.5k")

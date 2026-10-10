@@ -20,15 +20,20 @@ import AVFoundation
 /// Schedules ONE repeating daily local notification that nudges the member back
 /// into their reading plan, deep-specific to the plan + day. Grace-first tone: a
 /// warm invitation, never a guilt trip. Re-scheduling replaces the pending one.
+/// It never asks for permission itself — Plans re-schedules on every visit, and
+/// that must not put the phone's prompt up cold (EXPERIENCE.md §7.2 #12): the
+/// switch asks, with its one line (`why`), when the member turns it on.
 enum PlanReminders {
     static let id = "nuru.plan.daily"
+    /// The one line saying why, when the switch asks to notify.
+    static let why = "So your daily reading reminder can reach you."
 
     static func schedule(enabled: Bool, hour: Int, minute: Int, planTitle: String?, day: Int?) {
         let center = UNUserNotificationCenter.current()
         center.removePendingNotificationRequests(withIdentifiers: [id])
         guard enabled else { return }
-        center.requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
-            guard granted else { return }
+        center.getNotificationSettings { settings in
+            guard NotificationPermission.status(of: settings.authorizationStatus) == .allowed else { return }
             let content = UNMutableNotificationContent()
             content.title = "Time in the Word 🌱"
             if let planTitle, let day {
@@ -63,8 +68,22 @@ struct ReaderPalette {
     var goldDeep: Color { night ? Color(hex: 0xCBA24A) : PL.goldDeep }
     var border: Color { night ? Color.white.opacity(0.09) : PL.border }
     var verseBg: Color { night ? Color(hex: 0x251E13) : PL.highlight }
+    /// A save the server refused, above the button that tried (§7.4 #2).
+    var danger: Color { night ? Color(hex: 0xF0A0A0) : Color(hex: 0xB91C1C) }
 }
 private struct ReaderPaletteKey: EnvironmentKey { static let defaultValue = ReaderPalette() }
+
+/// Pushes a plan's day onto the stack that hosts the plan's page — the Plans
+/// tab sets it (it owns the path), so "Begin Day 1" can start the plan AND
+/// open Day 1 in one tap (EXPERIENCE.md §7.4 #2 follow-up). Nil where no
+/// stack offers it: the page then stays, its button now opening the day.
+private struct OpenPlanDayKey: EnvironmentKey { static let defaultValue: ((PlanDayRef) -> Void)? = nil }
+extension EnvironmentValues {
+    var openPlanDay: ((PlanDayRef) -> Void)? {
+        get { self[OpenPlanDayKey.self] }
+        set { self[OpenPlanDayKey.self] = newValue }
+    }
+}
 extension EnvironmentValues {
     var readerPalette: ReaderPalette {
         get { self[ReaderPaletteKey.self] }
@@ -81,35 +100,82 @@ final class ReadingPlansViewModel: ObservableObject {
     /// simply means the page falls back to the locally-edited promos.
     @Published var promos: [PlanPromo] = []
     @Published var streak = 0
-    @Published var todayWordDone = false
+    /// The streak card's today (§7.4 #4): ticked only once a plan day was
+    /// finished today — on this phone (PlanDayLog) or on any phone (the
+    /// plans' `last_day_finished_at`). Reading one part used to tick it
+    /// beside "0-day streak".
+    @Published var todaySealed = false
+    /// "Today: 2 of 3 parts" while the day being read is under way.
+    @Published var todayLine: String?
+    /// The member was active today (any of the rhythm): the one streak
+    /// counts today, on Plans as on Home (§9.2 #3).
+    @Published var activeToday = false
     @Published var loading = true
-    @Published var error: String?
+    /// Why the catalogue didn't load — spoken through the one state language
+    /// (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
+    /// A part or a day was finished since the last load — the list refreshes
+    /// in place when the member comes back to it.
+    var stale = false
 
     func load() async {
-        loading = true; error = nil
+        loading = true; failure = nil; stale = false
         async let ach = try? MemberAPI.achievements()
         async let rhythm = try? MemberAPI.rhythmToday()
         // Best-effort and in parallel: a promo failure (offline, older server)
         // must leave today's page exactly as it was.
         async let promoList = try? MemberAPI.planPromos()
-        do { plans = try await MemberAPI.plans() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load reading plans." }
-        streak = (await ach)?.streak?.current ?? 0
-        todayWordDone = (await rhythm)?.word ?? false
-        promos = (await promoList) ?? []
+        let read: [ReadingPlanRow]?
+        do { read = try await MemberAPI.plans() }
+        catch { read = nil; failure = error }
+        // Today's day needs the plan being read — read it while the
+        // achievements and promos are still on their way.
+        let today = await Self.today(of: read ?? plans)
+        let achievements = await ach
+        let rhythmNow = await rhythm
+        let promosNow = (await promoList) ?? []
+        // Every read has answered before any of it shows (final walk, M4's
+        // class): the plans once painted the streak card with no streak and
+        // no day yet — "start your streak" for a member on day 12, then the
+        // truth a moment later. Now the page lands whole.
+        if let read { plans = read }
+        todaySealed = today.sealed
+        todayLine = today.line
+        streak = achievements?.streak?.current ?? 0
+        if let rhythmNow { activeToday = rhythmNow.doneCount > 0 }
+        promos = promosNow
         loading = false
+    }
+
+    /// Today's day of the plan being read — its parts as the plan's own page
+    /// counts them (PlanDayParts). Best-effort: no plan, a failed read or a
+    /// day not begun leaves the card's invitation.
+    private static func today(of plans: [ReadingPlanRow]) async -> (sealed: Bool, line: String?) {
+        let sealed = StreakToday.done(plans: plans, sealedHere: PlanDayLog.sealedToday())
+        guard let active = ReadingPlanRow.active(in: plans),
+              let d = try? await MemberAPI.plan(active.planId),
+              let day = d.continueDay, day.completed != true, !day.locked else {
+            return (sealed, nil)
+        }
+        // Only the parts finished today count as today's (final walk M6).
+        return (sealed, PlanDayParts.todayLine(day.segments ?? []))
     }
 }
 
 struct ReadingPlansView: View {
     @StateObject private var vm = ReadingPlansViewModel()
     @EnvironmentObject private var tabs: TabRouter
+    /// At the accessibility sizes the plan grid is one column and a section's
+    /// count takes a line of its own (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var query = ""
     @State private var category = "all"
     @AppStorage("planReminderOn") private var reminderOn = false
     @AppStorage("planReminderHour") private var reminderHour = 7
     @AppStorage("planReminderMinute") private var reminderMinute = 0
     @AppStorage("streakQuiet") private var streakQuiet = false
+    /// "Allow notifications?" — asked when the member turns the reminder on (§7.2 #12).
+    @State private var reminderAsk: NotificationAsk?
 
     private var q: String { query.trimmingCharacters(in: .whitespaces).lowercased() }
     private var searching: Bool { !q.isEmpty || category != "all" }
@@ -120,8 +186,9 @@ struct ReadingPlansView: View {
                 && (q.isEmpty || p.title.lowercased().contains(q) || (p.category ?? "").lowercased().contains(q))
         }
     }
-    private var continueReading: [ReadingPlanRow] { vm.plans.filter { $0.enrolled && $0.completedAt == nil } }
-    private var planOfDay: ReadingPlanRow? { vm.plans.first { !$0.enrolled } ?? vm.plans.first }
+    private var continueReading: [ReadingPlanRow] { vm.plans.filter(PlanPicks.isBeingRead) }
+    /// The picks follow PlanPicks — one rule, both apps (§8.2 #6).
+    private var planOfDay: ReadingPlanRow? { PlanPicks.planOfDay(vm.plans) }
     private var categories: [String] {
         var seen = Set<String>(); var out: [String] = []
         for p in vm.plans { if let c = p.category, !c.isEmpty, !seen.contains(c) { seen.insert(c); out.append(c) } }
@@ -135,48 +202,40 @@ struct ReadingPlansView: View {
     /// the section that describes the commitment it asks for.
     private var collections: [(id: String, label: String, plans: [ReadingPlanRow])] {
         var out: [(String, String, [ReadingPlanRow])] = []
-        let short = vm.plans.filter { $0.dayCount <= 7 }
+        // A plan with a card of its own above (being read, or promoted) isn't
+        // repeated in the grid (§9.6 #1) — it is still on the tab, once.
+        let own = PlanPicks.withOwnCard(vm.plans, promos: resolvedPromos, planOfDay: planOfDay, midPromo: midPromoPlan)
+        let browse = vm.plans.filter { !own.contains($0.planId) }
+        let short = browse.filter { $0.dayCount <= 7 }
         if !short.isEmpty { out.append(("short", "Short reads · 7 days or less", short)) }
         // Mid-length (8–13 days) — most study plans are 10-day, so without this
         // bucket they'd fall between "short" and "long" and never appear in browse.
-        let mid = vm.plans.filter { (8...13).contains($0.dayCount) }
+        let mid = browse.filter { (8...13).contains($0.dayCount) }
         if !mid.isEmpty { out.append(("mid", "Mid-length journeys · about 10 days", mid)) }
-        let long = vm.plans.filter { $0.dayCount >= 14 }
+        let long = browse.filter { $0.dayCount >= 14 }
         if !long.isEmpty { out.append(("long", "Longer journeys · 2 weeks and up", long)) }
         return out
     }
 
     /// A server promo paired with the plan row it names. Unresolvable promos (a
     /// plan the catalogue didn't return) are dropped rather than rendered blank.
-    private struct ResolvedPromo: Identifiable {
-        let promo: PlanPromo
-        let plan: ReadingPlanRow
-        var id: String { promo.slot + "\u{00B7}" + promo.planId }
-        var kicker: String { promo.kicker.isEmpty ? "WORTH YOUR WEEK" : promo.kicker }
-    }
+    private typealias ResolvedPromo = PlanPicks.Resolved
 
     /// The personalized promos, most-personal-first, that we can actually show.
-    private var resolvedPromos: [ResolvedPromo] {
-        guard !vm.promos.isEmpty else { return [] }
-        let byId = Dictionary(vm.plans.map { ($0.planId, $0) }, uniquingKeysWith: { a, _ in a })
-        return vm.promos.compactMap { p in byId[p.planId].map { ResolvedPromo(promo: p, plan: $0) } }
-    }
+    private var resolvedPromos: [ResolvedPromo] { PlanPicks.resolve(vm.promos, in: vm.plans) }
     /// Everything after the hero promo — woven into the browse sections below.
     private var trailingPromos: [ResolvedPromo] { Array(resolvedPromos.dropFirst()) }
 
     @ViewBuilder
-    private func promoCard(_ rp: ResolvedPromo) -> some View {
-        PLPlanPromo(plan: rp.plan, kicker: rp.kicker, reason: rp.promo.reason)
+    private func promoCard(_ rp: ResolvedPromo, primary: Bool = false) -> some View {
+        PLPlanPromo(plan: rp.plan, kicker: rp.kicker, reason: rp.promo.reason, primary: primary)
     }
 
     /// A second plan to promote further down the page — never the one already
     /// featured at the top, and never one already being read. Rotates with the
-    /// day like the plan of the day, so browsing feels edited, not random.
+    /// church's (Nairobi) day, so browsing feels edited, not random.
     private var midPromoPlan: ReadingPlanRow? {
-        let pool = vm.plans.filter { !$0.enrolled && $0.planId != planOfDay?.planId && ($0.description?.isEmpty == false) }
-        guard !pool.isEmpty else { return nil }
-        let day = Int(Date().timeIntervalSince1970 / 86_400)
-        return pool[(day / 2) % pool.count]
+        PlanPicks.midPromo(vm.plans, planOfDayId: planOfDay?.planId, day: PlanPicks.nairobiDay())
     }
 
     var body: some View {
@@ -189,7 +248,12 @@ struct ReadingPlansView: View {
             listBody
             #endif
         }
-        .task { if vm.plans.isEmpty { await vm.load() }; reschedule() }
+        // Back from a plan after finishing a part or a day: the streak card,
+        // the header's day and the continue card refresh in place (§7.1
+        // rule 5 — content stays, no skeleton).
+        .task { if vm.plans.isEmpty || vm.stale { await vm.load() }; reschedule() }
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanPartDone)) { _ in vm.stale = true }
+        .onReceive(NotificationCenter.default.publisher(for: .nuruPlanDayUnlocked)) { _ in vm.stale = true }
         // Root of the Plans tab — the bottom bar belongs here (hidden inside a plan).
         .onAppear { tabs.chromeHidden = false }
     }
@@ -198,20 +262,28 @@ struct ReadingPlansView: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
                 header
-                LoadStateView(loading: vm.loading && vm.plans.isEmpty,
-                              isEmpty: vm.plans.isEmpty, error: vm.error,
-                              emptyText: "Plans are being prepared — check back soon.", retry: { Task { await vm.load() } }) {
+                // Loading, empty and failed speak the one state language (§4)
+                // in the shared full-width card; content wins whenever there is any.
+                if let state = NuruState.resolve(loading: vm.loading, isEmpty: vm.plans.isEmpty, failure: vm.failure,
+                                                 empty: .empty(title: "Plans are being prepared — check back soon.")) {
+                    NuruStateView(state: state, retry: { Task { await vm.load() } })
+                        .padding(.horizontal, 20).padding(.top, 20)
+                } else {
                     VStack(alignment: .leading, spacing: 24) {
-                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todayWordDone) }
+                        // A saved copy says so (final walk M3).
+                        NuruSavedCopyNotice(hasContent: true)
+                        if !searching, !streakQuiet { PLStreakStrip(count: vm.streak, todayDone: vm.todaySealed, today: vm.todayLine, activeToday: vm.activeToday) }
                         if !searching, !continueReading.isEmpty { continueSection }
                         if !searching, !continueReading.isEmpty { reminderCard }
                         // The day's invitation, given room to actually invite:
                         // cover + subtitle + the plan's own opening line + a CTA.
+                        // The hero promo is the tab's gold primary only when no
+                        // plan is being read; else the continue card holds it (E3).
                         if !searching {
                             if let hero = resolvedPromos.first {
-                                promoCard(hero)
+                                promoCard(hero, primary: continueReading.isEmpty)
                             } else if let pod = planOfDay {
-                                PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY")
+                                PLPlanPromo(plan: pod, kicker: "PLAN OF THE DAY", primary: continueReading.isEmpty)
                             }
                         }
                         categoriesSection
@@ -223,6 +295,7 @@ struct ReadingPlansView: View {
                     .padding(.bottom, Nuru.tabBarSpace + 20)
                 }
             }
+            .scrollsToTopOnReselect(.plans)   // a re-tap at the root returns to the top (B10)
         }
         .ignoresSafeArea(edges: .top)
         .background(
@@ -237,21 +310,24 @@ struct ReadingPlansView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("PLANS").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(PL.catText)
-                    Text("Grow in the Word").font(.fraunces(26, .medium)).kerning(-0.72).foregroundStyle(PL.navy)
-                        .padding(.top, 4)
-                    Text("A little every day — with the whole family of God.")
-                        .font(.inter(12)).foregroundStyle(PL.ink2).padding(.top, 4)
-                }
+            // One header (§8.1 rule 2), laid out as Home's and Pathway's: the
+            // kicker and the bell on one line, the title and its line below,
+            // from the same top (final walk #38: the bell sat between the
+            // kicker and the title, and the header rode higher).
+            HStack(alignment: .center) {
+                Text("PLANS").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
                 Spacer(minLength: 8)
                 bellButton
             }
+            // One line of what matters now (§6.2): the plan being read — the
+            // same plan and day Home's week names — else the tagline.
+            NuruHeaderText(title: "Grow in the Word",
+                           line: ReadingPlanRow.activeLine(in: vm.plans) ?? "A little every day — with the whole family of God.")
+                .padding(.top, 12)
             searchBar.padding(.top, 16)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 64)
+        .padding(.top, NuruSafeArea.top + 8)
         .padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .topTrailing) {
@@ -265,24 +341,15 @@ struct ReadingPlansView: View {
         .shadow(color: Color(hex: 0x0A1628).opacity(0.16), radius: 12, y: 7)
     }
 
+    /// The one bell (EXPERIENCE.md §7.2 #4): its dot was painted on — now
+    /// only while the inbox has something unread.
     private var bellButton: some View {
-        NavigationLink(value: AppRoute.notifications) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)
-                RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(PL.border, lineWidth: 1)
-                Icon(.bell, size: 18, color: PL.navy)
-            }
-            .overlay(alignment: .topTrailing) {
-                Circle().fill(PL.gold).frame(width: 8, height: 8).padding(8)
-            }
-            .frame(width: 40, height: 40)
-        }
-        .buttonStyle(.plain)
+        NuruBell()
     }
 
     private var searchBar: some View {
         HStack(spacing: 10) {
-            Icon(.search, size: 16, color: PL.ink3)
+            Icon(.search, size: 18, color: PL.ink3)
             ZStack(alignment: .leading) {
                 if query.isEmpty {
                     Text("Search plans, topics, books…").font(.inter(14)).foregroundStyle(PL.ink3)
@@ -293,7 +360,7 @@ struct ReadingPlansView: View {
             }
             if !query.isEmpty {
                 Button { Haptics.tap(); query = "" } label: {
-                    Icon(.x, size: 15, color: PL.ink3)
+                    Icon(.x, size: 14, color: PL.ink3)
                         // Grow the hit area without growing the field.
                         .contentShape(Rectangle().inset(by: -14))
                 }
@@ -320,30 +387,44 @@ struct ReadingPlansView: View {
     }
 
     /// Prominent navy "Continue · Day N" banner (mirrors the Home resume nudge).
+    /// It carries the tab's one gold primary (§8.1 rule 4; the Cycle 3 walk's
+    /// E3: four gold "Begin the journey" promos while Ada's real next step was
+    /// to continue First Steps). Its title and line wrap, never cut (rule 9).
     private func planResumeBanner(_ p: ReadingPlanRow) -> some View {
         let day = p.currentDay ?? 1
         let done = p.completedDays?.count ?? max(0, day - 1)
         let pct = p.dayCount > 0 ? CGFloat(done) / CGFloat(p.dayCount) : 0
-        return HStack(spacing: 14) {
-            ZStack {
-                Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
-                Circle().trim(from: 0, to: pct)
-                    .stroke(PL.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-                Icon(.bookMarked, size: 17, color: .white)
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 14) {
+                ZStack {
+                    Circle().stroke(Color.white.opacity(0.22), lineWidth: 4)
+                    Circle().trim(from: 0, to: pct)
+                        .stroke(PL.gold, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Icon(.bookMarked, size: 18, color: .white)
+                }
+                .frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("CONTINUE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0xE8CA6C))
+                    Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(p.title, font: .fraunces(18, .medium), kerning: -0.2)
+                    // Home's story about today (§9.2 #3): "Day 3 done today ·
+                    // Day 4 next" once today's day is read, else "Today · " and
+                    // the plan's own words — Android's planCardLine.
+                    Text(PlanLines.cardLine(p, readToday: PlanLines.readToday(p, sealedHere: PlanDayLog.sealedToday())))
+                        .font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
             }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("CONTINUE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                Text(p.title).font(.fraunces(18, .medium)).kerning(-0.2).foregroundStyle(.white).lineLimit(1)
-                Text("Day \(day) of \(p.dayCount) · pick up where you left off")
-                    .font(.inter(12)).foregroundStyle(.white.opacity(0.72)).lineLimit(1)
-            }
-            Spacer(minLength: 8)
-            Icon(.arrowRight, size: 18, color: PL.gold)
+            PlansPrimaryLabel(text: "Continue · Day \(day)")
         }
-        .padding(16).frame(maxWidth: .infinity)
-        .background(LinearGradient(colors: [PL.navy, PL.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+        .padding(16).frame(maxWidth: .infinity, alignment: .leading)
+        // Plans' one navy next-step card, in Home's navy (owner, 2026-10-07:
+        // colour option A): the gradient, the gold kicker, the #B9C4D4 line.
+        .background(LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
                     in: RoundedRectangle(cornerRadius: 20, style: .continuous))
     }
 
@@ -369,15 +450,16 @@ struct ReadingPlansView: View {
     private var reminderCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 12) {
-                Icon(.bell, size: 16, color: PL.goldDeep)
+                Icon(.bell, size: 18, color: PL.goldDeep)
                     .frame(width: 38, height: 38)
                     .background(PL.gold.opacity(0.12), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Daily reminder").font(.inter(14, .semibold)).foregroundStyle(PL.navy)
-                    Text("A gentle nudge to keep your rhythm").font(.inter(11.5)).foregroundStyle(PL.ink3)
+                    Text("A gentle nudge to keep your rhythm").font(.inter(12)).foregroundStyle(PL.ink3)
                 }
                 Spacer(minLength: 8)
-                Toggle("", isOn: $reminderOn).labelsHidden().tint(PL.gold)
+                // Only the member's own tap asks (the day reader shares the setting).
+                Toggle("", isOn: Binding(get: { reminderOn }, set: { turnReminder($0) })).labelsHidden().tint(PL.gold)
             }
             if reminderOn {
                 Rectangle().fill(PL.border).frame(height: 1)
@@ -388,7 +470,21 @@ struct ReadingPlansView: View {
         .padding(16)
         .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PL.border, lineWidth: 1))
-        .onChange(of: reminderOn) { _, _ in reschedule() }
+        .notificationAsk($reminderAsk) { allowed in
+            if allowed { reschedule() } else { reminderOn = false }
+        }
+    }
+
+    /// Turned on: the phone is asked now — with its one line — or not at all
+    /// when it already allows (§7.2 #12). A "no" turns the switch back off: a
+    /// reminder that can't reach the member never shows as on.
+    private func turnReminder(_ on: Bool) {
+        reminderOn = on
+        guard on else { reschedule(); return }
+        Task {
+            if let ask = await NotificationPermission.askIfNeeded(why: PlanReminders.why) { reminderAsk = ask }
+            else { reschedule() }
+        }
     }
 
     // MARK: plan of the day (shimmering badge + sparkles)
@@ -408,7 +504,7 @@ struct ReadingPlansView: View {
                     Text(plan.title).font(.fraunces(22, .medium)).kerning(-0.44).foregroundStyle(.white)
                         .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                     HStack(spacing: 4) {
-                        Icon(.clock, size: 12, color: .white.opacity(0.8))
+                        Icon(.clock, size: 14, color: .white.opacity(0.8))
                         Text("\(plan.dayCount) days").font(.nCardMeta).foregroundStyle(.white.opacity(0.8))
                     }
                 }
@@ -422,8 +518,8 @@ struct ReadingPlansView: View {
 
     private var planOfDayBadge: some View {
         HStack(spacing: 4) {
-            Icon(.sparkles, size: 9, color: PL.navy)
-            Text("PLAN OF THE DAY").font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+            Icon(.sparkles, size: 14, color: PL.navy)
+            Text("PLAN OF THE DAY").font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(PL.gold, in: Capsule())
@@ -476,12 +572,23 @@ struct ReadingPlansView: View {
         VStack(alignment: .leading, spacing: 24) {
             ForEach(Array(collections.enumerated()), id: \.element.id) { i, col in
                 VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
-                        Spacer(minLength: 0)
-                        Text("\(col.plans.count)").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
+                    // The count beside the label at the everyday sizes; under
+                    // it at the largest, where "· 2 weeks and up 4" read as "24".
+                    if typeSize.isAccessibilitySize {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .nuruWholeWords(col.label, font: .fraunces(13, .semibold), kerning: -0.13)
+                            Text("\(col.plans.count) plan\(col.plans.count == 1 ? "" : "s")").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
+                        }
+                    } else {
+                        HStack {
+                            Text(col.label).font(.fraunces(13, .semibold)).kerning(-0.13).foregroundStyle(PL.navy)
+                            Spacer(minLength: 0)
+                            Text("\(col.plans.count)").font(.inter(11, .bold)).foregroundStyle(PL.ink3)
+                        }
                     }
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                    LazyVGrid(columns: planColumns, spacing: 12) {
                         ForEach(col.plans) { plan in PLPlanTile(plan: plan) }
                     }
                 }
@@ -500,7 +607,23 @@ struct ReadingPlansView: View {
                     }
                 }
             }
+            // Every plan already has a card of its own, so the grid is empty:
+            // the promos still show — a plan is never hidden.
+            if collections.isEmpty {
+                if resolvedPromos.isEmpty {
+                    if let promo = midPromoPlan { PLPlanPromo(plan: promo, kicker: "WORTH YOUR WEEK") }
+                } else {
+                    ForEach(trailingPromos) { rp in promoCard(rp) }
+                }
+            }
         }
+    }
+
+    /// Two plans to a row at the everyday sizes; one at the largest, where
+    /// two cut every title ("Who A…", "Healed…") and topic ("IDENTI…"). §9.6 #4.
+    private var planColumns: [GridItem] {
+        typeSize.isAccessibilitySize ? [GridItem(.flexible())]
+                                     : [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)]
     }
 
     private var filteredResults: some View {
@@ -508,7 +631,9 @@ struct ReadingPlansView: View {
             HStack {
                 overline(category == "all" ? "Results" : category)
                 Spacer(minLength: 0)
-                Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(10, .semibold)).foregroundStyle(PL.ink3)
+                if !filtered.isEmpty {   // no zero counts (§7.4 #9)
+                    Text("\(filtered.count) plan\(filtered.count == 1 ? "" : "s")").font(.inter(11, .semibold)).foregroundStyle(PL.ink3)
+                }
             }
             if filtered.isEmpty {
                 VStack(spacing: 0) {
@@ -527,7 +652,7 @@ struct ReadingPlansView: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PL.border, lineWidth: 1))
             } else {
-                LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                LazyVGrid(columns: planColumns, spacing: 12) {
                     ForEach(filtered) { plan in PLPlanTile(plan: plan) }
                 }
             }
@@ -541,7 +666,7 @@ struct ReadingPlansView: View {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PL.gold.opacity(0.12))
-                    Icon(.users, size: 19, color: PL.gold)
+                    Icon(.users, size: 18, color: PL.gold)
                 }.frame(width: 40, height: 40)
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Read with a friend").font(.inter(13, .bold)).foregroundStyle(PL.navy)
@@ -549,7 +674,7 @@ struct ReadingPlansView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: PL.ink3)
+                Icon(.chevronRight, size: 18, color: PL.ink3)
             }
             .padding(16)
             .background(LinearGradient(colors: [PL.gold.opacity(0.08), PL.gold.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -560,7 +685,7 @@ struct ReadingPlansView: View {
     }
 
     private func overline(_ text: String) -> some View {
-        Text(text.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PL.goldDeep)
+        Text(text.uppercased()).font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PL.goldDeep)
     }
 }
 
@@ -595,14 +720,18 @@ final class PlanDetailViewModel: ObservableObject {
                 awaitingUnlock = nil
             }
         }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this plan." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load this plan.", error) }
         loading = false
     }
 
-    func start() async {
+    /// Enrol (idempotent). Returns why the server didn't, or nil once it did
+    /// — the page then opens the day to read (one tap, as Android).
+    func start() async -> Error? {
         busy = true; defer { busy = false }
-        try? await MemberAPI.startPlan(planId)
+        do { try await MemberAPI.startPlan(planId) }
+        catch { return error }
         await load()
+        return nil
     }
 
     /// A segment's ack (relayed from the day hub) said this plan's next day
@@ -640,6 +769,9 @@ struct PlanDetailView: View {
     @State private var shareAfterPicker = false
     @State private var inviteSent: InviteSentToast?
     @State private var inviteSentDismiss: Task<Void, Never>?
+    /// Why the plan didn't start — "Couldn't start this plan" (Android's words).
+    @State private var startError: String?
+    @Environment(\.openPlanDay) private var openPlanDay
 
     init(plan: ReadingPlanRow) {
         self.plan = plan
@@ -716,9 +848,7 @@ struct PlanDetailView: View {
 
     // Real completion state, derived from the day rows the server returns.
     private func completedCount(_ d: ReadingPlanDetail) -> Int { d.days.filter { $0.completed == true }.count }
-    private func firstIncomplete(_ d: ReadingPlanDetail) -> ReadingPlanDay? {
-        d.days.first { $0.completed != true } ?? d.days.first
-    }
+    private func firstIncomplete(_ d: ReadingPlanDetail) -> ReadingPlanDay? { d.continueDay }
 
     private func content(_ d: ReadingPlanDetail) -> some View {
         VStack(spacing: 0) {
@@ -777,7 +907,7 @@ struct PlanDetailView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 if let c = d.category, !c.isEmpty {
-                    Text(c.uppercased()).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                    Text(c.uppercased()).font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
                         .lineLimit(1)
                         .padding(.horizontal, 10).padding(.vertical, 4).background(PL.gold, in: Capsule())
                 }
@@ -795,11 +925,13 @@ struct PlanDetailView: View {
         .clipped()
         .overlay(alignment: .topLeading) {
             HStack {
-                circleBtn(.chevronLeft, tint: .white) { dismiss() }
+                // The "←" every pushed page wears (the Cycle 4 walk saw "‹" here).
+                circleBtn(.arrowLeft, size: 18, tint: .white) { dismiss() }
+                    .accessibilityLabel("Back")
                 Spacer()
                 saveButton
             }
-            .padding(.horizontal, 16).padding(.top, 60)
+            .padding(.horizontal, 16).padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         }
     }
 
@@ -810,29 +942,33 @@ struct PlanDetailView: View {
         } label: {
             Group {
                 if saved {
-                    Image(systemName: "heart.fill").font(.system(size: 15)).foregroundStyle(PL.gold)
+                    Image(systemName: "heart.fill").font(.symbol(15)).foregroundStyle(PL.gold)
                         .transition(.scale(scale: 0.5).combined(with: .opacity))
                 } else {
-                    Icon(.heart, size: 17, color: .white)
+                    Icon(.heart, size: 18, color: .white)
                 }
             }
-            .frame(width: 40, height: 40)
+            .frame(width: 44, height: 44)
             .background(Color.black.opacity(0.35), in: Circle())
             .animation(.spring(response: 0.3, dampingFraction: 0.6), value: saved)
         }
         .buttonStyle(.pressable)
+        // A quiet like — nothing is saved anywhere, so it never says so
+        // (owner decision, §7.4).
+        .accessibilityLabel(HeartWords.label)
+        .accessibilityValue(saved ? "Liked" : "")
     }
 
     private func heroMeta(_ icon: Lucide, _ text: String) -> some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 13, color: PL.goldLight)
+            Icon(icon, size: 14, color: PL.goldLight)
             Text(text).font(.inter(12)).foregroundStyle(.white.opacity(0.8))
         }
     }
 
-    private func circleBtn(_ icon: Lucide, tint: Color, action: @escaping () -> Void) -> some View {
+    private func circleBtn(_ icon: Lucide, size: CGFloat = 22, tint: Color, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: 20, color: tint)
+            Icon(icon, size: size, color: tint)
                 .frame(width: 40, height: 40)
                 .background(Color.black.opacity(0.35), in: Circle())
         }
@@ -862,8 +998,19 @@ struct PlanDetailView: View {
                 Spacer(minLength: 0)
                 if done > 0 {
                     Text("\(Int((Double(done) / Double(max(d.days.count, 1)) * 100).rounded()))% done")
-                        .font(.inter(10, .bold)).foregroundStyle(PL.catText)
+                        .font(.inter(11, .bold)).foregroundStyle(PL.catText)
                 }
+            }
+            // A pause named kindly, once, on gold tint (§9.1 rule 5) — the
+            // same words as Home's row and the Plans card.
+            if let at = PlanLines.pausedOn(plan) {
+                Text(PlanLines.pauseLine(pausedOn: at, waitingDay: PlanLines.day(plan)))
+                    .font(.inter(13, .semibold)).foregroundStyle(PL.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .padding(.top, 10)
             }
             VStack(spacing: 6) {
                 ForEach(visible) { day in
@@ -905,7 +1052,7 @@ struct PlanDetailView: View {
                     } label: {
                         HStack(spacing: 5) {
                             Text("Show all \(d.days.count) days").font(.inter(12, .bold)).foregroundStyle(PL.goldDeep)
-                            Icon(.chevronDown, size: 13, color: PL.goldDeep)
+                            Icon(.chevronDown, size: 14, color: PL.goldDeep)
                         }
                         .frame(maxWidth: .infinity, minHeight: 40)
                         .contentShape(Rectangle())
@@ -932,7 +1079,7 @@ struct PlanDetailView: View {
 
     private var nudge: some View {
         HStack(spacing: 8) {
-            Icon(.sparkles, size: 16, color: PL.gold)
+            Icon(.sparkles, size: 18, color: PL.gold)
             Text("Consistency over intensity — a few faithful minutes a day.")
                 .font(.fraunces(12)).italic().foregroundStyle(PL.navy)
                 .fixedSize(horizontal: false, vertical: true)
@@ -946,22 +1093,27 @@ struct PlanDetailView: View {
 
     // Sticky CTA — Start plan (enroll) when not enrolled; once enrolled it
     // deep-links straight into the first incomplete day (or day 1 to review).
+    // The words follow progress (§7.4 #2): a member with any part done reads
+    // "Continue · Day N", never "Begin Day 1".
     private func ctaBar(_ d: ReadingPlanDetail) -> some View {
         let done = completedCount(d)
         let allDone = !d.days.isEmpty && done >= d.days.count
         let target = allDone ? d.days.first : firstIncomplete(d)
-        let label: String = done > 0
-            ? (allDone ? "Read again" : "Continue · Day \(target?.dayNumber ?? 1)")
-            : "Begin Day 1"
+        let label = PlanDayParts.planButton(d)
         return HStack(spacing: 10) {
             Group {
                 if d.enrolled, let target {
                     NavigationLink(value: PlanDayRef(planId: d.planId, day: target, planTitle: d.title)) { ctaLabel(label) }
                 } else {
+                    // "Begin Day 1" starts the plan AND opens Day 1 — one tap,
+                    // and only on the server's word (§7.4 #2): a refusal or no
+                    // answer is "Couldn't start this plan" and §4's sentence.
                     Button {
+                        guard !vm.busy else { return }
                         Haptics.action()
-                        Task { await vm.start() }
+                        Task { await beginPlan() }
                     } label: { ctaLabel(label) }
+                    .disabled(vm.busy)
                 }
             }
             .buttonStyle(.pressable)
@@ -970,7 +1122,7 @@ struct PlanDetailView: View {
                 showInvitePicker = true   // friends first; the open link is inside
             } label: {
                 HStack(spacing: 6) {
-                    if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 15, color: PL.navy) }
+                    if invitingBusy { ProgressView().tint(PL.navy) } else { Icon(.share2, size: 14, color: PL.navy) }
                     Text("Invite").font(.inter(13, .semibold)).foregroundStyle(PL.navy)
                 }
                 .frame(minHeight: 48).padding(.horizontal, 16)
@@ -987,6 +1139,11 @@ struct PlanDetailView: View {
             Button("OK") { inviteError = nil }
         } message: {
             Text(inviteError ?? "")
+        }
+        .alert("Couldn't start this plan", isPresented: Binding(get: { startError != nil }, set: { if !$0 { startError = nil } })) {
+            Button("OK") { startError = nil }
+        } message: {
+            Text(startError ?? "")
         }
     }
 
@@ -1005,7 +1162,7 @@ struct PlanDetailView: View {
             showInviteSent(InviteSentToast(name: inviteFirstName(friend.fullName), peerUserId: friend.userId))
         } catch {
             Haptics.error()
-            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+            inviteError = NuruStateCopy.failureLine("Couldn't send the invite.", error)
         }
     }
 
@@ -1036,14 +1193,33 @@ struct PlanDetailView: View {
             presentSystemShareSheet([message])
         } catch {
             Haptics.error()
-            inviteError = (error as? APIError)?.errorDescription ?? "Check your connection and try again."
+            inviteError = NuruStateCopy.failureLine("Couldn't make the invite link.", error)
         }
+    }
+
+    private func beginPlan() async {
+        if let failed = await vm.start() {
+            Haptics.error()
+            startError = NuruStateCopy.failure(failed).sentence
+            return
+        }
+        guard let d = vm.detail, let day = Self.dayToOpen(d), let openPlanDay else { return }
+        openPlanDay(PlanDayRef(planId: d.planId, day: day, planTitle: d.title))
+    }
+
+    /// The day a just-started plan opens on: the server's next day (Day 1),
+    /// never one still behind the gate.
+    static func dayToOpen(_ d: ReadingPlanDetail) -> ReadingPlanDay? {
+        let n = d.nextDay ?? 1
+        let day = d.days.first { $0.dayNumber == n } ?? d.continueDay
+        guard let day, !day.locked else { return nil }
+        return day
     }
 
     private func ctaLabel(_ text: String) -> some View {
         HStack(spacing: 8) {
             if vm.busy { ProgressView().tint(PL.navy) }
-            else { Icon(.bookOpen, size: 16, color: PL.navy) }
+            else { Icon(.bookOpen, size: 18, color: PL.navy) }
             Text(text).font(.inter(14, .bold)).foregroundStyle(PL.navy)
         }
         .frame(maxWidth: .infinity, minHeight: 48)
@@ -1074,7 +1250,7 @@ final class PlanDayViewModel: ObservableObject {
     func completeSegment(_ id: String) async {
         if let res = try? await MemberAPI.completePlanSegment(id) {
             completedSegments.insert(id)
-            if res.dayCompleted { dayCompleted = true }
+            if res.dayCompleted { dayCompleted = true; PlanDayLog.noteSealed() }
         }
     }
 
@@ -1091,9 +1267,10 @@ final class PlanDayViewModel: ObservableObject {
             let planDone = try await MemberAPI.completePlanDay(planId, dayNumber: dayNumber)
             dayCompleted = true
             planCompleted = planDone
+            PlanDayLog.noteSealed()   // the server sealed it: the streak card's tick (§7.4 #4)
             return true
         } catch {
-            completeError = "Couldn't save today — check your connection and try again."
+            completeError = NuruStateCopy.failureLine("Couldn't save today.", error)
             return false
         }
     }
@@ -1130,10 +1307,8 @@ final class PlanDayViewModel: ObservableObject {
             }
         } catch {
             Haptics.error()
-            let api = error as? APIError
-            reflectionError = (api?.isNetwork == true)
-                ? "You're offline — your reflection needs a connection to save."
-                : (api?.errorDescription ?? "Couldn't save your reflection. Try again.")
+            // §4's words — offline only when the phone is, never raw text.
+            reflectionError = NuruStateCopy.failureLine("Couldn't save your reflection.", error)
         }
         reflectionSaving = false
     }
@@ -1164,22 +1339,11 @@ struct PlanDayView: View {
         _vm = StateObject(wrappedValue: PlanDayViewModel(ref: ref))
     }
 
-    /// The day's parts in the STUDY flow: watch/listen first (media sets the
-    /// scene), then the Word (Scripture), the teaching (Devotional), the
-    /// conversation (Talk it Over), the prayer, and Go Deeper for the hungry.
+    /// The day's parts in the STUDY flow (PlanDayParts — the one grouping the
+    /// plan's page and the Plans streak card count with, §7.4 #2, #4).
     /// Stable within ranks (DB sort breaks ties), so authored order is respected.
-    private var segments: [PlanSegment] {
-        (ref.day.segments ?? []).sorted { rank($0) == rank($1) ? $0.sort < $1.sort : rank($0) < rank($1) }
-    }
-    private func rank(_ s: PlanSegment) -> Int {
-        switch s.kind.lowercased() {
-        case "video", "audio": return 0
-        case "scripture": return 1
-        case "talk": return 3
-        case "reading": return 5
-        default: return s.title.lowercased().hasPrefix("pray") ? 4 : 2   // Pray after Talk; teaching before
-        }
-    }
+    private var segments: [PlanSegment] { PlanDayParts.ordered(ref.day.segments ?? []) }
+    private func rank(_ s: PlanSegment) -> Int { PlanDayParts.rank(s) }
     private var progress: Double {
         if vm.dayCompleted { return 1 }
         guard !segments.isEmpty else { return 0 }
@@ -1199,7 +1363,10 @@ struct PlanDayView: View {
                     VStack(spacing: 0) {
                         dayHeader
                         VStack(alignment: .leading, spacing: 10) {
-                            Text("TODAY'S JOURNEY · \(hubParts.count) PART\(hubParts.count == 1 ? "" : "S")")
+                            // The day's own parts — never "TODAY'S" on a day
+                            // read later than its own (final walk M6: Day 4 of
+                            // a plan paused since Monday said "TODAY'S JOURNEY").
+                            Text(PlanDayWords.hubKicker(parts: hubParts.count))
                                 .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(pal.goldDeep)
                             ForEach(hubParts) { part in
                                 partLink(part) { partRow(part) }
@@ -1263,31 +1430,24 @@ struct PlanDayView: View {
     /// then THE WORD (Scripture woven into the teaching, Go Deeper folded in),
     /// then RESPOND (Talk it Over + Prayer + Reflection together).
     private var hubParts: [HubPart] {
-        let segs = segments
-        var parts: [HubPart] = []
-        for (i, s) in segs.enumerated() where rank(s) == 0 {
-            let audio = s.kind.lowercased() == "audio"
-            parts.append(HubPart(id: s.segmentId, tag: "media",
-                                 label: audio ? "Listen" : "Watch",
-                                 icon: .play, segs: [s], firstIndex: i))
+        PlanDayParts.parts(ref.day.segments ?? []).map { p in
+            switch p.kind {
+            case .media:
+                let audio = p.segments.first?.kind.lowercased() == "audio"
+                return HubPart(id: p.id, tag: "media", label: audio ? "Listen" : "Watch",
+                               icon: .play, segs: p.segments, firstIndex: p.firstIndex)
+            case .word:
+                return HubPart(id: p.id, tag: "word", label: "The Word",
+                               icon: .bookOpen, segs: p.segments, firstIndex: p.firstIndex)
+            case .respond:
+                return HubPart(id: p.id, tag: "respond", label: "Respond",
+                               icon: .handHeart, segs: p.segments, firstIndex: p.firstIndex)
+            case .talk:
+                // Talk it Over stands alone — the family's shared conversation.
+                return HubPart(id: p.id, tag: "talk", label: "Talk it Over",
+                               icon: .messageCircle, segs: p.segments, firstIndex: p.firstIndex)
+            }
         }
-        let word = segs.enumerated().filter { [1, 2, 5].contains(rank($0.element)) }
-        if let f = word.first {
-            parts.append(HubPart(id: "word", tag: "word", label: "The Word",
-                                 icon: .bookOpen, segs: word.map(\.element), firstIndex: f.offset))
-        }
-        let respond = segs.enumerated().filter { rank($0.element) == 4 }
-        if let f = respond.first {
-            parts.append(HubPart(id: "respond", tag: "respond", label: "Respond",
-                                 icon: .handHeart, segs: respond.map(\.element), firstIndex: f.offset))
-        }
-        // Talk it Over stands alone — the family's shared conversation.
-        let talk = segs.enumerated().filter { rank($0.element) == 3 }
-        if let f = talk.first {
-            parts.append(HubPart(id: "talk", tag: "talk", label: "Talk it Over",
-                                 icon: .messageCircle, segs: talk.map(\.element), firstIndex: f.offset))
-        }
-        return parts
     }
 
     /// The day's talk questions, joined — seeds the conversation page prompt.
@@ -1335,24 +1495,31 @@ struct PlanDayView: View {
         let done = isDone(part)
         let isNext = part.id == nextPartId && !done
         return HStack(spacing: 12) {
-            Icon(part.icon, size: 16, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
+            Icon(part.icon, size: 18, color: (done || isNext) ? pal.goldDeep : pal.inkDim)
                 .frame(width: 42, height: 42)
                 .background((done || isNext) ? pal.gold.opacity(0.15) : pal.inkDim.opacity(0.07), in: Circle())
                 .overlay(Circle().stroke(done ? pal.gold.opacity(0.5) : (isNext ? pal.gold.opacity(0.4) : pal.border), lineWidth: 1))
             VStack(alignment: .leading, spacing: 2) {
-                Text(part.label).font(.inter(14, .semibold)).foregroundStyle(pal.ink)
-                Text(partSub(part)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim).lineLimit(1)
+                // A day's part is a content row (§8.1 rule 3: Fraunces 15
+                // semibold; final walk #38 — it was Inter).
+                Text(part.label).font(.nRowTitle).foregroundStyle(pal.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Wraps, never cut (rule 9; the walk's 34: "Scripture & teac…").
+                Text(partSub(part)).font(.inter(11)).foregroundStyle(done ? pal.goldDeep : pal.inkDim)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 8)
             if done {
-                Image(systemName: "checkmark.circle.fill").font(.system(size: 20)).foregroundStyle(pal.gold)
+                Image(systemName: "checkmark.circle.fill").font(.symbol(20)).foregroundStyle(pal.gold)
                     .transition(.scale(scale: 0.5).combined(with: .opacity))
             } else if isNext {
-                Text("Next").font(.inter(10, .bold)).foregroundStyle(PL.navy)
+                // A status chip, not a second primary (§8.1 rules 4/6; final
+                // walk #38: a gold-filled "Next" beside the gold button).
+                Text("Next").font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
                     .padding(.horizontal, 10).padding(.vertical, 4)
-                    .background(pal.gold, in: Capsule())
+                    .background(Nuru.goldChipBg, in: Capsule())
             } else {
-                Image(systemName: "circle").font(.system(size: 20)).foregroundStyle(pal.inkDim.opacity(0.35))
+                Image(systemName: "circle").font(.symbol(20)).foregroundStyle(pal.inkDim.opacity(0.35))
             }
         }
         .padding(14)
@@ -1383,12 +1550,16 @@ struct PlanDayView: View {
     @AppStorage("planReminderHour") private var reminderHour = 7
     @AppStorage("planReminderMinute") private var reminderMinute = 0
     @State private var walkDays: Int?
+    /// "Allow notifications?" — asked when the member turns the reminder on (§7.2 #12).
+    @State private var reminderAsk: NotificationAsk?
 
     @ViewBuilder private var walkStrip: some View {
         if !streakQuiet, let days = walkDays, days > 0 {
             HStack(spacing: 8) {
                 PLFlame()
-                Text(days == 1 ? "1 day with God" : "\(days) days with God")
+                // The streak in the Plans card's words (§8.2 #5) — one fact,
+                // one phrasing.
+                Text(StreakWords.title(days))
                     .font(.inter(12, .bold)).foregroundStyle(pal.ink)
                 Text("· grace covers missed days").font(.inter(11)).foregroundStyle(pal.inkDim)
                 Spacer(minLength: 0)
@@ -1408,15 +1579,31 @@ struct PlanDayView: View {
                  : "Set a daily reminder")
                 .font(.inter(12, .semibold)).foregroundStyle(pal.ink)
             Spacer(minLength: 8)
-            Toggle("", isOn: $reminderOn).labelsHidden().tint(pal.gold)
+            // Only the member's own tap asks (the Plans list shares the setting).
+            Toggle("", isOn: Binding(get: { reminderOn }, set: { turnReminder($0) })).labelsHidden().tint(pal.gold)
         }
         .padding(.horizontal, 14).padding(.vertical, 8)
         .background(pal.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(pal.border, lineWidth: 1))
-        .onChange(of: reminderOn) { _, _ in
-            PlanReminders.schedule(enabled: reminderOn, hour: reminderHour, minute: reminderMinute,
-                                   planTitle: ref.planTitle ?? ref.day.title, day: ref.day.dayNumber)
+        .notificationAsk($reminderAsk) { allowed in
+            if allowed { scheduleReminder() } else { reminderOn = false }
         }
+    }
+
+    /// Turned on: the phone is asked now, with its one line, or not at all
+    /// when it already allows (§7.2 #12); a "no" turns the switch back off.
+    private func turnReminder(_ on: Bool) {
+        reminderOn = on
+        guard on else { scheduleReminder(); return }
+        Task {
+            if let ask = await NotificationPermission.askIfNeeded(why: PlanReminders.why) { reminderAsk = ask }
+            else { scheduleReminder() }
+        }
+    }
+
+    private func scheduleReminder() {
+        PlanReminders.schedule(enabled: reminderOn, hour: reminderHour, minute: reminderMinute,
+                               planTitle: ref.planTitle ?? ref.day.title, day: ref.day.dayNumber)
     }
 
     // MARK: navy header (fresh DayReader)
@@ -1425,23 +1612,24 @@ struct PlanDayView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Button { dismiss() } label: {
-                    Icon(.chevronLeft, size: 18, color: .white)
-                        .frame(width: 36, height: 36)
+                    Icon(.arrowLeft, size: 18, color: .white)
+                        .frame(width: 40, height: 40)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
+                .accessibilityLabel("Back")
                 Spacer()
                 if let pt = ref.planTitle, !pt.isEmpty {
-                    Text(pt.uppercased()).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(PL.gold)
-                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text(pt.uppercased()).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(PL.gold)
+                        .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
                 } label: {
-                    Icon(readerNight ? .sun : .moon, size: 17, color: .white)
+                    Icon(readerNight ? .sun : .moon, size: 18, color: .white)
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
@@ -1453,16 +1641,16 @@ struct PlanDayView: View {
             // whatever the read-state, beside the day's title + reference.
             HStack(alignment: .center, spacing: 14) {
                 VStack(spacing: -4) {
-                    Text("DAY").font(.inter(9, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    Text("DAY").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     Text("\(ref.day.dayNumber)")
-                        .font(.fraunces(40, .medium)).kerning(-1.2).foregroundStyle(.white)
+                        .font(.fraunces(28, .medium)).kerning(-1.2).foregroundStyle(.white)
                         .monospacedDigit()
                 }
                 .frame(minWidth: 52)
                 Rectangle().fill(PL.gold.opacity(0.5)).frame(width: 1, height: 44)
                 VStack(alignment: .leading, spacing: 3) {
                     Text(ref.day.title ?? "Reading & reflection")
-                        .font(.fraunces(21, .medium)).kerning(-0.6).foregroundStyle(.white)
+                        .font(.fraunces(22, .medium)).kerning(-0.6).foregroundStyle(.white)
                         .lineLimit(2).minimumScaleFactor(0.85)
                     Text(ref.day.reference).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                 }
@@ -1482,7 +1670,7 @@ struct PlanDayView: View {
             .padding(.top, 12)
         }
         .padding(.horizontal, 20)
-        .padding(.top, 60)
+        .padding(.top, NuruSafeArea.top + 8)   // below the status band (rule 9)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .topTrailing) {
@@ -1525,7 +1713,7 @@ struct PlanDayView: View {
                 Button { Haptics.tap(); dismiss() } label: {
                     HStack(spacing: 8) {
                         Text("Continue the plan").font(.inter(14, .bold)).foregroundStyle(PL.navy)
-                        Icon(.arrowRight, size: 15, color: PL.navy)
+                        Icon(.arrowRight, size: 14, color: PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1540,9 +1728,9 @@ struct PlanDayView: View {
                 // refuses that too: 409 CONTENT_INCOMPLETE.)
                 partLink(next) {
                     HStack(spacing: 8) {
-                        Icon(next.icon, size: 16, color: PL.navy)
+                        Icon(next.icon, size: 18, color: PL.navy)
                         Text("Continue · \(next.label)").font(.inter(14, .bold)).foregroundStyle(PL.navy)
-                        Icon(.arrowRight, size: 15, color: PL.navy)
+                        Icon(.arrowRight, size: 14, color: PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
                     .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -1571,7 +1759,7 @@ struct PlanDayView: View {
                 } label: {
                     HStack(spacing: 8) {
                         if vm.busy { ProgressView().tint(PL.navy) }
-                        else { Icon(.check, size: 16, color: PL.navy) }
+                        else { Icon(.check, size: 18, color: PL.navy) }
                         Text("Seal the day").font(.inter(14, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity, minHeight: 48)
@@ -1628,7 +1816,7 @@ private struct FireworksCelebration: View {
     private static let gold = Color(hex: 0xC89B3C)
     private static let goldLight = Color(hex: 0xE0B85E)
     private static let cream = Color(hex: 0xFFF4C7)
-    private static let accent = Color(hex: 0xFB7185)   // one accent spark color, used sparingly
+    private static let accent = Color(hex: 0xE6CA68)   // the gold glow — no pink spark (§8.1 rule 1)
     private static let palette: [Color] = [gold, gold, goldLight, goldLight, cream, .white, accent]
 
     private static let sparkLife = 1.25   // seconds a spark stays visible once it bursts
@@ -1864,7 +2052,7 @@ struct DayPullQuote: View {
             VerseQuoteCard(
                 verse: text, reference: caption,
                 background: pal.verseBg, ink: pal.ink, gold: pal.gold, referenceColor: pal.inkDim,
-                verseSize: pal.fs(18)
+                reading: pal
             )
             // Long-press: keep the day's verse, or copy it with its reference.
             .contextMenu {
@@ -1949,7 +2137,7 @@ struct DayTalk: View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(questions.enumerated()), id: \.offset) { _, q in
                 HStack(alignment: .top, spacing: 8) {
-                    Icon(.messageCircle, size: 13, color: pal.goldDeep).padding(.top, 3)
+                    Icon(.messageCircle, size: 14, color: pal.goldDeep).padding(.top, 3)
                     Text(q).font(.fraunces(pal.fs(16), .regular)).italic().foregroundStyle(pal.ink).nuruLineSpacing(5)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1994,7 +2182,7 @@ struct DayGoDeeper: View {
     @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(spacing: 10) {
-            Icon(.bookOpen, size: 15, color: pal.goldDeep)
+            Icon(.bookOpen, size: 14, color: pal.goldDeep)
             Text(refs).font(.inter(13, .medium)).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -2008,7 +2196,7 @@ struct DayEncouragement: View {
     @Environment(\.readerPalette) private var pal
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
-            Icon(.handHeart, size: 16, color: pal.gold)
+            Icon(.handHeart, size: 18, color: pal.gold)
             Text("Every faithful day adds up. There's no rush — just presence.")
                 .font(.nCardBody).foregroundStyle(pal.ink).fixedSize(horizontal: false, vertical: true)
         }
@@ -2038,7 +2226,7 @@ struct DayVideoCard: View {
             } label: {
                 ZStack {
                     Circle().fill(PL.gold).frame(width: 58, height: 58)
-                    Icon(.play, size: 20, color: PL.navy).offset(x: 1)
+                    Icon(.play, size: 22, color: PL.navy).offset(x: 1)
                 }
             }.buttonStyle(.pressable)
         }
@@ -2077,7 +2265,7 @@ struct PlanKeepsakeView: View {
                 .scaleEffect(seal ? 1 : 0.6).opacity(seal ? 1 : 0)
                 .padding(.bottom, 24)
                 Text("PLAN COMPLETE").font(.inter(12, .bold)).kerning(2.4).foregroundStyle(PL.goldDeep)
-                Text(planTitle).font(.fraunces(30, .medium)).kerning(-0.9).foregroundStyle(PL.navy)
+                Text(planTitle).font(.fraunces(28, .medium)).kerning(-0.9).foregroundStyle(PL.navy)
                     .multilineTextAlignment(.center).padding(.horizontal, 32).padding(.top, 8)
                 Text("\(days) days walking with God").font(.inter(14, .medium)).foregroundStyle(PL.ink2).padding(.top, 6)
                 Text("“Well done, good and faithful servant.”\nMatthew 25:23")
@@ -2088,7 +2276,7 @@ struct PlanKeepsakeView: View {
                     if let shareImage {
                         ShareLink(item: shareImage, preview: SharePreview("I completed \(planTitle)", image: shareImage)) {
                             HStack(spacing: 8) {
-                                Icon(.share2, size: 15, color: .white)
+                                Icon(.share2, size: 14, color: .white)
                                 Text("Share my finish").font(.inter(15, .bold)).foregroundStyle(.white)
                             }
                             .frame(maxWidth: .infinity, minHeight: 52)

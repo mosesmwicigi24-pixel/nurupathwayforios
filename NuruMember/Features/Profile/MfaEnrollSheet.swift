@@ -59,7 +59,7 @@ final class MfaEnrollViewModel: ObservableObject {
             enrollment = e
             phase = .ready
         } catch {
-            enrollError = (error as? APIError)?.errorDescription ?? "Couldn't start two-factor setup."
+            enrollError = NuruStateCopy.failureLine("Couldn't start two-factor setup.", error)
             phase = .failed
         }
     }
@@ -184,11 +184,13 @@ struct MfaEnrollSheet: View {
                 }
             } label: {
                 HStack(spacing: 6) {
+                    // Inter with tabular figures (§8.3: never the system face),
+                    // whole — the key wraps rather than shrinking under 11 pt.
                     Text(vm.groupedSecret)
-                        .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                        .font(.inter(12, .semibold).monospacedDigit())
                         .kerning(1.5).foregroundStyle(Nuru.navy)
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                    Icon(copied ? .check : .copy, size: 12, color: copied ? Nuru.success : Nuru.faint)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Icon(copied ? .check : .copy, size: 14, color: copied ? Nuru.success : Nuru.faint)
                 }
                 .padding(.horizontal, 12).padding(.vertical, 8)
                 .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -215,7 +217,7 @@ struct MfaEnrollSheet: View {
             .keyboardType(.numberPad)
             .textContentType(.oneTimeCode)
             .focused($codeFocused)
-            .font(.system(size: 20, weight: .semibold, design: .monospaced))
+            .font(.inter(22, .semibold).monospacedDigit())
             .foregroundStyle(Nuru.navy)
             .kerning(8)
             .multilineTextAlignment(.center)

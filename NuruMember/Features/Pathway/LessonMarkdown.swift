@@ -53,8 +53,10 @@ enum MLMarkdown {
 
     /// Parse a Markdown lesson body into ordered blocks. Blank lines separate
     /// blocks; runs of like items (bullets, numbered, quote lines, table rows)
-    /// are coalesced into one block.
-    static func parse(_ raw: String) -> [MLBlock] {
+    /// are coalesced into one block. `hardBreaks`: a single line break inside
+    /// a paragraph is kept as written (an announcement's "Yours in Service,⏎
+    /// Discipleship Dept."), where a lesson's is markdown's soft wrap.
+    static func parse(_ raw: String, hardBreaks: Bool = false) -> [MLBlock] {
         let lines = raw
             .replacingOccurrences(of: "\r\n", with: "\n")
             .replacingOccurrences(of: "\r", with: "\n")
@@ -65,7 +67,7 @@ enum MLMarkdown {
         var i = 0
 
         func flushParagraph() {
-            let joined = paragraph.joined(separator: " ").trimmingCharacters(in: .whitespaces)
+            let joined = paragraph.joined(separator: hardBreaks ? "\n" : " ").trimmingCharacters(in: .whitespaces)
             if !joined.isEmpty { blocks.append(.paragraph(joined)) }
             paragraph.removeAll()
         }
@@ -293,7 +295,7 @@ enum MLMarkdown {
 struct MLMarkdownView: View {
     let blocks: [MLBlock]
 
-    init(_ content: String) { self.blocks = MLMarkdown.parse(content) }
+    init(_ content: String, hardBreaks: Bool = false) { self.blocks = MLMarkdown.parse(content, hardBreaks: hardBreaks) }
     init(blocks: [MLBlock]) { self.blocks = blocks }
 
     var body: some View {
@@ -304,6 +306,9 @@ struct MLMarkdownView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A link in a lesson or a notice is a text action — gold, as the
+        // reader's own links are (§8.1 rule 4); the root tint is navy (M5).
+        .tint(ML.goldDeep)
     }
 
     /// Space above a block, decided by what precedes it.
@@ -357,7 +362,7 @@ private struct MLParagraphText: View {
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(MLMarkdown.inline(text))
-            .font(.inter(15)).foregroundStyle(ML.bodyInk)
+            .font(.nBodyLg).foregroundStyle(ML.bodyInk)   // the one 16 pt reading body
             .nuruLineSpacing(6)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -371,19 +376,11 @@ private struct MLHeadingBlock: View {
     let text: String
     var body: some View {
         Text(MLMarkdown.inline(text))
-            .font(.fraunces(size, .semibold)).kerning(-0.4)
+            .font(.fraunces(level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 16 : 15, .semibold)).kerning(-0.4)
             .foregroundStyle(ML.navy)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
-    }
-    private var size: CGFloat {
-        switch level {
-        case 1:  return 22
-        case 2:  return 19
-        case 3:  return 17
-        default: return 15.5
-        }
     }
 }
 
@@ -395,7 +392,7 @@ private struct MLBulletList: View {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Circle().fill(ML.navy).frame(width: 5, height: 5).offset(y: -2)
                     Text(MLMarkdown.inline(item))
-                        .font(.inter(15)).foregroundStyle(ML.bodyInk)
+                        .font(.nBodyLg).foregroundStyle(ML.bodyInk)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -415,7 +412,7 @@ private struct MLNumberedList: View {
                         .font(.inter(14, .bold)).foregroundStyle(ML.gold)
                         .frame(minWidth: 20, alignment: .trailing)
                     Text(MLMarkdown.inline(pair.1))
-                        .font(.inter(15)).foregroundStyle(ML.bodyInk)
+                        .font(.nBodyLg).foregroundStyle(ML.bodyInk)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -433,7 +430,7 @@ private struct MLQuoteCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: attribution == nil ? 0 : 8) {
             Text(MLMarkdown.inline(verse))
-                .font(.fraunces(16.5, .regular)).italic()
+                .font(.fraunces(16, .regular)).italic()
                 .foregroundStyle(ML.navy)
                 .nuruLineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
@@ -490,7 +487,7 @@ private struct MLTableBlock: View {
             ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
                 if i > 0 { Rectangle().fill(ML.border).frame(width: 1) }
                 Text(MLMarkdown.inline(cell))
-                    .font(.inter(12.5, .bold)).foregroundStyle(ML.navy)
+                    .font(.inter(13, .bold)).foregroundStyle(ML.navy)
                     .frame(minWidth: minColumn, maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, cellH).padding(.vertical, cellV)
                     .fixedSize(horizontal: false, vertical: true)

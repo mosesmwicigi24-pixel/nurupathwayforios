@@ -24,9 +24,13 @@ enum PrayerRoomTab: Hashable {
 struct PrayerRoomView: View {
     @State private var tab: PrayerRoomTab
     @Environment(\.dismiss) private var dismiss
+    /// Community's "Pray" door: the room is a root there, not a pushed page —
+    /// no back (the door row is the way out), and the bell at the right.
+    let asDoor: Bool
 
-    init(initialTab: PrayerRoomTab = .privatePrayer) {
+    init(initialTab: PrayerRoomTab = .privatePrayer, asDoor: Bool = false) {
         _tab = State(initialValue: initialTab)
+        self.asDoor = asDoor
     }
 
     var body: some View {
@@ -52,6 +56,14 @@ struct PrayerRoomView: View {
     // control anchored underneath.
     private var header: some View {
         VStack(alignment: .leading, spacing: Nuru.S.md) {
+            if asDoor {
+                // One header (§8.1 rule 2): kicker · title · the bell.
+                HStack(alignment: .top) {
+                    NuruHeaderText(kicker: "Pray", title: "My Prayer Room")
+                    Spacer(minLength: 0)
+                    NuruBell()
+                }
+            } else {
             HStack(alignment: .center, spacing: Nuru.S.sm) {
                 Button { dismiss() } label: {
                     Icon(.arrowLeft, size: 18, color: Nuru.navy)
@@ -61,21 +73,19 @@ struct PrayerRoomView: View {
                 }
                 .buttonStyle(.plain)
                 Spacer(minLength: 0)
-                Text("MY PRAYER ROOM")
-                    .font(.inter(11, .bold)).tracking(1.8)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(1).minimumScaleFactor(0.75)
-                Spacer(minLength: 0)
                 Color.clear.frame(width: 40, height: 40) // balances the back button
             }
-            Text("My Prayer Room")
-                .font(.fraunces(24, .semibold))
-                .foregroundStyle(Nuru.navy)
+            // A pushed page: back · kicker · title (§8.1 rule 2) — the kicker
+            // names where it lives, not the title again (the walk's 82:
+            // "MY PRAYER ROOM · My Prayer Room").
+            NuruHeaderText(kicker: "Pray", title: "My Prayer Room")
+            }
             segmentedControl
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Nuru.S.screen)
-        .padding(.top, 60)
+        // Under Community's door row there's no status bar to clear.
+        .padding(.top, asDoor ? Nuru.S.base : 60)
         .padding(.bottom, Nuru.S.lg)
         .background(
             LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -116,7 +126,7 @@ struct PrayerRoomView: View {
             Text(label)
                 .font(.nChipLabel)
                 .foregroundStyle(selected ? Color.white : Color(hex: 0x59667C))
-                .lineLimit(1).minimumScaleFactor(0.85)
+                .lineLimit(1).minimumScaleFactor(0.92)
                 .padding(.horizontal, 16)
                 .padding(.vertical, 10)
                 .background(

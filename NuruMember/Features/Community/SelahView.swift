@@ -101,7 +101,7 @@ struct SelahView: View {
                     VStack(spacing: Nuru.S.base) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Pause. Reflect. Write.")
-                                .font(.fraunces(21, .medium)).foregroundStyle(Nuru.navy)
+                                .font(.fraunces(22, .medium)).foregroundStyle(Nuru.navy)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .gentleEntrance()
@@ -115,7 +115,7 @@ struct SelahView: View {
                             Spacer(minLength: 0)
                             Button { Haptics.tap(); editing = SelahDraft() } label: {
                                 HStack(spacing: 5) {
-                                    Icon(.plus, size: 13, color: .white)
+                                    Icon(.plus, size: 14, color: .white)
                                     Text("New Thought").font(.nActionLabel).foregroundStyle(.white)
                                 }
                                 .padding(.horizontal, 14).padding(.vertical, 12)
@@ -176,7 +176,7 @@ private struct ExplainerCard: View {
                 }
                 Spacer(minLength: 0)
                 Button { Haptics.tap(); dismiss() } label: {
-                    Icon(.x, size: 13, color: Color(hex: 0x74808F))
+                    Icon(.x, size: 14, color: Color(hex: 0x74808F))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Dismiss")
@@ -195,7 +195,7 @@ private struct EmptyThoughts: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Nuru.surface)
                     .frame(width: 48, height: 48)
-                    .overlay(Icon(.bookOpen, size: 20, color: Nuru.gold))
+                    .overlay(Icon(.bookOpen, size: 22, color: Nuru.gold))
                 Text("Selah. Pause here — write your first thought.")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                     .multilineTextAlignment(.center)
@@ -229,7 +229,7 @@ private struct ThoughtRowCard: View {
                         .lineLimit(1)
                     Spacer(minLength: Nuru.S.sm)
                     if !thought.drawingUrls.isEmpty {
-                        Icon(.pencil, size: 12, color: Color(hex: 0x9A7A2A))
+                        Icon(.pencil, size: 14, color: Color(hex: 0x9A7A2A))
                     }
                     Text(relativeThoughtLabel(thought.updatedAt))
                         .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
@@ -259,7 +259,6 @@ private func relativeThoughtLabel(_ iso: String) -> String {
     case 1: return "1 day ago"
     case ..<7: return "\(days) days ago"
     default:
-        let f = DateFormatter(); f.dateFormat = "MMM d"
-        return f.string(from: d)
+        return NuruDates.day(d)
     }
 }

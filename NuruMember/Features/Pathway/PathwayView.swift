@@ -58,65 +58,82 @@ private enum PW {
     static let navyDeep   = Color(hex: 0x081C36)
     static let surface    = Color(hex: 0xFBF8F1)
     static let border     = Color(hex: 0x0A2540, alpha: 0.08)
-    static let badgeEmoji = ["🪨", "🕊️", "🌿", "🔥", "📖", "👑", "⭐", "🏅"]
+    /// Each level's milestone mark — Lucide, never colour emoji art (§8.1
+    /// rule 7; the walk's rock, dove, sprig and flame).
+    static let badgeGlyph: [Lucide] = [.landmark, .leaf, .heart, .flame, .bookOpen, .award, .sparkles, .badgeCheck]
 }
 
 // Small helpers shared by the PathwayHub subviews (mirror the Figma functions).
-private func pwGreeting() -> String {
-    let h = Calendar.current.component(.hour, from: Date())
-    if h < 12 { return "Good morning" }
-    if h < 17 { return "Good afternoon" }
-    return "Good evening"
-}
-private func pwShortName(_ t: String) -> String {
-    let w = t.split(separator: " ").first.map(String.init) ?? ""
-    guard let f = w.first else { return "" }
-    return String(f).uppercased() + w.dropFirst().lowercased()
-}
-private func pwSubtitle(_ l: PathwayLevel?) -> String {
-    guard let l else { return "" }
-    if let t = l.theme, !t.isEmpty { return t }
-    if let d = l.description, !d.isEmpty { return d }
-    return PW.subtitle[l.levelNumber] ?? ""
+// (The greeting left Pathway with Cycle 4 — it belongs to Home alone, §8.1.)
+/// A level's own short name — the server's `theme` ("Foundations",
+/// "Transformation", "Grace", "Spirit", "Leadership"), on the rail, the
+/// milestones and their reward (EXPERIENCE.md §9.2 #9). The title's first
+/// word made Levels 1 and 3 both "Foundations". Without a theme, the title
+/// itself (production's untitled "Level 6" reads "Level 6", not "Level").
+/// Android's levelShortName.
+func levelShortName(_ level: PathwayLevel) -> String {
+    if let t = level.theme?.trimmingCharacters(in: .whitespaces), !t.isEmpty { return t }
+    let title = level.title.trimmingCharacters(in: .whitespaces)
+    return title.isEmpty ? "Level \(level.levelNumber)" : title
 }
 
 /// The reward the member is working toward — the first not-yet-complete level.
-struct PWReward { let name: String; let emoji: String; let remaining: Int; let pct: Int }
+struct PWReward { let name: String; let glyph: Lucide; let remaining: Int; let pct: Int }
 
 private func nextReward(_ s: PathwaySummary) -> PWReward? {
-    guard let idx = s.levels.firstIndex(where: { $0.status != .completed }) else { return nil }
+    guard let idx = s.levels.firstIndex(where: { !$0.walked }) else { return nil }
     let l = s.levels[idx]
-    let remaining = max(l.totalModules - l.completedModules, 0)
-    let pct = l.totalModules > 0 ? Int((Double(l.completedModules) / Double(l.totalModules) * 100).rounded()) : 0
-    return PWReward(name: pwShortName(l.title), emoji: PW.badgeEmoji[idx % PW.badgeEmoji.count], remaining: remaining, pct: pct)
+    // Lessons — the exam is a step of its own, never "a module" (§8.2 #4).
+    let remaining = max(l.lessonCount - l.lessonsDone, 0)
+    let pct = l.lessonCount > 0 ? min(100, Int((Double(l.lessonsDone) / Double(l.lessonCount) * 100).rounded())) : 0
+    return PWReward(name: levelShortName(l), glyph: PW.badgeGlyph[idx % PW.badgeGlyph.count], remaining: remaining, pct: pct)
 }
 
 @MainActor
 final class PathwayViewModel: ObservableObject {
     @Published var summary: PathwaySummary?
-    @Published var streak = 0
     @Published var modulesByLevel: [Int: [LevelModule]] = [:]   // real module trails, cached per level
     @Published var loading = true
-    @Published var error: String?
+    /// Why the pathway didn't load — spoken through the one state language
+    /// (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
 
-    func load() async {
-        loading = true; error = nil
+    /// The summary and its level's trail land TOGETHER (final walk, M4's
+    /// class): the hero, the ring and the rail read one journey, and from the
+    /// summary alone a member at the exam read "Continue" for a moment before
+    /// "Exam ready" — the open exam is the trail's row. So the first load
+    /// holds the skeleton (§4) until both have answered, and a refresh keeps
+    /// the last pair on screen until the new pair is in: a new summary beside
+    /// the old trail could tell a step neither says. A trail that fails reads
+    /// as none — the journey then speaks from the summary, as it always has.
+    /// (The reads are parameters only so the tests can hold one in flight.)
+    func load(pathway: () async throws -> PathwaySummary = { try await MemberAPI.pathway() },
+              trail: (Int) async throws -> [LevelModule] = { try await MemberAPI.levelModules($0) }) async {
+        loading = true; failure = nil
         do {
-            summary = try await MemberAPI.pathway()
+            let s = try await pathway()
+            // The current level's trail is re-read on every load (pull-to-refresh
+            // included): the journey's next step is read from it.
+            let mods = (try? await trail(s.currentLevel)) ?? []
+            modulesByLevel[s.currentLevel] = mods
+            summary = s
         } catch {
             summary = nil
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your pathway."
+            failure = error
         }
-        streak = (try? await MemberAPI.achievements())?.streak?.current ?? 0
-        if let active = active(in: summary) { await fetchModules(active.levelNumber) }
         loading = false
     }
 
     /// Lazily fetch (and cache) a level's real module trail — driven by taps on
     /// the journey rail so each level's list is the server's, not a placeholder.
-    func fetchModules(_ levelNumber: Int) async {
-        if modulesByLevel[levelNumber] != nil { return }
+    func fetchModules(_ levelNumber: Int, force: Bool = false) async {
+        if !force, modulesByLevel[levelNumber] != nil { return }
         modulesByLevel[levelNumber] = (try? await MemberAPI.levelModules(levelNumber)) ?? []
+    }
+
+    /// The member's journey (EXPERIENCE.md §3) — the same derivation Home reads.
+    var journey: Journey? {
+        Journey.derive(summary, trail: summary.flatMap { modulesByLevel[$0.currentLevel] })
     }
 
     private func active(in p: PathwaySummary?) -> PathwayLevel? {
@@ -127,38 +144,47 @@ final class PathwayViewModel: ObservableObject {
     }
     var activeLevel: PathwayLevel? { active(in: summary) }
 
-    /// The module to resume in a level (status-driven from the real trail).
+    /// The module to resume in a level (status-driven from the real trail) —
+    /// nil once every module is done: a finished level has nothing to resume,
+    /// and "Continue" must never re-open a finished module — nor an exam that
+    /// can't be taken yet (EXPERIENCE.md §7.2 #1: it would only answer 422).
     func resumeModule(in levelNumber: Int) -> LevelModule? {
-        let mods = modulesByLevel[levelNumber] ?? []
-        return mods.first { $0.status == .next } ?? mods.first { !$0.completed } ?? mods.last
+        let mods = (modulesByLevel[levelNumber] ?? []).filter { !$0.examOpensSoon }
+        return mods.first { $0.status == .next } ?? mods.first { !$0.completed }
     }
 
     /// The level (if any) the member just passed and is now waiting to be ushered
     /// past — surfaced by the pathway API's `awaitingReview` flag. Drives the
     /// "awaiting your discipler" banner; the next level stays locked while set.
-    var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.awaitingReview } }
+    var awaitingLevel: PathwayLevel? { summary?.levels.first { $0.isAwaitingReview } }
 
+    /// Map view's "LEVELS n/6": the levels the server calls completed — as
+    /// Android counts them. A level whose exam is passed and awaits the
+    /// leader isn't complete until the server says so; its card says
+    /// "Exam passed" in words.
     var levelsDone: Int { summary?.levels.filter { $0.status == .completed }.count ?? 0 }
-    var doneModules: Int { summary?.levels.reduce(0) { $0 + $1.completedModules } ?? 0 }
-    var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.totalModules } ?? 0 }
+    // Lessons, every count the member reads (§8.2 #4): the exam is a step.
+    var doneModules: Int { summary?.levels.reduce(0) { $0 + min($1.lessonsDone, $1.lessonCount) } ?? 0 }
+    var totalModules: Int { summary?.levels.reduce(0) { $0 + $1.lessonCount } ?? 0 }
     var levelCount: Int { summary?.levels.count ?? 6 }
-    var overallPct: Int { totalModules > 0 ? Int(round(Double(doneModules) / Double(totalModules) * 100)) : 0 }
-    func pct(_ l: PathwayLevel) -> Int { l.totalModules > 0 ? Int(round(Double(l.completedModules) / Double(l.totalModules) * 100)) : 0 }
+    // (The old overallPct — modules done ÷ every PUBLISHED module — is gone: with
+    // Levels 2–6 unpublished it read Level 1's twenty as 100% and commissioned
+    // the member. The ring and the summit read the journey, counted in levels.)
+    func pct(_ l: PathwayLevel) -> Int { l.lessonCount > 0 ? min(100, Int(round(Double(l.lessonsDone) / Double(l.lessonCount) * 100))) : 0 }
 }
 
 struct PathwayView: View {
     @EnvironmentObject private var auth: AuthStore
     @EnvironmentObject private var tabs: TabRouter
     @StateObject private var vm = PathwayViewModel()
+    /// Whether a discipler is paired (GET /growth/mentor) — the Discipleship
+    /// Hub row shows only then (Cycle 4, B1).
+    @ObservedObject private var disciplers = DisciplerStore.shared
     @State private var path = NavigationPath()
-    @State private var selectedLevelNumber: Int?
 
-    /// The level whose module list is shown inline (defaults to the active level).
-    private var selectedLevel: PathwayLevel? {
-        guard let s = vm.summary else { return nil }
-        let target = selectedLevelNumber ?? vm.activeLevel?.levelNumber
-        return s.levels.first { $0.levelNumber == target } ?? vm.activeLevel
-    }
+    /// The level whose module list is shown inline — the member's own. (A
+    /// rail circle opens its level's page instead, §9.2 #9.)
+    private var selectedLevel: PathwayLevel? { vm.activeLevel }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -171,15 +197,23 @@ struct PathwayView: View {
                     } else {
                         // Includes a decoded-but-empty levels array — rendering
                         // "Level 1 of 0" with dead CTAs is worse than retrying.
-                        errorState.padding(.top, 120)
+                        // The tab keeps its one header (§8.1 rule 2; final
+                        // walk #36: the failed tab had none).
+                        PathwayFailedHeader()
+                        errorState.padding(.horizontal, 20).padding(.top, 24)
                     }
                 }
+                .scrollsToTopOnReselect(.pathway)   // a re-tap at the root returns to the top (B10)
+                // Full width whatever the state: a narrow error column left the
+                // ScrollView (and its cream) hugging it, with white bands beside.
+                .frame(maxWidth: .infinity)
                 .padding(.bottom, Nuru.tabBarSpace)
             }
             .ignoresSafeArea(edges: .top)
             .background(PW.bg.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
             .refreshable { await vm.load() }
+            .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
             .navigationDestination(for: PathwayRoute.self) { r in
                 switch r {
                 case .level(let n): LevelDetailView(levelNumber: n)
@@ -207,10 +241,14 @@ struct PathwayView: View {
                 }
             }
             // The Pathway stack registers only PathwayRoute; the Discipleship Hub
-            // is an AppRoute, so register it here too (the tab has no .nuruDestinations()).
+            // is an AppRoute, so register it here too (the tab has no .nuruDestinations()),
+            // with the bell's inbox and the announcement a row of it opens.
             .navigationDestination(for: AppRoute.self) { r in
                 switch r {
                 case .discipleshipHub: DiscipleshipHubView()
+                case .notifications: NotificationsView()
+                case .announcement(let id): AnnouncementDetailView(announcementId: id)
+                case .announcementsList: AnnouncementsAllView()
                 default: EmptyView()
                 }
             }
@@ -227,6 +265,7 @@ struct PathwayView: View {
             path.append(link)
             DispatchQueue.main.async { tabs.pathwayLink = nil }
         }
+        .popsToRoot(on: .pathway, path: $path)   // a re-tap returns to the hub (§7.4 #17)
     }
 
     /// Routes a module id to its screen: the level's exam container opens the
@@ -245,48 +284,56 @@ struct PathwayView: View {
 
     private func content(_ s: PathwaySummary) -> some View {
         let active = vm.activeLevel
+        let journey = vm.journey
         return VStack(spacing: 0) {
             PathwayHubHeader(
-                vm: vm, firstName: firstName, active: active,
-                resume: active.flatMap { vm.resumeModule(in: $0.levelNumber) },
-                openModule: { openModuleId($0) })
+                vm: vm, active: active, journey: journey,
+                open: { d in
+                    if case .module(let id) = d { openModuleId(id) } else { path.append(d.route) }
+                })
 
             VStack(alignment: .leading, spacing: 24) {
-                // Awaiting your discipler — the level exam is passed; the member waits
-                // to be ushered (the next level stays LOCKED until awaitingReview
-                // clears server-side). Server-authoritative: purely reflects state.
-                if let a = vm.awaitingLevel {
-                    PathwayAwaitingBanner(level: a).gentleEntrance()
-                }
+                // A saved copy says so (final walk M3).
+                NuruSavedCopyNotice(hasContent: true)
+                // Awaiting the usher (the exam passed; the next level stays LOCKED
+                // until awaitingReview clears server-side) is the hero's own story
+                // — "Level N+1 is next · Your leader will open Level N+1" (§3). A
+                // second card said it again as "Awaiting your discipler's
+                // blessing" (E2: one card, one word for who opens the level).
 
                 // Studying together, apart (Wave 2): who from your cell opened
                 // a lesson this week. Renders nothing when nobody has.
                 CellPresenceLine().gentleEntrance()
 
                 PathwayJourneyRail(
-                    levels: s.levels, selected: selectedLevel?.levelNumber ?? -1,
-                    onSelect: { n in
-                        Haptics.selection()
-                        withAnimation(.easeInOut(duration: 0.2)) { selectedLevelNumber = n }
-                    },
+                    levels: s.levels, current: journey?.levelNumber,
+                    // A walked or current level's circle opens that level's
+                    // page; a locked one is not a button (§9.2 #9).
+                    onOpen: { n in path.append(PathwayRoute.level(n)) },
                     onMap: { path.append(PathwayRoute.map) })
                     .gentleEntrance()
 
                 if let sel = selectedLevel {
                     PathwaySelectedModules(
-                        level: sel, modules: vm.modulesByLevel[sel.levelNumber] ?? [],
+                        level: sel, nextPreparing: UsherWords.nextPreparing(after: sel.levelNumber, in: s),
+                        modules: vm.modulesByLevel[sel.levelNumber] ?? [],
                         loading: vm.modulesByLevel[sel.levelNumber] == nil,
                         resume: vm.resumeModule(in: sel.levelNumber),
+                        // The fold and the exam row are the journey's call, for
+                        // the member's own level only (§6.3).
+                        journey: journey,
                         openModule: { openModuleId($0) },
                         openExam: { path.append(PathwayRoute.exam($0)) })
                         .gentleEntrance(delay: 0.05)
                 }
 
                 // Discipleship Hub link — a warm door into the relationship home
-                // (discipler, feedback, meeting notes). Sits naturally beside the
-                // "awaiting your discipler's blessing" flow above.
-                PathwayDisciplershipRow { path.append(AppRoute.discipleshipHub) }
-                    .gentleEntrance(delay: 0.08)
+                // (discipler, feedback, meeting notes), only for a discipler the
+                // server names (Cycle 4, B1).
+                if disciplers.hasDiscipler {
+                    PathwayDisciplershipRow { path.append(AppRoute.discipleshipHub) }
+                        .gentleEntrance(delay: 0.08)
+                }
 
                 PathwayWalkRow { path.append(PathwayRoute.walk) }
                     .gentleEntrance(delay: 0.09)
@@ -300,47 +347,70 @@ struct PathwayView: View {
                     })
                     .gentleEntrance(delay: 0.1)
 
-                PathwaySummitCard(overallPct: vm.overallPct, levels: s.levels, firstName: firstName)
+                PathwaySummitCard(reached: journey?.summitReached ?? false, levels: s.levels, firstName: firstName)
                     .gentleEntrance(delay: 0.15)
             }
             .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 24)
         }
     }
 
+    /// The pathway didn't come — in the one state language (§4). A summary
+    /// that arrived with no levels is the server's fault, not the member's.
     private var errorState: some View {
-        VStack(spacing: Nuru.S.md) {
-            Text(vm.error ?? "Something went wrong.")
-                .font(.nBody).foregroundStyle(PW.ink2).multilineTextAlignment(.center)
-            Button {
-                Haptics.tap()
-                Task { await vm.load() }
-            } label: {
-                Text("Try again").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
-                    .padding(.horizontal, 22).padding(.vertical, 11)
-                    .background(PW.gold, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }.padding(Nuru.S.xl)
+        NuruStateView(state: .failed(vm.failure.map { NuruStateCopy.failure($0) } ?? .serverSide),
+                      retry: { Task { await vm.load() } })
     }
 
     private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
+}
+
+// MARK: - The header of a pathway that didn't load
+
+/// The tab's one header when its pathway didn't come (§8.1 rule 2): the
+/// PATHWAY kicker and the bell, then "Your pathway" — on the hero's own
+/// cream, so a failed read never leaves a page without its name.
+private struct PathwayFailedHeader: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                Spacer()
+                NuruBell()
+            }
+            NuruHeaderText(title: "Your pathway").padding(.top, 12)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 20)
+        .background(LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing))
+        .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 30, bottomTrailingRadius: 30, style: .continuous))
+        .overlay(alignment: .bottom) { Rectangle().fill(PW.border).frame(height: 1) }
+    }
 }
 
 // MARK: - PathwayHub · cinematic hero (your current level)
 
 private struct PathwayHubHeader: View {
     @ObservedObject var vm: PathwayViewModel
-    let firstName: String
     let active: PathwayLevel?
-    let resume: LevelModule?
-    let openModule: (String) -> Void
+    /// The member's journey — the hero card's next step and the ring (§3).
+    let journey: Journey?
+    let open: (Journey.Destination) -> Void
 
     private var idx: Int {
         guard let a = active, let levels = vm.summary?.levels else { return 0 }
         return levels.firstIndex { $0.levelNumber == a.levelNumber } ?? 0
     }
-    private var activePct: Int { active.map { vm.pct($0) } ?? 0 }
-    private var remaining: Int { active.map { max($0.totalModules - $0.completedModules, 0) } ?? 0 }
+    /// The level's one measure (final walk C8): its exam the last step, as
+    /// the level page and Map view count it — the bar read 10/10 here and
+    /// 91% on the level's own page.
+    private var activePct: Int { active.map { Journey.levelPercent($0, journey: journey) } ?? 0 }
+    /// Modules still to walk — said only while the member is walking them
+    /// (an exam row left in the trail is the exam, not "1 module to go").
+    private var remaining: Int {
+        guard journey?.stage == .learning else { return 0 }
+        return active.map { max($0.lessonCount - $0.lessonsDone, 0) } ?? 0
+    }
 
     var body: some View {
         // Fresh Figma PathwayHub: LIGHT cream hero (navy text) with a navy Continue CTA.
@@ -350,26 +420,32 @@ private struct PathwayHubHeader: View {
 
             VStack(alignment: .leading, spacing: 0) {
                 topBar
-                Text("\(pwGreeting()), \(firstName) · Level \(idx + 1) of \(vm.levelCount)")
-                    .font(.inter(10)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 16)
-                Text(active?.title ?? "Your pathway")
-                    .font(.fraunces(26, .semibold)).kerning(-0.52).foregroundStyle(PW.navy)
-                    .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
-                Text(pwSubtitle(active)).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).padding(.top, 4)
+                // One header (EXPERIENCE.md §8.1 rule 2): PATHWAY (the top
+                // bar's kicker) · the level · one line of where it stands. The
+                // greeting belongs to Home alone.
+                NuruHeaderText(title: active?.title ?? "Your pathway",
+                               line: PathwayTrail.headerLine(active, position: idx + 1, of: vm.levelCount))
+                    .padding(.top, 12)
+                // The level's bar once a lesson is done — not an empty "0/10"
+                // on a first day (§9.2 #4; the line above says "10 modules").
+                if (active?.lessonsDone ?? 0) > 0 {
                 HStack(spacing: 8) {
                     PWBar(pct: activePct, height: 6,
                           fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing),
                           track: PW.navy.opacity(0.10))
-                    Text("\(active?.completedModules ?? 0)/\(active?.totalModules ?? 0)")
-                        .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
+                    // The bar's own figure — the same percent the level page
+                    // and Map view show; the line above counts the modules.
+                    Text("\(activePct)%")
+                        .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
                         .contentTransition(.numericText())
-                        .animation(.default, value: active?.completedModules)
+                        .animation(.default, value: activePct)
                 }.padding(.top, 16)
+                }
                 if remaining > 0 {
                     HStack(spacing: 6) {
-                        Icon(.sparkles, size: 11, color: Color(hex: 0x9A7A2A))
+                        Icon(.sparkles, size: 14, color: Color(hex: 0x9A7A2A))
                         Text(remaining == 1 ? "Just 1 module left to level up 🎉" : "Only \(remaining) modules to complete this level")
-                            .font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
+                            .font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                     }.padding(.top, 8)
                 }
                 continueCard.padding(.top, 16)
@@ -383,44 +459,58 @@ private struct PathwayHubHeader: View {
 
     private var topBar: some View {
         HStack {
-            HStack(spacing: 8) {
-                Text("YOUR PATHWAY").font(.inter(9, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0x9A7A2A))
-                if vm.streak > 0 {
-                    HStack(spacing: 4) {
-                        Icon(.flame, size: 9, color: Color(hex: 0x9A7A2A))
-                        Text("\(vm.streak)-day streak").font(.inter(9, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
-                    }
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(PW.border, lineWidth: 1))
-                }
-            }
+            // (The streak is named on Home's rhythm card and Plans, not here
+            // — one streak, §9.2 #3.)
+            Text("PATHWAY").font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
             Spacer()
             HStack(spacing: 8) {
-                ZStack(alignment: .topTrailing) {
-                    Icon(.bell, size: 17, color: PW.navy).frame(width: 36, height: 36)
-                        .background(Color.white, in: Circle())
-                        .overlay(Circle().stroke(PW.border, lineWidth: 1))
-                    Circle().fill(PW.gold).frame(width: 8, height: 8).offset(x: -6, y: 6)
-                }
-                PWHeaderRing(pct: vm.overallPct)
+                // Shown once there is progress to show — never a "0%" ring on
+                // a first day (§9.2 #4) — left of the bell.
+                if let pct = journey?.progressPercent, pct > 0 { PWHeaderRing(pct: pct) }
+                // The one bell (§7.2 #4), at the far right as on every tab
+                // (§8.1 rule 2; the Cycle 4 walk saw the ring right of it) —
+                // it was decorative here once, opening nothing under a
+                // painted-on dot.
+                NuruBell()
             }
         }
     }
 
-    // Navy CTA that pops on the light header (fresh Figma).
+    // Navy CTA that pops on the light header (fresh Figma) — the journey's
+    // next step: the module to continue, the exam to take, the level a leader
+    // will open. A step with no action (the exam still in review) just says so.
     private var continueCard: some View {
-        Button { if let m = resume { Haptics.tap(); openModule(m.moduleId) } } label: {
+        Button { if let d = journey?.destination { Haptics.tap(); open(d) } } label: {
             HStack(spacing: 12) {
-                Icon(.playCircle, size: 22, color: PW.navy)
+                Icon(journey?.stage.glyph ?? .playCircle, size: 22, color: PW.navy)
                     .frame(width: 44, height: 44)
                     .background(PW.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CONTINUE WHERE YOU LEFT OFF").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
-                    Text(resume?.title ?? "Level complete").font(.inter(14, .semibold)).foregroundStyle(.white).lineLimit(1)
+                    // Whole at every text size (§9.6 #4): "EXAM READY…",
+                    // "Take the Level 1 e…" at the largest.
+                    Text((journey?.kicker ?? "Your pathway").uppercased())
+                        .font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    // The card's title (§8.1 rule 3): Fraunces 18, wrapping.
+                    Text(journey?.title ?? "Your pathway").font(.nCardTitle).foregroundStyle(.white)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(journey?.title ?? "Your pathway", font: .nCardTitle)
+                    if let line = journey?.line {
+                        Text(line).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if let label = journey?.actionLabel {
+                        HStack(spacing: 4) {
+                            Text(label).font(.inter(11, .bold))
+                            Icon(.chevronRight, size: 14, color: PW.navy)
+                        }
+                        .foregroundStyle(PW.navy)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(PW.gold, in: Capsule())
+                        .padding(.top, 8)
+                    }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 18, color: .white)
             }
             .padding(12)
             .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -428,6 +518,24 @@ private struct PathwayHubHeader: View {
             .shadow(color: Color(hex: 0x0A1628).opacity(0.5), radius: 17, y: 10)
         }
         .buttonStyle(.pressable)
+        .disabled(journey?.destination == nil)
+        .accessibilityElement(children: .combine)
+        .accessibilityHint(journey?.actionLabel ?? "")
+    }
+}
+
+extension Journey.Stage {
+    /// The step's glyph once it is no longer a lesson to continue (each surface
+    /// keeps its own play glyph for that): the exam, its wait, the person who
+    /// opens the next level, the summit. Home's continue card wears the same.
+    var glyph: Lucide? {
+        switch self {
+        case .learning: return nil
+        case .examReady: return .award
+        case .examSoon: return .clock
+        case .awaitingUsher: return .heartHandshake
+        case .finished: return .sparkles
+        }
     }
 }
 
@@ -442,54 +550,18 @@ private struct PWHeaderRing: View {
                 .stroke(PW.gold, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                 .rotationEffect(.degrees(-90))
                 .animation(.spring(response: 0.8, dampingFraction: 0.9), value: pct)
-            Text("\(pct)%").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x9A7A2A))
+            // A ring's figure is Fraunces, as every ring's (both apps).
+            Text("\(pct)%").font(.fraunces(12, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
                 .contentTransition(.numericText())
                 .animation(.default, value: pct)
         }
         .frame(width: 40, height: 40)
+        .nuruFixedFigure()
         .onAppear {
             guard !shown else { return }
             if reduceMotion { shown = true }
             else { withAnimation(.spring(response: 0.8, dampingFraction: 0.9).delay(0.1)) { shown = true } }
         }
-    }
-}
-
-// MARK: - PathwayHub · "awaiting your discipler" waiting state
-
-/// A dignified waiting card: the level exam is passed and the member is waiting to
-/// be ushered onward by a discipler. Purely reflects the server's awaitingReview
-/// flag; it never advances anything (§1.9). The next level stays locked meanwhile.
-private struct PathwayAwaitingBanner: View {
-    let level: PathwayLevel
-
-    var body: some View {
-        HStack(spacing: 12) {
-            ZStack {
-                Circle().fill(PW.gold.opacity(0.16))
-                    .overlay(Circle().stroke(PW.gold.opacity(0.4), lineWidth: 1))
-                Text("🌿").font(.system(size: 22))
-            }
-            .frame(width: 48, height: 48)
-            VStack(alignment: .leading, spacing: 3) {
-                Text("AWAITING YOUR DISCIPLER")
-                    .font(.inter(9, .bold)).kerning(1.4).foregroundStyle(PW.goldLight)
-                Text("Level \(level.levelNumber) complete")
-                    .font(.inter(14, .bold)).foregroundStyle(.white)
-                Text("Awaiting your discipler's blessing to continue.")
-                    .font(.inter(11)).foregroundStyle(.white.opacity(0.7))
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.gold.opacity(0.35), lineWidth: 1))
-        .shadow(color: PW.navyDeep.opacity(0.5), radius: 16, y: 8)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Level \(level.levelNumber) complete. Awaiting your discipler's blessing to continue.")
     }
 }
 
@@ -508,12 +580,16 @@ private struct PathwayDisciplershipRow: View {
                         .fill(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)],
                                              startPoint: .topLeading, endPoint: .bottomTrailing))
                         .frame(width: 44, height: 44)
-                    Icon(.heartHandshake, size: 20, color: PW.navy)
+                    Icon(.heartHandshake, size: 22, color: PW.navy)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("WALK WITH YOUR DISCIPLER").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
-                    Text("Your Discipleship Hub").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text("Message, feedback & meeting notes").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
+                    Text("WALK WITH YOUR DISCIPLER").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size (§9.6 #4).
+                    Text("Your Discipleship Hub").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    Text("Message, feedback & meeting notes").font(.inter(11)).foregroundStyle(PW.ink2)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: PW.chevron)
@@ -533,17 +609,20 @@ private struct PathwayWalkRow: View {
     var body: some View {
         Button { Haptics.tap(); onTap() } label: {
             HStack(spacing: 12) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .fill(LinearGradient(colors: [PW.navy, Color(hex: 0x1B3A5C)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
-                        .frame(width: 44, height: 44)
-                    Icon(.flag, size: 20, color: PW.gold)
-                }
+                // A row's icon sits on a gold-tint tile (§8.1 rules 1, 7).
+                Icon(.flag, size: 22, color: PW.navy)
+                    .frame(width: 44, height: 44)
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("EVERY STEP, REMEMBERED").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
-                    Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2).lineLimit(1)
+                    Text("EVERY STEP, REMEMBERED").font(.inter(11, .bold)).kerning(1.28).foregroundStyle(PW.goldDeep)
+                        .fixedSize(horizontal: false, vertical: true)
+                    // Whole at the largest size: "Your whole jo…" (§9.6 #4).
+                    Text("Your Walk").font(.inter(14, .semibold)).foregroundStyle(PW.navy)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                    // Wraps rather than cut (§8.1 rule 9; final walk C3:
+                    // "…on one gold thr…" at "Large").
+                    Text("Your whole journey on one gold thread").font(.inter(11)).foregroundStyle(PW.ink2)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Icon(.chevronRight, size: 18, color: PW.chevron)
@@ -562,16 +641,23 @@ private struct PathwayWalkRow: View {
 
 private struct PathwayJourneyRail: View {
     let levels: [PathwayLevel]
-    let selected: Int
-    let onSelect: (Int) -> Void
+    /// The member's own level (the journey's) — wears "▾ You" whatever its
+    /// status: still walking it, every module done, or its exam passed.
+    let current: Int?
+    let onOpen: (Int) -> Void
     let onMap: () -> Void
 
-    /// The level right after the active one — "up next" wears a gold ring and
+    private var currentIndex: Int? {
+        if let current, let i = levels.firstIndex(where: { $0.levelNumber == current }) { return i }
+        return levels.firstIndex { $0.status == .active }
+    }
+
+    /// The level right after the member's — "up next" wears a gold ring and
     /// its own "▾ Next" marker, but only while it is still locked (an
     /// awaiting-review hand-off leaves it locked too, which is exactly when
     /// the member most wants to see where the thread goes).
     private var upNextIndex: Int? {
-        guard let a = levels.firstIndex(where: { $0.status == .active }) else { return nil }
+        guard let a = currentIndex else { return nil }
         let i = a + 1
         return i < levels.count && levels[i].status == .locked ? i : nil
     }
@@ -579,10 +665,10 @@ private struct PathwayJourneyRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("THE JOURNEY · \(levels.count) LEVELS").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
+                Text("THE JOURNEY · \(levels.count) LEVELS").font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
                 Spacer()
                 Button { Haptics.tap(); onMap() } label: {
-                    Text("Map view").font(.inter(9, .bold)).foregroundStyle(PW.gold)
+                    Text("Map view").font(.inter(11, .bold)).foregroundStyle(PW.gold)
                         .padding(.vertical, 10).padding(.leading, 16)
                         .contentShape(Rectangle())
                 }
@@ -592,12 +678,13 @@ private struct PathwayJourneyRail: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 0) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWJourneyNode(level: lvl, number: i + 1, selected: lvl.levelNumber == selected,
-                                      upNext: i == upNextIndex) { onSelect(lvl.levelNumber) }
+                        PWJourneyNode(level: lvl, number: i + 1,
+                                      isCurrent: i == currentIndex,
+                                      upNext: i == upNextIndex) { onOpen(lvl.levelNumber) }
                         if i < levels.count - 1 {
                             // Connectors ahead of the member read at 0.28 — 0.12
                             // vanished into the cream (locked-rail pass, 2026-09).
-                            Capsule().fill(lvl.status == .completed ? PW.gold : PW.navy.opacity(0.28))
+                            Capsule().fill(lvl.walked ? PW.gold : PW.navy.opacity(0.28))
                                 .frame(width: 28, height: 3).padding(.top, 40)
                         }
                     }
@@ -611,18 +698,41 @@ private struct PathwayJourneyRail: View {
 private struct PWJourneyNode: View {
     let level: PathwayLevel
     let number: Int
-    let selected: Bool
-    /// The locked level right after the active one — gold ring + "▾ Next".
+    /// The member's own level — "▾ You" and the navy ring.
+    var isCurrent: Bool = false
+    /// The locked level right after the member's — gold ring + "▾ Next".
     var upNext: Bool = false
     let onTap: () -> Void
-    private var done: Bool { level.status == .completed }
-    private var active: Bool { level.status == .active }
+    /// Walked: ushered past, or its exam passed (awaiting the usher) — never
+    /// shown locked (an awaiting level used to decode as locked).
+    private var done: Bool { level.walked }
+    private var active: Bool { isCurrent }
+
+    /// A circle opens its level only when there is a level to open: walked,
+    /// or the member's own. A locked circle isn't a button — its lock seal
+    /// says why (§9.2 #9).
+    private var opens: Bool { done || active }
 
     var body: some View {
-        Button(action: onTap) {
+        if opens {
+            Button { Haptics.tap(); onTap() } label: { node }
+                .buttonStyle(.pressable)
+                .accessibilityLabel("Level \(number), \(levelShortName(level))")
+                .accessibilityHint("Opens Level \(number)")
+        } else {
+            node
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Level \(number), \(levelShortName(level)), locked")
+        }
+    }
+
+    private var node: some View {
             VStack(spacing: 6) {
-                Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(7, .bold)).kerning(0.7)
-                    .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(height: 10)
+                // At least 10 pt, and as tall as its words: a fixed 10 pt let
+                // "▾ You" spill past the rail's top edge, where the scroll cut it
+                // at the largest text size (§9.6 #4).
+                Text(active ? "▾ You" : (upNext ? "▾ Next" : " ")).font(.inter(11, .bold)).kerning(0.7)
+                    .foregroundStyle(active ? PW.gold : (upNext ? PW.gold : Color.clear)).frame(minHeight: 10)
                 // The level NUMBER never leaves the circle — completion becomes a
                 // corner check-seal; locked levels keep their number with a lock-seal.
                 // Locked = cream surface + navy ring (was flat mutedBg with ink3
@@ -647,28 +757,103 @@ private struct PWJourneyNode: View {
                     if done {
                         ZStack {
                             Circle().fill(PW.navy).frame(width: 16, height: 16)
-                            Icon(.check, size: 9, color: .white)
+                            Icon(.check, size: 14, color: .white)
                         }
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
                         .offset(x: 3, y: -2)
                     } else if !active {
                         ZStack {
                             Circle().fill(PW.goldTint).frame(width: 16, height: 16)
-                            Icon(.lock, size: 9, color: PW.goldDeep)
+                            Icon(.lock, size: 14, color: PW.goldDeep)
                         }
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
                         .offset(x: 3, y: -2)
                     }
                 }
-                .overlay { if selected { Circle().stroke(PW.gold, lineWidth: 2).frame(width: 54, height: 54) } }
-                Text(pwShortName(level.title))
-                    .font(.inter(9, active ? .bold : .medium))
+                // Its own name, whole (§8.1 rule 9): the node grows to fit
+                // "Transformation" rather than cut it.
+                Text(levelShortName(level))
+                    .font(.inter(11, active ? .bold : .medium))
                     .foregroundStyle(active ? PW.navy : (upNext ? PW.goldDeep : PW.ink2))
-                    .lineLimit(1)
+                    .fixedSize()
             }
-            .frame(width: 68)
-        }
-        .buttonStyle(.pressable)
+            .frame(minWidth: 68)
+    }
+}
+
+// MARK: - PathwayHub · the trail's rules (EXPERIENCE.md §6.3)
+
+/// Pure, so the tests pin them; Android's PathwayTrail, the same rules.
+enum PathwayTrail {
+    /// The member's own level, once they are past learning it (every module
+    /// done — the exam ready, or soon, or passed): its list folds into one
+    /// row. Any other level's list, and a level still being learned, stays open.
+    static func folds(_ journey: Journey?, levelNumber: Int, modules: [LevelModule]) -> Bool {
+        guard let j = journey else { return false }
+        return j.stage != .learning && j.levelNumber == levelNumber && !modules.isEmpty
+    }
+
+    /// The Pathway header's one line (§8.1 rule 2, §8.2 #1): "Level 1 of 6 ·
+    /// 20 of 20 modules" — where the level sits on the road, then its lessons
+    /// (the exam is its own step, §8.2 #4). A level with nothing published yet
+    /// says so in the journey's words rather than "0 of 0 modules".
+    static func headerLine(_ level: PathwayLevel?, position: Int, of count: Int) -> String {
+        let place = "Level \(position) of \(count)"
+        guard let level else { return place }
+        guard level.lessonCount > 0 else { return place + " · Modules open soon" }
+        // Nothing done yet: what lies ahead, never "0 of 10" (§9.2 #4).
+        let done = min(level.lessonsDone, level.lessonCount)
+        return place + (done == 0 ? " · \(level.lessonCount) modules" : " · \(done) of \(level.lessonCount) modules")
+    }
+
+    /// The count under a level's name over its list. The Cycle 4 walk saw
+    /// "0 of 0 done" over a level with nothing published: such a level is
+    /// §3's "Level N is being prepared", and a level not begun says what lies
+    /// ahead ("10 modules", §9.2 #4) — never a zero count.
+    static func sectionCountLine(_ level: PathwayLevel) -> String {
+        let total = level.lessonCount
+        guard total > 0 else { return "Level \(level.levelNumber) is being prepared" }
+        let done = min(level.lessonsDone, total)
+        return done == 0 ? "\(total) module\(total == 1 ? "" : "s")" : "\(done) of \(total) done"
+    }
+
+    /// Map view's card says the same, in its own shape: "Level 2 is being
+    /// prepared", "10 modules" before a lesson is done, then "3/10 modules".
+    static func cardCountLine(_ level: PathwayLevel) -> String {
+        let total = level.lessonCount
+        guard total > 0 else { return "Level \(level.levelNumber) is being prepared" }
+        let done = min(level.lessonsDone, total)
+        return done == 0 ? "\(total) module\(total == 1 ? "" : "s")" : "\(done)/\(total) modules"
+    }
+
+    /// An empty list's line: a level with nothing published keeps §3's
+    /// promise ("Its modules open soon — we'll let you know."); a level whose
+    /// lessons exist but aren't open to the member yet opens as they go.
+    static func emptyListLine(_ level: PathwayLevel) -> String {
+        level.lessonCount > 0 ? "Modules open as you progress." : "Its modules open soon — we'll let you know."
+    }
+
+    /// The folded row's words: "20 of 20 modules done · Show" — the level's
+    /// lessons, its exam being a step, not a module — and "· Hide" once open.
+    static func foldLine(_ modules: [LevelModule], expanded: Bool) -> String {
+        let lessons = modules.filter { !$0.isExam }
+        let done = lessons.filter { $0.completed || $0.status == .completed }.count
+        return "\(done) of \(lessons.count) modules done · \(expanded ? "Hide" : "Show")"
+    }
+
+    /// The section link's verb (§3): "Start" while nothing in the level is
+    /// begun — no lesson done, none opened part-way — else "Continue".
+    static func resumeVerb(_ modules: [LevelModule]) -> String {
+        let begun = modules.contains { !$0.isExam && ($0.completed || $0.status == .completed || $0.progress > 0) }
+        return begun ? "Continue" : "Start"
+    }
+
+    /// The hero shows the exam step — the journey at its exam on this level —
+    /// so the trail's own exam row is not shown again (nor offered by its
+    /// "Continue →").
+    static func examRowHidden(_ journey: Journey?, levelNumber: Int) -> Bool {
+        guard let j = journey else { return false }
+        return j.stage == .examReady && j.levelNumber == levelNumber
     }
 }
 
@@ -676,30 +861,38 @@ private struct PWJourneyNode: View {
 
 private struct PathwaySelectedModules: View {
     let level: PathwayLevel
+    /// The level after this one has no lessons yet (§9.2 #7).
+    var nextPreparing: Bool = false
     let modules: [LevelModule]
     let loading: Bool
     let resume: LevelModule?
+    /// The member's journey (§3) — whether this level's list folds, and
+    /// whether the hero above already shows its exam.
+    let journey: Journey?
     let openModule: (String) -> Void
     let openExam: (Int) -> Void
+    /// The folded list, opened — per level, closed again on another level.
+    @State private var expanded = false
 
-    /// Trail walked, level not yet passed, and not already awaiting a discipler's
-    /// usher → the exam gate row shows. Built only from fields the pathway/levels
-    /// API already returns; the server remains the eligibility authority and answers
-    /// politely if the gate isn't open. Once the exam is passed the level flips to
-    /// awaitingReview and the gate is replaced by the waiting row.
-    private var examReady: Bool {
-        !modules.isEmpty && modules.allSatisfy(\.completed)
-            && level.status != .completed && !level.awaitingReview
-            && level.examPublished   // hidden until the admin publishes the exam
-    }
-    private var awaitingReview: Bool { level.awaitingReview }
+    /// Once the member is past learning their own level (the exam ready, or
+    /// soon, or passed), its list folds into one row that expands (§6.3).
+    private var folds: Bool { PathwayTrail.folds(journey, levelNumber: level.levelNumber, modules: modules) }
+    /// The hero shows the exam step — the trail's own exam row (prod's
+    /// exit-exam module) is not shown again. The gate row that used to stand
+    /// at the foot of a fully-walked trail only ever repeated the hero, and is
+    /// gone. The server remains the eligibility authority either way.
+    private var examHidden: Bool { PathwayTrail.examRowHidden(journey, levelNumber: level.levelNumber) }
+    private var awaitingReview: Bool { level.isAwaitingReview }
+    /// "Continue →" goes where the list's open row goes — never to an exam
+    /// the hero already offers.
+    private var resumeShown: LevelModule? { resume.flatMap { examHidden && $0.isExam ? nil : $0 } }
 
     // Progression order — completed, then the one in progress, then locked (each
     // by sequence). Identical to raw sequence for a clean curriculum; for real
     // data it keeps finished modules from being buried below locked ones.
     private var ordered: [LevelModule] {
         func rank(_ m: LevelModule) -> Int { m.status == .completed ? 0 : m.status == .next ? 1 : 2 }
-        return modules.sorted { a, b in
+        return modules.filter { !(examHidden && $0.isExam) }.sorted { a, b in
             rank(a) != rank(b) ? rank(a) < rank(b) : a.moduleSequenceNumber < b.moduleSequenceNumber
         }
     }
@@ -708,13 +901,21 @@ private struct PathwaySelectedModules: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(level.title.uppercased()).font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).lineLimit(1)
-                    Text("\(level.completedModules) of \(level.totalModules) done").font(.inter(11)).foregroundStyle(PW.ink2)
+                    // Whole, never cut (§8.1 rule 9): "FOUNDATIONS OF GRACE &
+                    // KINGDOM PERSPECT…" wraps to a second line instead.
+                    Text(level.title.uppercased()).font(.nCardKicker).kerning(1.4).foregroundStyle(PW.goldDeep)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(level.title.uppercased(), font: .nCardKicker, kerning: 1.4)
+                    Text(PathwayTrail.sectionCountLine(level)).font(.inter(11)).foregroundStyle(PW.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                if let r = resume {
+                if let r = resumeShown {
                     Button { Haptics.tap(); openModule(r.moduleId) } label: {
-                        Text("Continue →").font(.inter(10, .bold)).foregroundStyle(PW.gold)
+                        // "Start" before anything is begun (§3; final walk
+                        // C8, #14: Ben's first day read "Continue →" under a
+                        // card saying "Start").
+                        Text("\(PathwayTrail.resumeVerb(modules)) →").font(.inter(11, .bold)).foregroundStyle(PW.gold)
                             .padding(.vertical, 10).padding(.leading, 16)
                             .contentShape(Rectangle())
                     }
@@ -726,23 +927,25 @@ private struct PathwaySelectedModules: View {
                 if loading {
                     skeletonRows
                 } else if ordered.isEmpty {
-                    Text("Modules open as you progress.").font(.nCardBody).foregroundStyle(PW.ink3)
+                    Text(PathwayTrail.emptyListLine(level)).font(.nCardBody).foregroundStyle(PW.ink3)
+                        .multilineTextAlignment(.center).fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity).padding(.vertical, 26)
                 } else {
-                    ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
-                        PWModuleRow(module: m, last: (i == ordered.count - 1) && !examReady && !awaitingReview) {
-                            guard m.status != .locked else { return }
-                            if m.isExam { openExam(level.levelNumber) } else { openModule(m.moduleId) }
+                    if folds { PWFoldRow(line: PathwayTrail.foldLine(modules, expanded: expanded), expanded: expanded) {
+                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    } }
+                    if !folds || expanded {
+                        ForEach(Array(ordered.enumerated()), id: \.element.id) { i, m in
+                            PWModuleRow(module: m, last: (i == ordered.count - 1) && !awaitingReview) {
+                                // An exam that can't be taken yet opens nothing (§7.2 #1).
+                                guard m.status != .locked, !m.examOpensSoon else { return }
+                                if m.isExam { openExam(level.levelNumber) } else { openModule(m.moduleId) }
+                            }
+                            // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
+                            if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
                         }
-                        // Fresh Figma: after the first 4 modules — a moment to surrender to His Word.
-                        if i == 3 && ordered.count > 4 { PWSurrenderFigure() }
-                    }
-                    // Exam passed → waiting to be ushered by a discipler (§1.9); else
-                    // every module done → the exam gate opens the way.
-                    if awaitingReview {
-                        PWAwaitingRow(levelNumber: level.levelNumber)
-                    } else if examReady {
-                        PWExamGateRow(levelNumber: level.levelNumber) { openExam(level.levelNumber) }
+                        // Exam passed → waiting to be ushered by a discipler (§1.9).
+                        if awaitingReview { PWAwaitingRow(levelNumber: level.levelNumber, nextPreparing: nextPreparing) }
                     }
                 }
             }
@@ -750,6 +953,7 @@ private struct PathwaySelectedModules: View {
             .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(PW.border, lineWidth: 1))
         }
+        .onChange(of: level.levelNumber) { _, _ in expanded = false }
     }
 
     /// Shimmering placeholder rows while a level's real trail is fetched.
@@ -780,83 +984,104 @@ private struct PWModuleRow: View {
     @State private var shakes = 0
     @State private var lockHint = false
     private var done: Bool { module.status == .completed }
-    private var active: Bool { module.status == .next }
+    /// The exam row is open but its exam has no questions yet: it says
+    /// "opens soon", wears no lock and no "Start exam", and is not a link
+    /// (EXPERIENCE.md §7.2 #1 — the server would answer 422).
+    private var opensSoon: Bool { module.examOpensSoon }
+    private var active: Bool { module.status == .next && !opensSoon }
     private var locked: Bool { module.status == .locked }
     private var isExam: Bool { module.isExam }
 
     /// Caption under the title — the exam row speaks in exam language ("locked
     /// until you finish the modules", "ready — tap to begin", "passed").
     private var caption: String {
+        // The exam's row is titled "Level N exam" (ExamWords, §9.1 rule 1) —
+        // its line doesn't name it again. Android's words.
         if isExam {
-            return done ? "Level exam · passed"
-                 : active ? "Level exam · ready — tap to begin"
-                 : lockHint ? "Finish every module to unlock the exam" : "Level exam · locked"
+            return done ? "Passed"
+                 : opensSoon ? "Opens soon"
+                 : active ? "Ready — tap to begin"
+                 : "Finish every module to unlock it"
         }
         return done ? "Completed"
-             : active ? "In progress · tap to continue"
+             : active ? ModuleRowWords.openCaption(progress: module.progress)
              : lockHint ? "Finish the previous module to unlock" : "Locked"
     }
 
     var body: some View {
-        Button(action: handleTap) {
-            HStack(spacing: 12) {
-                // The module NUMBER stays put; completion/locks move to a corner
-                // seal. The exam tile keeps its award identity.
-                ZStack(alignment: .topTrailing) {
+        if opensSoon {
+            rowLabel.accessibilityElement(children: .combine)
+        } else {
+            Button(action: handleTap) { rowLabel }
+                .buttonStyle(.pressable)
+                .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
+                .accessibilityHint(locked ? "Locked. Finish the previous module to unlock." : "")
+        }
+    }
+
+    private var rowLabel: some View {
+        HStack(spacing: 12) {
+            // The module NUMBER stays put; completion/locks move to a corner
+            // seal. The exam tile keeps its award identity.
+            ZStack(alignment: .topTrailing) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
+                              : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                              : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
+                              : AnyShapeStyle(PW.mutedBg))
+                        .frame(width: 32, height: 32)
+                    if isExam { Icon(.award, size: 14, color: done || active ? PW.goldDeep : PW.goldDeep) }
+                    else {
+                        Text("\(module.moduleSequenceNumber)")
+                            .font(.inter(13, .bold))
+                            .foregroundStyle(done ? PW.goldDeep : active ? PW.navy : PW.ink3)
+                    }
+                }
+                if done {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 11, style: .continuous)
-                            .fill(done ? AnyShapeStyle(PW.gold.opacity(0.13))
-                                  : active ? AnyShapeStyle(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)], startPoint: .topLeading, endPoint: .bottomTrailing))
-                                  : isExam ? AnyShapeStyle(PW.gold.opacity(0.10))
-                                  : AnyShapeStyle(PW.mutedBg))
-                            .frame(width: 32, height: 32)
-                        if isExam { Icon(.award, size: 15, color: done || active ? PW.goldDeep : PW.goldDeep) }
-                        else {
-                            Text("\(module.moduleSequenceNumber)")
-                                .font(.inter(13, .bold))
-                                .foregroundStyle(done ? PW.goldDeep : active ? PW.navy : PW.ink3)
-                        }
+                        Circle().fill(PW.navy).frame(width: 13, height: 13)
+                        Icon(.check, size: 14, color: .white)
                     }
-                    if done {
-                        ZStack {
-                            Circle().fill(PW.navy).frame(width: 13, height: 13)
-                            Icon(.check, size: 7, color: .white)
-                        }
-                        .overlay(Circle().stroke(.white, lineWidth: 1.2))
-                        .offset(x: 4, y: -3)
-                    } else if !active && !done {
-                        ZStack {
-                            Circle().fill(PW.mutedBg).frame(width: 13, height: 13)
-                            Icon(.lock, size: 7, color: PW.ink3)
-                        }
-                        .overlay(Circle().stroke(.white, lineWidth: 1.2))
-                        .offset(x: 4, y: -3)
+                    .overlay(Circle().stroke(.white, lineWidth: 1.2))
+                    .offset(x: 4, y: -3)
+                } else if !active && !done && !opensSoon {
+                    ZStack {
+                        Circle().fill(PW.mutedBg).frame(width: 13, height: 13)
+                        Icon(.lock, size: 14, color: PW.ink3)
                     }
-                }
-                VStack(alignment: .leading, spacing: 1) {
-                    // Locked titles stay legible ink (only the caption goes faint) —
-                    // #8B95A5-on-white washed the whole card out on device.
-                    Text(module.title).font(.inter(13, (active || isExam) ? .bold : .medium))
-                        .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy).lineLimit(1)
-                    Text(caption)
-                        .font(.inter(9, (active || isExam) ? .bold : .medium))
-                        .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
-                }
-                Spacer(minLength: 0)
-                if active {
-                    Text(isExam ? "Start exam" : "Resume").font(.inter(9, .bold)).foregroundStyle(PW.gold)
-                        .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
-                } else if done {
-                    Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
+                    .overlay(Circle().stroke(.white, lineWidth: 1.2))
+                    .offset(x: 4, y: -3)
                 }
             }
-            .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(active ? PW.gold.opacity(0.05) : isExam ? PW.gold.opacity(0.03) : Color.clear)
-            .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
+            VStack(alignment: .leading, spacing: 1) {
+                // Locked titles stay legible ink (only the caption goes faint) —
+                // #8B95A5-on-white washed the whole card out on device.
+                // A module is a thing: the content row title, Fraunces 15 — the
+                // same face the level page gives it (§8.1 rule 3).
+                Text(ExamWords.rowTitle(module)).font(.nRowTitle)
+                    .foregroundStyle(locked && !isExam ? PW.ink2 : PW.navy)
+                    // Titles wrap to two lines, never cut (§8.1 rule 9):
+                    // "Christian Living & Character (First Ste…"; in full,
+                    // whole words, at the accessibility sizes (§9.6 #4).
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(ExamWords.rowTitle(module), font: .nRowTitle)
+                Text(caption)
+                    .font(.inter(11, (active || isExam) ? .bold : .medium))
+                    .foregroundStyle(active || (isExam && !done) ? PW.goldDeep : PW.ink3)
+            }
+            Spacer(minLength: 0)
+            if active {
+                Text(isExam ? "Start exam" : ModuleRowWords.openAction(progress: module.progress))
+                    .font(.inter(11, .bold)).foregroundStyle(PW.gold)
+                    .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
+            } else if done {
+                Icon(.chevronRight, size: 14, color: Color(hex: 0xCBD5E1))
+            }
         }
-        .buttonStyle(.pressable)
-        .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
-        .accessibilityHint(locked ? "Locked. Finish the previous module to unlock." : "")
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(active ? PW.gold.opacity(0.05) : isExam ? PW.gold.opacity(0.03) : Color.clear)
+        .overlay(alignment: .bottom) { if !last { Rectangle().fill(PW.border).frame(height: 1) } }
     }
 
     /// Locked rows stay locked (server-authoritative) — a tap just answers with a
@@ -874,47 +1099,42 @@ private struct PWModuleRow: View {
     }
 }
 
-/// The exam gate row at the foot of a fully-walked trail — "Take the Level N
-/// exam". Visibility is derived from the API's own module/level fields; taking
-/// the exam is still gated server-side (§1.9), so this row is only a doorway.
-private struct PWExamGateRow: View {
-    let levelNumber: Int
+/// A finished level's trail, folded (§6.3): "20 of 20 modules done · Show" —
+/// a tap opens the list, "· Hide" folds it again. Android's FoldedTrailRow.
+private struct PWFoldRow: View {
+    let line: String
+    let expanded: Bool
     let onTap: () -> Void
 
     var body: some View {
-        Button { Haptics.action(); onTap() } label: {
+        Button { Haptics.tap(); onTap() } label: {
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .fill(LinearGradient(colors: [PW.gold, Color(hex: 0xA87F29)],
-                                             startPoint: .topLeading, endPoint: .bottomTrailing))
+                        .fill(PW.gold.opacity(0.13))
                         .frame(width: 32, height: 32)
-                    Icon(.award, size: 16, color: PW.navy)
+                    Icon(.check, size: 14, color: PW.goldDeep)
                 }
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Take the Level \(levelNumber) exam")
-                        .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
-                    Text("Every module is done — the gate is open")
-                        .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
-                }
+                Text(line).font(.inter(13, .semibold)).foregroundStyle(PW.navy)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)   // "10 of 10 mo…" at the largest (§9.6 #4)
                 Spacer(minLength: 0)
-                Text("Begin").font(.inter(9, .bold)).foregroundStyle(PW.gold)
-                    .padding(.horizontal, 10).padding(.vertical, 5).background(PW.navy, in: Capsule())
+                Icon(expanded ? .chevronUp : .chevronDown, size: 14, color: PW.ink3)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            .background(PW.gold.opacity(0.10))
-            .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
+            .contentShape(Rectangle())
+            .overlay(alignment: .bottom) { if expanded { Rectangle().fill(PW.border).frame(height: 1) } }
         }
         .buttonStyle(.pressable)
-        .accessibilityHint("Opens the Level \(levelNumber) exam.")
+        .accessibilityHint(expanded ? "Folds the finished modules away." : "Shows the finished modules.")
     }
 }
 
 /// The waiting node at the foot of a fully-passed level — the exam is done and the
 /// member is awaiting a discipler's usher (§1.9). Not tappable; purely reflects the
-/// awaitingReview flag. Replaces the exam gate row once the exam has been passed.
+/// awaitingReview flag — shown with the level's list (inside the fold, once opened).
 private struct PWAwaitingRow: View {
     let levelNumber: Int
+    var nextPreparing: Bool = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -923,13 +1143,13 @@ private struct PWAwaitingRow: View {
                     .fill(PW.gold.opacity(0.16))
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).stroke(PW.gold.opacity(0.4), lineWidth: 1))
                     .frame(width: 32, height: 32)
-                Text("🌿").font(.system(size: 15))
+                Icon(.flag, size: 14, color: PW.goldDeep)   // a glyph, not a colour emoji (§8.1 rule 7)
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text("Level \(levelNumber) complete")
                     .font(.inter(13, .bold)).foregroundStyle(PW.navy).lineLimit(1)
-                Text("Awaiting your discipler's blessing to continue")
-                    .font(.inter(9, .semibold)).foregroundStyle(PW.goldDeep)
+                Text(UsherWords.line(passed: levelNumber, nextPreparing: nextPreparing))
+                    .font(.inter(11, .semibold)).foregroundStyle(PW.goldDeep)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
@@ -938,7 +1158,7 @@ private struct PWAwaitingRow: View {
         .background(PW.gold.opacity(0.08))
         .overlay(alignment: .top) { Rectangle().fill(PW.gold.opacity(0.35)).frame(height: 1) }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Level \(levelNumber) complete. Awaiting your discipler's blessing to continue.")
+        .accessibilityLabel("Level \(levelNumber) complete. \(UsherWords.line(passed: levelNumber, nextPreparing: nextPreparing))")
     }
 }
 
@@ -958,20 +1178,22 @@ private struct PathwayMilestones: View {
     let levels: [PathwayLevel]
     let reward: PWReward?
     let openResume: () -> Void
-    private var earned: Int { levels.filter { $0.status == .completed }.count }
+    private var earned: Int { levels.filter(\.walked).count }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("MILESTONES").font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
+                Text("MILESTONES").font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep)
                 Spacer()
-                Text("\(earned) earned").font(.inter(9, .semibold)).foregroundStyle(PW.ink3)
+                if earned > 0 {   // no "0 earned" (§7.4 #9; the walk's E14)
+                    Text("\(earned) earned").font(.inter(11, .semibold)).foregroundStyle(PW.ink3)
+                }
             }.padding(.horizontal, 4)
             if let r = reward, r.remaining > 0 { nextRewardCard(r) }
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 10) {
                     ForEach(Array(levels.enumerated()), id: \.element.id) { i, lvl in
-                        PWRewardBadge(name: pwShortName(lvl.title), emoji: PW.badgeEmoji[i % PW.badgeEmoji.count], earned: lvl.status == .completed)
+                        PWRewardBadge(name: levelShortName(lvl), glyph: PW.badgeGlyph[i % PW.badgeGlyph.count], earned: lvl.walked)
                     }
                 }.padding(.horizontal, 2)
             }
@@ -981,23 +1203,25 @@ private struct PathwayMilestones: View {
     private func nextRewardCard(_ r: PWReward) -> some View {
         Button { Haptics.tap(); openResume() } label: {
             HStack(spacing: 12) {
-                Text(r.emoji).font(.system(size: 22))
+                Icon(r.glyph, size: 22, color: Nuru.navy)
                     .frame(width: 48, height: 48)
-                    .background(Color.white.opacity(0.08), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .background(Color(hex: Nuru.tileTint), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("NEXT REWARD").font(.inter(8, .bold)).kerning(1.28).foregroundStyle(PW.goldLight)
-                    Text("The “\(r.name)” badge").font(.inter(13, .bold)).foregroundStyle(.white).lineLimit(1)
+                    Text("NEXT REWARD").font(.nCardKicker).kerning(1.4).foregroundStyle(PW.goldDeep)
+                    Text("The “\(r.name)” badge").font(.nRowTitle).foregroundStyle(PW.navy)
+                        .fixedSize(horizontal: false, vertical: true)
                     HStack(spacing: 8) {
-                        PWBar(pct: r.pct, height: 6, fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing), track: Color.white.opacity(0.16))
-                        Text("\(r.remaining) to go").font(.inter(9, .semibold)).foregroundStyle(.white.opacity(0.7))
+                        PWBar(pct: r.pct, height: 6, fill: .linearGradient(colors: [PW.gold, PW.goldLight], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
+                        Text("\(r.remaining) to go").font(.inter(11, .semibold)).foregroundStyle(PW.ink2)
                     }
                 }
                 Spacer(minLength: 0)
-                Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+                Icon(.chevronRight, size: 18, color: PW.chevron)
             }
             .padding(14)
-            .background(LinearGradient(colors: [PW.navy, PW.navyDeep], startPoint: .topLeading, endPoint: .bottomTrailing), in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .shadow(color: PW.navyDeep.opacity(0.6), radius: 20, y: 12)
+            // A white card (§8.1 rule 1): the navy one was a third dark card.
+            .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(PW.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
     }
@@ -1005,24 +1229,32 @@ private struct PathwayMilestones: View {
 
 private struct PWRewardBadge: View {
     let name: String
-    let emoji: String
+    let glyph: Lucide
     let earned: Bool
+    /// The rail scrolls sideways, so at the accessibility sizes a badge is as
+    /// wide as its name: 84 pt cut "Fo…", "Tra…", "Gra…" (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         VStack(spacing: 6) {
-            Text(emoji).font(.system(size: 20)).frame(width: 44, height: 44)
-                .background(earned ? Color.white : PW.mutedBg, in: Circle())
+            // Lucide on a gold-tint tile (§8.1 rule 7); quiet until earned.
+            Icon(glyph, size: 22, color: earned ? Nuru.navy : PW.ink3).frame(width: 44, height: 44)
+                .background(earned ? Color(hex: Nuru.tileTint) : PW.mutedBg, in: Circle())
                 .overlay(Circle().stroke(earned ? PW.gold.opacity(0.33) : PW.border, lineWidth: 1))
-                .grayscale(earned ? 0 : 1).opacity(earned ? 1 : 0.7)
-            Text(name).font(.inter(9, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+                .opacity(earned ? 1 : 0.7)
+            // As wide as its name at every size — the rail scrolls sideways —
+            // so a name is never cut (final walk C3: "Transform…" at
+            // "Large"; 84 pt cut "Fo…" at the largest before).
+            Text(name).font(.inter(11, .semibold)).foregroundStyle(earned ? PW.navy : PW.ink3).lineLimit(1)
+                .fixedSize().padding(.horizontal, 12)
             if earned {
                 HStack(spacing: 1) {
-                    ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.system(size: 8)).foregroundStyle(PW.gold) }
+                    ForEach(0..<3, id: \.self) { _ in Image(systemName: "star.fill").font(.symbol(8)).foregroundStyle(PW.gold) }
                 }
             } else {
-                Icon(.lock, size: 9, color: PW.ink3)
+                Icon(.lock, size: 14, color: PW.ink3)
             }
         }
-        .frame(width: 84).padding(.vertical, 12)
+        .frame(minWidth: 84).padding(.vertical, 12)
         .background(earned
                     ? AnyShapeStyle(LinearGradient(colors: [PW.gold.opacity(0.14), PW.gold.opacity(0.03)], startPoint: .topLeading, endPoint: .bottomTrailing))
                     : AnyShapeStyle(PW.surface),
@@ -1050,11 +1282,11 @@ private struct PWSurrenderFigure: View {
             }
             LinearGradient(colors: [Color(hex: 0x081424, alpha: 0.15), Color(hex: 0x081424, alpha: 0.55), Color(hex: 0x081424, alpha: 0.90)], startPoint: .top, endPoint: .bottom)
             VStack(alignment: .leading, spacing: 2) {
-                Text("PAUSE & SURRENDER").font(.inter(7, .bold)).kerning(1.54).foregroundStyle(PW.goldLight)
+                Text("PAUSE & SURRENDER").font(.inter(11, .bold)).kerning(1.54).foregroundStyle(PW.goldLight)
                 Text("“Offer yourselves as a living sacrifice, holy and pleasing to God.”")
                     .font(.fraunces(12, .medium)).italic().foregroundStyle(.white)
                     .fixedSize(horizontal: false, vertical: true)
-                Text("Romans 12:1 · Surrender to His Word").font(.inter(8, .semibold)).foregroundStyle(.white.opacity(0.65))
+                Text("Romans 12:1 · Surrender to His Word").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.65))
             }
             .padding(14)
         }
@@ -1067,19 +1299,22 @@ private struct PWSurrenderFigure: View {
 // MARK: - PathwayHub · the summit (redesigned commissioning card — Android parity)
 
 private struct PathwaySummitCard: View {
-    let overallPct: Int
+    /// The journey reached `finished` — the final level's exam is passed
+    /// (§3). Never "every published module done": Level 1 finishers were being
+    /// commissioned while Levels 2–6 had nothing published yet.
+    let reached: Bool
     let levels: [PathwayLevel]
     let firstName: String
-    private var reached: Bool { overallPct >= 100 }
-    private var levelsLeft: Int { levels.filter { $0.status != .completed }.count }
-    // Real sending: a worship gathering, hands raised, JESUS over the stage —
-    // visually verified (not picked blind from an ID).
-    private let img = "https://images.unsplash.com/photo-1507692049790-de58290a4334?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080"
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// Levels still between the member and being sent — at least one until
+    /// the summit: every module done at the last level still leaves its exam
+    /// (it used to read "0 levels between you and being sent").
+    private var levelsLeft: Int { max(1, levels.filter { !$0.walked }.count) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("THE SUMMIT · WHERE THIS ROAD LEADS")
-                .font(.inter(9, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).padding(.horizontal, 4)
+                .font(.inter(11, .bold)).kerning(1.62).foregroundStyle(PW.goldDeep).padding(.horizontal, 4)
             card
         }
         // First time the summit is truly reached → a real celebration (once ever;
@@ -1093,71 +1328,75 @@ private struct PathwaySummitCard: View {
         }
     }
 
+    /// A light card on gold tint (§8.1 rule 1): Pathway's one dark feature
+    /// card is the journey's step at the top; the summit under a photograph
+    /// and a navy wash was a second (the Cycle 4 walk's 09).
     private var card: some View {
-        ZStack {
-            // Overlay-on-Color.clear so the artwork's fill width can't inflate
-            // the card (and with it the whole Pathway column) past the screen.
-            if let u = URL(string: img) {
-                Color.clear
-                    .overlay {
-                        CachedAsyncImage(url: u) { p in (p.image ?? Image(systemName: "photo")).resizable().scaledToFill() }
-                    }
-                    .clipped()
+        Group {
+            if typeSize.isAccessibilitySize {
+                // The chip in the flow at the largest sizes: laid over the
+                // card's corner it covered the seal (§9.6 #4).
+                VStack(spacing: 12) {
+                    statusChip.frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 12)
+                    content
+                }
+                .padding(.top, 12)
+            } else {
+                content.padding(.top, 28)
             }
-            // Navy scrim: 0x26 → 0x73 → 0xF2 of 0A1628, top → bottom.
-            LinearGradient(colors: [Color(hex: 0x0A1628, alpha: 0.15), Color(hex: 0x0A1628, alpha: 0.45), Color(hex: 0x0A1628, alpha: 0.95)], startPoint: .top, endPoint: .bottom)
-            content
         }
-        .frame(height: 300).frame(maxWidth: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .frame(maxWidth: .infinity)
+            .background(Nuru.verseBg)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).stroke(PW.gold.opacity(0.25), lineWidth: 1))
         // Reached earns a gold ceremonial ring; the road there stays quiet.
         .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous)
             .strokeBorder(reached ? PW.gold.opacity(0.85) : .clear, lineWidth: 1.5))
-        .overlay(alignment: .topTrailing) { statusChip.padding(12) }
+        .overlay(alignment: .topTrailing) { if !typeSize.isAccessibilitySize { statusChip.padding(12) } }
     }
 
     private var statusChip: some View {
         HStack(spacing: 4) {
-            if reached { Image(systemName: "star.fill").font(.system(size: 10)) } else { Icon(.lock, size: 10, color: .white) }
-            Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(9, .bold)).kerning(1)
+            if reached { Image(systemName: "star.fill").font(.symbol(10)) } else { Icon(.lock, size: 14, color: PW.ink2) }
+            Text(reached ? "SENT" : "AHEAD OF YOU").font(.inter(11, .bold)).kerning(1)
         }
-        .foregroundStyle(reached ? PW.navy : .white)
+        .foregroundStyle(reached ? PW.navy : PW.ink2)
         .padding(.horizontal, 10).padding(.vertical, 4)
-        .background(reached ? PW.gold : Color.white.opacity(0.18), in: Capsule())
+        .background(reached ? PW.gold : PW.mutedBg, in: Capsule())
     }
 
     private var content: some View {
         VStack(spacing: 0) {
             // Ceremonial seal — double gold ring, medal, no emoji.
             ZStack {
-                Circle().fill(Color.white.opacity(reached ? 0.14 : 0.07)).frame(width: 58, height: 58)
+                Circle().fill(PW.gold.opacity(reached ? 0.16 : 0.08)).frame(width: 58, height: 58)
                     .overlay(Circle().strokeBorder(PW.gold.opacity(reached ? 0.95 : 0.45), lineWidth: 1.5))
                 Circle().strokeBorder(PW.goldLight.opacity(reached ? 0.8 : 0.35), lineWidth: 1).frame(width: 46, height: 46)
                 Icon(.award, size: 24, color: reached ? PW.goldLight : PW.gold.opacity(0.75))
             }
             .padding(.bottom, 10)
-            Text("COMMISSIONED").font(.inter(10, .bold)).kerning(2.4).foregroundStyle(PW.goldLight)
+            Text("COMMISSIONED").font(.inter(11, .bold)).kerning(2.4).foregroundStyle(PW.goldDeep)
             // The actual charge, not a caption — the words carry the weight.
             Text("“Go therefore and make disciples of all nations…”")
-                .font(.fraunces(19, .semibold)).italic().kerning(-0.2)
-                .foregroundStyle(.white).multilineTextAlignment(.center).lineSpacing(4)
+                .font(.fraunces(18, .semibold)).italic().kerning(-0.2)
+                .foregroundStyle(PW.navy).multilineTextAlignment(.center).lineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
-            Text("MATTHEW 28:19").font(.inter(9, .bold)).kerning(1.8)
-                .foregroundStyle(.white.opacity(0.75)).padding(.top, 4)
+            Text("MATTHEW 28:19").font(.inter(11, .bold)).kerning(1.8)
+                .foregroundStyle(PW.ink2).padding(.top, 4)
             // The road itself: one dot per level, gold when walked.
             HStack(spacing: 8) {
                 ForEach(levels) { lv in
-                    let done = lv.status == .completed
+                    let done = reached || lv.walked
                     Circle()
-                        .fill(done ? PW.gold : Color.white.opacity(0.28))
+                        .fill(done ? PW.gold : PW.navy.opacity(0.15))
                         .overlay(Circle().strokeBorder(done ? PW.goldLight : .clear, lineWidth: 1))
                         .frame(width: done ? 9 : 7, height: done ? 9 : 7)
                 }
             }
             .padding(.top, 14)
             Text(personalLine)
-                .font(.inter(11, .bold)).foregroundStyle(PW.goldLight)
+                .font(.inter(11, .bold)).foregroundStyle(PW.goldDeep)
                 .multilineTextAlignment(.center)
                 .padding(.top, 8)
         }
@@ -1177,10 +1416,18 @@ private struct PathwaySummitCard: View {
 struct LevelsMapView: View {
     @ObservedObject var vm: PathwayViewModel
     let onOpenLevel: (Int) -> Void
-    @EnvironmentObject private var auth: AuthStore
     @Environment(\.dismiss) private var dismiss
+    /// At the accessibility sizes the ring sits under the title and the three
+    /// stats stand one above another (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
-    private var firstName: String { (auth.profile?.fullName ?? "Friend").split(separator: " ").first.map(String.init) ?? "Friend" }
+    /// The member's own level wears the journey's word once its modules are
+    /// done ("Exam ready", "Exam passed") — not the server's bare "completed",
+    /// which says every module is done, not that the level is passed.
+    private func stagePill(for level: PathwayLevel) -> String? {
+        guard let j = vm.journey, j.levelNumber == level.levelNumber, j.stage != .learning else { return nil }
+        return j.pill
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -1189,12 +1436,20 @@ struct LevelsMapView: View {
                 if let s = vm.summary {
                     VStack(alignment: .leading, spacing: 0) {
                         if let a = vm.activeLevel {
-                            PWContinueCard(level: a) { onOpenLevel(a.levelNumber) }.padding(.bottom, 20)
+                            PWContinueCard(level: a, words: LevelsMapWords.continueCard(level: a, journey: vm.journey),
+                                           pct: Journey.levelPercent(a, journey: vm.journey)) {
+                                onOpenLevel(a.levelNumber)
+                            }.padding(.bottom, 20)
                         }
                         sectionHeader.padding(.bottom, 12)
                         VStack(spacing: 12) {
                             ForEach(s.levels) { level in
-                                PWLevelCard(level: level) { if level.status != .locked { onOpenLevel(level.levelNumber) } }
+                                PWLevelCard(level: level, pct: Journey.levelPercent(level, journey: vm.journey),
+                                            stagePill: stagePill(for: level),
+                                            lockLine: LevelsMapWords.lockLine(levelNumber: level.levelNumber, journey: vm.journey,
+                                                                              preparing: level.lessonCount <= 0)) {
+                                    if level.status != .locked { onOpenLevel(level.levelNumber) }
+                                }
                             }
                         }
                     }
@@ -1204,7 +1459,7 @@ struct LevelsMapView: View {
             .padding(.bottom, Nuru.tabBarSpace)
         }
         .ignoresSafeArea(edges: .top)
-        .background(PW.bg.ignoresSafeArea())
+        .background(Nuru.paper.ignoresSafeArea())   // the page is paper (§8.1 rule 1)
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
     }
@@ -1215,31 +1470,44 @@ struct LevelsMapView: View {
             Circle().fill(PW.gold.opacity(0.14)).frame(width: 288, height: 288).blur(radius: 48).offset(x: 80, y: -96)
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
+                    // The "←" every pushed page wears (the Cycle 4 walk: Map
+                    // view's "‹" was the odd one out).
                     Button { Haptics.tap(); dismiss() } label: {
-                        Icon(.chevronLeft, size: 20, color: PW.navy).frame(width: 36, height: 36)
+                        Icon(.arrowLeft, size: 18, color: PW.navy).frame(width: 40, height: 40)
                             .background(Color.white, in: Circle())
                             .overlay(Circle().stroke(PW.border, lineWidth: 1))
                             .contentShape(Circle())
                     }.buttonStyle(.pressable)
+                    .accessibilityLabel("Back")
                     Spacer()
                 }
-                Text("Welcome back, \(firstName)".uppercased())
+                // A pushed page's kicker names the page (§8.1 rule 2) — the
+                // greeting is Home's alone (the walk's E5: "WELCOME BACK, ADA").
+                Text("MAP VIEW")
                     .font(.inter(11, .medium)).kerning(1.98).foregroundStyle(Color(hex: 0x9A7A2A)).padding(.top, 14)
-                HStack(alignment: .bottom, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text("Your pathway is unfolding.")
-                            .font(.fraunces(30, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
-                        Text("A calm view of your discipleship journey, saved progress, and what opens next.")
-                            .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
-                            .frame(maxWidth: 280, alignment: .leading).padding(.top, 12)
+                // Beside the ring at the everyday sizes; above it at the
+                // largest, where the narrowed column broke "pathw / ay is /
+                // unfold / ing." (§9.6 #4).
+                if typeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 16) {
+                        mapTitle
+                        PWProgressRing(pct: vm.journey?.progressPercent ?? 0)
+                    }.padding(.top, 12)
+                } else {
+                    HStack(alignment: .bottom, spacing: 16) {
+                        mapTitle
+                        Spacer(minLength: 0)
+                        PWProgressRing(pct: vm.journey?.progressPercent ?? 0)
+                    }.padding(.top, 12)
+                }
+                // Three across at the everyday sizes; one above another at the
+                // largest ("LEVE / LS", "10/1 / 0", "Rea / dy").
+                Group {
+                    if typeSize.isAccessibilitySize {
+                        VStack(spacing: 8) { mapStats }
+                    } else {
+                        HStack(spacing: 8) { mapStats }
                     }
-                    Spacer(minLength: 0)
-                    PWProgressRing(pct: vm.overallPct)
-                }.padding(.top, 12)
-                HStack(spacing: 8) {
-                    PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
-                    PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
-                    PWStatCard(label: "Offline", value: "Ready")
                 }.padding(.top, 24)
             }
             .padding(.horizontal, 20).padding(.top, NuruSafeArea.top + 8).padding(.bottom, 24)
@@ -1250,16 +1518,40 @@ struct LevelsMapView: View {
         .clipped()
     }
 
+    private var mapTitle: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Your pathway is unfolding.")
+                .font(.fraunces(28, .medium)).kerning(-1.35).lineSpacing(4).foregroundStyle(PW.navy)
+                // Whole beside the ring (§8.1 rule 9): it read "Your pathway is un…".
+                .fixedSize(horizontal: false, vertical: true)
+                .nuruWholeWords("Your pathway is unfolding.", font: .fraunces(28, .medium), kerning: -1.35)
+            Text("A calm view of your discipleship journey, saved progress, and what opens next.")
+                .font(.inter(14)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: typeSize.isAccessibilitySize ? .infinity : 280, alignment: .leading).padding(.top, 12)
+        }
+    }
+
+    /// The member's journey in two counts, both read from the pathway (final
+    /// walk C6, as Android's LevelsScreen): "Offline · Ready" was words about
+    /// the app, not the journey (§8.1 rule 8), and is gone.
+    @ViewBuilder private var mapStats: some View {
+        PWStatCard(label: "Levels", value: "\(vm.levelsDone)/\(vm.levelCount)")
+        PWStatCard(label: "Modules", value: "\(vm.doneModules)/\(vm.totalModules)")
+    }
+
     private var sectionHeader: some View {
         HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 0) {
-                Text("SIX-LEVEL PATHWAY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.ink2)
+                // The road's real length, read from the pathway — "SIX" was
+                // written in (Android's countWord).
+                Text(LevelsMapWords.pathwayKicker(levels: vm.levelCount)).font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.ink2)
                 Text("Choose your level").font(.fraunces(22, .medium)).kerning(-0.88).foregroundStyle(PW.ink).padding(.top, 4)
             }
             Spacer(minLength: 0)
             ZStack {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.white).shadow(color: PW.navy.opacity(0.05), radius: 6, y: 2)
-                Icon(.map, size: 19, color: PW.navy)
+                Icon(.map, size: 18, color: PW.navy)
             }.frame(width: 40, height: 40)
         }
     }
@@ -1282,11 +1574,12 @@ private struct PWProgressRing: View {
                 Text("\(pct)%").font(.fraunces(18, .medium)).kerning(-0.72).foregroundStyle(PW.navy)
                     .contentTransition(.numericText())
                     .animation(.default, value: pct)
-                Text("DONE").font(.inter(9, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x74808F))
+                Text("DONE").font(.inter(11, .medium)).kerning(1.08).foregroundStyle(Color(hex: 0x74808F))
                     .padding(.top, -1)
             }
         }
         .frame(width: 74, height: 74)
+        .nuruFixedFigure()
         .onAppear {
             guard !shown else { return }
             if reduceMotion { shown = true }
@@ -1302,7 +1595,7 @@ private struct PWStatCard: View {
     let value: String
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text(label.uppercased()).font(.inter(10, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
+            Text(label.uppercased()).font(.inter(11, .medium)).kerning(1.2).foregroundStyle(Color(hex: 0x74808F))
             Text(value).font(.inter(16, .bold)).kerning(-0.32).foregroundStyle(PW.navy).padding(.top, 4)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1316,39 +1609,54 @@ private struct PWStatCard: View {
 
 private struct PWContinueCard: View {
     let level: PathwayLevel
+    /// The journey's words for this level (the walk's E5: "CONTINUE YOUR
+    /// JOURNEY · Level 1" over a level whose every module was done).
+    let words: LevelsMapWords.Card
+    /// The level, its exam the last step (§9.2 #10).
+    let pct: Int
     let onTap: () -> Void
-    private var pct: Int { level.totalModules > 0 ? Int(round(Double(level.completedModules) / Double(level.totalModules) * 100)) : 0 }
 
     var body: some View {
         Button { Haptics.tap(); onTap() } label: {
             ZStack(alignment: .trailing) {
-                // Right tone strip (w-32, opacity 90) + decorative ring.
+                // Right tone strip + decorative ring — narrow enough that the
+                // words never run under it (the walk's E5: "the navy panel cuts
+                // its own words"); the chevron sits on it.
                 HStack(spacing: 0) {
                     Spacer(minLength: 0)
                     LinearGradient(colors: PW.tone(level.levelNumber), startPoint: .topLeading, endPoint: .bottomTrailing)
-                        .frame(width: 128).opacity(0.9)
+                        .frame(width: 56).opacity(0.9)
                         .overlay(alignment: .topTrailing) {
-                            Circle().stroke(Color.white.opacity(0.25), lineWidth: 1).frame(width: 80, height: 80).offset(x: -8, y: 24)
+                            Circle().stroke(Color.white.opacity(0.25), lineWidth: 1).frame(width: 44, height: 44).offset(x: 10, y: 14)
                         }
+                        .clipped()
                 }
 
                 HStack(spacing: 16) {
                     ZStack {
                         RoundedRectangle(cornerRadius: 16, style: .continuous).fill(PW.navy.opacity(0.06))
-                        Icon(.bookOpen, size: 20, color: PW.navy)
+                        Icon(.bookOpen, size: 22, color: PW.navy)
                     }
                     .frame(width: 44, height: 44)
 
                     VStack(alignment: .leading, spacing: 0) {
-                        Text("CONTINUE YOUR JOURNEY").font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.goldDeep)
-                        Text("Level \(level.levelNumber): \(level.title)")
+                        Text(words.kicker).font(.inter(11, .medium)).kerning(1.54).foregroundStyle(PW.goldDeep)
+                            .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                        Text(words.title)
                             .font(.nCardTitle).kerning(-0.54).foregroundStyle(PW.ink)
-                            .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 4)
+                            .nuruLineLimit(2).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .nuruWholeWords(words.title, font: .nCardTitle, kerning: -0.54)
+                            .padding(.top, 4)
+                        if let line = words.line {
+                            Text(line).font(.nCardBody).foregroundStyle(PW.ink2)
+                                .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+                        }
                         PWBar(pct: pct, height: 8, fill: .linearGradient(colors: [Color(hex: 0xB8911F), Color(hex: 0xD8B84D)], startPoint: .leading, endPoint: .trailing), track: PW.navy.opacity(0.10))
                             .padding(.top, 12)
                     }
-                    .padding(.trailing, 8)
-                    Icon(.chevronRight, size: 20, color: PW.gold)
+                    .padding(.trailing, 12)
+                    Icon(.chevronRight, size: 18, color: PW.gold)
                 }
                 .padding(16)
             }
@@ -1365,14 +1673,24 @@ private struct PWContinueCard: View {
 
 private struct PWLevelCard: View {
     let level: PathwayLevel
+    /// The level, its exam the last step (§9.2 #10): Map gave Level 1 "100%"
+    /// before its exam was sat.
+    let pct: Int
+    /// The journey's word for the member's own level once its modules are
+    /// done ("Exam ready", "Exam passed") — nil for every other level.
+    var stagePill: String? = nil
+    /// What opens this level when it is locked, in the journey's words.
+    var lockLine: String = ""
     let onTap: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var shakes = 0
 
+    /// Completed as the server says it (Android's LevelCard): a level whose
+    /// exam is passed and awaits the leader is the member's own — the cross,
+    /// and "Exam passed" in its pill — not a tick, and never "locked".
     private var isCompleted: Bool { level.status == .completed }
     private var isActive: Bool { level.status == .active }
     private var isLocked: Bool { level.status == .locked }
-    private var pct: Int { level.totalModules > 0 ? Int(round(Double(level.completedModules) / Double(level.totalModules) * 100)) : 0 }
     private var subtitle: String { level.theme ?? level.description ?? PW.subtitle[level.levelNumber] ?? "" }
 
     var body: some View {
@@ -1382,9 +1700,9 @@ private struct PWLevelCard: View {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
                         .fill(isActive ? PW.navy : isCompleted ? PW.goldTint : PW.mutedBg)
                     if isCompleted {
-                        Icon(.check, size: 19, color: PW.goldDeep)
+                        Icon(.check, size: 18, color: PW.goldDeep)
                     } else if isLocked {
-                        Icon(.lock, size: 17, color: PW.ink3)
+                        Icon(.lock, size: 18, color: PW.ink3)
                     } else {
                         CrossMark(size: 18, color: PW.gold)   // Figma's lucide `Cross`
                     }
@@ -1393,40 +1711,47 @@ private struct PWLevelCard: View {
 
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .center) {
-                        Text("LEVEL \(level.levelNumber)").font(.inter(10, .medium)).kerning(1.4).foregroundStyle(PW.goldDeep)
+                        Text("LEVEL \(level.levelNumber)").font(.inter(11, .medium)).kerning(1.4).foregroundStyle(PW.goldDeep)
                         Spacer(minLength: 0)
                         statusPill
                     }
                     Text(level.title).font(.nRowTitle).kerning(-0.3).foregroundStyle(PW.ink)
-                        .lineLimit(2).multilineTextAlignment(.leading).padding(.top, 6)
+                        .nuruLineLimit(2).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords(level.title, font: .nRowTitle, kerning: -0.3)
+                        .padding(.top, 6)
                     if !subtitle.isEmpty {
                         Text(subtitle).font(.nCardBody).foregroundStyle(PW.ink2).lineSpacing(2)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(.top, 4)
                     }
                     if isLocked {
                         HStack(spacing: 6) {
-                            Icon(.lock, size: 12, color: PW.ink3)
-                            Text("Complete Level \(level.levelNumber - 1) to unlock").font(.nCardMeta).foregroundStyle(PW.ink3)
+                            Icon(.lock, size: 14, color: PW.ink3)
+                            Text(lockLine).font(.nCardMeta).foregroundStyle(PW.ink3)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 12)
                     } else {
                         VStack(spacing: 8) {
                             HStack {
                                 HStack(spacing: 4) {
-                                    Icon(.bookOpen, size: 12, color: PW.ink2)
-                                    Text("\(level.completedModules)/\(level.totalModules) modules").font(.nCardMeta).foregroundStyle(PW.ink2)
+                                    Icon(.bookOpen, size: 14, color: PW.ink2)
+                                    // No zero counts (the Cycle 4 walk): "Level 2 is
+                                    // being prepared", "10 modules", "3/10 modules".
+                                    Text(PathwayTrail.cardCountLine(level)).font(.nCardMeta).foregroundStyle(PW.ink2)
+                                        .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
-                                Text("\(pct)%").font(.inter(11, .medium)).foregroundStyle(PW.navy)
+                                if pct > 0 { Text("\(pct)%").font(.inter(11, .medium)).foregroundStyle(PW.navy) }
                             }
-                            PWBar(pct: pct, height: 6, fill: .color(PW.gold), track: PW.navy.opacity(0.10))
+                            if pct > 0 { PWBar(pct: pct, height: 6, fill: .color(PW.gold), track: PW.navy.opacity(0.10)) }
                         }
                         .padding(.top, 12)
                     }
                 }
 
                 if !isLocked {
-                    Icon(.chevronRight, size: 17, color: PW.chevron).padding(.top, 8)
+                    Icon(.chevronRight, size: 18, color: PW.chevron).padding(.top, 8)
                 }
             }
             .padding(16)
@@ -1438,7 +1763,7 @@ private struct PWLevelCard: View {
         }
         .buttonStyle(.pressableSubtle)
         .modifier(PWLockedShake(animatableData: CGFloat(shakes)))
-        .accessibilityHint(isLocked ? "Locked. Complete Level \(level.levelNumber - 1) to unlock." : "")
+        .accessibilityHint(isLocked ? "Locked. \(lockLine)." : "")
     }
 
     /// Locked levels stay locked (server-authoritative, §1.9) — a tap answers
@@ -1451,11 +1776,13 @@ private struct PWLevelCard: View {
 
     private var statusPill: some View {
         let (label, bg, fg): (String, Color, Color) = {
+            if let stagePill { return (stagePill, PW.goldTint, Color(hex: 0x8A6B10)) }
+            if level.isAwaitingReview { return ("Exam passed", PW.goldTint, Color(hex: 0x8A6B10)) }
             if isCompleted { return ("Complete", PW.goldTint, Color(hex: 0x8A6B10)) }
             if isActive    { return ("Active", Color(hex: 0xDDF4C6), Color(hex: 0x22612A)) }
             return ("Locked", PW.mutedBg, PW.ink3)
         }()
-        return Text(label).font(.inter(10, .medium)).foregroundStyle(fg)
+        return Text(label).font(.inter(11, .medium)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(bg, in: Capsule())
     }
@@ -1563,5 +1890,66 @@ private struct CrossMark: View {
         }
         .foregroundStyle(color)
         .frame(width: size, height: size)
+    }
+}
+
+
+/// The open module's words follow the server's progress (the walk's B3): a
+/// module never opened (`progress` 0) is "Up next · tap to start" with
+/// "Start" — it read "In progress · tap to continue" with "Resume" beside a
+/// hero that said "Start", claiming progress that didn't exist.
+enum ModuleRowWords {
+    static func openCaption(progress: Double) -> String {
+        progress > 0 ? "In progress · tap to continue" : "Up next · tap to start"
+    }
+    static func openAction(progress: Double) -> String {
+        progress > 0 ? "Resume" : "Start"
+    }
+}
+
+/// Map view speaks the journey's words (the Cycle 3 walk's E5): it said
+/// "CONTINUE YOUR JOURNEY · Level 1" and "Complete Level 1 to unlock" while
+/// Level 1's every module was done and its exam was next. Pure, so the
+/// tests pin it.
+enum LevelsMapWords {
+    struct Card: Equatable { let kicker: String; let title: String; let line: String? }
+
+    /// "SIX-LEVEL PATHWAY" — the number of levels the pathway really has, in
+    /// words (Android's countWord): never written in (final walk C6).
+    static func pathwayKicker(levels n: Int) -> String {
+        let words = ["", "ONE", "TWO", "THREE", "FOUR", "FIVE", "SIX", "SEVEN", "EIGHT", "NINE", "TEN"]
+        let count = (1...10).contains(n) ? words[n] : "\(n)"
+        return "\(count)-LEVEL PATHWAY"
+    }
+
+    /// The continue card for the member's level: the journey's next step once
+    /// the modules are done; "continue" only while there are modules to walk.
+    static func continueCard(level: PathwayLevel, journey j: Journey?) -> Card {
+        guard let j, j.levelNumber == level.levelNumber, j.stage != .learning else {
+            return Card(kicker: "CONTINUE YOUR JOURNEY", title: "Level \(level.levelNumber): \(level.title)", line: nil)
+        }
+        return Card(kicker: j.kicker.uppercased(), title: j.title, line: j.line)
+    }
+
+    /// What opens a locked level: the step before it, in the journey's words.
+    /// A level with no lessons yet is being prepared, and says so — nobody is
+    /// promised to open it (§9.1 rule 7, §9.2 #7). Android's lockLine.
+    static func lockLine(levelNumber n: Int, journey j: Journey?, preparing: Bool = false) -> String {
+        let prev = n - 1
+        guard let j, j.levelNumber == prev else {
+            return preparing ? "Level \(n) is being prepared" : "Complete Level \(prev) to unlock"
+        }
+        switch j.stage {
+        case .learning: return preparing ? "Level \(n) is being prepared" : "Complete Level \(prev) to unlock"
+        case .examReady:
+            return preparing ? "Pass the Level \(prev) exam — Level \(n) is being prepared"
+                : "Pass the Level \(prev) exam — then your leader opens Level \(n)"
+        case .examSoon:
+            return preparing ? "The Level \(prev) exam opens soon — Level \(n) is being prepared"
+                : "The Level \(prev) exam opens soon — then your leader opens Level \(n)"
+        case .awaitingUsher, .finished:
+            return preparing ? "Level \(n) is being prepared — we'll let you know"
+                : "Your leader will open Level \(n) — you'll get a notice"
+        }
     }
 }

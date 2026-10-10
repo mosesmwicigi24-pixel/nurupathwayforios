@@ -105,27 +105,27 @@ struct GuestStagePiP: View {
             case .idle, .connecting:
                 VStack(spacing: 6) {
                     ProgressView().tint(Nuru.gold)
-                    Text("Joining stage…").font(.inter(9, .semibold)).foregroundStyle(.white.opacity(0.8))
+                    Text("Joining stage…").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.8))
                 }
             case .live:
                 WebRTCVideoView(track: publisher.localVideoTrack)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     .opacity(publisher.isVideoEnabled ? 1 : 0.25)
                 if !publisher.isVideoEnabled {
-                    Image(systemName: "video.slash.fill").font(.system(size: 16)).foregroundStyle(.white.opacity(0.85))
+                    Image(systemName: "video.slash.fill").font(.symbol(16)).foregroundStyle(.white.opacity(0.85))
                 }
             case .failed(let message):
                 VStack(spacing: 6) {
                     Image(systemName: "exclamationmark.triangle.fill")
-                        .font(.system(size: 16)).foregroundStyle(Nuru.gold)
-                    Text(message).font(.inter(8, .semibold)).foregroundStyle(.white.opacity(0.85))
+                        .font(.symbol(16)).foregroundStyle(Nuru.gold)
+                    Text(message).font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
                         .multilineTextAlignment(.center).lineLimit(3)
                         .padding(.horizontal, 6)
                     Button {
                         Haptics.tap()
                         onRetry()
                     } label: {
-                        Text("Retry").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                        Text("Retry").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                             .padding(.horizontal, 12).padding(.vertical, 5)
                             .background(Nuru.gold, in: Capsule())
                     }
@@ -147,7 +147,7 @@ struct GuestStagePiP: View {
             visibility = visibility.reduce(.toggle)
         } label: {
             Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 8, weight: .bold)).foregroundStyle(.white)
+                .font(.symbol(8, weight: .bold)).foregroundStyle(.white)
                 .frame(width: 20, height: 20)
                 .background(Color.black.opacity(0.55), in: Circle())
         }
@@ -167,7 +167,7 @@ struct GuestStagePiP: View {
                 Circle().fill(.ultraThinMaterial)
                 Circle().stroke(Nuru.gold.opacity(0.6), lineWidth: 1.5)
                 Image(systemName: "person.crop.rectangle.fill")
-                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Nuru.gold)
+                    .font(.symbol(16, weight: .semibold)).foregroundStyle(Nuru.gold)
             }
         }
         .environment(\.colorScheme, .dark)

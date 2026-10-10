@@ -13,7 +13,7 @@ final class GiftsViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { gifts = try await MemberAPI.myGifts() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your gifts." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your gifts.", error) }
         loading = false
     }
 }
@@ -22,16 +22,24 @@ struct GiftsView: View {
     @StateObject private var vm = GiftsViewModel()
 
     var body: some View {
-        ZStack {
-            Nuru.paper.ignoresSafeArea()
-            LoadStateView(loading: vm.loading && vm.gifts == nil,
-                          isEmpty: vm.gifts == nil, error: vm.error,
-                          emptyText: "No gifts profile yet.", retry: { Task { await vm.load() } }) {
-                if let g = vm.gifts { content(g) }
+        VStack(spacing: 0) {
+            // The §8.1 header (rule 2: back · kicker · title; final walk #30:
+            // it was the system's centred title and a "‹" back).
+            NuruPushedHeader(kicker: "Profile", title: "Your Calling", line: "How God has wired you to serve.")
+            ZStack {
+                Nuru.paper
+                LoadStateView(loading: vm.loading && vm.gifts == nil,
+                              isEmpty: vm.gifts == nil, error: vm.error,
+                              emptyText: "No gifts profile yet.", retry: { Task { await vm.load() } }) {
+                    if let g = vm.gifts { content(g) }
+                }
             }
         }
-        .navigationTitle("Your Calling")
-        .navigationBarTitleDisplayMode(.inline)
+        .ignoresSafeArea(edges: .top)
+        .background(Nuru.paper.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .nuruEdgeSwipeBack()
         .task { if vm.gifts == nil { await vm.load() } }
     }
 
@@ -89,7 +97,7 @@ struct GiftsView: View {
     private func personaCard(_ p: GiftPersona) -> some View {
         VStack(alignment: .leading, spacing: Nuru.S.sm) {
             HStack(spacing: Nuru.S.sm) {
-                Text(p.emoji ?? "✨").font(.system(size: 24))
+                Text(p.emoji ?? "✨").font(.emoji(22))
                 VStack(alignment: .leading, spacing: 1) {
                     Text(p.title).font(.nHeading).foregroundStyle(Nuru.ink)
                     Text(p.personaName).font(.nCaption).foregroundStyle(Nuru.gold)
@@ -130,7 +138,7 @@ struct GiftsView: View {
                 .font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
             NavigationLink(value: GrowDestination.giftsAssessment) {
                 Text("Discover how God wired you")
-                    .font(.inter(16, .semibold)).foregroundStyle(.white)
+                    .font(.inter(16, .semibold)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity, minHeight: Nuru.buttonHeightLg)
                     .background(Nuru.goldGradient, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
             }

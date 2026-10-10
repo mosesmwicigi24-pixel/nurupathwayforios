@@ -43,7 +43,7 @@ final class GiftsAssessmentViewModel: ObservableObject {
             return
         }
         do { questionSet = try await MemberAPI.giftQuestions() }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load the assessment." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load the assessment.", error) }
         loading = false
     }
 
@@ -75,7 +75,7 @@ final class GiftsAssessmentViewModel: ObservableObject {
             Haptics.success()
         } catch {
             Haptics.error()
-            submitError = (error as? APIError)?.errorDescription ?? "Couldn't submit. Please try again."
+            submitError = NuruStateCopy.failureLine("Couldn't submit. Please try again.", error)
         }
     }
 
@@ -135,7 +135,7 @@ struct GiftsAssessmentView: View {
                 Color.clear.frame(width: 40, height: 40)
             }
             Text("Spiritual gifts")
-                .font(.fraunces(24, .semibold))
+                .font(.fraunces(26, .semibold))
                 .foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -184,7 +184,7 @@ struct GiftsAssessmentView: View {
             Spacer()
             Text(vm.error ?? "Couldn't load the assessment.")
                 .font(.nBody).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-            PButton(title: "Try again", variant: .navy) { Task { await vm.load() } }
+            PButton(title: "Try again", variant: .secondary) { Task { await vm.load() } }
                 .frame(maxWidth: 200)
             Spacer()
         }
@@ -200,7 +200,7 @@ struct GiftsAssessmentView: View {
                     VStack(alignment: .leading, spacing: Nuru.S.base) {
                         SegmentedProgress(step: index, total: total)
                         Text(q.prompt)
-                            .font(.fraunces(20, .medium))
+                            .font(.fraunces(18, .medium))
                             .foregroundStyle(Nuru.navy)
                             .lineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
@@ -313,7 +313,8 @@ private struct ResultsPane: View {
     let onDone: () -> Void
 
     /// Figma's result-bar palette, cycled across the top gifts.
-    private static let barColors: [Color] = [Color(hex: 0x6366F1), Color(hex: 0xDC2626), Nuru.gold]
+    /// Navy and gold only (§8.1 rule 1) — no indigo or red bars.
+    private static let barColors: [Color] = [Nuru.navy, Nuru.gold, Nuru.navyMid]
 
     /// One resolved result row (gift key → persona title + normalised %).
     private struct TopGift: Identifiable {
@@ -362,7 +363,7 @@ private struct ResultsPane: View {
                         .frame(width: 56, height: 56)
                         .background(Nuru.gold.opacity(0.13), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     Text("YOUR TOP GIFTS")
-                        .font(.inter(10, .bold)).tracking(1.8)
+                        .font(.inter(11, .bold)).tracking(1.8)
                         .foregroundStyle(Nuru.goldLo)
                         .padding(.top, Nuru.S.sm)
                     Text("Based on \(answered) reflections")
@@ -382,11 +383,11 @@ private struct ResultsPane: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 Text("WHERE TO SERVE")
-                    .font(.inter(10, .bold)).tracking(1.8)
+                    .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Nuru.goldLo)
                 ForEach(gifts.suggestedTracks.prefix(3)) { t in
                     HStack(spacing: Nuru.S.sm) {
-                        Icon(.check, size: 13, color: Nuru.navy)
+                        Icon(.check, size: 14, color: Nuru.navy)
                             .frame(width: 28, height: 28)
                             .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                         Text(t.title)

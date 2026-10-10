@@ -90,7 +90,7 @@ struct ShareToChatSheet: View {
     private func sendErrorBanner(_ message: String) -> some View {
         HStack(spacing: Nuru.S.sm) {
             Image(systemName: "exclamationmark.circle.fill")
-                .font(.system(size: 14)).foregroundStyle(Nuru.danger)
+                .font(.symbol(14)).foregroundStyle(Nuru.danger)
             Text(message).font(.nCaption).foregroundStyle(Nuru.ink)
             Spacer(minLength: 0)
         }
@@ -132,7 +132,7 @@ struct ShareToChatSheet: View {
                 if sendingId == c.conversationId {
                     ProgressView().tint(Nuru.gold)
                 } else {
-                    Icon(.send, size: 16, color: Nuru.gold)
+                    Icon(.send, size: 18, color: Nuru.gold)
                 }
             }
             .padding(Nuru.S.base)
@@ -146,7 +146,7 @@ struct ShareToChatSheet: View {
     private func load() async {
         loading = true; error = nil
         do { conversations = try await MemberAPI.chatInbox().conversations }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load your chats." }
+        catch { self.error = NuruStateCopy.failureLine("Couldn't load your chats.", error) }
         loading = false
     }
 
@@ -164,7 +164,7 @@ struct ShareToChatSheet: View {
         } catch {
             Haptics.error()
             // Keep the conversation list on screen — only surface the failure.
-            sendError = (error as? APIError)?.errorDescription ?? "Couldn't send. Try again."
+            sendError = NuruStateCopy.failureLine("Couldn't send. Try again.", error)
         }
         sendingId = nil
     }

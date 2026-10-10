@@ -14,6 +14,8 @@ enum AppRoute: Hashable {
     /// The cell's people — pushed from CellInfoView's members card.
     case cellRoster
     case discipleshipHub
+    /// "Ask to be connected" to a cell (EXPERIENCE.md §9.2 #12).
+    case cellConnect
 }
 
 /// Value-routes for the growth screens, pushed from Home / Plans stacks.
@@ -91,6 +93,7 @@ extension View {
                 case .cell: CellInfoView()
                 case .cellRoster: CellRosterView()
                 case .discipleshipHub: DiscipleshipHubView()
+                case .cellConnect: CellConnectView()
                 }
             }
     }

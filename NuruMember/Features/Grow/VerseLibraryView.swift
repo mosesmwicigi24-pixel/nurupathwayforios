@@ -113,11 +113,11 @@ struct VerseLibraryView: View {
                 .presentationDetents([.medium, .large])
         }
         // Removing a verse is irreversible — a beat of confirmation first.
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Remove this verse?",
             isPresented: Binding(get: { pendingDelete != nil },
-                                 set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
+                                 set: { if !$0 { pendingDelete = nil } })
         ) {
             Button("Remove verse", role: .destructive) {
                 if let v = pendingDelete { Task { await vm.delete(v) } }
@@ -200,7 +200,7 @@ private struct SavedVerseCard: View {
                     .foregroundStyle(Nuru.gold)
                 Spacer()
                 Text(verse.version)
-                    .font(.inter(10, .semibold))
+                    .font(.inter(11, .semibold))
                     .foregroundStyle(Nuru.muted)
                     .padding(.horizontal, Nuru.S.sm).padding(.vertical, 3)
                     .background(Nuru.surface, in: Capsule())
@@ -221,7 +221,7 @@ private struct SavedVerseCard: View {
                 if hasText {
                     Button(action: practice) {
                         HStack(spacing: 6) {
-                            Icon(.penLine, size: 13, color: Nuru.navy)
+                            Icon(.penLine, size: 14, color: Nuru.navy)
                             Text("Practice")
                                 .font(.inter(12, .bold))
                                 .foregroundStyle(Nuru.navy)
@@ -252,8 +252,9 @@ private struct SavedVerseCard: View {
 }
 
 /// Type-from-memory practice for a saved verse — the Figma practice sheet
-/// (serif title + close, editor, gold match bar, save). Presentation-only:
-/// saved verses have no practice endpoint, so "Save practice" simply closes.
+/// (serif title + close, editor, gold match bar, Done). Presentation-only:
+/// saved verses have no practice endpoint, so nothing is saved — the button
+/// says "Done", never "Save practice" with a success it didn't have (§7.4 #2).
 private struct VersePracticeSheet: View {
     let verse: SavedVerse
     @Environment(\.dismiss) private var dismiss
@@ -270,7 +271,7 @@ private struct VersePracticeSheet: View {
                         .foregroundStyle(Nuru.navy)
                     Spacer()
                     Button { dismiss() } label: {
-                        Icon(.x, size: 15, color: Nuru.navy)
+                        Icon(.x, size: 14, color: Nuru.navy)
                             .frame(width: 32, height: 32)
                             .background(Nuru.surface, in: Circle())
                     }
@@ -285,9 +286,9 @@ private struct VersePracticeSheet: View {
                     .onChange(of: matchPct) { old, new in
                         if new / 25 != old / 25, new > old { Haptics.selection() }
                     }
-                PButton(title: "Save practice", variant: .gold,
+                PButton(title: "Done", variant: .gold,
                         disabled: typed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty) {
-                    Haptics.success()
+                    Haptics.tap()
                     dismiss()
                 }
             }
@@ -331,7 +332,7 @@ private struct VersePracticeSheet: View {
             }
             .frame(height: 8)
             Text("\(matchPct)% match")
-                .font(.inter(10, .regular))
+                .font(.inter(11, .regular))
                 .foregroundStyle(Nuru.muted)
                 .contentTransition(.numericText())
                 .animation(.default, value: matchPct)

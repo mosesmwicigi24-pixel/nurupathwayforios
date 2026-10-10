@@ -13,6 +13,12 @@
 // null-defaults title/salutation/theme/image_key before they hit the wire, but
 // every field here is STILL decoded defensively — a letter written before this
 // migration (or a future wire hiccup) must never render broken.
+//
+// v3 (pathway#512, the editorial letter — owner, 2026-10-07): additive and
+// derived — `issue_no`, `reading_minutes`, `paragraphs`, `scripture` (the verse
+// in full), `photo`, `figures` (0–3 of the week's true numbers), `signed_by`
+// and `pdf_url` (a one-page A4). Every one decodes as OPTIONAL: a v2 server's
+// letter has none of them, and renders exactly as before (LetterView).
 import Foundation
 
 /// One weekly pastoral letter, composed from the member's actual week.
@@ -42,10 +48,41 @@ struct PastoralLetter: Codable, Sendable, Identifiable {
     /// share affordance entirely rather than falling back to sharing the body.
     let shareLine: String?
     let createdAt: String
-    let readAt: String?
+    var readAt: String?
+
+    // MARK: v3 — the editorial letter (all optional; nil on a v2 server)
+
+    /// The member's own issue number — "No. 6".
+    var issueNo: Int? = nil
+    /// The letter's reading time, in whole minutes.
+    var readingMinutes: Int? = nil
+    /// The body as the paragraphs it is laid out in.
+    var paragraphs: [String]? = nil
+    /// The week's verse in full; `text` and `version` may be absent.
+    var scripture: LetterScripture? = nil
+    /// The week's photograph — a curated library image, with its words.
+    var photo: LetterPhoto? = nil
+    /// Up to three of the week's true figures ("10/10", "lessons finished").
+    var figures: [LetterFigure] = []
+    /// Who signs the letter — "Pastor Moses", "Nuru Place".
+    var signedBy: LetterSigner? = nil
+    /// The letter as a one-page A4, a path from the server's root
+    /// ("/v1/me/letters/{id}/pdf") — resolved against the API's origin.
+    var pdfUrl: String? = nil
 
     var id: String { letterId }
     var isUnread: Bool { readAt == nil }
+    /// A v3 letter, laid out as board A (the editorial letter). A v2 letter
+    /// — no paragraphs on the wire — keeps today's stationery exactly.
+    var isEditorial: Bool { !(paragraphs ?? []).isEmpty }
+
+    /// The same letter, read — every field carried over (v2 and v3 alike),
+    /// only `readAt` set. Home's knock clears with it.
+    func markedRead(at iso: String) -> PastoralLetter {
+        var copy = self
+        copy.readAt = iso
+        return copy
+    }
 
     /// Defaults matching the backend's own (letters.ts `DEFAULT_LETTER_*`) —
     /// kept here too so the client never depends solely on the server having
@@ -68,6 +105,47 @@ struct LetterNextStep: Codable, Sendable, Hashable {
 
 struct LetterNextStepParams: Codable, Sendable, Hashable {
     let moduleId: String?
+}
+
+/// The week's verse in full (v3). `text` is nil when the server has no
+/// stored text for the reference — the card then shows the reference alone.
+struct LetterScripture: Codable, Sendable, Hashable {
+    let ref: String
+    let text: String?
+    let version: String?
+}
+
+/// The week's photograph (v3): a curated library image and its words.
+struct LetterPhoto: Codable, Sendable, Hashable {
+    let id: String?
+    let url: String
+    let alt: String?
+    let caption: String?
+}
+
+/// One of the week's true figures (v3): "10/10" · "lessons finished".
+struct LetterFigure: Codable, Sendable, Hashable {
+    let value: String
+    let label: String
+}
+
+/// A figure as it comes off the wire — each field on its own, so one odd
+/// figure never costs the others.
+private struct RawFigure: Decodable {
+    let value: String?
+    let label: String?
+    private enum CodingKeys: String, CodingKey { case value, label }
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        value = try? c.decodeIfPresent(String.self, forKey: .value)
+        label = try? c.decodeIfPresent(String.self, forKey: .label)
+    }
+}
+
+/// Who signs the letter (v3): "Pastor Moses" · "Nuru Place".
+struct LetterSigner: Codable, Sendable, Hashable {
+    let name: String
+    let role: String?
 }
 
 // Tolerant decoding lives in an extension so the synthesized memberwise init
@@ -98,6 +176,24 @@ extension PastoralLetter {
         shareLine = Self.nonEmpty(try? c.decodeIfPresent(String.self, forKey: .shareLine))
         createdAt = (try? c.decodeIfPresent(String.self, forKey: .createdAt)) ?? ""
         readAt = try? c.decodeIfPresent(String.self, forKey: .readAt)
+        // v3 — each optional and tolerant on its own: one odd field never
+        // costs the letter (or the rest of the editorial layout).
+        issueNo = (try? c.decodeIfPresent(Int.self, forKey: .issueNo)).flatMap { $0 > 0 ? $0 : nil }
+        readingMinutes = (try? c.decodeIfPresent(Int.self, forKey: .readingMinutes)).flatMap { $0 > 0 ? $0 : nil }
+        let paras = ((try? c.decodeIfPresent([String].self, forKey: .paragraphs)) ?? nil)?.compactMap(Self.nonEmpty)
+        paragraphs = (paras?.isEmpty ?? true) ? nil : paras
+        if let s = try? c.decodeIfPresent(LetterScripture.self, forKey: .scripture), let ref = Self.nonEmpty(s.ref) {
+            scripture = LetterScripture(ref: ref, text: Self.nonEmpty(s.text), version: Self.nonEmpty(s.version))
+        }
+        if let p = try? c.decodeIfPresent(LetterPhoto.self, forKey: .photo), let url = Self.nonEmpty(p.url) {
+            photo = LetterPhoto(id: p.id, url: url, alt: Self.nonEmpty(p.alt), caption: Self.nonEmpty(p.caption))
+        }
+        figures = ((try? c.decodeIfPresent([RawFigure].self, forKey: .figures)) ?? nil ?? [])
+            .compactMap { f in Self.nonEmpty(f.value).map { LetterFigure(value: $0, label: Self.nonEmpty(f.label) ?? "") } }
+        if let s = try? c.decodeIfPresent(LetterSigner.self, forKey: .signedBy), let name = Self.nonEmpty(s.name) {
+            signedBy = LetterSigner(name: name, role: Self.nonEmpty(s.role))
+        }
+        pdfUrl = Self.nonEmpty(try? c.decodeIfPresent(String.self, forKey: .pdfUrl))
     }
 
     /// Convenience memberwise init — used by HomeView's optimistic mark-read

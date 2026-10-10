@@ -130,7 +130,7 @@ final class CalendarViewModel: ObservableObject {
 
     var listTitle: String {
         guard let selected else { return "UPCOMING" }
-        return Ev.weekday(iso(selected), "MMM d").uppercased()      // "JUN 15"
+        return NuruDates.day(selected).uppercased()                 // "MON 15 JUN" — the one shape
     }
 
     private func iso(_ d: Date) -> String { ISO8601DateFormatter().string(from: d) }
@@ -170,43 +170,10 @@ struct CalendarView: View {
     // MARK: header — cream sub-page chrome (make's CommunityPage).
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Button { dismiss() } label: {
-                    Icon(.chevronLeft, size: 18, color: Nuru.navy)
-                        .frame(width: 40, height: 40)
-                        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-                Text("EVENTS").font(.inter(9, .bold)).kerning(1.5)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Color.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))
-            }
-            Text("All events & calendar")
-                .font(.fraunces(27, .semibold)).foregroundStyle(Nuru.navy)
-                .padding(.top, Nuru.S.base)
-            Text("\(vm.upcomingCount) upcoming · \(vm.headerTitle)")
-                .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 6)
-            RoundedRectangle(cornerRadius: 2)
-                .fill(LinearGradient(colors: [Nuru.gold, Nuru.gold.opacity(0)], startPoint: .leading, endPoint: .trailing))
-                .frame(width: 48, height: 3)
-                .padding(.top, Nuru.S.md)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Nuru.S.screen).padding(.top, 60).padding(.bottom, Nuru.S.lg)
-        .background {
-            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.27)).frame(width: 224, height: 224).blur(radius: 48).offset(x: 60, y: -80)
-                }
-        }
-        .clipShape(.rect(bottomLeadingRadius: 30, bottomTrailingRadius: 30))
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+        // The §8.1 pushed-page header (rule 2: back · kicker · title · one
+        // line; final walk #38): the chip and the gold underline went.
+        NuruPushedHeader(kicker: "Events", title: "All events & calendar",
+                         line: ZeroCounts.calendarHeader(upcoming: vm.upcomingCount, month: vm.headerTitle))
     }
 
     // MARK: month-grid card
@@ -225,7 +192,7 @@ struct CalendarView: View {
                     Haptics.selection()
                     withAnimation(.spring(response: 0.32, dampingFraction: 0.85)) { vm.goToday() }
                 } label: {
-                    Text("TODAY").font(.inter(9, .bold)).kerning(1)
+                    Text("TODAY").font(.inter(11, .bold)).kerning(1)
                         .foregroundStyle(Color(hex: 0xA8861C))
                         .padding(.horizontal, 12).padding(.vertical, 6)
                         .background(Nuru.gold.opacity(0.1), in: Capsule())
@@ -238,7 +205,7 @@ struct CalendarView: View {
             // weekday header
             LazyVGrid(columns: cols, spacing: 0) {
                 ForEach(Array(weekdays.enumerated()), id: \.offset) { _, d in
-                    Text(d).font(.inter(9, .bold)).kerning(0.8).foregroundStyle(Color(hex: 0xB0B8C4))
+                    Text(d).font(.inter(11, .bold)).kerning(0.8).foregroundStyle(Color(hex: 0xB0B8C4))
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -333,7 +300,7 @@ struct CalendarView: View {
     private func legendItem(_ category: String) -> some View {
         HStack(spacing: 5) {
             Circle().fill(Ev.categoryColor(category)).frame(width: 6, height: 6)
-            Text(category.capitalized).font(.inter(10, .medium)).foregroundStyle(Nuru.ink600)
+            Text(category.capitalized).font(.inter(11, .medium)).foregroundStyle(Nuru.ink600)
         }
     }
 
@@ -341,10 +308,12 @@ struct CalendarView: View {
 
     private var listHeader: some View {
         HStack {
-            Text(vm.listTitle).font(.inter(10, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
+            Text(vm.listTitle).font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Color(hex: 0xA8861C))
             Spacer(minLength: 0)
             let n = vm.listEvents.count
-            Text("\(n) \(n == 1 ? "event" : "events")").font(.inter(10, .semibold)).foregroundStyle(Nuru.faint)
+            if n > 0 {   // no zero counts (§7.4 #9)
+                Text("\(n) \(n == 1 ? "event" : "events")").font(.inter(11, .semibold)).foregroundStyle(Nuru.faint)
+            }
         }
         .padding(.horizontal, 4)
     }
@@ -392,7 +361,7 @@ struct CalendarView: View {
                     Haptics.tap()
                     withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { vm.selected = nil }
                 } label: {
-                    Text("See all upcoming").font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
+                    Text("See all upcoming").font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
                         .padding(.horizontal, 12).padding(.vertical, 6)   // comfortable tap target
                         .contentShape(Rectangle())
                 }

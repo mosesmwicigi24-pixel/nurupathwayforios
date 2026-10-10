@@ -1,7 +1,8 @@
 // Celebration layer — the app's "human moments". Warm, once-only pop-ups and
 // confetti fired by REAL server milestones (rhythm complete, streak marks, new
-// badges, a confirmed gift, a prayer landing on the wall). Mirrors the Android
-// member app's celebration layer.
+// badges, a prayer landing on the wall). Mirrors the Android member app's
+// celebration layer. A confirmed gift has ONE celebration — its own success
+// screen on Give (EXPERIENCE.md §7.4 #14) — never a second card here.
 //
 // Rules of the house:
 //   · Server truth only — a moment fires from data the server returned, never
@@ -108,7 +109,7 @@ struct CelebrationHost: View {
 
     private func card(_ moment: CelebrationCenter.Moment) -> some View {
         VStack(spacing: 0) {
-            Text("🎉").font(.system(size: 44))
+            Text("🎉").font(.emoji(44))
             Text(moment.title)
                 .font(.fraunces(22, .semibold))
                 .foregroundStyle(Nuru.navy)

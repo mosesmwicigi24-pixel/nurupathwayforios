@@ -35,7 +35,7 @@ struct BroadcastMiniPlayer: View {
                     dot
                     VStack(alignment: .leading, spacing: 1) {
                         Text(statusLabel)
-                            .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(statusColor)
+                            .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(statusColor)
                         if let startedAt = controller.startedAt {
                             TimelineView(.periodic(from: .now, by: 1)) { ctx in
                                 Text(formatDuration(ctx.date.timeIntervalSince(startedAt)))
@@ -59,7 +59,7 @@ struct BroadcastMiniPlayer: View {
                 Haptics.action()
                 confirmEnd = true
             } label: {
-                Icon(.x, size: 12, color: .white.opacity(0.85))
+                Icon(.x, size: 14, color: .white.opacity(0.85))
                     .frame(width: 26, height: 26)
                     .background(Color.white.opacity(0.14), in: Circle())
             }
@@ -72,7 +72,8 @@ struct BroadcastMiniPlayer: View {
         .shadow(color: .black.opacity(0.3), radius: 8, y: 3)
         .padding(.horizontal, Nuru.S.base)
         .transition(.scale(scale: 0.85).combined(with: .opacity))
-        .confirmationDialog("End this stream?", isPresented: $confirmEnd, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("End this stream?", isPresented: $confirmEnd) {
             Button("End stream", role: .destructive) {
                 Task { await controller.end() }
             }

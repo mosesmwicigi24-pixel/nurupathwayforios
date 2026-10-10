@@ -25,7 +25,7 @@ final class GivingReceiptViewModel: ObservableObject {
     func load() async {
         loading = true; error = nil
         do { detail = try await MemberAPI.givingDetail(transactionId) }
-        catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't load this receipt." }
+        catch { self.error = NuruStateCopy.failure(error).sentence }   // §4, never raw text
         loading = false
     }
 }
@@ -52,6 +52,13 @@ private enum ReceiptState {
         }
     }
 
+    /// The money reached (or is on its way to) the fund.
+    var reachesFund: Bool {
+        switch self {
+        case .failed, .refunded: return false
+        default: return true
+        }
+    }
 }
 
 struct GivingReceiptView: View {
@@ -98,6 +105,8 @@ struct GivingReceiptView: View {
                 Spacer()
             }
         }
+        // The header sits at the screen's top and pads the status bar itself.
+        .ignoresSafeArea(edges: .top)
         .background(Nuru.paper.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -110,46 +119,14 @@ struct GivingReceiptView: View {
         .sheet(item: $sharePayload) { p in ReceiptShareSheet(items: p.items) }
     }
 
-    // MARK: Header — cream band, back + title + share
+    // MARK: Header — the pushed page's one header
 
+    /// back · kicker · title (§8.1 rule 2; final walk #38: "Receipt" had no
+    /// kicker, and an empty band sat above it — the header padded the status
+    /// bar's height a second time). Share is offered once — "Share receipt"
+    /// below, beside "View statement" (§9.6 #3).
     private var header: some View {
-        HStack(spacing: Nuru.S.md) {
-            Button { dismiss() } label: {
-                Icon(.arrowLeft, size: 18, color: Nuru.navy).frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-            }
-            .buttonStyle(.pressable)
-            .accessibilityLabel("Back")
-            Text("Receipt").font(.fraunces(20, .semibold)).foregroundStyle(Nuru.navy)
-            Spacer()
-            // Same action as the primary "Share receipt" button below.
-            if let d = vm.detail {
-                Button { share(d) } label: {
-                    Group {
-                        if downloading { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
-                        else { Icon(.share, size: 16, color: Nuru.navy) }
-                    }
-                    .frame(width: 40, height: 40)
-                    .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
-                }
-                .buttonStyle(.pressable)
-                .disabled(downloading)
-                .accessibilityLabel("Share receipt")
-            }
-        }
-        .padding(.horizontal, Nuru.S.lg)
-        // Right under the status bar — the real inset, never a fixed 60.
-        .padding(.top, NuruSafeArea.top + 8)
-        .padding(.bottom, Nuru.S.lg)
-        .background(
-            LinearGradient(colors: [Color(hex: 0xF6F4EF), Color(hex: 0xEFE8DA)], startPoint: .topLeading, endPoint: .bottomTrailing)
-                .overlay(alignment: .topTrailing) {
-                    Circle().fill(Nuru.gold.opacity(0.22)).frame(width: 176, height: 176).blur(radius: 44).offset(x: 40, y: -60)
-                }
-        )
-        .overlay(alignment: .bottom) { Rectangle().fill(Nuru.border).frame(height: 1) }
+        NuruPushedHeader(kicker: "Give", title: "Receipt")
     }
 
     // MARK: Loading — the receipt's silhouette (hero, details, two buttons)
@@ -185,7 +162,9 @@ struct GivingReceiptView: View {
             VStack(spacing: Nuru.S.base) {
                 hero(d, state).gentleEntrance()
                 details(d).gentleEntrance(delay: 0.06)
-                whereItWent(d).gentleEntrance(delay: 0.10)
+                // "100% reaches the fund" is a promise about money that moves —
+                // never said under a gift that failed or was refunded.
+                if state.reachesFund { whereItWent(d).gentleEntrance(delay: 0.10) }
                 actions(d).gentleEntrance(delay: 0.14)
                 verseFooter.gentleEntrance(delay: 0.18)
             }
@@ -206,7 +185,7 @@ struct GivingReceiptView: View {
             .padding(.bottom, 2)
 
             Text(look.eyebrow)
-                .font(.inter(10, .semibold)).kerning(1.6).foregroundStyle(look.eyebrowColor)
+                .font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(look.eyebrowColor)
 
             if look.thanks, let first = firstName(d) {
                 Text("Thank you, \(first).")
@@ -217,7 +196,7 @@ struct GivingReceiptView: View {
             let parts = amountParts(d.amountMinor, d.currency)
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(parts.symbol).font(.inter(15, .semibold)).foregroundStyle(Color(hex: 0x74808F))
-                Text(parts.number).font(.fraunces(40, .semibold)).kerning(-0.8).foregroundStyle(Nuru.navy)
+                Text(parts.number).font(.fraunces(28, .semibold)).kerning(-0.8).foregroundStyle(Nuru.navy)
             }
             .padding(.top, 2)
 
@@ -232,7 +211,7 @@ struct GivingReceiptView: View {
                 Text("\u{201C}\(name)\u{201D}").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x9A7A2A))
             }
 
-            Text(whenLine(d.settledAt ?? d.createdAt))
+            Text(whenLine(d.shownAt))
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x8B95A5))
 
             // A status chip ONLY when the gift is not (yet) received — the
@@ -242,6 +221,22 @@ struct GivingReceiptView: View {
                     .padding(.horizontal, 12).padding(.vertical, 6)
                     .background(chip.bg, in: Capsule())
                     .padding(.top, 4)
+            }
+
+            // Why it did not go through, in the server's words (Giving Cycle
+            // 1): what happened, then what to do next and whether money moved.
+            if case .failed = state, let f = d.failure, !f.reason.isEmpty {
+                VStack(spacing: 4) {
+                    Text(f.reason)
+                        .font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626))
+                    if !f.hint.isEmpty {
+                        Text(f.hint)
+                            .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C))
+                    }
+                }
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 2)
             }
         }
         .frame(maxWidth: .infinity)
@@ -280,7 +275,8 @@ struct GivingReceiptView: View {
         case .other(let raw):
             return HeroLook(circle: Nuru.mutedBg, glyph: .clock, glyphColor: Nuru.ink600,
                             eyebrow: "GIFT", eyebrowColor: Nuru.ink600, thanks: true,
-                            chip: (raw.replacingOccurrences(of: "_", with: " ").capitalized, Nuru.mutedBg, Nuru.ink600))
+                            chip: raw.trimmingCharacters(in: .whitespaces).isEmpty ? nil
+                                : (raw.replacingOccurrences(of: "_", with: " ").capitalized, Nuru.mutedBg, Nuru.ink600))
         }
     }
 
@@ -289,10 +285,18 @@ struct GivingReceiptView: View {
     private func details(_ d: GivingDetail) -> some View {
         let ref = d.receiptCode ?? d.providerRef
         let refLabel = referenceLabel(d)
-        // Never two rows called "Reference": when the provider code already
-        // owns that word, the internal id is "Transaction".
-        let idLabel = (ref != nil && refLabel == "Reference") ? "Transaction" : "Reference"
         return VStack(spacing: 0) {
+            // The member covered the fee (Giving Cycle 2): what was the gift,
+            // what was the fee, and the total charged — it used to be one
+            // number, with the fee silently folded in.
+            if let fee = d.feeCoverMinor, fee > 0, fee < d.amountMinor {
+                row("Gift", money(d.amountMinor - fee, d.currency))
+                hairline
+                row("Fee cover", "\(money(fee, d.currency)) · covered by you")
+                hairline
+                row("Total", money(d.amountMinor, d.currency))
+                hairline
+            }
             row("Fund", fundDisplayName(d))
             if let p = d.pledge, !p.title.isEmpty {
                 hairline
@@ -309,9 +313,13 @@ struct GivingReceiptView: View {
                 row(refLabel, ref, mono: true, copy: (key: "ref", text: ref))
             }
             hairline
-            row("Date", whenFull(d.settledAt ?? d.createdAt))
-            hairline
-            row(idLabel, String(d.transactionId.prefix(8)) + "…", mono: true, copy: (key: "txid", text: d.transactionId))
+            // The one date shape (§8.1 rule 8): "Mon 5 Oct · 11:59 AM", the
+            // year only when it isn't this year. The shared text keeps it.
+            row("Date", whenLine(d.shownAt))
+            // No internal transaction id ("Reference bd48d11d…", the walks'
+            // E18 and A5; §8.1 rule 8): the member's reference is the
+            // provider's code above; the office finds a gift by it, or by
+            // member, day and amount.
         }
         .padding(.horizontal, Nuru.S.base)
         .receiptCard(radius: 20)
@@ -332,7 +340,7 @@ struct GivingReceiptView: View {
                         valueText(value, mono: mono)
                         if copiedKey == copy.key {
                             HStack(spacing: 3) {
-                                Icon(.check, size: 12, color: Color(hex: 0x16A34A))
+                                Icon(.check, size: 14, color: Color(hex: 0x16A34A))
                                 Text("Copied").font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x16A34A))
                             }
                             .transition(.opacity)
@@ -400,7 +408,11 @@ struct GivingReceiptView: View {
     // MARK: Where it went
 
     private func whereItWent(_ d: GivingDetail) -> some View {
-        var line = "100% of this gift reaches the \(fundDisplayName(d)) fund."
+        let name = fundDisplayName(d)
+        // "the Tithe fund" — but "the Building Fund", never "Building Fund fund".
+        var line = name.lowercased().hasSuffix("fund")
+            ? "100% of this gift reaches the \(name)."
+            : "100% of this gift reaches the \(name) fund."
         if d.pledge != nil { line += " · counts toward your pledge" }
         return HStack(alignment: .top, spacing: 8) {
             Icon(.shieldCheck, size: 14, color: Color(hex: 0x16A34A))
@@ -416,30 +428,32 @@ struct GivingReceiptView: View {
     private func actions(_ d: GivingDetail) -> some View {
         VStack(spacing: Nuru.S.sm) {
             HStack(spacing: 10) {
+                // The page's one primary (§8.1 rule 4; final walk #38): gold
+                // fill, navy words, radius 14 — it was navy.
                 Button { share(d) } label: {
                     HStack(spacing: 8) {
                         if downloading {
-                            ProgressView().tint(.white).scaleEffect(0.85)
-                            Text("Preparing…").font(.inter(14, .semibold)).foregroundStyle(.white)
+                            ProgressView().tint(Nuru.navy).scaleEffect(0.85)
+                            Text("Preparing…").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                         } else {
-                            Icon(.share, size: 16, color: .white)
-                            Text("Share receipt").font(.inter(14, .semibold)).foregroundStyle(.white)
+                            Icon(.share, size: 18, color: Nuru.navy)
+                            Text("Share receipt").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
                         }
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)
-                    .background(Nuru.navy, in: Capsule())
+                    .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                 }
                 .buttonStyle(.pressable)
                 .disabled(downloading)
 
                 NavigationLink(value: ReceiptRoute.statement) {
                     HStack(spacing: 8) {
-                        Icon(.fileText, size: 16, color: Nuru.navy)
+                        Icon(.fileText, size: 18, color: Nuru.navy)
                         Text("View statement").font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                     }
                     .frame(maxWidth: .infinity).frame(height: 48)
                     .background(Nuru.white, in: Capsule())
-                    .overlay(Capsule().stroke(Nuru.navy.opacity(0.35), lineWidth: 1.2))
+                    .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
                 }
                 .buttonStyle(.pressable)
                 .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
@@ -491,7 +505,7 @@ struct GivingReceiptView: View {
     private func shareText(_ d: GivingDetail) -> String {
         var method = methodLabel(d)
         if let ref = d.receiptCode ?? d.providerRef, !ref.isEmpty { method += " \(ref)" }
-        return "\(money(d.amountMinor, d.currency)) \(destinationPhrase(d)) · \(method) · \(giveDateFull(d.settledAt ?? d.createdAt))"
+        return "\(money(d.amountMinor, d.currency)) \(destinationPhrase(d)) · \(method) · \(giveDateFull(d.shownAt))"
     }
 
     // MARK: Verse footer — the Give page's verse card
@@ -561,29 +575,26 @@ struct GivingReceiptView: View {
         return "Reference"
     }
 
-    /// ("KSh", "500") · ("$", "5.00") · ("USD", "5.00") — integer minor units in,
-    /// the same rounding as money().
+    /// ("KSh", "500") · ("US$", "5.00") · ("EUR", "5.00") — integer minor units
+    /// in, the same symbols as money() (Giving Cycle 2: "US$", and shilling
+    /// cents when there are any).
     private func amountParts(_ minor: Int, _ currency: String) -> (symbol: String, number: String) {
         switch currency.uppercased() {
-        case "", "KES": return ("KSh", (minor / 100).formatted(.number.grouping(.automatic)))
-        case "USD": return ("$", String(format: "%.2f", Double(minor) / 100.0))
-        case let c: return (c, String(format: "%.2f", Double(minor) / 100.0))
+        case "", "KES":
+            let whole = (minor / 100).formatted(.number.grouping(.automatic))
+            return ("KSh", minor % 100 == 0 ? whole : "\(whole).\(String(format: "%02d", abs(minor % 100)))")
+        case "USD": return ("US$", GiveMoney.number(minor))
+        case let c: return (c, GiveMoney.number(minor))
         }
     }
 
     /// "Thu 25 Sep 2026 · 8:11 PM"
+    /// "Fri 25 Sep · 8:11 PM" (the year when it isn't this year).
     private func whenLine(_ iso: String) -> String {
         guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-        let f = DateFormatter(); f.dateFormat = "EEE d MMM yyyy · h:mm a"
-        return f.string(from: d)
+        return NuruDates.dayTime(d)
     }
 
-    /// "25 September 2026 · 8:11 PM"
-    private func whenFull(_ iso: String) -> String {
-        guard let d = giveParseDate(iso) else { return String(iso.prefix(10)) }
-        let f = DateFormatter(); f.dateFormat = "d MMMM yyyy · h:mm a"
-        return f.string(from: d)
-    }
 }
 
 // MARK: - Share sheet plumbing

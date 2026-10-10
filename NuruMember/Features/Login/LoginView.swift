@@ -41,7 +41,6 @@ struct LoginView: View {
     @State private var remember = true
 
     private let rememberKey = "auth.rememberEmail"
-    private let connectError = "Can't reach the server. Check your connection and try again."
 
     var body: some View {
         GeometryReader { geo in
@@ -70,6 +69,10 @@ struct LoginView: View {
             #if targetEnvironment(simulator) && DEBUG
             if email.isEmpty { email = "student1@dev.local" }
             if password.isEmpty { password = "pathway123" }
+            // Scripted UI verification signs in as a named seeded persona
+            // (SIMCTL_CHILD_NURU_AUTOLOGIN_EMAIL=student5@dev.local) — over a
+            // remembered address too — so a walk never types into the form.
+            if let who = ProcessInfo.processInfo.environment["NURU_AUTOLOGIN_EMAIL"], !who.isEmpty { email = who }
             // Scripted UI verification (simctl launch with SIMCTL_CHILD_NURU_AUTOLOGIN=1)
             // submits the prefilled dev credentials without a tap.
             if ProcessInfo.processInfo.environment["NURU_AUTOLOGIN"] == "1" {
@@ -97,7 +100,7 @@ struct LoginView: View {
                 }
             }
             Text("Nuru Place")
-                .font(.fraunces(36, .semibold)).kerning(-1.08).foregroundStyle(.white)
+                .font(.fraunces(28, .semibold)).kerning(-1.08).foregroundStyle(.white)
                 .padding(.top, Nuru.S.base)
             HStack(spacing: Nuru.S.sm) {
                 LinearGradient(colors: [.clear, Nuru.gold], startPoint: .leading, endPoint: .trailing)
@@ -108,7 +111,7 @@ struct LoginView: View {
             }
             .padding(.top, 14)
             Text("A MISSIONARY SENDING CHURCH")
-                .font(.inter(10, .medium)).kerning(1.8)
+                .font(.inter(11, .medium)).kerning(1.8)
                 .foregroundStyle(Color.white.opacity(0.45))
                 .padding(.top, 12)
         }
@@ -215,7 +218,7 @@ struct LoginView: View {
                             .background(remember ? Nuru.gold : .clear, in: RoundedRectangle(cornerRadius: 6))
                             .frame(width: 20, height: 20)
                         if remember {
-                            Icon(.check, size: 11, color: Nuru.navy)
+                            Icon(.check, size: 14, color: Nuru.navy)
                                 .transition(.scale.combined(with: .opacity))
                         }
                     }
@@ -250,7 +253,7 @@ struct LoginView: View {
                 Haptics.tap()
                 showPw.toggle()
             } label: {
-                Icon(showPw ? .eyeOff : .eye, size: 17, color: Color.white.opacity(0.40))
+                Icon(showPw ? .eyeOff : .eye, size: 18, color: Color.white.opacity(0.40))
                     // Bigger invisible hit area — the visible glyph stays 17pt.
                     .frame(width: 36, height: 36)
                     .contentShape(Rectangle())
@@ -267,7 +270,7 @@ struct LoginView: View {
         return VStack(alignment: .leading, spacing: 8) {
             Text(label).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.onNavyDim)
             HStack(spacing: Nuru.S.sm) {
-                Icon(icon, size: 17, color: focused ? Nuru.gold.opacity(0.85) : Color.white.opacity(0.40))
+                Icon(icon, size: 18, color: focused ? Nuru.gold.opacity(0.85) : Color.white.opacity(0.40))
                 content().frame(maxWidth: .infinity)
                 if let trailing { trailing }
             }
@@ -408,12 +411,17 @@ struct LoginView: View {
         } catch let e as APIError {
             error = errorMessage(for: e)
         } catch {
-            self.error = "Something went wrong. Please try again."
+            self.error = NuruStateCopy.failure(error).sentence
         }
     }
 
     private func errorMessage(for e: APIError) -> String {
-        if e.isNetwork { return connectError }
+        // No answer, or our side failed: §4's words. Offline only when the
+        // phone is; a server error is ours — never "Invalid email or password"
+        // or "check your connection" on a guess.
+        if e.isNetwork { return NuruStateCopy.failure(e).sentence }
+        if case .decoding = e { return NuruStateCopy.serverSide.sentence }
+        if case .http(let status, _, _, _) = e, status >= 500 { return NuruStateCopy.serverSide.sentence }
         switch mode {
         case .login: return "Invalid email or password."
         case .mfa: return "That code didn't match. Try again or use a recovery code."

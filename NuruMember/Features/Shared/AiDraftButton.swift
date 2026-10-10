@@ -21,10 +21,8 @@ struct AiDraftButton: View {
     @State private var summary: String?
     @State private var draft = ""
 
-    // The NuruAssistant orb palette (NUR.orb) + the brand gold story ring.
-    private let orb = LinearGradient(
-        colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-        startPoint: .topLeading, endPoint: .bottomTrailing)
+    // Nuru's orb — navy with gold (§8.1 rule 1) — + the brand gold story ring.
+    private let orb = Nuru.aiOrb
     private let goldGrad = LinearGradient(
         colors: [Color(hex: 0xE6C068), Color(hex: 0xC89B3C), Color(hex: 0xB07D2E)],
         startPoint: .topLeading, endPoint: .bottomTrailing)
@@ -38,7 +36,7 @@ struct AiDraftButton: View {
                 if busy {
                     ProgressView().tint(.white).scaleEffect(0.55)
                 } else {
-                    Icon(.sparkles, size: 15, color: .white)
+                    Icon(.sparkles, size: 14, color: .white)
                 }
             }
             .frame(width: 30, height: 30)
@@ -57,9 +55,9 @@ struct AiDraftButton: View {
             HStack(spacing: 8) {
                 Circle().fill(orb)
                     .frame(width: 22, height: 22)
-                    .overlay(Icon(.sparkles, size: 12, color: .white))
+                    .overlay(Icon(.sparkles, size: 14, color: .white))
                 Text("NURU SUGGESTS")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
             }
             Text(failed
                  ? "Nuru couldn’t reach the assistant just now — you can still write your own reply below."

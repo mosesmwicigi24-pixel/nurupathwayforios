@@ -9,7 +9,8 @@ import SwiftUI
 struct YourWalkView: View {
     @State private var events: [WalkEvent] = []
     @State private var loading = true
-    @State private var failed = false
+    /// Why the walk didn't come, in §4's words — offline ≠ "no walk yet".
+    @State private var failure: String?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -21,8 +22,7 @@ struct YourWalkView: View {
                 } else if events.isEmpty {
                     VStack(spacing: 8) {
                         Icon(.flag, size: 26, color: Nuru.gold)
-                        Text(failed ? "Couldn't load your walk — check your connection and come back."
-                                    : "Your walk begins with the next lesson you open.")
+                        Text(failure ?? "Your walk begins with the next lesson you open.")
                             .font(.inter(14)).foregroundStyle(Nuru.ink)
                             .multilineTextAlignment(.center)
                     }
@@ -41,8 +41,8 @@ struct YourWalkView: View {
         .background(Color(hex: 0xFAF7F0).ignoresSafeArea())
         .toolbar(.hidden, for: .navigationBar)
         .task {
-            do { events = try await MemberAPI.myWalk(); failed = false }
-            catch { failed = true } // offline ≠ "no walk yet" — tell the truth
+            do { events = try await MemberAPI.myWalk(); failure = nil }
+            catch { failure = NuruStateCopy.failureLine("Couldn't load your walk.", error) } // offline ≠ "no walk yet" — tell the truth
             loading = false
         }
     }
@@ -58,10 +58,10 @@ struct YourWalkView: View {
                 .buttonStyle(.pressable)
                 Spacer()
             }
-            Text("YOUR WALK").font(.inter(10, .bold)).kerning(1.8).foregroundStyle(Nuru.gold)
+            Text("YOUR WALK").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Nuru.gold)
                 .padding(.top, 10)
             Text("Look how far He has brought you")
-                .font(.fraunces(24)).foregroundStyle(.white)
+                .font(.fraunces(26)).foregroundStyle(.white)
             if !events.isEmpty {
                 Text("\(events.count) moments, all real")
                     .font(.inter(12)).foregroundStyle(.white.opacity(0.75))
@@ -122,9 +122,11 @@ private struct WalkNode: View {
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text(event.dateLine)
-                    .font(.inter(10, .semibold)).kerning(0.8).foregroundStyle(Nuru.ink.opacity(0.45))
-                Text(event.title)
-                    .font(.inter(14.5, .semibold)).foregroundStyle(Nuru.navy)
+                    .font(.inter(11, .semibold)).kerning(0.8).foregroundStyle(Nuru.ink.opacity(0.45))
+                // A thing walked — the content row title (§8.1 rule 3:
+                // Fraunces 15 semibold), its quotation marks curled.
+                Text(event.shownTitle)
+                    .font(.nRowTitle).foregroundStyle(Nuru.navy)
                     .fixedSize(horizontal: false, vertical: true)
                 if let d = event.detail, !d.isEmpty {
                     Text(d).font(.inter(12)).foregroundStyle(Nuru.ink.opacity(0.65))
@@ -154,23 +156,20 @@ private struct WalkNode: View {
 /// who already completed this module. Renders nothing when the trail is fresh.
 struct FootprintsStrip: View {
     let moduleId: String
+    /// The member finished this module already — then "before you" may be
+    /// untrue (Android's walk: "Eli walked here before you" when Eli finished
+    /// after Ada), so the line says "too".
+    var mineDone: Bool = false
     @State private var res: FootprintsRes?
 
-    private var line: String? {
-        guard let r = res, r.count > 0 else { return nil }
+    private var line: String? { Self.line(res, mineDone: mineDone) }
+
+    /// Pure, so the tests pin the words.
+    static func line(_ r: FootprintsRes?, mineDone: Bool) -> String? {
+        guard let r, r.count > 0 else { return nil }
         let names = r.footprints.map(\.firstName)
-        let others = r.count - names.count
-        let shown: String
-        switch names.count {
-        case 0: return nil
-        case 1: shown = names[0]
-        case 2: shown = "\(names[0]) and \(names[1])"
-        default: shown = names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1]
-        }
-        if others > 0 {
-            return "\(shown) and \(others) other\(others == 1 ? "" : "s") walked here before you."
-        }
-        return "\(shown) walked here before you."
+        guard !names.isEmpty, let shown = NameList.join(names, others: max(0, r.count - names.count)) else { return nil }
+        return mineDone ? "\(shown) walked here too." : "\(shown) walked here before you."
     }
 
     var body: some View {

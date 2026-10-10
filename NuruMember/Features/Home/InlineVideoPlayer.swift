@@ -14,12 +14,19 @@ struct InlineVideoPlayer: UIViewRepresentable {
     /// Fires once when the embed's page finishes (or fails) loading — hosts use
     /// it to drop their buffering spinner. Optional, so call sites are unchanged.
     var onReady: (() -> Void)?
+    /// The picture fills its frame (CSS `object-fit: cover`, the web's
+    /// `.resizeAspectFill`) — for a host whose frame already has the video's
+    /// own shape (Home's featured video, owner 2026-10-06), so the player
+    /// draws no bars. Off, it fits inside with bars, as every other host
+    /// wants (a 16:9 page showing any video).
+    var fill: Bool = false
 
     /// The Home welcome-video payload, unchanged call sites.
-    init(video: WelcomeVideo, onReady: (() -> Void)? = nil) {
+    init(video: WelcomeVideo, fill: Bool = false, onReady: (() -> Void)? = nil) {
         self.urlString = video.playUrl
         self.source = video.videoSource
         self.externalVideoId = video.externalVideoId
+        self.fill = fill
         self.onReady = onReady
     }
 
@@ -52,7 +59,7 @@ struct InlineVideoPlayer: UIViewRepresentable {
         if let embed = embedURL {
             web.load(URLRequest(url: embed))
         } else if let raw = urlString, let u = URL(string: raw) {
-            web.loadHTMLString(Self.html(for: u), baseURL: nil)
+            web.loadHTMLString(Self.html(for: u, fill: fill), baseURL: nil)
         } else {
             // Nothing playable — never leave the host spinning forever.
             context.coordinator.signalReady()
@@ -112,10 +119,10 @@ struct InlineVideoPlayer: UIViewRepresentable {
         return last.isEmpty ? nil : last
     }
 
-    private static func html(for url: URL) -> String {
+    static func html(for url: URL, fill: Bool = false) -> String {
         """
         <html><head><meta name='viewport' content='width=device-width, initial-scale=1'>
-        <style>html,body{margin:0;background:#000;height:100%}video{width:100%;height:100%;object-fit:contain}</style>
+        <style>html,body{margin:0;background:#000;height:100%}video{width:100%;height:100%;object-fit:\(fill ? "cover" : "contain")}</style>
         </head><body>
         <video src='\(url.absoluteString)' controls autoplay playsinline webkit-playsinline></video>
         </body></html>

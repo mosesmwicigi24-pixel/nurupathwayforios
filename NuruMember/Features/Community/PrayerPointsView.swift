@@ -13,13 +13,14 @@ import SwiftUI
 struct PrayerPointsView: View {
     @State private var optedOut: Bool?
     @State private var consentBusy = false
-    @State private var consentFailed = false
+    /// Why the consent switch didn't save, in §4's words.
+    @State private var consentError: String?
 
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: Nuru.S.base) {
                 Text("Let Nuru help you pray")
-                    .font(.fraunces(21, .medium)).foregroundStyle(Nuru.navy)
+                    .font(.fraunces(22, .medium)).foregroundStyle(Nuru.navy)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .gentleEntrance()
 
@@ -27,7 +28,7 @@ struct PrayerPointsView: View {
                 case nil:
                     ProgressView().padding(.top, Nuru.S.xl)
                 case true?:
-                    ConsentGateCard(busy: consentBusy, failed: consentFailed) { Task { await enableAi() } }
+                    ConsentGateCard(busy: consentBusy, error: consentError) { Task { await enableAi() } }
                         .gentleEntrance(delay: 0.05)
                 case false?:
                     AssistComposerCard()
@@ -49,14 +50,14 @@ struct PrayerPointsView: View {
     private func enableAi() async {
         guard !consentBusy else { return }
         consentBusy = true
-        consentFailed = false
+        consentError = nil
         do {
             _ = try await MemberAPI.setAiConsent(optOut: false)
             Haptics.success()
             withAnimation { optedOut = false }
         } catch {
             Haptics.error()
-            consentFailed = true
+            consentError = NuruStateCopy.saveFailureLine(error)
         }
         consentBusy = false
     }
@@ -66,7 +67,7 @@ struct PrayerPointsView: View {
 
 private struct ConsentGateCard: View {
     let busy: Bool
-    let failed: Bool
+    let error: String?
     let enable: () -> Void
 
     var body: some View {
@@ -74,18 +75,17 @@ private struct ConsentGateCard: View {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 8) {
                     Circle().fill(
-                        LinearGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-                                       startPoint: .topLeading, endPoint: .bottomTrailing))
+                        Nuru.aiOrb)
                         .frame(width: 26, height: 26)
-                        .overlay(Icon(.sparkles, size: 13, color: .white))
-                    Text("NURU INTELLIGENCE").font(.inter(10, .bold)).tracking(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
+                        .overlay(Icon(.sparkles, size: 14, color: .white))
+                    Text("NURU INTELLIGENCE").font(.inter(11, .bold)).tracking(1.6).foregroundStyle(Color(hex: 0x9A7A2A))
                 }
                 Text("Turn on AI personalization to use the prayer assistant.")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Nuru remembers your journey to walk with you personally. Your prayer journal is never read — ever. This is the same switch as your Sunday Letter and personal companion; turning it on here turns it on everywhere, and you can turn it off again anytime in Profile.")
                     .font(.inter(12)).foregroundStyle(Nuru.muted).lineSpacing(3)
-                if failed {
-                    Text("Couldn't save that — check your connection and try again.")
+                if let error {
+                    Text(error)
                         .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
                 }
                 Button {
@@ -97,7 +97,10 @@ private struct ConsentGateCard: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // Secondary (§8.1 rule 4): white, hairline, navy words —
+                    // the page has one primary, "Draft with Nuru" above.
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)
@@ -118,7 +121,7 @@ private struct AssistComposerCard: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 8) {
-                    Icon(.handHeart, size: 16, color: Nuru.gold)
+                    Icon(.handHeart, size: 18, color: Nuru.gold)
                     Text("Draft a prayer").font(.nCardTitle).foregroundStyle(Nuru.navy)
                 }
                 Text("Jot a few seed points — Nuru drafts a short prayer in your own voice. You always edit it before you pray or keep it.")
@@ -134,15 +137,16 @@ private struct AssistComposerCard: View {
                     Button {
                         Task { await assist() }
                     } label: {
+                        // The page's one primary (§8.1 rule 4; final walk
+                        // #31): gold fill, navy words, radius 14 — it was a
+                        // gold-to-navy gradient pill beside a second gold
+                        // primary.
                         HStack(spacing: 6) {
-                            if busy { ProgressView().tint(.white) } else { Icon(.sparkles, size: 13, color: .white) }
-                            Text(busy ? "Drafting…" : "Draft with Nuru").font(.inter(12, .bold)).foregroundStyle(.white)
+                            if busy { ProgressView().tint(Nuru.navy) } else { Icon(.sparkles, size: 14, color: Nuru.navy) }
+                            Text(busy ? "Drafting…" : "Draft with Nuru").font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
                         }
-                        .padding(.horizontal, 16).padding(.vertical, 10)
-                        .background(
-                            LinearGradient(colors: [Color(hex: 0xC4B5FD), Color(hex: 0x7C3AED), Color(hex: 0x2A1259)],
-                                           startPoint: .topLeading, endPoint: .bottomTrailing),
-                            in: Capsule())
+                        .padding(.horizontal, 18).padding(.vertical, 12)
+                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
                     .buttonStyle(.pressable)
                     .disabled(busy)
@@ -153,7 +157,7 @@ private struct AssistComposerCard: View {
                 }
                 if !draft.isEmpty {
                     Divider().overlay(Nuru.border)
-                    Text("YOUR DRAFT").font(.inter(10, .bold)).tracking(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
+                    Text("YOUR DRAFT").font(.inter(11, .bold)).tracking(1.4).foregroundStyle(Color(hex: 0x9A7A2A))
                     TextField("", text: $draft, axis: .vertical)
                         .lineLimit(3...12)
                         .font(.inter(14, .regular)).foregroundStyle(Nuru.navy).lineSpacing(4)
@@ -210,7 +214,7 @@ private struct GatherPointsCard: View {
         Card {
             VStack(alignment: .leading, spacing: Nuru.S.sm) {
                 HStack(spacing: 8) {
-                    Icon(.list, size: 16, color: Nuru.gold)
+                    Icon(.list, size: 18, color: Nuru.gold)
                     Text("Gather my prayer points").font(.nCardTitle).foregroundStyle(Nuru.navy)
                 }
                 Text("Nuru reads across your own Selah thoughts, private prayers, and things you've shared to the wall — and distills what to pray through today.")
@@ -219,13 +223,16 @@ private struct GatherPointsCard: View {
                     Task { await gather() }
                 } label: {
                     HStack(spacing: 6) {
-                        if busy { ProgressView().tint(Nuru.navy) } else { Icon(.list, size: 13, color: Nuru.navy) }
+                        if busy { ProgressView().tint(Nuru.navy) } else { Icon(.list, size: 14, color: Nuru.navy) }
                         Text(busy ? "Gathering…" : "Gather my prayer points")
                             .font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
-                    .background(Color(hex: 0xC9A227), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // Secondary (§8.1 rule 4): white, hairline, navy words —
+                    // the page has one primary, "Draft with Nuru" above.
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)
@@ -302,7 +309,7 @@ private struct PrayerPointRow: View {
                 .font(.inter(13, .regular)).foregroundStyle(Nuru.navy).lineSpacing(3)
                 .onChange(of: editing) { _, newValue in onEdit(newValue) }
             Button { Haptics.tap(); onRemove() } label: {
-                Icon(.x, size: 11, color: Color(hex: 0x9CA3AF))
+                Icon(.x, size: 14, color: Color(hex: 0x9CA3AF))
             }
             .buttonStyle(.plain)
         }
