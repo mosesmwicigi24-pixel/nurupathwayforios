@@ -14,6 +14,8 @@ enum AppRoute: Hashable {
     /// The cell's people — pushed from CellInfoView's members card.
     case cellRoster
     case discipleshipHub
+    /// "Ask to be connected" to a cell (EXPERIENCE.md §9.2 #12).
+    case cellConnect
 }
 
 /// Value-routes for the growth screens, pushed from Home / Plans stacks.
@@ -67,6 +69,8 @@ extension View {
                 // screen directly — deep links keep working unchanged.
                 case .prayerWall: PrayerRoomView(initialTab: .corporatePrayer)
                 case .prayer(let id): PrayerWallDetailView(postId: id)
+                case .ekklesia: PrayerRoomView(initialTab: .ekklesia)
+                case .ekklesiaRequest(let id): EkklesiaRequestView(requestId: id)
                 case .discussions: DiscussionsView()
                 case .discussion(let id): DiscussionThreadView(threadId: id)
                 }
@@ -91,6 +95,7 @@ extension View {
                 case .cell: CellInfoView()
                 case .cellRoster: CellRosterView()
                 case .discipleshipHub: DiscipleshipHubView()
+                case .cellConnect: CellConnectView()
                 }
             }
     }

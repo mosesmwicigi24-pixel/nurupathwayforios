@@ -25,7 +25,7 @@ struct ScoreDetailView: View {
                     componentsCard(b).gentleEntrance(delay: 0.05)
                     if !b.detail.isEmpty { detailCard(b).gentleEntrance(delay: 0.1) }
                     Text("Scores are formative, never a leaderboard — they decay gently when you lapse and grow as you do.")
-                        .font(.inter(10)).italic().foregroundStyle(Color(hex: 0x74808F))
+                        .font(.inter(11)).italic().foregroundStyle(Color(hex: 0x74808F))
                         .frame(maxWidth: .infinity).multilineTextAlignment(.center)
                 } else if failed {
                     errorCard
@@ -55,14 +55,15 @@ struct ScoreDetailView: View {
                         if !on { Haptics.selection(); pillar = p }
                     } label: {
                         HStack(spacing: 5) {
-                            Icon(p.icon, size: 12, color: on ? Nuru.navy : Color(hex: 0x59667C))
+                            Icon(p.icon, size: 14, color: on ? .white : Color(hex: 0x59667C))
                             Text(p.displayName)
                                 .font(.inter(12, on ? .bold : .semibold))
-                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                                .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                         }
                         .padding(.horizontal, 12).frame(height: 36)
-                        .background(on ? Nuru.gold.opacity(0.16) : Nuru.surface, in: Capsule())
-                        .overlay(Capsule().stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        // Selected navy, unselected white with a hairline (§8.1 rule 6).
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                 }
@@ -76,13 +77,13 @@ struct ScoreDetailView: View {
         VStack(spacing: Nuru.S.sm) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text("\(b.score)")
-                    .font(.fraunces(52, .semibold)).kerning(-1)
+                    .font(.fraunces(28, .semibold)).kerning(-1)
                     .foregroundStyle(Nuru.navy)
                     .contentTransition(.numericText())
                 Text("/ 100").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0x74808F))
             }
             HStack(spacing: 4) {
-                Icon(.sparkles, size: 11, color: Color(hex: 0x8A6D18))
+                Icon(.sparkles, size: 14, color: Color(hex: 0x8A6D18))
                 Text(b.band).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x8A6D18))
             }
             .padding(.horizontal, 12).padding(.vertical, 5)
@@ -167,7 +168,7 @@ struct ScoreDetailView: View {
     }
 
     private func sectionHeading(_ text: String) -> some View {
-        Text(text).font(.inter(10, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
+        Text(text).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xA8861C))
     }
 
     // MARK: Loading / error

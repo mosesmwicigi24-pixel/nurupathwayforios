@@ -78,7 +78,7 @@ struct VoiceNoteCard: View {
                     Avatar(url: note.avatarUrl, name: note.authorName, size: 44)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("A WORD FROM \(firstName.uppercased())")
-                            .font(.inter(10, .bold)).kerning(1.8)
+                            .font(.inter(11, .bold)).kerning(1.8)
                             .foregroundStyle(Nuru.goldChipText)
                         Text("Voice note · \(max(1, note.durationSec / 60))m \(note.durationSec % 60)s")
                             .font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
@@ -87,7 +87,7 @@ struct VoiceNoteCard: View {
                     ZStack {
                         Circle().fill(Nuru.gold).frame(width: 40, height: 40)
                         Image(systemName: player.playing ? "pause.fill" : "play.fill")
-                            .font(.system(size: 14, weight: .bold))
+                            .font(.symbol(14, weight: .bold))
                             .foregroundStyle(Nuru.navy)
                             .offset(x: player.playing ? 0 : 1)
                     }
@@ -129,7 +129,7 @@ struct VoiceNoteLeaderRow: View {
             showRecorder = true
         } label: {
             HStack(spacing: 8) {
-                Icon(.mic, size: 13, color: Nuru.goldChipText)
+                Icon(.mic, size: 14, color: Nuru.goldChipText)
                 Text(existing == nil ? "Leave a word for your flock" : "Re-record your word")
                     .font(.inter(13, .semibold)).foregroundStyle(Nuru.goldChipText)
             }
@@ -303,7 +303,7 @@ final class VoiceRecorderModel: NSObject, ObservableObject {
             try await MemberAPI.setVoiceNote(moduleId: moduleId, audioUrl: url, durationSec: max(1, seconds))
             return true
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't share the voice note."
+            self.error = NuruStateCopy.failureLine("Couldn't share the voice note.", error)
             phase = .recorded
             return false
         }
@@ -334,7 +334,7 @@ struct VoiceRecordSheet: View {
             Text(existing == nil
                  ? "Everyone in your congregation will hear this at the top of the lesson. Up to five minutes."
                  : "This replaces your current word on this module.")
-                .font(.inter(13.5)).foregroundStyle(Nuru.ink)
+                .font(.inter(14)).foregroundStyle(Nuru.ink)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 28)
 
@@ -348,7 +348,7 @@ struct VoiceRecordSheet: View {
                 }
             case .recording:
                 Text(timeString(model.seconds))
-                    .font(.fraunces(40)).foregroundStyle(Nuru.navy)
+                    .font(.fraunces(28)).foregroundStyle(Nuru.navy)
                     .monospacedDigit()
                 bigButton(icon: nil, sfSymbol: "stop.fill", label: "Stop", tint: .red) { model.stop() }
             case .recorded, .uploading:
@@ -360,7 +360,7 @@ struct VoiceRecordSheet: View {
                     } label: {
                         HStack(spacing: 6) {
                             Image(systemName: model.previewing ? "pause.fill" : "play.fill")
-                                .font(.system(size: 12, weight: .bold))
+                                .font(.symbol(12, weight: .bold))
                             Text("Listen back").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -373,7 +373,7 @@ struct VoiceRecordSheet: View {
                         Haptics.tap(); model.redo()
                     } label: {
                         HStack(spacing: 6) {
-                            Icon(.mic, size: 12, color: Nuru.ink)
+                            Icon(.mic, size: 14, color: Nuru.ink)
                             Text("Redo").font(.inter(13, .semibold)).foregroundStyle(Nuru.ink)
                         }
                         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -438,7 +438,7 @@ struct VoiceRecordSheet: View {
                         Icon(icon, size: 28, color: .white)
                     } else if let sfSymbol {
                         Image(systemName: sfSymbol)
-                            .font(.system(size: 24, weight: .bold)).foregroundStyle(.white)
+                            .font(.symbol(24, weight: .bold)).foregroundStyle(.white)
                     }
                 }
                 .shadow(color: tint.opacity(0.35), radius: 10, y: 4)
@@ -459,13 +459,12 @@ struct CellPresenceLine: View {
     private var line: String? {
         guard let p = presence, p.count > 0 else { return nil }
         let who = p.scope == "cell" ? "your cell" : "your congregation"
-        let others = p.count - p.names.count
-        var names = p.names.joined(separator: ", ")
-        if p.names.count > 1, let last = p.names.last {
-            names = p.names.dropLast().joined(separator: ", ") + " and " + last
-        }
+        let others = max(0, p.count - p.names.count)
+        // One joiner, in a stable order (it read "Dee, Cara and Builder and 2
+        // others", and reshuffled on every load).
+        guard let names = NameList.join(p.names, others: others, stable: true) else { return nil }
         if others > 0 {
-            return "\(names) and \(others) other\(others == 1 ? "" : "s") from \(who) opened a lesson this week."
+            return "\(names) from \(who) opened a lesson this week."
         }
         return p.count == 1
             ? "\(names) from \(who) opened a lesson this week. You're not walking alone."
@@ -479,10 +478,10 @@ struct CellPresenceLine: View {
             }
             if let line {
                 HStack(alignment: .top, spacing: 8) {
-                    Icon(.flame, size: 13, color: Nuru.goldChipText)
+                    Icon(.flame, size: 14, color: Nuru.goldChipText)
                         .padding(.top, 1)
                     Text(line)
-                        .font(.inter(12.5)).foregroundStyle(Nuru.ink)
+                        .font(.inter(13)).foregroundStyle(Nuru.ink)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.horizontal, 14).padding(.vertical, 10)

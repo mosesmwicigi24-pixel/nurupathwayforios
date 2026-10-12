@@ -12,6 +12,10 @@ enum Lucide: String {
     case messageCircle = "\u{E116}"
     case handHeart = "\u{E5B9}"
     case user = "\u{E19F}"
+    /// Lucide `armchair` — an empty seat: a role no one holds yet.
+    case armchair = "\u{E2C0}"
+    /// Lucide `wifi-off` — the offline state card (one icon family, §8.1 rule 7).
+    case wifiOff = "\u{E1AF}"
     case bell = "\u{E059}"
     case chevronRight = "\u{E06F}"
     case chevronLeft = "\u{E06E}"
@@ -29,6 +33,9 @@ enum Lucide: String {
     case calendarClock = "\u{E304}"
     case mapPin = "\u{E111}"
     case megaphone = "\u{E235}"
+    /// Lucide `radio` — the broadcast mark (a dot between waves): a Live notice.
+    case radio = "\u{E142}"
+    case userPlus = "\u{E1A2}"
     case play = "\u{E13C}"
     case share2 = "\u{E156}"
     case badgeCheck = "\u{E241}"
@@ -115,6 +122,12 @@ enum Lucide: String {
     case circleX = "\u{E084}"
     case share = "\u{E155}"
     case fileText = "\u{E0CC}"
+    // Cycle 4 (§8.1 rule 7 — one icon family): codepoints read from the
+    // bundled Resources/Fonts/lucide.ttf cmap with fontTools.
+    /// Lucide `cross` — the Latin cross that marks a reading.
+    case cross = "\u{E1E5}"
+    /// Lucide `compass` — browse (was SF "safari").
+    case compass = "\u{E09B}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).

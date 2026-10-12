@@ -4,6 +4,7 @@
 // cards that float on one soft shadow, gold used with restraint, Inter body type.
 // Sized for the phone canvas (the mobile type scale, NOT the iPad-bumped one).
 import SwiftUI
+import UIKit
 import CoreText
 
 enum Nuru {
@@ -32,7 +33,17 @@ enum Nuru {
     static let goldTint   = Color(hex: 0xFFF4C7)
     static let goldChipBg   = Color(hex: 0xFFF4DA)
     static let goldChipText = Color(hex: 0x7A5A14)
+    /// Gold kicker text on light — every header's eyebrow and card kicker
+    /// (EXPERIENCE.md §8.1 rule 3). Android's `Nuru.eyebrow`, the same value.
+    static let eyebrow      = Color(hex: 0x9A7A2A)
     static let priorityBg   = Color(hex: 0xFFFAEC)   // selected-tile tint (giving funds)
+    /// A row or tile icon (EXPERIENCE.md §8.1 rules 1, 7): a gold-tint tile
+    /// with the icon in navy — never a per-item hue.
+    static let tileTint: UInt32 = 0xFFF4DA
+    static let tileIcon: UInt32 = 0x0B1F33
+    /// Nuru (the AI) is navy with gold — never purple (§8.1 rule 1).
+    static let aiOrb = LinearGradient(colors: [Color(hex: 0xE0B85E), Color(hex: 0x143559), Color(hex: 0x0B1F33)],
+                                      startPoint: .topLeading, endPoint: .bottomTrailing)
 
     // MARK: Ink (text)
     static let ink     = Color(hex: 0x0B0B0C)   // primary text on light
@@ -121,11 +132,12 @@ enum Nuru {
     static let buttonHeightLg: CGFloat = 56
     static let buttonHeightMd: CGFloat = 48
 
-    // MARK: Fonts — register the bundled OFL faces (Inter + Fraunces).
+    // MARK: Fonts — register the bundled OFL faces (Inter + Fraunces, and the
+    // Sunday Letter's Fraunces italic and signature — FONTS-LICENSE.md).
     static func registerFonts() {
         let faces = ["Inter-Regular", "Inter-Medium", "Inter-SemiBold", "Inter-Bold",
                      "Fraunces-Regular", "Fraunces-Medium", "Fraunces-SemiBold", "Fraunces-Bold",
-                     "lucide"]
+                     "Fraunces72pt-Italic", "MrsSaintDelafield-Regular", "lucide"]
         for f in faces {
             if let url = Bundle.main.url(forResource: f, withExtension: "ttf") {
                 CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
@@ -203,6 +215,12 @@ extension Font {
     static func nuruDisplay(_ size: CGFloat, weight: Font.Weight = .medium) -> Font {
         .custom(frauncesFace(weight), size: size * Nuru.textScale)
     }
+    /// Fraunces italic — a true italic face (Fraunces 72pt Italic, the one
+    /// the Sunday Letter's PDF embeds), for the letter's italics (owner,
+    /// 2026-10-07: board A). Its own family, so no other `.italic()` changes.
+    static func frauncesItalic(_ size: CGFloat) -> Font {
+        .custom("Fraunces72pt-Italic", size: size * Nuru.textScale)
+    }
 
     // Semantic scale — matches tokens.ts `type` (designed at ~390pt).
     static var nDisplay: Font  { fraunces(28, .medium) }
@@ -227,6 +245,57 @@ extension Font {
     static var nChipLabel: Font  { inter(12, .semibold) }    // segment/filter chip text
     static var nActionLabel: Font { inter(13, .bold) }       // pill CTA / menu action text
     static var nCardCTA: Font    { inter(14, .semibold) }    // in-card button labels
+}
+
+/// The type scale (EXPERIENCE.md §8.1 rule 3): kicker and meta 11 · 12 ·
+/// body 13–14 · content row title 15 · the reading body 16 · card title 18 ·
+/// 22 · screen title 26–28. Every text size in the app is one of these steps,
+/// proven by TypographyTests' scan; nothing is set under 11.
+enum NuruType {
+    static let scale: [CGFloat] = [11, 12, 13, 14, 15, 16, 18, 22, 26, 28]
+
+    /// The step nearest a size computed from its container (an avatar's
+    /// initials): never under 11, never over 28; halfway goes up.
+    static func snap(_ size: CGFloat) -> CGFloat {
+        var best = scale[0]
+        for step in scale where abs(step - size) <= abs(best - size) { best = step }
+        return best
+    }
+}
+
+extension Nuru {
+    /// A bundled face as a UIFont (UIKit chrome, attributed text). `scaled`:
+    /// it carries the member's own text size (Profile → Display, the same
+    /// `Nuru.textScale` every SwiftUI type helper multiplies by) — every UIKit
+    /// font a member reads does (TypographyTests: the in-app text size reaches
+    /// every surface). The faces are proven to load by TypographyTests; should
+    /// one ever go missing, a debug build stops here instead of drawing the
+    /// system face in silence.
+    static func uiFont(_ face: String, _ size: CGFloat, scaled: Bool = false) -> UIFont {
+        let points = scaled ? size * Nuru.textScale : size
+        if let font = UIFont(name: face, size: points) { return font }
+        assertionFailure("The bundled face \(face) didn't load")
+        return UIFont.systemFont(ofSize: points)
+    }
+}
+
+extension Font {
+    /// An SF Symbol's size — for `Image(systemName:)` only, never words. The
+    /// icon family is Lucide (`Icon`); a symbol stays only where the bundled
+    /// Lucide has no glyph for it (a filled mark, a system glyph). Every site
+    /// is listed in TypographyTests (EXPERIENCE.md §8.3).
+    static func symbol(_ size: CGFloat, weight: Font.Weight = .regular) -> Font {
+        .system(size: size, weight: weight)
+    }
+    /// An emoji's size — Apple Color Emoji draws it whatever the face asked
+    /// for; never words. Every site is listed in TypographyTests.
+    static func emoji(_ size: CGFloat) -> Font { .system(size: size) }
+}
+
+extension View {
+    /// Text with no font of its own reads as the body (Inter 14), never the
+    /// system face — set once at the app's root (EXPERIENCE.md §8.3).
+    func nuruDefaultFont() -> some View { font(.nBody) }
 }
 
 private func interFace(_ w: Font.Weight) -> String {

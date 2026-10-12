@@ -42,6 +42,8 @@ final class LiveFloatingChatController: ObservableObject {
     /// it never LIES about being confirmed, just feels instant rather than
     /// waiting out a round trip.
     @Published private(set) var pendingMessageIds: Set<String> = []
+    /// Why the last message didn't send (§4) — its words are back in the field.
+    @Published private(set) var sendLine: String?
 
     /// Only the trailing window is ever RENDERED (owner spec: "last ~6
     /// messages") — the full session history is kept here regardless, so a
@@ -107,7 +109,20 @@ final class LiveFloatingChatController: ObservableObject {
         )
         pendingMessageIds.insert(pendingId)
         messages.append(optimistic)
-        guard let sent = try? await MemberAPI.sendLiveMessage(streamId: streamId, body: text) else { return }
+        sendLine = nil
+        let sent: LiveChatMessage
+        do { sent = try await MemberAPI.sendLiveMessage(streamId: streamId, body: text) }
+        catch {
+            // The words come back to the field and the half-sent bubble goes —
+            // never a faded bubble left forever, never words lost (the Cycle 4
+            // lost-input class). If it did land, the next poll shows it.
+            pendingMessageIds.remove(pendingId)
+            messages.removeAll { $0.messageId == pendingId }
+            if draft.isEmpty { draft = text }
+            sendLine = NuruStateCopy.sendFailureLine(error)
+            Haptics.error()
+            return
+        }
         pendingMessageIds.remove(pendingId)
         if let idx = messages.firstIndex(where: { $0.messageId == pendingId }) {
             messages[idx] = sent
@@ -250,9 +265,9 @@ struct LiveFloatingChatOverlay: View {
             header
             if handsRaisedCount > 0 {
                 HStack(spacing: 5) {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .semibold))
+                    Image(systemName: "hand.raised.fill").font(.symbol(9, weight: .semibold))
                     Text("\(handsRaisedCount) hand\(handsRaisedCount == 1 ? "" : "s") raised")
-                        .font(.inter(10, .semibold))
+                        .font(.inter(11, .semibold))
                 }
                 .foregroundStyle(Nuru.navy)
                 .padding(.horizontal, 9).padding(.vertical, 4)
@@ -280,16 +295,16 @@ struct LiveFloatingChatOverlay: View {
     private var header: some View {
         HStack(spacing: 8) {
             Image(systemName: "line.3.horizontal")
-                .font(.system(size: 10, weight: .semibold))
+                .font(.symbol(10, weight: .semibold))
                 .foregroundStyle(.white.opacity(0.4))
-            Text("LIVE CHAT").font(.inter(9, .bold)).kerning(1).foregroundStyle(.white.opacity(0.6))
+            Text("LIVE CHAT").font(.inter(11, .bold)).kerning(1).foregroundStyle(.white.opacity(0.6))
             Spacer(minLength: 0)
             Button {
                 Haptics.tap()
                 collapsed = true
             } label: {
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 10, weight: .bold))
+                    .font(.symbol(10, weight: .bold))
                     .foregroundStyle(.white.opacity(0.85))
                     .frame(width: 22, height: 22)
                     .background(Color.white.opacity(0.14), in: Circle())
@@ -311,7 +326,7 @@ struct LiveFloatingChatOverlay: View {
             ZStack {
                 Circle().fill(.ultraThinMaterial)
                 Circle().stroke(Color.white.opacity(0.2), lineWidth: 1)
-                Image(systemName: "message.fill").font(.system(size: 17, weight: .semibold)).foregroundStyle(Nuru.gold)
+                Image(systemName: "message.fill").font(.symbol(17, weight: .semibold)).foregroundStyle(Nuru.gold)
             }
         }
         .environment(\.colorScheme, .dark)
@@ -359,7 +374,7 @@ struct LiveFloatingChatOverlay: View {
 
     private func bubble(_ m: LiveChatMessage) -> some View {
         (Text(m.fullName + "  ").font(.inter(12, .bold)).foregroundStyle(Nuru.gold)
-         + Text(m.body).font(.inter(12.5)).foregroundStyle(.white))
+         + Text(m.body).font(.inter(13)).foregroundStyle(.white))
         .fixedSize(horizontal: false, vertical: true)
         .lineLimit(4)
         // Optimistic bubble, not yet confirmed by the server — dimmed just
@@ -370,6 +385,16 @@ struct LiveFloatingChatOverlay: View {
     // MARK: Composer — translucent input pill + send button
 
     private var composerPill: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let line = chat.sendLine {
+                Text(line).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0xFCA5A5))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            composerRow
+        }
+    }
+
+    private var composerRow: some View {
         HStack(spacing: 8) {
             TextField("Say something…", text: $chat.draft)
                 .font(.inter(13)).foregroundStyle(.white)
@@ -383,7 +408,7 @@ struct LiveFloatingChatOverlay: View {
                 Haptics.tap()
                 Task { await chat.send() }
             } label: {
-                Icon(.send, size: 13, color: .white)
+                Icon(.send, size: 14, color: .white)
                     .frame(width: 32, height: 32)
                     .background(canSend ? Nuru.gold : Color.white.opacity(0.16), in: Circle())
             }

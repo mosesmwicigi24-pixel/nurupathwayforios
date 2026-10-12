@@ -61,7 +61,7 @@ struct PLCover: View {
 struct PLDaysBadge: View {
     let days: Int
     var body: some View {
-        Text("\(days) DAYS").font(.inter(8, .bold)).kerning(0.96).foregroundStyle(PL.navy)
+        Text("\(days) DAYS").font(.inter(11, .bold)).kerning(0.96).foregroundStyle(PL.navy)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(Color.white.opacity(0.9), in: Capsule())
             .padding(8)
@@ -104,30 +104,80 @@ struct PLPulseRing: View {
     }
 }
 
+// MARK: - streak words (EXPERIENCE.md §8.2 #5)
+
+/// The one streak (EXPERIENCE.md §8.2 #5, §9.2 #3) in Android's words, on
+/// both apps: the server's count of days with God (any prayer, Word or
+/// reflection — GET /me/achievements, recomputed overnight, so it doesn't
+/// hold today yet). Home's rhythm card and the Plans card showed it under
+/// two counts — "Start today" on Home beside a done Word, "1-day streak" on
+/// Plans. Both now count and name it by these rules. No emoji in the words
+/// (§8.1 rule 7): the card's flame is its tile.
+enum StreakWords {
+    static func title(_ count: Int) -> String { "\(max(0, count))-day streak" }
+    static func line(_ count: Int) -> String {
+        count > 0 ? "Read today to keep it alive" : "Read today to start your streak"
+    }
+
+    /// The streak as shown: today counts once the member was active today —
+    /// at least 1 beside today's mark, never 0.
+    static func days(_ server: Int, activeToday: Bool) -> Int {
+        activeToday ? max(server, 1) : max(0, server)
+    }
+
+    /// The count beside the week (§7.4 #4): a day sealed today is a day of
+    /// the streak — a tick never sits beside "0-day streak".
+    static func count(_ server: Int, todayDone: Bool) -> Int { days(server, activeToday: todayDone) }
+
+    /// The line under the title: done once today's day is sealed; today's
+    /// progress while it is under way ("Today: 2 of 3 parts"); else the
+    /// invitation.
+    static func line(_ count: Int, todayDone: Bool, today: String?) -> String {
+        if todayDone { return "Today's reading is done" }
+        if let today, !today.isEmpty { return today }
+        return line(count)
+    }
+}
+
 // MARK: - streak strip (cue + reward loop)
-// Real data: `count` = GET /me/achievements streak.current; `todayDone` =
-// GET /me/rhythm/today `word`. The 7-day badge goal is a client-side constant
-// (the design's mock STREAK.goal) — week dots are derived from the streak.
+// Real data: `count` = GET /me/achievements streak.current; `todayDone` = a
+// plan day finished today, on this phone or any other (StreakToday, §7.4 #4 —
+// it was the rhythm's `word`, so reading one part ticked today beside "0-day
+// streak"); `today` =
+// the day under way, "Today: 2 of 3 parts" (PlanDayParts). The 7-day badge
+// goal is a client-side constant (the design's mock STREAK.goal) — week dots
+// are derived from the streak.
 
 struct PLStreakStrip: View {
     let count: Int
     let todayDone: Bool
+    var today: String? = nil
+    /// The member was active today (any of the rhythm — GET
+    /// /me/rhythm/today): the one streak counts today, as Home counts it.
+    var activeToday: Bool = false
 
     private static let week = ["S", "M", "T", "W", "T", "F", "S"]
     private static let goal = 7
     private var todayIdx: Int { Calendar.current.component(.weekday, from: Date()) - 1 }
-    private var toReward: Int { max(Self.goal - count, 0) }
-    private var pct: Double { min(Double(count) / Double(Self.goal), 1) }
+    /// The streak as shown — the one streak's count (StreakWords.days): a
+    /// day read, or any of the rhythm done today, counts today.
+    private var shown: Int { StreakWords.days(count, activeToday: todayDone || activeToday) }
+    private var toReward: Int { max(Self.goal - shown, 0) }
+    private var pct: Double { min(Double(shown) / Double(Self.goal), 1) }
 
     private func isDone(_ i: Int) -> Bool {
         if i == todayIdx { return todayDone }
         guard i < todayIdx else { return false }
-        let back = max(todayDone ? count - 1 : count, 0)
+        let back = max(todayDone ? shown - 1 : shown, 0)
         return todayIdx - i <= back
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
+            // Android's words, whole, with room to read (§8.1 rule 9): the
+            // words take the card's width — beside seven week dots they had
+            // ~106 pt, and "Read today to start your streak 🔥" broke over four
+            // lines with the flame alone on the last. The week has its own row.
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 16, style: .continuous)
@@ -137,19 +187,21 @@ struct PLStreakStrip: View {
                 }
                 .frame(width: 44, height: 44)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(count == 1 ? "1 day with God" : "\(count) days with God")
-                        .font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy)
-                        .lineLimit(1)
-                    // Grace-first tone: an invitation, never loss-aversion or guilt.
-                    Text(count > 0 ? "A day at a time — return when you can 🌱" : "Begin your walk today 🌱")
+                    // The streak card's title is a card title (§8.1 rule 3:
+                    // Fraunces 18 semibold; final walk #38 — it was Inter).
+                    Text(StreakWords.title(shown))
+                        .font(.nCardTitle).foregroundStyle(PL.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(StreakWords.line(shown, todayDone: todayDone, today: today))
                         .font(.nCardMeta).foregroundStyle(PL.ink2)
-                        .lineLimit(2).minimumScaleFactor(0.9)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-                Spacer(minLength: 8)
-                HStack(spacing: 4) {
-                    ForEach(0..<7, id: \.self) { i in weekDot(i) }
-                }
+                Spacer(minLength: 0)
             }
+            HStack(spacing: 0) {
+                ForEach(0..<7, id: \.self) { i in weekDot(i).frame(maxWidth: .infinity) }
+            }
+            .padding(.top, 12)
             HStack(spacing: 10) {
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -161,9 +213,9 @@ struct PLStreakStrip: View {
                 }
                 .frame(height: 8)
                 HStack(spacing: 4) {
-                    Icon(.gift, size: 12, color: PL.catText)
+                    Icon(.gift, size: 14, color: PL.catText)
                     Text(toReward == 0 ? "Reward ready!" : "\(toReward) day\(toReward == 1 ? "" : "s") to a badge")
-                        .font(.inter(10, .bold)).foregroundStyle(PL.catText)
+                        .font(.inter(11, .bold)).foregroundStyle(PL.catText)
                 }
             }
             .padding(.top, 12)
@@ -178,11 +230,11 @@ struct PLStreakStrip: View {
         let done = isDone(i)
         let today = i == todayIdx
         return VStack(spacing: 4) {
-            Text(Self.week[i]).font(.inter(8, .bold)).foregroundStyle(PL.ink3)
+            Text(Self.week[i]).font(.inter(11, .bold)).foregroundStyle(PL.ink3)
             ZStack {
                 if done {
                     Circle().fill(PL.gold)
-                    Icon(.check, size: 11, color: .white)
+                    Icon(.check, size: 14, color: .white)
                 } else if today {
                     Circle().fill(Color.white)
                     Circle().stroke(PL.gold, lineWidth: 1.5)
@@ -202,7 +254,7 @@ struct PLFlame: View {
     @State private var up = false
     var body: some View {
         Image(systemName: "flame.fill")
-            .font(.system(size: 18))
+            .font(.symbol(18))
             .foregroundStyle(PL.gold)
             .scaleEffect(up ? 1.14 : 1)
             .onAppear {
@@ -241,7 +293,10 @@ struct PLContinueRow: View {
             PLCover(plan: plan).frame(width: 56, height: 56)
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
             VStack(alignment: .leading, spacing: 0) {
-                Text(plan.title).font(.inter(14, .bold)).kerning(-0.14).foregroundStyle(PL.navy).lineLimit(1)
+                // A plan is a content row (§8.1 rule 3; final walk #38),
+                // wrapping rather than cut (rule 9).
+                Text(plan.title).font(.nRowTitle).foregroundStyle(PL.navy)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text("Today · \(plan.subtitle ?? "Day \(day) of \(total)")")
                     .font(.nCardMeta).foregroundStyle(PL.ink2).lineLimit(1).padding(.top, 2)
                 HStack(spacing: 8) {
@@ -252,7 +307,7 @@ struct PLContinueRow: View {
                         }
                     }
                     .frame(height: 6)
-                    Text("Day \(day)/\(total)").font(.inter(9, .semibold)).foregroundStyle(PL.ink2)
+                    Text("Day \(day)/\(total)").font(.inter(11, .semibold)).foregroundStyle(PL.ink2)
                 }
                 .padding(.top, 8)
             }
@@ -260,7 +315,7 @@ struct PLContinueRow: View {
                 Circle().fill(PL.gold.opacity(0.10))
                 PLPulseRing()
                 Image(systemName: "play.fill")
-                    .font(.system(size: 13)).foregroundStyle(PL.gold).offset(x: 1)
+                    .font(.symbol(13)).foregroundStyle(PL.gold).offset(x: 1)
             }
             .frame(width: 36, height: 36)
         }
@@ -289,7 +344,7 @@ struct PLPlanCard: View {
                         Text(plan.title).font(.fraunces(13, .semibold)).foregroundStyle(.white)
                             .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
                         if let c = plan.category, !c.isEmpty {
-                            Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
+                            Text(c.uppercased()).font(.inter(11, .bold)).kerning(0.9).foregroundStyle(.white.opacity(0.7))
                                 .lineLimit(1)
                         }
                     }
@@ -320,7 +375,7 @@ struct PLPlanTile: View {
                     .overlay(alignment: .topLeading) { PLDaysBadge(days: plan.dayCount) }
                     .overlay(alignment: .topTrailing) {
                         if plan.completedAt != nil {
-                            Icon(.check, size: 11, color: .white)
+                            Icon(.check, size: 14, color: PL.navy)
                                 .frame(width: 22, height: 22).background(PL.gold, in: Circle())
                                 .padding(6)
                         }
@@ -339,15 +394,22 @@ struct PLPlanTile: View {
                         }
                     }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(plan.title).font(.inter(12, .bold)).foregroundStyle(PL.navy)
-                        .lineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                    // Whole at the largest sizes (§9.6 #4): the grid is one
+                    // column there, and the words wrap rather than cut.
+                    // A plan in the grid is a content row (§8.1 rule 3: Fraunces
+                    // 15 semibold; final walk #38 — it was Inter).
+                    Text(plan.title).font(.nRowTitle).foregroundStyle(PL.navy)
+                        .nuruLineLimit(2).truncationMode(.tail).multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                     if plan.enrolled, plan.completedAt == nil {
-                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(9, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep).lineLimit(1)
+                        Text("Day \(plan.currentDay ?? 1) of \(plan.dayCount)").font(.inter(11, .bold)).kerning(0.5).foregroundStyle(PL.goldDeep)
+                            .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     } else if plan.completedAt != nil {
-                        Text("COMPLETED").font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep).lineLimit(1)
+                        Text("COMPLETED").font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.goldDeep)
+                            .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     } else if let c = plan.category, !c.isEmpty {
-                        Text(c.uppercased()).font(.inter(9, .bold)).kerning(0.9).foregroundStyle(PL.catText)
-                            .lineLimit(1)
+                        Text(c.uppercased()).font(.inter(11, .bold)).kerning(0.9).foregroundStyle(PL.catText)
+                            .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -377,7 +439,7 @@ struct PLFinishEarnCard: View {
                     .stroke(PL.gold.opacity(0.33), lineWidth: 1)
                     .opacity(glow ? 0.8 : 0.3)
                 Image(systemName: "trophy")
-                    .font(.system(size: 20)).foregroundStyle(PL.goldLight)
+                    .font(.symbol(20)).foregroundStyle(PL.goldLight)
             }
             .frame(width: 48, height: 48)
             .onAppear {
@@ -385,7 +447,7 @@ struct PLFinishEarnCard: View {
                 withAnimation(.easeInOut(duration: 1.2).repeatForever()) { glow = true }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text("FINISH & EARN").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(PL.goldLight)
+                Text("FINISH & EARN").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(PL.goldLight)
                 Text("The “\(category ?? "Finisher")” badge")
                     .font(.inter(13, .bold)).kerning(-0.13).foregroundStyle(.white)
                     .lineLimit(2).truncationMode(.tail)
@@ -428,13 +490,13 @@ struct PLDetailDayRow: View {
                     RoundedRectangle(cornerRadius: 13, style: .continuous)
                         .stroke(done ? PL.gold.opacity(0.55) : PL.border, lineWidth: 1)
                     VStack(spacing: -2) {
-                        Text("DAY").font(.inter(8, .bold)).kerning(0.9).foregroundStyle(done ? PL.goldDeep : PL.gold)
+                        Text("DAY").font(.inter(11, .bold)).kerning(0.9).foregroundStyle(done ? PL.goldDeep : PL.gold)
                         Text("\(day.dayNumber)").font(.fraunces(22, .medium)).foregroundStyle(PL.navy)
                     }
                 }
                 .frame(width: 52, height: 52)
                 if done {
-                    Icon(.check, size: 9, color: .white)
+                    Icon(.check, size: 14, color: PL.navy)
                         .frame(width: 17, height: 17)
                         .background(PL.gold, in: Circle())
                         .overlay(Circle().stroke(.white, lineWidth: 1.5))
@@ -442,22 +504,32 @@ struct PLDetailDayRow: View {
                 }
             }
             VStack(alignment: .leading, spacing: 2) {
-                Text(day.title ?? "Reading & reflection").font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
+                // Nothing that matters truncates (§8.1 rule 9): a title takes
+                // two lines, and the day's line wraps — it read "opens when
+                // today is d…".
+                // A day is a content row (§8.1 rule 3: Fraunces 15 semibold;
+                // final walk #38 — it was Inter).
+                Text(day.title ?? "Reading & reflection").font(.nRowTitle).foregroundStyle(PL.navy)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Text(done ? "Completed · \(day.reference)"
                      : syncing ? "Finishing your sync… tap to check"
                      : locked ? "\(day.reference) · opens when today is done"
                      : "\(day.reference) · about \(ReadTime.minutes(for: day)) min")
-                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3)).lineLimit(1)
+                    .font(.nCardMeta).foregroundStyle(done ? PL.goldDeep : (syncing ? PL.goldDeep : PL.ink3))
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
             if isNext {
-                Text("Start").font(.inter(9, .bold)).foregroundStyle(PL.navy)
-                    .padding(.horizontal, 8).padding(.vertical, 2)
-                    .background(PL.gold, in: Capsule())
+                // "1 part left" once the day is begun, "Start" before (§7.4 #2).
+                // A navy compact pill — the page's one gold primary is its
+                // "Begin Day" button (§8.1 rule 4; Android, the same).
+                Text(PlanDayParts.pill(day.segments ?? [])).font(.inter(11, .bold)).foregroundStyle(.white)
+                    .padding(.horizontal, 10).padding(.vertical, 4)
+                    .background(PL.navy, in: Capsule())
             } else if syncing {
-                Icon(.clock, size: 13, color: PL.goldDeep)
+                Icon(.clock, size: 14, color: PL.goldDeep)
             } else if locked {
-                Icon(.lock, size: 13, color: PL.chev)
+                Icon(.lock, size: 14, color: PL.chev)
             } else {
                 Icon(.chevronRight, size: 14, color: PL.chev)
             }
@@ -486,6 +558,9 @@ struct PLPlanPromo: View {
     /// takes the hook's place (same styling) — a sentence about the reader beats
     /// the plan's own opening line.
     var reason: String? = nil
+    /// The tab's one gold primary (§8.1 rule 4) — only the hero, and only
+    /// while no plan is being read. Every other promo is a secondary.
+    var primary: Bool = false
 
     /// The opening of the plan's description — the hook, never the essay.
     /// A sentence ends at `.!?` only when a SPACE and a capital follow it;
@@ -535,8 +610,8 @@ struct PLPlanPromo: View {
                 }
                 .overlay(alignment: .topLeading) {
                     HStack(spacing: 4) {
-                        Icon(.sparkles, size: 9, color: PL.navy)
-                        Text(kicker).font(.inter(9, .bold)).kerning(1.26).foregroundStyle(PL.navy)
+                        Icon(.sparkles, size: 14, color: PL.navy)
+                        Text(kicker).font(.inter(11, .bold)).kerning(1.26).foregroundStyle(PL.navy)
                     }
                     .padding(.horizontal, 10).padding(.vertical, 4)
                     .background(PL.gold, in: Capsule())
@@ -544,31 +619,32 @@ struct PLPlanPromo: View {
                 }
                 VStack(alignment: .leading, spacing: 6) {
                     Text(plan.title)
-                        .font(.fraunces(19, .medium)).kerning(-0.3).foregroundStyle(PL.navy)
+                        .font(.fraunces(18, .medium)).kerning(-0.3).foregroundStyle(PL.navy)
                         .fixedSize(horizontal: false, vertical: true)
                     if let s = plan.subtitle, !s.isEmpty {
-                        Text(s).font(.inter(11.5, .semibold)).foregroundStyle(PL.gold)
+                        Text(s).font(.inter(12, .semibold)).foregroundStyle(PL.gold)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     if let h = blurb {
                         Text(h)
                             .font(.fraunces(13)).italic().foregroundStyle(PL.ink2)
                             .nuruLineSpacing(4)
-                            .lineLimit(3)
+                            .nuruLineLimit(3)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.top, 2)
                     }
-                    HStack(spacing: 6) {
-                        Text(plan.enrolled ? "Continue the journey" : "Begin the journey")
-                            .font(.inter(12, .bold)).foregroundStyle(PL.navy)
-                        Icon(.arrowRight, size: 13, color: PL.navy)
+                    // It opens the plan, so it says so; the one way to start a
+                    // plan is the plan page's "Begin Day 1" (the walk's E3).
+                    Group {
+                        if primary { PlansPrimaryLabel(text: PlanPromoWords.cta) }
+                        else { PlansSecondaryLabel(text: PlanPromoWords.cta) }
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 9)
-                    .background(PL.gold, in: Capsule())
                     .padding(.top, 6)
                     HStack(spacing: 4) {
-                        Icon(.clock, size: 11, color: PL.ink3)
+                        Icon(.clock, size: 14, color: PL.ink3)
                         Text("\(plan.dayCount) days · a few minutes a day")
-                            .font(.inter(10.5)).foregroundStyle(PL.ink3)
+                            .font(.inter(11)).foregroundStyle(PL.ink3)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                     .padding(.top, 2)
                 }
@@ -581,5 +657,43 @@ struct PLPlanPromo: View {
             .shadow(color: PL.navyDeep.opacity(0.14), radius: 16, y: 8)
         }
         .buttonStyle(.pressableSubtle)
+    }
+}
+
+/// A promo's words (the Cycle 3 walk's E3): it opens the plan's page, so it
+/// never says "Begin" — starting is the plan page's "Begin Day 1".
+enum PlanPromoWords {
+    static let cta = "See the plan"
+}
+
+/// The Plans tab's one primary, drawn as a label inside a tappable card:
+/// gold fill, navy text, radius 14 (§8.1 rule 4).
+struct PlansPrimaryLabel: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text).font(.nCardCTA).foregroundStyle(PL.navy)
+                .lineLimit(2).multilineTextAlignment(.center)
+            Icon(.arrowRight, size: 14, color: PL.navy)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, 14)
+        .background(PL.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+}
+
+/// A secondary: white, hairline border, navy text (§8.1 rule 4).
+struct PlansSecondaryLabel: View {
+    let text: String
+    var body: some View {
+        HStack(spacing: 6) {
+            Text(text).font(.nCardCTA).foregroundStyle(PL.navy)
+                .lineLimit(2).multilineTextAlignment(.center)
+            Icon(.arrowRight, size: 14, color: PL.navy)
+        }
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, 14)
+        .background(Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(Nuru.border, lineWidth: 1))
     }
 }

@@ -143,12 +143,12 @@ struct GoLiveSetupSheet: View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
                 Text("GO LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(Nuru.gold)
-                Text("Start a broadcast").font(.fraunces(19, .medium)).foregroundStyle(Nuru.navy)
+                Text("Start a broadcast").font(.fraunces(18, .medium)).foregroundStyle(Nuru.navy)
             }
             Spacer(minLength: 0)
             Button { Haptics.tap(); dismiss() } label: {
                 Circle().fill(Nuru.surface).frame(width: 32, height: 32)
-                    .overlay(Icon(.x, size: 15, color: Nuru.navy))
+                    .overlay(Icon(.x, size: 14, color: Nuru.navy))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close")
@@ -157,7 +157,7 @@ struct GoLiveSetupSheet: View {
 
     private var titleField: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("TITLE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("TITLE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             TextField("What's happening?", text: $title)
                 .font(.inter(14, .regular)).foregroundStyle(Nuru.navy)
                 .padding(Nuru.S.md)
@@ -170,7 +170,7 @@ struct GoLiveSetupSheet: View {
 
     private var kindToggle: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("FORMAT").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("FORMAT").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             HStack(spacing: 4) {
                 segmentButton("Video", selected: kind == .video) { kind = .video }
                 segmentButton("Audio only", selected: kind == .audio) { kind = .audio }
@@ -183,7 +183,7 @@ struct GoLiveSetupSheet: View {
 
     @ViewBuilder private var scopeSection: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("AUDIENCE").font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
+            Text("AUDIENCE").font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.muted)
             if let forcedCell {
                 scopeLabelRow(icon: .users, text: forcedCell.name)
             } else if churchEligible && cellSectionAvailable {
@@ -225,10 +225,10 @@ struct GoLiveSetupSheet: View {
                     } label: {
                         let isSelected = selectedCellId == cell.id
                         HStack(spacing: 8) {
-                            Icon(.users, size: 13, color: Nuru.goldChipText)
+                            Icon(.users, size: 14, color: Nuru.goldChipText)
                             Text(cell.name).font(.inter(13, isSelected ? .bold : .semibold)).foregroundStyle(Nuru.navy)
                             Spacer(minLength: 0)
-                            if isSelected { Icon(.checkCircle2, size: 15, color: Nuru.gold) }
+                            if isSelected { Icon(.checkCircle2, size: 14, color: Nuru.gold) }
                         }
                         .padding(.horizontal, Nuru.S.md).padding(.vertical, 10)
                         .background(isSelected ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -299,7 +299,7 @@ struct GoLiveSetupSheet: View {
         } label: {
             HStack(spacing: 8) {
                 if starting { ProgressView().tint(Nuru.navy) }
-                else { Icon(.play, size: 15, color: Nuru.navy) }
+                else { Icon(.play, size: 14, color: Nuru.navy) }
                 Text(starting ? "Starting…" : "Go live").font(.inter(14, .bold)).foregroundStyle(Nuru.navy)
             }
             .frame(maxWidth: .infinity).frame(height: 50)
@@ -353,12 +353,11 @@ struct GoLiveSetupSheet: View {
                 case "FORBIDDEN_SCOPE":
                     forbiddenAlert = true
                 default:
-                    conflictMessage = message
+                    conflictMessage = NuruStateCopy.failureLine("Couldn't start the broadcast.", error)
                 }
-            } else if api?.isNetwork == true {
-                conflictMessage = "You're offline — going live needs a connection."
             } else {
-                conflictMessage = api?.errorDescription ?? "Couldn't start the broadcast. Try again."
+                // §4's words — offline only when the phone is, never raw text.
+                conflictMessage = NuruStateCopy.failureLine("Couldn't start the broadcast.", error)
             }
         }
     }

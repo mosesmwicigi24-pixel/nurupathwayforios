@@ -196,13 +196,13 @@ struct LiveDockIconButton: View {
         Button(action: action) {
             VStack(spacing: 3) {
                 Image(systemName: systemImage)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.symbol(18, weight: .semibold))
                     .foregroundStyle(active ? Nuru.navy : .white)
                     .frame(width: 44, height: 44)
                     .background(active ? Nuru.gold : Color.white.opacity(0.14), in: Circle())
                     .overlay(Circle().stroke(Color.white.opacity(0.2), lineWidth: 1))
                 if let caption {
-                    Text(caption).font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.85))
+                    Text(caption).font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.85))
                         .shadow(color: .black.opacity(0.5), radius: 2)
                 }
             }
@@ -242,8 +242,8 @@ struct LiveTopStatChip: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: systemImage).font(.system(size: 10)).foregroundStyle(tint.opacity(0.9))
-            Text(value).font(.inter(10, .semibold)).foregroundStyle(tint.opacity(0.9))
+            Image(systemName: systemImage).font(.symbol(10)).foregroundStyle(tint.opacity(0.9))
+            Text(value).font(.inter(11, .semibold)).foregroundStyle(tint.opacity(0.9))
                 .lineLimit(1)
         }
         .padding(.horizontal, 8).padding(.vertical, 4)

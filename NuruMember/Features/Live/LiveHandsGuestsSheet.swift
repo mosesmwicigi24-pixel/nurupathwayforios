@@ -48,7 +48,7 @@ struct LiveHandsGuestsSheet: View {
                         Haptics.tap()
                         dismiss()
                     } label: {
-                        Icon(.x, size: 15, color: Nuru.ink600)
+                        Icon(.x, size: 14, color: Nuru.ink600)
                             .frame(width: 30, height: 30)
                             .background(Nuru.white, in: Circle())
                     }
@@ -62,7 +62,7 @@ struct LiveHandsGuestsSheet: View {
 
     private var handsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("RAISED HANDS · \(hands.count)")
+            Text(hands.isEmpty ? "RAISED HANDS" : "RAISED HANDS · \(hands.count)")   // no zero counts (§7.4 #9)
                 .font(.nCardKicker).kerning(1.2).foregroundStyle(Nuru.goldLo)
             if hands.isEmpty {
                 Text("No hands raised right now.")
@@ -93,7 +93,7 @@ struct LiveHandsGuestsSheet: View {
             Spacer(minLength: 8)
             if let status = guestStatus(for: hand.userId) {
                 Text(status == "accepted" ? "Joining soon" : "Invited")
-                    .font(.inter(10, .semibold)).foregroundStyle(Nuru.ink400)
+                    .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink400)
             } else {
                 Button {
                     Haptics.tap()

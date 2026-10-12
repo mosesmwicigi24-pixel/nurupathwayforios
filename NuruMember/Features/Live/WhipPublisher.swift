@@ -166,7 +166,8 @@ final class WhipPublisher: WebRTCPeerConnectionObserver, ObservableObject {
             // finish connecting — this is just "negotiated OK so far".
         } catch {
             guard myGeneration == generation else { return }
-            state = .failed("Couldn't connect to the stage. Check your connection and try again.")
+            // §4's words — offline only when the phone is, never raw text.
+            state = .failed(NuruStateCopy.failureLine("Couldn't connect to the stage.", error))
             teardownPeerConnection()
         }
     }

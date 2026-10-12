@@ -185,7 +185,21 @@ struct CellSummary: Codable, Sendable {
                 avatarUrl = try? c.decodeIfPresent(String.self, forKey: .avatarUrl)
             }
         }
-        struct Attendance: Codable, Sendable { let attended: Int; let expected: Int }
+        struct Attendance: Codable, Sendable {
+            let attended: Int
+            /// A scoring baseline (expected check-ins / 30 days — 8 everywhere),
+            /// not the cell's schedule: never shown to a member (§7.4 #16).
+            let expected: Int
+            /// The member's part in the cell's real recent meetings — the same
+            /// meetings `turnout` counts. Nil until the cell has met (and from
+            /// a server that predates it).
+            var you: You? = nil
+
+            struct You: Codable, Sendable {
+                let attended: Int
+                let meetings: Int
+            }
+        }
         struct Next: Codable, Sendable {
             let startAt: String
             let endAt: String?
@@ -292,6 +306,15 @@ extension CellSummary.Cell.Attendance {
         let c = try d.container(keyedBy: CodingKeys.self)
         attended = (try? c.decodeIfPresent(Int.self, forKey: .attended)) ?? 0
         expected = (try? c.decodeIfPresent(Int.self, forKey: .expected)) ?? 0
+        you = try? c.decodeIfPresent(You.self, forKey: .you)
+    }
+}
+
+extension CellSummary.Cell.Attendance.You {
+    init(from d: Decoder) throws {
+        let c = try d.container(keyedBy: CodingKeys.self)
+        attended = (try? c.decodeIfPresent(Int.self, forKey: .attended)) ?? 0
+        meetings = (try? c.decodeIfPresent(Int.self, forKey: .meetings)) ?? 0
     }
 }
 

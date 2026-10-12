@@ -9,6 +9,7 @@
 import Foundation
 import Network
 import Combine
+import os
 
 @MainActor
 final class SyncCoordinator: ObservableObject {
@@ -17,6 +18,13 @@ final class SyncCoordinator: ObservableObject {
     @Published private(set) var isOnline = true
     @Published private(set) var pendingCount = 0
     @Published private(set) var isSyncing = false
+
+    /// The DEVICE's network path as the monitor last reported it — nil until
+    /// its first report. Readable from any thread: the state language asks it
+    /// whether a call that got no answer was the phone's connection (offline)
+    /// or our server (EXPERIENCE.md §4) — never blame a connection the phone has.
+    nonisolated static var devicePathOnline: Bool? { devicePath.withLock { $0 } }
+    private nonisolated static let devicePath = OSAllocatedUnfairLock<Bool?>(initialState: nil)
 
     /// The encrypted store, exposed so feature view-models can read/write the cache.
     let store: EncryptedSQLiteStore
@@ -42,7 +50,8 @@ final class SyncCoordinator: ObservableObject {
         guard !started else { return }
         started = true
         monitor.pathUpdateHandler = { [weak self] path in
-            let online = path.status == .satisfied
+            let online = path.status == .satisfied && !UITestHooks.offline
+            Self.devicePath.withLock { $0 = online }
             Task { @MainActor in
                 guard let self else { return }
                 let reconnected = online && !self.isOnline

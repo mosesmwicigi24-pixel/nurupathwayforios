@@ -87,8 +87,8 @@ struct HomeLiveNowCard: View {
                 metaRow.padding(.top, 4)
                 Button { Haptics.tap(); onOpen() } label: {
                     HStack(spacing: 8) {
-                        if isLive { Icon(.play, size: 15, color: HomeFig.navy) }
-                        else { Image(systemName: "bell.badge.fill").font(.system(size: 14)).foregroundStyle(HomeFig.navy) }
+                        if isLive { Icon(.play, size: 14, color: HomeFig.navy) }
+                        else { Image(systemName: "bell.badge.fill").font(.symbol(14)).foregroundStyle(HomeFig.navy) }
                         Text(isLive ? "Watch live" : "Set reminder")
                             .font(.nCardCTA).foregroundStyle(HomeFig.navy)
                     }
@@ -104,10 +104,8 @@ struct HomeLiveNowCard: View {
         .background(HomeFig.navy)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Color.white.opacity(0.08), lineWidth: 1))
-        .onAppear {
-            guard !reduceMotion else { return }   // pulses are decoration only
-            withAnimation(.easeInOut(duration: 1.2).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1.2).repeatForever(autoreverses: true))
     }
 
     // 16:9 poster with LIVE pill, ON AIR studio lights, and the gold play disc.
@@ -151,7 +149,7 @@ struct HomeLiveNowCard: View {
                 .shadow(color: HomeFig.gold.opacity(0.65), radius: 14, y: 7)
             Circle().stroke(Color.white.opacity(0.28), lineWidth: 4).frame(width: 58, height: 58)
             if isLive { Icon(.play, size: 26, color: HomeFig.navy).offset(x: 2) }
-            else { Image(systemName: "bell.badge.fill").font(.system(size: 22)).foregroundStyle(HomeFig.navy) }
+            else { Image(systemName: "bell.badge.fill").font(.symbol(22)).foregroundStyle(HomeFig.navy) }
         }
     }
 
@@ -159,10 +157,10 @@ struct HomeLiveNowCard: View {
         HStack(spacing: 6) {
             if isLive {
                 Circle().fill(.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
-                Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+                Text("LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(.white)
             } else {
-                Icon(.clock, size: 11, color: HomeFig.navy)
-                Text("STARTS IN \(startsInMin ?? 0)M").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(HomeFig.navy)
+                Icon(.clock, size: 14, color: HomeFig.navy)
+                Text("STARTS IN \(startsInMin ?? 0)M").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(HomeFig.navy)
             }
         }
         .padding(.horizontal, 8).padding(.vertical, 4)
@@ -173,15 +171,13 @@ struct HomeLiveNowCard: View {
     private var onAirChip: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
+                // One red dot: "live" is a state (§8.1 rule 1) — no amber
+                // and green lights for decoration.
                 Circle().fill(Color(hex: 0xEF4444)).frame(width: 8, height: 8)
                     .shadow(color: Color(hex: 0xEF4444), radius: 4)
                     .opacity(pulse ? 0.25 : 1)
-                Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
-                    .shadow(color: Color(hex: 0xF59E0B), radius: 3)
-                Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
-                    .shadow(color: Color(hex: 0x22C55E), radius: 3)
             }
-            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
+            Text("ON AIR").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(.white)
         }
         .padding(.horizontal, 10).padding(.vertical, 4)
         .background(HomeFig.navy.opacity(0.55), in: Capsule())
@@ -197,7 +193,7 @@ struct HomeLiveNowCard: View {
                 Text(location).font(.nCardMeta).foregroundStyle(.white.opacity(0.7)).lineLimit(1)
             }
             if let m = startsInMin {
-                Icon(.clock, size: 11, color: .white.opacity(0.7)).padding(.leading, location == nil ? 0 : 6)
+                Icon(.clock, size: 14, color: .white.opacity(0.7)).padding(.leading, location == nil ? 0 : 6)
                 Text("Starts in \(m) min").font(.nCardMeta).foregroundStyle(.white.opacity(0.7))
             }
         }
@@ -215,7 +211,7 @@ struct HomePriorityStrip: View {
     var body: some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 12) {
-                Icon(.messageSquareText, size: 16, color: HomeFig.gold)
+                Icon(.messageSquareText, size: 18, color: HomeFig.gold)
                     .frame(width: 36, height: 36)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 VStack(alignment: .leading, spacing: 1) {
@@ -251,10 +247,10 @@ struct HomeNeedsYouRail: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("WHAT NEEDS YOU TODAY").font(.inter(9, .bold)).kerning(1.6)
+                Text("WHAT NEEDS YOU TODAY").font(.inter(11, .bold)).kerning(1.6)
                     .foregroundStyle(Color(hex: 0xA8861C))
                 if nudges.count > 1 {
-                    Text("\(nudges.count)").font(.inter(9, .bold)).foregroundStyle(.white)
+                    Text("\(nudges.count)").font(.inter(11, .bold)).foregroundStyle(.white)
                         .padding(.horizontal, 7).padding(.vertical, 2)
                         .background(HomeFig.navy, in: Capsule())
                 }
@@ -292,18 +288,21 @@ struct HomeNeedsYouCard: View {
                 HStack(alignment: .top, spacing: 12) {
                     iconTile
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(nudge.title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy)
-                            .lineLimit(2).multilineTextAlignment(.leading)
+                        // A prompt's title is a card title (§8.1 rule 3).
+                        Text(nudge.title).font(.nCardTitle).foregroundStyle(HomeFig.navy)
+                            .nuruLineLimit(2).multilineTextAlignment(.leading)
+                            .fixedSize(horizontal: false, vertical: true)
                         if !nudge.body.isEmpty {
                             Text(nudge.body).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
-                                .lineLimit(2).multilineTextAlignment(.leading)
+                                .nuruLineLimit(2).multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     Spacer(minLength: 0)
                 }
                 HStack(spacing: 8) {
                     if let due = dueLabel {
-                        Text(due).font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
+                        Text(due).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
                             .padding(.horizontal, 8).padding(.vertical, 4)
                             .background(Color(hex: 0xFFF4DA), in: Capsule())
                     }
@@ -383,13 +382,19 @@ struct HomeNeedsYouCard: View {
 
 struct HomeResumeHero: View {
     let title: String
-    let meta: String
-    let pct: Int
+    /// The level line ("Level 1 · Exam ready") and its bar belong to a pathway
+    /// step — nil for any other ask, so a prayer card never wears a level's 100%.
+    let meta: String?
+    let pct: Int?
     let note: String?
     let ctaLabel: String
     let action: () -> Void
 
-    private var clamped: Int { min(max(pct, 0), 100) }
+    private var clamped: Int? { pct.map { min(max($0, 0), 100) } }
+
+    /// "Almost there" is for the last stretch of a level still being walked —
+    /// never at 100%, where there is nothing left to finish (EXPERIENCE.md §3).
+    static func showsAlmostThere(_ pct: Int) -> Bool { pct >= 60 && pct < 100 }
 
     var body: some View {
         Button { Haptics.tap(); action() } label: {
@@ -424,21 +429,25 @@ struct HomeResumeHero: View {
                 .lineLimit(3).truncationMode(.tail)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 4)
-            Text(meta).font(.nCardBody).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
-            HStack(spacing: 8) {
-                GeometryReader { geo in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.white.opacity(0.16)).frame(height: 6)
-                        Capsule()
-                            .fill(LinearGradient(colors: [HomeFig.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
-                            .frame(width: geo.size.width * CGFloat(clamped) / 100, height: 6)
-                    }
-                }
-                .frame(height: 6)
-                Text("\(clamped)%").font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.7))
+            if let meta {
+                Text(meta).font(.nCardBody).foregroundStyle(.white.opacity(0.55)).lineLimit(2).padding(.top, 4)
             }
-            .padding(.top, 12)
-            if clamped >= 60 {
+            if let clamped {
+                HStack(spacing: 8) {
+                    GeometryReader { geo in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.white.opacity(0.16)).frame(height: 6)
+                            Capsule()
+                                .fill(LinearGradient(colors: [HomeFig.gold, HomeFig.goldSoft], startPoint: .leading, endPoint: .trailing))
+                                .frame(width: geo.size.width * CGFloat(clamped) / 100, height: 6)
+                        }
+                    }
+                    .frame(height: 6)
+                    Text("\(clamped)%").font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.7))
+                }
+                .padding(.top, 12)
+            }
+            if let clamped, Self.showsAlmostThere(clamped) {
                 Text("Almost there — finish strong 🎉")
                     .font(.inter(11, .semibold)).foregroundStyle(HomeFig.goldSoft).padding(.top, 6)
             } else if let note, !note.isEmpty {
@@ -446,7 +455,7 @@ struct HomeResumeHero: View {
             }
             HStack(spacing: 6) {
                 Text(ctaLabel).font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                Icon(.chevronRight, size: 15, color: HomeFig.navy)
+                Icon(.chevronRight, size: 14, color: HomeFig.navy)
             }
             .padding(.horizontal, 16).padding(.vertical, 10)
             .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -465,22 +474,32 @@ struct HomeWeekChain: View {
     let todayDone: Bool
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
-    private static let days = ["M", "T", "W", "T", "F", "S", "S"]
+    /// One first day of the week on every strip (EXPERIENCE.md §9.1 rule 8):
+    /// Sunday, as Plans' streak strip and the month calendar — and Android's.
+    /// It started on Monday here.
+    static let days = ["S", "M", "T", "W", "T", "F", "S"]
+
+    /// Today's place in a Sunday-first week (Sun = 0).
+    static func todayIndex(_ now: Date = Date(), calendar: Calendar = .current) -> Int {
+        calendar.component(.weekday, from: now) - 1
+    }
 
     var body: some View {
-        // Monday-first index of today (Sun=6).
-        let todayIdx = (Calendar.current.component(.weekday, from: Date()) + 5) % 7
+        let todayIdx = Self.todayIndex()
+        // The days before today that the streak covers (today is one of them
+        // once it counts).
+        let back = max(todayDone ? streakDays - 1 : streakDays, 0)
         HStack(spacing: 0) {
             ForEach(0..<7, id: \.self) { i in
                 let isToday = i == todayIdx
-                let isPastDone = i < todayIdx && todayIdx - i <= streakDays
+                let isPastDone = i < todayIdx && todayIdx - i <= back
                 let isDone = isPastDone || (isToday && todayDone)
                 VStack(spacing: 4) {
-                    Text(Self.days[i]).font(.inter(9, .bold)).foregroundStyle(Color(hex: 0xB8BFC9))
+                    Text(Self.days[i]).font(.inter(11, .bold)).foregroundStyle(Color(hex: 0xB8BFC9))
                     ZStack {
                         if isDone {
                             Circle().fill(HomeFig.gold)
-                            Icon(.check, size: 12, color: .white)
+                            Icon(.check, size: 14, color: .white)
                         } else if isToday {
                             Circle().fill(Color.white)
                             Circle().stroke(HomeFig.gold, lineWidth: 1.5)
@@ -496,10 +515,8 @@ struct HomeWeekChain: View {
                 .frame(maxWidth: .infinity)
             }
         }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1.4).repeatForever(autoreverses: true))
     }
 }
 
@@ -524,7 +541,9 @@ struct VerseQuoteCard: View {
     var ink: Color = Nuru.navyDeep
     var gold: Color = Nuru.gold
     var referenceColor: Color = Nuru.ink400
-    var verseSize: CGFloat = 18
+    /// The reader's own text-size step (the plan reader passes its palette);
+    /// the verse is the 18 card-title size at that step.
+    var reading = ReaderPalette()
 
     /// Strip any wrapping curly/straight quotes from the source text — the
     /// hanging glyph IS the quote mark, so the verse text itself never doubles it.
@@ -543,10 +562,10 @@ struct VerseQuoteCard: View {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 6) {
                     Text("\u{201C}")
-                        .font(.fraunces(30, .semibold)).foregroundStyle(gold)
+                        .font(.fraunces(28, .semibold)).foregroundStyle(gold)
                         .offset(y: -8).accessibilityHidden(true)
                     Text(displayVerse)
-                        .font(.fraunces(verseSize)).foregroundStyle(ink)
+                        .font(.fraunces(reading.fs(18))).foregroundStyle(ink)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -570,6 +589,75 @@ struct VerseQuoteCard: View {
     }
 }
 
+// MARK: - The Sunday Letter, quiet (owner, 2026-10-07: colour option A)
+
+/// The Sunday Letter is navy in every state: "navy for the church's voice".
+/// This is its quiet card, for a letter already read and for the weeks before
+/// a letter exists. It is the unread knock's card without the knock: the same
+/// navy gradient, a gold hairline at 0.35 and a soft navy shadow instead of
+/// the gold glow, the gold envelope, the gold kicker, the title in white
+/// Fraunces, one line in #B9C4D4, and a gold chevron. Its words grow with the
+/// phone's text size and are never cut or split (§9.6 #4).
+struct HomeLetterQuietCard: View {
+    let title: String
+    let line: String
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(LinearGradient(colors: [Color(hex: 0xE8CA6C), Color(hex: 0xB6862F)],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .frame(width: 44, height: 44)
+                Icon(.mail, size: 18, color: Color(hex: 0x1E2A1F))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("THE SUNDAY LETTER").font(.inter(11, .bold)).kerning(1.6)
+                    .foregroundStyle(Color(hex: 0xE8CA6C))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(title).font(.fraunces(16, .semibold)).foregroundStyle(.white)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(title, font: .fraunces(16, .semibold))
+                Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+            Icon(.chevronRight, size: 18, color: Nuru.goldGlow)
+        }
+        .padding(14)
+        .background(
+            LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 18, style: .continuous)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+            .stroke(Color(hex: 0xC9A227).opacity(0.35), lineWidth: 1))
+        .shadow(color: Color(hex: 0x0B1F33).opacity(0.18), radius: 8, y: 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+/// The Sunday Letter's quiet lines (owner, 2026-10-07: colour option A).
+enum HomeLetterWords {
+    /// "Sun 4 Oct · Read again": the letter's Sunday, `week_of`, a calendar
+    /// date shown as sent and never shifted by a time zone (§8.1 rule 8).
+    static func readLine(weekOf: String, now: Date = Date()) -> String {
+        let utc = TimeZone(identifier: "UTC") ?? .current
+        let f = DateFormatter()
+        f.calendar = Calendar(identifier: .gregorian)
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = utc
+        f.dateFormat = "yyyy-MM-dd"
+        guard let day = f.date(from: String(weekOf.prefix(10))) else { return "Read again" }
+        return "\(NuruDates.day(day, now: now, timeZone: utc)) · Read again"
+    }
+
+    /// "Written for your week · In 4 days": before a letter exists, its own
+    /// words, the countdown to Sunday evening folded into its one line.
+    static func arrivalLine(countdown: String) -> String { "Written for your week · \(countdown)" }
+}
+
 // MARK: - Encouragement ("You're one reflection away…" / "Beautifully done today.")
 
 /// Nuru's daily word in the header — the AI blessing written for this member.
@@ -580,7 +668,7 @@ struct HomePersonalWord: View {
     var body: some View {
         HStack(alignment: .top, spacing: 7) {
             // Owner (2026-08-26): the quoted head-card word steps down a point.
-            Text("“").font(.fraunces(23, .semibold)).foregroundStyle(HomeFig.gold)
+            Text("“").font(.fraunces(22, .semibold)).foregroundStyle(HomeFig.gold)
                 .offset(y: -2).accessibilityHidden(true)
             Text(text)
                 .font(.fraunces(13)).italic()
@@ -634,7 +722,7 @@ struct HomeEncouragementCard: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
-            Icon(.sparkles, size: 16, color: HomeFig.gold)
+            Icon(.sparkles, size: 18, color: HomeFig.gold)
                 .frame(width: 32, height: 32)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             Text(line)
@@ -654,187 +742,203 @@ struct HomeEncouragementCard: View {
     }
 }
 
-// MARK: - "You're not in a cell yet" belonging cue (cohort cold start)
+// MARK: - YOUR WEEK (EXPERIENCE.md §6.1) — one row per pillar, one card
 
-struct HomeCohortColdStart: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
+/// The week block: Pathway · Plans · Events · Giving · Cell — an icon, the
+/// next thing, one line of when or where it stands, a chevron. The words are
+/// HomeWeek's (pure, pinned by tests); this only draws them and hands a tap
+/// back to Home, which knows where each pillar lives.
+struct HomeWeekCard: View {
+    let rows: [HomeWeekRow]
+    let open: (HomeWeekRow) -> Void
+
     var body: some View {
-        HStack(spacing: 10) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(HomeFig.gold.opacity(0.12))
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .stroke(HomeFig.gold.opacity(0.4), lineWidth: 1)
-                    .opacity(pulse ? 0.85 : 0.3)
-                Icon(.users, size: 15, color: HomeFig.gold)
+        // The week's one next step leads, as a navy band (HomeWeek.cardOrder);
+        // the other rows follow, white, in their order.
+        let order = HomeWeek.cardOrder(rows)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("YOUR WEEK").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
+                .padding(.bottom, 4)
+            if let step = order.step, let ask = step.ask {
+                Button { Haptics.tap(); open(step) } label: { nextStepBand(step, ask) }
+                    .buttonStyle(.pressableSubtle)
+                    // Inset 10 pt from the card's edge, as drawn: wider than the rows.
+                    .padding(.horizontal, -6)
+                    .padding(.vertical, 6)
             }
-            .frame(width: 32, height: 32)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("You're not in a cell yet").font(.inter(12, .semibold)).foregroundStyle(HomeFig.navy)
-                Text("Find your people — grow where your absence is noticed.")
-                    .font(.nCardMeta).foregroundStyle(HomeFig.subGray)
+            ForEach(Array(order.rest.enumerated()), id: \.element.id) { i, row in
+                Button { Haptics.tap(); open(row) } label: { rowView(row) }
+                    .buttonStyle(.pressableSubtle)
+                if i < order.rest.count - 1 {
+                    Rectangle().fill(Nuru.border).frame(height: 1).padding(.leading, 48)
+                }
             }
-            Spacer(minLength: 0)
-            Icon(.chevronRight, size: 15, color: HomeFig.faintGray)
         }
-        .padding(12)
-        .background(LinearGradient(colors: [HomeFig.gold.opacity(0.08), HomeFig.gold.opacity(0.02)],
-                                   startPoint: .topLeading, endPoint: .bottomTrailing),
-                    in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(HomeFig.gold.opacity(0.2), lineWidth: 1))
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 2.2).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
     }
-}
 
-// MARK: - Upcoming card: next-gathering row (thumb · kicker/title/sub · RSVP pill)
+    /// The week's one next step (owner, 2026-10-07: colour option A, "navy for
+    /// your next step"): a navy band inside the white card — a gold-tint tile
+    /// with the pillar's gold icon, "YOUR NEXT STEP · ‹PILLAR›" in gold, what it
+    /// acts on in white Fraunces, the row's line in #B9C4D4, and the screen's
+    /// one gold primary pill with the row's verb. At the accessibility sizes
+    /// the pill takes a line of its own, so no word is squeezed (§9.6 #4).
+    private func nextStepBand(_ row: HomeWeekRow, _ ask: HomeWeekRow.Ask) -> some View {
+        // The dot keeps to the word before it, so a wrapped kicker never
+        // starts its second line with "·".
+        NuruNextStepBand(icon: Self.icon(row.pillar),
+                         kicker: "YOUR NEXT STEP\u{00A0}· \(row.pillar.rawValue.uppercased())",
+                         title: ask.subject, line: row.line, verb: ask.verb)
+    }
 
-struct HomeUpcomingEventRow: View {
-    let kicker: String        // "Today · 9:00 AM"
-    let soon: Bool            // today/tomorrow → blinking gold dot
-    let title: String
-    let sub: String           // "3 going" or the location
-    let subHighlight: Bool    // gold-bold when it's a going-count
-    let imageUrl: String?
-    /// The member's RSVP for this occurrence — "going" | "maybe" | "declined" | nil.
-    /// nil (the default) keeps the original static gold-on-navy "RSVP" call-to-action;
-    /// a real status swaps in a tinted state pill (same palette as the Events tab's
-    /// RSVP row — EvD in EventDetailView.swift).
-    var rsvpStatus: String? = nil
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var pulse = false
-
-    var body: some View {
+    private func rowView(_ row: HomeWeekRow) -> some View {
         HStack(spacing: 12) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.goldChipBg)
-                if let s = imageUrl, let u = URL(string: s) {
-                    // Contained fill image — keeps the thumb ZStack at exactly
-                    // 56×56 so the crop stays centred and nothing paints outside.
-                    Color.clear.overlay {
-                        CachedAsyncImage(url: u) { phase in
-                            if let img = phase.image { HomeFadeInImage(image: img) }
-                            else { Rectangle().fill(Nuru.mutedBg) }
-                        }
-                    }
-                } else {
-                    Icon(.calendarDays, size: 18, color: Nuru.goldChipText)
+            // Row icons sit on gold-tint tiles at the 18pt size (§8.1 rule 7).
+            Icon(Self.icon(row.pillar), size: 18, color: Nuru.goldChipText)
+                .frame(width: 36, height: 36)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                // A week row names a THING — the content row title (§8.1
+                // rule 3: Fraunces 15 semibold, as Android), wrapping to two
+                // lines rather than cut (rule 9).
+                Text(row.title).font(.nRowTitle).foregroundStyle(HomeFig.navy)
+                    .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .nuruWholeWords(row.title, font: .nRowTitle)
+                if !row.line.isEmpty {
+                    // A gift's failed prompt is told in Give's amber, in the
+                    // server's words (final walk M2).
+                    Text(row.urgent ? NuruText.keepHyphens(row.line) : row.line).font(row.urgent ? .inter(11, .semibold) : .nCardMeta)
+                        .foregroundStyle(row.urgent ? Nuru.urgentText : HomeFig.metaGray)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                 }
-            }
-            .frame(width: 56, height: 56)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-            VStack(alignment: .leading, spacing: 1) {
-                HStack(spacing: 4) {
-                    if soon {
-                        Circle().fill(HomeFig.gold).frame(width: 4, height: 4).opacity(pulse ? 0.3 : 1)
-                    }
-                    Text(kicker).font(.inter(10, .bold)).foregroundStyle(HomeFig.gold).lineLimit(1)
-                }
-                Text(title).font(.inter(13, .semibold)).foregroundStyle(HomeFig.navy).lineLimit(1)
-                Text(sub)
-                    .font(.inter(10, subHighlight ? .bold : .regular))
-                    .foregroundStyle(subHighlight ? HomeFig.eyebrow : HomeFig.subGray)
-                    .lineLimit(1)
             }
             Spacer(minLength: 8)
-            rsvpPill
+            Icon(.chevronRight, size: 14, color: HomeFig.faintGray)
         }
-        .padding(10)
-        .background(Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        .padding(.vertical, 10)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 
-    /// nil → the original gold-on-navy "RSVP" call-to-action. A real status swaps
-    /// in a tinted state pill — same hexes as the Events tab's RSVP row (EvD in
-    /// EventDetailView.swift; that enum is private to its file, so reused by value).
-    @ViewBuilder private var rsvpPill: some View {
-        switch rsvpStatus {
-        case "going":
-            rsvpStatePill("Going", fg: Color(hex: 0x166534), bg: Color(hex: 0x16A34A).opacity(0.14))
-        case "maybe":
-            rsvpStatePill("Maybe", fg: Color(hex: 0xB45309), bg: Color(hex: 0xD97706).opacity(0.14))
-        case "declined":
-            rsvpStatePill("Can't go", fg: Color(hex: 0x59667C), bg: Color(hex: 0x74808F).opacity(0.14))
-        default:
-            Text("RSVP").font(.inter(9, .bold)).foregroundStyle(HomeFig.gold)
-                .padding(.horizontal, 10).padding(.vertical, 4)
-                .background(HomeFig.navy, in: Capsule())
+    /// Each pillar wears its tab's own glyph (the cell, Community's people) —
+    /// the one icon per pillar both apps draw (EXPERIENCE.md §8.2 #2):
+    /// Pathway book-open · Plans book-marked · Events calendar · Giving
+    /// hand-heart · Cell users.
+    static func icon(_ p: HomeWeekRow.Pillar) -> Lucide {
+        switch p {
+        case .pathway: return .bookOpen
+        case .plans: return .bookMarked
+        case .events: return .calendar
+        case .giving: return .handHeart
+        case .cell: return .users
         }
-    }
-
-    private func rsvpStatePill(_ label: String, fg: Color, bg: Color) -> some View {
-        Text(label).font(.inter(9, .bold)).foregroundStyle(fg)
-            .padding(.horizontal, 10).padding(.vertical, 4)
-            .background(bg, in: Capsule())
     }
 }
 
-// MARK: - "Support God's work" give panel (centered ceremony layout)
+/// YOUR WEEK while its reads are in flight (§4's loading state; final walk
+/// M4's class): the card's own shape — its kicker, five rows of shimmer —
+/// so nothing is said about a pillar before its read answers, and nothing
+/// jumps when the rows land. Android's YourWeekSkeleton.
+struct HomeWeekSkeleton: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("YOUR WEEK").font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.eyebrow)
+                .padding(.bottom, 4)
+            ForEach(0..<5, id: \.self) { i in
+                HStack(spacing: 12) {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Nuru.surface)
+                        .frame(width: 36, height: 36)
+                    VStack(alignment: .leading, spacing: 6) {
+                        RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Nuru.surface)
+                            .frame(width: 168, height: 13)
+                        RoundedRectangle(cornerRadius: 4, style: .continuous).fill(Nuru.surface)
+                            .frame(width: 112, height: 10)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.vertical, 10)
+                .nuruShimmer()
+                if i < 4 { Rectangle().fill(Nuru.border).frame(height: 1).padding(.leading, 48) }
+            }
+        }
+        .padding(Nuru.S.base)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        .nuruShadow()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Your week, loading")
+    }
+}
 
+/// The header's journey pill while its reads are in flight (§4): the pill's
+/// own capsule, shimmering — no level or stage until the trail answers.
+struct HomePillSkeleton: View {
+    var body: some View {
+        Capsule().fill(Nuru.surface)
+            .frame(width: 168, height: 28)
+            .nuruShimmer()
+            .clipShape(Capsule())
+            .overlay(Capsule().stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Your level, loading")
+    }
+}
+
+// MARK: - "Support God's work" — a gentle prompt on gold tint
+
+/// Shown only while the week's giving row is "Give" (HomeWeek.asksToGive).
+/// A paper card, gold tint (owner, 2026-10-08, §8.1 rules 1 and 5: navy is
+/// the church's voice and each tab's next step — an invitation to give is a
+/// gentle prompt). Its way on is a gold text action, "Give now ›" (rule 4):
+/// the screen's one primary is YOUR WEEK's.
 struct HomeGiveCard: View {
+    /// "Tithe & offering · M-Pesa" — names only the rails that can take a gift
+    /// here (GivingMethods.homeGiveLine); never a rail the member can't use.
+    let railsLine: String
     let action: () -> Void
     var body: some View {
         Button { Haptics.tap(); action() } label: {
-            ZStack(alignment: .topTrailing) {
-                LinearGradient(colors: [HomeFig.navy, HomeFig.navyDark],
-                               startPoint: .topLeading, endPoint: .bottomTrailing)
-                Circle()
-                    .fill(RadialGradient(colors: [HomeFig.gold.opacity(0.4), .clear],
-                                         center: .center, startRadius: 0, endRadius: 90))
-                    .frame(width: 176, height: 176)
-                    .offset(x: 48, y: -56)
-                    .blur(radius: 26)
-                VStack(spacing: 0) {
-                    ZStack {
-                        Circle()
-                            .fill(RadialGradient(colors: [HomeFig.gold.opacity(0.2), .clear],
-                                                 center: .center, startRadius: 0, endRadius: 32))
-                            .frame(width: 64, height: 64)
-                        Circle()
-                            .fill(LinearGradient(colors: [HomeFig.gold, Color(hex: 0xA87F29)],
-                                                 startPoint: .topLeading, endPoint: .bottomTrailing))
-                            .frame(width: 48, height: 48)
-                            .shadow(color: HomeFig.gold.opacity(0.6), radius: 10, y: 6)
-                        Icon(.handHeart, size: 24, color: HomeFig.navy)
-                    }
-                    Text("SUPPORT GOD'S WORK")
-                        .font(.nCardKicker).kerning(1.4).foregroundStyle(HomeFig.gold)
-                        .padding(.top, 12)
-                    Text("Sow into something eternal")
-                        .font(.fraunces(20, .semibold)).foregroundStyle(.white)
-                        .padding(.top, 4)
-                    Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
-                        .font(.nCardBody).foregroundStyle(.white.opacity(0.65))
-                        .multilineTextAlignment(.center)
-                        .frame(maxWidth: 280)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 6)
-                    HStack(spacing: 8) {
-                        Icon(.handHeart, size: 16, color: HomeFig.navy)
-                        Text("Give now").font(.nCardCTA).foregroundStyle(HomeFig.navy)
-                        Icon(.chevronRight, size: 16, color: HomeFig.navy)
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 48)
-                    .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep],
-                                               startPoint: .topLeading, endPoint: .bottomTrailing),
-                                in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .padding(.top, 16)
-                    Text("Tithe & offering · M-Pesa, card and more")
-                        .font(.nCardMeta).foregroundStyle(.white.opacity(0.45))
-                        .padding(.top, 10)
+            VStack(spacing: 0) {
+                Icon(.handHeart, size: 22, color: Nuru.goldChipText)
+                    .frame(width: 48, height: 48)
+                    .background(Nuru.goldChipBg, in: Circle())
+                    .overlay(Circle().stroke(Nuru.gold.opacity(0.3), lineWidth: 1))
+                Text("SUPPORT GOD'S WORK")
+                    .font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+                    .padding(.top, 12)
+                Text("Sow into something eternal")
+                    .font(.nCardTitle).foregroundStyle(Nuru.navy)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
+                Text("Every gift carries the gospel further — raising disciples, sustaining the mission, and lighting the way for the next person to find Christ. Give cheerfully, as the Lord leads.")
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 300)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 6)
+                HStack(spacing: 4) {
+                    Text("Give now").font(.nCardCTA).foregroundStyle(Nuru.gold)
+                    Icon(.chevronRight, size: 14, color: Nuru.gold)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(20)
+                .padding(.top, 14)
+                Text(railsLine)
+                    .font(.nCardMeta).foregroundStyle(Nuru.ink400)
+                    .padding(.top, 6)
             }
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .nuruShadow()
+            .frame(maxWidth: .infinity)
+            .padding(20)
+            .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
         }
         .buttonStyle(.pressableSubtle)
+        .accessibilityHint("Opens Give")
     }
 }
 
@@ -867,20 +971,20 @@ struct HomeOnAirCard: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack(spacing: 6) {
                             studioLights
-                            Text("ON AIR").font(.inter(9, .bold)).kerning(1.44).foregroundStyle(.white)
-                            Text("· Nuru Radio").font(.inter(10, .bold)).foregroundStyle(HomeFig.gold)
+                            Text("ON AIR").font(.inter(11, .bold)).kerning(1.44).foregroundStyle(.white)
+                            Text("· Nuru Radio").font(.inter(11, .bold)).foregroundStyle(HomeFig.gold)
                         }
                         HStack(spacing: 8) {
                             if let n = program.peakListeners, n > 0 {
                                 HStack(spacing: 4) {
-                                    Icon(.users, size: 11, color: HomeFig.goldSoft)
-                                    Text("\(n) listening").font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+                                    Icon(.users, size: 14, color: HomeFig.goldSoft)
+                                    Text("\(n) listening").font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                                 }
                             } else {
-                                Text(program.title).font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+                                Text(program.title).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
                                     .lineLimit(1)
                             }
-                            Text("❤️ 🙏 🙌").font(.system(size: 11))
+                            Text("❤️ 🙏 🙌").font(.emoji(11))
                         }
                     }
                     Spacer(minLength: 4)
@@ -893,7 +997,7 @@ struct HomeOnAirCard: View {
                 if isPlayingThis { radio.pause() } else { radio.tune(program) }
             } label: {
                 Image(systemName: isPlayingThis ? "pause.fill" : "play.fill")
-                    .font(.system(size: 14, weight: .bold)).foregroundStyle(HomeFig.navy)
+                    .font(.symbol(14, weight: .bold)).foregroundStyle(HomeFig.navy)
                     .frame(width: 36, height: 36)
                     .background(LinearGradient(colors: [HomeFig.gold, HomeFig.goldDeep],
                                                startPoint: .topLeading, endPoint: .bottomTrailing), in: Circle())
@@ -908,10 +1012,8 @@ struct HomeOnAirCard: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
             .stroke(Color.white.opacity(0.06), lineWidth: 1))
         .shadow(color: Color(hex: 0x0A1628).opacity(0.35), radius: 12, y: 7)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1).repeatForever(autoreverses: true))
     }
 
     private var art: some View {
@@ -922,7 +1024,7 @@ struct HomeOnAirCard: View {
             if let u = (program.artworkUrl.flatMap(URL.init(string:))) ?? Self.fallbackArt {
                 CachedAsyncImage(url: u) { ph in
                     if let img = ph.image { HomeFadeInImage(image: img) }
-                    else { Image(systemName: "dot.radiowaves.left.and.right").font(.system(size: 14)).foregroundStyle(HomeFig.gold) }
+                    else { Image(systemName: "dot.radiowaves.left.and.right").font(.symbol(14)).foregroundStyle(HomeFig.gold) }
                 }
             }
         }
@@ -930,16 +1032,13 @@ struct HomeOnAirCard: View {
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    // Red pulses; amber + green glow steady — the studio lamp trio.
+    // One red lamp pulses — "live" is a state (§8.1 rule 1); the amber and
+    // green lamps beside it were decoration.
     private var studioLights: some View {
         HStack(spacing: 4) {
             Circle().fill(Color(hex: 0xEF4444)).frame(width: 8, height: 8)
                 .shadow(color: Color(hex: 0xEF4444), radius: 4)
                 .opacity(pulse ? 0.25 : 1)
-            Circle().fill(Color(hex: 0xF59E0B)).frame(width: 8, height: 8)
-                .shadow(color: Color(hex: 0xF59E0B), radius: 3)
-            Circle().fill(Color(hex: 0x22C55E)).frame(width: 8, height: 8)
-                .shadow(color: Color(hex: 0x22C55E), radius: 3)
         }
     }
 }
@@ -971,19 +1070,19 @@ struct HomeLiveBannerCard: View {
                     HStack(spacing: 10) {
                         ZStack {
                             Circle().fill(HomeFig.gold.opacity(0.16)).frame(width: 44, height: 44)
-                            Icon(stream.isAudio ? .audioLines : .camera, size: 19, color: HomeFig.gold)
+                            Icon(stream.isAudio ? .audioLines : .camera, size: 18, color: HomeFig.gold)
                         }
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(spacing: 5) {
                                 Circle().fill(Color.white).frame(width: 6, height: 6).opacity(pulse ? 0.3 : 1)
-                                Text("LIVE").font(.inter(10, .bold)).kerning(1.6).foregroundStyle(.white)
+                                Text("LIVE").font(.inter(11, .bold)).kerning(1.6).foregroundStyle(.white)
                             }
                             .padding(.horizontal, 8).padding(.vertical, 3)
                             .background(HomeFig.liveRed, in: Capsule())
                             Text(stream.title).font(.inter(15, .bold)).foregroundStyle(.white).lineLimit(1)
                         }
                         Spacer(minLength: 0)
-                        Icon(.chevronRight, size: 16, color: .white.opacity(0.5))
+                        Icon(.chevronRight, size: 18, color: .white.opacity(0.5))
                     }
                     Text(metaLine)
                         .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
@@ -995,7 +1094,7 @@ struct HomeLiveBannerCard: View {
             HStack(spacing: 10) {
                 Button { Haptics.tap(); onWatch() } label: {
                     HStack(spacing: 6) {
-                        Icon(.play, size: 12, color: HomeFig.navy)
+                        Icon(.play, size: 14, color: HomeFig.navy)
                         Text("Watch live").font(.inter(12, .bold)).foregroundStyle(HomeFig.navy)
                     }
                     .padding(.horizontal, 14).padding(.vertical, 9)
@@ -1019,10 +1118,8 @@ struct HomeLiveBannerCard: View {
             in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(HomeFig.liveRed.opacity(0.4), lineWidth: 1))
         .shadow(color: HomeFig.liveRed.opacity(0.2), radius: 10, y: 5)
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeInOut(duration: 1).repeatForever(autoreverses: true)) { pulse = true }
-        }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeInOut(duration: 1).repeatForever(autoreverses: true))
     }
 }
 
@@ -1038,9 +1135,75 @@ struct HomePulseDot: View {
                 .opacity(pulse ? 0 : 0.6)
             Circle().fill(HomeFig.gold).frame(width: 10, height: 10)
         }
-        .onAppear {
-            guard !reduceMotion else { return }
-            withAnimation(.easeOut(duration: 1.6).repeatForever(autoreverses: false)) { pulse = true }
+        // Pulses only while Home is seen (final walk M7).
+        .nuruPulse($pulse, .easeOut(duration: 1.6).repeatForever(autoreverses: false))
+    }
+}
+
+
+/// The navy "next step" band (owner, 2026-10-07: colour option A, "navy for
+/// your next step"): a gold-tint tile with the step's gold icon, the gold
+/// kicker, what it acts on in white Fraunces, the line in #B9C4D4, and the
+/// screen's one gold primary pill with the step's verb. At the accessibility
+/// sizes the pill takes a line of its own, so no word is squeezed (§9.6 #4).
+/// Home's YOUR WEEK leads with it; the Sunday Letter's one step wears it too.
+struct NuruNextStepBand: View {
+    let icon: Lucide
+    let kicker: String
+    let title: String
+    var line: String = ""
+    let verb: String
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    var body: some View {
+        let gold = Color(hex: 0xE8CA6C)
+        let tile = Icon(icon, size: 18, color: gold)
+            .frame(width: 42, height: 42)
+            .background(gold.opacity(0.16), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        let kickerText = Text(kicker)
+            .font(.nCardKicker).kerning(1.4).foregroundStyle(gold)
+            .fixedSize(horizontal: false, vertical: true)
+        let titleText = Text(title).font(.nCardTitle).foregroundStyle(.white)
+            .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+            .nuruWholeWords(title, font: .nCardTitle)
+        let meta = Text(line).font(.inter(12)).foregroundStyle(Color(hex: 0xB9C4D4))
+            .fixedSize(horizontal: false, vertical: true)
+        let pill = Text(verb).font(.inter(13, .bold)).foregroundStyle(Nuru.navy)
+            .padding(.horizontal, 16).padding(.vertical, 9)
+            .background(Nuru.goldGradient, in: Capsule())
+            .fixedSize()
+        return Group {
+            if typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 10) {
+                    tile; kickerText; titleText
+                    if !line.isEmpty { meta }
+                    pill.padding(.top, 2)
+                }
+            } else {
+                // The kicker and the title take the band's whole width; the
+                // pill sits at the right of the line below, so a phone's width
+                // never squeezes the words.
+                HStack(alignment: .top, spacing: 12) {
+                    tile
+                    VStack(alignment: .leading, spacing: 3) {
+                        kickerText
+                        titleText
+                        HStack(alignment: .center, spacing: 8) {
+                            meta.frame(maxWidth: .infinity, alignment: .leading)
+                            pill
+                        }
+                        .padding(.top, 4)
+                    }
+                }
+            }
         }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(LinearGradient(colors: [Color(hex: 0x11253F), Color(hex: 0x0A1628)],
+                                   startPoint: .topLeading, endPoint: .bottomTrailing),
+                    in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }

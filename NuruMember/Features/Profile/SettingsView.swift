@@ -2,9 +2,10 @@
 // (which keeps the member's identity + spiritual journey). Pushed from the
 // Profile header's gear button. Sections: Security & Login (real password
 // change + TOTP 2FA), Notifications (server-backed GET/PUT /me/notification-
-// preferences with optimistic toggles), Display (global text size), Language
-// (PATCH /me locale), Privacy (location consent → /me/location), Help &
-// Privacy (FAQs + policy), then Sign out / Delete account and the app version.
+// preferences with optimistic toggles — the channels, and Sound and
+// vibration), Display (global text size), Language (PATCH /me locale),
+// Privacy (location consent → /me/location), Help & Privacy (FAQs + policy),
+// then Sign out / Delete account and the app version.
 // Reuses the shared sectionCard / icon-tile building blocks from ProfileView.
 import SwiftUI
 import UIKit
@@ -25,12 +26,23 @@ struct SettingsView: View {
     // preferences) with @AppStorage as the offline cache/fallback so the UI
     // never blocks. Toggles are optimistic and roll back on a failed PUT; push
     // additionally requests the real system permission.
-    @State private var prefSaveFailed = false
+    /// Why a preference didn't save, in §4's words.
+    @State private var prefSaveError: String?
+    /// "Allow notifications?" — asked when the member turns push on, with
+    /// its one line (EXPERIENCE.md §7.2 #12), never cold.
+    @State private var pushAsk: NotificationAsk?
+    static let pushWhy = "So devotionals, events and reminders reach this phone."
     @AppStorage("nuru.notif.push") private var pushOn = true
     @AppStorage("nuru.notif.email") private var emailOn = true
     @AppStorage("nuru.notif.sms") private var smsOn = false
+    /// Sound and vibration on notifications (`sound_enabled`) — off, they
+    /// still arrive, quietly. LocalNotifier reads the same key offline.
+    @AppStorage(NuruPush.soundPrefKey) private var soundOn = true
     /// Approximate-location sharing consent (persisted); wired to /me/location.
     @AppStorage("nuru.privacy.shareLocation") private var shareLocation = false
+    /// The location switch is waiting for the server; what its last try said.
+    @State private var locationBusy = false
+    @State private var locationLine: String?
     /// Global text scale (persisted); the font helpers read Nuru.textScale from here.
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
     /// Global line spacing (persisted); `.nuruLineSpacing(_:)` reads Nuru.lineSpacing from here.
@@ -67,7 +79,9 @@ struct SettingsView: View {
                         privacy
                         helpPrivacy
                         actions
-                        Text("Nuru Pathway · v1.0").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+                        // The installed build, as the bundle says it (the walk's B12: a
+                        // hard-coded "v1.0" beside build 1.1 (130)).
+                        Text(AppVersion.line()).font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
                             .padding(.top, Nuru.S.xs)
                     }
                     .padding(.horizontal, Nuru.S.screen)
@@ -98,7 +112,7 @@ struct SettingsView: View {
             Button("Turn off", role: .destructive) {
                 Task {
                     do { try await MemberAPI.disableMfa(code: mfaDisableCode); Haptics.success(); await auth.loadProfile() }
-                    catch { Haptics.error(); mfaError = (error as? APIError)?.errorDescription ?? "Couldn't turn off two-factor." }
+                    catch { Haptics.error(); mfaError = NuruStateCopy.failureLine("Couldn't turn off two-factor.", error) }
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -108,7 +122,7 @@ struct SettingsView: View {
         .alert("Two-factor authentication", isPresented: Binding(get: { mfaError != nil }, set: { if !$0 { mfaError = nil } })) {
             Button("OK") { mfaError = nil }
         } message: { Text(mfaError ?? "") }
-        .onChange(of: shareLocation) { _, on in Task { await applyLocationSharing(on) } }
+        .notificationAsk($pushAsk) { _ in }
     }
 
     // MARK: Header (standard pushed-screen idiom: back tile, kicker, Fraunces title)
@@ -129,7 +143,7 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: Nuru.S.xs) {
                 Text("PREFERENCES")
                     .font(.nCardKicker).kerning(1.4)
-                    .foregroundStyle(Color(hex: 0x9A7A2A))
+                    .foregroundStyle(Nuru.eyebrow)
                 Text("Settings")
                     .font(.fraunces(26, .semibold))
                     .foregroundStyle(Nuru.navy)
@@ -160,46 +174,55 @@ struct SettingsView: View {
             pushOn = prefs.pushEnabled
             emailOn = prefs.emailEnabled
             smsOn = prefs.smsEnabled
+            soundOn = prefs.soundEnabled
         }
     }
 
     // MARK: Settings side-effects
 
-    /// Ask iOS for notification permission when the member turns push on.
+    /// The member turned push on: the phone is asked now — with its one line
+    /// first — or not at all when it already allows. The preference itself
+    /// is the server's, saved either way; this is only this phone's say.
     private func requestPushPermission() {
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in }
+        Task { pushAsk = await NotificationPermission.askIfNeeded(why: Self.pushWhy) }
     }
 
     /// Optimistic toggle: flip the local (@AppStorage-cached) value immediately,
-    /// PUT all three channels, and roll back + error-haptic if the save fails.
+    /// PUT all three channels (and sound), and roll back + error-haptic if the
+    /// save fails.
     private func prefBinding(_ value: Binding<Bool>, isPush: Bool = false) -> Binding<Bool> {
         Binding(get: { value.wrappedValue }, set: { on in
             let old = value.wrappedValue
             value.wrappedValue = on
             if isPush, on { requestPushPermission() }
+            prefSaveError = nil
             Task {
                 do {
-                    try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn)
+                    try await MemberAPI.updateNotificationPreferences(push: pushOn, email: emailOn, sms: smsOn, sound: soundOn)
                 } catch {
                     Haptics.error()
                     value.wrappedValue = old
-                    prefSaveFailed = true // say it, don't just snap the toggle back
+                    // Say it, don't just snap the toggle back — and say why.
+                    prefSaveError = NuruStateCopy.failureLine("Couldn't save your preferences.", error)
                 }
             }
         })
     }
 
-    /// Share or stop sharing an approximate location fix (§proximity). If permission
-    /// is denied or a fix can't be obtained, revert the toggle so it never lies.
-    private func applyLocationSharing(_ on: Bool) async {
-        if on {
-            if let c = await location.requestCoarseFix() {
-                try? await MemberAPI.shareLocation(lat: c.latitude, lng: c.longitude)
-            } else {
-                shareLocation = false
-            }
+    /// Share or stop sharing an approximate location (§proximity). The switch
+    /// waits for the server (owner decision, §7.4): it moves on the server's
+    /// yes; on a failure it stays as it was and the line under it says why.
+    private func changeLocationSharing(_ on: Bool) async {
+        guard !locationBusy, on != shareLocation else { return }
+        locationBusy = true
+        locationLine = nil
+        let outcome = await LocationSharing.set(on, using: location)
+        locationBusy = false
+        if case .failed(let line) = outcome {
+            Haptics.error()
+            locationLine = line
         } else {
-            try? await MemberAPI.stopSharingLocation()
+            Haptics.success()
         }
     }
 
@@ -213,18 +236,20 @@ struct SettingsView: View {
     private var security: some View {
         sectionCard("SECURITY & LOGIN", icon: .lock) {
             Button { Haptics.tap(); showPasswordSheet = true } label: {
-                actionRow(.key, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
+                actionRow(.key,
                           "Change password", "Keep your account secure")
             }.buttonStyle(.pressableSubtle)
             Divider()
             HStack(spacing: Nuru.S.md) {
-                iconTile(.fingerprint,
-                         tint: twoFactorOn ? Color(hex: 0x16A34A).opacity(0.13) : Color(hex: 0xFEF3C7),
-                         color: twoFactorOn ? Color(hex: 0x16A34A) : Color(hex: 0xD97706))
+                iconTile(.fingerprint)   // its state is in its words (rule 1)
                 VStack(alignment: .leading, spacing: 1) {
+                    // "authentica / tion" beside the switch at the largest size (§9.6 #4).
                     Text("Two-factor authentication").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .nuruWholeWords("Two-factor authentication", font: .inter(13, .semibold))
                     Text(twoFactorOn ? "Active · Authenticator app" : "Not enabled · recommended")
                         .font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
                 Toggle("", isOn: Binding(get: { twoFactorOn }, set: { want in
@@ -235,7 +260,7 @@ struct SettingsView: View {
             }
             .padding(.vertical, 10)
             Divider()
-            actionRow(.smartphone, tint: Color(hex: 0xFCE7F3), color: Color(hex: 0xDB2777),
+            actionRow(.smartphone,
                       "Active sessions", "This device")
         }
     }
@@ -244,23 +269,30 @@ struct SettingsView: View {
 
     private var notifications: some View {
         sectionCard("NOTIFICATIONS", icon: .bell) {
-            toggleRow(.bell, "Push notifications", "Devotionals, events, reminders", prefBinding($pushOn, isPush: true)); Divider()
+            // What iOS really does with it (B11): no remote push yet, so the
+            // switch turns this phone's banners for new notices on and off.
+            toggleRow(.bell, IOSNoticeWords.bannersTitle, IOSNoticeWords.bannersLine, prefBinding($pushOn, isPush: true)); Divider()
+            // Muting silences the sound and the buzz, never the notification
+            // itself; one conversation's mute lives in that chat's menu.
+            toggleRow(.volume2, "Sound and vibration",
+                      soundOn ? "A sound and a buzz when a message or notification arrives." : "Notifications arrive quietly.",
+                      prefBinding($soundOn)); Divider()
             toggleRow(.mail, "Email", "Weekly summary & receipts", prefBinding($emailOn)); Divider()
             toggleRow(.phone, "SMS", "Critical updates only", prefBinding($smsOn)); Divider()
-            if prefSaveFailed {
-                Text("Couldn't save your preferences — check your connection and try again.")
+            if let line = prefSaveError {
+                Text(line)
                     .font(.nCardMeta).foregroundStyle(Nuru.danger)
                     .padding(.top, 6)
             }
             Button { Haptics.tap(); openSystemSettings() } label: {
                 HStack(spacing: Nuru.S.md) {
-                    iconTile(.bell, tint: Nuru.gold.opacity(0.08), color: Color(hex: 0xA8861C))
+                    iconTile(.bell)
                     VStack(alignment: .leading, spacing: 1) {
                         Text("Notification settings").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                         Text("Manage sounds & toggles in phone settings").font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                     }
                     Spacer(minLength: 0)
-                    Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+                    Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
                 }
                 .padding(.vertical, 10)
                 .contentShape(Rectangle())
@@ -291,14 +323,19 @@ struct SettingsView: View {
                         withAnimation(.easeInOut(duration: 0.15)) { textScale = opt.scale }
                     } label: {
                         Text(opt.label)
-                            .font(.inter(opt.preview, on ? .bold : .semibold))
-                            .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                            .font(.inter(NuruType.snap(opt.preview), on ? .bold : .semibold))
+                            // Selected navy, unselected white with a hairline
+                            // (§8.1 rule 6; the walk's E17 found gold-tint selection).
+                            .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                             .frame(maxWidth: .infinity).frame(height: 48)
-                            .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                            .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
+                    .accessibilityShowsLargeContentViewer()
                 }
             }
+            // A bar too: its three choices stop at the largest everyday size.
+            .nuruBarText()
             .padding(.top, Nuru.S.xs)
             Text("Adjusts text size across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
 
@@ -313,16 +350,19 @@ struct SettingsView: View {
                         VStack(spacing: CGFloat(2 * opt.scale)) {
                             Text(opt.label)
                                 .font(.inter(12, on ? .bold : .semibold))
-                                .foregroundStyle(on ? Nuru.navy : Color(hex: 0x59667C))
+                                .foregroundStyle(on ? .white : Color(hex: 0x59667C))
                             Rectangle().fill(on ? Nuru.gold : Nuru.border).frame(width: 26, height: 1.5)
                             Rectangle().fill(on ? Nuru.gold : Nuru.border).frame(width: 26, height: 1.5)
                         }
                         .frame(maxWidth: .infinity).frame(height: 48)
-                        .background(on ? Nuru.goldChipBg : Nuru.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(on ? Nuru.gold : Nuru.border, lineWidth: 1))
+                        .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+                        .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
+                    .accessibilityShowsLargeContentViewer()
                 }
             }
+            // A bar: "Co… Def… Rela…" at the largest size (§9.6 #4).
+            .nuruBarText()
             .padding(.top, Nuru.S.xs)
             Text("Adjusts line spacing across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
         }
@@ -333,7 +373,7 @@ struct SettingsView: View {
     private var language: some View {
         sectionCard("LANGUAGE", icon: .languages) {
             Button { Haptics.tap(); helpSheet = .language } label: {
-                actionRow(.languages, tint: Color(hex: 0xE0F2FE), color: Color(hex: 0x0EA5E9),
+                actionRow(.languages,
                           "Language", "App language · \(nuruLanguageName(p?.locale))")
             }.buttonStyle(.pressableSubtle)
         }
@@ -352,7 +392,21 @@ struct SettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
-                Toggle("", isOn: $shareLocation).labelsHidden().tint(Nuru.gold)
+                // The switch shows what the server holds; while it is asked,
+                // a spinner stands in its place.
+                if locationBusy {
+                    ProgressView().tint(Nuru.gold).frame(width: 51, height: 31)
+                } else {
+                    Toggle("", isOn: Binding(get: { shareLocation },
+                                             set: { want in Task { await changeLocationSharing(want) } }))
+                        .labelsHidden().tint(Nuru.gold)
+                }
+            }
+            if let locationLine {
+                Text(locationLine)
+                    .font(.nCardMeta).foregroundStyle(Nuru.danger)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Nuru.S.xs)
             }
         }
     }
@@ -362,12 +416,12 @@ struct SettingsView: View {
     private var helpPrivacy: some View {
         sectionCard("HELP & PRIVACY", icon: .lifeBuoy) {
             Button { Haptics.tap(); helpSheet = .support } label: {
-                actionRow(.lifeBuoy, tint: Nuru.successBg, color: Color(hex: 0x16A34A),
+                actionRow(.lifeBuoy,
                           "Help & support", "FAQs, contact us")
             }.buttonStyle(.pressableSubtle)
             Divider()
             Button { Haptics.tap(); helpSheet = .privacyPolicy } label: {
-                actionRow(.shieldCheck, tint: Color(hex: 0xEEF2FF), color: Color(hex: 0x6366F1),
+                actionRow(.shieldCheck,
                           "Privacy policy", "How we handle your data")
             }.buttonStyle(.pressableSubtle)
         }
@@ -378,15 +432,18 @@ struct SettingsView: View {
     private var actions: some View {
         HStack(spacing: Nuru.S.sm) {
             Button { Haptics.tap(); showSignOutConfirm = true } label: {
-                HStack(spacing: 6) { Icon(.logOut, size: 15, color: Nuru.navy); Text("Sign out").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
+                HStack(spacing: 6) { Icon(.logOut, size: 14, color: Nuru.navy); Text("Sign out").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
             }
             .buttonStyle(.pressable)
-            // Calm confirm — signing out is reversible, so no destructive red.
-            .confirmationDialog("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm, titleVisibility: .visible) {
-                Button("Sign out") {
+            // The answer that ends the session wears the alert's destructive
+            // role (EXPERIENCE.md §8.1 rule 4, §8.2 #19) — it was plain, with
+            // "Stay signed in" the bold one. An alert, not a confirmation
+            // dialog: on this iOS a dialog hides its cancel answer (§7.3).
+            .alert("Sign out of Nuru Pathway?", isPresented: $showSignOutConfirm) {
+                Button("Sign out", role: .destructive) {
                     // Revoke the refresh-token family server-side FIRST (the token
                     // is captured synchronously, the call is fire-and-forget), then
                     // clear local state — the sign-out never waits on the network.
@@ -401,7 +458,7 @@ struct SettingsView: View {
                 Haptics.tap()
                 showDeleteInfo = true
             } label: {
-                HStack(spacing: 6) { Icon(.trash2, size: 15, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
+                HStack(spacing: 6) { Icon(.trash2, size: 14, color: Color(hex: 0xDC2626)); Text("Delete account").font(.inter(13, .semibold)).foregroundStyle(Color(hex: 0xDC2626)) }
                     .frame(maxWidth: .infinity).frame(height: 46)
                     .background(Color(hex: 0xFEF2F2), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color(hex: 0xFECACA), lineWidth: 1))
@@ -418,15 +475,15 @@ struct SettingsView: View {
 
     // MARK: building blocks (rows only used on this screen)
 
-    private func actionRow(_ icon: Lucide, tint: Color, color: Color, _ title: String, _ sub: String) -> some View {
+    private func actionRow(_ icon: Lucide, _ title: String, _ sub: String) -> some View {
         HStack(spacing: Nuru.S.md) {
-            iconTile(icon, tint: tint, color: color)
+            iconTile(icon)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                 Text(sub).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
             }
             Spacer(minLength: 0)
-            Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+            Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
         }
         .padding(.vertical, 10)
         .contentShape(Rectangle())
@@ -469,14 +526,13 @@ private struct PasswordChangeSheet: View {
     @State private var succeeded = false
 
     var body: some View {
-        PSheetShell(title: "Change password") {
+        PSheetShell(title: "Change password", fitsContent: true) {
             if succeeded {
                 successView
             } else {
                 formView
             }
         }
-        .presentationDetents([.medium])
     }
 
     // Clear confirmation — the member sees exactly what happened before dismissing.
@@ -485,7 +541,7 @@ private struct PasswordChangeSheet: View {
             Icon(.checkCircle2, size: 40, color: Nuru.success)
                 .padding(.top, Nuru.S.sm)
             Text("Your password has been changed.")
-                .font(.fraunces(19, .medium)).foregroundStyle(Nuru.navy)
+                .font(.fraunces(18, .medium)).foregroundStyle(Nuru.navy)
                 .multilineTextAlignment(.center)
             Text("Use your new password next time you sign in.")
                 .font(.inter(13)).foregroundStyle(Color(hex: 0x5B6472))
@@ -531,7 +587,7 @@ private struct PasswordChangeSheet: View {
             succeeded = true
         } catch {
             Haptics.error()
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't change the password — check your current one."
+            self.error = NuruStateCopy.failureLine("Couldn't change the password — check your current one.", error)
         }
     }
 }
@@ -594,9 +650,10 @@ private struct AppLanguageSheet: View {
         ("sw", "Swahili", "Available", true),
         ("fr", "French", "Coming soon", false),
     ]
+    private var currentCode: String { String(current.prefix(2)).lowercased() == "sw" ? "sw" : "en" }
 
     var body: some View {
-        PSheetShell(title: "App language") {
+        PSheetShell(title: "App language", fitsContent: true) {
             VStack(alignment: .leading, spacing: Nuru.S.md) {
                 Text("Choose the language for the app interface.")
                     .font(.inter(12)).foregroundStyle(Color(hex: 0x5B6472))
@@ -609,7 +666,7 @@ private struct AppLanguageSheet: View {
                                     Text(o.note).font(.nCardMeta).foregroundStyle(Color(hex: 0x5B6472))
                                 }
                                 Spacer()
-                                if picked == o.code { Icon(.check, size: 16, color: Nuru.gold) }
+                                if picked == o.code { Icon(.check, size: 18, color: Nuru.gold) }
                             }
                             .padding(12)
                             .background(picked == o.code ? Nuru.gold.opacity(0.09) : Nuru.surface,
@@ -621,11 +678,11 @@ private struct AppLanguageSheet: View {
                     }
                 }
                 if let error { Text(error).font(.inter(12)).foregroundStyle(Nuru.danger) }
-                GoldSheetButton(title: "Save", busy: saving) { Task { await save() } }
+                // Save waits for a change (the walk's E18).
+                GoldSheetButton(title: "Save", busy: saving, disabled: picked == currentCode) { Task { await save() } }
             }
         }
-        .presentationDetents([.medium])
-        .onAppear { picked = String(current.prefix(2)).lowercased() == "sw" ? "sw" : "en" }
+        .onAppear { picked = currentCode }
     }
 
     private func save() async {
@@ -636,7 +693,7 @@ private struct AppLanguageSheet: View {
             onSaved()
             dismiss()
         } catch {
-            self.error = (error as? APIError)?.errorDescription ?? "Couldn't save — please try again."
+            self.error = NuruStateCopy.failureLine("Couldn't save — please try again.", error)
         }
     }
 }
@@ -667,7 +724,7 @@ private struct HelpSupportSheet: View {
                                 Text(f.q).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
                                     .multilineTextAlignment(.leading)
                                 Spacer(minLength: 0)
-                                Icon(.chevronRight, size: 16, color: Color(hex: 0x74808F))
+                                Icon(.chevronRight, size: 18, color: Color(hex: 0x74808F))
                                     .rotationEffect(.degrees(open == i ? 90 : 0))
                             }
                             .padding(12)
@@ -687,13 +744,13 @@ private struct HelpSupportSheet: View {
                     .padding(.top, Nuru.S.md)
                 HStack(spacing: Nuru.S.sm) {
                     Button { openURL("mailto:support@nuru.app") } label: {
-                        HStack(spacing: 6) { Icon(.mail, size: 15, color: Nuru.navy); Text("Email us").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
+                        HStack(spacing: 6) { Icon(.mail, size: 14, color: Nuru.navy); Text("Email us").font(.inter(13, .semibold)).foregroundStyle(Nuru.navy) }
                             .frame(maxWidth: .infinity).frame(height: 46)
                             .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                     }.buttonStyle(.plain)
                     Button { openURL("tel:+254700000000") } label: {
-                        HStack(spacing: 6) { Icon(.phone, size: 15, color: Nuru.navy); Text("Call us").font(.inter(13, .bold)).foregroundStyle(Nuru.navy) }
+                        HStack(spacing: 6) { Icon(.phone, size: 14, color: Nuru.navy); Text("Call us").font(.inter(13, .bold)).foregroundStyle(Nuru.navy) }
                             .frame(maxWidth: .infinity).frame(height: 46)
                             .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                     }.buttonStyle(.plain)
@@ -739,6 +796,21 @@ private struct PrivacyPolicySheet: View {
                     .font(.nCardMeta).italic().foregroundStyle(Color(hex: 0x74808F))
                 GoldSheetButton(title: "Got it") { dismiss() }
             }
+        }
+    }
+}
+
+
+/// "Nuru Pathway · 1.1 (130)" — the version and build of what's installed,
+/// read from the bundle (Cycle 3 close walk B12).
+enum AppVersion {
+    static func line(_ info: [String: Any]? = Bundle.main.infoDictionary) -> String {
+        let version = info?["CFBundleShortVersionString"] as? String
+        let build = info?["CFBundleVersion"] as? String
+        switch (version, build) {
+        case let (v?, b?) where !v.isEmpty && !b.isEmpty: return "Nuru Pathway · \(v) (\(b))"
+        case let (v?, _) where !v.isEmpty: return "Nuru Pathway · \(v)"
+        default: return "Nuru Pathway"
         }
     }
 }

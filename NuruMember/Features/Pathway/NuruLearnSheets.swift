@@ -25,13 +25,13 @@ struct NuruCoachSheet: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 16) {
                     HStack(spacing: 8) {
-                        Icon(.sparkles, size: 15, color: Color(hex: 0xE8CA6C))
+                        Icon(.sparkles, size: 14, color: Color(hex: 0xE8CA6C))
                         Text("REVIEW WITH NURU").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Color(hex: 0xE8CA6C))
                         Spacer()
                     }
                     if let text {
                         Text(text)
-                            .font(.fraunces(17)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
+                            .font(.fraunces(16)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
                             .padding(20)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(hex: 0xFFFDF6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
@@ -117,7 +117,7 @@ struct ExplainSheet: View {
                 ScrollView(showsIndicators: false) {
                     if let text {
                         Text(text)
-                            .font(.fraunces(17)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
+                            .font(.fraunces(16)).foregroundStyle(Color(hex: 0x2A3441)).lineSpacing(6)
                             .padding(20)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .background(Color(hex: 0xFFFDF6), in: RoundedRectangle(cornerRadius: 18, style: .continuous))

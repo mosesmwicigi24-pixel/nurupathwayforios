@@ -43,6 +43,11 @@ struct PlanSegmentView: View {
     @AppStorage(ReaderTextScale.key) private var readerScale: Double = 1.0
     @State private var done = false
     @State private var saving = false
+    /// Why the server didn't record the part — above the button (§7.4 #2).
+    @State private var saveError: String?
+    /// This part's segments the server has recorded while the page is open:
+    /// a retry finishes only the rest.
+    @State private var acked: Set<String> = []
     @State private var player: MediaItem?
     // Live scroll fraction → the same reading instruments the Pathway reader
     // shows (top gold hairline + right-rail eye-pacer). Hidden when the part
@@ -64,15 +69,8 @@ struct PlanSegmentView: View {
         default: return [segment]
         }
     }
-    private func rank(_ s: PlanSegment) -> Int {
-        switch s.kind.lowercased() {
-        case "video", "audio": return 0
-        case "scripture": return 1
-        case "talk": return 3
-        case "reading": return 5
-        default: return s.title.lowercased().hasPrefix("pray") ? 4 : 2
-        }
-    }
+    /// The day hub's grouping (PlanDayParts) — one truth for every part.
+    private func rank(_ s: PlanSegment) -> Int { PlanDayParts.rank(s) }
 
     var body: some View {
         ZStack {
@@ -149,8 +147,8 @@ struct PlanSegmentView: View {
                 .buttonStyle(.pressable)
                 Spacer(minLength: 8)
                 Text("DAY \(ref.dayNumber) · \(ref.planTitle.uppercased())")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 // Text size: Small → Regular → Large → Small, one tap each.
                 Button {
@@ -169,7 +167,7 @@ struct PlanSegmentView: View {
                     Haptics.tap()
                     withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
                 } label: {
-                    Icon(readerNight ? .sun : .moon, size: 17, color: .white)
+                    Icon(readerNight ? .sun : .moon, size: 18, color: .white)
                         .frame(width: 36, height: 36)
                         .background(Color.white.opacity(0.10), in: Circle())
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
@@ -178,12 +176,12 @@ struct PlanSegmentView: View {
                 .accessibilityLabel(readerNight ? "Day mode" : "Night mode")
             }
             HStack(spacing: 12) {
-                Icon(partIcon, size: 16, color: PL.gold)
+                Icon(partIcon, size: 18, color: PL.gold)
                     .frame(width: 40, height: 40)
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(partName).font(.fraunces(24, .medium)).kerning(-0.7).foregroundStyle(.white)
+                    Text(partName).font(.fraunces(26, .medium)).kerning(-0.7).foregroundStyle(.white)
                     if let r = headerRef, !r.isEmpty {
                         Text(r).font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                     }
@@ -283,7 +281,7 @@ struct PlanSegmentView: View {
             // a few scanty keynotes just below.
             DayVideoCard(seg: segment, portrait: true) { url in player = MediaItem(url: url) }
             if !segment.title.isEmpty {
-                Text(segment.title).font(.fraunces(20, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
+                Text(segment.title).font(.fraunces(18, .medium)).kerning(-0.4).foregroundStyle(pal.ink)
             }
             if let c = segment.content, !c.isEmpty { keynotes(c) }
         }
@@ -307,55 +305,85 @@ struct PlanSegmentView: View {
         }
     }
 
-    // MARK: finish — tick + notify the hub + return
+    // MARK: finish — tick + notify the hub + return, on the server's word
 
     private var cta: some View {
-        Button {
-            guard !saving else { return }
-            if done {
-                Haptics.tap(); dismiss(); return
+        VStack(spacing: 8) {
+            // Above the button (both apps): clear of the home indicator, read
+            // before the retry tap. On its own card: the reading scrolls under
+            // this bar, and the words must stay legible over it.
+            if let saveError {
+                Text(saveError)
+                    .font(.inter(12, .medium)).foregroundStyle(pal.danger)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(pal.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(pal.danger.opacity(0.25), lineWidth: 1))
+                    .transition(.opacity)
             }
-            saving = true
-            Task {
-                var lastAck: SegmentCompleteResult?
-                for seg in group where !seg.completed {
-                    if let res = try? await MemberAPI.completePlanSegment(seg.segmentId) { lastAck = res }
-                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: seg.segmentId)
+            Button {
+                guard !saving else { return }
+                if done {
+                    Haptics.tap(); dismiss(); return
                 }
-                // The LAST segment's ack is the server's authoritative word on
-                // whether this day just sealed and the next one opened —
-                // computed in the same transaction as the write. Broadcasting
-                // it lets the day hub skip the explicit "Seal the day" tap and
-                // the plan overview tell a genuine lock apart from a
-                // completion still landing through the sync path.
-                if let ack = lastAck, ack.dayComplete {
-                    NotificationCenter.default.post(
-                        name: .nuruPlanDayUnlocked,
-                        object: PlanDayUnlockAck(planId: ref.planId, dayNumber: ack.dayNumber,
-                                                  nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
+                saving = true
+                withAnimation(.easeOut(duration: 0.2)) { saveError = nil }
+                Task { await finish() }
+            } label: {
+                HStack(spacing: 8) {
+                    if saving { ProgressView().tint(PL.navy) }
+                    else { Icon(.check, size: 14, color: PL.navy) }
+                    Text(done ? "Done" : finishLabel)
+                        .font(.inter(14, .bold)).foregroundStyle(PL.navy)
                 }
-                done = true; saving = false
-                Haptics.success()
-                dismiss()
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: PL.gold.opacity(0.4), radius: 10, y: 6)
             }
-        } label: {
-            HStack(spacing: 8) {
-                if saving { ProgressView().tint(PL.navy) }
-                else { Icon(.check, size: 15, color: PL.navy) }
-                Text(done ? "Done" : finishLabel)
-                    .font(.inter(14, .bold)).foregroundStyle(PL.navy)
-            }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: PL.gold.opacity(0.4), radius: 10, y: 6)
+            .buttonStyle(.pressable)
+            .disabled(saving)
         }
-        .buttonStyle(.pressable)
         .padding(.horizontal, 20).padding(.top, 12).padding(.bottom, 14)
         .background(
             LinearGradient(colors: [pal.bg.opacity(0), pal.bg], startPoint: .top, endPoint: .bottom)
                 .ignoresSafeArea(edges: .bottom)
         )
+    }
+
+    /// Finish the part — every part's gold button (the Word: Scripture,
+    /// teaching, Go Deeper; Respond: the prayer; Watch / Listen). No success
+    /// before the server says so (§7.4 #2): each segment ticks the hub only
+    /// on its own ack; the haptic and the way back come only once all have
+    /// landed. A refusal or no answer keeps the member here, with §4's words
+    /// for why above the button, and the next tap finishes only the rest.
+    private func finish() async {
+        var lastAck: SegmentCompleteResult?
+        for seg in group where !seg.completed && !acked.contains(seg.segmentId) {
+            do {
+                let res = try await MemberAPI.completePlanSegment(seg.segmentId)
+                acked.insert(seg.segmentId)
+                lastAck = res
+                NotificationCenter.default.post(name: .nuruPlanPartDone, object: seg.segmentId)
+            } catch {
+                saving = false
+                withAnimation(.easeOut(duration: 0.2)) { saveError = NuruStateCopy.saveFailureLine(error) }
+                Haptics.error()
+                return
+            }
+        }
+        // The LAST segment's ack is the server's authoritative word on whether
+        // this day just sealed and the next one opened — computed in the same
+        // transaction as the write. Broadcasting it lets the day hub skip the
+        // explicit "Seal the day" tap and the plan overview tell a genuine
+        // lock apart from a completion still landing through the sync path.
+        // (It also notes the sealed day for the Plans streak card, §7.4 #4.)
+        if let ack = lastAck { PlanDayUnlockAck.announce(ack, planId: ref.planId) }
+        done = true; saving = false
+        Haptics.success()
+        dismiss()
     }
 
     /// Warm, part-specific completion wording.
@@ -385,7 +413,7 @@ struct PlanSegmentView: View {
                 Spacer(minLength: 0)
                 Button { openURL(url) } label: {
                     HStack(spacing: 8) {
-                        Icon(.play, size: 16, color: PL.navy)
+                        Icon(.play, size: 18, color: PL.navy)
                         Text("Start playing").font(.inter(16, .bold)).foregroundStyle(PL.navy)
                     }
                     .frame(maxWidth: .infinity).frame(height: 52)
@@ -426,14 +454,14 @@ private struct PartReflectionBox: View {
                 Spacer(minLength: 0)
                 if justSaved {
                     HStack(spacing: 4) {
-                        Icon(.check, size: 11, color: Color(hex: 0x16A34A))
-                        Text("Saved").font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                        Icon(.check, size: 14, color: Color(hex: 0x16A34A))
+                        Text("Saved").font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.85)))
                 }
             }
             Text("What is God showing you today?")
-                .font(.fraunces(16.5, .regular)).italic().foregroundStyle(pal.ink)
+                .font(.fraunces(16, .regular)).italic().foregroundStyle(pal.ink)
                 .fixedSize(horizontal: false, vertical: true)
             ZStack(alignment: .topLeading) {
                 if text.isEmpty {
@@ -469,8 +497,8 @@ private struct PartReflectionBox: View {
             } label: {
                 HStack(spacing: 6) {
                     if saving { ProgressView().tint(pal.goldDeep) }
-                    else if justSaved { Icon(.check, size: 13, color: pal.goldDeep) }
-                    else { Icon(.pencil, size: 13, color: pal.goldDeep) }
+                    else if justSaved { Icon(.check, size: 14, color: pal.goldDeep) }
+                    else { Icon(.pencil, size: 14, color: pal.goldDeep) }
                     Text(justSaved ? "Saved" : (saved == nil ? "Save reflection" : "Update"))
                         .font(.inter(12, .bold)).foregroundStyle(pal.goldDeep)
                 }
@@ -484,7 +512,7 @@ private struct PartReflectionBox: View {
             .opacity(trimmed.isEmpty ? 0.5 : 1)
             if let error {
                 Text(error)
-                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
                     .fixedSize(horizontal: false, vertical: true)
                     .transition(.opacity)
             }
@@ -518,11 +546,9 @@ private struct PartReflectionBox: View {
             }
         } catch {
             Haptics.error()
-            let api = error as? APIError
             withAnimation(.easeOut(duration: 0.2)) {
-                self.error = (api?.isNetwork == true)
-                    ? "You're offline — your reflection needs a connection to save."
-                    : (api?.errorDescription ?? "Couldn't save your reflection. Try again.")
+                // §4's words — offline only when the phone is, never raw text.
+                self.error = NuruStateCopy.failureLine("Couldn't save your reflection.", error)
             }
         }
         saving = false
@@ -543,8 +569,14 @@ struct TalkItOverView: View {
     @State private var loading = true
     @State private var draft = ""
     @State private var posting = false
-    @State private var postFailed = false
-    @State private var markedRead = false
+    /// Why the last post didn't send — §4's words, with the draft kept.
+    @State private var postError: String?
+    /// The server has acked Talk it Over's completion on this page.
+    @State private var talkSealed = false
+    /// The gold button is waiting on the server (§7.4 #2).
+    @State private var sealing = false
+    /// Why the server didn't record it — above the gold button.
+    @State private var sealError: String?
     @State private var aiBusy = false
     @FocusState private var composing: Bool
     /// How far the composer must rise to clear the keyboard, taken from the
@@ -616,7 +648,7 @@ struct TalkItOverView: View {
         .toolbar(.hidden, for: .navigationBar)
         // Deliberately NO auto-marking here: the back arrow leaves the day
         // untouched (owner ask — sometimes you just want to look and leave).
-        // Only the gold "I've talked it over" button seals the part.
+        // Posting, or the gold "I've talked it over", seals the part.
         .onAppear { tabs.chromeHidden = true }
         .task { await load() }
         .refreshable { await load() }
@@ -660,15 +692,23 @@ struct TalkItOverView: View {
         guard !body.isEmpty, !posting else { return }
         posting = true
         Task {
-            if let row = try? await MemberAPI.talkPost(planId: route.planId, dayNumber: route.dayNumber, body: body) {
+            do {
+                let row = try await MemberAPI.talkPost(planId: route.planId, dayNumber: route.dayNumber, body: body)
                 withAnimation(.spring(response: 0.35, dampingFraction: 0.8)) { posts.append(row) }
                 draft = ""
                 composing = false
-                postFailed = false
+                postError = nil
                 Haptics.success()
-            } else {
+                // Posting is talking it over: the server completes the part
+                // with the post (§7.4 #1). This asks for its ack, so the hub
+                // ticks and a sealed day is announced; if it doesn't answer,
+                // the gold button finishes it — and says so if it can't.
+                Task { await completeTalk() }
+            } catch {
                 Haptics.error()
-                postFailed = true // the draft is kept; say why it's still here
+                // The draft is kept; say why it's still here (§4's words, as
+                // Android: "Couldn't send." and the reason).
+                postError = "Couldn't send. " + NuruStateCopy.failure(error).sentence
             }
             posting = false
         }
@@ -688,18 +728,18 @@ struct TalkItOverView: View {
                 .buttonStyle(.pressable)
                 Spacer(minLength: 8)
                 Text("DAY \(route.dayNumber) · \(route.planTitle.uppercased())")
-                    .font(.inter(10, .bold)).kerning(1.6).foregroundStyle(PL.gold)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 Color.clear.frame(width: 36, height: 36)
             }
             HStack(spacing: 12) {
-                Icon(.users, size: 16, color: PL.gold)
+                Icon(.users, size: 18, color: PL.gold)
                     .frame(width: 40, height: 40)
                     .background(PL.gold.opacity(0.16), in: Circle())
                     .overlay(Circle().stroke(PL.gold.opacity(0.4), lineWidth: 1))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Talk it Over").font(.fraunces(24, .medium)).kerning(-0.7).foregroundStyle(.white)
+                    Text("Talk it Over").font(.fraunces(26, .medium)).kerning(-0.7).foregroundStyle(.white)
                     Text(posts.isEmpty ? "Be the first to respond" : "\(posts.count) response\(posts.count == 1 ? "" : "s")")
                         .font(.inter(11)).foregroundStyle(.white.opacity(0.65))
                 }
@@ -739,11 +779,11 @@ struct TalkItOverView: View {
 
     private var promptCard: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(promptLines.count == 1 ? "TODAY'S QUESTION" : "TODAY'S QUESTIONS")
+            Text(PlanDayWords.questionKicker(promptLines.count))
                 .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.goldDeep)
             ForEach(Array(promptLines.enumerated()), id: \.offset) { _, q in
                 Text(q)
-                    .font(.fraunces(16.5, .regular)).italic().foregroundStyle(PL.navy)
+                    .font(.fraunces(16, .regular)).italic().foregroundStyle(PL.navy)
                     .nuruLineSpacing(5).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -769,9 +809,10 @@ struct TalkItOverView: View {
 
     private var composer: some View {
         VStack(alignment: .leading, spacing: 6) {
-        if postFailed {
-            Text("Couldn't send — check your connection and try again.")
+        if let postError {
+            Text(postError)
                 .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 4)
         }
         HStack(spacing: 10) {
@@ -812,7 +853,7 @@ struct TalkItOverView: View {
                     if aiBusy { ProgressView().tint(PL.goldDeep) }
                     else {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 15, weight: .semibold))
+                            .font(.symbol(15, weight: .semibold))
                             .foregroundStyle(PL.goldDeep)
                     }
                 }
@@ -825,7 +866,7 @@ struct TalkItOverView: View {
             Button { send() } label: {
                 Group {
                     if posting { ProgressView().tint(PL.navy) }
-                    else { Icon(.send, size: 16, color: PL.navy) }
+                    else { Icon(.send, size: 18, color: PL.navy) }
                 }
                 .frame(width: 42, height: 42)
                 .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
@@ -842,43 +883,96 @@ struct TalkItOverView: View {
 
     // MARK: done — seal the part and return to the day hub
 
-    /// Talk it Over completes the moment it's opened (nobody is forced to post),
-    /// but the page still ends with the SAME gold button every other part has —
-    /// one consistent gesture: read/respond, press gold, back at the hub, ticked.
+    /// Talk it Over is a required part of the day (owner, 2026-10-05),
+    /// completed by posting in the conversation OR by the gold "I've talked
+    /// it over" — nobody is forced to post. Opening the page never completes
+    /// it. The server's ack ticks the hub's row and, when this was the day's
+    /// last part, seals the day — the same broadcast as every other part's
+    /// finish. Returns why it failed, or nil once the part stands.
+    @discardableResult
+    private func completeTalk() async -> Error? {
+        guard let sid = route.talkSegmentId, !route.talkDone, !talkSealed else { return nil }
+        do {
+            let ack = try await MemberAPI.completePlanSegment(sid)
+            talkSealed = true
+            NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
+            PlanDayUnlockAck.announce(ack, planId: route.planId)
+            return nil
+        } catch {
+            return error
+        }
+    }
+
+    /// The page ends with the SAME gold button every other part has — one
+    /// consistent gesture: read/respond, press gold, back at the hub, ticked.
+    /// No success before the server says so (§7.4 #2, as Android): the button
+    /// shows progress while it waits; on the ack, the haptic and back to the
+    /// day; on a refusal or no answer the member stays, told why above it.
     private var doneBar: some View {
-        Button {
-            // Backstop: make sure the tick landed even if the appear-marking raced.
-            if let sid = route.talkSegmentId, !route.talkDone, !markedRead {
-                markedRead = true
+        VStack(spacing: 8) {
+            if route.talkDone || talkSealed {
+                // Already done (the walk's B4): say so, and a quiet way back —
+                // no gold "I've talked it over" asking again for a part the day
+                // page already shows as completed.
+                Text(TalkWords.done).font(.inter(13, .semibold)).foregroundStyle(Nuru.successText)
+                Button { Haptics.tap(); dismiss() } label: {
+                    Text(TalkWords.back(day: route.dayNumber)).font(.inter(14, .semibold)).foregroundStyle(PL.navy)
+                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .background(Color.white, in: RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Nuru.R.button, style: .continuous).stroke(PL.border, lineWidth: 1))
+                }
+                .buttonStyle(.pressable)
+            } else {
+            // Above the button (both apps): read before the retry tap.
+            if let sealError {
+                Text(sealError)
+                    .font(.inter(12, .medium)).foregroundStyle(Color(hex: 0xB91C1C))
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(.opacity)
+            }
+            Button {
+                guard !sealing else { return }
+                if route.talkDone || talkSealed {
+                    Haptics.tap(); dismiss(); return
+                }
+                sealing = true
+                withAnimation(.easeOut(duration: 0.2)) { sealError = nil }
                 Task {
-                    let ack = try? await MemberAPI.completePlanSegment(sid)
-                    NotificationCenter.default.post(name: .nuruPlanPartDone, object: sid)
-                    // Talk it Over can be the LAST part of a day too — same
-                    // authoritative-ack broadcast as the segment reader's CTA.
-                    if let ack, ack.dayComplete {
-                        NotificationCenter.default.post(
-                            name: .nuruPlanDayUnlocked,
-                            object: PlanDayUnlockAck(planId: route.planId, dayNumber: ack.dayNumber,
-                                                      nextDayNumber: ack.nextDayNumber, nextDayUnlocked: ack.nextDayUnlocked))
+                    let failed = await completeTalk()
+                    sealing = false
+                    if let failed {
+                        withAnimation(.easeOut(duration: 0.2)) { sealError = NuruStateCopy.saveFailureLine(failed) }
+                        Haptics.error()
+                    } else {
+                        Haptics.success()
+                        dismiss()
                     }
                 }
+            } label: {
+                HStack(spacing: 8) {
+                    if sealing { ProgressView().tint(PL.navy) }
+                    else { Icon(.check, size: 14, color: PL.navy) }
+                    Text("I've talked it over").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+                }
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
+                            in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: PL.gold.opacity(0.4), radius: 10, y: 6)
             }
-            Haptics.success()
-            dismiss()
-        } label: {
-            HStack(spacing: 8) {
-                Icon(.check, size: 15, color: PL.navy)
-                Text("I've talked it over").font(.inter(14, .bold)).foregroundStyle(PL.navy)
+            .buttonStyle(.pressable)
+            .disabled(sealing)
             }
-            .frame(maxWidth: .infinity, minHeight: 52)
-            .background(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing),
-                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .shadow(color: PL.gold.opacity(0.4), radius: 10, y: 6)
         }
-        .buttonStyle(.pressable)
         .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 10)
         .background(Color.white)
     }
+}
+
+/// Talk it Over's words once its part is done (the walk's B4).
+enum TalkWords {
+    static let done = "Completed ✓"
+    static func back(day: Int) -> String { "Back to Day \(day)" }
 }
 
 /// One response row — avatar, name, time-ago, body, encouragement heart.
@@ -893,7 +987,7 @@ private struct TalkPostRow: View {
                 HStack(spacing: 6) {
                     Text(post.name).font(.inter(13, .semibold)).foregroundStyle(PL.navy).lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(TalkTime.ago(post.createdAt)).font(.inter(10)).foregroundStyle(PL.ink3)
+                    Text(TalkTime.ago(post.createdAt)).font(.inter(11)).foregroundStyle(PL.ink3)
                 }
                 Text(post.body)
                     .font(.inter(13)).foregroundStyle(PL.bodyInk).lineSpacing(4)
@@ -901,7 +995,7 @@ private struct TalkPostRow: View {
                 Button(action: onLike) {
                     HStack(spacing: 5) {
                         Image(systemName: post.liked ? "heart.fill" : "heart")
-                            .font(.system(size: 13))
+                            .font(.symbol(13))
                             .foregroundStyle(post.liked ? PL.gold : PL.ink3)
                         if post.likeCount > 0 {
                             Text("\(post.likeCount)").font(.inter(11, .semibold))
@@ -950,7 +1044,7 @@ private struct TalkAvatar: View {
     private var fallback: some View {
         ZStack {
             Circle().fill(LinearGradient(colors: [PL.gold, PL.ctaDeep], startPoint: .topLeading, endPoint: .bottomTrailing))
-            Text(initials).font(.inter(size * 0.34, .bold)).foregroundStyle(.white)
+            Text(initials).font(.inter(NuruType.snap(size * 0.34), .bold)).foregroundStyle(.white)
         }
     }
 }

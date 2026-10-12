@@ -250,7 +250,9 @@ final class LiveStageCompositor {
         let label = TextScreenObject()
         label.string = name
         label.attributes = [
-            .font: UIFont.boldSystemFont(ofSize: max(12, tileSize.height * 0.14)),
+            // The brand's face, sized to the tile in the video frame's pixels
+            // (not app text on the type scale — TypographyTests lists it).
+            .font: Nuru.uiFont("Inter-Bold", max(12, tileSize.height * 0.14)),
             .foregroundColor: UIColor.white,
             .strokeColor: UIColor.black,
             .strokeWidth: -2

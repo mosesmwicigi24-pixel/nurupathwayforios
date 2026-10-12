@@ -69,11 +69,17 @@ final class AuthStore: ObservableObject {
     }
 
     func signOut() {
+        Task { @MainActor in EkklesiaPulse.shared.clear() }
         Task { await APIClient.shared.clearSession() }
         // Seal + forget the device-local pastoral privacy state (C3b): the
         // next account on this phone must not inherit the previous member's
         // remembered thread ids, mute/archive flags, or an open lock window.
         PastoralLock.shared.reset()
+        // …nor the previous member's sealed plan day on the streak card.
+        // (Here, not on isAuthenticated == false: that is also the launch
+        // state before the session is restored.)
+        PlanDayLog.forget()
+        PlanPartLog.forget()
         me = nil
         isAuthenticated = false
     }

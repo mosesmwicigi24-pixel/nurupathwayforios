@@ -15,17 +15,23 @@
 // posts `{}` and that is the whole ceremony. "Pay" never charges here: it
 // opens Give pre-filled (fund, amount still due) with the pledge id riding the
 // intent body (§1 rule a), so money stays on the one server-authoritative
-// path (§5.6). Pause / resume / edit / cancel / reminders live on the pledge
-// detail page (tap a pledge) — the list itself is read-only.
+// path (§5.6). Pause / resume / edit / cancel / reminders and "I paid another
+// way" (PledgeClaims.swift) live on the pledge detail page (tap a pledge) —
+// the list itself is read-only.
 //
-// The STATEMENT card's three numbers follow the rule shared with Android and
-// the docs, computed HERE from the statement + the pledges, never sent:
+// The STATEMENT card's three numbers follow the rule shared with the server
+// (partnerStatementMath.ts), Android and the docs — per currency, as the
+// server sends them (`summary_by_currency`, Giving Cycle 9); an older server
+// sends none, and the same rule is counted here (PledgeMath, Giving Cycle 5):
 //   Paid      = Σ payments[].amountMinor where pledgeId != nil
 //   Pledged   = Σ over pledges not cancelled:
 //                 monthly → amountMinor × (dueDay dates in that year from
-//                           max(createdAt, 1 Jan) through 31 Dec)
+//                           max(start, 1 Jan) through min(until_on, 31 Dec)),
+//                           start = the later of starts_on and the creation
+//                           day — the church's (Nairobi) days
 //                 total   → targetMinor if dueOn falls in that year, else 0
-//   Remaining = max(Pledged − Paid, 0)
+//   Remaining = Σ per pledge max(Pledged_i − Paid_i, 0)
+// never added across currencies.
 //
 // The card is the PREVIEW. "Statement" on the standing card and "Partners
 // statement and PDF" under the card both open PartnersStatementView — the
@@ -70,13 +76,24 @@ enum GivingSignal {
 @MainActor final class PartnersModel: ObservableObject {
     @Published var partnership: Partnership?
     @Published var loading = false
-    @Published var error: String?
+    /// Why the portal didn't load (nothing to show yet) — spoken through the
+    /// one state language (NuruStateCopy), never as the server's raw text.
+    @Published var failure: Error?
     /// The pledge / schedule id with an action in flight — its control shows a
     /// spinner and refuses a second tap.
     @Published var busyId: String?
     @Published var joining = false
     /// A failed action, surfaced once in an alert and cleared. Never silent.
     @Published var actionError: String?
+    /// A pledge just made whose automatic collection could not be set up
+    /// (`auto_schedule_error`, Giving Cycle 5): its page says why, by pledge
+    /// id, until the member dismisses it.
+    @Published var pledgeNotices: [String: String] = [:]
+    /// The recurring gifts (GET /giving/schedules) — which DUE instalments a
+    /// pledge's collector takes care of (EXPERIENCE.md §6.4). Nil until the
+    /// first answer; a failed read keeps what was known. While unknown every
+    /// instalment keeps Pay: nothing is said to be collected by guesswork.
+    @Published var schedules: [GivingSchedule]?
 
     // Statements (GET /giving/statements?year=)
     @Published var statements: GivingStatements?
@@ -133,20 +150,30 @@ enum GivingSignal {
 
     func load() async {
         loading = partnership == nil
-        error = nil
+        failure = nil
         partnershipSeq += 1
         let seq = partnershipSeq
-        do {
-            let p = try await MemberAPI.partnership()
+        // Beside the partnership, so the DUE list renders once with both —
+        // never Pay first, then a chip a moment later.
+        async let gifts = try? MemberAPI.schedules()
+        // Both answer before either shows (final walk, M4's class): assigned
+        // between the two awaits, the partnership could paint its DUE rows
+        // with no gifts beside them — Pay, then the chip a moment later.
+        let read: Result<Partnership, Error>
+        do { read = .success(try await MemberAPI.partnership()) } catch { read = .failure(error) }
+        let g = await gifts
+        switch read {
+        case .success(let p):
             if seq > partnershipApplied {
                 partnershipApplied = seq
                 partnership = p
             }
             partnershipRefreshFailed = false
-        } catch {
-            if partnership == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this just now." }
+        case .failure(let error):
+            if partnership == nil { failure = error }
             else { partnershipRefreshFailed = true }
         }
+        if let g { schedules = g }
         loading = false
     }
 
@@ -198,7 +225,7 @@ enum GivingSignal {
             await loadStatements()   // the STATEMENT section appears with membership
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Nothing has changed."
+            actionError = GiveRefusal.from(error).message
         }
     }
 
@@ -212,13 +239,15 @@ enum GivingSignal {
         await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(remindersEnabled: on))
     }
 
-    /// Edit name / amount / due day. `title` nil = untouched, `.set` = a new
-    /// custom name, `.clear` = an explicit null so the server falls back to
-    /// its derived name. Returns true on success so the sheet can close.
+    /// Edit name / amount / due day. `amountMinor` is the new promise in the
+    /// pledge's own currency — a monthly amount or a total's target (the body
+    /// sends it as the one the pledge reads). `title` nil = untouched, `.set`
+    /// = a new custom name, `.clear` = an explicit null so the server falls
+    /// back to its derived name. Returns true on success so the sheet can close.
     @discardableResult
     func edit(_ pledge: Pledge, amountMinor: Int?, dueDay: Int?,
               title: MemberAPI.PledgePatchBody.TitlePatch? = nil) async -> Bool {
-        await patch(pledge.pledgeId, MemberAPI.PledgePatchBody(amountMinor: amountMinor, dueDay: dueDay, title: title))
+        await patch(pledge.pledgeId, .edit(pledge, commitmentMinor: amountMinor, dueDay: dueDay, title: title))
     }
 
     @discardableResult
@@ -229,11 +258,14 @@ enum GivingSignal {
         do {
             _ = try await MemberAPI.updatePledge(id, patch: body)
             Haptics.success()
+            // A pledge's amount, day, pause and cancel move the recurring gift
+            // that collects it (Giving Cycle 5) — Give's list hears of it.
+            GivingSignal.post(from: self)
             await load()
             return true
         } catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your pledge is unchanged."
+            actionError = GiveRefusal.from(error).message
             return false
         }
     }
@@ -248,7 +280,7 @@ enum GivingSignal {
         do { try await MemberAPI.resumeSchedule(id); Haptics.success(); GivingSignal.post(from: self); await load() }
         catch {
             Haptics.error()
-            actionError = (error as? APIError)?.errorDescription ?? "That didn't go through. Your giving is unchanged."
+            actionError = GiveRefusal.from(error).message
         }
     }
 
@@ -276,7 +308,7 @@ enum GivingSignal {
             statementsRefreshFailed = false
         } catch {
             if quiet { statementsRefreshFailed = true }
-            else { statementsError = (error as? APIError)?.errorDescription ?? "We couldn't load your statement." }
+            else { statementsError = NuruStateCopy.failure(error).sentence }
         }
         if !quiet {
             statementLoadsInFlight -= 1
@@ -296,45 +328,284 @@ enum PartnersRoute: Hashable {
 // MARK: - The statement arithmetic (shared rule — see the header comment)
 
 enum PledgeMath {
-    /// How many of a monthly pledge's due dates fall in `year`, counting from
-    /// max(createdAt, 1 Jan) through `through` (31 Dec when nil), inclusive
-    /// at both ends. A pledge created after `through` counts none.
-    static func monthlyDueDates(_ p: Pledge, in year: Int, through: Date? = nil) -> Int {
-        guard p.isMonthly else { return 0 }
-        let cal = Calendar.current
-        let day = min(28, max(1, p.dueDay ?? 1))
-        guard var start = cal.date(from: DateComponents(year: year, month: 1, day: 1)),
-              let yearEnd = cal.date(from: DateComponents(year: year, month: 12, day: 31)) else { return 0 }
-        if let iso = p.createdAt, let created = PartnerFormat.date(iso) ?? giveParseDate(iso) {
-            start = max(start, cal.startOfDay(for: created))
-        }
-        let end = through.map { cal.startOfDay(for: $0) } ?? yearEnd
-        var n = 0
-        for month in 1...12 {
-            guard let d = cal.date(from: DateComponents(year: year, month: month, day: day)) else { continue }
-            if d >= start && d <= end { n += 1 }
-        }
-        return n
+    // MARK: The church's calendar — Africa/Nairobi, as the server counts days
+
+    /// "2026-10-05" — string order is date order.
+    static func ymd(_ y: Int, _ m: Int, _ d: Int) -> String {
+        String(format: "%04d-%02d-%02d", y, m, d)
     }
 
-    /// Pledged for `year` across every pledge that is not cancelled.
-    static func pledgedMinor(_ pledges: [Pledge], year: Int) -> Int {
-        pledges.filter { $0.status != "cancelled" }.reduce(0) { acc, p in
-            if p.isMonthly {
-                return acc + (p.amountMinor ?? 0) * monthlyDueDates(p, in: year)
+    /// The church's day (YYYY-MM-DD) of an instant.
+    static func churchDay(of date: Date) -> String {
+        let c = GiveCalendar.calendar.dateComponents([.year, .month, .day], from: date)
+        return ymd(c.year ?? 1970, c.month ?? 1, c.day ?? 1)
+    }
+
+    /// A pledge's date as the church's day (the server's `partnerDate`): a
+    /// bare YYYY-MM-DD as it is — a calendar day, never shifted; a timestamp
+    /// → its Nairobi day ("2026-07-31 22:30:00+00" is 1 August); nil when
+    /// absent or unreadable.
+    static func churchDay(_ text: String?) -> String? {
+        guard let s = text?.trimmingCharacters(in: .whitespaces), !s.isEmpty else { return nil }
+        if isDay(s) { return s }
+        return instant(s).map { churchDay(of: $0) }
+    }
+
+    /// Exactly YYYY-MM-DD.
+    static func isDay(_ s: String) -> Bool {
+        let c = Array(s)
+        guard c.count == 10, c[4] == "-", c[7] == "-" else { return false }
+        return c.enumerated().allSatisfy { i, ch in i == 4 || i == 7 || (ch.isASCII && ch.isNumber) }
+    }
+
+    /// An ISO-8601 instant, or Postgres timestamptz text as the server sends
+    /// `created_at` ("2026-08-01 06:12:33.123456+00": a space for the "T",
+    /// up to microseconds, a "+00" / "+03:00" / "Z" offset — none reads as
+    /// UTC). Nil when it is neither.
+    static func instant(_ text: String) -> Date? {
+        let s = text.trimmingCharacters(in: .whitespaces)
+        if let d = PartnerFormat.date(s) { return d }
+        let c = Array(s)
+        func num(_ at: Int, _ len: Int) -> Int? {
+            guard at + len <= c.count, c[at..<at + len].allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            return Int(String(c[at..<at + len]))
+        }
+        guard c.count >= 19, c[4] == "-", c[7] == "-", c[10] == " " || c[10] == "T", c[13] == ":", c[16] == ":",
+              let y = num(0, 4), let mo = num(5, 2), let d = num(8, 2),
+              let h = num(11, 2), let mi = num(14, 2), let sec = num(17, 2) else { return nil }
+        var i = 19
+        var nanos = 0
+        if i < c.count, c[i] == "." {
+            i += 1
+            var digits = ""
+            while i < c.count, c[i].isASCII, c[i].isNumber { digits.append(c[i]); i += 1 }
+            nanos = (Int(String((digits + "000").prefix(3))) ?? 0) * 1_000_000
+        }
+        var offset = 0
+        if i < c.count {
+            if c[i] == "Z", i == c.count - 1 {
+                offset = 0
+            } else if c[i] == "+" || c[i] == "-" {
+                let rest = String(c[(i + 1)...]).replacingOccurrences(of: ":", with: "")
+                guard rest.count == 2 || rest.count == 4, rest.allSatisfy({ $0.isASCII && $0.isNumber }),
+                      let hh = Int(rest.prefix(2)), let mm = Int(rest.count == 4 ? String(rest.suffix(2)) : "0") else { return nil }
+                offset = (hh * 3600 + mm * 60) * (c[i] == "-" ? -1 : 1)
+            } else {
+                return nil
             }
-            guard let due = p.dueOn, let d = giveParseDate(due),
-                  Calendar.current.component(.year, from: d) == year else { return acc }
-            return acc + (p.targetMinor ?? 0)
+        }
+        guard let zone = TimeZone(secondsFromGMT: offset) else { return nil }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = zone
+        return cal.date(from: DateComponents(year: y, month: mo, day: d, hour: h, minute: mi, second: sec, nanosecond: nanos))
+    }
+
+    /// Today on the church's calendar.
+    static func today(now: Date = Date()) -> String { churchDay(of: now) }
+
+    // MARK: A monthly pledge's instalments
+
+    /// The first day a pledge's instalments can fall due: the later of its
+    /// `starts_on` (a pledge collected automatically starts at its first
+    /// collection) and its creation day. Nil when it has neither.
+    static func start(_ p: Pledge) -> String? {
+        let created = churchDay(p.createdAt)
+        let starts = churchDay(p.startsOn)
+        guard let created else { return starts }
+        guard let starts else { return created }
+        return max(starts, created)
+    }
+
+    /// The `dueDay`-of-the-month dates (held to 1–28) in `year`, on or after
+    /// `from` (1 January when earlier or nil) and on or before `through`
+    /// (31 December when later or nil) — the server's dueDatesInYear, listed.
+    static func dueDates(in year: Int, dueDay: Int, from: String?, through: String?) -> [String] {
+        let jan1 = ymd(year, 1, 1), dec31 = ymd(year, 12, 31)
+        let start = from.map { max($0, jan1) } ?? jan1
+        let end = through.map { min($0, dec31) } ?? dec31
+        guard end >= start else { return [] }
+        let day = min(28, max(1, dueDay))
+        return (1...12).map { ymd(year, $0, day) }.filter { $0 >= start && $0 <= end }
+    }
+
+    /// A monthly pledge's instalments in `year`: its due day each month from
+    /// its start, none after its `until_on` — and, given `through` (today,
+    /// for "fallen due so far"), none after that day. A total pledge has none.
+    static func instalments(_ p: Pledge, in year: Int, through: String? = nil) -> [String] {
+        guard p.isMonthly else { return [] }
+        var end = churchDay(p.untilOn)
+        if let through { end = end.map { min($0, through) } ?? through }
+        return dueDates(in: year, dueDay: p.dueDay ?? 1, from: start(p), through: end)
+    }
+
+    /// What one pledge promises in `year` (§3a): nothing once cancelled; a
+    /// total pledge its target when `due_on` falls in the year; a monthly one
+    /// its amount on each of its instalments in the year.
+    static func pledgedInYear(_ p: Pledge, year: Int) -> Int {
+        if p.status == "cancelled" { return 0 }
+        guard p.isMonthly else {
+            guard let due = churchDay(p.dueOn), Int(due.prefix(4)) == year else { return 0 }
+            return p.targetMinor ?? 0
+        }
+        return (p.amountMinor ?? 0) * instalments(p, in: year).count
+    }
+
+    // MARK: "Charge me automatically" — the first collection
+
+    /// The first `day`-of-the-month date strictly AFTER `from` (YYYY-MM-DD) —
+    /// a pledge's first automatic collection, never today (the server's
+    /// firstDueAfter; a day past the 28th is the 28th).
+    static func firstDueAfter(_ from: String, day: Int) -> String {
+        let d = min(28, max(1, day))
+        guard let y = Int(from.prefix(4)), let m = Int(from.dropFirst(5).prefix(2)) else { return from }
+        let same = ymd(y, m, d)
+        if same > from { return same }
+        return m == 12 ? ymd(y + 1, 1, d) : ymd(y, m + 1, d)
+    }
+
+    /// "Mon 5 Oct" — "Tue 5 Jan 2027" when it falls in another year than
+    /// `today`: the one date shape (§8.1 rule 8; it read "paid 27 September").
+    /// A date-only value, so the calendar day sent — never shifted by a zone.
+    static func dayLabel(_ day: String, today: String) -> String {
+        guard let d = PauseDates.date(String(day.prefix(10))) else { return GivingNotificationCopy.dayWords(day) }
+        return NuruDates.day(d, now: PauseDates.date(String(today.prefix(10))) ?? Date(), timeZone: GiveCalendar.nairobi)
+    }
+
+    /// A monthly pledge's first instalment on or after `day`: its due day,
+    /// never before its start; nil once that is past its `until_on`.
+    static func nextInstalment(_ p: Pledge, onOrAfter day: String) -> String? {
+        guard p.isMonthly else { return nil }
+        let from = max(day, start(p) ?? day)
+        let d = min(28, max(1, p.dueDay ?? 1))
+        guard let y = Int(from.prefix(4)), let m = Int(from.dropFirst(5).prefix(2)) else { return nil }
+        let same = ymd(y, m, d)
+        let next = same >= from ? same : (m == 12 ? ymd(y + 1, 1, d) : ymd(y, m + 1, d))
+        if let until = churchDay(p.untilOn), next > until { return nil }
+        return next
+    }
+
+    // MARK: Pledged · Paid · Remaining — per currency
+
+    /// One pledge's promise for the year, in its own currency.
+    struct Promise: Equatable {
+        let pledgeId: String
+        let currency: String
+        let pledgedMinor: Int
+    }
+
+    /// The year's three numbers per currency, shillings first:
+    ///   Pledged   = Σ the promises
+    ///   Paid      = Σ the payments that carry a pledge id
+    ///   Remaining = Σ per pledge max(pledged − paid toward it, 0)
+    /// Remaining is owed PER PLEDGE (Giving Cycle 5): money beyond one pledge
+    /// — one paid ahead, or a cancelled one paid this year — never hides what
+    /// another still owes. Nothing is added across currencies, and a payment
+    /// counts toward a pledge only in the pledge's own currency. A currency
+    /// with nothing in it is left out; nothing at all is one row of zeros.
+    static func figures(_ promises: [Promise], payments: [PledgePayment]) -> [PartnerFigures] {
+        var pledged: [String: Int] = [:], paid: [String: Int] = [:], remaining: [String: Int] = [:]
+        var paidToward: [String: Int] = [:]     // "pledgeId|CUR"
+        for x in payments {
+            guard let id = x.pledgeId, !id.isEmpty else { continue }
+            let cur = x.currency.uppercased()
+            paid[cur, default: 0] += x.amountMinor
+            paidToward["\(id)|\(cur)", default: 0] += x.amountMinor
+        }
+        for p in promises {
+            let cur = p.currency.uppercased()
+            pledged[cur, default: 0] += p.pledgedMinor
+            remaining[cur, default: 0] += max(p.pledgedMinor - (paidToward["\(p.pledgeId)|\(cur)"] ?? 0), 0)
+        }
+        let rows = Set(pledged.keys).union(paid.keys)
+            .map { PartnerFigures(currency: $0, pledgedMinor: pledged[$0] ?? 0, paidMinor: paid[$0] ?? 0, remainingMinor: remaining[$0] ?? 0) }
+            .sorted { a, b in a.currency == "KES" ? b.currency != "KES" : (b.currency == "KES" ? false : a.currency < b.currency) }
+        let live = rows.filter { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
+        return live.isEmpty ? [PartnerFigures(currency: rows.first?.currency ?? "KES", pledgedMinor: 0, paidMinor: 0, remainingMinor: 0)] : live
+    }
+
+    /// The STATEMENT numbers for `s` — one rule for the Partners tab's card
+    /// and the Partners statement, so they never disagree: the server's own
+    /// per-currency figures, as sent (`summary_by_currency`, Giving Cycle 9;
+    /// a currency with nothing in it is left out). An older server sends
+    /// none: its own three numbers when the year is in ONE currency (its sums
+    /// did not separate currencies); otherwise per currency from its
+    /// `pledges[]` rows and payments; with no rows, from the partnership's
+    /// pledges by the same rule.
+    static func figures(_ s: GivingStatements, pledges: [Pledge]) -> [PartnerFigures] {
+        if let sent = s.summaryByCurrency {
+            let live = sent.filter { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
+            if !live.isEmpty { return live }
+            let currency = s.summaryCurrency ?? sent.first?.currency ?? "KES"
+            return [PartnerFigures(currency: currency, pledgedMinor: 0, paidMinor: 0, remainingMinor: 0)]
+        }
+        let promises: [Promise] = s.pledges.isEmpty
+            ? pledges.map { Promise(pledgeId: $0.pledgeId, currency: $0.currency, pledgedMinor: pledgedInYear($0, year: s.year)) }
+            : s.pledges.map { Promise(pledgeId: $0.pledgeId, currency: $0.currency, pledgedMinor: $0.pledgedMinor) }
+        let computed = figures(promises, payments: s.payments)
+        guard computed.count == 1, let one = computed.first else { return computed }
+        return [PartnerFigures(currency: one.currency,
+                               pledgedMinor: s.pledgedMinor ?? one.pledgedMinor,
+                               paidMinor: s.paidMinor ?? one.paidMinor,
+                               remainingMinor: s.remainingMinor.map { max($0, 0) } ?? one.remainingMinor)]
+    }
+
+    /// The statement's per-pledge rows when the server sends none (an older
+    /// server): every partnership pledge that lived in the year (an
+    /// instalment or due date in it, or a payment in it), with the year's
+    /// pledged / paid / kept by the same rule as the figures. A payment
+    /// counts toward a pledge only in the pledge's own currency (Giving
+    /// Cycle 9, as the server's rows). A cancelled pledge appears only when
+    /// money was paid toward it that year, and pledges nothing.
+    static func localRows(_ s: GivingStatements, pledges: [Pledge], today: String = PledgeMath.today()) -> [GivingStatements.StatementPledge] {
+        let year = s.year
+        // Fallen due so far: this year through today; any other, whole.
+        let dueThrough: String? = Int(today.prefix(4)) == year ? today : nil
+        return pledges.compactMap { pl in
+            let pays = s.payments.filter { $0.pledgeId == pl.pledgeId && $0.currency.uppercased() == pl.currency.uppercased() }
+            let paid = pays.reduce(0) { $0 + $1.amountMinor }
+            let cancelled = pl.status == "cancelled"
+            if cancelled && pays.isEmpty { return nil }
+            let pledged = pledgedInYear(pl, year: year)
+            let dueCount: Int
+            if pl.isMonthly {
+                guard !instalments(pl, in: year).isEmpty || !pays.isEmpty else { return nil }
+                dueCount = instalments(pl, in: year, through: dueThrough).count
+            } else {
+                let dueInYear = churchDay(pl.dueOn).map { Int($0.prefix(4)) == year } ?? false
+                guard dueInYear || !pays.isEmpty else { return nil }
+                dueCount = dueInYear ? 1 : 0
+            }
+            // `kept` counts DUE DATES kept; counting payments, it is capped
+            // at the due count — never "3 of 2".
+            return GivingStatements.StatementPledge(
+                pledgeId: pl.pledgeId, title: pl.displayTitle, shape: pl.shape,
+                amountMinor: pl.amountMinor, targetMinor: pl.targetMinor, currency: pl.currency,
+                status: pl.status, dueDay: pl.dueDay, dueOn: pl.dueOn, createdAt: pl.createdAt,
+                pledgedMinor: pledged, paidMinor: paid, kept: min(pays.count, dueCount), dueCount: dueCount)
         }
     }
 
-    /// Paid toward pledges in a statement: only payments that carry a pledge id.
+    /// Paid toward pledges in a statement: only payments that carry a pledge
+    /// id (one currency's worth — see `figures` for more than one).
     static func paidMinor(_ s: GivingStatements) -> Int {
         s.pledgePayments.reduce(0) { $0 + $1.amountMinor }
     }
 
-    static func remainingMinor(pledged: Int, paid: Int) -> Int { max(pledged - paid, 0) }
+    /// The year's pledge payments per currency, shillings first — for lines
+    /// that must never add currencies together.
+    static func paidByCurrency(_ rows: [PledgePayment]) -> [CurrencyTotal] {
+        GiveMoney.ordered(GiveMoney.merged(rows.map { CurrencyTotal(currency: $0.currency, totalMinor: $0.amountMinor) }))
+    }
+
+    /// Amounts in any currencies as one line, shillings first: "KSh 3,000 +
+    /// US$ 20.00". All zero reads as zero in the first currency there is.
+    static func line(_ totals: [CurrencyTotal]) -> String {
+        let merged = GiveMoney.ordered(GiveMoney.merged(totals))
+        guard merged.contains(where: { $0.totalMinor != 0 }) else {
+            return GiveMoney.format(0, merged.first?.currency ?? "KES")
+        }
+        return GiveMoney.line(merged)
+    }
 }
 
 extension GivingStatements {
@@ -378,6 +649,8 @@ struct PartnersView: View {
     /// band's first row when both are supplied (GiveTabView).
     var segment: GiveSegment? = nil
     var onSelectSegment: ((GiveSegment) -> Void)? = nil
+    /// At the accessibility sizes the band scrolls with the page (§9.6 #4).
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     @StateObject private var vm = PartnersModel()
     @EnvironmentObject private var tabs: TabRouter
@@ -394,12 +667,14 @@ struct PartnersView: View {
             if embedded {
                 NavigationStack(path: $path) {
                     content
+                        .nuruEdgeSwipeBack()   // back by the edge swipe on every pushed page (B9)
                         .toolbar(.hidden, for: .navigationBar)
                         .navigationDestination(for: PartnersRoute.self) { destination($0) }
                         // The general statement (reached from the partners
                         // statement's "Giving statement") pushes its gift rows
                         // as GivingRecord values — this stack must know them.
                         .navigationDestination(for: GivingRecord.self) { GivingReceiptView(transactionId: $0.transactionId) }
+                        .inboxDestinations()   // the band's bell
                 }
             } else {
                 content
@@ -423,10 +698,25 @@ struct PartnersView: View {
         .onChange(of: scenePhase) { _, phase in
             if phase == .active && onScreen { Task { await vm.refresh() } }
         }
+        // A pledge notice, or a gift that collects a pledge (Giving Cycle 5):
+        // that pledge's page, with this list as the back stop. Consumed once.
+        .onReceive(tabs.$pledgeLink) { id in
+            guard let id else { return }
+            DispatchQueue.main.async { tabs.pledgeLink = nil }
+            path = NavigationPath([PartnersRoute.pledge(id)])
+        }
+        // A re-tap on Give while Partners shows returns to its top (§7.4 #17).
+        .popsToRoot(on: .give, path: $path, when: { segment == nil || segment == .partners })
         .fullScreenCover(isPresented: $showNewPledge) {
             NewPledgeFlow(isMember: vm.partnership?.isProgrammeMember ?? false,
                           pledgeOptions: vm.partnership?.pledgeOptions ?? [],
-                          campaigns: vm.partnership?.campaigns ?? []) {
+                          campaigns: vm.partnership?.campaigns ?? []) { pledge, autoScheduleError in
+                // Made, but its automatic collection could not be set up
+                // (Giving Cycle 5): land on the pledge, which says why.
+                if let note = autoScheduleError, !pledge.pledgeId.isEmpty {
+                    vm.pledgeNotices[pledge.pledgeId] = note
+                    path.append(PartnersRoute.pledge(pledge.pledgeId))
+                }
                 // Pledged is derived from the pledges, so a reload of the
                 // partnership + the year on screen is enough — never jump the
                 // member back to this year if they were reading an earlier one.
@@ -460,15 +750,21 @@ struct PartnersView: View {
         ZStack {
             Nuru.paper.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 12) {
-                    sections
+                VStack(alignment: .leading, spacing: 0) {
+                    // At the accessibility sizes the band scrolls with the
+                    // page: pinned, it filled two thirds of the screen (§9.6 #4).
+                    if embedded && typeSize.isAccessibilitySize { band }
+                    VStack(alignment: .leading, spacing: 12) {
+                        sections
+                    }
+                    .padding(.horizontal, Nuru.S.base)
+                    .padding(.top, Nuru.S.base)
+                    .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)
                 }
-                .padding(.horizontal, Nuru.S.base)
-                .padding(.top, Nuru.S.base)
-                .padding(.bottom, embedded ? Nuru.tabBarSpace : 40)
+                .scrollsToTopOnReselect(.give)   // a re-tap at the root returns to the top (B10)
             }
             .safeAreaInset(edge: .top, spacing: 0) {
-                if embedded { band }
+                if embedded && !typeSize.isAccessibilitySize { band }
             }
             .refreshable {
                 await vm.load()
@@ -479,7 +775,9 @@ struct PartnersView: View {
     }
 
     @ViewBuilder private var sections: some View {
-        if vm.partnership != nil && vm.refreshFailed {
+        // A saved copy says so (final walk M3).
+        NuruSavedCopyNotice(hasContent: vm.partnership != nil)
+        if vm.partnership != nil && vm.refreshFailed && SyncCoordinator.shared.isOnline {
             Text("Couldn't refresh just now — showing what we last had.")
                 .font(.inter(11)).foregroundStyle(Nuru.ink400)
                 .frame(maxWidth: .infinity).multilineTextAlignment(.center)
@@ -502,10 +800,11 @@ struct PartnersView: View {
             } else {
                 joinCard(p)
             }
-        } else if vm.loading {
-            ProgressView().tint(Nuru.gold).frame(maxWidth: .infinity).padding(.top, 60)
+        } else if let f = vm.failure, !vm.loading {
+            errorState(f)
         } else {
-            errorState
+            // Loading — and the first frame before the first read begins.
+            ProgressView().tint(Nuru.gold).frame(maxWidth: .infinity).padding(.top, 60)
         }
     }
 
@@ -514,14 +813,13 @@ struct PartnersView: View {
     private var band: some View {
         VStack(alignment: .leading, spacing: 0) {
             if let segment, let onSelectSegment {
-                SplitSegmentBar(selection: segment, onSelect: onSelectSegment)
+                GiveSwitchRow(selection: segment, onSelect: onSelectSegment)
                     .padding(.bottom, 12)
             }
-            Text("Walk with the church")
-                .font(.fraunces(24, .semibold)).kerning(-0.48).foregroundStyle(Nuru.navy)
-            Text("Decide in advance. The church can plan.")
-                .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
-                .padding(.top, 4)
+            // The one header's words (§8.1 rules 2–3): the switch sits above
+            // the kicker, which names the segment (final walk #38: there was
+            // none under the switch).
+            NuruHeaderText(kicker: "Partners", title: "Walk with the church", line: "Decide in advance. The church can plan.")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 20)
@@ -545,7 +843,7 @@ struct PartnersView: View {
         VStack(alignment: .leading, spacing: 10) {
             eyebrow("JOIN THE PARTNERS PROGRAMME")
             Text("Become a partner")
-                .font(.fraunces(20, .semibold)).foregroundStyle(Nuru.ink)
+                .font(.fraunces(18, .semibold)).foregroundStyle(Nuru.ink)
             Text("Joining costs nothing today. A pledge can come later.")
                 .font(.inter(13)).foregroundStyle(Nuru.ink600)
                 .fixedSize(horizontal: false, vertical: true)
@@ -572,13 +870,26 @@ struct PartnersView: View {
 
     // MARK: Due — soonest first, one action each
 
+    /// "DUE" only within the fortnight; further out the same rows read
+    /// "COMING UP" (EXPERIENCE.md §9.3 rule 2) — Pay still there, for paying
+    /// early. A total pledge's 31 Dec read "DUE" 87 days ahead.
     private func dueSection(_ p: Partnership) -> some View {
+        let today = PauseDates.wire(Date())
+        let soon = p.due.filter { HomeWeek.dueIsSoon($0, today: today) }
+        let later = p.due.filter { !HomeWeek.dueIsSoon($0, today: today) }
+        return VStack(alignment: .leading, spacing: 16) {
+            if !soon.isEmpty { dueGroup("DUE", soon, p) }
+            if !later.isEmpty { dueGroup("COMING UP", later, p) }
+        }
+    }
+
+    private func dueGroup(_ label: String, _ rows: [DueItem], _ p: Partnership) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            eyebrow("DUE")
+            eyebrow(label)
             VStack(spacing: 0) {
-                ForEach(Array(p.due.enumerated()), id: \.element.id) { i, item in
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, item in
                     dueRow(item, p)
-                    if i != p.due.count - 1 {
+                    if i != rows.count - 1 {
                         Divider().overlay(Nuru.border).padding(.vertical, 10)
                     }
                 }
@@ -599,12 +910,23 @@ struct PartnersView: View {
                 Text(partial
                      ? "\(money(item.uncoveredMinor, item.currency)) left · \(when.text)"
                      : "\(money(item.amountMinor, item.currency)) · \(when.text)")
-                    .font(.inter(15, .semibold))
+                    .font(.nRowTitle)   // a content row (§8.1 rule 3)
                     .foregroundStyle(when.overdue ? Nuru.goldChipText : Nuru.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                // Whole at the largest size: "Roof shee…" (§9.6 #4).
                 Text(partial
                      ? "\(dueSubtitle(item, p)) · \(money(item.pendingMinor, item.currency)) processing"
                      : dueSubtitle(item, p))
-                    .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    .font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
+                // What the office is already checking, on the row it covers
+                // (§9.3 rule 1): said, never subtracted — the row and Pay
+                // still ask what is owed.
+                if let claim = item.claimLine {
+                    Text(claim)
+                        .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             Spacer(minLength: 8)
             if item.fullyPending {
@@ -613,23 +935,62 @@ struct PartnersView: View {
                     .padding(.horizontal, 10).frame(height: 28)
                     .background(Nuru.urgentBg, in: Capsule())
                     .accessibilityLabel("\(pendingChipText(item)) — this payment is already on its way")
+            } else if item.kind == "schedule", item.action != "resume", let collected = ScheduleRhythm.collectedOn(item.dueOn) {
+                // A running recurring gift collects itself — no Pay, which
+                // gave a second, one-time gift (owner, 2026-09-28). A tap
+                // opens the gift's own sheet on Give (pause, change).
+                collectedChip(collected, label: "\(collected), automatically. Opens the recurring gift.") {
+                    tabs.openGive(link: .schedule(scheduleId: item.id))
+                }
+            } else if let pledge = p.pledges.first(where: { $0.pledgeId == item.id }),
+                      let day = PledgePace.collectedDay(item, by: vm.schedules.flatMap { PledgePace.collector(of: pledge, in: $0) }),
+                      let collected = ScheduleRhythm.collectedOn(day) {
+                // A pledge whose collector prompts on or before the date says
+                // so too (EXPERIENCE.md §6.4) — the same chip. A tap opens the
+                // pledge, where paying early by hand stays possible.
+                collectedChip(collected, label: "\(collected), automatically. Opens the pledge.") {
+                    path.append(PartnersRoute.pledge(item.id))
+                }
             } else {
                 Button {
                     Haptics.action()
                     act(on: item, p)
                 } label: {
+                    // While the office checks money toward it, Pay is the
+                    // quiet secondary pill — never the row's navy ask (final
+                    // walk M1): the claim line above says what is happening.
+                    let quiet = item.action != "resume" && item.pendingClaimMinor > 0
                     HStack(spacing: 6) {
-                        if busy { ProgressView().tint(.white).scaleEffect(0.7) }
-                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, .bold))
+                        if busy { ProgressView().tint(quiet ? Nuru.navy : .white).scaleEffect(0.7) }
+                        Text(item.action == "resume" ? "Resume" : "Pay").font(.inter(13, quiet ? .semibold : .bold))
                     }
-                    .foregroundStyle(.white)
+                    .foregroundStyle(quiet ? Nuru.navy : .white)
                     .padding(.horizontal, 18).frame(height: 36)
-                    .background(Nuru.navy, in: Capsule())
+                    .background(quiet ? Nuru.white : Nuru.navy, in: Capsule())
+                    .overlay(Capsule().stroke(quiet ? Nuru.border : .clear, lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
                 .disabled(busy)
             }
         }
+    }
+
+    /// "Collected on Mon 5 Oct" — the gold chip a DUE row wears in place of
+    /// Pay when a prompt will take care of it: a running recurring gift, or
+    /// a pledge's collector (§6.4). One look for both.
+    private func collectedChip(_ text: String, label: String, open: @escaping () -> Void) -> some View {
+        Button {
+            Haptics.tap()
+            open()
+        } label: {
+            Text(text)
+                .font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                .lineLimit(1).minimumScaleFactor(0.92)
+                .padding(.horizontal, 12).frame(height: 32)
+                .background(Nuru.goldChipBg, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(label)
     }
 
     /// "Waiting for M-Pesa" when the rail of the in-flight payment is known
@@ -666,7 +1027,8 @@ struct PartnersView: View {
                                              pledgeId: item.id,
                                              pledgeTitle: pl?.displayTitle ?? (item.title.isEmpty ? nil : item.title),
                                              pledgeAmountLine: pl.map { pledgeAmountLine($0) },
-                                             paysTo: item.paysTo ?? pl?.paysTo))
+                                             paysTo: item.paysTo ?? pl?.paysTo,
+                                             currency: pl?.currency ?? item.currency))
         default:
             tabs.openGive(preset: GivePreset(fund: nil, amountMinor: item.amountMinor, pledgeId: nil))
         }
@@ -746,9 +1108,10 @@ struct PartnersView: View {
     /// due_count counts only RESOLVED instalments (one due today and unpaid
     /// is not yet counted). Shown as sent.
     /// Fallback, only when that entry is absent (an older server): payments
-    /// this year carrying this pledge id, capped at the due dates elapsed so
-    /// far — never "3 of 2". Nil until the statement has loaded, or while
-    /// nothing has fallen due (due_count 0); the card then shows no text.
+    /// this year carrying this pledge id, capped at its instalments fallen due
+    /// so far (from its start, none after until_on) — never "3 of 2". Nil
+    /// until the statement has loaded, or while nothing has fallen due
+    /// (due_count 0); the card then shows no text.
     private func keptLine(_ pledge: Pledge) -> String? {
         guard pledge.isMonthly, let s = vm.currentYearStatements else { return nil }
         if !pledge.pledgeId.isEmpty,
@@ -756,8 +1119,8 @@ struct PartnersView: View {
             guard entry.dueCount > 0 else { return nil }
             return "\(entry.kept) of \(entry.dueCount) kept this year"
         }
-        let year = Calendar.current.component(.year, from: Date())
-        let elapsed = PledgeMath.monthlyDueDates(pledge, in: year, through: Date())
+        let today = PledgeMath.today()
+        let elapsed = PledgeMath.instalments(pledge, in: Int(today.prefix(4)) ?? s.year, through: today).count
         guard elapsed > 0 else { return nil }
         let paid = s.payments.filter { $0.pledgeId == pledge.pledgeId }.count
         return "\(min(paid, elapsed)) of \(elapsed) kept this year"
@@ -813,19 +1176,23 @@ struct PartnersView: View {
     }
 
     private func statementBody(_ s: GivingStatements, _ p: Partnership) -> some View {
-        let pledged = PledgeMath.pledgedMinor(p.pledges, year: s.year)
-        let paid = PledgeMath.paidMinor(s)
-        let remaining = PledgeMath.remainingMinor(pledged: pledged, paid: paid)
+        // One line per currency (shillings first), never one sum across them.
+        let figures = PledgeMath.figures(s, pledges: p.pledges)
         let rows = s.pledgePayments
         let pending = s.pendingPledgePayments
+        // Three "KSh 0" tiles say nothing (§7.4 #9; the walks' E14/A1 for
+        // Ben): the figures show once any of them is more than nothing.
+        let anyFigure = figures.contains { $0.pledgedMinor != 0 || $0.paidMinor != 0 || $0.remainingMinor != 0 }
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .top, spacing: 8) {
-                summaryColumn("Pledged", money(pledged, s.currency), Nuru.navy)
-                summaryColumn("Paid", money(paid, s.currency), Nuru.successText)
-                summaryColumn("Remaining", money(remaining, s.currency), Nuru.goldLo)
-            }
+            if anyFigure {
+                NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
+                    summaryColumn("Pledged", figures.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
+                    partnerSummaryColumn("Paid", figures.map { (money($0.paidMinor, $0.currency), PaidTint.color($0.paidMinor)) })
+                    summaryColumn("Remaining", figures.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
+                }
 
-            Divider().overlay(Nuru.border).padding(.vertical, 14)
+                Divider().overlay(Nuru.border).padding(.vertical, 14)
+            }
 
             // Still processing: listed first, never in Paid above.
             ForEach(pending) { pay in
@@ -837,8 +1204,8 @@ struct PartnersView: View {
                 Divider().overlay(Nuru.border)
             }
             if rows.isEmpty && pending.isEmpty {
-                Text("No pledge payments in \(String(s.year)).")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
+                // The empty year in §4's state (final walk C16) — not a bare line.
+                NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year)), compact: true)
             } else {
                 ForEach(Array(rows.enumerated()), id: \.element.id) { i, pay in
                     StatementPaymentRow(payment: pay, title: paymentTitle(pay, s, p)) {
@@ -855,7 +1222,7 @@ struct PartnersView: View {
             } label: {
                 HStack(spacing: 4) {
                     Text("Partners statement and PDF").font(.inter(13, .semibold))
-                    Icon(.arrowRight, size: 12, color: Nuru.gold)
+                    Icon(.arrowRight, size: 14, color: Nuru.gold)
                 }
                 .foregroundStyle(Nuru.gold)
                 .frame(maxWidth: .infinity)
@@ -865,13 +1232,8 @@ struct PartnersView: View {
         }
     }
 
-    private func summaryColumn(_ label: String, _ value: String, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased()).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
-            Text(value).font(.inter(16, .semibold)).foregroundStyle(tint)
-                .lineLimit(1).minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    private func summaryColumn(_ label: String, _ values: [String], _ tint: Color) -> some View {
+        partnerSummaryColumn(label, values, tint)
     }
 
     /// The statement's own title for the pledge, else the pledge's name.
@@ -884,22 +1246,12 @@ struct PartnersView: View {
 
     // MARK: Error / retry states
 
-    private var errorState: some View {
-        VStack(spacing: Nuru.S.md) {
-            Icon(.circleHelp, size: 28, color: Nuru.muted)
-            Text("We couldn't load this just now").font(.inter(15, .bold)).foregroundStyle(Nuru.ink)
-            Text(vm.error ?? "Your giving is unaffected.")
-                .font(.nCaption).foregroundStyle(Nuru.muted).multilineTextAlignment(.center)
-                .padding(.horizontal, Nuru.S.xl)
-            Button { Haptics.tap(); Task { await vm.load() } } label: {
-                Text("Try again").font(.inter(12, .semibold)).foregroundStyle(.white)
-                    .padding(.horizontal, 16).padding(.vertical, 9)
-                    .background(Nuru.navy, in: Capsule())
-            }
-            .buttonStyle(.pressable)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 40)
+    /// Nothing loaded yet and the read failed — what really happened, in the
+    /// one state language (§4). (A failed refresh over a loaded portal keeps
+    /// the portal and says so in its own row.)
+    private func errorState(_ failure: Error) -> some View {
+        NuruStateView(state: .failed(.failure(failure)), retry: { Task { await vm.load() } })
+            .padding(.top, 24)
     }
 
     private func retryRow(_ message: String, retry: @escaping () -> Void) -> some View {
@@ -919,7 +1271,7 @@ struct PartnersView: View {
 
 /// ONE-word eyebrow: `.inter(9, .semibold)`, kerning 1.6, goldLo.
 func eyebrow(_ s: String) -> some View {
-    Text(s).font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
+    Text(s).font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.goldLo)
 }
 
 /// The Partners card: white, border stroke, radius 16, 16pt padding.
@@ -934,6 +1286,33 @@ struct PartnerCardStyle: ViewModifier {
 }
 extension View {
     func partnerCard() -> some View { modifier(PartnerCardStyle()) }
+}
+
+/// One column of the Pledged / Paid / Remaining card: the label, then one
+/// amount per currency — the same currency on the same line in every column.
+func partnerSummaryColumn(_ label: String, _ values: [String], _ tint: Color) -> some View {
+    partnerSummaryColumn(label, values.map { ($0, tint) })
+}
+
+/// A column whose figures carry their own colour — "Paid" is green, the
+/// on-track colour, only for money that was paid (final walk C11: "PAID ·
+/// KSh 0" in green).
+func partnerSummaryColumn(_ label: String, _ values: [(text: String, tint: Color)]) -> some View {
+    VStack(alignment: .leading, spacing: 3) {
+        Text(label.uppercased()).font(.inter(11, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
+        ForEach(Array(values.enumerated()), id: \.offset) { _, value in
+            Text(value.text).font(.inter(16, .semibold)).foregroundStyle(value.tint)
+                .lineLimit(1).minimumScaleFactor(0.7)
+        }
+    }
+    .frame(maxWidth: .infinity, alignment: .leading)
+}
+
+/// Green says a state (§8.1 rule 1: on track): money paid. Nothing paid is
+/// a plain figure, navy.
+enum PaidTint {
+    static func isGreen(_ paidMinor: Int) -> Bool { paidMinor > 0 }
+    static func color(_ paidMinor: Int) -> Color { isGreen(paidMinor) ? Nuru.successText : Nuru.navy }
 }
 
 /// "Partner since Sep 2026" — month + year from the membership's joinedAt,
@@ -1000,54 +1379,103 @@ private struct StandingCard: View {
     let faithfulness: GivingStatements.Faithfulness?
     let onPledge: () -> Void
     let onStatement: () -> Void
+    /// At the accessibility sizes the tier sits under the standing and the two
+    /// buttons stand one above the other (§9.6 #4): "Partne / r since",
+    /// "discipl / es".
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             eyebrow("STANDING")
 
-            HStack(alignment: .top, spacing: 10) {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
-                    Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
-                }
-                Spacer(minLength: 8)
-                if let t = partnership.tier, !t.name.isEmpty {
-                    HStack(spacing: 5) {
-                        Icon(.award, size: 12, color: Nuru.goldChipText)
-                        Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
-                    }
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(Nuru.goldChipBg, in: Capsule())
-                    .accessibilityElement(children: .ignore)
-                    // The tier sentence lives here and nowhere on screen.
-                    .accessibilityLabel("\(t.name) partner — \(money(t.monthlyMinor, partnership.currency)) a month. KSh 20,000 carries one disciple through a level.")
-                }
+            // A standing only once there is one — a pledge or a gift that
+            // went through (the Android walk's A1: Ben read "Partner since
+            // Oct 2026 · 0 gifts kept" and a tier beside a gift that failed).
+            if PartnerStanding.isReal(partnership) {
+                standingRow
+            } else {
+                Text(PartnerStanding.notYet)
+                    .font(.nCardBody).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            HStack(spacing: 10) {
-                // The ONLY gold-filled button on the page.
-                Button(action: onPledge) {
-                    HStack(spacing: 6) {
-                        Icon(.plus, size: 14, color: Nuru.navy)
-                        Text("Make a pledge").font(.inter(14, .bold))
-                    }
-                    .foregroundStyle(Nuru.navy)
-                    .frame(maxWidth: .infinity).frame(height: 44)
-                    .background(Nuru.gold, in: Capsule())
-                }
-                .buttonStyle(.pressable)
-
-                Button(action: onStatement) {
-                    Text("Statement").font(.inter(14, .semibold))
-                        .foregroundStyle(Nuru.navy)
-                        .frame(maxWidth: .infinity).frame(height: 44)
-                        .background(Nuru.white, in: Capsule())
-                        .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
-                }
-                .buttonStyle(.pressable)
+            if typeSize.isAccessibilitySize {
+                VStack(spacing: 10) { pledgeButton; statementButton }
+            } else {
+                HStack(spacing: 10) { pledgeButton; statementButton }
             }
         }
         .partnerCard()
+    }
+
+    // The ONLY gold-filled button on the page.
+    private var pledgeButton: some View {
+        Button(action: onPledge) {
+            HStack(spacing: 6) {
+                Icon(.plus, size: 14, color: Nuru.navy)
+                Text("Make a pledge").font(.inter(14, .bold))
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .foregroundStyle(Nuru.navy)
+            .frame(maxWidth: .infinity).frame(minHeight: 44)
+            .background(Nuru.gold, in: Capsule())
+        }
+        .buttonStyle(.pressable)
+    }
+
+    private var statementButton: some View {
+        Button(action: onStatement) {
+            Text("Statement").font(.inter(14, .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(Nuru.navy)
+                .frame(maxWidth: .infinity).frame(minHeight: 44)
+                .background(Nuru.white, in: Capsule())
+                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
+        }
+        .buttonStyle(.pressable)
+    }
+
+    /// Since · kept, and the tier — shown once the standing is real.
+    @ViewBuilder private var standingRow: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: 10) {
+                standingWords
+                tierChip
+            }
+        } else {
+            HStack(alignment: .top, spacing: 10) {
+                standingWords
+                Spacer(minLength: 8)
+                tierChip
+            }
+        }
+    }
+
+    private var standingWords: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(sinceLine).font(.inter(16, .semibold)).foregroundStyle(Nuru.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(keptLine).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder private var tierChip: some View {
+        if let t = partnership.tier, !t.name.isEmpty {
+            HStack(spacing: 5) {
+                Icon(.award, size: 14, color: Nuru.goldChipText)
+                Text(t.name).font(.inter(11, .bold)).foregroundStyle(Nuru.goldChipText)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 5)
+            .background(Nuru.goldChipBg, in: Capsule())
+            .accessibilityElement(children: .ignore)
+            // The tier sentence lives here and nowhere on screen.
+            // The tier's words are the server's — "will carry 3 disciples…"
+            // until the partner's money lands, then "carries…" (owner,
+            // 2026-10-08) — and nothing here says otherwise.
+            .accessibilityLabel("\(t.name). \(money(t.monthlyMinor, partnership.currency)) a month.")
+        }
     }
 
     /// "Partner since Sep 2026" — the shared formatter (partnerSinceLine).
@@ -1101,7 +1529,7 @@ private struct TroubleRow: View {
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.symbol(13, weight: .semibold))
                 .foregroundStyle(Nuru.urgentText)
             Text(trouble.paused ? "Your giving is paused — nothing is owed." : "One gift didn't go through — nothing is owed.")
                 .font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
@@ -1129,6 +1557,35 @@ private struct TroubleRow: View {
 
 // MARK: - One pledge (read-only card; the detail page holds the actions)
 
+/// The pledge page's lead while the office checks a claim (final walk M1):
+/// gentle, on gold tint (§8.1 rule 5) — what is happening, and that it
+/// counts once confirmed. Nothing is subtracted from the figures below.
+struct PledgeClaimLead: View {
+    let line: String
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Icon(.clock, size: 18, color: Nuru.goldChipText)
+                .frame(width: 36, height: 36)
+                .background(Nuru.goldChipBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(line).font(.nRowTitle).foregroundStyle(Nuru.navy)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(PledgeClaimLead.counts).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.priorityBg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.gold.opacity(0.25), lineWidth: 1))
+        .accessibilityElement(children: .combine)
+    }
+
+    static let counts = "It counts toward this pledge once the office confirms it — no need to pay it again."
+}
+
 private struct PledgeCard: View {
     let pledge: Pledge
     /// "9 of 12 kept this year" — supplied by the screen (needs the statement).
@@ -1143,8 +1600,20 @@ private struct PledgeCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     // The pledge's NAME leads (pledge names contract); the
                     // promise itself sits under it.
-                    Text(pledge.displayTitle).font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
-                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
+                    // A pledge is a content row (§8.1 rule 3); its name wraps
+                    // to two lines rather than being cut (rule 9).
+                    Text(pledge.displayTitle).font(.nRowTitle).foregroundStyle(Nuru.ink)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    // What the office is already checking leads (final walk
+                    // M1; §9.3 rule 1): said, never subtracted — Eli's US$ 50
+                    // was on no row at all, and a member could pay twice.
+                    if let claim = pledge.claimLine {
+                        Text(claim).font(.inter(12, .semibold)).foregroundStyle(Nuru.goldChipText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    // Whole at the largest size: "KSh 5,0…" (§9.6 #4).
+                    Text(pledgeAmountLine(pledge)).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 8)
                 stateChip
@@ -1161,14 +1630,15 @@ private struct PledgeCard: View {
             .frame(height: 6)
             .accessibilityLabel("\(Int((pledge.fraction * 100).rounded())) percent")
 
-            HStack(spacing: 8) {
-                Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600).lineLimit(1)
+            NuruAdaptiveStack(spacing: 8) {
+                Text(leftLine).font(.inter(11)).foregroundStyle(Nuru.ink600)
+                    .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
                 if let n = nextLine {
                     Text(n.text)
                         .font(.inter(11, n.overdue ? .semibold : .regular))
                         .foregroundStyle(n.overdue ? Nuru.goldChipText : Nuru.ink600)
-                        .lineLimit(1)
+                        .nuruLineLimit(1).fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -1182,7 +1652,7 @@ private struct PledgeCard: View {
         if pledge.isMonthly { return keptLine ?? "" }
         let paid = pledge.progress.paidMinor
         let toGo = max(0, (pledge.targetMinor ?? 0) - paid)
-        return "\(money(paid, pledge.currency)) paid · \((toGo / 100).formatted(.number.grouping(.automatic))) to go"
+        return "\(money(paid, pledge.currency)) paid · \(GiveMoney.figures(toGo, pledge.currency)) to go"
     }
 
     /// "Next 10 Oct" — or, once the server's next due has passed unpaid (it
@@ -1207,7 +1677,7 @@ private struct PledgeCard: View {
             default: return (Nuru.successBg, Nuru.successText, "On track")
             }
         }()
-        return Text(text).font(.inter(10, .bold)).foregroundStyle(fg)
+        return Text(text).font(.inter(11, .bold)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 3).background(bg, in: Capsule())
     }
 }
@@ -1250,7 +1720,8 @@ private struct StatementPaymentRow: View {
     }
 }
 
-// MARK: - A pledge's detail (GET /giving/pledges/{id}) — payments + actions
+// MARK: - A pledge's detail (GET /giving/pledges/{id}) — payments + actions,
+// and what the member told the office they paid another way (…/claims)
 
 struct PledgeDetailView: View {
     let pledgeId: String
@@ -1267,10 +1738,35 @@ struct PledgeDetailView: View {
     @State private var error: String?
     @State private var editing: Pledge?
     @State private var cancelling: Pledge?
+    /// "I paid another way" is open for this pledge.
+    @State private var claiming: Pledge?
+    /// What the member has told the office (GET …/claims), newest first;
+    /// nil until it has loaded.
+    @State private var claims: [PledgeClaim]?
+    @State private var claimsFailed = false
+    @ObservedObject private var sync = SyncCoordinator.shared
+    /// What collecting this pledge automatically needs to know (Giving Cycle
+    /// 9): the rails (GET /giving/methods) and the recurring gifts (GET
+    /// /giving/schedules). Nil until they answer — the offer waits for both.
+    @State private var methods: GivingMethods?
+    @State private var schedules: [GivingSchedule]?
+    /// "Collect it automatically at this pace": in flight, its refusal in the
+    /// server's words, and its key (kept only when no answer came).
+    @State private var startingPace = false
+    @State private var paceError: String?
+    @State private var paceKey = GiveKey.fresh()
 
     /// Freshest first: the fetched detail, then the list's live copy, then the seed.
     private var pledge: Pledge? {
         detail?.pledge ?? vm.partnership?.pledges.first { $0.pledgeId == pledgeId } ?? seed
+    }
+    /// What the office is checking toward it (final walk M1) — the single-
+    /// pledge read carries `pending_claim_minor` since pathway#516 (an older
+    /// server's didn't), so the list's copy and this page's own claims say
+    /// it too: whichever answered first, the page never leads with Pay.
+    private func checkingMinor(_ p: Pledge) -> Int {
+        PledgeChecking.minor(rows: [detail?.pledge, vm.partnership?.pledges.first { $0.pledgeId == pledgeId }, seed],
+                             claims: claims, currency: p.currency)
     }
     private var busy: Bool { vm.busyId == pledgeId }
 
@@ -1279,17 +1775,35 @@ struct PledgeDetailView: View {
             header
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: Nuru.S.base) {
+                    if let note = vm.pledgeNotices[pledgeId] {
+                        autoScheduleNotice(note)
+                    }
                     if let p = pledge {
+                        // What is already happening is said first (§9.3 rule
+                        // 1; final walk M1): money the office is checking
+                        // leads the page — it sat at the foot, under a gold
+                        // "Pay now", and a member could pay twice.
+                        if let claim = PledgeChecking.line(checkingMinor(p), p.currency) { PledgeClaimLead(line: claim) }
                         VStack(alignment: .leading, spacing: 4) {
                             // The name is the page's header; this card carries the promise.
                             Text(pledgeAmountLine(p)).font(.nuruDisplay(22)).foregroundStyle(Nuru.ink)
-                            Text("\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "") · \(money(p.progress.paidMinor, p.currency)) given in all")
+                            Text(PledgeWords.progressLine(p))
                                 .font(.nCaption).foregroundStyle(Nuru.ink600)
+                            // A total pledge's pace (Giving Cycle 9), as the server sets it.
+                            if let pace = PledgePace.line(p) {
+                                HStack(alignment: .top, spacing: 6) {
+                                    Icon(.calendarClock, size: 14, color: Nuru.gold).padding(.top, 2)
+                                    Text(pace).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .padding(.top, 6)
+                            }
                         }
                         .padding(18)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
 
+                        collectionCard(p)
                         actions(p)
                     }
                     if loading && detail == nil {
@@ -1307,7 +1821,7 @@ struct PledgeDetailView: View {
                         .frame(maxWidth: .infinity).padding(.top, Nuru.S.xl)
                     } else if let d = detail {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("PAYMENTS").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                            Text("PAYMENTS").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
                             if d.payments.isEmpty {
                                 Text("No payments yet — the first one will appear here the moment it settles.")
                                     .font(.nCardBody).foregroundStyle(Color(hex: 0x5B6472))
@@ -1327,6 +1841,7 @@ struct PledgeDetailView: View {
                         .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
                         .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
                     }
+                    claimsCard
                 }
                 .padding(Nuru.S.screen)
                 .padding(.bottom, Nuru.tabBarSpace)
@@ -1348,10 +1863,13 @@ struct PledgeDetailView: View {
                 return ok
             }
         }
-        .confirmationDialog(
+        .sheet(item: $claiming) { p in
+            PledgeClaimSheet(pledge: p, checking: PledgeChecking.line(checkingMinor(p), p.currency)) { body in await sendClaim(p, body) }
+        }
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Cancel \u{201C}\(cancelling?.displayTitle ?? "this pledge")\u{201D}?",
-            isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } }),
-            titleVisibility: .visible
+            isPresented: Binding(get: { cancelling != nil }, set: { if !$0 { cancelling = nil } })
         ) {
             Button("Cancel the pledge", role: .destructive) {
                 if let p = cancelling {
@@ -1370,8 +1888,168 @@ struct PledgeDetailView: View {
         loading = detail == nil
         error = nil
         do { detail = try await MemberAPI.pledge(pledgeId) }
-        catch { if detail == nil { self.error = (error as? APIError)?.errorDescription ?? "We couldn't load this pledge." } }
+        catch { if detail == nil { self.error = NuruStateCopy.failure(error).sentence } }
         loading = false
+        await loadClaims()
+        await loadCollection()
+    }
+
+    /// The rails and the recurring gifts, side by side. A failed read keeps
+    /// what is on screen — with either unknown, nothing is offered (a second
+    /// collector must never be offered by guesswork).
+    private func loadCollection() async {
+        async let m = try? MemberAPI.givingMethods()
+        async let s = try? MemberAPI.schedules()
+        let (rails, gifts) = await (m, s)
+        if let rails { methods = rails }
+        if let gifts { schedules = gifts }
+    }
+
+    /// Collecting it automatically (Giving Cycle 9): the offer at the pace,
+    /// or the recurring gift that already collects the pledge, which opens
+    /// its sheet. Nothing when neither applies.
+    @ViewBuilder private func collectionCard(_ p: Pledge) -> some View {
+        switch PledgePace.offer(for: p, methods: methods, schedules: schedules) {
+        case .collect:
+            VStack(alignment: .leading, spacing: 8) {
+                Button { Task { await collectAtPace(p) } } label: {
+                    HStack(spacing: 8) {
+                        if startingPace { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
+                        else { Icon(.calendarClock, size: 14, color: Nuru.navy) }
+                        Text(startingPace ? "Setting it up…" : "Collect it automatically at this pace").font(.inter(13, .bold))
+                    }
+                    .foregroundStyle(Nuru.navy)
+                    .frame(maxWidth: .infinity).frame(height: 44)
+                    .background(Nuru.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
+                }
+                .buttonStyle(.pressable)
+                .disabled(startingPace || busy || !sync.isOnline)
+                Text("Each month asks only what's left, and stops when you reach it.")
+                    .font(.nCaption).foregroundStyle(Nuru.ink400)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !sync.isOnline {
+                    Text("You're offline — setting this up needs a connection.")
+                        .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                } else if let paceError {
+                    Text(paceError).font(.inter(12)).foregroundStyle(Nuru.danger)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .partnerCard()
+        case let .collected(scheduleId, line):
+            Button {
+                Haptics.tap()
+                // Its sheet (Resume / Change / Pause) lives on Give.
+                tabs.openGive(link: .schedule(scheduleId: scheduleId))
+            } label: {
+                HStack(spacing: 8) {
+                    Icon(.repeat, size: 14, color: Nuru.gold)
+                    Text(line).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Icon(.chevronRight, size: 14, color: Nuru.ink300)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.pressableSubtle)
+            .partnerCard()
+        case .none:
+            EmptyView()
+        }
+    }
+
+    /// POST /giving/schedules at the pace (Giving Cycle 9): a monthly M-Pesa
+    /// gift bound to the pledge, its first prompt now — shown on Give's own
+    /// result screen, as "give now" is (the prompt watched; or, when today's
+    /// could not go out, the gift standing with the server's reason). A
+    /// refusal is the server's words; the key is spent by any answer and
+    /// kept only when none came, so a resend finds the same gift.
+    private func collectAtPace(_ p: Pledge) async {
+        guard !startingPace, sync.isOnline, let body = PledgePace.scheduleBody(for: p, key: paceKey) else { return }
+        Haptics.action()
+        startingPace = true
+        paceError = nil
+        defer { startingPace = false }
+        let label = GiveMoney.format(body.amountMinor, body.currency)
+        do {
+            let made = try await MemberAPI.createSchedule(body)
+            paceKey = GiveKey.fresh()
+            Haptics.success()
+            GivingSignal.post()   // Give's recurring gifts and Partners hear of it
+            if let first = made.firstCharge {
+                tabs.openGive(watch: GiveWatch(outcome: .firstPrompt(transactionId: first.transactionId),
+                                               amountLabel: label, pledgeTitle: p.displayTitle))
+            } else {
+                tabs.openGive(watch: GiveWatch(outcome: .scheduled(note: made.firstChargeError, nextRunAt: made.nextRunAt),
+                                               amountLabel: label, pledgeTitle: p.displayTitle))
+            }
+            await load()
+        } catch {
+            if !GiveRefusal.gotNoServerAnswer(error) { paceKey = GiveKey.fresh() }
+            switch GiveRefusal.from(error) {
+            case let .promptWaiting(tx, message):
+                // A prompt from a moment ago is still on the phone: nothing
+                // was made — watch that one, as Give does.
+                tabs.openGive(watch: GiveWatch(outcome: .waiting(transactionId: tx, message: message),
+                                               amountLabel: label, pledgeTitle: p.displayTitle))
+            case let .message(text):
+                Haptics.error()
+                paceError = text
+            }
+        }
+    }
+
+    /// A failed read keeps what is on screen; with nothing yet, one quiet line says so.
+    private func loadClaims() async {
+        do {
+            claims = try await MemberAPI.pledgeClaims(pledgeId)
+            claimsFailed = false
+        } catch {
+            claimsFailed = claims == nil
+        }
+    }
+
+    /// POST the claim (online only — the sheet will not send offline). Nil
+    /// when the office has it: it joins the list as pending. Otherwise the
+    /// words to show — the server's own for a refusal (currency, day, told
+    /// already, five waiting).
+    private func sendClaim(_ p: Pledge, _ body: MemberAPI.PledgeClaimBody) async -> String? {
+        do {
+            let claim = try await MemberAPI.claimPledgePayment(p.pledgeId, body)
+            claims = [claim] + (claims ?? []).filter { $0.id != claim.id }
+            claimsFailed = false
+            await loadClaims()
+            return nil
+        } catch {
+            if GiveRefusal.gotNoServerAnswer(error) {
+                return "We couldn't reach the church just now. Try again in a moment."
+            }
+            return GiveRefusal.from(error).message
+        }
+    }
+
+    /// PAID ANOTHER WAY — each thing the member told the office and where it
+    /// stands. Hidden while there is none.
+    @ViewBuilder private var claimsCard: some View {
+        if let claims, !claims.isEmpty {
+            let today = PledgeMath.today()
+            VStack(alignment: .leading, spacing: 0) {
+                Text("PAID ANOTHER WAY").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Color(hex: 0xA8861C))
+                    .padding(.bottom, 4)
+                ForEach(claims) { claim in
+                    PledgeClaimRow(claim: claim, today: today)
+                }
+            }
+            .padding(Nuru.S.base)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Nuru.white, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+        } else if claimsFailed {
+            Text("We couldn't load what you've told the office. Pull down to try again.")
+                .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                .frame(maxWidth: .infinity).multilineTextAlignment(.center)
+        }
     }
 
     // MARK: Actions — every one a server round-trip; the page never relabels itself
@@ -1379,6 +2057,12 @@ struct PledgeDetailView: View {
     @ViewBuilder private func actions(_ p: Pledge) -> some View {
         let paused = p.status == "paused"
         let fulfilled = p.status == "fulfilled" || p.progress.label == "fulfilled"
+        // The church collects it automatically (the card above says so):
+        // paying is a choice — "Pay early", as quiet as Pause (§7.2 #2).
+        let early = PledgePace.paysEarly(p, schedules: schedules)
+        // Money the office is checking: paying is still possible, never the
+        // page's gold primary (final walk M1).
+        let quiet = early || checkingMinor(p) > 0
         if !fulfilled && p.status != "cancelled" {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
@@ -1390,15 +2074,19 @@ struct PledgeDetailView: View {
                             pledgeId: p.pledgeId,
                             pledgeTitle: p.displayTitle,
                             pledgeAmountLine: pledgeAmountLine(p),
-                            paysTo: p.paysTo))
+                            paysTo: p.paysTo,
+                            // Its currency decides the rails (Giving Cycle 5).
+                            currency: p.currency))
                     } label: {
                         HStack(spacing: 6) {
-                            Text("Pay now").font(.inter(13, .bold))
-                            Icon(.arrowRight, size: 12, color: Nuru.navy)
+                            Text(early ? "Pay early" : "Pay now").font(.inter(13, quiet ? .semibold : .bold))
+                            Icon(.arrowRight, size: 14, color: Nuru.navy)
                         }
                         .foregroundStyle(Nuru.navy)
                         .frame(maxWidth: .infinity).frame(height: 40)
-                        .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .background(quiet ? Nuru.white : Nuru.gold, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .stroke(quiet ? Nuru.border : .clear, lineWidth: 1))
                     }
                     .buttonStyle(.pressable)
                     .disabled(paused || busy)
@@ -1410,7 +2098,7 @@ struct PledgeDetailView: View {
                     } label: {
                         HStack(spacing: 6) {
                             if busy { ProgressView().tint(Nuru.navy).scaleEffect(0.7) }
-                            else { Icon(paused ? .play : .pause, size: 12, color: Nuru.navy) }
+                            else { Icon(paused ? .play : .pause, size: 14, color: Nuru.navy) }
                             Text(paused ? "Resume" : "Pause").font(.inter(13, .semibold))
                         }
                         .foregroundStyle(Nuru.navy)
@@ -1429,22 +2117,36 @@ struct PledgeDetailView: View {
                 }
                 .disabled(busy)
 
-                // Claims (§1 rule d) are a later phase — say so, rather than hide it.
-                HStack(spacing: 6) {
-                    Icon(.check, size: 12, color: Nuru.ink300)
-                    Text("I paid another way").font(.inter(12, .semibold)).foregroundStyle(Nuru.ink300)
-                    Text("coming soon").font(.inter(10, .semibold)).foregroundStyle(Nuru.ink400)
-                        .padding(.horizontal, 7).padding(.vertical, 2)
-                        .background(Nuru.mutedBg, in: Capsule())
-                    Spacer(minLength: 0)
+                // "I paid another way" (§1 rule d, Giving Cycle 5): tell the
+                // office about money given outside the app. Online only —
+                // a claim about money is never queued.
+                VStack(alignment: .leading, spacing: 4) {
+                    Button { Haptics.tap(); claiming = p } label: {
+                        HStack(spacing: 6) {
+                            Icon(.check, size: 14, color: sync.isOnline ? Nuru.navy : Nuru.ink300)
+                            Text("I paid another way").font(.inter(12, .semibold))
+                                .foregroundStyle(sync.isOnline ? Nuru.navy : Nuru.ink300)
+                            Spacer(minLength: 0)
+                            Icon(.chevronRight, size: 14, color: Nuru.ink300)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(!sync.isOnline || busy)
+                    if !sync.isOnline {
+                        Text("You're offline — telling the office needs a connection.")
+                            .font(.inter(11)).foregroundStyle(Nuru.ink400)
+                    }
                 }
-                .accessibilityHint("Coming soon")
 
                 Toggle(isOn: Binding(get: { p.remindersEnabled },
                                      set: { on in Task { await vm.setReminders(p, on); await load() } })) {
                     HStack(spacing: 8) {
-                        Icon(.bell, size: 13, color: Nuru.gold)
-                        Text("Remind me before it's due").font(.inter(13)).foregroundStyle(Nuru.ink)
+                        Icon(.bell, size: 14, color: Nuru.gold)
+                        // The server's reminder lands in the inbox; no remote push
+                        // on this phone yet (B11).
+                        Text(IOSNoticeWords.pledgeReminder).font(.inter(13)).foregroundStyle(Nuru.ink)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 .tint(Nuru.gold)
@@ -1457,10 +2159,37 @@ struct PledgeDetailView: View {
         }
     }
 
+    /// "Charge me automatically" could not be set up when the pledge was
+    /// made (Giving Cycle 5): the pledge stands, and the server's words say
+    /// why. One amber row (TroubleRow's look) until dismissed.
+    private func autoScheduleNotice(_ note: String) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.symbol(13, weight: .semibold))
+                .foregroundStyle(Nuru.urgentText)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Your pledge is made — automatic collection isn't set up.")
+                    .font(.inter(12, .semibold)).foregroundStyle(Nuru.urgentText)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(note).font(.inter(12)).foregroundStyle(Nuru.ink600)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button { Haptics.tap(); vm.pledgeNotices[pledgeId] = nil } label: {
+                Icon(.x, size: 14, color: Nuru.ink400).frame(width: 28, height: 28)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Dismiss")
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Nuru.urgentBg, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+    }
+
     private func smallAction(_ title: String, _ icon: Lucide, tint: Color = Nuru.ink600, action: @escaping () -> Void) -> some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 5) {
-                Icon(icon, size: 12, color: tint)
+                Icon(icon, size: 14, color: tint)
                 Text(title).font(.inter(12, .semibold)).foregroundStyle(tint)
             }
             .frame(maxWidth: .infinity).frame(height: 32)
@@ -1514,7 +2243,7 @@ private struct PaymentRowLabel: View {
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(money(payment.amountMinor, payment.currency)).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy)
-                Text([giveDateFull(payment.at), payment.receiptCode].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                Text([giveDateShort(payment.at), payment.receiptCode].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
                     .font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
             }
             Spacer(minLength: 8)
@@ -1555,5 +2284,41 @@ enum PartnerFormat {
     }()
     static func grouped(_ n: Int) -> String {
         number.string(from: NSNumber(value: n)) ?? "\(n)"
+    }
+}
+
+/// Whether the Partners page has a standing to show (the Android walk's A1;
+/// §7.4 #9, no zero facts): a pledge that isn't cancelled, or a gift that
+/// went through. A schedule set up whose first collection failed is not yet
+/// a standing — no "Partner since", no "0 gifts kept", no tier.
+enum PartnerStanding {
+    static func isReal(_ p: Partnership) -> Bool {
+        p.pledges.contains { $0.status != "cancelled" } || p.kept > 0 || p.givenMinor > 0
+    }
+    static let notYet = "Your standing shows here after your first gift or pledge."
+}
+
+/// A pledge's progress line on its page. The Android walk's A7: a monthly
+/// pledge that begins on 5 Nov read "KSh 0 of 5,000 this month" in October —
+/// a month it was never due. Until its first day it says when it starts.
+/// Display only: the numbers are the server's, untouched.
+enum PledgeWords {
+    static func progressLine(_ p: Pledge, today: String = PledgeMath.today()) -> String {
+        let given = p.progress.paidMinor > 0 ? "\(money(p.progress.paidMinor, p.currency)) given in all" : nil
+        if p.isMonthly, let start = PledgeMath.start(p), start > today, let starts = startsLine(start) {
+            return [starts, given].compactMap { $0 }.joined(separator: " · ")
+        }
+        let toward = "\(money(p.paidTowardMinor, p.currency)) of \(money(p.commitmentMinor, p.currency))\(p.isMonthly ? " this month" : "")"
+        return [toward, given].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// "Starts Thu 5 Nov" — the calendar day sent, never shifted (§8.1 rule 8).
+    static func startsLine(_ ymd: String) -> String? {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = GiveCalendar.nairobi
+        f.dateFormat = "yyyy-MM-dd"
+        guard let d = f.date(from: ymd) else { return nil }
+        return "Starts \(NuruDates.day(d, timeZone: GiveCalendar.nairobi))"
     }
 }

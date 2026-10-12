@@ -50,7 +50,7 @@ struct SelahEditorView: View {
         VStack(spacing: 0) {
             header
             TextField("Untitled", text: $draft.title)
-                .font(.fraunces(20, .medium)).foregroundStyle(Nuru.navy)
+                .font(.fraunces(22, .medium)).foregroundStyle(Nuru.navy)
                 .padding(.horizontal, Nuru.S.screen)
                 .padding(.top, Nuru.S.md)
 
@@ -76,7 +76,8 @@ struct SelahEditorView: View {
         .sheet(isPresented: $showDrawing) {
             SelahDrawingSheet { url in draft.drawingUrls.append(url) }
         }
-        .confirmationDialog("Delete this thought?", isPresented: $pendingDelete, titleVisibility: .visible) {
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert("Delete this thought?", isPresented: $pendingDelete) {
             Button("Delete thought", role: .destructive) { onDelete?(); dismiss() }
             Button("Keep it", role: .cancel) {}
         } message: {
@@ -127,7 +128,7 @@ struct SelahEditorView: View {
                         Button {
                             Haptics.tap(); draft.drawingUrls.remove(at: idx)
                         } label: {
-                            Icon(.x, size: 10, color: .white)
+                            Icon(.x, size: 14, color: .white)
                                 .frame(width: 18, height: 18)
                                 .background(Color.black.opacity(0.55), in: Circle())
                         }
@@ -208,7 +209,7 @@ struct SelahEditorView: View {
 
     private func toolbarIcon(system: String, active: Bool = false) -> some View {
         Image(systemName: system)
-            .font(.system(size: 15, weight: .semibold))
+            .font(.symbol(15, weight: .semibold))
             .foregroundStyle(active ? Color.white : Nuru.navy)
             .frame(width: 34, height: 34)
             .background(active ? Nuru.navy : Nuru.surface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))

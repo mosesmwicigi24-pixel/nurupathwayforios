@@ -6,21 +6,22 @@ import SwiftUI
 struct AnnouncementsAllView: View {
     @State private var items: [MyAnnouncement] = []
     @State private var loading = true
-    @State private var failed = false
+    /// Why the list didn't load — said in §4's words, never a bare line.
+    @State private var failure: Error?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
+        VStack(spacing: 0) {
+        // The §8.1 pushed-page header (rule 2: back · kicker · title), not the
+        // system's centred title.
+        NuruPushedHeader(kicker: "Home", title: "Announcements", line: "From your church")
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 12) {
-                if loading {
-                    ProgressView().frame(maxWidth: .infinity).padding(.top, 60)
-                } else if items.isEmpty {
-                    VStack(spacing: 8) {
-                        Icon(.megaphone, size: 24, color: Nuru.gold)
-                        Text(failed ? "Couldn't load announcements — pull to try again." : "No announcements yet.")
-                            .font(.inter(14)).foregroundStyle(Nuru.ink)
-                    }
-                    .frame(maxWidth: .infinity).padding(.top, 60)
+                // Loading, empty and failed in §4's one state card (final
+                // walk C16's class) — the empty list was a bare line.
+                if let state = NuruState.resolve(loading: loading, isEmpty: items.isEmpty, failure: failure,
+                                                 empty: .empty(title: "No announcements yet")) {
+                    NuruStateView(state: state, retry: { Task { await load() } })
                 } else {
                     ForEach(items) { a in
                         NavigationLink(value: AppRoute.announcement(a.announcementId)) {
@@ -33,17 +34,21 @@ struct AnnouncementsAllView: View {
             .padding(.horizontal, 20).padding(.top, 12)
             .padding(.bottom, Nuru.tabBarSpace)
         }
-        .background(Color(hex: 0xFAF7F0).ignoresSafeArea())
-        .refreshable {
-            do { items = try await MemberAPI.myAnnouncements(); failed = false } catch { failed = true }
+        .refreshable { await load() }
         }
-        .navigationTitle("Announcements")
-        .navigationBarTitleDisplayMode(.inline)
-        .task {
-            do { items = try await MemberAPI.myAnnouncements(); failed = false }
-            catch { failed = true }
-            loading = false
-        }
+        .ignoresSafeArea(edges: .top)
+        .background(Nuru.paper.ignoresSafeArea())
+        .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .nuruEdgeSwipeBack()
+        .task { await load() }
+    }
+
+    /// A failed refresh keeps the list on screen; with nothing shown, §4 says why.
+    private func load() async {
+        do { items = try await MemberAPI.myAnnouncements(); failure = nil }
+        catch { failure = error }
+        loading = false
     }
 
     private func row(_ a: MyAnnouncement) -> some View {
@@ -51,7 +56,7 @@ struct AnnouncementsAllView: View {
             ZStack {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                     .fill(Nuru.goldChipBg).frame(width: 40, height: 40)
-                Icon(.megaphone, size: 17, color: Nuru.goldChipText)
+                Icon(.megaphone, size: 18, color: Nuru.goldChipText)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(a.title)
@@ -60,9 +65,10 @@ struct AnnouncementsAllView: View {
                 Text(a.body)
                     .font(.inter(12)).foregroundStyle(Nuru.ink600)
                     .lineLimit(2).multilineTextAlignment(.leading)
-                if let at = a.sentAt {
-                    Text(String(at.prefix(10)))
-                        .font(.inter(10.5, .semibold)).foregroundStyle(Nuru.ink600.opacity(0.7))
+                // The one date shape (§8.1 rule 8) — it showed "2026-10-05".
+                if let at = a.sentAt, let d = NuruDates.parse(at) ?? PauseDates.date(String(at.prefix(10))) {
+                    Text(NuruDates.day(d))
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600.opacity(0.7))
                 }
             }
             Spacer(minLength: 0)

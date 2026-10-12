@@ -28,6 +28,9 @@
 // none, and the same figures are computed here with PledgeMath from the
 // partnership's pledges + the statement's payments — the rule written in
 // PartnersView's header, so the preview card and this page always agree.
+// Money in more than one currency is shown per currency, shillings first —
+// the server's three sums do not separate currencies, so a year that has
+// more than one is counted here, per pledge (Giving Cycle 5).
 import SwiftUI
 import UIKit
 
@@ -177,10 +180,10 @@ struct PartnersStatementView: View {
     private var hero: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("PARTNERS STATEMENT · \(String(vm.statementYear))")
-                .font(.inter(10, .bold)).kerning(1.8)
+                .font(.inter(11, .bold)).kerning(1.8)
                 .foregroundStyle(Color(hex: 0xE6CA68))
             Text(thankYouLine)
-                .font(.fraunces(24, .semibold)).foregroundStyle(.white)
+                .font(.fraunces(26, .semibold)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
             if let line = standingText {
@@ -188,7 +191,7 @@ struct PartnersStatementView: View {
                     .padding(.top, 4)
             }
             if let s = shownStatements, let tiles = HeroTiles(s) {
-                tileRow(tiles, s.currency).padding(.top, 16)
+                tileRow(tiles).padding(.top, 16)
             }
         }
         .padding(.horizontal, Nuru.S.screen)
@@ -228,6 +231,12 @@ struct PartnersStatementView: View {
         /// (owner, 2026-09-25): kept = on time + late, over those that fell due.
         let kept: (kept: Int, due: Int, late: Int)?
         let givenMinor: Int?
+        /// The Given tile's currency: the pledge payments' own — not the
+        /// year's first currency when that is another.
+        let givenCurrency: String
+        /// "+ US$ 20.00" — pledge money in a second currency, said beside
+        /// the first and never added to it. Nil with one currency.
+        let givenRest: String?
 
         /// What one disciple through a level costs (giving-tier economics:
         /// KSh 20,000). Used ONLY when the server's `per_disciple_minor` is
@@ -256,7 +265,23 @@ struct PartnersStatementView: View {
             } else {
                 kept = nil
             }
-            givenMinor = i.paidMinor.flatMap { $0 >= 0 ? $0 : nil }
+            // Given toward pledges, per currency, never one sum: the server's
+            // summary_by_currency (Giving Cycle 9), else the payments. Not
+            // `impact.paid_minor` — it counts shillings only now (the costing
+            // is in shillings), so a dollar partner's gifts are read here.
+            let paidBy = (s.summaryByCurrency.map { $0.map { CurrencyTotal(currency: $0.currency, totalMinor: $0.paidMinor) } }
+                          ?? PledgeMath.paidByCurrency(s.pledgePayments)).filter { $0.totalMinor != 0 }
+            if let first = paidBy.first {
+                givenMinor = first.totalMinor
+                givenCurrency = first.currency
+                givenRest = paidBy.count > 1
+                    ? "+ " + paidBy.dropFirst().map { money($0.totalMinor, $0.currency) }.joined(separator: " + ")
+                    : nil
+            } else {
+                givenMinor = i.paidMinor.flatMap { $0 >= 0 ? $0 : nil }
+                givenCurrency = s.summaryCurrency ?? "KES"
+                givenRest = nil
+            }
             if disciples == nil && kept == nil && givenMinor == nil { return nil }
         }
     }
@@ -264,49 +289,58 @@ struct PartnersStatementView: View {
     /// Three across when the disciples tile holds a count. Below the first
     /// disciple its sentence needs the width: that tile goes full width and
     /// Kept + Given sit side by side beneath it.
-    @ViewBuilder private func tileRow(_ t: HeroTiles, _ currency: String) -> some View {
+    @ViewBuilder private func tileRow(_ t: HeroTiles) -> some View {
         if let d = t.disciples, case .toward = d {
             VStack(spacing: 8) {
-                disciplesTile(d, currency)
+                disciplesTile(d)
                 if t.kept != nil || t.givenMinor != nil {
-                    HStack(alignment: .top, spacing: 8) { keptAndGiven(t, currency) }
+                    HStack(alignment: .top, spacing: 8) { keptAndGiven(t) }
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         } else {
             HStack(alignment: .top, spacing: 8) {
-                if let d = t.disciples { disciplesTile(d, currency) }
-                keptAndGiven(t, currency)
+                if let d = t.disciples { disciplesTile(d) }
+                keptAndGiven(t)
             }
             .fixedSize(horizontal: false, vertical: true)
         }
     }
 
-    @ViewBuilder private func keptAndGiven(_ t: HeroTiles, _ currency: String) -> some View {
+    @ViewBuilder private func keptAndGiven(_ t: HeroTiles) -> some View {
         if let k = t.kept {
             heroTile("KEPT", a11y: "\(k.kept) of \(k.due) commitments kept\(k.late > 0 ? ", \(k.late) late" : "")") {
+                // Only the big number gives way (26 × 0.6 = 15.6); the words
+                // beside it keep their size — nothing under 11 pt.
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
                     Text("\(k.kept)").font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                     Text("of \(k.due)").font(.inter(12, .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1).fixedSize()
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
                 // "9 of 10 · 1 late" — the late ones are kept, and said.
                 tileCaption(k.late > 0 ? "commitments · \(k.late) late" : "commitments")
             }
         }
         if let g = t.givenMinor {
-            heroTile("GIVEN", a11y: "Given \(money(g, currency)) toward pledges") {
+            let rest = t.givenRest.map { " \($0)" } ?? ""
+            heroTile("GIVEN", a11y: "Given \(money(g, t.givenCurrency))\(rest) toward pledges") {
                 HStack(alignment: .firstTextBaseline, spacing: 3) {
-                    Text(Self.currencyPrefix(currency)).font(.inter(10, .semibold)).foregroundStyle(.white.opacity(0.75))
+                    Text(Self.currencyPrefix(t.givenCurrency)).font(.inter(11, .semibold)).foregroundStyle(.white.opacity(0.75))
+                        .lineLimit(1).fixedSize()
                     Text(Self.compactAmount(g)).font(.fraunces(26, .semibold)).foregroundStyle(.white)
+                        .lineLimit(1).minimumScaleFactor(0.6)
                 }
-                .lineLimit(1).minimumScaleFactor(0.6)
-                tileCaption("toward pledges")
+                tileCaption(t.givenRest.map { "toward pledges · \($0)" } ?? "toward pledges")
             }
         }
     }
 
-    @ViewBuilder private func disciplesTile(_ d: HeroTiles.Disciples, _ currency: String) -> some View {
+    /// In shillings: the costing is (KSh 20,000 carries one disciple through
+    /// a level), and the server counts disciples from shillings only (Giving
+    /// Cycle 9).
+    @ViewBuilder private func disciplesTile(_ d: HeroTiles.Disciples) -> some View {
+        let currency = "KES"
         switch d {
         case .carried(let n):
             heroTile("DISCIPLES CARRIED", a11y: "\(n) disciple\(n == 1 ? "" : "s") carried through a level") {
@@ -316,7 +350,10 @@ struct PartnersStatementView: View {
             }
         case .toward(let toward, let per):
             let ofLine = "\(money(toward, currency)) of \(PartnerFormat.grouped(per / 100))"
-            heroTile("DISCIPLES CARRIED",
+            // Below the first disciple nothing is carried yet: the tile says
+            // what the money is toward — never "carried" beside the server's
+            // "will carry" (owner, 2026-10-08).
+            heroTile(PartnerTierWords.towardKicker,
                      a11y: "\(money(toward, currency)) of \(money(per, currency)) toward carrying one disciple through a level") {
                 GeometryReader { geo in
                     let f = Double(toward) / Double(per)
@@ -329,18 +366,18 @@ struct PartnersStatementView: View {
                 .frame(height: 5)
                 .padding(.top, 6)
                 Text(ofLine).font(.inter(11, .semibold)).foregroundStyle(.white)
-                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 4)
-                tileCaption("toward carrying one disciple through a level")
+                tileCaption(PartnerTierWords.towardCaption)
             }
         }
     }
 
     private func heroTile<V: View>(_ label: String, a11y: String, @ViewBuilder content: () -> V) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.inter(9, .semibold)).kerning(0.8)
+            Text(label).font(.inter(11, .semibold)).kerning(0.8)
                 .foregroundStyle(.white.opacity(0.6))
-                .lineLimit(1).minimumScaleFactor(0.65)
+                .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 .padding(.bottom, 2)
             content()
         }
@@ -352,7 +389,7 @@ struct PartnersStatementView: View {
     }
 
     private func tileCaption(_ s: String) -> some View {
-        Text(s).font(.inter(10)).foregroundStyle(.white.opacity(0.7))
+        Text(s).font(.inter(11)).foregroundStyle(.white.opacity(0.7))
             .fixedSize(horizontal: false, vertical: true)
     }
 
@@ -374,7 +411,7 @@ struct PartnersStatementView: View {
     static func currencyPrefix(_ currency: String?) -> String {
         switch currency?.uppercased() {
         case nil, "", "KES": return "KSh"
-        case "USD": return "$"
+        case "USD": return "US$"
         case let c?: return c
         }
     }
@@ -411,11 +448,11 @@ struct PartnersStatementView: View {
             let figures = Figures(s, vm.partnership)
             // No hero tiles (an older server sends no `impact`): the three
             // numbers stay on their card.
-            if HeroTiles(s) == nil { summaryCard(figures, s.currency) }
+            if HeroTiles(s) == nil { summaryCard(figures) }
             if let months = s.months, let strip = MonthStrip(months) {
                 faithfulnessSection(strip, s.faithfulness, year: s.year)
             }
-            commitmentsSection(figures.pledges, year: s.year, currency: s.currency)
+            commitmentsSection(figures.pledges, year: s.year)
             if let sentence = seasonSentence(s.season) { seasonCard(sentence) }
             paymentsSection(s)
         } else if vm.statementsLoading || (vm.statements == nil && vm.statementsError == nil) {
@@ -434,22 +471,15 @@ struct PartnersStatementView: View {
         }
     }
 
-    private func summaryCard(_ f: Figures, _ currency: String) -> some View {
-        HStack(alignment: .top, spacing: 8) {
-            summaryColumn("Pledged", money(f.pledged, currency), Nuru.navy)
-            summaryColumn("Paid", money(f.paid, currency), Nuru.successText)
-            summaryColumn("Remaining", money(f.remaining, currency), Nuru.goldLo)
+    /// One line per currency in each column (shillings first) — never one
+    /// sum across currencies.
+    private func summaryCard(_ f: Figures) -> some View {
+        NuruAdaptiveStack(spacing: 8, rowAlignment: .top) {
+            partnerSummaryColumn("Pledged", f.byCurrency.map { money($0.pledgedMinor, $0.currency) }, Nuru.navy)
+            partnerSummaryColumn("Paid", f.byCurrency.map { (money($0.paidMinor, $0.currency), PaidTint.color($0.paidMinor)) })
+            partnerSummaryColumn("Remaining", f.byCurrency.map { money($0.remainingMinor, $0.currency) }, Nuru.goldLo)
         }
         .partnerCard()
-    }
-
-    private func summaryColumn(_ label: String, _ value: String, _ tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label.uppercased()).font(.inter(9, .semibold)).kerning(1.2).foregroundStyle(Nuru.ink400)
-            Text(value).font(.inter(16, .semibold)).foregroundStyle(tint)
-                .lineLimit(1).minimumScaleFactor(0.7)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: Faithfulness — twelve squares, Jan→Dec, and one line
@@ -501,7 +531,7 @@ struct PartnersStatementView: View {
                     Spacer()
                     Text(short.last ?? "Dec")
                 }
-                .font(.inter(9, .medium)).foregroundStyle(Nuru.ink400)
+                .font(.inter(11, .medium)).foregroundStyle(Nuru.ink400)
                 .accessibilityHidden(true)
                 if let line = faithfulnessLine(strip, faithfulness, year: year) {
                     Text(line)
@@ -547,9 +577,10 @@ struct PartnersStatementView: View {
     /// pledge: the SERVER's `progress.nextDue` when it is today or later — it
     /// is ledger-correct (payments fill due dates oldest first, so once
     /// September is paid it says November); otherwise — overdue, or absent —
-    /// the next occurrence of its `due_day` (1–28) on or after today, so an
-    /// overdue pledge still contributes its next upcoming date. With no
-    /// partnership loaded, the statement rows' `due_day`. Nil when none.
+    /// its next instalment on or after today (its `due_day`, never before its
+    /// start, none after its `until_on`), so an overdue pledge still
+    /// contributes its next upcoming date. With no partnership loaded, the
+    /// statement rows' `due_day`. Nil when none.
     private func nextPledgeDue() -> Date? {
         let cal = Calendar.current
         let today = cal.startOfDay(for: Date())
@@ -568,7 +599,7 @@ struct PartnersStatementView: View {
                        cal.startOfDay(for: d) >= today {
                         return cal.startOfDay(for: d)
                     }
-                    return pl.dueDay.flatMap(fromDueDay)
+                    return PledgeMath.nextInstalment(pl, onOrAfter: PledgeMath.today()).flatMap(giveParseDate)
                 }
         } else {
             candidates = (vm.statements?.pledges ?? [])
@@ -578,13 +609,9 @@ struct PartnersStatementView: View {
         return candidates.min()
     }
 
-    /// "5 Oct" this year, "5 Jan 2027" when it falls in the next.
-    private static func dayMonth(_ d: Date) -> String {
-        let cal = Calendar.current
-        let f = DateFormatter()
-        f.dateFormat = cal.component(.year, from: d) == cal.component(.year, from: Date()) ? "d MMM" : "d MMM yyyy"
-        return f.string(from: d)
-    }
+    /// "Thu 5 Nov" this year, "Tue 5 Jan 2027" when it falls in the next —
+    /// the one date shape (§8.1 rule 8), beside the page's "by Thu 31 Dec".
+    private static func dayMonth(_ d: Date) -> String { NuruDates.day(d) }
 
     private func stripAccessibility(_ strip: MonthStrip) -> String {
         let full = Self.monthCalendar.monthSymbols
@@ -604,20 +631,24 @@ struct PartnersStatementView: View {
 
     // MARK: Commitments — one row each; tap opens the pledge
 
-    private func commitmentsSection(_ pledges: [GivingStatements.StatementPledge], year: Int, currency: String) -> some View {
-        // Σ remaining_year_minor; a row without it counts max(pledged −
-        // paid, 0). Hidden when NO row carries it (older server / local-math
-        // rows) — the same rule as Android's remainingThisYear.
+    private func commitmentsSection(_ pledges: [GivingStatements.StatementPledge], year: Int) -> some View {
+        // Σ remaining_year_minor per currency (each pledge in its own); a row
+        // without it counts max(pledged − paid, 0). Hidden when NO row carries
+        // it (older server / local-math rows) — the same rule as Android's
+        // remainingThisYear.
         let carries = pledges.contains { $0.remainingYearMinor != nil }
-        let remaining = pledges.reduce(0) { $0 + ($1.remainingYearMinor ?? max($1.pledgedMinor - $1.paidMinor, 0)) }
+        let remaining = PledgeMath.line(pledges.map {
+            CurrencyTotal(currency: $0.currency, totalMinor: $0.remainingYearMinor ?? max($0.pledgedMinor - $0.paidMinor, 0))
+        })
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 eyebrow("COMMITMENTS")
                 Spacer()
                 if carries {
                     Text("Remaining this year").font(.inter(11)).foregroundStyle(Nuru.ink400)
-                    Text(money(remaining, currency))
+                    Text(remaining)
                         .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
+                        .lineLimit(1).fixedSize()
                 }
             }
             if pledges.isEmpty {
@@ -658,8 +689,8 @@ struct PartnersStatementView: View {
 
     private func seasonCard(_ sentence: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("SINCE YOU BEGAN").font(.inter(9, .semibold)).kerning(1.6).foregroundStyle(Nuru.gold)
-            Text(sentence).font(.fraunces(17, .medium)).foregroundStyle(.white)
+            Text("SINCE YOU BEGAN").font(.inter(11, .semibold)).kerning(1.6).foregroundStyle(Nuru.gold)
+            Text(sentence).font(.fraunces(18, .medium)).foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
@@ -674,20 +705,20 @@ struct PartnersStatementView: View {
         let rows = s.pledgePayments
         let pending = s.pendingPledgePayments
         let groups = monthGroups(rows)
-        // Settled rows only — a payment still processing is never totalled.
-        let listTotal = rows.reduce(0) { $0 + $1.amountMinor }
+        // Settled rows only — a payment still processing is never totalled —
+        // and per currency, never one sum across them.
+        let listTotal = PledgeMath.line(PledgeMath.paidByCurrency(rows))
         return VStack(alignment: .leading, spacing: 8) {
             eyebrow("PAYMENTS")
             if rows.isEmpty && pending.isEmpty {
-                Text("No pledge payments in \(String(s.year)).")
-                    .font(.inter(13)).foregroundStyle(Nuru.ink600)
-                    .partnerCard()
+                // The empty year in §4's state card (final walk C16) — not a bare line.
+                NuruStateView(state: .empty(title: PartnerStatementWords.noPayments(s.year)))
             } else {
                 VStack(alignment: .leading, spacing: 0) {
                     if !pending.isEmpty {
                         HStack(alignment: .firstTextBaseline) {
                             Text("PROCESSING")
-                                .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.urgentText)
+                                .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Nuru.urgentText)
                             Spacer()
                             Text("not yet counted").font(.inter(11)).foregroundStyle(Nuru.ink400)
                         }
@@ -704,9 +735,9 @@ struct PartnersStatementView: View {
                     ForEach(Array(groups.enumerated()), id: \.element.key) { gi, g in
                         HStack(alignment: .firstTextBaseline) {
                             Text(g.label.uppercased())
-                                .font(.inter(10, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
+                                .font(.inter(11, .bold)).kerning(1.1).foregroundStyle(Nuru.goldChipText)
                             Spacer()
-                            Text(money(g.subtotal, s.currency))
+                            Text(g.subtotal)
                                 .font(.inter(11, .semibold)).foregroundStyle(Nuru.ink600)
                         }
                         .padding(.top, gi == 0 && pending.isEmpty ? 0 : 16)
@@ -728,10 +759,11 @@ struct PartnersStatementView: View {
                     Divider().overlay(Nuru.navy.opacity(0.35)).padding(.top, 12)
                     HStack(alignment: .firstTextBaseline) {
                         Text("TOTAL PAID \(String(s.year))")
-                            .font(.inter(10, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
+                            .font(.inter(11, .bold)).kerning(1.2).foregroundStyle(Nuru.navy)
                         Spacer()
-                        Text(money(listTotal, s.currency))
+                        Text(listTotal)
                             .font(.fraunces(18, .bold)).foregroundStyle(Nuru.gold)
+                            .lineLimit(1).minimumScaleFactor(0.7)
                     }
                     .padding(.top, 10)
                 }
@@ -743,7 +775,7 @@ struct PartnersStatementView: View {
     /// Newest month first (the payments are already newest first), grouped
     /// by the member's LOCAL month — a gift at 22:30 UTC on the 30th is a
     /// gift on the 1st in Nairobi, and the row's day says so.
-    private func monthGroups(_ rows: [PledgePayment]) -> [(key: String, label: String, subtotal: Int, rows: [PledgePayment])] {
+    private func monthGroups(_ rows: [PledgePayment]) -> [(key: String, label: String, subtotal: String, rows: [PledgePayment])] {
         let cal = Calendar.current
         var order: [String] = []
         var map: [String: [PledgePayment]] = [:]
@@ -760,7 +792,7 @@ struct PartnersStatementView: View {
         }
         return order.map { k in
             let rs = map[k] ?? []
-            return (key: k, label: monthLabel(k), subtotal: rs.reduce(0) { $0 + $1.amountMinor }, rows: rs)
+            return (key: k, label: monthLabel(k), subtotal: PledgeMath.line(PledgeMath.paidByCurrency(rs)), rows: rs)
         }
     }
 
@@ -785,15 +817,17 @@ struct PartnersStatementView: View {
 
     private var actions: some View {
         VStack(spacing: 10) {
+            // The page's one primary (§8.1 rule 4; final walk #38): gold
+            // fill, navy words, radius 14 — it was navy.
             Button { download() } label: {
                 HStack(spacing: 8) {
-                    if downloading { ProgressView().tint(.white).scaleEffect(0.8) }
-                    else { Icon(.download, size: 14, color: .white) }
+                    if downloading { ProgressView().tint(Nuru.navy).scaleEffect(0.8) }
+                    else { Icon(.download, size: 14, color: Nuru.navy) }
                     Text(downloading ? "Preparing PDF…" : "Download PDF").font(.inter(14, .bold))
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 48)
-                .background(Nuru.navy, in: Capsule())
+                .background(Nuru.gold, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             }
             .buttonStyle(.pressable)
             .disabled(downloading)
@@ -811,12 +845,12 @@ struct PartnersStatementView: View {
             NavigationLink(value: PartnersRoute.statement) {
                 HStack(spacing: 6) {
                     Text("Giving statement").font(.inter(14, .semibold))
-                    Icon(.arrowRight, size: 12, color: Nuru.navy)
+                    Icon(.arrowRight, size: 14, color: Nuru.navy)
                 }
                 .foregroundStyle(Nuru.navy)
                 .frame(maxWidth: .infinity).frame(height: 48)
                 .background(Nuru.white, in: Capsule())
-                .overlay(Capsule().stroke(Nuru.navy, lineWidth: 1.2))
+                .overlay(Capsule().stroke(Nuru.border, lineWidth: 1))   // a secondary's hairline (§8.1 rule 4)
             }
             .buttonStyle(.pressable)
             .simultaneousGesture(TapGesture().onEnded { Haptics.tap() })
@@ -855,12 +889,14 @@ struct PartnersStatementView: View {
         }
     }
 
+    /// Offline only when the phone has no network (§4) — a timeout while it
+    /// has one was ours, and the PDF just isn't available right now.
     private static func downloadMessage(for error: Error) -> String {
-        if let api = error as? APIError {
-            if case let .http(status, _, _, _) = api, status == 404 {
-                return "There's no partners statement for you yet."
-            }
-            if api.isNetwork { return "You appear to be offline — the PDF needs a connection." }
+        if case let .http(status, _, _, _)? = error as? APIError, status == 404 {
+            return "There's no partners statement for you yet."
+        }
+        if NuruStateCopy.failure(error).cause == .offline {
+            return "You're offline — the PDF needs a connection."
         }
         return "The PDF isn't available right now. The statement above is still complete."
     }
@@ -868,58 +904,15 @@ struct PartnersStatementView: View {
     // MARK: The page's numbers — server first, PledgeMath when absent
 
     private struct Figures {
-        let pledged: Int
-        let paid: Int
-        let remaining: Int
+        /// Pledged / Paid / Remaining, one entry per currency, shillings
+        /// first (PledgeMath.figures — the preview card's numbers too).
+        let byCurrency: [PartnerFigures]
         let pledges: [GivingStatements.StatementPledge]
 
         init(_ s: GivingStatements, _ p: Partnership?) {
-            let localPledged = PledgeMath.pledgedMinor(p?.pledges ?? [], year: s.year)
-            let localPaid = PledgeMath.paidMinor(s)
-            pledged = s.pledgedMinor ?? localPledged
-            paid = s.paidMinor ?? localPaid
-            remaining = s.remainingMinor ?? PledgeMath.remainingMinor(pledged: pledged, paid: paid)
-            pledges = s.pledges.isEmpty ? Self.localPledges(s, p) : s.pledges
-        }
-
-        /// The fallback rows: every partnership pledge that lived in the
-        /// year (a due date in it, or a payment in it), with the year's
-        /// pledged / paid / kept computed by the same rule as the summary.
-        /// A cancelled pledge appears only when money was paid toward it
-        /// that year (so the payments are explained) and pledges nothing.
-        static func localPledges(_ s: GivingStatements, _ p: Partnership?) -> [GivingStatements.StatementPledge] {
-            guard let p else { return [] }
-            let cal = Calendar.current
-            let year = s.year
-            let thisYear = cal.component(.year, from: Date())
-            let dueThrough: Date? = year == thisYear ? Date() : nil
-            return p.pledges.compactMap { pl in
-                let pays = s.payments.filter { $0.pledgeId == pl.pledgeId }
-                let paid = pays.reduce(0) { $0 + $1.amountMinor }
-                let cancelled = pl.status == "cancelled"
-                if cancelled && pays.isEmpty { return nil }
-                let pledged: Int
-                let dueCount: Int
-                if pl.isMonthly {
-                    let dues = PledgeMath.monthlyDueDates(pl, in: year)
-                    guard dues > 0 || !pays.isEmpty else { return nil }
-                    pledged = cancelled ? 0 : (pl.amountMinor ?? 0) * dues
-                    dueCount = PledgeMath.monthlyDueDates(pl, in: year, through: dueThrough)
-                } else {
-                    let dueInYear = pl.dueOn.flatMap(giveParseDate)
-                        .map { cal.component(.year, from: $0) == year } ?? false
-                    guard dueInYear || !pays.isEmpty else { return nil }
-                    pledged = (cancelled || !dueInYear) ? 0 : (pl.targetMinor ?? 0)
-                    dueCount = dueInYear ? 1 : 0
-                }
-                // `kept` counts DUE DATES kept; counting payments, it is
-                // capped at the due count — never "3 of 2".
-                return GivingStatements.StatementPledge(
-                    pledgeId: pl.pledgeId, title: pl.displayTitle, shape: pl.shape,
-                    amountMinor: pl.amountMinor, targetMinor: pl.targetMinor, currency: pl.currency,
-                    status: pl.status, dueDay: pl.dueDay, dueOn: pl.dueOn, createdAt: pl.createdAt,
-                    pledgedMinor: pledged, paidMinor: paid, kept: min(pays.count, dueCount), dueCount: dueCount)
-            }
+            byCurrency = PledgeMath.figures(s, pledges: p?.pledges ?? [])
+            // The server's rows; an older server's are counted here by the same rule.
+            pledges = s.pledges.isEmpty ? PledgeMath.localRows(s, pledges: p?.pledges ?? []) : s.pledges
         }
     }
 }
@@ -933,8 +926,12 @@ private struct StatementPledgeRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .top, spacing: 10) {
                 VStack(alignment: .leading, spacing: 3) {
+                    // A pledge is a content row (§8.1 rule 3: Fraunces 15
+                    // semibold, as on Partners; final walk #38 — it was
+                    // Inter here), wrapping rather than cut (rule 9).
                     Text(pledge.title.isEmpty ? "Pledge" : pledge.title)
-                        .font(.inter(15, .semibold)).foregroundStyle(Nuru.ink).lineLimit(1)
+                        .font(.nRowTitle).foregroundStyle(Nuru.ink)
+                        .nuruLineLimit(2).fixedSize(horizontal: false, vertical: true)
                     Text(pledgeAmountLine(pledge))
                         .font(.inter(12)).foregroundStyle(Nuru.ink600).lineLimit(1)
                 }
@@ -948,7 +945,7 @@ private struct StatementPledgeRow: View {
                 // the server sends it for need pledges only.
                 if let pct = pledge.churchProgressPercent {
                     Text("Church raised \(Int(min(100, max(0, pct)).rounded(.down)))%")
-                        .font(.inter(10, .semibold)).foregroundStyle(Nuru.goldLo)
+                        .font(.inter(11, .semibold)).foregroundStyle(Nuru.goldLo)
                         .lineLimit(1)
                 }
             }
@@ -985,7 +982,7 @@ private struct StatementPledgeRow: View {
                 return (Nuru.successBg, Nuru.successText, "On track")
             }
         }()
-        return Text(text).font(.inter(10, .bold)).foregroundStyle(fg)
+        return Text(text).font(.inter(11, .bold)).foregroundStyle(fg)
             .padding(.horizontal, 8).padding(.vertical, 3).background(bg, in: Capsule())
     }
 }
@@ -1125,7 +1122,7 @@ struct PendingPledgePaymentRow: View {
                 Text(title).font(.inter(13, .semibold)).foregroundStyle(Nuru.navy).lineLimit(1)
                 HStack(spacing: 6) {
                     Text(chipText)
-                        .font(.inter(10, .bold)).foregroundStyle(Nuru.urgentText)
+                        .font(.inter(11, .bold)).foregroundStyle(Nuru.urgentText)
                         .padding(.horizontal, 8).padding(.vertical, 3)
                         .background(Nuru.urgentBg, in: Capsule())
                     if giveParseDate(payment.at) != nil {
@@ -1151,4 +1148,18 @@ struct PendingPledgePaymentRow: View {
         default: return "Processing"
         }
     }
+}
+
+/// The statement's empty year, said once in §4's state (final walk C16):
+/// the state's title, never a bare line under PAYMENTS.
+enum PartnerStatementWords {
+    static func noPayments(_ year: Int) -> String { "No pledge payments in \(String(year))" }
+}
+
+/// The statement's words beside the tier (owner, 2026-10-08: the tier says
+/// "will carry" until the partner's money lands). Below the first disciple
+/// the tile names what the money is toward, not "carried".
+enum PartnerTierWords {
+    static let towardKicker = "TOWARD A DISCIPLE"
+    static let towardCaption = "through a level"
 }

@@ -382,7 +382,7 @@ struct VoiceMessageBubble: View {
                     Circle().fill(onDark ? Color.white.opacity(0.22) : Nuru.gold)
                         .frame(width: 34, height: 34)
                     Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.symbol(13, weight: .bold))
                         .foregroundStyle(onDark ? .white : Nuru.navy)
                         .offset(x: playing ? 0 : 1)
                 }

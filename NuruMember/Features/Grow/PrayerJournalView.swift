@@ -81,7 +81,7 @@ final class PrayerJournalViewModel: ObservableObject {
     // The server is idempotent: re-sharing returns the existing wall post, so
     // "already shared" simply succeeds.
 
-    /// Entry ids shared during this session — drives the "On the wall 🙏" state.
+    /// Entry ids shared during this session — drives the "Shared to Corporate" state.
     @Published var sharedToWall: Set<String> = []
     @Published var shareError: String?
 
@@ -96,8 +96,9 @@ final class PrayerJournalViewModel: ObservableObject {
             // mirrors) once the private prayer is confirmed public.
             CelebrationCenter.shared.fire(
                 key: "prayer-share-\(e.entryId)",
-                title: "Shared to Corporate Prayer",
-                subtitle: "Your cell is standing with you 🙏",
+                title: "Shared to Corporate",
+                // One story about who sees it (final walk M8): the congregation.
+                subtitle: PrayerWallWords.posted,
                 confetti: false)
         } catch {
             Haptics.error()
@@ -106,10 +107,10 @@ final class PrayerJournalViewModel: ObservableObject {
                 // Offline-created entries live in the mutation queue until the
                 // next sync — the server can't share what it hasn't seen yet.
                 shareError = "This prayer hasn't finished syncing yet. Give it a moment and try again."
-            } else if api?.isNetwork == true {
-                shareError = "You're offline — sharing to the wall needs a connection."
             } else {
-                shareError = api?.errorDescription ?? "Couldn't share this prayer right now. Try again."
+                // §4's words: offline only when the phone is; the server's own
+                // refusal as it said it; never raw error text.
+                shareError = NuruStateCopy.failureLine("Couldn't share this prayer.", error)
             }
         }
     }
@@ -198,10 +199,7 @@ private func relativeLabel(_ iso: String) -> String {
     }
 }
 
-private func shortDate(_ d: Date) -> String {
-    let f = DateFormatter(); f.dateFormat = "MMM d"
-    return f.string(from: d)
-}
+private func shortDate(_ d: Date) -> String { NuruDates.day(d) }
 
 // MARK: - Screen
 
@@ -249,10 +247,11 @@ struct PrayerJournalView: View {
                                     PrayerTabs(tab: $tab, activeCount: vm.active.count, answeredCount: vm.answered.count)
                                 }
                                 Button { Haptics.tap(); editing = PrayerDraft() } label: {
+                                    // Navy on gold (§8.1 rule 4).
                                     HStack(spacing: 5) {
-                                        Icon(.plus, size: 13, color: .white)
-                                        Text("Add Prayer").font(.nActionLabel).foregroundStyle(.white)
-                                            .lineLimit(1).minimumScaleFactor(0.8)
+                                        Icon(.plus, size: 14, color: Nuru.navy)
+                                        Text("Add Prayer").font(.nActionLabel).foregroundStyle(Nuru.navy)
+                                            .lineLimit(1).minimumScaleFactor(0.85)
                                     }
                                     .padding(.horizontal, 14).padding(.vertical, 12)
                                     .frame(maxWidth: forcedTab == nil ? nil : .infinity)
@@ -290,22 +289,23 @@ struct PrayerJournalView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            // Sharing publishes a private entry to the whole cell — confirm
-            // first. (Attached to the inner VStack so it never collides with
+            // Sharing publishes a private entry to the whole congregation —
+            // confirm first. One name for the step everywhere (final walk
+            // M8): "Share to Corporate" — the menu, this alert, its answer. (Attached to the inner VStack so it never collides with
             // the delete dialog on the outer ZStack.)
-            .confirmationDialog(
-                "Share to the prayer wall?",
+            // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+            .alert(
+                "Share to Corporate?",
                 isPresented: Binding(get: { pendingShare != nil },
-                                     set: { if !$0 { pendingShare = nil } }),
-                titleVisibility: .visible
+                                     set: { if !$0 { pendingShare = nil } })
             ) {
-                Button("Share to wall") {
+                Button("Share") {
                     if let e = pendingShare { Task { await vm.shareToWall(e) } }
                     pendingShare = nil
                 }
                 Button("Keep it private", role: .cancel) { pendingShare = nil }
             } message: {
-                Text("Your cell will see this and pray with you.")
+                Text("Everyone in your congregation will see this and can pray with you.")
             }
             .alert("Couldn't share",
                    isPresented: Binding(get: { vm.shareError != nil },
@@ -327,11 +327,11 @@ struct PrayerJournalView: View {
             }
         }
         // Deleting a prayer is irreversible — ask before letting it go.
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Delete this prayer?",
             isPresented: Binding(get: { pendingDelete != nil },
-                                 set: { if !$0 { pendingDelete = nil } }),
-            titleVisibility: .visible
+                                 set: { if !$0 { pendingDelete = nil } })
         ) {
             Button("Delete prayer", role: .destructive) {
                 if let e = pendingDelete { Task { await vm.delete(e) } }
@@ -349,10 +349,11 @@ struct PrayerJournalView: View {
             HStack(alignment: .center, spacing: Nuru.S.sm) {
                 BackButton()
                 Spacer(minLength: 0)
-                Text("\(vm.active.count) ACTIVE · \(vm.answered.count) ANSWERED")
+                // No zero counts (§7.4 #9): only the counts above zero.
+                Text(ZeroCounts.journalHeader(active: vm.active.count, answered: vm.answered.count) ?? "")
                     .font(.inter(11, .bold)).tracking(1.8)
                     .foregroundStyle(Color(hex: 0x9A7A2A))
-                    .lineLimit(1).minimumScaleFactor(0.75)
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
                 Button { Haptics.tap(); editing = PrayerDraft() } label: {
                     Icon(.plus, size: 18, color: Nuru.navy)
@@ -363,7 +364,7 @@ struct PrayerJournalView: View {
                 .accessibilityLabel("New prayer")
             }
             Text("Prayer journal")
-                .font(.fraunces(24, .semibold))
+                .font(.fraunces(26, .semibold))
                 .foregroundStyle(Nuru.navy)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -414,12 +415,12 @@ private struct PrayerPulseCard: View {
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: Nuru.S.sm) {
                         Text("THIS WEEK")
-                            .font(.inter(10, .bold)).tracking(2.2)
+                            .font(.inter(11, .bold)).tracking(2.2)
                             .foregroundStyle(gold)
                         if streak > 0 { streakChip }
                     }
                     Text("Your prayer rhythm")
-                        .font(.fraunces(21, .medium))
+                        .font(.fraunces(22, .medium))
                         .foregroundStyle(.white)
                 }
                 Spacer(minLength: 0)
@@ -430,15 +431,19 @@ private struct PrayerPulseCard: View {
             }
 
             // Weekly goal bar — days journaled out of 7, honest to created-at data.
+            // No zero counts and no celebration at zero (§7.4 #9; the walk's E14:
+            // "Journaled 0 of 7 days · 7 to a full week 🙌").
             VStack(alignment: .leading, spacing: 6) {
                 HStack {
-                    Text("Journaled \(daysThisWeek) of 7 days")
-                        .font(.inter(10, .semibold))
+                    Text(PrayerPulseWords.journaled(daysThisWeek))
+                        .font(.inter(11, .semibold))
                         .foregroundStyle(Color.white.opacity(0.7))
                     Spacer(minLength: Nuru.S.sm)
-                    Text(daysThisWeek >= 7 ? "A full week 🙌" : "\(7 - daysThisWeek) to a full week 🙌")
-                        .font(.inter(10, .semibold))
-                        .foregroundStyle(gold)
+                    if let toGo = PrayerPulseWords.toFullWeek(daysThisWeek) {
+                        Text(toGo)
+                            .font(.inter(11, .semibold))
+                            .foregroundStyle(gold)
+                    }
                 }
                 GeometryReader { geo in
                     ZStack(alignment: .leading) {
@@ -452,10 +457,12 @@ private struct PrayerPulseCard: View {
                 .frame(height: 6)
             }
 
-            HStack(spacing: Nuru.S.sm) {
-                StatTile(value: activeCount, label: "active")
-                StatTile(value: weekCount, label: "this week")
-                StatTile(value: answeredCount, label: "answered")
+            // Only the counts above zero; none at all when every one is zero.
+            let tiles = PrayerPulseWords.tiles(active: activeCount, week: weekCount, answered: answeredCount)
+            if !tiles.isEmpty {
+                HStack(spacing: Nuru.S.sm) {
+                    ForEach(tiles, id: \.label) { t in StatTile(value: t.value, label: t.label) }
+                }
             }
         }
         .padding(Nuru.S.base)
@@ -472,8 +479,8 @@ private struct PrayerPulseCard: View {
 
     private var streakChip: some View {
         HStack(spacing: 4) {
-            Icon(.flame, size: 9, color: gold)
-            Text("\(streak)-day streak").font(.inter(9, .bold)).foregroundStyle(gold)
+            Icon(.flame, size: 14, color: gold)
+            Text("\(streak)-day streak").font(.inter(11, .bold)).foregroundStyle(gold)
         }
         .padding(.horizontal, 8).padding(.vertical, 3)
         .background(Color.white.opacity(0.10), in: Capsule())
@@ -487,7 +494,7 @@ private struct StatTile: View {
     var body: some View {
         VStack(spacing: 2) {
             Text("\(value)").font(.fraunces(18, .medium)).foregroundStyle(Color(hex: 0xC9A227))
-            Text(label).font(.inter(9, .medium)).foregroundStyle(Color.white.opacity(0.65))
+            Text(label).font(.inter(11, .medium)).foregroundStyle(Color.white.opacity(0.65))
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, Nuru.S.sm)
@@ -524,11 +531,13 @@ private struct PrayerTabs: View {
                 Text(label)
                     .font(.inter(11, .bold))
                     .foregroundStyle(on ? .white : Color(hex: 0x59667C))
-                Text("\(count)")
-                    .font(.inter(10, .bold)).foregroundStyle(Nuru.navy)
-                    .padding(.horizontal, 6)
-                    .frame(minWidth: 18, minHeight: 16)
-                    .background(on ? Color(hex: 0xC9A227) : Nuru.surface, in: Capsule())
+                if count > 0 {   // no zero counts (§7.4 #9)
+                    Text("\(count)")
+                        .font(.inter(11, .bold)).foregroundStyle(Nuru.navy)
+                        .padding(.horizontal, 6)
+                        .frame(minWidth: 18, minHeight: 16)
+                        .background(on ? Color(hex: 0xC9A227) : Nuru.surface, in: Capsule())
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, Nuru.S.sm)
@@ -548,7 +557,7 @@ private struct EmptyPrayers: View {
                 RoundedRectangle(cornerRadius: 16, style: .continuous)
                     .fill(Nuru.surface)
                     .frame(width: 48, height: 48)
-                    .overlay(Icon(.handHeart, size: 20, color: Nuru.gold))
+                    .overlay(Icon(.handHeart, size: 22, color: Nuru.gold))
                 Text(tab == .active ? "No active prayers yet" : "No answered prayers yet")
                     .font(.inter(14, .semibold)).foregroundStyle(Nuru.navy)
                 Text("Bring your requests before Him.")
@@ -572,10 +581,11 @@ private struct JournalCard: View {
     let remove: () -> Void
     let compose: () -> Void
 
-    /// Green answered · orange on-the-wall · gold private.
+    /// Green answered (a state) · navy on-the-wall · gold private — no
+    /// orange (§8.1 rule 1).
     private var statusColor: Color {
         if entry.isAnswered { return Color(hex: 0x16A34A) }
-        if shared { return Color(hex: 0xF97316) }
+        if shared { return Nuru.navy }
         return Color(hex: 0xC9A227)
     }
     private var initials: String {
@@ -610,13 +620,13 @@ private struct JournalCard: View {
                         Button { Haptics.success(); toggle() } label: { Label("Mark answered", systemImage: "checkmark.circle") }
                     }
                     if !shared {
-                        Button { Haptics.tap(); share() } label: { Label("Publish to Corporate", systemImage: "megaphone") }
+                        Button { Haptics.tap(); share() } label: { Label("Share to Corporate", systemImage: "megaphone") }
                     }
                     Button { edit() } label: { Label("Edit", systemImage: "pencil") }
                     Button(role: .destructive) { remove() } label: { Label("Delete", systemImage: "trash") }
                 } label: {
                     Image(systemName: "ellipsis")
-                        .font(.system(size: 17, weight: .semibold))
+                        .font(.symbol(17, weight: .semibold))
                         .foregroundStyle(Color(hex: 0x74808F))
                         .frame(width: 36, height: 36)
                         .contentShape(Rectangle())
@@ -644,8 +654,8 @@ private struct JournalCard: View {
                     .padding(.top, Nuru.S.md)
             } else if shared {
                 HStack(spacing: 6) {
-                    Icon(.handHeart, size: 13, color: Color(hex: 0xF97316))
-                    Text("On the Corporate wall").font(.nMicro).foregroundStyle(Color(hex: 0xF97316))
+                    Icon(.handHeart, size: 14, color: Nuru.navy)
+                    Text("On the Corporate wall").font(.nMicro).foregroundStyle(Nuru.navy)
                 }
                 .padding(.horizontal, Nuru.S.base)
                 .padding(.top, Nuru.S.md)
@@ -663,12 +673,12 @@ private struct JournalCard: View {
         HStack(alignment: .top, spacing: Nuru.S.sm) {
             Circle().fill(Color(hex: 0x16A34A))
                 .frame(width: 28, height: 28)
-                .overlay(Icon(.check, size: 13, color: .white))
+                .overlay(Icon(.check, size: 14, color: .white))
             VStack(alignment: .leading, spacing: 1) {
                 Text("Answered prayer 🎉")
-                    .font(.inter(10, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    .font(.inter(11, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 Text(answeredSub)
-                    .font(.inter(9, .medium)).foregroundStyle(Color(hex: 0x16A34A))
+                    .font(.inter(11, .medium)).foregroundStyle(Color(hex: 0x16A34A))
                 if let note = entry.answeredNote, !note.isEmpty {
                     Text(note)
                         .font(.nCardMeta).foregroundStyle(Color(hex: 0x166534))
@@ -697,7 +707,7 @@ private struct JournalCard: View {
             toggle()
         } label: {
             HStack(spacing: 6) {
-                Icon(.checkCircle2, size: 13, color: Color(hex: 0x7A5A14))
+                Icon(.checkCircle2, size: 14, color: Color(hex: 0x7A5A14))
                 Text("Mark answered").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x7A5A14))
             }
             .frame(maxWidth: .infinity)
@@ -715,8 +725,8 @@ private struct JournalCard: View {
         Group {
             if shared {
                 HStack(spacing: 6) {
-                    Icon(.handHeart, size: 15, color: Color(hex: 0x16A34A))
-                    Text("On the wall 🙏").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x15803D))
+                    Icon(.handHeart, size: 14, color: Color(hex: 0x16A34A))
+                    Text("Shared to Corporate").font(.inter(12, .bold)).foregroundStyle(Color(hex: 0x15803D))
                 }
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
@@ -729,7 +739,7 @@ private struct JournalCard: View {
                 Button { Haptics.tap(); share() } label: {
                     HStack(spacing: 6) {
                         Icon(.share2, size: 14, color: Nuru.navyDeep)
-                        Text("Share to Corporate").font(.inter(12, .bold)).lineLimit(1).minimumScaleFactor(0.8).foregroundStyle(Nuru.navyDeep)
+                        Text("Share to Corporate").font(.inter(12, .bold)).lineLimit(1).minimumScaleFactor(0.92).foregroundStyle(Nuru.navyDeep)
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 12)
@@ -749,8 +759,8 @@ private struct RowAction: View {
     var body: some View {
         Button { Haptics.tap(); action() } label: {
             HStack(spacing: 6) {
-                Icon(icon, size: 15, color: Color(hex: 0x59667C))
-                Text(label).font(.inter(10, .semibold)).foregroundStyle(Color(hex: 0x59667C))
+                Icon(icon, size: 14, color: Color(hex: 0x59667C))
+                Text(label).font(.inter(11, .semibold)).foregroundStyle(Color(hex: 0x59667C))
             }
             .frame(maxWidth: .infinity, minHeight: 44) // proper thumb-sized target
             .contentShape(Rectangle())
@@ -793,7 +803,7 @@ private struct PrayerComposerSheet: View {
                 Button { dismiss() } label: {
                     Circle().fill(Nuru.surface)
                         .frame(width: 32, height: 32)
-                        .overlay(Icon(.x, size: 15, color: Nuru.navy))
+                        .overlay(Icon(.x, size: 14, color: Nuru.navy))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Close")
@@ -839,5 +849,22 @@ private struct PrayerComposerSheet: View {
         .background(Color.white)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+/// The prayer rhythm card's words without zero counts (§7.4 #9; the walk's
+/// E14). Pure, so the tests pin it.
+enum PrayerPulseWords {
+    static func journaled(_ days: Int) -> String {
+        days <= 0 ? "A prayer a day fills this week" : "Journaled \(days) of 7 days"
+    }
+    /// "4 to a full week" — nothing at zero (it was "7 to a full week 🙌").
+    static func toFullWeek(_ days: Int) -> String? {
+        if days >= 7 { return "A full week 🙌" }
+        return days > 0 ? "\(7 - days) to a full week" : nil
+    }
+    static func tiles(active: Int, week: Int, answered: Int) -> [(value: Int, label: String)] {
+        [(active, "active"), (week, "this week"), (answered, "answered")].filter { $0.0 > 0 }
+            .map { (value: $0.0, label: $0.1) }
     }
 }

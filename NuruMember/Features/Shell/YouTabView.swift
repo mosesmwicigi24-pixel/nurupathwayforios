@@ -14,6 +14,7 @@ import SwiftUI
 
 struct YouTabView: View {
     @EnvironmentObject private var tabs: TabRouter
+    @Environment(\.screenVisible) private var visible
     @ObservedObject private var chatBadge = ChatBadge.shared
     @State private var segment: YouSegment = .chat
     /// Lazily mounted (like RootView's `loaded`) — Profile/Settings don't pay
@@ -28,6 +29,7 @@ struct YouTabView: View {
                 ForEach(YouSegment.allCases, id: \.self) { seg in
                     if mounted.contains(seg) {
                         segmentContent(seg)
+                            .environment(\.screenVisible, visible && seg == segment)
                             .opacity(seg == segment ? 1 : 0)
                             .allowsHitTesting(seg == segment)
                             .accessibilityHidden(seg != segment)
@@ -45,13 +47,18 @@ struct YouTabView: View {
             select(seg, haptic: false)
             DispatchQueue.main.async { tabs.youSegment = nil }
         }
-        .onAppear { ScreenTracker.record(screen: "you.\(segment.label.lowercased())") }
+        .onAppear {
+            tabs.youSegmentShown = segment   // a rebuilt You tab starts on its own segment
+            ScreenTracker.record(screen: "you.\(segment.label.lowercased())")
+        }
     }
 
     private func select(_ seg: YouSegment, haptic: Bool) {
         guard segment != seg else { return }
         if haptic { Haptics.selection() }
         withAnimation(.easeInOut(duration: 0.15)) { segment = seg }
+        // The tab bar's state follows the segment on screen (§7.2 #11).
+        tabs.youSegmentShown = seg
         mounted.insert(seg)
         ScreenTracker.record(screen: "you.\(seg.label.lowercased())")
     }
@@ -61,7 +68,7 @@ struct YouTabView: View {
         case .chat:        CommunityView(embeddedInYou: true)   // Talk (ChatView) + Pray (PrayerRoomView)
         case .departments: DepartmentsView()
         case .profile:     ProfileView(embeddedInYou: true)
-        case .settings:    NavigationStack { SettingsView(embeddedInYou: true) }
+        case .settings:    NavigationStack { SettingsView(embeddedInYou: true).nuruEdgeSwipeBack() }
         }
     }
 }

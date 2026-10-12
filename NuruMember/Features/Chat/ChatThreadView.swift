@@ -64,7 +64,7 @@ final class ChatThreadViewModel: ObservableObject {
         let k = thread?.kind ?? conversation.kind
         return k != "dm"
     }
-    var title: String { thread?.title ?? conversation.title ?? "Conversation" }
+    var title: String { (thread?.title ?? conversation.title).map(ChatConversation.shownTitle) ?? "Conversation" }
     var topic: String? {
         let t = thread?.topic ?? conversation.topic
         return (t?.isEmpty == false) ? t : nil
@@ -103,7 +103,7 @@ final class ChatThreadViewModel: ObservableObject {
         do {
             thread = try await MemberAPI.chatConversation(conversation.conversationId)
             try? await MemberAPI.markChatRead(conversation.conversationId)
-        } catch { self.error = (error as? APIError)?.errorDescription ?? "Couldn't open this chat." }
+        } catch { self.error = NuruStateCopy.failureLine("Couldn't open this chat.", error) }
         loading = false
     }
 
@@ -224,7 +224,7 @@ final class ChatThreadViewModel: ObservableObject {
             _ = try await MemberAPI.removeConnection(peerUserId)
             connectionNotice = "Connection removed. This chat's history is kept."
         } catch {
-            connectionNotice = "Couldn't remove this connection — try again."
+            connectionNotice = NuruStateCopy.failureLine("Couldn't remove this connection.", error)
         }
     }
 
@@ -235,7 +235,7 @@ final class ChatThreadViewModel: ObservableObject {
             _ = try await MemberAPI.blockConnection(peerUserId)
             connectionNotice = "Blocked. They can no longer message you."
         } catch {
-            connectionNotice = "Couldn't block — try again."
+            connectionNotice = NuruStateCopy.failureLine("Couldn't block them.", error)
         }
     }
 
@@ -250,9 +250,9 @@ final class ChatThreadViewModel: ObservableObject {
             // unconditionally since the client has no per-pair status read;
             // this is the expected, harmless outcome when it wasn't needed.
             if case .http(404, _, _, _) = err { connectionNotice = "This person wasn't blocked." }
-            else { connectionNotice = "Couldn't unblock — try again." }
+            else { connectionNotice = NuruStateCopy.failureLine("Couldn't unblock them.", err) }
         } catch {
-            connectionNotice = "Couldn't unblock — try again."
+            connectionNotice = NuruStateCopy.failureLine("Couldn't unblock them.", error)
         }
     }
 }
@@ -287,16 +287,14 @@ private enum Aurora {
         colors: [Color(hex: 0xF6F4EE), Color(hex: 0xF1ECE1)],
         startPoint: .top, endPoint: .bottom)
 
-    /// SENDER_PALETTE `name` colors — stable, harmonious accents (Telegram pattern).
+    /// Sender `name` colours — stable per person, and only navy or gold
+    /// (§8.1 rule 1: no indigo, sky, teal, pink or violet names).
     static let senderPalette: [Color] = [
-        Color(hex: 0x4F46E5), // indigo
-        Color(hex: 0x0284C7), // sky
-        Color(hex: 0x0D9488), // teal
-        Color(hex: 0x059669), // emerald
-        Color(hex: 0xDB2777), // pink
-        Color(hex: 0xC2410C), // burnt orange
-        Color(hex: 0x7C3AED), // violet
-        Color(hex: 0xB45309), // amber
+        Color(hex: 0x0B1F33), // navy
+        Color(hex: 0x7A5A14), // deep gold
+        Color(hex: 0x143559), // navy 700
+        Color(hex: 0xA87F2E), // gold low
+        Color(hex: 0x315F8C), // navy mid
     ]
 
     /// Same stable hash as the make: `h = (h * 31 + charCodeAt(i)) >>> 0`.
@@ -389,6 +387,11 @@ struct ChatThreadView: View {
     /// already reverted itself — this just tells the member why).
     @State private var actionError: String?
     @State private var actionErrorDismiss: Task<Void, Never>?
+    /// "On screen" is both: the top of its stack (appeared, not covered by a
+    /// push) and not hidden behind another tab, You segment or Community door
+    /// — those stay mounted, so they never make it disappear.
+    @State private var onTop = false
+    @Environment(\.screenVisible) private var screenVisible
 
     init(conversation: ChatConversation, context: ChatThreadContext = .normal) {
         _vm = StateObject(wrappedValue: ChatThreadViewModel(conversation: conversation, context: context))
@@ -497,14 +500,24 @@ struct ChatThreadView: View {
         .task { if vm.thread == nil { await vm.load() } }
         // A conversation owns the whole bottom edge: slide the tab bar away while
         // this screen is up so the composer sits on the home indicator / keyboard.
-        .onAppear { tabs.chromeHidden = true }
+        .onAppear {
+            tabs.chromeHidden = true
+            onTop = true
+            markOpenConversation()
+        }
         .onDisappear {
             tabs.chromeHidden = false
+            onTop = false
+            markOpenConversation()
             // Silence the thread's shared player on the way out — it's
             // process-wide, and once this screen is gone there is no visible
             // control anywhere to stop a note still talking over Home.
             ChatVoicePlayer.threadShared.stop()
         }
+        // Another tab, You segment or Community door hides this thread
+        // without a disappear (they're keep-alive) — a routed notification
+        // tap, or the capsule above the thread.
+        .onChange(of: screenVisible) { _, _ in markOpenConversation() }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             keyboardVisible = true
         }
@@ -525,11 +538,11 @@ struct ChatThreadView: View {
             }
         }
         // Deleting is irreversible for everyone in the thread — always confirm.
-        .confirmationDialog(
+        // An alert, not a confirmation dialog: on this iOS a dialog hides its cancel answer (EXPERIENCE.md §7.3).
+        .alert(
             "Delete this message?",
             isPresented: Binding(get: { pendingDeleteMessage != nil },
-                                  set: { if !$0 { pendingDeleteMessage = nil } }),
-            titleVisibility: .visible
+                                  set: { if !$0 { pendingDeleteMessage = nil } })
         ) {
             Button("Delete", role: .destructive) {
                 guard let message = pendingDeleteMessage else { return }
@@ -571,7 +584,7 @@ struct ChatThreadView: View {
         VStack(spacing: 0) {
             if let actionError {
                 Text(actionError)
-                    .font(.inter(11.5, .medium)).foregroundStyle(Nuru.danger)
+                    .font(.inter(12, .medium)).foregroundStyle(Nuru.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, 16).padding(.vertical, 7)
                     .background(Nuru.danger.opacity(0.08))
@@ -584,7 +597,7 @@ struct ChatThreadView: View {
             // admin, no leader, nobody else can open it.
             if let label = vm.privacyLabel {
                 HStack(spacing: 6) {
-                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Icon(.lock, size: 14, color: Nuru.goldChipText)
                     Text(label)
                         .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
@@ -593,7 +606,7 @@ struct ChatThreadView: View {
                 .background(Nuru.goldChipBg)
             } else if vm.isPastorMail || vm.context == .pastoral {
                 HStack(spacing: 6) {
-                    Icon(.lock, size: 11, color: Nuru.goldChipText)
+                    Icon(.lock, size: 14, color: Nuru.goldChipText)
                     Text("Only \(vm.title) sees your reply")
                         .font(.inter(11, .medium)).foregroundStyle(Nuru.goldChipText)
                     Spacer(minLength: 0)
@@ -635,6 +648,13 @@ struct ChatThreadView: View {
                 }
                 return (author, text)
             }
+    }
+
+    /// THE open conversation while it's on screen: a message for it lands as
+    /// a light tap, not a banner (NuruPush.foreground). Off screen, it lets go.
+    private func markOpenConversation() {
+        let id = vm.conversation.conversationId
+        if onTop && screenVisible { OpenConversation.opened(id) } else { OpenConversation.closed(id) }
     }
 }
 
@@ -712,7 +732,7 @@ private struct ThreadHeader: View {
     @ViewBuilder private var avatar: some View {
         if isSpace {
             RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(Color(hex: 0x2E7D6B))
+                .fill(Nuru.navy)   // a space's mark: navy, not teal (§8.1 rule 1)
                 .frame(width: 38, height: 38)
                 .overlay(Text("#").font(.inter(18, .bold)).foregroundStyle(.white))
         } else {
@@ -724,12 +744,12 @@ private struct ThreadHeader: View {
 
     private var titles: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy).lineLimit(1)
+            Text(title).font(.fraunces(18, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy).lineLimit(1)
             if isSpace {
                 Text(subtitle).font(.inter(11)).foregroundStyle(Color(hex: 0x59667C)).lineLimit(1)
             } else {
                 HStack(spacing: 4) {
-                    Text("🕊️").font(.system(size: 10))
+                    Text("🕊️").font(.emoji(11))
                     Text(subtitle).font(.fraunces(12, .medium)).italic()
                         .foregroundStyle(Color(hex: 0x9A7A2A))
                     LinearGradient(colors: [Color(hex: 0x9A7A2A).opacity(0.5), .clear],
@@ -771,7 +791,7 @@ private struct ThreadHeader: View {
                 if connectionBusy {
                     ProgressView().tint(Nuru.navy).scaleEffect(0.7)
                 } else {
-                    Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+                    Image(systemName: "ellipsis").font(.symbol(16, weight: .bold)).foregroundStyle(Nuru.navy)
                 }
             }
             .frame(width: 38, height: 38)
@@ -810,7 +830,7 @@ private struct ThreadHeader: View {
                 Label("Privacy info", systemImage: "info.circle")
             }
         } label: {
-            Image(systemName: "ellipsis").font(.system(size: 16, weight: .bold)).foregroundStyle(Nuru.navy)
+            Image(systemName: "ellipsis").font(.symbol(16, weight: .bold)).foregroundStyle(Nuru.navy)
                 .frame(width: 38, height: 38)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Nuru.border, lineWidth: 1))
@@ -820,7 +840,7 @@ private struct ThreadHeader: View {
 
     private func topicStrip(_ topic: String) -> some View {
         HStack(spacing: 6) {
-            Icon(.flag, size: 13, color: Color(hex: 0x59667C))
+            Icon(.flag, size: 14, color: Color(hex: 0x59667C))
             Text(topic).font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineLimit(1)
             Spacer()
         }
@@ -850,7 +870,7 @@ private struct PastoralLockedGate: View {
                 Icon(.lockKeyhole, size: 30, color: Nuru.goldChipText)
             }
             Text("This conversation is locked")
-                .font(.fraunces(19, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
+                .font(.fraunces(18, .semibold)).kerning(-0.3).foregroundStyle(Nuru.navy)
             Text("Unlock with \(PastoralLock.biometryName) to open your pastoral conversation on this device.")
                 .font(.inter(12)).foregroundStyle(Color(hex: 0x59667C)).lineSpacing(4)
                 .multilineTextAlignment(.center)
@@ -865,7 +885,7 @@ private struct PastoralLockedGate: View {
             } label: {
                 HStack(spacing: 8) {
                     Image(systemName: PastoralLock.biometryName == "Touch ID" ? "touchid" : "faceid")
-                        .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                        .font(.symbol(16, weight: .semibold)).foregroundStyle(.white)
                     Text("Unlock").font(.nCardCTA).foregroundStyle(.white)
                 }
                 .padding(.horizontal, 26).frame(height: 46)
@@ -963,7 +983,7 @@ private struct JumpToLatestButton: View {
 
     var body: some View {
         Button(action: action) {
-            Icon(.chevronDown, size: 16, color: Aurora.navy)
+            Icon(.chevronDown, size: 18, color: Aurora.navy)
                 .frame(width: 40, height: 40)
                 .background(Color.white, in: Circle())
                 .overlay(Circle().stroke(Aurora.border, lineWidth: 1))
@@ -1007,7 +1027,7 @@ private struct DaySeparator: View {
             LinearGradient(colors: [.clear, Aurora.hairline], startPoint: .leading, endPoint: .trailing)
                 .frame(height: 1)
             Text(label.uppercased())
-                .font(.inter(10, .bold)).tracking(2.2)
+                .font(.inter(11, .bold)).tracking(2.2)
                 .foregroundStyle(Aurora.dayGold)
                 .fixedSize()
             LinearGradient(colors: [Aurora.hairline, .clear], startPoint: .leading, endPoint: .trailing)
@@ -1021,7 +1041,7 @@ private struct DaySeparator: View {
 private struct ConfidencePill: View {
     var body: some View {
         Text("🕊️ Held in confidence — speak life here")
-            .font(.inter(9, .semibold))
+            .font(.inter(11, .semibold))
             .foregroundStyle(Aurora.confidence)
             .padding(.horizontal, Nuru.S.md)
             .padding(.vertical, 4)
@@ -1036,7 +1056,7 @@ private struct EmptyThread: View {
         VStack(spacing: 6) {
             Icon(.sparkles, size: 18, color: Aurora.gold)
             Text("No messages yet — say hello")
-                .font(.inter(10)).foregroundStyle(Aurora.meta)
+                .font(.inter(11)).foregroundStyle(Aurora.meta)
         }
         .padding(.horizontal, Nuru.S.base)
         .padding(.vertical, Nuru.S.screen)
@@ -1134,7 +1154,7 @@ private struct SenderThumb: View {
                                          startPoint: .topLeading, endPoint: .bottomTrailing))
                     .frame(width: 28, height: 28)
                     .overlay(Text(Avatar.initials(m.authorName))
-                        .font(.inter(9, .bold)).foregroundStyle(.white))
+                        .font(.inter(11, .bold)).foregroundStyle(.white))
             }
         }
         .overlay(Circle().stroke(.white, lineWidth: 2))
@@ -1190,7 +1210,7 @@ private struct AuroraBubble: View {
     private var authorLine: some View {
         HStack(spacing: 6) {
             Circle().fill(accent).frame(width: 6, height: 6)
-            Text(m.authorName).font(.inter(11.5, .bold)).foregroundStyle(accent)
+            Text(m.authorName).font(.inter(12, .bold)).foregroundStyle(accent)
         }
     }
 
@@ -1325,7 +1345,7 @@ private struct ReadingInviteBubble: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             cover
-            Text("READ WITH A FRIEND").font(.inter(9, .bold)).kerning(1.6)
+            Text("READ WITH A FRIEND").font(.inter(11, .bold)).kerning(1.6)
                 .foregroundStyle(m.mine ? Color(hex: 0xE8CA6C) : Aurora.goldDeep)
             Text(invite.planTitle).font(.fraunces(15, .semibold))
                 .foregroundStyle(m.mine ? Color.white : Aurora.textDark)
@@ -1477,10 +1497,10 @@ private struct BubbleFooter: View {
     private var meta: some View {
         HStack(spacing: 4) {
             if m.isEdited {
-                Text("edited").font(.inter(9)).italic()
+                Text("edited").font(.inter(11)).italic()
                     .foregroundStyle(dark ? Color.white.opacity(0.55) : Aurora.meta)
             }
-            Text(timeShort(m.createdAt)).font(.inter(10))
+            Text(timeShort(m.createdAt)).font(.inter(11))
                 .foregroundStyle(dark ? Color.white.opacity(0.6) : Aurora.meta)
             if m.mine { ReadTicksView(read: (m.readCount ?? 0) > 0, dark: dark) }
         }
@@ -1498,8 +1518,8 @@ private struct ReactionChip: View {
             onTap()
         } label: {
             HStack(spacing: 2) {
-                Text(r.emoji).font(.system(size: 11))
-                Text("\(r.count)").font(.inter(9.5, .bold))
+                Text(r.emoji).font(.emoji(11))
+                Text("\(r.count)").font(.inter(11, .bold))
                     .foregroundStyle(dark ? Color.white : Aurora.navy)
             }
             .padding(.horizontal, 6)
@@ -1522,9 +1542,9 @@ private struct ReadTicksView: View {
     /// spec — no gold, no gray states.
     var body: some View {
         Text(read ? "✓✓" : "✓")
-            .font(.inter(9.5, .semibold))
+            .font(.inter(11, .semibold))
             .kerning(-1)
-            .foregroundStyle(Color(hex: 0x2F80ED))
+            .foregroundStyle(Nuru.gold)   // read ticks in the accent, not blue (§8.1 rule 1)
             .opacity(dark ? 1 : 0.95)
     }
 }
@@ -1581,7 +1601,7 @@ private struct QuickReplyRow: View {
     private func chip(_ reply: String) -> some View {
         Button { onSend(reply) } label: {
             Text(reply)
-                .font(.inter(12.5, .medium))
+                .font(.inter(13, .medium))
                 .foregroundStyle(Aurora.navy)
                 .padding(.horizontal, 14)
                 .padding(.vertical, Nuru.S.sm)
@@ -1607,6 +1627,8 @@ private struct ComposerBar: View {
     @StateObject private var recorder = ChatVoiceRecorder()
     @State private var sendingVoice = false
     @State private var voiceSendFailed = false
+    /// Why the recording didn't send, in §4's words — the take is kept.
+    @State private var voiceFailLine: String?
     @State private var micHint = false
     @State private var micHintDismiss: Task<Void, Never>?
 
@@ -1619,9 +1641,17 @@ private struct ComposerBar: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if voiceSendFailed, let line = voiceFailLine {
+                Text(line)
+                    .font(.inter(12)).foregroundStyle(Color(hex: 0xE0342C))
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+            }
             if micHint {
                 Text("Allow microphone in Settings to send voice messages.")
-                    .font(.inter(11.5)).foregroundStyle(Aurora.meta)
+                    .font(.inter(12)).foregroundStyle(Aurora.meta)
                     .frame(maxWidth: .infinity)
                     .padding(.bottom, 8)
                     .transition(.opacity)
@@ -1666,8 +1696,9 @@ private struct ComposerBar: View {
                 Haptics.tap()
                 recorder.cancel()
                 voiceSendFailed = false
+                voiceFailLine = nil
             } label: {
-                Icon(.x, size: 17, color: Aurora.meta)
+                Icon(.x, size: 18, color: Aurora.meta)
                     .frame(width: 36, height: 36)
                     .background(Nuru.paper, in: Circle())
             }
@@ -1680,7 +1711,7 @@ private struct ComposerBar: View {
                     .frame(width: 10, height: 10)
             }
             if voiceSendFailed {
-                Text("Couldn't send — tap to retry")
+                Text("Not sent — tap send to retry")
                     .font(.inter(12, .semibold)).foregroundStyle(Color(hex: 0xE0342C))
                     .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -1719,9 +1750,11 @@ private struct ComposerBar: View {
         // that race and silently drop the message.
         guard let data = try? Data(contentsOf: file) else {
             voiceSendFailed = true
+            voiceFailLine = "Couldn't send that. The recording couldn't be read on this phone — record it again."
             return
         }
         voiceSendFailed = false
+        voiceFailLine = nil
         sendingVoice = true
         Task {
             defer { sendingVoice = false }
@@ -1733,9 +1766,11 @@ private struct ComposerBar: View {
                 onVoiceSent()
             } catch {
                 // Keep the take: the strip stays up with a retry until the
-                // member sends it or cancels it themselves.
-                Haptics.tap()
+                // member sends it or cancels it themselves — and says why.
+                Haptics.error()
                 voiceSendFailed = true
+                voiceFailLine = NuruStateCopy.sendFailureLine(
+                    error, kept: "Your recording is kept — tap send to try again.")
             }
         }
     }
@@ -1743,7 +1778,7 @@ private struct ComposerBar: View {
     private var myAvatar: some View {
         Circle().fill(Aurora.inkBubble)
             .frame(width: 36, height: 36)
-            .overlay(Text(Avatar.initials(myName)).font(.inter(10, .bold)).foregroundStyle(.white))
+            .overlay(Text(Avatar.initials(myName)).font(.inter(11, .bold)).foregroundStyle(.white))
             .overlay(Circle().stroke(.white, lineWidth: 2))
             .shadow(color: Aurora.shadowInk.opacity(0.30), radius: 5, x: 0, y: 4)
             .padding(.bottom, 2)
@@ -1751,7 +1786,7 @@ private struct ComposerBar: View {
 
     private var inputPill: some View {
         HStack(alignment: .bottom, spacing: Nuru.S.sm) {
-            Icon(.plus, size: 19, color: Aurora.meta).padding(.bottom, 9)
+            Icon(.plus, size: 18, color: Aurora.meta).padding(.bottom, 9)
             TextField("Message", text: $draft, axis: .vertical)
                 .font(.inter(12))
                 .foregroundStyle(Aurora.navy)
@@ -1763,7 +1798,7 @@ private struct ComposerBar: View {
                 draft = text
             }
             .padding(.bottom, 5)
-            Icon(.smile, size: 19, color: Aurora.meta).padding(.bottom, 9)
+            Icon(.smile, size: 18, color: Aurora.meta).padding(.bottom, 9)
         }
         .padding(.horizontal, Nuru.S.md)
         .background(Nuru.paper, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
