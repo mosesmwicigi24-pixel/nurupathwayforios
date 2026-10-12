@@ -21,6 +21,12 @@ struct NotifPayload: Codable, Sendable {
     /// Departments (PARTNERS_PROGRAMME §4): serve_request_* / department_post /
     /// department_need_* carry `department_id` so a tap opens the page.
     let departmentId: String?
+    /// …and what their words are built from (DepartmentNotificationCopy):
+    /// serve_request_* / department_post carry the department's name, and a
+    /// department_post its first 90 characters. A leader's
+    /// serve_request_received names who asked in `name`.
+    var department: String? = nil
+    var preview: String? = nil
     /// Giving (Giving Cycle 3): `giving_gift_failed` carries the gift's
     /// `transaction_id` (a tap opens its result, with Try again), its amount,
     /// currency and fund, and the server's `reason` + `hint` for the banner.
@@ -70,6 +76,7 @@ struct NotifPayload: Codable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case title, body, feedback, levelNumber, name, moduleId, announcementId, inviteToken, groupId, departmentId
+        case department, preview
         case transactionId, amountMinor, currency, fund, reason, hint
         case scheduleId, frequency, fundName, retryAt
         case pledgeId, coveredThrough, untilOn, scheduleStopped, pledgeTitle, partial, daysAway, dueOn, message
@@ -92,6 +99,8 @@ struct NotifPayload: Codable, Sendable {
         inviteToken = try? c.decodeIfPresent(String.self, forKey: .inviteToken)
         groupId = try? c.decodeIfPresent(String.self, forKey: .groupId)
         departmentId = try? c.decodeIfPresent(String.self, forKey: .departmentId)
+        department = try? c.decodeIfPresent(String.self, forKey: .department)
+        preview = try? c.decodeIfPresent(String.self, forKey: .preview)
         transactionId = try? c.decodeIfPresent(String.self, forKey: .transactionId)
         amountMinor = try? c.decodeIfPresent(Int.self, forKey: .amountMinor)
         currency = try? c.decodeIfPresent(String.self, forKey: .currency)
