@@ -360,8 +360,8 @@ struct NotificationsView: View {
         "event_reminder_24h": "Event tomorrow", "event_reminder_1h": "Event starting soon",
         "reflection_approved": "Reflection approved", "reflection_returned": "Reflection returned",
         "reflection_deferred": "Reflection received",
-        "serve_request_approved": "You're on the team", "serve_request_declined": "About your request to serve",
-        "department_post": "News from your department",
+        // serve_request_* / department_post take the push's own words from
+        // DepartmentNotificationCopy (dispatch.ts PUSH_TEMPLATE_COPY).
         // department_need_* take the server's words from GivingNotificationCopy.
     ]
     private func titleFor(_ n: NotificationRow) -> String {
@@ -369,11 +369,15 @@ struct NotificationsView: View {
         // is the pledge's name, not the notice's title.
         if let t = GivingNotificationCopy.title(template: n.template, payload: n.payload) { return t }
         if let t = n.payload?.title, !t.isEmpty { return t }
+        // serve_request_* / department_post: the push's own words (dispatch.ts).
+        if let t = DepartmentNotificationCopy.title(template: n.template, payload: n.payload) { return t }
         if let t = titles[n.template] { return t }
         return n.template.replacingOccurrences(of: "_", with: " ").replacingOccurrences(of: "-", with: " ").capitalizingFirst()
     }
     private func bodyFor(_ n: NotificationRow) -> String? {
         if let b = n.payload?.body, !b.isEmpty { return b }
+        // Ahead of `feedback`, in dispatch.ts pushCopy()'s order.
+        if let b = DepartmentNotificationCopy.body(template: n.template, payload: n.payload) { return b }
         if let f = n.payload?.feedback, !f.isEmpty { return f }
         // A failed gift is not "your receipt is ready" (Giving Cycle 3).
         if let b = GivingNotificationCopy.body(template: n.template, payload: n.payload) { return b }
