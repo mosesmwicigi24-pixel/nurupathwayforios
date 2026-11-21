@@ -28,6 +28,10 @@ struct LetterView: View {
     @State private var heroIn = false
     @State private var sealIn = false
     @State private var paperIn = false
+    /// Read aloud (member suggestion, 2026-11-21; ReaderListen.classicLetter).
+    /// This v2 stationery keeps its own paper on navy — the night page is the
+    /// editorial letter's (LetterEditorialView).
+    @State private var listen = ListenReading.empty
 
     private var weekLabel: String {
         let f = DateFormatter()
@@ -65,10 +69,24 @@ struct LetterView: View {
                 }
             }
 
-            // Close
+            // Listen · Close
             VStack {
-                HStack {
+                HStack(spacing: 8) {
                     Spacer()
+                    ListenHost(listen) { c in
+                        if c.available {
+                            Button {
+                                Haptics.tap()
+                                ReadAloud.shared.toggle(c.reading)
+                            } label: {
+                                Icon(c.glyph, size: 14, color: .white)
+                                    .frame(width: 34, height: 34)
+                                    .background(Color.white.opacity(0.16), in: Circle())
+                            }
+                            .buttonStyle(.pressable)
+                            .accessibilityLabel(c.label)
+                        }
+                    }
                     Button {
                         Haptics.tap(); dismiss()
                     } label: {
@@ -82,7 +100,21 @@ struct LetterView: View {
             }
             .padding(.top, 14)
         }
+        // The player floats at the foot while the letter is read.
+        .overlay(alignment: .bottom) {
+            ListenHost(listen) { c in
+                ListenBar(controls: c, colors: ListenColors(
+                    bar: Color(hex: 0xFFFDF6), ink: Color(hex: 0x2A3441), inkDim: Color(hex: 0x6B7686),
+                    accent: Color(hex: 0xC9A227), onAccent: Color(hex: 0x0A1628), border: Color(hex: 0xF2E2BD)))
+            }
+            .padding(.horizontal, 22)
+        }
         .sheet(isPresented: $showArchive) { LetterArchiveView() }
+        .onAppear {
+            let next = ListenReading(pieces: ReaderListen.classicLetter(letter))
+            if next != listen { listen = next }
+        }
+        .onDisappear { ReadAloud.shared.leave(listen.key) }
         .onAppear {
             guard letter.isUnread else { return }
             Task { _ = try? await MemberAPI.markLetterRead(letter.letterId); onRead() }

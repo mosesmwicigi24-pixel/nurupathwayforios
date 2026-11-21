@@ -38,6 +38,10 @@
 - ✅ PlanDetailScreen → `PlanDetailView` (start + day list)
 - ✅ PlanDayScreen → `PlanDayView` (segments + complete day)
 - ✅ PrayerJournalScreen → `Features/Grow/PrayerJournalView.swift` (add/edit/answer/delete)
+- ✅ Read aloud + reading theme (Automatic / Day / Night) on a plan's part, the
+  Devotional, the Sunday Letter and a lesson → `Features/Listen/`,
+  `Theme/ReadingTheme.swift`, Settings → Display (Android parity, 2026-11-21;
+  docs/PARITY_AUDIT.md)
 - ✅ VerseLibraryScreen → `Features/Grow/VerseLibraryView.swift` (add/delete)
 - Hub: `Features/Grow/GrowView.swift`. NOTE: writes are online-first for now;
   retrofit onto `SyncEngine.writeThrough` in the offline-engine phase.

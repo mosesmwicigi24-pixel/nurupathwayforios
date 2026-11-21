@@ -1,3 +1,44 @@
+## 2026-11-21 — Read aloud ("Listen") + the reading theme on the four readers (branch feat/listen-and-night-reading, port of the Android feature)
+
+Member suggestion to the pastor: light/dark for "reading at night", and a
+voice so people can "listen to the teachings and articles". Same scope as
+Android (already built): a **Listen** control and a **Reading theme
+(Automatic / Day / Night)** on a plan's part (`PlanSegmentView`), today's
+Devotional, the Sunday Letter (editorial; the v2 stationery gets Listen
+only) and a Pathway lesson (`ModuleView`). App-wide dark mode stays out of
+scope — the app's `.preferredColorScheme(.light)` lock is untouched.
+
+- **Pure, tested** (`ListenAndNightReadingTests`): `Features/Listen/ListenScript.swift`
+  (pieces → paragraphs; markdown, tables, links, images stripped; Bible
+  references read as words over `ScriptureRefs`' book list, "10:30" left
+  alone; verse numbers dropped; ≤1200-char chunks at sentence ends; speeds
+  0.8/1/1.25/1.5, 1× = 0.92 of the engine's default),
+  `ReaderListen.swift` (each reader's pieces, in its page's order),
+  `Theme/ReadingTheme.swift` (keys `nuru.readingTheme` / `nuru.listen.speed`
+  as Android; the old `readerNight` switch migrates to Night once).
+- **Engine** `ReadAloud.swift`: AVSpeechSynthesizer, `.playback`/`.spokenAudio`
+  (keeps reading when locked), real pause/continue mid-word, skip/speed
+  re-queue from the paragraph, stops when the reader disappears (not on
+  background). Guards as the liturgy voice: hidden under VoiceOver (a reading
+  pauses if it turns on), hidden while the church is live, stopped if the
+  member broadcasts; Radio is paused for a reading and comes back when it
+  pauses or ends; a call pauses it.
+- **Automatic** reads the screen's trait collection (the system's style,
+  which the window's light override doesn't reach), refreshed on becoming
+  active and whenever a reader opens.
+- **Re-render on a flip**: plan readers through the existing
+  `\.readerPalette` environment (now `Equatable`); the lesson through a new
+  `\.lessonPalette` environment (`MLPalette`, read by every lesson view and
+  the markdown renderer — whose default stays the day page, so a notice's
+  markdown is unchanged); the devotional by passing `DevotionalPalette` into
+  each block; the letter by `LetterInk` in its one view (and the drop cap's
+  UIKit colours). No `.id(…)` rebuilds.
+- **Differences from Android, on purpose**: the bar's previous/next are
+  Lucide skip-back/skip-forward (a chevron-left is reserved for pagers by
+  `testEveryBackControlIsTheArrow`); the lesson reads its key verse after the
+  first section, where this phone shows it; the editorial letter's
+  listen/moon circles sit top-left so they never cover the masthead.
+
 ## 2026-07-31 — Host-stability audit + hardening: guest join must never take down the host's broadcast (iOS, branch fix/live-host-stability, this repo only)
 
 Triggered by a confirmed Android production bug: the moment a guest tapped

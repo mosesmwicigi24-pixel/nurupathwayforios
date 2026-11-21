@@ -38,7 +38,12 @@ struct PlanSegmentView: View {
     @EnvironmentObject private var tabs: TabRouter
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
-    @AppStorage("readerNight") private var readerNight = false
+    // The reading theme (ReadingTheme.swift; member suggestion, 2026-11-21):
+    // the member's choice, and the phone's own style for Automatic — either
+    // changing redraws the page (every block below reads `pal` from the
+    // environment, so the whole part turns with it).
+    @AppStorage(ReadingTheme.storageKey) private var readingTheme = ReadingTheme.auto.rawValue
+    @ObservedObject private var appearance = ReadingAppearance.shared
     /// Three text-size steps, cycled from the header, remembered per device.
     @AppStorage(ReaderTextScale.key) private var readerScale: Double = 1.0
     @State private var done = false
@@ -55,7 +60,14 @@ struct PlanSegmentView: View {
     @State private var readFraction: Double = 0
     @State private var readScrollable = false
 
+    // Read aloud (ReaderListen.planPart): the part's words, cut once — not on
+    // every scroll frame — and again when a bare reference's passage lands.
+    @State private var listen = ListenReading.empty
+    @State private var listenPassages: [String: String] = [:]
+
     private struct MediaItem: Identifiable { let id = UUID(); let url: URL }
+
+    private var readerNight: Bool { ReadingTheme.from(readingTheme).isNight(systemDark: appearance.systemDark) }
 
     private var pal: ReaderPalette { ReaderPalette(night: readerNight, textScale: CGFloat(readerScale)) }
     private var segment: PlanSegment { ref.segments[min(max(ref.index, 0), ref.segments.count - 1)] }
@@ -130,7 +142,16 @@ struct PlanSegmentView: View {
         .onAppear {
             tabs.chromeHidden = true
             if group.allSatisfy({ $0.completed || ref.doneIds.contains($0.segmentId) }) { done = true }
+            ReadingAppearance.shared.refresh()
+            rebuildListen()
         }
+        // A bare reference is read once its passage lands — the same cached
+        // fetch the quote card makes.
+        .task { await fetchListenPassages() }
+        // Leaving the part — or its words changing under it — stops the
+        // voice; going to the background does not.
+        .onDisappear { ReadAloud.shared.leave(listen.key) }
+        .onChange(of: listen.key) { old, _ in ReadAloud.shared.leave(old) }
     }
 
     // MARK: header — back · medallion + part name · DAY N kicker · night toggle
@@ -150,6 +171,24 @@ struct PlanSegmentView: View {
                     .font(.inter(11, .bold)).kerning(1.6).foregroundStyle(PL.gold)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 8)
+                // Read aloud: start, pause, resume (the bar above the button
+                // does the rest).
+                ListenHost(listen) { c in
+                    if c.available {
+                        Button {
+                            Haptics.tap()
+                            ReadAloud.shared.toggle(c.reading)
+                        } label: {
+                            Icon(c.glyph, size: 18, color: .white)
+                                .frame(width: 36, height: 36)
+                                .background(Color.white.opacity(0.10), in: Circle())
+                                .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
+                        }
+                        .buttonStyle(.pressable)
+                        .accessibilityLabel(c.label)
+                        .padding(.trailing, 8)
+                    }
+                }
                 // Text size: Small → Regular → Large → Small, one tap each.
                 Button {
                     Haptics.tap()
@@ -165,7 +204,8 @@ struct PlanSegmentView: View {
                 .padding(.trailing, 8)
                 Button {
                     Haptics.tap()
-                    withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
+                    let next = ReadingTheme.toggled(currentlyNight: readerNight)
+                    withAnimation(.easeInOut(duration: 0.25)) { readingTheme = next.rawValue }
                 } label: {
                     Icon(readerNight ? .sun : .moon, size: 18, color: .white)
                         .frame(width: 36, height: 36)
@@ -173,7 +213,7 @@ struct PlanSegmentView: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
-                .accessibilityLabel(readerNight ? "Day mode" : "Night mode")
+                .accessibilityLabel(ReadingTheme.toggleLabel(night: readerNight))
             }
             HStack(spacing: 12) {
                 Icon(partIcon, size: 18, color: PL.gold)
@@ -305,10 +345,36 @@ struct PlanSegmentView: View {
         }
     }
 
+    // MARK: read aloud — the part's words, and the passages they wait on
+
+    private func rebuildListen() {
+        let pieces = ReaderListen.planPart(part: ref.part, group: group, dayTitle: ref.dayTitle,
+                                           passages: listenPassages)
+        let next = ListenReading(pieces: pieces)
+        if next != listen { listen = next }
+    }
+
+    private func fetchListenPassages() async {
+        let refs = ReaderListen.passagesToFetch(part: ref.part, group: group)
+        guard !refs.isEmpty else { return }
+        var found = listenPassages
+        for r in refs {
+            if let p = try? await ScripturePassageStore.shared.passage(r) {
+                found[ScriptureRefs.normalize(r)] = p.text
+            }
+        }
+        if found != listenPassages {
+            listenPassages = found
+            rebuildListen()
+        }
+    }
+
     // MARK: finish — tick + notify the hub + return, on the server's word
 
     private var cta: some View {
         VStack(spacing: 8) {
+            // The Read aloud player, while this part is being read.
+            ListenHost(listen) { c in ListenBar(controls: c, colors: pal.listenColors) }
             // Above the button (both apps): clear of the home indicator, read
             // before the retry tap. On its own card: the reading scrolls under
             // this bar, and the words must stay legible over it.

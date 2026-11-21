@@ -294,6 +294,9 @@ enum MLMarkdown {
 /// blocks is tuned per neighbouring types so headings breathe and lists hug.
 struct MLMarkdownView: View {
     let blocks: [MLBlock]
+    /// The lesson's page (MLPalette, ModuleView) — day unless a lesson read
+    /// by night hands down its night page; a notice keeps the day page.
+    @Environment(\.lessonPalette) private var ml
 
     init(_ content: String, hardBreaks: Bool = false) { self.blocks = MLMarkdown.parse(content, hardBreaks: hardBreaks) }
     init(blocks: [MLBlock]) { self.blocks = blocks }
@@ -308,7 +311,7 @@ struct MLMarkdownView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         // A link in a lesson or a notice is a text action — gold, as the
         // reader's own links are (§8.1 rule 4); the root tint is navy (M5).
-        .tint(ML.goldDeep)
+        .tint(ml.goldDeep)
     }
 
     /// Space above a block, decided by what precedes it.
@@ -342,14 +345,15 @@ struct MLMarkdownView: View {
             // or one that isn't a Book chapter:verse — keeps its plain callout.
             if let attribution, MLMarkdown.isScriptureReference(attribution) {
                 VerseQuoteCard(verse: body, reference: attribution,
-                                background: ML.surface, ink: ML.navy, gold: ML.gold)
+                                background: ml.surface, ink: ml.navy, gold: ml.gold,
+                                referenceColor: ml.verseReference)
             } else {
                 MLQuoteCard(verse: body, attribution: attribution)
             }
         case let .table(header, rows):
             MLTableBlock(header: header, rows: rows)
         case .rule:
-            Rectangle().fill(ML.border).frame(height: 1)
+            Rectangle().fill(ml.border).frame(height: 1)
         }
     }
 }
@@ -358,11 +362,12 @@ struct MLMarkdownView: View {
 
 /// Body paragraph — the reader's established copy style, with inline emphasis.
 private struct MLParagraphText: View {
+    @Environment(\.lessonPalette) private var ml
     let text: String
     init(_ text: String) { self.text = text }
     var body: some View {
         Text(MLMarkdown.inline(text))
-            .font(.nBodyLg).foregroundStyle(ML.bodyInk)   // the one 16 pt reading body
+            .font(.nBodyLg).foregroundStyle(ml.bodyInk)   // the one 16 pt reading body
             .nuruLineSpacing(6)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -372,12 +377,13 @@ private struct MLParagraphText: View {
 /// `#`/`##`/`###`+ → descending Fraunces headings in navy. The `#` marks never
 /// render. h4–h6 collapse onto the smallest step.
 private struct MLHeadingBlock: View {
+    @Environment(\.lessonPalette) private var ml
     let level: Int
     let text: String
     var body: some View {
         Text(MLMarkdown.inline(text))
             .font(.fraunces(level == 1 ? 22 : level == 2 ? 18 : level == 3 ? 16 : 15, .semibold)).kerning(-0.4)
-            .foregroundStyle(ML.navy)
+            .foregroundStyle(ml.navy)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityAddTraits(.isHeader)
@@ -385,14 +391,15 @@ private struct MLHeadingBlock: View {
 }
 
 private struct MLBulletList: View {
+    @Environment(\.lessonPalette) private var ml
     let items: [String]
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Circle().fill(ML.navy).frame(width: 5, height: 5).offset(y: -2)
+                    Circle().fill(ml.navy).frame(width: 5, height: 5).offset(y: -2)
                     Text(MLMarkdown.inline(item))
-                        .font(.nBodyLg).foregroundStyle(ML.bodyInk)
+                        .font(.nBodyLg).foregroundStyle(ml.bodyInk)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -403,16 +410,17 @@ private struct MLBulletList: View {
 }
 
 private struct MLNumberedList: View {
+    @Environment(\.lessonPalette) private var ml
     let items: [(Int, String)]
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, pair in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(pair.0).")
-                        .font(.inter(14, .bold)).foregroundStyle(ML.gold)
+                        .font(.inter(14, .bold)).foregroundStyle(ml.gold)
                         .frame(minWidth: 20, alignment: .trailing)
                     Text(MLMarkdown.inline(pair.1))
-                        .font(.nBodyLg).foregroundStyle(ML.bodyInk)
+                        .font(.nBodyLg).foregroundStyle(ml.bodyInk)
                         .nuruLineSpacing(6)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -425,27 +433,28 @@ private struct MLNumberedList: View {
 /// Blockquote → gold-ruled scripture callout on a cream surface: the verse in
 /// italic Fraunces, the "— Romans 12:2" attribution in gold beneath it.
 private struct MLQuoteCard: View {
+    @Environment(\.lessonPalette) private var ml
     let verse: String
     let attribution: String?
     var body: some View {
         VStack(alignment: .leading, spacing: attribution == nil ? 0 : 8) {
             Text(MLMarkdown.inline(verse))
                 .font(.fraunces(16, .regular)).italic()
-                .foregroundStyle(ML.navy)
+                .foregroundStyle(ml.navy)
                 .nuruLineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if let attribution {
                 Text(attribution)
                     .font(.inter(12, .semibold)).kerning(0.3)
-                    .foregroundStyle(ML.gold)
+                    .foregroundStyle(ml.gold)
             }
         }
         .padding(.vertical, Nuru.S.base)
         .padding(.horizontal, Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ML.surface)
-        .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
+        .background(ml.surface)
+        .overlay(alignment: .leading) { Rectangle().fill(ml.gold).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
 }
@@ -454,6 +463,7 @@ private struct MLQuoteCard: View {
 /// separators, rounded container. Columns size to content; the whole grid
 /// scrolls horizontally when it would overflow the reader width.
 private struct MLTableBlock: View {
+    @Environment(\.lessonPalette) private var ml
     let header: [String]
     let rows: [[String]]
 
@@ -466,14 +476,14 @@ private struct MLTableBlock: View {
             VStack(alignment: .leading, spacing: 0) {
                 headerRow
                 ForEach(Array(rows.enumerated()), id: \.offset) { idx, row in
-                    Rectangle().fill(ML.border).frame(height: 1)
+                    Rectangle().fill(ml.border).frame(height: 1)
                     bodyRow(row, even: idx % 2 == 0)
                 }
             }
             .frame(minWidth: totalMinWidth, alignment: .leading)
-            .background(ML.surface)
+            .background(ml.surface)
             .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .stroke(ML.border, lineWidth: 1))
+                .stroke(ml.border, lineWidth: 1))
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .accessibilityElement(children: .contain)
@@ -485,29 +495,29 @@ private struct MLTableBlock: View {
     private var headerRow: some View {
         HStack(spacing: 0) {
             ForEach(Array(header.enumerated()), id: \.offset) { i, cell in
-                if i > 0 { Rectangle().fill(ML.border).frame(width: 1) }
+                if i > 0 { Rectangle().fill(ml.border).frame(width: 1) }
                 Text(MLMarkdown.inline(cell))
-                    .font(.inter(13, .bold)).foregroundStyle(ML.navy)
+                    .font(.inter(13, .bold)).foregroundStyle(ml.navy)
                     .frame(minWidth: minColumn, maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, cellH).padding(.vertical, cellV)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .background(ML.gold.opacity(0.14))
+        .background(ml.gold.opacity(0.14))
     }
 
     private func bodyRow(_ row: [String], even: Bool) -> some View {
         HStack(spacing: 0) {
             ForEach(Array(row.enumerated()), id: \.offset) { i, cell in
-                if i > 0 { Rectangle().fill(ML.border).frame(width: 1) }
+                if i > 0 { Rectangle().fill(ml.border).frame(width: 1) }
                 Text(MLMarkdown.inline(cell))
-                    .font(.inter(13)).foregroundStyle(ML.bodyInk)
+                    .font(.inter(13)).foregroundStyle(ml.bodyInk)
                     .lineSpacing(4)
                     .frame(minWidth: minColumn, maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, cellH).padding(.vertical, cellV)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .background(even ? Color.clear : ML.surface.opacity(0.5))
+        .background(even ? Color.clear : ml.surface.opacity(0.5))
     }
 }

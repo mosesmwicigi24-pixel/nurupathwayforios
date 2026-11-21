@@ -47,6 +47,9 @@ struct SettingsView: View {
     @AppStorage(Nuru.textScaleKey) private var textScale: Double = 1.0
     /// Global line spacing (persisted); `.nuruLineSpacing(_:)` reads Nuru.lineSpacing from here.
     @AppStorage(Nuru.lineSpacingKey) private var lineSpacing: Double = 1.0
+    /// How the readers are lit (ReadingTheme.swift; member suggestion,
+    /// 2026-11-21) — the same choice as the moon/sun button on each reader.
+    @AppStorage(ReadingTheme.storageKey) private var readingTheme = ReadingTheme.auto.rawValue
 
     @StateObject private var location = LocationManager()
     @State private var showMfaEnroll = false
@@ -365,7 +368,50 @@ struct SettingsView: View {
             .nuruBarText()
             .padding(.top, Nuru.S.xs)
             Text("Adjusts line spacing across the whole app.").font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F)).padding(.top, Nuru.S.xs)
+
+            readingThemeRow
         }
+    }
+
+    /// Automatic · Day · Night, in the text-size row's shape: the chosen one
+    /// navy, the others white with a hairline.
+    private var readingThemeRow: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(ReadingThemeWords.title).font(.inter(12, .semibold)).foregroundStyle(Nuru.navy).padding(.top, Nuru.S.base)
+            HStack(spacing: Nuru.S.sm) {
+                ForEach(ReadingTheme.allCases) { theme in
+                    readingThemeChip(theme)
+                }
+            }
+            // A bar too: its three choices stop at the largest everyday size.
+            .nuruBarText()
+            .padding(.top, Nuru.S.xs)
+            Text(ReadingThemeWords.caption).font(.nCardMeta).foregroundStyle(Color(hex: 0x74808F))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, Nuru.S.xs)
+        }
+    }
+
+    private func readingThemeChip(_ theme: ReadingTheme) -> some View {
+        let on = ReadingTheme.from(readingTheme) == theme
+        return Button {
+            if !on { Haptics.selection() }
+            withAnimation(.easeInOut(duration: 0.15)) { readingTheme = theme.rawValue }
+        } label: {
+            HStack(spacing: 6) {
+                Icon(theme.icon, size: 14, color: on ? Nuru.gold : Color(hex: 0x59667C))
+                Text(theme.label)
+                    .font(.inter(12, on ? .bold : .semibold))
+                    .foregroundStyle(on ? .white : Color(hex: 0x59667C))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity).frame(height: 48)
+            .background(on ? Nuru.navy : Nuru.white, in: Capsule())
+            .overlay(Capsule().stroke(on ? Color.clear : Nuru.border, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .accessibilityShowsLargeContentViewer()
+        .accessibilityAddTraits(on ? [.isSelected] : [])
     }
 
     // MARK: Language

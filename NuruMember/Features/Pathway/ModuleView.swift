@@ -371,6 +371,66 @@ enum ML {
     static let reflectMinChars = 20   // Figma REFLECT_MIN_MOD
 }
 
+/// The lesson's colours on the page it is read by (the reading theme,
+/// ReadingTheme.swift; member suggestion, 2026-11-21): ML's own on the day
+/// page — exactly as before — and the readers' dark sepia on the night page
+/// (ReaderPalette's night; Android's ML getters). ModuleView hands it down
+/// the environment, and every lesson view reads it from there, so a flip
+/// redraws each one (a view reading ML's static colours would not). Its
+/// default is the day page, so the lesson renderer elsewhere (a notice's
+/// markdown) stays exactly as it was. `navy` is TEXT navy — the light ink on
+/// the night page; a navy FILL with white on it, or words on gold, use
+/// `navyFill`, dark on both pages.
+struct MLPalette: Equatable {
+    var night: Bool = false
+
+    var navy: Color { night ? Color(hex: 0xEBE3D3) : ML.navy }
+    var navyFill: Color { ML.navy }
+    var cream: Color { night ? Color(hex: 0x171411) : ML.cream }
+    var surface: Color { night ? Color(hex: 0x251E13) : ML.surface }
+    /// The white cards, pills and buttons on the page.
+    var card: Color { night ? Color(hex: 0x221E19) : Color.white }
+    var gold: Color { night ? Color(hex: 0xD9B65A) : ML.gold }
+    var goldDeep: Color { night ? Color(hex: 0xE0C06A) : ML.goldDeep }
+    var border: Color { night ? Color.white.opacity(0.09) : ML.border }
+    var track: Color { night ? Color.white.opacity(0.14) : ML.track }
+    var overline: Color { night ? Color(hex: 0xD9B65A) : ML.overline }
+    var kicker: Color { night ? Color(hex: 0xD9B65A) : ML.kicker }
+    var secondary: Color { night ? Color(hex: 0x9A9280) : ML.secondary }
+    var lead: Color { night ? Color(hex: 0xD8CFBE) : ML.lead }
+    var bodyInk: Color { night ? Color(hex: 0xEBE3D3) : ML.bodyInk }
+    var headerTop: Color { night ? Color(hex: 0x221E19) : ML.headerTop }
+    var headerBottom: Color { night ? Color(hex: 0x171411) : ML.headerBottom }
+    var goldGradient: LinearGradient {
+        night ? LinearGradient(colors: [gold, goldDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
+              : ML.goldGradient
+    }
+    var danger: Color { night ? Color(hex: 0xF87171) : Nuru.danger }
+    var eyebrow: Color { night ? Color(hex: 0xD9B65A) : Nuru.eyebrow }
+    var faint: Color { night ? Color(hex: 0x6B6455) : Nuru.faint }
+    /// A verse card's reference line (VerseQuoteCard's own default by day).
+    var verseReference: Color { night ? Color(hex: 0x9A9280) : Nuru.ink400 }
+    /// The reflection's submit: navy with white words by day; gold with navy
+    /// words at night, where a navy fill would sink into the page.
+    var submitFill: Color { night ? Color(hex: 0xD9B65A) : ML.navy }
+    var submitInk: Color { night ? ML.navy : Color.white }
+    var submitIdleFill: Color { night ? Color.white.opacity(0.10) : Color(hex: 0x0A2540, alpha: 0.18) }
+    var submitIdleInk: Color { night ? Color(hex: 0xEBE3D3, alpha: 0.5) : Color(hex: 0x0A2540, alpha: 0.55) }
+
+    var listenColors: ListenColors {
+        ListenColors(bar: card, ink: navy, inkDim: secondary, accent: gold, onAccent: navyFill, border: border)
+    }
+}
+
+private struct MLPaletteKey: EnvironmentKey { static let defaultValue = MLPalette() }
+
+extension EnvironmentValues {
+    var lessonPalette: MLPalette {
+        get { self[MLPaletteKey.self] }
+        set { self[MLPaletteKey.self] = newValue }
+    }
+}
+
 // MARK: - Gate step model (the incremental "N of M steps done")
 
 /// One applicable content step. `fraction` (0…1) is the REAL progress toward it —
@@ -416,6 +476,18 @@ struct ModuleView: View {
     /// (§9.6 #4): pinned above the reader with the gate below, it left the
     /// reading a sliver between them.
     @Environment(\.dynamicTypeSize) private var typeSize
+    // The reading theme (ReadingTheme.swift; member suggestion, 2026-11-21):
+    // the member's choice, and the phone's own style for Automatic. Either
+    // changing redraws this view, and `ml` goes down the environment to every
+    // lesson view below — never `.id(...)`, which would wipe the reflection
+    // being typed.
+    @AppStorage(ReadingTheme.storageKey) private var readingTheme = ReadingTheme.auto.rawValue
+    @ObservedObject private var appearance = ReadingAppearance.shared
+    /// Read aloud (ReaderListen.module): the lesson's words, cut once it loads.
+    @State private var listen = ListenReading.empty
+
+    private var night: Bool { ReadingTheme.from(readingTheme).isNight(systemDark: appearance.systemDark) }
+    private var ml: MLPalette { MLPalette(night: night) }
 
     @State private var reflection: String = ""
     @State private var playingVideo = false      // real inline player started
@@ -553,8 +625,21 @@ struct ModuleView: View {
     }
 
     var body: some View {
+        screen
+            // Read aloud: the lesson's words once it loads; leaving the
+            // lesson — or its words changing — stops the voice; going to the
+            // background does not.
+            .onChange(of: vm.detail?.moduleId, initial: true) { _, _ in rebuildListen() }
+            .onChange(of: listen.key) { old, _ in ReadAloud.shared.leave(old) }
+            .onDisappear { ReadAloud.shared.leave(listen.key) }
+            .onAppear { ReadingAppearance.shared.refresh() }
+            // Last, so every overlay above reads it too.
+            .environment(\.lessonPalette, ml)
+    }
+
+    private var screen: some View {
         ZStack {
-            ML.cream.ignoresSafeArea()
+            ml.cream.ignoresSafeArea()
             if vm.loading && vm.detail == nil {
                 lessonSkeleton
             } else if let d = vm.detail {
@@ -562,14 +647,14 @@ struct ModuleView: View {
             } else {
                 VStack(spacing: Nuru.S.md) {
                     Text(vm.error ?? "Couldn't load this lesson.")
-                        .font(.inter(14)).foregroundStyle(ML.secondary).multilineTextAlignment(.center)
+                        .font(.inter(14)).foregroundStyle(ml.secondary).multilineTextAlignment(.center)
                     Button {
                         Haptics.tap()
                         Task { await vm.load() }
                     } label: {
-                        Text("Try again").font(.inter(13, .semibold)).foregroundStyle(ML.navy)
+                        Text("Try again").font(.inter(13, .semibold)).foregroundStyle(ml.navyFill)
                             .padding(.horizontal, 20).padding(.vertical, 10)
-                            .background(ML.gold, in: Capsule())
+                            .background(ml.gold, in: Capsule())
                     }
                     .buttonStyle(.pressable)
                     // The nav bar is hidden on this screen — without this the
@@ -577,7 +662,7 @@ struct ModuleView: View {
                     Button {
                         Haptics.tap(); dismiss()
                     } label: {
-                        Text("Go back").font(.inter(13, .semibold)).foregroundStyle(ML.secondary)
+                        Text("Go back").font(.inter(13, .semibold)).foregroundStyle(ml.secondary)
                             .padding(.horizontal, 20).padding(.vertical, 10)
                     }
                     .buttonStyle(.pressable)
@@ -749,16 +834,39 @@ struct ModuleView: View {
         }
     }
 
+    private func rebuildListen() {
+        let next = vm.detail.map { ListenReading(pieces: ReaderListen.module($0)) } ?? .empty
+        if next != listen { listen = next }
+    }
+
+    /// The Listen pill: one voice at a time — the lesson's own narration
+    /// pauses when the reading starts.
+    private func toggleListen(_ c: ListenControls) {
+        Haptics.tap()
+        if !c.active, vm.audioPlaying {
+            vm.toggleAudio()
+            syncEngagementSignals()
+        }
+        ReadAloud.shared.toggle(c.reading)
+    }
+
+    /// The moon/sun pill: the other page, chosen explicitly.
+    private func flipNight() {
+        Haptics.tap()
+        let next = ReadingTheme.toggled(currentlyNight: night)
+        withAnimation(.easeInOut(duration: 0.25)) { readingTheme = next.rawValue }
+    }
+
     // MARK: - First-load skeleton (parchment header + text-line placeholders)
 
     private var lessonSkeleton: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 12) {
-                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ML.track).frame(width: 140, height: 10)
-                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ML.track).frame(width: 230, height: 22)
+                RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ml.track).frame(width: 140, height: 10)
+                RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ml.track).frame(width: 230, height: 22)
                 HStack(spacing: 8) {
-                    Capsule().fill(ML.track).frame(width: 80, height: 22)
-                    Capsule().fill(ML.track).frame(width: 90, height: 22)
+                    Capsule().fill(ml.track).frame(width: 80, height: 22)
+                    Capsule().fill(ml.track).frame(width: 90, height: 22)
                 }
             }
             .padding(.horizontal, Nuru.S.screen)
@@ -766,14 +874,14 @@ struct ModuleView: View {
             .padding(.bottom, Nuru.S.screen)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                LinearGradient(colors: [ML.headerTop, ML.headerBottom],
+                LinearGradient(colors: [ml.headerTop, ml.headerBottom],
                                startPoint: .topLeading, endPoint: .bottomTrailing)
                     .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 24, bottomTrailingRadius: 24, style: .continuous))
                     .ignoresSafeArea(edges: .top)
             )
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(0..<6, id: \.self) { i in
-                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(ML.track)
+                    RoundedRectangle(cornerRadius: 4, style: .continuous).fill(ml.track)
                         .frame(maxWidth: .infinity).frame(height: 12)
                         .padding(.trailing, i % 3 == 2 ? 80 : 0)
                 }
@@ -820,6 +928,10 @@ struct ModuleView: View {
                              onBack: { dismiss() },
                              onToggleImmersion: { toggleImmersion() },
                              onExplain: { Haptics.tap(); showExplainMenu = true },
+                             listen: listen,
+                             night: night,
+                             onListen: { toggleListen($0) },
+                             onToggleNight: { flipNight() },
                              finished: d.isFinished ? MLFinishedSummary(
                                  score: d.bestScore,
                                  when: d.finishedLine,
@@ -836,6 +948,10 @@ struct ModuleView: View {
                 reader(d, pages: pages, bodyBlocks: bodyBlocks,
                        sectionTitle: pageTitle, video: video, pageIndex: pageIndex,
                        scrollingHeader: scrollsWithText ? header : nil)
+                // The Read aloud player, over the pager and the gate (and in
+                // full-screen reading too, where it is the way to stop).
+                ListenHost(listen) { c in ListenBar(controls: c, colors: ml.listenColors) }
+                    .padding(.horizontal, Nuru.S.screen)
                 if pages.count > 1 && !chromeHidden {
                     MLPagerBar(pageCount: pages.count, current: pageIndex) {
                         goToPage($0, pageCount: pages.count)
@@ -997,6 +1113,7 @@ struct ModuleView: View {
                             progress: vm.audioProgress,
                             minutes: mlMinutes(d.audioDurationSec)) {
                     Haptics.tap()
+                    if !vm.audioPlaying { ReadAloud.shared.pause() }
                     vm.toggleAudio()
                     syncEngagementSignals()
                 }
@@ -1005,7 +1122,7 @@ struct ModuleView: View {
             }
             if let leadParagraph {
                 Text(MLMarkdown.inline(leadParagraph))
-                    .font(.inter(16, .medium)).foregroundStyle(ML.lead)
+                    .font(.inter(16, .medium)).foregroundStyle(ml.lead)
                     .lineSpacing(7)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -1037,13 +1154,13 @@ struct ModuleView: View {
                                 showRevisitDialog = true
                             } label: {
                                 HStack(spacing: 6) {
-                                    Icon(.bookOpen, size: 14, color: ML.secondary)
+                                    Icon(.bookOpen, size: 14, color: ml.secondary)
                                     Text("Revisit this module")
-                                        .font(.inter(13, .semibold)).foregroundStyle(ML.secondary)
+                                        .font(.inter(13, .semibold)).foregroundStyle(ml.secondary)
                                 }
                                 .padding(.horizontal, 18).padding(.vertical, 10)
-                                .background(Color.white, in: Capsule())
-                                .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+                                .background(ml.card, in: Capsule())
+                                .overlay(Capsule().stroke(ml.border, lineWidth: 1))
                             }
                             .buttonStyle(.pressable)
                         }
@@ -1127,6 +1244,8 @@ struct ModuleView: View {
                 Haptics.selection()
                 goToPage(0, pageCount: pageCount)
                 withAnimation { proxy.scrollTo("audio", anchor: .top) }
+                // One voice at a time: the narration pauses a reading aloud.
+                if !vm.audioPlaying { ReadAloud.shared.pause() }
                 vm.toggleAudio()
                 syncEngagementSignals()
             })
@@ -1321,16 +1440,17 @@ private struct MLScrollMetricsKey: PreferenceKey {
 // MARK: - Resume note + whisper page indicator (immersive-mode companions)
 
 private struct MLResumeNote: View {
+    @Environment(\.lessonPalette) private var ml
     let text: String
     var body: some View {
         HStack(spacing: 6) {
-            Icon(.sparkles, size: 14, color: ML.gold)
-            Text(text).font(.inter(12, .medium)).foregroundStyle(ML.navy)
+            Icon(.sparkles, size: 14, color: ml.gold)
+            Text(text).font(.inter(12, .medium)).foregroundStyle(ml.navy)
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 8)
-        .background(ML.surface, in: Capsule())
-        .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+        .background(ml.surface, in: Capsule())
+        .overlay(Capsule().stroke(ml.border, lineWidth: 1))
         .shadow(color: Color(hex: 0x0A1628).opacity(0.10), radius: 8, y: 4)
         .transition(.opacity)
         .allowsHitTesting(false)
@@ -1338,16 +1458,17 @@ private struct MLResumeNote: View {
 }
 
 private struct MLPageWhisper: View {
+    @Environment(\.lessonPalette) private var ml
     let page: Int
     let count: Int
     var body: some View {
         Text("\(page) / \(count)")
             .font(.inter(11, .medium)).kerning(0.5)
-            .foregroundStyle(ML.secondary)
+            .foregroundStyle(ml.secondary)
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(ML.surface.opacity(0.92), in: Capsule())
-            .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+            .background(ml.surface.opacity(0.92), in: Capsule())
+            .overlay(Capsule().stroke(ml.border, lineWidth: 1))
             .allowsHitTesting(false)
             .accessibilityLabel("Section \(page) of \(count)")
     }
@@ -1356,6 +1477,7 @@ private struct MLPageWhisper: View {
 // MARK: - Pager bar (chevrons + number pills, current = gold gradient)
 
 private struct MLPagerBar: View {
+    @Environment(\.lessonPalette) private var ml
     let pageCount: Int
     let current: Int
     let onSelect: (Int) -> Void
@@ -1371,7 +1493,7 @@ private struct MLPagerBar: View {
                 } else {
                     // Too many pills to fit — a compact label keeps orientation.
                     Text("Section \(current + 1) of \(pageCount)")
-                        .font(.inter(12, .semibold)).foregroundStyle(ML.navy)
+                        .font(.inter(12, .semibold)).foregroundStyle(ml.navy)
                 }
             }
             .frame(maxWidth: .infinity)
@@ -1385,11 +1507,11 @@ private struct MLPagerBar: View {
         Button { onSelect(i) } label: {
             Text("\(i + 1)")
                 .font(.inter(12, .bold))
-                .foregroundStyle(i == current ? ML.navy : ML.secondary)
+                .foregroundStyle(i == current ? ml.navyFill : ml.secondary)
                 .frame(width: 30, height: 30)
-                .background(i == current ? AnyShapeStyle(ML.goldGradient) : AnyShapeStyle(Color.white),
+                .background(i == current ? AnyShapeStyle(ml.goldGradient) : AnyShapeStyle(ml.card),
                             in: Circle())
-                .overlay(Circle().stroke(i == current ? Color.clear : ML.border, lineWidth: 1))
+                .overlay(Circle().stroke(i == current ? Color.clear : ml.border, lineWidth: 1))
         }
         .buttonStyle(.pressable)
         .accessibilityLabel("Section \(i + 1) of \(pageCount)")
@@ -1398,10 +1520,10 @@ private struct MLPagerBar: View {
 
     private func arrow(_ icon: Lucide, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Icon(icon, size: 14, color: enabled ? ML.navy : ML.secondary.opacity(0.4))
+            Icon(icon, size: 14, color: enabled ? ml.navy : ml.secondary.opacity(0.4))
                 .frame(width: 34, height: 34)
-                .background(Color.white, in: Circle())
-                .overlay(Circle().stroke(ML.border, lineWidth: 1))
+                .background(ml.card, in: Circle())
+                .overlay(Circle().stroke(ml.border, lineWidth: 1))
                 .contentShape(Circle())
         }
         .buttonStyle(.pressable)
@@ -1447,6 +1569,7 @@ private struct MLHeaderActions {
 }
 
 private struct MLHeader: View {
+    @Environment(\.lessonPalette) private var ml
     let levelNumber: Int
     let moduleNumber: Int
     let title: String
@@ -1461,6 +1584,11 @@ private struct MLHeader: View {
     let onBack: () -> Void
     let onToggleImmersion: () -> Void
     let onExplain: () -> Void
+    /// Read aloud and the night page (member suggestion, 2026-11-21).
+    let listen: ListenReading
+    let night: Bool
+    let onListen: (ListenControls) -> Void
+    let onToggleNight: () -> Void
     var finished: MLFinishedSummary? = nil
 
     var body: some View {
@@ -1483,14 +1611,14 @@ private struct MLHeader: View {
                 }
                 Text("LEVEL \(levelNumber) · MODULE \(moduleNumber)")
                     .font(.inter(11, .bold)).kerning(2)
-                    .foregroundStyle(ML.overline)
+                    .foregroundStyle(ml.overline)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
             // Title — centred serif.
             Text(title)
                 .font(.fraunces(26, .medium)).kerning(-0.7)
-                .foregroundStyle(ML.navy)
+                .foregroundStyle(ml.navy)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 // "Relationships" whole at the largest size (§9.6 #4).
@@ -1500,6 +1628,10 @@ private struct MLHeader: View {
             // Meta row — read · sections · watch · listen, evenly spaced.
             metaRow
                 .padding(.top, 12)
+            // Listen (read aloud) and the night page — the two ways to take
+            // the lesson in other than reading it on a bright page.
+            readingRow
+                .padding(.top, 8)
             // Section index — one tappable chip per section (only when >1).
             if sectionCount > 1 {
                 MLSectionIndex(titles: sectionTitles, current: currentSection, onSelect: onSelectSection)
@@ -1536,6 +1668,19 @@ private struct MLHeader: View {
         .frame(maxWidth: .infinity)
     }
 
+    private var readingRow: some View {
+        HStack(spacing: 8) {
+            ListenHost(listen) { c in
+                if c.available {
+                    MLActionPill(icon: c.glyph, label: c.pillWord, a11y: c.label) { onListen(c) }
+                }
+            }
+            MLActionPill(icon: night ? .sun : .moon, label: night ? "Day" : "Night",
+                         a11y: ReadingTheme.toggleLabel(night: night), action: onToggleNight)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     /// A segmented Read | Reflect control, and — for whatever media exists — a
     /// matching Watch and/or Listen button beside it. All share equal width.
     private var actionRow: some View {
@@ -1543,12 +1688,12 @@ private struct MLHeader: View {
             HStack(spacing: 0) {
                 MLSegment(label: "Read", icon: .bookOpen, done: actions.readDone,
                           action: actions.onRead)
-                Rectangle().fill(ML.border).frame(width: 1, height: 22)
+                Rectangle().fill(ml.border).frame(width: 1, height: 22)
                 MLSegment(label: "Reflect", icon: .quote, done: actions.reflectDone,
                           action: actions.onReflect)
             }
-            .background(Color.white, in: Capsule())
-            .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+            .background(ml.card, in: Capsule())
+            .overlay(Capsule().stroke(ml.border, lineWidth: 1))
             .frame(maxWidth: .infinity)
             if actions.hasVideo {
                 MLMediaButton(icon: actions.watchDone ? .check : .play, label: "Watch",
@@ -1569,14 +1714,14 @@ private struct MLHeader: View {
             // walk's E15) sharing one line with the status and Retake.
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 8) {
-                    Icon(.check, size: 14, color: ML.navy)
-                    Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ML.navy)
+                    Icon(.check, size: 14, color: ml.navy)
+                    Text("COMPLETED").font(.inter(11, .bold)).kerning(1.4).foregroundStyle(ml.navy)
                     if let s = f.score {
-                        Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ML.gold)
+                        Text("· \(s)%").font(.inter(11, .bold)).foregroundStyle(ml.gold)
                     }
                 }
                 if let w = f.when {
-                    Text(w).font(.inter(11)).foregroundStyle(ML.secondary)
+                    Text(w).font(.inter(11)).foregroundStyle(ml.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -1585,21 +1730,21 @@ private struct MLHeader: View {
                 Button { f.onRetake() } label: {
                     Text("Retake").font(.inter(11, .bold)).foregroundStyle(.white)
                         .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(ML.navy, in: Capsule())
+                        .background(ml.navyFill, in: Capsule())
                 }
                 .buttonStyle(.pressable)
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(ML.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ML.gold.opacity(0.35), lineWidth: 1))
+        .background(ml.gold.opacity(0.14), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ml.gold.opacity(0.35), lineWidth: 1))
     }
 
     private var headerBackground: some View {
         ZStack(alignment: .topTrailing) {
-            LinearGradient(colors: [ML.headerTop, ML.headerBottom],
+            LinearGradient(colors: [ml.headerTop, ml.headerBottom],
                            startPoint: .topLeading, endPoint: .bottomTrailing)
-            Circle().fill(ML.gold.opacity(0.13))
+            Circle().fill(ml.gold.opacity(0.13))
                 .frame(width: 224, height: 224)
                 .blur(radius: 44)
                 .offset(x: 64, y: -80)
@@ -1613,6 +1758,7 @@ private struct MLHeader: View {
 /// One segment of the Read | Reflect control. The active/done state fills gold
 /// with a check; otherwise a quiet white pill segment.
 private struct MLSegment: View {
+    @Environment(\.lessonPalette) private var ml
     let label: String
     let icon: Lucide
     let done: Bool
@@ -1620,14 +1766,14 @@ private struct MLSegment: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                if done { Icon(.check, size: 14, color: ML.navy) }
-                else { Icon(icon, size: 14, color: ML.secondary) }
+                if done { Icon(.check, size: 14, color: ml.navyFill) }
+                else { Icon(icon, size: 14, color: ml.secondary) }
                 Text(label).font(.inter(12, .bold))
             }
-            .foregroundStyle(done ? ML.navy : ML.secondary)
+            .foregroundStyle(done ? ml.navyFill : ml.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(done ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.clear),
+            .background(done ? AnyShapeStyle(ml.gold.opacity(0.9)) : AnyShapeStyle(Color.clear),
                         in: Capsule())
             .contentShape(Capsule())
         }
@@ -1640,6 +1786,7 @@ private struct MLSegment: View {
 /// each only shown when the module carries that medium. `active` fills gold (the
 /// video has been opened / the audio is playing).
 private struct MLMediaButton: View {
+    @Environment(\.lessonPalette) private var ml
     let icon: Lucide
     let label: String
     let active: Bool
@@ -1647,15 +1794,15 @@ private struct MLMediaButton: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 5) {
-                Icon(icon, size: 14, color: active ? ML.navy : ML.secondary)
+                Icon(icon, size: 14, color: active ? ml.navyFill : ml.secondary)
                 Text(label).font(.inter(12, .bold))
             }
-            .foregroundStyle(active ? ML.navy : ML.secondary)
+            .foregroundStyle(active ? ml.navyFill : ml.secondary)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 9)
-            .background(active ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+            .background(active ? AnyShapeStyle(ml.gold.opacity(0.9)) : AnyShapeStyle(ml.card),
                         in: Capsule())
-            .overlay(Capsule().stroke(active ? Color.clear : ML.border, lineWidth: 1))
+            .overlay(Capsule().stroke(active ? Color.clear : ml.border, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.pressable)
@@ -1672,6 +1819,7 @@ private struct MLMediaButton: View {
 /// current chip in view as the reader turns pages. Chip text is truncated to one
 /// line so a long heading never blows out the row.
 private struct MLSectionIndex: View {
+    @Environment(\.lessonPalette) private var ml
     let titles: [String]
     let current: Int
     let onSelect: (Int) -> Void
@@ -1704,17 +1852,17 @@ private struct MLSectionIndex: View {
             HStack(spacing: 5) {
                 Text("\(idx + 1)")
                     .font(.inter(11, .bold))
-                    .foregroundStyle(isCurrent ? ML.navy.opacity(0.7) : ML.secondary.opacity(0.7))
+                    .foregroundStyle(isCurrent ? ml.navyFill.opacity(0.7) : ml.secondary.opacity(0.7))
                 Text(title)
                     .font(.inter(12, .semibold))
                     .lineLimit(1)
-                    .foregroundStyle(isCurrent ? ML.navy : ML.secondary)
+                    .foregroundStyle(isCurrent ? ml.navyFill : ml.secondary)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 7)
-            .background(isCurrent ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+            .background(isCurrent ? AnyShapeStyle(ml.gold.opacity(0.9)) : AnyShapeStyle(ml.card),
                         in: Capsule())
-            .overlay(Capsule().stroke(isCurrent ? Color.clear : ML.border, lineWidth: 1))
+            .overlay(Capsule().stroke(isCurrent ? Color.clear : ml.border, lineWidth: 1))
             .contentShape(Capsule())
         }
         .buttonStyle(.pressable)
@@ -1734,13 +1882,14 @@ private struct MLSquareButton: View {
 }
 
 private struct MLSquareLabel: View {
+    @Environment(\.lessonPalette) private var ml
     let icon: Lucide
     var body: some View {
-        Icon(icon, size: 18, color: ML.navy)
+        Icon(icon, size: 18, color: ml.navy)
             .frame(width: 40, height: 40)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(ml.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(ML.border, lineWidth: 1))
+                .stroke(ml.border, lineWidth: 1))
     }
 }
 
@@ -1772,6 +1921,7 @@ private struct MLSlowDownNudge: View {
 /// that lives in the immersive top-right corner; otherwise it matches the
 /// header's square chrome buttons.
 private struct MLImmerseButton: View {
+    @Environment(\.lessonPalette) private var ml
     let expanded: Bool
     var floating = false
     let action: () -> Void
@@ -1782,17 +1932,17 @@ private struct MLImmerseButton: View {
                   ? "arrow.down.right.and.arrow.up.left"
                   : "arrow.up.left.and.arrow.down.right")
                 .font(.symbol(15, weight: .semibold))
-                .foregroundStyle(floating ? .white : ML.navy)
+                .foregroundStyle(floating ? .white : ml.navy)
                 .frame(width: 40, height: 40)
                 .background {
                     if floating {
-                        Circle().fill(ML.navy.opacity(0.82))
+                        Circle().fill(ml.navyFill.opacity(0.82))
                             .overlay(Circle().stroke(Color.white.opacity(0.18), lineWidth: 1))
                             .shadow(color: .black.opacity(0.28), radius: 8, y: 4)
                     } else {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Color.white)
+                        RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ml.card)
                             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                                .stroke(ML.border, lineWidth: 1))
+                                .stroke(ml.border, lineWidth: 1))
                     }
                 }
                 .contentShape(Rectangle())
@@ -1802,25 +1952,51 @@ private struct MLImmerseButton: View {
     }
 }
 
+/// A tappable pill under the meta row (Listen · Night), the meta pills' shape.
+private struct MLActionPill: View {
+    @Environment(\.lessonPalette) private var ml
+    let icon: Lucide
+    let label: String
+    let a11y: String
+    let action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Icon(icon, size: 14, color: ml.navy)
+                Text(label).font(.inter(11, .semibold)).foregroundStyle(ml.navy)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(ml.card, in: Capsule())
+            .overlay(Capsule().stroke(ml.border, lineWidth: 1))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.pressable)
+        .accessibilityLabel(a11y)
+    }
+}
+
 private struct MLMetaPill: View {
+    @Environment(\.lessonPalette) private var ml
     let icon: Lucide
     let label: String
     var body: some View {
         HStack(spacing: 4) {
-            Icon(icon, size: 14, color: ML.secondary)
+            Icon(icon, size: 14, color: ml.secondary)
             Text(label).font(.inter(11))
         }
-        .foregroundStyle(ML.secondary)
+        .foregroundStyle(ml.secondary)
         .padding(.horizontal, 10)
         .padding(.vertical, 4)
-        .background(Color.white, in: Capsule())
-        .overlay(Capsule().stroke(ML.border, lineWidth: 1))
+        .background(ml.card, in: Capsule())
+        .overlay(Capsule().stroke(ml.border, lineWidth: 1))
     }
 }
 
 // MARK: - Video card (16:9, real inline player — never a fake transport)
 
 private struct MLVideoCard: View {
+    @Environment(\.lessonPalette) private var ml
     let video: WelcomeVideo
     @Binding var playing: Bool
 
@@ -1837,15 +2013,15 @@ private struct MLVideoCard: View {
         }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(playing ? ML.gold : ML.border, lineWidth: 1))
+            .stroke(playing ? ml.gold : ml.border, lineWidth: 1))
     }
 
     private var poster: some View {
         ZStack {
-            LinearGradient(colors: [Color(hex: 0x123B62), ML.navy],
+            LinearGradient(colors: [Color(hex: 0x123B62), ml.navyFill],
                            startPoint: .top, endPoint: .bottom)
-            Circle().fill(ML.gold.opacity(0.92)).frame(width: 56, height: 56)
-            Icon(.play, size: 22, color: ML.navy).offset(x: 2)
+            Circle().fill(ml.gold.opacity(0.92)).frame(width: 56, height: 56)
+            Icon(.play, size: 22, color: ml.navyFill).offset(x: 2)
         }
         .aspectRatio(16.0 / 9.0, contentMode: .fit)
         .overlay(alignment: .topLeading) {
@@ -1865,6 +2041,7 @@ private struct MLVideoCard: View {
 /// and a thin gold progress line bound to actual playback. No scrubber, no fake
 /// timecodes — it plays and it counts seconds; that's the whole job here.
 private struct MLAudioCard: View {
+    @Environment(\.lessonPalette) private var ml
     let playing: Bool
     let progress: Double        // 0…1 of the track
     let minutes: Int?           // real duration in minutes, or nil
@@ -1878,22 +2055,22 @@ private struct MLAudioCard: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text("LISTEN")
                             .font(.inter(11, .bold)).kerning(1.8)
-                            .foregroundStyle(ML.kicker)
+                            .foregroundStyle(ml.kicker)
                         Text(minutes.map { "Narration · \($0)m" } ?? "Narration")
-                            .font(.inter(13, .semibold)).foregroundStyle(ML.navy)
+                            .font(.inter(13, .semibold)).foregroundStyle(ml.navy)
                     }
                     Spacer(minLength: 0)
-                    Icon(.audioLines, size: 18, color: ML.gold.opacity(0.9))
+                    Icon(.audioLines, size: 18, color: ml.gold.opacity(0.9))
                 }
                 progressLine
             }
             .padding(Nuru.S.base)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ML.surface)
-            .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
+            .background(ml.surface)
+            .overlay(alignment: .leading) { Rectangle().fill(ml.gold).frame(width: 3) }
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(playing ? ML.gold : ML.border, lineWidth: 1))
+                .stroke(playing ? ml.gold : ml.border, lineWidth: 1))
             .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.pressableSubtle)
@@ -1903,21 +2080,21 @@ private struct MLAudioCard: View {
 
     private var transport: some View {
         ZStack {
-            Circle().fill(ML.goldGradient).frame(width: 44, height: 44)
+            Circle().fill(ml.goldGradient).frame(width: 44, height: 44)
             // No Lucide "pause" glyph — SF Symbols, as MLImmerseButton already does.
             Image(systemName: playing ? "pause.fill" : "play.fill")
                 .font(.symbol(16, weight: .bold))
-                .foregroundStyle(ML.navy)
+                .foregroundStyle(ml.navyFill)
                 .offset(x: playing ? 0 : 1)
         }
-        .shadow(color: ML.gold.opacity(0.4), radius: 6, y: 3)
+        .shadow(color: ml.gold.opacity(0.4), radius: 6, y: 3)
     }
 
     private var progressLine: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
-                Capsule().fill(ML.track)
-                Capsule().fill(ML.goldGradient)
+                Capsule().fill(ml.track)
+                Capsule().fill(ml.goldGradient)
                     .frame(width: max(0, geo.size.width * min(1, max(0, progress))))
             }
         }
@@ -1928,6 +2105,7 @@ private struct MLAudioCard: View {
 // MARK: - Scripture pull-quote (surface tile with a gold left edge)
 
 private struct MLScriptureCard: View {
+    @Environment(\.lessonPalette) private var ml
     let line: String
     @StateObject private var loader = ScripturePassageLoader()
     @State private var reading: ScriptureSheetItem?
@@ -1940,15 +2118,15 @@ private struct MLScriptureCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
-                Icon(.quote, size: 14, color: ML.gold)
+                Icon(.quote, size: 14, color: ml.gold)
                 Text("KEY VERSE")
                     .font(.inter(11, .bold)).kerning(1.8)
-                    .foregroundStyle(ML.kicker)
+                    .foregroundStyle(ml.kicker)
             }
             if let words = KeyVerseWords.text(line: line, isReference: isReference, fetched: loader.passage?.text) {
                 Text("\u{201C}\(words)\u{201D}")
                     .font(.fraunces(16, .regular)).italic()
-                    .foregroundStyle(ML.navy)
+                    .foregroundStyle(ml.navy)
                     .lineSpacing(5)
                     .lineLimit(KeyVerseWords.lineLimit)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1959,8 +2137,8 @@ private struct MLScriptureCard: View {
                 Button { Haptics.tap(); reading = ScriptureSheetItem(reference: line) } label: {
                     HStack(spacing: 4) {
                         Text(KeyVerseWords.caption(reference: line, version: loader.passage?.version))
-                            .font(.inter(12, .semibold)).foregroundStyle(ML.kicker)
-                        Icon(.chevronRight, size: 14, color: ML.kicker)
+                            .font(.inter(12, .semibold)).foregroundStyle(ml.kicker)
+                        Icon(.chevronRight, size: 14, color: ml.kicker)
                     }
                 }
                 .buttonStyle(.plain)
@@ -1969,8 +2147,8 @@ private struct MLScriptureCard: View {
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ML.surface)
-        .overlay(alignment: .leading) { Rectangle().fill(ML.gold).frame(width: 3) }
+        .background(ml.surface)
+        .overlay(alignment: .leading) { Rectangle().fill(ml.gold).frame(width: 3) }
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .task { if isReference { await loader.load(line) } }
         .sheet(item: $reading) { item in
@@ -2007,6 +2185,7 @@ enum KeyVerseWords {
 /// heading. When there are multiple pages the kicker carries the "n of m";
 /// a single page shows just "SECTION".
 private struct MLSectionHeader: View {
+    @Environment(\.lessonPalette) private var ml
     let title: String
     let index0: Int
     let count: Int
@@ -2022,10 +2201,10 @@ private struct MLSectionHeader: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(kicker)
                 .font(.inter(11, .bold)).kerning(1.8)
-                .foregroundStyle(ML.kicker)
+                .foregroundStyle(ml.kicker)
             Text(title)
                 .font(.fraunces(22, .semibold)).kerning(-0.5)
-                .foregroundStyle(ML.navy)
+                .foregroundStyle(ml.navy)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -2101,17 +2280,18 @@ enum LessonOnward: Equatable {
 /// The way on, at the foot of a finished lesson: what comes next, and its
 /// one gold action.
 private struct MLOnwardCard: View {
+    @Environment(\.lessonPalette) private var ml
     let onward: LessonOnward
     let action: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(onward.kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(Nuru.eyebrow)
+            Text(onward.kicker).font(.nCardKicker).kerning(1.4).foregroundStyle(ml.eyebrow)
                 .fixedSize(horizontal: false, vertical: true)
-            Text(onward.title).font(.nRowTitle).foregroundStyle(ML.navy)
+            Text(onward.title).font(.nRowTitle).foregroundStyle(ml.navy)
                 .fixedSize(horizontal: false, vertical: true)
             if let line = onward.line {
-                Text(line).font(.nCardBody).foregroundStyle(ML.secondary)
+                Text(line).font(.nCardBody).foregroundStyle(ml.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let label = onward.actionLabel {
@@ -2120,17 +2300,18 @@ private struct MLOnwardCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ML.border, lineWidth: 1))
+        .background(ml.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ml.border, lineWidth: 1))
     }
 }
 
 private struct MLReflectionFolded: View {
+    @Environment(\.lessonPalette) private var ml
     let text: String
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Text("YOUR REFLECTION").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ML.kicker)
+                Text("YOUR REFLECTION").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ml.kicker)
                 Spacer()
                 HStack(spacing: 3) {
                     Icon(.check, size: 14, color: Color(hex: 0x15803D))
@@ -2138,19 +2319,20 @@ private struct MLReflectionFolded: View {
                 }
             }
             Text(text.isEmpty ? "\u{2014}" : text)
-                .font(.fraunces(15)).foregroundStyle(ML.bodyInk)
+                .font(.fraunces(15)).foregroundStyle(ml.bodyInk)
                 .lineSpacing(5)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(ml.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(ML.gold.opacity(0.4), lineWidth: 1))
+            .stroke(ml.gold.opacity(0.4), lineWidth: 1))
     }
 }
 
 private struct MLReflectionCard: View {
+    @Environment(\.lessonPalette) private var ml
     @Binding var text: String
     let busy: Bool
     let done: Bool          // the reflection has been saved server-side
@@ -2166,41 +2348,41 @@ private struct MLReflectionCard: View {
             HStack(spacing: 6) {
                 Text("REFLECTION · STEP")
                     .font(.inter(11, .bold)).kerning(1.8)
-                    .foregroundStyle(ML.kicker)
+                    .foregroundStyle(ml.kicker)
                 Spacer(minLength: 0)
                 if done {
                     HStack(spacing: 4) {
-                        Icon(.check, size: 14, color: ML.navy)
-                        Text("Saved").font(.inter(11, .bold)).foregroundStyle(ML.navy)
+                        Icon(.check, size: 14, color: ml.navyFill)
+                        Text("Saved").font(.inter(11, .bold)).foregroundStyle(ml.navyFill)
                     }
                     .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(ML.gold.opacity(0.9), in: Capsule())
+                    .background(ml.gold.opacity(0.9), in: Capsule())
                     .transition(.opacity)
                 }
             }
             Text("What is one thing from this module the Spirit is asking you to practice this week?")
-                .font(.fraunces(15, .regular)).foregroundStyle(ML.navy)
+                .font(.fraunces(15, .regular)).foregroundStyle(ml.navy)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, 6)
             editor.padding(.top, 12)
             Text(counterLine)
-                .font(.inter(11)).foregroundStyle(done ? ML.overline : ML.secondary)
+                .font(.inter(11)).foregroundStyle(done ? ml.overline : ml.secondary)
                 .contentTransition(.numericText())
                 .animation(.default, value: trimmed.count)
                 .padding(.top, 6)
             if let error {
                 Text(error)
-                    .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                    .font(.inter(11, .medium)).foregroundStyle(ml.danger)
                     .padding(.top, 6)
             }
             submitButton.padding(.top, 12)
         }
         .padding(Nuru.S.base)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(ml.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(done ? ML.gold.opacity(0.5) : ML.border, lineWidth: 1))
+            .stroke(done ? ml.gold.opacity(0.5) : ml.border, lineWidth: 1))
         .animation(.easeInOut(duration: 0.2), value: done)
     }
 
@@ -2215,29 +2397,29 @@ private struct MLReflectionCard: View {
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
                 Text("A few honest words…")
-                    .font(.inter(13)).foregroundStyle(Nuru.faint)
+                    .font(.inter(13)).foregroundStyle(ml.faint)
                     .padding(.horizontal, 14).padding(.vertical, 12)
             }
             TextEditor(text: $text)
-                .font(.inter(13)).foregroundStyle(ML.navy)
+                .font(.inter(13)).foregroundStyle(ml.navy)
                 .scrollContentBackground(.hidden)
                 .frame(minHeight: 110)
                 .padding(.horizontal, 10).padding(.vertical, 6)
         }
-        .background(ML.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(ml.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-            .stroke(ML.border, lineWidth: 1))
+            .stroke(ml.border, lineWidth: 1))
     }
 
     private var submitButton: some View {
         Button(action: onSubmit) {
             ZStack {
-                if busy { ProgressView().tint(.white) }
+                if busy { ProgressView().tint(ml.submitInk) }
                 else { Text(done ? "Update reflection" : "Submit reflection").font(.inter(13, .semibold)) }
             }
-            .foregroundStyle(canSubmit ? Color.white : Color(hex: 0x0A2540, alpha: 0.55))
+            .foregroundStyle(canSubmit ? ml.submitInk : ml.submitIdleInk)
             .frame(maxWidth: .infinity, minHeight: 48)
-            .background(canSubmit ? AnyShapeStyle(ML.navy) : AnyShapeStyle(Color(hex: 0x0A2540, alpha: 0.18)),
+            .background(canSubmit ? AnyShapeStyle(ml.submitFill) : AnyShapeStyle(ml.submitIdleFill),
                         in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.pressable)
@@ -2249,6 +2431,7 @@ private struct MLReflectionCard: View {
 // MARK: - Bottom gate (progress strip + locked / quiz / mark-complete CTA)
 
 private struct MLBottomGate: View {
+    @Environment(\.lessonPalette) private var ml
     let steps: [GateStep]       // the applicable steps, in order, each with a live fraction
     let complete: Bool          // every applicable step done
     let lockReason: String      // why it's still locked (names the first unmet step)
@@ -2273,7 +2456,7 @@ private struct MLBottomGate: View {
                 // reflection card visible above the gate.
                 HStack(spacing: 10) {
                     Text("All steps done 🎉")
-                        .font(.inter(11, .bold)).foregroundStyle(ML.overline)
+                        .font(.inter(11, .bold)).foregroundStyle(ml.overline)
                     Spacer(minLength: 0)
                 }
             } else {
@@ -2281,7 +2464,7 @@ private struct MLBottomGate: View {
                 HStack(spacing: 10) {
                     Text("\(doneCount) of \(steps.count) steps done")
                         .font(.inter(11, .bold))
-                        .foregroundStyle(ML.navy)
+                        .foregroundStyle(ml.navy)
                         .contentTransition(.numericText())
                         .animation(.easeInOut(duration: 0.25), value: doneCount)
                     Spacer(minLength: 0)
@@ -2293,7 +2476,7 @@ private struct MLBottomGate: View {
             }
             if let error {
                 Text(error)
-                    .font(.inter(11, .medium)).foregroundStyle(Nuru.danger)
+                    .font(.inter(11, .medium)).foregroundStyle(ml.danger)
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             cta
@@ -2302,8 +2485,8 @@ private struct MLBottomGate: View {
         .padding(.top, complete ? Nuru.S.sm : Nuru.S.md)
         .padding(.bottom, bottomInset)
         .background(
-            ML.cream
-                .overlay(alignment: .top) { Rectangle().fill(ML.border).frame(height: 1) }
+            ml.cream
+                .overlay(alignment: .top) { Rectangle().fill(ml.border).frame(height: 1) }
                 .ignoresSafeArea(edges: .bottom)
         )
         .animation(.easeInOut(duration: 0.25), value: complete)
@@ -2321,19 +2504,19 @@ private struct MLBottomGate: View {
     private var cta: some View {
         if !complete {
             HStack(spacing: 8) {
-                Icon(.lock, size: 14, color: ML.secondary)
+                Icon(.lock, size: 14, color: ml.secondary)
                 Text(lockReason)
                     .font(.inter(14, .bold))
                     // Wraps whole: "Add a reflectio…" at the largest size (§9.6 #4).
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .foregroundStyle(ML.secondary)
+            .foregroundStyle(ml.secondary)
             .padding(.horizontal, 12).padding(.vertical, 8)
             .frame(maxWidth: .infinity, minHeight: 52)
-            .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .background(ml.card, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(ML.border, lineWidth: 1))
+                .stroke(ml.border, lineWidth: 1))
         } else if requiresQuiz {
             // Flush the latest read/watch/listen seconds before navigating, so
             // the server's content gate never wrongly blocks a real finisher.
@@ -2342,31 +2525,31 @@ private struct MLBottomGate: View {
                 onStartQuiz()
             } label: {
                 ZStack {
-                    if startingQuiz { ProgressView().tint(ML.navy) }
+                    if startingQuiz { ProgressView().tint(ml.navyFill) }
                     else {
                         HStack(spacing: 8) {
                             Text("Start the quiz").font(.inter(14, .bold))
-                            Icon(.arrowRight, size: 14, color: ML.navy)
+                            Icon(.arrowRight, size: 14, color: ml.navyFill)
                         }
                     }
                 }
-                .foregroundStyle(ML.navy)
+                .foregroundStyle(ml.navyFill)
                 .frame(maxWidth: .infinity, minHeight: 52)
-                .background(ML.goldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .shadow(color: ML.gold.opacity(0.45), radius: 12, y: 8)
+                .background(ml.goldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: ml.gold.opacity(0.45), radius: 12, y: 8)
             }
             .buttonStyle(.pressable)
             .disabled(startingQuiz)
         } else {
             Button(action: onComplete) {
                 ZStack {
-                    if busy { ProgressView().tint(ML.navy) }
+                    if busy { ProgressView().tint(ml.navyFill) }
                     else { Text("Mark complete").font(.inter(14, .bold)) }
                 }
-                .foregroundStyle(ML.navy)
+                .foregroundStyle(ml.navyFill)
                 .frame(maxWidth: .infinity, minHeight: 52)
-                .background(ML.goldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                .shadow(color: ML.gold.opacity(0.45), radius: 12, y: 8)
+                .background(ml.goldGradient, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .shadow(color: ml.gold.opacity(0.45), radius: 12, y: 8)
             }
             .buttonStyle(.pressable)
             .disabled(busy)
@@ -2380,6 +2563,7 @@ private struct MLBottomGate: View {
 /// (0 < fraction < 1) → a subtle gold partial ring around the icon. Not started →
 /// a quiet white chip. The ring reads the step's REAL fraction so it grows live.
 private struct MLStepChip: View {
+    @Environment(\.lessonPalette) private var ml
     let step: GateStep
 
     private var inProgress: Bool { step.clamped > 0.001 && !step.done }
@@ -2388,29 +2572,29 @@ private struct MLStepChip: View {
         HStack(spacing: 5) {
             ZStack {
                 if step.done {
-                    Icon(.check, size: 14, color: ML.navy)
+                    Icon(.check, size: 14, color: ml.navyFill)
                 } else {
                     // A partial ring that fills to the live fraction while in progress.
-                    Circle().stroke(ML.track, lineWidth: 1.5).frame(width: 14, height: 14)
+                    Circle().stroke(ml.track, lineWidth: 1.5).frame(width: 14, height: 14)
                     if inProgress {
                         Circle().trim(from: 0, to: step.clamped)
-                            .stroke(ML.gold, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                            .stroke(ml.gold, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                             .rotationEffect(.degrees(-90))
                             .frame(width: 14, height: 14)
                             .animation(.easeOut(duration: 0.35), value: step.clamped)
                     }
-                    Icon(step.kind.icon, size: 14, color: inProgress ? ML.overline : ML.secondary)
+                    Icon(step.kind.icon, size: 14, color: inProgress ? ml.overline : ml.secondary)
                 }
             }
             .frame(width: 16, height: 16)
             Text(step.kind.label)
                 .font(.inter(11, .bold))
-                .foregroundStyle(step.done ? ML.navy : (inProgress ? ML.navy : ML.secondary))
+                .foregroundStyle(step.done ? ml.navyFill : (inProgress ? ml.navy : ml.secondary))
         }
         .padding(.horizontal, 10).padding(.vertical, 6)
-        .background(step.done ? AnyShapeStyle(ML.gold.opacity(0.9)) : AnyShapeStyle(Color.white),
+        .background(step.done ? AnyShapeStyle(ml.gold.opacity(0.9)) : AnyShapeStyle(ml.card),
                     in: Capsule())
-        .overlay(Capsule().stroke(step.done ? Color.clear : (inProgress ? ML.gold.opacity(0.5) : ML.border), lineWidth: 1))
+        .overlay(Capsule().stroke(step.done ? Color.clear : (inProgress ? ml.gold.opacity(0.5) : ml.border), lineWidth: 1))
         .animation(.easeInOut(duration: 0.2), value: step.done)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(step.kind.label) step")
@@ -2422,7 +2606,7 @@ private struct MLStepChip: View {
 
 /// The reader's pages: the server's author-inserted splits when present,
 /// otherwise the whole lesson as one page.
-private func mlPages(_ d: ModuleDetail) -> [String] {
+func mlPages(_ d: ModuleDetail) -> [String] {
     let pages = (d.contentPages ?? [])
         .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
         .filter { !$0.isEmpty }
