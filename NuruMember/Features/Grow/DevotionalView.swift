@@ -137,14 +137,17 @@ struct DevotionalView: View {
     /// The day page's white Card, exactly as before; on the night page the
     /// same shape in the night card colour.
     @ViewBuilder private func pageCard<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        // Built once here: Card keeps its content closure (escaping), and a
+        // non-escaping parameter can't be captured by it — the view value can.
+        let inner = content()
         if night {
-            content()
+            inner
                 .padding(Nuru.S.base)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(pal.white, in: RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: Nuru.R.card, style: .continuous).stroke(pal.border, lineWidth: 1))
         } else {
-            Card { content() }
+            Card { inner }
         }
     }
 
