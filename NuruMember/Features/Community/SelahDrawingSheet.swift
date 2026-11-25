@@ -20,10 +20,12 @@ struct PKCanvasRepresentable: UIViewRepresentable {
         canvasView.backgroundColor = .white
         canvasView.tool = PKInkingTool(.pen, color: .black, width: 4)
         canvasView.delegate = context.coordinator
-        if let window = UIApplication.shared.connectedScenes
-            .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first {
-            PKToolPicker.shared(for: window)?.setVisible(true, forFirstResponder: canvasView)
-            PKToolPicker.shared(for: window)?.addObserver(canvasView)
+        if UIApplication.shared.connectedScenes
+            .compactMap({ ($0 as? UIWindowScene)?.keyWindow }).first != nil {
+            let picker = PKToolPicker()
+            context.coordinator.toolPicker = picker
+            picker.setVisible(true, forFirstResponder: canvasView)
+            picker.addObserver(canvasView)
             canvasView.becomeFirstResponder()
         }
         return canvasView
@@ -33,6 +35,7 @@ struct PKCanvasRepresentable: UIViewRepresentable {
 
     final class Coordinator: NSObject, PKCanvasViewDelegate {
         let parent: PKCanvasRepresentable
+        var toolPicker: PKToolPicker?
         init(_ parent: PKCanvasRepresentable) { self.parent = parent }
         func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) { parent.onChange() }
     }

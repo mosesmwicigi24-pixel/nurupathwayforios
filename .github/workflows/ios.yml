@@ -29,7 +29,7 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Show toolchain
         run: |
@@ -39,7 +39,7 @@ jobs:
       # Firebase, WebRTC and HaishinKit are heavy checkouts. Package.resolved is
       # committed, so the cache key pins exactly the revisions being built.
       - name: Cache SwiftPM checkouts
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
           key: spm-${{ runner.os }}-${{ hashFiles('NuruMember.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
