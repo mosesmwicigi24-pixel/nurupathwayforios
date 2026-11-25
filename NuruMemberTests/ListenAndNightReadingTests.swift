@@ -10,6 +10,60 @@ import SwiftUI
 @testable import NuruMember
 
 final class ListenAndNightReadingTests: XCTestCase {
+    func testPlanNarrationRejectsUntrustedPathsAndVersions() {
+        let id = "4c5fbfa1-d7e7-4d8f-8a89-a2970a95c904"
+        let valid = PlanNarration(planId: id, day: 1, part: "word", version: String(repeating: "a", count: 64))
+        XCTAssertEqual(valid.audioPath(index: 2), "growth/plans/\(id)/days/1/narration/word/\(String(repeating: "a", count: 64))/2/audio")
+        XCTAssertNil(valid.audioPath(index: 100))
+        XCTAssertNil(PlanNarration(planId: "../other", day: 1, part: "word").path)
+        XCTAssertNil(PlanNarration(planId: id, day: 1, part: "word", version: "../bad").audioPath(index: 0))
+    }
+
+    func testPlanPlaybackNamesTheDeviceFallback() {
+        let reading = ListenReading(words: ["A reading"], isPlan: true)
+        let controls = ListenControls.resolve(reading, loadedKey: reading.key, status: .playing,
+                                              index: 0, offered: true, speed: 1, deviceFallback: true)
+        XCTAssertEqual(controls.stateLine, "Device voice")
+    }
+
+    @MainActor
+    func testPlanAudioPlaysEachParagraphOnSimulator() async throws {
+        let player = ReadAloud.shared
+        guard player.offered else { throw XCTSkip("Spoken feedback or live audio is active") }
+        var requests: [String] = []
+        player.testAudioLoader = { path in requests.append(path); return Self.silentMp3() }
+        defer { player.stop(); player.testAudioLoader = nil }
+        let source = PlanNarration(planId: "4c5fbfa1-d7e7-4d8f-8a89-a2970a95c904", day: 1,
+                                   part: "word", version: String(repeating: "a", count: 64))
+        player.play(ListenReading(words: ["One", "Two"], narration: source, isPlan: true))
+        for _ in 0..<100 {
+            if requests.count == 2 && player.status == .idle { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(player.status, .idle)
+    }
+
+    @MainActor
+    func testInvalidPlanAudioFallsBackToDeviceVoice() async throws {
+        let player = ReadAloud.shared
+        guard player.offered else { throw XCTSkip("Spoken feedback or live audio is active") }
+        player.testAudioLoader = { _ in Data([1, 2, 3, 4]) }
+        defer { player.stop(); player.testAudioLoader = nil }
+        let source = PlanNarration(planId: "4c5fbfa1-d7e7-4d8f-8a89-a2970a95c904", day: 1,
+                                   part: "word", version: String(repeating: "a", count: 64))
+        player.play(ListenReading(words: [String(repeating: "A longer reading. ", count: 30)], narration: source, isPlan: true))
+        for _ in 0..<50 {
+            if player.deviceFallback { break }
+            try await Task.sleep(for: .milliseconds(100))
+        }
+        XCTAssertTrue(player.deviceFallback)
+    }
+
+    // Generated silence, encoded as MP3 to exercise the production codec.
+    private static func silentMp3() -> Data {
+        Data(base64Encoded: "SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYzLjEuMTAyAAAAAAAAAAAAAAD/8zTEAAAAA0gAAAAATEFNRTQuMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTEOwAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTEdgAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTEsQAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=")!
+    }
     func testReadingVoicePrefersPremiumThenFallsBackToEnglish() {
         let voices = [
             ListenVoiceCandidate(identifier: "gb-enhanced", language: "en-GB", quality: 1),

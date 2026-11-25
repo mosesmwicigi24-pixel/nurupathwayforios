@@ -380,10 +380,10 @@ actor APIClient {
     /// GET a file the server hands out by path (the letter's PDF), with the
     /// session's bearer token: its bytes. A 401 refreshes once, as `send`;
     /// a failure says what happened in the same terms.
-    func download(serverPath path: String, isRetry: Bool = false) async throws -> Data {
+    func download(serverPath path: String, method: String = "GET", isRetry: Bool = false) async throws -> Data {
         guard let url = Self.serverURL(path, base: baseURL) else { throw APIError.transport("Couldn't form the request URL.") }
         var req = URLRequest(url: url)
-        req.httpMethod = "GET"
+        req.httpMethod = method
         req.timeoutInterval = 30
         if let token = accessToken { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         let data: Data, response: URLResponse
@@ -398,7 +398,7 @@ actor APIClient {
         }
         guard let http = response as? HTTPURLResponse else { throw APIError.transport("No HTTP response.") }
         if http.statusCode == 401, !isRetry, refreshToken != nil {
-            if await refreshSession() { return try await download(serverPath: path, isRetry: true) }
+            if await refreshSession() { return try await download(serverPath: path, method: method, isRetry: true) }
             onSessionExpired?()
             throw APIError.unauthorized
         }

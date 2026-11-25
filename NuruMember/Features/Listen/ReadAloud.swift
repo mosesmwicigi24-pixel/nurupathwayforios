@@ -1,7 +1,7 @@
-// Read aloud — the on-device engine (member suggestion, 2026-11-21).
-// AVSpeechSynthesizer, never a cloud voice, for the liturgy voice's reasons
-// (LiturgyVoice.swift's header): no cost per play, no key, works offline,
-// nothing a member reads leaves the phone. Android's twin: ReadAloud.kt.
+// Read aloud. Plan readings can use server-authorized narration, with the
+// device voice as an offline/service fallback; other readers remain on-device.
+// Only plan and scripture text goes to the provider, never a member's reflection.
+// Android's twin: ReadAloud.kt.
 //
 // The liturgy voice reads one short card. A plan reading, a devotional, a
 // letter or a lesson is long, so this engine adds what listening to something
@@ -41,9 +41,18 @@ final class ReadAloud: NSObject, ObservableObject {
     @Published private(set) var voiceOverOn: Bool
     /// The church is live (or this member is broadcasting): Listen waits.
     @Published private(set) var liveNow = false
+    @Published private(set) var deviceFallback = false
 
     private var paragraphs: [String] = []
     private var synthesizer: AVSpeechSynthesizer?
+    private var narration: PlanNarration?
+    private var audioPlayer: AVAudioPlayer?
+    private var audioTask: Task<Void, Never>?
+    private var audioGeneration = UUID()
+    #if DEBUG
+    // Injected only by simulator tests; production always uses the API client.
+    var testAudioLoader: ((String) async throws -> Data)?
+    #endif
     /// The queued utterances (held, so their identities stay unique) and the
     /// paragraph each one reads.
     private var queued: [AVSpeechUtterance] = []
@@ -71,7 +80,7 @@ final class ReadAloud: NSObject, ObservableObject {
     /// The controls for one reading on screen.
     func controls(for reading: ListenReading) -> ListenControls {
         ListenControls.resolve(reading, loadedKey: key, status: status, index: index,
-                               offered: offered, speed: speed)
+                               offered: offered, speed: speed, deviceFallback: deviceFallback)
     }
 
     // MARK: - Transport (every call is a member's tap)
@@ -94,6 +103,8 @@ final class ReadAloud: NSObject, ObservableObject {
         guard activateSession() else { return }
         paragraphs = reading.words
         key = reading.key
+        narration = reading.narration
+        deviceFallback = reading.isPlan && reading.narration == nil
         speakFrom(min(max(start, 0), reading.words.count - 1))
     }
 
@@ -103,7 +114,10 @@ final class ReadAloud: NSObject, ObservableObject {
         guard status == .paused, key != nil, !paragraphs.isEmpty else { return }
         guard !UIAccessibility.isVoiceOverRunning else { return }
         guard activateSession() else { return }
-        if resumeFresh || synthesizer?.isPaused != true {
+        if narration != nil, !resumeFresh, let player = audioPlayer, !player.isPlaying {
+            pauseRadio()
+            if player.play() { status = .playing } else { speakFrom(index) }
+        } else if resumeFresh || synthesizer?.isPaused != true {
             speakFrom(index)
         } else {
             pauseRadio()
@@ -154,14 +168,55 @@ final class ReadAloud: NSObject, ObservableObject {
 
     private func pause(handBackRadio: Bool) {
         guard status == .playing else { return }
-        synthesizer?.pauseSpeaking(at: .word)
+        if narration != nil {
+            audioTask?.cancel()
+            audioTask = nil
+            audioGeneration = UUID()
+            if let player = audioPlayer { player.pause() } else { resumeFresh = true }
+        } else {
+            synthesizer?.pauseSpeaking(at: .word)
+        }
         status = .paused
         if handBackRadio { resumeRadio() }
     }
 
     private func speakFrom(_ start: Int) {
         discardSynthesizer()
+        discardAudio()
         guard start >= 0, start < paragraphs.count else { halt(handBackRadio: true); return }
+        if let path = narration?.audioPath(index: start) {
+            index = start
+            resumeFresh = false
+            status = .playing
+            pauseRadio()
+            let generation = audioGeneration
+            audioTask = Task { [weak self] in
+                do {
+                    let bytes: Data
+                    #if DEBUG
+                    if let loader = self?.testAudioLoader { bytes = try await loader(path) }
+                    else { bytes = try await APIClient.shared.download(serverPath: path, method: "POST") }
+                    #else
+                    bytes = try await APIClient.shared.download(serverPath: path, method: "POST")
+                    #endif
+                    guard let self, !Task.isCancelled, self.audioGeneration == generation, self.status == .playing else { return }
+                    guard !bytes.isEmpty, bytes.count <= 10 * 1024 * 1024 else { throw NSError(domain: "PlanNarration", code: 2) }
+                    let player = try AVAudioPlayer(data: bytes)
+                    player.delegate = self
+                    player.enableRate = true
+                    player.rate = Float(self.speed)
+                    self.audioPlayer = player
+                    guard player.play() else { throw NSError(domain: "PlanNarration", code: 1) }
+                } catch {
+                    guard let self, !Task.isCancelled, self.audioGeneration == generation, self.status == .playing else { return }
+                    // Keep reading available when the service or network is down.
+                    self.narration = nil
+                    self.deviceFallback = true
+                    self.speakFrom(start)
+                }
+            }
+            return
+        }
         let synth = AVSpeechSynthesizer()
         synth.delegate = self
         synthesizer = synth
@@ -200,9 +255,21 @@ final class ReadAloud: NSObject, ObservableObject {
         paragraphOf = [:]
     }
 
+    private func discardAudio() {
+        audioGeneration = UUID()
+        audioTask?.cancel()
+        audioTask = nil
+        audioPlayer?.delegate = nil
+        audioPlayer?.stop()
+        audioPlayer = nil
+    }
+
     /// The one place a reading ends, for any reason.
     private func halt(handBackRadio: Bool) {
         discardSynthesizer()
+        discardAudio()
+        narration = nil
+        deviceFallback = false
         paragraphs = []
         key = nil
         index = 0
@@ -330,6 +397,34 @@ final class ReadAloud: NSObject, ObservableObject {
             guard interrupted else { return }
             interrupted = false
             if mayResume { resume() }
+        }
+    }
+}
+
+extension ReadAloud: AVAudioPlayerDelegate {
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        let identity = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            guard let self, let current = self.audioPlayer, ObjectIdentifier(current) == identity, self.status == .playing else { return }
+            if !flag {
+                self.narration = nil
+                self.deviceFallback = true
+                self.speakFrom(self.index)
+            } else if self.index < self.paragraphs.count - 1 {
+                self.speakFrom(self.index + 1)
+            } else {
+                self.stop()
+            }
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        let identity = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            guard let self, let current = self.audioPlayer, ObjectIdentifier(current) == identity, self.status == .playing else { return }
+            self.narration = nil
+            self.deviceFallback = true
+            self.speakFrom(self.index)
         }
     }
 }

@@ -320,13 +320,35 @@ enum ListenStatus: Equatable {
 }
 
 /// What a reader needs to draw its Listen controls for one reading.
+struct PlanNarration: Equatable {
+    let planId: String
+    let day: Int
+    let part: String
+    var version: String? = nil
+
+    var path: String? {
+        guard UUID(uuidString: planId) != nil, (1...366).contains(day), ["word", "respond"].contains(part) else { return nil }
+        return "growth/plans/\(planId)/days/\(day)/narration/\(part)"
+    }
+
+    func audioPath(index: Int) -> String? {
+        guard let path, let version, version.range(of: "^[a-f0-9]{64}$", options: .regularExpression) != nil,
+              (0..<100).contains(index) else { return nil }
+        return "\(path)/\(version)/\(index)/audio"
+    }
+}
+
 struct ListenReading: Equatable {
     let words: [String]
     let key: String
+    let narration: PlanNarration?
+    let isPlan: Bool
 
-    init(words: [String]) {
+    init(words: [String], narration: PlanNarration? = nil, isPlan: Bool = false) {
         self.words = words
-        self.key = ListenScript.key(words)
+        self.key = ListenScript.key(words) + (isPlan ? ":plan" : "") + (narration?.path.map { ":" + $0 + ":" + (narration?.version ?? "") } ?? "")
+        self.narration = narration
+        self.isPlan = isPlan
     }
 
     init(pieces: [ListenPiece]) {
@@ -348,18 +370,19 @@ struct ListenControls: Equatable {
     let playing: Bool
     let index: Int
     let speed: Double
+    let deviceFallback: Bool
 
     var total: Int { reading.words.count }
 
     static func resolve(_ reading: ListenReading, loadedKey: String?, status: ListenStatus,
-                        index: Int, offered: Bool, speed: Double) -> ListenControls {
+                        index: Int, offered: Bool, speed: Double, deviceFallback: Bool = false) -> ListenControls {
         let active = !reading.words.isEmpty && loadedKey == reading.key && status != .idle
         return ListenControls(reading: reading,
                               available: !reading.words.isEmpty && (offered || active),
                               active: active,
                               playing: active && status == .playing,
                               index: active ? min(max(index, 0), max(reading.words.count - 1, 0)) : 0,
-                              speed: speed)
+                              speed: speed, deviceFallback: active && deviceFallback)
     }
 
     /// The header button's glyph: headphones to start, pause while reading,
@@ -383,7 +406,7 @@ struct ListenControls: Equatable {
         return "Listen"
     }
 
-    var stateLine: String { playing ? "Reading aloud" : "Paused" }
+    var stateLine: String { deviceFallback ? "Device voice" : (playing ? "Reading aloud" : "Paused") }
     var placeLine: String { "\(index + 1) of \(total)" }
     var progress: Double { total > 0 ? Double(index + 1) / Double(total) : 0 }
 }
