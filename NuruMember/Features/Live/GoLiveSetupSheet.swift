@@ -346,7 +346,7 @@ struct GoLiveSetupSheet: View {
         } catch {
             Haptics.error()
             let api = error as? APIError
-            if case .http(_, let code, let message, _)? = api {
+            if case .http(_, let code, _, _)? = api {
                 switch code ?? "" {
                 case "CONFLICT":
                     conflictMessage = "Someone is already live there. Try a different scope, or wait until they finish."

@@ -135,7 +135,7 @@ final class LevelExamViewModel: ObservableObject {
     }
 
     func submit() async {
-        guard let exam else { return }
+        guard exam != nil else { return }
         submitting = true; error = nil   // clear a stale submit error before retrying
         defer { submitting = false }
         let answers: [QuizAnswer] = questions.map { q in

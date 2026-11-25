@@ -169,7 +169,7 @@ final class LiveViewerPlayerController: ObservableObject {
     private func startHeartbeat() {
         guard let heartbeatStreamId else { return }   // recordings never heartbeat
         heartbeatTask?.cancel()
-        heartbeatTask = Task { [weak self] in
+        heartbeatTask = Task {
             await MemberAPI.sendHeartbeat(streamId: heartbeatStreamId)
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 30_000_000_000)

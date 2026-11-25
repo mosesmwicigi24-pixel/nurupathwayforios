@@ -88,7 +88,7 @@ final class QuizViewModel: ObservableObject {
     }
 
     func submit() async {
-        guard let quiz else { return }
+        guard quiz != nil else { return }
         submitting = true; error = nil   // clear a stale submit error before retrying
         defer { submitting = false }
         let answers: [QuizAnswer] = questions.map { q in

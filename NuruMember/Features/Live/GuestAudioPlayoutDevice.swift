@@ -229,7 +229,7 @@ extension GuestAudioPlayoutDevice: RTCAudioDevice {
 
     func terminateDevice() -> Bool {
         Self.logger.notice("terminateDevice")
-        stopPlayout()
+        _ = stopPlayout()
         teardownAudioUnit()
         stopObservingInterruptions()
         delegate = nil
