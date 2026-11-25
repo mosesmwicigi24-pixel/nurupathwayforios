@@ -128,6 +128,13 @@ enum Lucide: String {
     case cross = "\u{E1E5}"
     /// Lucide `compass` — browse (was SF "safari").
     case compass = "\u{E09B}"
+    // Read aloud (member suggestion, 2026-11-21): codepoints read from the
+    // bundled Resources/Fonts/lucide.ttf cmap with fontTools.
+    /// Lucide `headphones` — a reader's Listen button, before it starts.
+    case headphones = "\u{E0F1}"
+    /// Lucide `skip-back` / `skip-forward` — a paragraph back or on.
+    case skipBack = "\u{E15F}"
+    case skipForward = "\u{E160}"
 }
 
 /// Renders one Lucide glyph. `size` is the icon's point size (≈ its RN `size` prop).

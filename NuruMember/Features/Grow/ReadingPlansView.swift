@@ -53,7 +53,10 @@ enum PlanReminders {
 
 /// Colors for the day reader in either light (cream/navy) or a warm night/sepia
 /// mode (deep warm paper, cream ink, dimmed gold) for comfortable low-light reading.
-struct ReaderPalette {
+/// The night page is the reading theme's (ReadingTheme.swift; member
+/// suggestion, 2026-11-21) — the same sepia every reader turns to, as Android's.
+/// Equatable, so a reader under it redraws exactly when the page turns.
+struct ReaderPalette: Equatable {
     var night: Bool = false
     /// The reader's own text-size step (ReaderTextScale), on top of the
     /// app-wide Nuru.textScale the font helpers already apply.
@@ -63,9 +66,9 @@ struct ReaderPalette {
     var bg: Color { night ? Color(hex: 0x171411) : PL.cream }
     var ink: Color { night ? Color(hex: 0xEBE3D3) : PL.navy }
     var inkDim: Color { night ? Color(hex: 0x9A9280) : PL.ink3 }
-    var card: Color { night ? Color(hex: 0x221E18) : Color.white }
+    var card: Color { night ? Color(hex: 0x221E19) : Color.white }
     var gold: Color { night ? Color(hex: 0xD9B65A) : PL.gold }
-    var goldDeep: Color { night ? Color(hex: 0xCBA24A) : PL.goldDeep }
+    var goldDeep: Color { night ? Color(hex: 0xE0C06A) : PL.goldDeep }
     var border: Color { night ? Color.white.opacity(0.09) : PL.border }
     var verseBg: Color { night ? Color(hex: 0x251E13) : PL.highlight }
     /// A save the server refused, above the button that tried (§7.4 #2).
@@ -1332,7 +1335,11 @@ struct PlanDayView: View {
     @Environment(\.openURL) private var openURL
     @State private var justDone = false
     @State private var showKeepsake = false
-    @AppStorage("readerNight") private var readerNight = false
+    // The reading theme (ReadingTheme.swift): the member's choice, and the
+    // phone's own style for Automatic — either changing redraws the page.
+    @AppStorage(ReadingTheme.storageKey) private var readingTheme = ReadingTheme.auto.rawValue
+    @ObservedObject private var appearance = ReadingAppearance.shared
+    private var readerNight: Bool { ReadingTheme.from(readingTheme).isNight(systemDark: appearance.systemDark) }
     private var pal: ReaderPalette { ReaderPalette(night: readerNight) }
 
     init(ref: PlanDayRef) {
@@ -1391,7 +1398,10 @@ struct PlanDayView: View {
             PlanKeepsakeView(planTitle: ref.planTitle ?? ref.day.title ?? "your plan",
                              days: ref.day.dayNumber) { showKeepsake = false; dismiss() }
         }
-        .onAppear { tabs.chromeHidden = true }
+        .onAppear {
+            tabs.chromeHidden = true
+            ReadingAppearance.shared.refresh()
+        }
         .task { if walkDays == nil { walkDays = (try? await MemberAPI.achievements())?.streak?.current } }
         // A part finished in its reader ticks its row the moment we return.
         .onReceive(NotificationCenter.default.publisher(for: .nuruPlanPartDone)) { note in
@@ -1628,7 +1638,8 @@ struct PlanDayView: View {
                 Spacer()
                 Button {
                     Haptics.tap()
-                    withAnimation(.easeInOut(duration: 0.25)) { readerNight.toggle() }
+                    let next = ReadingTheme.toggled(currentlyNight: readerNight)
+                    withAnimation(.easeInOut(duration: 0.25)) { readingTheme = next.rawValue }
                 } label: {
                     Icon(readerNight ? .sun : .moon, size: 18, color: .white)
                         .frame(width: 36, height: 36)
@@ -1636,7 +1647,7 @@ struct PlanDayView: View {
                         .overlay(Circle().stroke(Color.white.opacity(0.15), lineWidth: 1))
                 }
                 .buttonStyle(.pressable)
-                .accessibilityLabel(readerNight ? "Day mode" : "Night mode")
+                .accessibilityLabel(ReadingTheme.toggleLabel(night: readerNight))
             }
             // The DAY is the hero — a large serif numeral that stays prominent
             // whatever the read-state, beside the day's title + reference.

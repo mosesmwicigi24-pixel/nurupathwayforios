@@ -19,6 +19,9 @@ struct NuruMemberApp: App {
         Nuru.registerFonts()
         Self.configureAppearance()
         Self.followTextSize()
+        // A member who read the plans by the old night switch keeps the
+        // night page under the reading theme (ReadingTheme.swift).
+        ReadingTheme.migrateLegacySetting()
     }
 
     var body: some Scene {

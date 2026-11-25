@@ -8,6 +8,13 @@
 // Every v3 field is optional on the wire; each section below shows only when
 // its words came. A v2 letter never reaches this view (LetterView keeps it
 // exactly as it was).
+//
+// Read aloud and the night page (member suggestion, 2026-11-21): listen and
+// moon/sun circles in the page's top-left corner, close in its top-right, the
+// player floating at the page's foot, and the page's ink is LetterInk — board
+// A's own on the day page, the readers' sepia on the night page
+// (ReadingTheme.swift). The whole page is drawn in this one view, so a flip
+// redraws all of it.
 import QuickLook
 import SwiftUI
 import UIKit
@@ -171,6 +178,39 @@ enum LetterDropCap {
     }
 }
 
+// MARK: - The page's ink
+
+/// The letter's colours: board A's on the day page (exactly as it was), and
+/// the readers' dark sepia on the night page (ReaderPalette's; Android's
+/// EditorialLetter getters). `navy` is only ever words here, so on the night
+/// page it is the light ink.
+struct LetterInk: Equatable {
+    var night: Bool = false
+
+    static let dayBody = Color(hex: 0x1B2430)
+    static let nightBody = Color(hex: 0xEBE3D3)
+    static let dayGold = Color(hex: 0xA87F2E)
+    static let nightGold = Color(hex: 0xD9B65A)
+
+    var paper: Color { night ? Color(hex: 0x171411) : Color(hex: 0xFBF6EC) }
+    var navy: Color { night ? Color(hex: 0xEBE3D3) : Color(hex: 0x0B1F33) }
+    var body: Color { night ? Self.nightBody : Self.dayBody }
+    var gold: Color { night ? Self.nightGold : Self.dayGold }
+    var rule: Color { night ? Color(hex: 0xD9B65A) : Color(hex: 0xC89B3C) }
+    var muted: Color { night ? Color(hex: 0x9A9280) : Color(hex: 0x5B6678) }
+    var hairline: Color { night ? Color.white.opacity(0.09) : Color(hex: 0x0B1F33).opacity(0.10) }
+    var verse: Color { night ? Color(hex: 0x251E13) : Color(hex: 0xFFF4DA) }
+    /// The white cards and circles on the page.
+    var card: Color { night ? Color(hex: 0x221E19) : Color.white }
+    var chevron: Color { night ? Color(hex: 0x6B6455) : Color(hex: 0xB5BDC9) }
+    var danger: Color { night ? Color(hex: 0xF87171) : Nuru.danger }
+
+    var listenColors: ListenColors {
+        ListenColors(bar: card, ink: navy, inkDim: muted, accent: Color(hex: 0xC89B3C),
+                     onAccent: Color(hex: 0x0B1F33), border: hairline)
+    }
+}
+
 // MARK: - The page
 
 struct LetterEditorialView: View {
@@ -195,17 +235,17 @@ struct LetterEditorialView: View {
     @State private var actionLine: String?
     @State private var photoFailed = false
 
-    /// Board A's ink, fixed whatever the phone's appearance: this is paper.
-    private enum Ink {
-        static let paper = Color(hex: 0xFBF6EC)
-        static let navy = Color(hex: 0x0B1F33)
-        static let body = Color(hex: 0x1B2430)
-        static let gold = Color(hex: 0xA87F2E)
-        static let rule = Color(hex: 0xC89B3C)
-        static let muted = Color(hex: 0x5B6678)
-        static let hairline = Color(hex: 0x0B1F33).opacity(0.10)
-        static let verse = Color(hex: 0xFFF4DA)
-    }
+    // The reading theme: the member's choice, and the phone's own style for
+    // Automatic — either changing redraws the page.
+    @AppStorage(ReadingTheme.storageKey) private var readingTheme = ReadingTheme.auto.rawValue
+    @ObservedObject private var appearance = ReadingAppearance.shared
+    /// Read aloud (ReaderListen.letter): title, salutation, letter, verse, signature.
+    @State private var listen = ListenReading.empty
+
+    private var night: Bool { ReadingTheme.from(readingTheme).isNight(systemDark: appearance.systemDark) }
+    /// Board A's ink — this is paper, whatever the phone's appearance — or
+    /// the night page's, when the member reads by it.
+    private var ink: LetterInk { LetterInk(night: night) }
 
     /// The reading text's leading: Fraunces 18 on 28-ish lines (board A's 17/28).
     private static let bodySpacing: CGFloat = 7
@@ -215,7 +255,7 @@ struct LetterEditorialView: View {
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            Ink.paper.ignoresSafeArea()
+            ink.paper.ignoresSafeArea()
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     masthead
@@ -223,10 +263,23 @@ struct LetterEditorialView: View {
                     page
                 }
             }
-            closeButton
+            cornerButtons
+        }
+        // The player floats over the page's foot while the letter is read.
+        .overlay(alignment: .bottom) {
+            ListenHost(listen) { c in ListenBar(controls: c, colors: ink.listenColors) }
+                .padding(.horizontal, 20)
         }
         .sheet(item: $earlierOpened) { earlier in LetterArchiveView(opening: earlier, known: letters) }
         .quickLookPreview($pdfFile)
+        .onAppear {
+            ReadingAppearance.shared.refresh()
+            let next = ListenReading(pieces: ReaderListen.letter(letter))
+            if next != listen { listen = next }
+        }
+        // Closing the letter (or turning to another) stops the voice; going
+        // to the background does not.
+        .onDisappear { ReadAloud.shared.leave(listen.key) }
         .onAppear {
             guard letter.isUnread else { return }
             Task { _ = try? await MemberAPI.markLetterRead(letter.letterId); onRead() }
@@ -238,17 +291,55 @@ struct LetterEditorialView: View {
         }
     }
 
-    private var closeButton: some View {
-        Button {
-            Haptics.tap(); dismiss()
-        } label: {
-            Icon(.x, size: 14, color: Ink.navy)
-                .frame(width: 34, height: 34)
-                .background(Color.white, in: Circle())
-                .overlay(Circle().stroke(Ink.hairline, lineWidth: 1))
+    /// Listen and the night page in the top-left corner, Close in the
+    /// top-right — the same circles, all clear of the masthead between them.
+    private var cornerButtons: some View {
+        HStack(spacing: 8) {
+            readingButtons
+            Spacer(minLength: 0)
+            Button {
+                Haptics.tap(); dismiss()
+            } label: {
+                cornerCircle(.x)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("Close")
         }
-        .padding(.trailing, 16).padding(.top, 14)
-        .accessibilityLabel("Close")
+        .padding(.horizontal, 16).padding(.top, 14)
+    }
+
+    private var readingButtons: some View {
+        HStack(spacing: 8) {
+            ListenHost(listen) { c in
+                if c.available {
+                    Button {
+                        Haptics.tap()
+                        ReadAloud.shared.toggle(c.reading)
+                    } label: {
+                        cornerCircle(c.glyph)
+                    }
+                    .buttonStyle(.pressable)
+                    .accessibilityLabel(c.label)
+                }
+            }
+            Button {
+                Haptics.tap()
+                let next = ReadingTheme.toggled(currentlyNight: night)
+                withAnimation(.easeInOut(duration: 0.25)) { readingTheme = next.rawValue }
+            } label: {
+                cornerCircle(night ? .sun : .moon)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel(ReadingTheme.toggleLabel(night: night))
+        }
+    }
+
+    private func cornerCircle(_ icon: Lucide) -> some View {
+        Icon(icon, size: 14, color: ink.navy)
+            .frame(width: 34, height: 34)
+            .background(ink.card, in: Circle())
+            .overlay(Circle().stroke(ink.hairline, lineWidth: 1))
+            .contentShape(Circle())
     }
 
     // MARK: Masthead
@@ -264,23 +355,23 @@ struct LetterEditorialView: View {
                 }
                 .nuruFixedFigure()
                 .accessibilityHidden(true)
-                Text("NURU PLACE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Ink.gold)
+                Text("NURU PLACE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ink.gold)
             }
             Text("The Sunday Letter")
                 .font(.frauncesItalic(34))   // the masthead (an editorial size — TypeScan.listed)
-                .foregroundStyle(Ink.navy)
+                .foregroundStyle(ink.navy)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
                 .nuruDisplayType()
                 .accessibilityAddTraits(.isHeader)
             VStack(spacing: 3) {
-                Rectangle().fill(Ink.rule).frame(height: 1)
-                Rectangle().fill(Ink.rule).frame(height: 1)
+                Rectangle().fill(ink.rule).frame(height: 1)
+                Rectangle().fill(ink.rule).frame(height: 1)
             }
             .accessibilityHidden(true)
             let line = LetterEditorialWords.dateline(issueNo: letter.issueNo, weekOf: letter.weekOf)
             if !line.isEmpty {
-                Text(line.uppercased()).font(.inter(11)).kerning(1.2).foregroundStyle(Ink.muted)
+                Text(line.uppercased()).font(.inter(11)).kerning(1.2).foregroundStyle(ink.muted)
                     .multilineTextAlignment(.center)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -304,7 +395,7 @@ struct LetterEditorialView: View {
                                 // A photograph that doesn't come gives way to the art.
                                 Color.clear.onAppear { photoFailed = true }
                             } else {
-                                Ink.verse.opacity(0.6)
+                                ink.verse.opacity(0.6)
                             }
                         }
                     }
@@ -314,7 +405,7 @@ struct LetterEditorialView: View {
                     .accessibilityAddTraits(.isImage)
                 if let caption {
                     Text(caption)
-                        .font(.frauncesItalic(12)).foregroundStyle(Ink.muted)
+                        .font(.frauncesItalic(12)).foregroundStyle(ink.muted)
                         .nuruLineSpacing(3)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.horizontal, 24).padding(.top, 8)
@@ -334,17 +425,17 @@ struct LetterEditorialView: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(letter.title)
-                    .font(.fraunces(28, .semibold)).foregroundStyle(Ink.navy)
+                    .font(.fraunces(28, .semibold)).foregroundStyle(ink.navy)
                     .nuruLineSpacing(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .nuruWholeWords(letter.title, font: .fraunces(28, .semibold))
                     .accessibilityAddTraits(.isHeader)
                 Text(LetterEditorialWords.dek(readingMinutes: letter.readingMinutes))
-                    .font(.inter(13)).foregroundStyle(Ink.muted)
+                    .font(.inter(13)).foregroundStyle(ink.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Text(letter.salutation)
-                .font(.frauncesItalic(22)).foregroundStyle(Ink.navy)
+                .font(.frauncesItalic(22)).foregroundStyle(ink.navy)
                 .fixedSize(horizontal: false, vertical: true)
             if let first = paragraphs.first { openingParagraph(first) }
             if let line = letter.shareLine { pullQuote(line) }
@@ -361,7 +452,7 @@ struct LetterEditorialView: View {
 
     private func paragraph(_ text: String) -> some View {
         Text(text)
-            .font(.fraunces(18, .regular)).foregroundStyle(Ink.body)
+            .font(.fraunces(18, .regular)).foregroundStyle(ink.body)
             .nuruLineSpacing(Self.bodySpacing)
             .fixedSize(horizontal: false, vertical: true)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -373,7 +464,7 @@ struct LetterEditorialView: View {
     @ViewBuilder private func openingParagraph(_ text: String) -> some View {
         if !typeSize.isAccessibilitySize, let split = LetterDropCap.split(text) {
             LetterDropCapParagraph(initial: split.initial, rest: split.rest, spoken: text,
-                                   lineSpacing: Self.bodySpacing * Nuru.lineSpacing)
+                                   lineSpacing: Self.bodySpacing * Nuru.lineSpacing, night: night)
         } else {
             paragraph(text)
         }
@@ -383,25 +474,25 @@ struct LetterEditorialView: View {
     private func pullQuote(_ line: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(LetterEditorialWords.pullQuote(line))
-                .font(.frauncesItalic(22)).foregroundStyle(Ink.gold)
+                .font(.frauncesItalic(22)).foregroundStyle(ink.gold)
                 .nuruLineSpacing(4)
                 .fixedSize(horizontal: false, vertical: true)
             HStack {
                 Spacer(minLength: 0)
                 ShareLink(item: line) {
                     HStack(spacing: 6) {
-                        Icon(.share2, size: 14, color: Ink.gold)
-                        Text("Share this line").font(.inter(13, .semibold)).foregroundStyle(Ink.gold)
+                        Icon(.share2, size: 14, color: ink.gold)
+                        Text("Share this line").font(.inter(13, .semibold)).foregroundStyle(ink.gold)
                     }
                     .padding(.horizontal, 14).frame(minHeight: 36)
-                    .overlay(Capsule().stroke(Ink.gold.opacity(0.5), lineWidth: 1))
+                    .overlay(Capsule().stroke(ink.gold.opacity(0.5), lineWidth: 1))
                     .contentShape(Capsule())
                 }
             }
         }
         .padding(.vertical, 18)
-        .overlay(alignment: .top) { Rectangle().fill(Ink.rule).frame(height: 1) }
-        .overlay(alignment: .bottom) { Rectangle().fill(Ink.rule).frame(height: 1) }
+        .overlay(alignment: .top) { Rectangle().fill(ink.rule).frame(height: 1) }
+        .overlay(alignment: .bottom) { Rectangle().fill(ink.rule).frame(height: 1) }
         .padding(.vertical, 4)
     }
 
@@ -409,7 +500,7 @@ struct LetterEditorialView: View {
 
     private var weekCard: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Text("YOUR WEEK, IN GRACE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Ink.gold)
+            Text("YOUR WEEK, IN GRACE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ink.gold)
                 .fixedSize(horizontal: false, vertical: true)
             if !letter.figures.isEmpty {
                 // Three across at the everyday sizes; one above another at the
@@ -428,8 +519,8 @@ struct LetterEditorialView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     ForEach(letter.highlights, id: \.self) { h in
                         HStack(alignment: .top, spacing: 10) {
-                            Icon(.check, size: 14, color: Ink.gold).padding(.top, 2)
-                            Text(h).font(.inter(13)).foregroundStyle(Ink.body)
+                            Icon(.check, size: 14, color: ink.gold).padding(.top, 2)
+                            Text(h).font(.inter(13)).foregroundStyle(ink.body)
                                 .nuruLineSpacing(3)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
@@ -439,25 +530,25 @@ struct LetterEditorialView: View {
         }
         .padding(.vertical, 18).padding(.horizontal, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Ink.hairline, lineWidth: 1))
+        .background(ink.card, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(ink.hairline, lineWidth: 1))
     }
 
     private func figure(_ f: LetterFigure) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(f.value)
                 .font(.fraunces(34, .medium))   // a figure (an editorial size — TypeScan.listed)
-                .foregroundStyle(Ink.navy)
+                .foregroundStyle(ink.navy)
                 .nuruLineLimit(1).minimumScaleFactor(0.6)
                 .nuruDisplayType()
             if !f.label.isEmpty {
-                Text(f.label).font(.inter(12)).foregroundStyle(Ink.muted)
+                Text(f.label).font(.inter(12)).foregroundStyle(ink.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 14).padding(.horizontal, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .overlay(alignment: .leading) { Rectangle().fill(Ink.gold.opacity(0.35)).frame(width: 1) }
+        .overlay(alignment: .leading) { Rectangle().fill(ink.gold.opacity(0.35)).frame(width: 1) }
         .accessibilityElement(children: .combine)
     }
 
@@ -468,28 +559,28 @@ struct LetterEditorialView: View {
             if let text = s.text {
                 Text("\u{201C}")
                     .font(.fraunces(44))   // the opening quote (an editorial size — TypeScan.listed)
-                    .foregroundStyle(Ink.rule)
+                    .foregroundStyle(ink.rule)
                     .nuruDisplayType()
                     .frame(height: 30, alignment: .top)
                     .accessibilityHidden(true)
                 Text(text)
-                    .font(.frauncesItalic(18)).foregroundStyle(Ink.navy)
+                    .font(.frauncesItalic(18)).foregroundStyle(ink.navy)
                     .nuruLineSpacing(5)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(LetterEditorialWords.scriptureKicker(s).uppercased())
-                    .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Ink.gold)
+                    .font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ink.gold)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 // No stored text for the reference: the reference alone.
-                Text("SCRIPTURE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Ink.gold)
+                Text("SCRIPTURE").font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ink.gold)
                 Text(LetterEditorialWords.scriptureKicker(s))
-                    .font(.fraunces(18, .semibold)).foregroundStyle(Ink.navy)
+                    .font(.fraunces(18, .semibold)).foregroundStyle(ink.navy)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(.vertical, 22).padding(.horizontal, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Ink.verse, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .background(ink.verse, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
     }
 
@@ -521,10 +612,10 @@ struct LetterEditorialView: View {
 
     private var signature: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("With grace,").font(.frauncesItalic(15)).foregroundStyle(Ink.muted)
+            Text("With grace,").font(.frauncesItalic(15)).foregroundStyle(ink.muted)
             Text(signer.name)
                 .font(.custom("MrsSaintDelafield-Regular", size: 52 * Nuru.textScale))   // the signature (an editorial size — TypeScan.listed)
-                .foregroundStyle(Ink.navy)
+                .foregroundStyle(ink.navy)
                 .fixedSize(horizontal: false, vertical: true)
                 // A script face's line is deep (ascender 906, descender −619
                 // per 1000) while a name's ink sits on its baseline: drawn on
@@ -532,7 +623,7 @@ struct LetterEditorialView: View {
                 .padding(.top, -6).padding(.bottom, -16)
                 .nuruDisplayType()
             if let role = signer.role {
-                Text(role.uppercased()).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(Ink.gold)
+                Text(role.uppercased()).font(.inter(11, .bold)).kerning(1.8).foregroundStyle(ink.gold)
             }
         }
         .padding(.top, 6)
@@ -543,7 +634,7 @@ struct LetterEditorialView: View {
 
     private var footer: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Rectangle().fill(Ink.hairline).frame(height: 1)
+            Rectangle().fill(ink.hairline).frame(height: 1)
             footerRow(.penLine, LetterEditorialWords.writeBackLabel, busy: openingThread) { writeBack() }
             if letter.pdfUrl != nil {
                 footerRow(.fileText, "Keep this letter as a PDF", busy: fetchingPDF) { keepPDF() }
@@ -554,7 +645,7 @@ struct LetterEditorialView: View {
                 footerRow(.bookOpen, row.label) { Haptics.tap(); openEarlierLetter(row.opens) }
             }
             if let actionLine {
-                Text(actionLine).font(.nCardMeta).foregroundStyle(Nuru.danger)
+                Text(actionLine).font(.nCardMeta).foregroundStyle(ink.danger)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 10)
             }
@@ -564,18 +655,18 @@ struct LetterEditorialView: View {
     private func footerRow(_ icon: Lucide, _ label: String, busy: Bool = false, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 12) {
-                Icon(icon, size: 18, color: Ink.gold)
-                Text(label).font(.inter(14, .medium)).foregroundStyle(Ink.navy)
+                Icon(icon, size: 18, color: ink.gold)
+                Text(label).font(.inter(14, .medium)).foregroundStyle(ink.navy)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                 if busy {
-                    ProgressView().tint(Ink.gold)
+                    ProgressView().tint(ink.gold)
                 } else {
-                    Icon(.chevronRight, size: 14, color: Color(hex: 0xB5BDC9))
+                    Icon(.chevronRight, size: 14, color: ink.chevron)
                 }
             }
             .padding(.vertical, 14).padding(.horizontal, 2)
-            .overlay(alignment: .bottom) { Rectangle().fill(Ink.hairline).frame(height: 1) }
+            .overlay(alignment: .bottom) { Rectangle().fill(ink.hairline).frame(height: 1) }
             .contentShape(Rectangle())
         }
         .buttonStyle(.pressableSubtle)
@@ -644,13 +735,17 @@ struct LetterDropCapParagraph: UIViewRepresentable {
     let rest: String
     let spoken: String
     let lineSpacing: CGFloat
+    /// The night page's ink (the reading theme) — board A's by day.
+    var night: Bool = false
 
     func makeUIView(context: Context) -> LetterDropCapView { LetterDropCapView() }
 
     func updateUIView(_ view: LetterDropCapView, context: Context) {
         let traits = UITraitCollection(preferredContentSizeCategory: UIContentSizeCategory(context.environment.dynamicTypeSize))
         view.configure(initial: initial, rest: rest, spoken: spoken,
-                       body: Self.bodyFont(traits), capFace: Self.capFace(), lineSpacing: lineSpacing)
+                       body: Self.bodyFont(traits), capFace: Self.capFace(), lineSpacing: lineSpacing,
+                       ink: UIColor(night ? LetterInk.nightBody : LetterInk.dayBody),
+                       gold: UIColor(night ? LetterInk.nightGold : LetterInk.dayGold))
     }
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: LetterDropCapView, context: Context) -> CGSize? {
@@ -683,8 +778,6 @@ final class LetterDropCapView: UIView {
     private var laidOutWidth: CGFloat = -1
     private var contentHeight: CGFloat = 0
 
-    private static let ink = UIColor(red: 0x1B / 255, green: 0x24 / 255, blue: 0x30 / 255, alpha: 1)
-    private static let gold = UIColor(red: 0xA8 / 255, green: 0x7F / 255, blue: 0x2E / 255, alpha: 1)
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -700,11 +793,12 @@ final class LetterDropCapView: UIView {
 
     required init?(coder: NSCoder) { nil }
 
-    func configure(initial: String, rest: String, spoken: String, body: UIFont, capFace: UIFont, lineSpacing: CGFloat) {
+    func configure(initial: String, rest: String, spoken: String, body: UIFont, capFace: UIFont, lineSpacing: CGFloat,
+                   ink: UIColor, gold: UIColor) {
         let para = NSMutableParagraphStyle()
         para.lineSpacing = lineSpacing
         storage.setAttributedString(NSAttributedString(string: rest, attributes: [
-            .font: body, .foregroundColor: Self.ink, .paragraphStyle: para,
+            .font: body, .foregroundColor: ink, .paragraphStyle: para,
         ]))
         // The initial's cap height runs from the first line's cap height down
         // to the last spanned line's baseline.
@@ -712,7 +806,7 @@ final class LetterDropCapView: UIView {
         let wanted = lineHeight * CGFloat(LetterDropCap.lines - 1) + body.capHeight
         let ratio = capFace.capHeight / capFace.pointSize
         let font = capFace.withSize(ratio > 0 ? wanted / ratio : capFace.pointSize)
-        cap = NSAttributedString(string: initial, attributes: [.font: font, .foregroundColor: Self.gold])
+        cap = NSAttributedString(string: initial, attributes: [.font: font, .foregroundColor: gold])
         capFont = font
         bodyFont = body
         spacing = lineSpacing
