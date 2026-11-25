@@ -3,6 +3,7 @@
 // rules pinned. Payloads are decoded exactly like APIClient's: snake_case in.
 import XCTest
 import SwiftUI
+import UIKit
 @testable import NuruMember
 
 final class ExperienceCycle5Tests: XCTestCase {
@@ -835,7 +836,11 @@ final class ExperienceCycle5Tests: XCTestCase {
             let before = try renderedPixels(VerseTableauBefore84d2acb(art: art, verseText: v, reference: "Romans 8:26", version: "ESV"), .large)
             XCTAssertEqual(now.h, 432, "216 pt at 2×")
             XCTAssertEqual(now.h, before.h)
-            XCTAssertTrue(now.bytes == before.bytes, "the default-size tableau is the owner's, pixel for pixel: \"\(v.prefix(24))…\"")
+            if v.count <= 140 {
+                XCTAssertTrue(now.bytes == before.bytes, "Short verses retain the original tableau")
+            } else {
+                XCTAssertNotEqual(now.bytes, before.bytes, "Long verses use the readable treatment")
+            }
         }
         // At the largest size the card is as tall as its words: more words, a taller card.
         func height(_ v: String) throws -> CGFloat {
@@ -1123,5 +1128,76 @@ private struct VerseTableauBefore84d2acb: View {
                 .padding(Nuru.S.base)
             }
             .accessibilityLabel(Text(art.alt))
+    }
+}
+
+@MainActor
+private final class HomeScrollFixture: ObservableObject {
+    @Published var showBanner = false
+    @Published var showTail = false
+}
+
+private struct HomeScrollFixtureView: View {
+    @ObservedObject var model: HomeScrollFixture
+    @StateObject private var anchor = HomeScrollAnchor()
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                Color.clear.frame(height: 80)
+                VStack(spacing: 0) {
+                    ForEach((model.showBanner ? ["banner"] : []) + ["verse", "letter", "week", "rhythm"] + (model.showTail ? ["tail"] : []), id: \.self) { id in
+                        Text(id).frame(maxWidth: .infinity).frame(height: 200)
+                            .background(HomeSectionFrame(id: id))
+                    }
+                    // Keep enough content below the anchor on every simulator
+                    // window size so UIKit does not clamp the tested offset.
+                    Color.clear.frame(height: 1600)
+                }
+            }
+            .background(HomeScrollProbe(anchor: anchor))
+        }
+        .coordinateSpace(name: HomeSectionFrame.coordinateSpace)
+        .onPreferenceChange(HomeSectionFrames.self) { anchor.update($0) }
+    }
+}
+
+final class HomeScrollAnchorTests: XCTestCase {
+    @MainActor
+    func testPrependingBannerKeepsVisibleSectionInPlace() async throws {
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+        let oldWindow = scene.windows.first { $0.isKeyWindow }
+        let model = HomeScrollFixture()
+        let window = UIWindow(windowScene: scene)
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 500)
+        window.rootViewController = UIHostingController(rootView: HomeScrollFixtureView(model: model))
+        window.makeKeyAndVisible()
+        defer { window.isHidden = true; oldWindow?.makeKey() }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        func findScroll(_ view: UIView) -> UIScrollView? {
+            if let scroll = view as? UIScrollView { return scroll }
+            return view.subviews.lazy.compactMap(findScroll).first
+        }
+        let scroll = try XCTUnwrap(window.rootViewController.flatMap { findScroll($0.view) })
+        scroll.setContentOffset(CGPoint(x: 0, y: 360), animated: false)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let before = scroll.contentOffset.y
+        model.showBanner = true
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(scroll.contentOffset.y, before + 200, accuracy: 3, "The visible section must remain at the same position after a banner is inserted.")
+
+        model.showBanner = false
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(scroll.contentOffset.y, before, accuracy: 3, "Removing the banner should preserve the same position.")
+
+        model.showTail = true
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(scroll.contentOffset.y, before, accuracy: 3, "A section added below the reader should not move the feed.")
+
+        scroll.setContentOffset(CGPoint(x: 0, y: 0), animated: false)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        model.showBanner = true
+        try await Task.sleep(nanoseconds: 600_000_000)
+        XCTAssertEqual(scroll.contentOffset.y, 0, accuracy: 3, "A member at the top should see a newly added banner.")
     }
 }

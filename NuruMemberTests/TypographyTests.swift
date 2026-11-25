@@ -468,7 +468,7 @@ enum TypeScan {
         "Features/Grow/ResourcesLibraryView.swift": 1,
         "Features/Home/CellRosterView.swift": 1,
         "Features/Home/HomeCards.swift": 4,
-        "Features/Home/HomeView.swift": 6,
+        "Features/Home/HomeView.swift": 5,
         "Features/Home/LiturgyRecorder.swift": 2,
         "Features/Home/ShareToChatSheet.swift": 1,
         "Features/Live/BroadcastSourceSheet.swift": 1,

@@ -126,7 +126,7 @@ struct LoginView: View {
             VStack(spacing: Nuru.S.base) {
                 fields
                 if mode == .login { rememberRow }
-                if let error { Text(error).font(.nCaption).foregroundStyle(Nuru.error).frame(maxWidth: .infinity).multilineTextAlignment(.center) }
+                if let error { Text(error).font(.nCaption).foregroundStyle(Color(hex: 0xF4C7C3)).frame(maxWidth: .infinity).multilineTextAlignment(.center) }
                 if let notice, error == nil { Text(notice).font(.nCaption).foregroundStyle(Nuru.gold).frame(maxWidth: .infinity).multilineTextAlignment(.center) }
                 PButton(title: primaryTitle, variant: .gold, busy: busy) { Task { await submit() } }
             }

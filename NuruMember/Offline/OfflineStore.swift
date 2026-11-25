@@ -47,27 +47,18 @@ enum MoneyDomains {
 /// a cached-rows key/value space. The native equivalent of LocalStore in
 /// src/db/localStore.ts. Backed on disk so it survives relaunch (§1.7).
 protocol LocalStore: Sendable {
-    func pendingMutations() async -> [PendingMutation]
-    func enqueueMutation(_ m: PendingMutation) async
+    func pendingMutations() async throws -> [PendingMutation]
+    func enqueueMutation(_ m: PendingMutation) async throws
     func removeMutations(ids: [String]) async
     func cursors() async -> [String: Int]
-    func setCursor(domain: String, value: Int) async
+    func setCursor(domain: String, value: Int) async throws
 
     // Per-domain read cache so screens open instantly (and work offline) with
     // last-known data. Bodies are opaque encoded blobs owned by each feature.
-    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) async
-    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) async
-    func cacheDelete(domain: String, ids: [String]) async
+    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) async throws
+    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) async throws
+    func cacheDelete(domain: String, ids: [String]) async throws
     func cachedRows(domain: String) async -> [Data]
-}
-
-// Default no-op cache so the lightweight `FileLocalStore` keeps conforming; the
-// encrypted SQLite store provides the real implementations.
-extension LocalStore {
-    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) async {}
-    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) async {}
-    func cacheDelete(domain: String, ids: [String]) async {}
-    func cachedRows(domain: String) async -> [Data] { [] }
 }
 
 // MARK: - File-backed local store
@@ -80,6 +71,12 @@ actor FileLocalStore: LocalStore {
         var mutations: [PendingMutation] = []
         var cursors: [String: Int] = [:]
     }
+
+    // The fallback only stores the mutation queue and cursors.
+    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) {}
+    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) {}
+    func cacheDelete(domain: String, ids: [String]) {}
+    func cachedRows(domain: String) -> [Data] { [] }
 
     private let url: URL
     private var snapshot: Snapshot
@@ -128,6 +125,7 @@ actor FileLocalStore: LocalStore {
 ///   • push    — replay the queue in seq order; drop applied/duplicate/rejected
 ///   • pull     — cursor-driven delta (skeleton; per-domain cache lands later)
 actor SyncEngine {
+    private var enqueueTail: Task<Void, Never>?
     private let store: LocalStore
     private let deviceId: String?
 
@@ -143,32 +141,43 @@ actor SyncEngine {
         guard !MoneyDomains.all.contains(domain) else {
             throw APIError.transport("Money is never queued offline (§5.6); the giving flow requires connectivity.")
         }
-        let pending = await store.pendingMutations()
-        let seq = (pending.map(\.seq).max() ?? 0) + 1
-        let mutation = PendingMutation(
-            mutationId: UUID().uuidString,
-            seq: seq,
-            domain: domain,
-            op: op,
-            payload: payload,
-            status: "pending"
-        )
-        await store.enqueueMutation(mutation)
-        return mutation
+        let previous = enqueueTail
+        let store = self.store
+        let operation = Task {
+            await previous?.value
+            let pending = try await store.pendingMutations()
+            let seq = (pending.map(\.seq).max() ?? 0) + 1
+            let mutation = PendingMutation(
+                mutationId: UUID().uuidString,
+                seq: seq,
+                domain: domain,
+                op: op,
+                payload: payload,
+                status: "pending"
+            )
+            try await store.enqueueMutation(mutation)
+            return mutation
+        }
+        enqueueTail = Task { _ = try? await operation.value }
+        return try await operation.value
     }
 
     /// Replay the queue. Returns the server result, or nil if nothing was queued.
     @discardableResult
     func push() async throws -> SyncPushResponse? {
-        let mutations = await store.pendingMutations()
+        let mutations = try await store.pendingMutations()
         guard !mutations.isEmpty else { return nil }
         struct Body: Encodable { let deviceId: String?; let mutations: [PendingMutation] }
         let res = try await APIClient.shared.post(
             "sync/push", body: Body(deviceId: deviceId, mutations: mutations), as: SyncPushResponse.self)
         // applied + duplicate + rejected all leave the queue (§3.6).
-        let settled = res.results.filter { ["applied", "duplicate", "rejected"].contains($0.status) }
-        await store.removeMutations(ids: settled.map(\.mutationId))
+        await store.removeMutations(ids: Self.settledMutationIds(sent: mutations, results: res.results))
         return res
+    }
+
+    nonisolated static func settledMutationIds(sent: [PendingMutation], results: [SyncPushResponse.Result]) -> [String] {
+        let sentIds = Set(sent.map(\.mutationId))
+        return results.filter { sentIds.contains($0.mutationId) && ["applied", "duplicate", "rejected"].contains($0.status) }.map(\.mutationId)
     }
 
     /// Server pull-domain → its primary-key field in the returned rows (snake_case).
@@ -205,18 +214,18 @@ actor SyncEngine {
                           let body = try? JSONSerialization.data(withJSONObject: row) else { return nil }
                     return (id: "\(idVal)", body: body)
                 }
-                await store.cacheUpsert(domain: domain, rows: rows)
+                try await store.cacheUpsert(domain: domain, rows: rows)
             }
         }
         if let tombstones = obj["tombstones"] as? [String: [String]] {
-            for (domain, ids) in tombstones { await store.cacheDelete(domain: domain, ids: ids) }
+            for (domain, ids) in tombstones { try await store.cacheDelete(domain: domain, ids: ids) }
         }
 
         var newCursors: [String: Int] = [:]
         if let cs = obj["cursors"] as? [String: Any] {
             for (domain, value) in cs {
                 let n = (value as? Int) ?? Int("\(value)") ?? 0
-                await store.setCursor(domain: domain, value: n)
+                try await store.setCursor(domain: domain, value: n)
                 newCursors[domain] = n
             }
         }

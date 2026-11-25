@@ -262,9 +262,7 @@ final class EventsViewModel: ObservableObject {
         }
     }
 
-    var monthLabel: String {
-        let f = DateFormatter(); f.dateFormat = "MMMM yyyy"; return f.string(from: todayStart).uppercased()
-    }
+    var monthLabel: String { EventsWeek.monthLabel(start: todayStart, calendar: cal) }
 
     /// Something from today on to show and filter (EventsHeader) — the
     /// tabs, search, filters and the header's counts show only then.
@@ -385,6 +383,7 @@ struct EventsView: View {
     @StateObject private var vm = EventsViewModel()
     @EnvironmentObject private var tabs: TabRouter
     @EnvironmentObject private var auth: AuthStore
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var path = NavigationPath()
 
     var body: some View {
@@ -489,7 +488,9 @@ struct EventsView: View {
             // week's header line already says it.
             if vm.hasSomethingToFilter {
                 // No zero chips (§7.4 #9): "0 you're going" said nothing.
-                HStack(spacing: Nuru.S.sm) {
+                AnyLayout(dynamicTypeSize.isAccessibilitySize
+                          ? AnyLayout(VStackLayout(alignment: .leading, spacing: Nuru.S.sm))
+                          : AnyLayout(HStackLayout(spacing: Nuru.S.sm))) {
                     if vm.liveOccurrence != nil { livePulseChip }
                     // The strip's own days, never "this week" (owner,
                     // 2026-10-08: Events' strip rolls from today).
@@ -580,6 +581,8 @@ struct EventsView: View {
             .background(bg, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .buttonStyle(.pressable)
+        .accessibilityLabel(Text(EventsWeek.accessibleDate(d.date)))
+        .accessibilityValue(Text([on ? "Selected" : nil, d.isToday ? "Today" : nil, d.hasEvents ? "Events scheduled" : nil].compactMap { $0 }.joined(separator: ", ")))
         .accessibilityShowsLargeContentViewer()
     }
 
@@ -922,12 +925,22 @@ struct EventsView: View {
 
 private struct LiveHeroCard: View {
     let occ: CalendarOccurrence
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         // Media-first hero: the poster keeps its NATURAL aspect (the card grows
         // to fit it — no crop, no letterbox), with the live chrome overlaid;
         // title/meta/footer sit on navy beneath.
         VStack(spacing: 0) {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: Nuru.S.sm) {
+                    livePill
+                    Text((occ.category ?? "Gathering").uppercased())
+                        .font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(Nuru.S.base)
+            }
             media
             content
                 .padding(.horizontal, Nuru.S.base)
@@ -957,12 +970,14 @@ private struct LiveHeroCard: View {
                                startPoint: .top, endPoint: .bottom)
             }
             .overlay(alignment: .topLeading) {
-                HStack(spacing: 8) {
-                    livePill
-                    Text((occ.category ?? "Gathering").uppercased())
-                        .font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    HStack(spacing: 8) {
+                        livePill
+                        Text((occ.category ?? "Gathering").uppercased())
+                            .font(.inter(11, .bold)).kerning(1.5).foregroundStyle(Nuru.goldLight)
+                    }
+                    .padding(Nuru.S.base)
                 }
-                .padding(Nuru.S.base)
             }
             .overlay(alignment: .topTrailing) {
                 Icon(.qrCode, size: 18, color: .white)
@@ -1629,6 +1644,32 @@ enum EventsWords {
 /// The strip's days (the walk's E21): today through the seventh day after.
 enum EventsWeek {
     static let days = 8
+
+    static func accessibleDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateStyle = .full
+        return formatter.string(from: date)
+    }
+
+    /// The heading names both months when the strip crosses a boundary.
+    static func monthLabel(start: Date, calendar: Calendar) -> String {
+        let end = calendar.date(byAdding: .day, value: days - 1, to: start) ?? start
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        let startYear = calendar.component(.year, from: start)
+        let endYear = calendar.component(.year, from: end)
+        if startYear == endYear && calendar.component(.month, from: start) == calendar.component(.month, from: end) {
+            formatter.dateFormat = "MMMM yyyy"
+            return formatter.string(from: start).uppercased()
+        }
+        formatter.dateFormat = "MMM"
+        let first = formatter.string(from: start).uppercased()
+        let last = formatter.string(from: end).uppercased()
+        return startYear == endYear ? "\(first) – \(last) \(startYear)" : "\(first) \(startYear) – \(last) \(endYear)"
+    }
 }
 
 /// A gathering list with each series' later dates folded under its first

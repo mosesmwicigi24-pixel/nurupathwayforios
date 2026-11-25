@@ -64,8 +64,6 @@ struct VerseTableauHeader: View {
                     Text("\u{201C}\(t)\u{201D}")
                         .font(.fraunces(t.count > 220 ? 12 : t.count > 140 ? 13 : 14)).foregroundStyle(.white)
                         .nuruLineSpacing(3)
-                        .nuruLineLimit(4)
-                        .minimumScaleFactor(0.92)
                         .shadow(color: .black.opacity(0.45), radius: 3, y: 1)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -109,7 +107,7 @@ struct VerseTableauHeader: View {
                 }
                 // Grown to hold a large verse, the words cover the whole image:
                 // it is veiled so they always read.
-                .overlay { if typeSize.isAccessibilitySize { Color(hex: 0x06111F).opacity(0.7) } }
+                .overlay { if typeSize.isAccessibilitySize || (verseText?.count ?? 0) > 140 { Color(hex: 0x06111F).opacity(0.7) } }
         }
         .clipped()
         .accessibilityLabel(Text(art.alt))
