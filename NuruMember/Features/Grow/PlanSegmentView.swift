@@ -147,7 +147,10 @@ struct PlanSegmentView: View {
         }
         // A bare reference is read once its passage lands — the same cached
         // fetch the quote card makes.
-        .task { await fetchListenPassages() }
+        .task {
+            await fetchListenPassages()
+            await fetchNarration()
+        }
         // Leaving the part — or its words changing under it — stops the
         // voice; going to the background does not.
         .onDisappear { ReadAloud.shared.leave(listen.key) }
@@ -350,7 +353,7 @@ struct PlanSegmentView: View {
     private func rebuildListen() {
         let pieces = ReaderListen.planPart(part: ref.part, group: group, dayTitle: ref.dayTitle,
                                            passages: listenPassages)
-        let next = ListenReading(pieces: pieces)
+        let next = ListenReading(words: ListenScript.paragraphs(pieces), isPlan: true)
         if next != listen { listen = next }
     }
 
@@ -366,6 +369,25 @@ struct PlanSegmentView: View {
         if found != listenPassages {
             listenPassages = found
             rebuildListen()
+        }
+    }
+
+    private func fetchNarration() async {
+        guard let id = ref.planId, let part = ref.part else { return }
+        var source = PlanNarration(planId: id, day: ref.dayNumber, part: part)
+        guard let path = source.path else { return }
+        struct Response: Decodable { let words: [String]; let version: String }
+        do {
+            let result = try await APIClient.shared.get(path, as: Response.self)
+            guard !Task.isCancelled, !result.words.isEmpty, result.words.count <= 100,
+                  result.words.allSatisfy({ !$0.isEmpty && $0.utf16.count <= 1200 }),
+                  ReadAloud.shared.key != listen.key else { return }
+            source.version = result.version
+            guard source.audioPath(index: 0) != nil else { return }
+            listen = ListenReading(words: result.words, narration: source, isPlan: true)
+        } catch {
+            // The local reader remains available offline or when cloud speech
+            // is not configured. No member-entered reflection is transmitted.
         }
     }
 
