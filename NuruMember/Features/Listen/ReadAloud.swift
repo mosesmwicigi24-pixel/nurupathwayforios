@@ -406,11 +406,25 @@ extension ReadAloud: AVAudioPlayerDelegate {
         let identity = ObjectIdentifier(player)
         Task { @MainActor [weak self] in
             guard let self, let current = self.audioPlayer, ObjectIdentifier(current) == identity, self.status == .playing else { return }
-            if flag, self.index < self.paragraphs.count - 1 {
+            if !flag {
+                self.narration = nil
+                self.deviceFallback = true
+                self.speakFrom(self.index)
+            } else if self.index < self.paragraphs.count - 1 {
                 self.speakFrom(self.index + 1)
             } else {
                 self.stop()
             }
+        }
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        let identity = ObjectIdentifier(player)
+        Task { @MainActor [weak self] in
+            guard let self, let current = self.audioPlayer, ObjectIdentifier(current) == identity, self.status == .playing else { return }
+            self.narration = nil
+            self.deviceFallback = true
+            self.speakFrom(self.index)
         }
     }
 }
