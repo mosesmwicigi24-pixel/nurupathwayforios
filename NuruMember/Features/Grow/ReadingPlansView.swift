@@ -2031,7 +2031,9 @@ private final class FireworksSound {
                 player.prepareToPlay()
                 loaded.append(player)
             }
-            await MainActor.run { FireworksSound.shared.players = loaded }
+            // Hand the main actor a copy: `loaded` is a var, and Swift 6
+            // rejects a captured var crossing into concurrently-executing code.
+            await MainActor.run { [loaded] in FireworksSound.shared.players = loaded }
         }
     }
 
