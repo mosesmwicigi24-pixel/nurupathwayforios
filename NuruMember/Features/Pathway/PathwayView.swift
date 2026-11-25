@@ -442,6 +442,9 @@ private struct PathwayHubHeader: View {
                         .contentTransition(.numericText())
                         .animation(.default, value: activePct)
                 }.padding(.top, 16)
+                Text("Level progress includes the exam")
+                    .font(.inter(11)).foregroundStyle(Color(hex: 0x59667C))
+                    .padding(.top, 6)
                 }
                 if remaining > 0 {
                     HStack(spacing: 6) {

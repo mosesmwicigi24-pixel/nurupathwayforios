@@ -46,8 +46,9 @@ struct NuruMemberApp: App {
             // about 1.05:1 on the alert's glass). Gold stays where a view sets
             // it: a selected switch, a picker, the primary action.
             .tint(Nuru.navy)
-            // The app is designed in warm light tones; keep system chrome light.
-            .preferredColorScheme(.light)
+            // The signed-out screens are dark; their status bar needs light glyphs.
+            // The authenticated app retains its warm light system chrome.
+            .preferredColorScheme(auth.isAuthenticated ? .light : .dark)
             // Start the offline sync engine once we're authenticated; drain the
             // durable queue whenever the app returns to the foreground.
             .task(id: auth.isAuthenticated) {

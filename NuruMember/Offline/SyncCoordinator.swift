@@ -64,7 +64,7 @@ final class SyncCoordinator: ObservableObject {
     }
 
     /// Enqueue an offline-capable write (durably), then flush immediately if online.
-    /// Returns false only if the domain is refused (e.g. money, §5.6).
+    /// Returns false when the write is refused or the queue cannot safely save it.
     @discardableResult
     func enqueue(domain: String, op: String, payload: [String: AnyCodable]) async -> Bool {
         do { _ = try await engine.enqueue(domain: domain, op: op, payload: payload) }
@@ -90,6 +90,7 @@ final class SyncCoordinator: ObservableObject {
     }
 
     private func refreshPending() async {
-        pendingCount = await store.pendingMutations().count
+        do { pendingCount = try await store.pendingMutations().count }
+        catch { Logger(subsystem: "org.nuruplace.member", category: "sync").error("Offline queue could not be read; pending work was retained.") }
     }
 }

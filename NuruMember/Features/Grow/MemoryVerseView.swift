@@ -100,6 +100,7 @@ struct MemoryVerseView: View {
                     .refreshable { await vm.load() }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -149,7 +150,10 @@ private struct BackButton: View {
                 .frame(width: 40, height: 40)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel("Back")
         .buttonStyle(.pressable)
     }
 }

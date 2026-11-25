@@ -10,6 +10,7 @@
 // row asks. All sections load concurrently and degrade gracefully (a section
 // hides when its data is empty; a week row falls back to its "none" form).
 import SwiftUI
+import UIKit
 
 @MainActor
 final class HomeViewModel: ObservableObject {
@@ -434,6 +435,7 @@ struct HomeView: View {
     @State private var path = NavigationPath()
     /// Featured-carousel position (auto-advances every 6s; swipes respected).
     @State private var featuredPageIndex = 0
+    @StateObject private var homeScrollAnchor = HomeScrollAnchor()
 
     /// Home is what the member sees (final walk M7): its tab, at its root,
     /// the app active, nothing full-screen over it. The featured carousel
@@ -665,6 +667,7 @@ struct HomeView: View {
                             let entering = feedStaged && i < 8
                             section.view
                                 .padding(.bottom, 20)
+                                .background(HomeSectionFrame(id: section.id))
                                 .opacity(entering && !feedRisen ? 0 : 1)
                                 .animation(entering ? .easeOut(duration: 0.45).delay(Double(i) * 0.04) : nil,
                                            value: feedRisen)
@@ -674,12 +677,15 @@ struct HomeView: View {
                     .padding(.top, Nuru.S.base)
                     .padding(.bottom, Nuru.tabBarSpace - 20)  // last row brings its own 20pt skirt
                 }
+                .background(HomeScrollProbe(anchor: homeScrollAnchor))
                 .scrollsToTopOnReselect(.home)   // a re-tap at the root returns to the top (B10)
             }
             // Home's own cards see whether Home is what the member sees
             // (final walk M7): their pulses stop behind another tab, a page
             // pushed over Home, or a cover.
             .environment(\.screenVisible, onScreen)
+            .coordinateSpace(name: HomeSectionFrame.coordinateSpace)
+            .onPreferenceChange(HomeSectionFrames.self) { homeScrollAnchor.update($0) }
             .ignoresSafeArea(edges: .top)
             .background(Nuru.paper.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
@@ -897,6 +903,15 @@ struct HomeView: View {
         #endif
     }
 
+    private var personalWord: String {
+        let firstName = auth.profile?.fullName.split(whereSeparator: \.isWhitespace).first.map(String.init)
+        guard let firstName else { return vm.greetingLine }
+        let prefix = "\(firstName), "
+        guard vm.greetingLine.range(of: prefix, options: [.anchored, .caseInsensitive]) != nil else { return vm.greetingLine }
+        let remainder = vm.greetingLine.dropFirst(prefix.count)
+        return remainder.prefix(1).uppercased() + String(remainder.dropFirst())
+    }
+
     // MARK: 1 — Navy header
 
     // Cream, navy-on-light header — exact Figma HomeTab (HEADER_BG cream gradient,
@@ -984,7 +999,16 @@ struct HomeView: View {
                 // fact before it loads; §7.4 #9: no "0" ring) — immediately
                 // left of the bell, 12 pt clear of it for the trend badge.
                 if HomeHeaderWords.showsScore(vm.scores?.overall.score) {
-                    progressRing.padding(.trailing, 12)
+                    VStack(spacing: 2) {
+                        progressRing
+                        Text("Growth score")
+                            .font(.inter(11, .semibold))
+                            .foregroundStyle(Nuru.goldChipText)
+                            .fixedSize()
+                            .accessibilityHidden(true)
+                    }
+                    .nuruFixedFigure()
+                    .padding(.trailing, 8)
                 }
                 // The one bell (§7.2 #4), at the far right as on every tab
                 // (§8.1 rule 2; the Cycle 4 walk saw the ring, Live and "Go
@@ -1005,7 +1029,7 @@ struct HomeView: View {
             // Nuru's daily word — a blessing written for THIS member (grounded in
             // their streak/level/prayers server-side, cached per day). It deserves
             // more than flat gray: a hanging gold quote and a settled serif voice.
-            HomePersonalWord(text: vm.greetingLine)
+            HomePersonalWord(text: personalWord)
                 .padding(.top, 6)
             if let j = vm.journey {
                 // The journey jewel — the level · where the member stands on it
@@ -1070,8 +1094,6 @@ struct HomeView: View {
     /// The member's overall GROWTH score (0–100) — the weighted average of the
     /// five domains over the rolling 28 days. Falls back to 0 until scores land.
     private var growthScore: Int { vm.scores?.overall.score ?? 0 }
-    /// This-28-days vs previous-28-days movement, for the ▲/▼ badge.
-    private var growthTrend: ScoreTrend? { vm.scores?.trend }
 
     /// The header ring's side: 42 pt at the everyday size, growing with the
     /// in-app text size so its figure and badge never meet.
@@ -1081,7 +1103,7 @@ struct HomeView: View {
     // The arc sweeps in once on appear and re-tracks smoothly as data lands.
     private var progressRing: some View {
         ZStack {
-            // A score is progress, and progress is gold (§8.1 rule 1).
+            // The growth score is displayed as a score out of 100.
             Circle().fill(Color(hex: Nuru.tileTint).opacity(0.8))
             Circle().stroke(Nuru.gold.opacity(0.18), lineWidth: 3)
             HomeRingTrim(
@@ -1098,28 +1120,7 @@ struct HomeView: View {
         // The ring grows with the member's own text size, as its figure and
         // badge do (final walk C3: at 1.3 the "↑26" badge covered the "26").
         .frame(width: Self.ringSide, height: Self.ringSide)
-        .overlay(alignment: .bottomTrailing) {
-            if let t = growthTrend, t.delta != 0 { trendBadge(t).offset(x: 5, y: 4) }
-        }
-        // The figure and its badge keep the everyday size inside the ring
-        // (§9.6 #4 — "↑2(" at the largest size).
-        .nuruFixedFigure()
         .accessibilityLabel("Growth score \(growthScore) out of 100")
-    }
-
-    /// A tiny ▲/▼ badge — points earned or lost vs the previous 28 days.
-    private func trendBadge(_ t: ScoreTrend) -> some View {
-        HStack(spacing: 0.5) {
-            Image(systemName: t.isDown ? "arrow.down" : "arrow.up").font(.symbol(7, weight: .black))
-            Text("\(abs(t.delta))").font(.inter(11, .bold)).contentTransition(.numericText())
-        }
-        // A score's movement is not a state (§8.1 rule 1): one quiet colour,
-        // never "on track" green or "due" amber for a rise or a fall.
-        .foregroundStyle(Nuru.goldChipText)
-        .padding(.horizontal, 3.5).padding(.vertical, 1.5)
-        .background(Nuru.goldChipBg, in: Capsule())
-        .overlay(Capsule().stroke(Color.white, lineWidth: 1))
-        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: t.delta)
     }
 
     // MARK: 0 — Live now (driven by REAL calendar occurrences; no fake stream data)
@@ -1220,11 +1221,8 @@ struct HomeView: View {
             Haptics.tap()
             showLetterArchive = true
         } label: {
-            // The read card's quiet navy, with its own words (owner,
-            // 2026-10-07: colour option A); the countdown joins its line — a
-            // fixed gold badge cut "In 4 days" at the largest text size.
-            HomeLetterQuietCard(title: "Your letter arrives Sunday evening",
-                                line: HomeLetterWords.arrivalLine(countdown: Self.sundayLetterCountdown()))
+            HomeLetterQuietCard(title: "Arrives Sunday evening",
+                                line: Self.sundayLetterCountdown())
         }
         .buttonStyle(.pressableSubtle)
         .accessibilityHint("Opens your letters.")
@@ -1800,11 +1798,14 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, 7).padding(.vertical, 6)
-                .background(mine ? Nuru.goldChipBg : Nuru.white, in: Capsule())
-                .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.border, lineWidth: 1))
+                .background(mine ? Nuru.goldChipBg : Nuru.verseBg, in: Capsule())
+                .overlay(Capsule().stroke(mine ? Nuru.gold : Nuru.gold.opacity(0.25), lineWidth: 1))
                 .contentShape(Capsule())   // whole chip is tappable, not just the glyph
                 .animation(.spring(response: 0.3, dampingFraction: 0.7), value: count)
-            }.buttonStyle(.pressable)
+            }
+            .buttonStyle(.pressable)
+            .accessibilityLabel("\(emoji), \(count) reactions")
+            .accessibilityValue(mine ? "Selected" : "Not selected")
         }
     }
 
@@ -2048,18 +2049,6 @@ struct HomeView: View {
                 .animation(.easeInOut(duration: 0.25), value: featuredPageIndex)
             }
         }
-        // Turns every 6 s only while Home is on screen (final walk M7): a
-        // Timer publisher fired on behind the other tabs and pushed pages.
-        .task(id: HomeMotion.turns(onScreen: onScreen, pages: pages.count)) {
-            guard HomeMotion.turns(onScreen: onScreen, pages: pages.count) else { return }
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 6_000_000_000)
-                guard !Task.isCancelled, pages.count > 1 else { return }
-                withAnimation(.easeInOut(duration: 0.45)) {
-                    featuredPageIndex = (featuredPageIndex + 1) % pages.count
-                }
-            }
-        }
     }
 
     @ViewBuilder private func featuredPageCard(_ page: FeaturedPage) -> some View {
@@ -2142,6 +2131,14 @@ struct HomeView: View {
 
     // MARK: 11 — Today's rhythm
 
+    private var rhythmMessage: String {
+        let remaining = [("Prayer", vm.rhythm.prayer), ("Word", vm.rhythm.word), ("Reflection", vm.rhythm.reflection)]
+            .filter { !$0.1 }.map { $0.0 }
+        if remaining.count == 3 { return "Start with a moment of prayer." }
+        if remaining.count == 1 { return "2 of 3 complete · \(remaining[0]) remains" }
+        return "1 of 3 complete · \(remaining.joined(separator: " and ")) remain"
+    }
+
     private var rhythmCard: some View {
         let complete = vm.rhythm.doneCount == 3
         // The one streak (§9.2 #3), counted as Plans counts it: today counts
@@ -2199,7 +2196,7 @@ struct HomeView: View {
             HomeWeekChain(streakDays: days, todayDone: active)
                 .padding(.top, 14)
             if !complete {
-                Text(vm.rhythm.reflection ? "One more to complete today's rhythm." : "Complete reflection to keep your rhythm.")
+                Text(rhythmMessage)
                     .font(.nCardBody).foregroundStyle(HomeFig.metaGray).padding(.top, Nuru.S.md)
             }
         }
@@ -2800,4 +2797,85 @@ enum HomeHeaderWords {
         return "\(greeting), \(first)."
     }
     static func showsScore(_ score: Int?) -> Bool { (score ?? 0) > 0 }
+}
+
+
+/// Tracks the section being read across changes higher in the Home feed.
+struct HomeSectionFrames: PreferenceKey {
+    static var defaultValue: [String: CGRect] = [:]
+    static func reduce(value: inout [String: CGRect], nextValue: () -> [String: CGRect]) {
+        value.merge(nextValue(), uniquingKeysWith: { _, new in new })
+    }
+}
+
+struct HomeSectionFrame: View {
+    static let coordinateSpace = "home-feed-scroll"
+    let id: String
+
+    var body: some View {
+        GeometryReader { geometry in
+            Color.clear.preference(key: HomeSectionFrames.self,
+                                   value: [id: geometry.frame(in: .named(Self.coordinateSpace))])
+        }
+    }
+}
+
+@MainActor
+final class HomeScrollAnchor: ObservableObject {
+    weak var scrollView: UIScrollView?
+    private var previousFrames: [String: CGRect] = [:]
+    private var previousOffset: CGFloat = 0
+
+    func update(_ frames: [String: CGRect]) {
+        guard let scroll = scrollView else { return }
+        let offset = scroll.contentOffset.y
+        defer {
+            previousFrames = frames
+            previousOffset = offset
+        }
+        guard !scroll.isTracking, !scroll.isDragging, !scroll.isDecelerating,
+              offset > max(0, -scroll.adjustedContentInset.top) + 1 else { return }
+        let visible = previousFrames.filter { _, frame in
+            frame.maxY > 0 && frame.minY < scroll.bounds.height
+        }.min { $0.value.minY < $1.value.minY }
+        guard let visible, let current = frames[visible.key] else { return }
+        let movement = (current.minY + offset) - (visible.value.minY + previousOffset)
+        guard abs(movement) > 0.5 else { return }
+        // SwiftUI reports the new section frames before UIScrollView has its
+        // new content size. Apply the correction on the next layout pass.
+        DispatchQueue.main.async { [weak scroll] in
+            guard let scroll, !scroll.isTracking, !scroll.isDragging, !scroll.isDecelerating else { return }
+            let maximum = max(-scroll.adjustedContentInset.top,
+                              scroll.contentSize.height - scroll.bounds.height + scroll.adjustedContentInset.bottom)
+            // A shrinking feed can clamp the old offset before this callback.
+            let clampedOffset = min(offset, maximum)
+            guard abs(scroll.contentOffset.y - offset) < 0.5 ||
+                    (movement < 0 && abs(scroll.contentOffset.y - clampedOffset) < 0.5) else { return }
+            let corrected = min(max(offset + movement, -scroll.adjustedContentInset.top), maximum)
+            scroll.setContentOffset(CGPoint(x: scroll.contentOffset.x, y: corrected), animated: false)
+        }
+    }
+}
+
+struct HomeScrollProbe: UIViewRepresentable {
+    let anchor: HomeScrollAnchor
+
+    func makeUIView(context: Context) -> UIView {
+        let view = UIView(frame: .zero)
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        DispatchQueue.main.async { [weak view, weak anchor] in
+            var parent = view?.superview
+            while let current = parent {
+                if let scroll = current as? UIScrollView {
+                    anchor?.scrollView = scroll
+                    return
+                }
+                parent = current.superview
+            }
+        }
+    }
 }

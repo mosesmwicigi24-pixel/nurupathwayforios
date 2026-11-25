@@ -3,9 +3,120 @@
 // a finisher reads "20 of 20" everywhere and never "20 of 21". Payloads are
 // decoded exactly like APIClient's: snake_case in.
 import XCTest
+import SQLite3
 @testable import NuruMember
 
 final class ExperienceCycle4Tests: XCTestCase {
+    func testKeychainRoundTripInSimulator() {
+        let key = "cache-test-\(UUID().uuidString)"
+        let value = UUID().uuidString
+        Keychain.set(value, for: key)
+        XCTAssertEqual(Keychain.get(key), value)
+        Keychain.set(nil, for: key)
+    }
+
+    func testEncryptedCacheSurvivesStoreReopening() async throws {
+        let filename = "cache-reopen-\(UUID().uuidString).sqlite"
+        let original = Data("synthetic private content".utf8)
+        let first = EncryptedSQLiteStore(filename: filename)
+        try await first.cacheReplace(domain: "prayer_entries", rows: [(id: "one", body: original)])
+        let reopened = EncryptedSQLiteStore(filename: filename)
+        let rows = await reopened.cachedRows(domain: "prayer_entries")
+        XCTAssertEqual(rows, [original])
+    }
+
+    func testCacheReplacementRollsBackWhenDatabaseInsertFails() async throws {
+        let filename = "cache-failure-\(UUID().uuidString).sqlite"
+        let store = EncryptedSQLiteStore(filename: filename)
+        let original = Data("existing private content".utf8)
+        try await store.cacheReplace(domain: "prayer_entries", rows: [(id: "old", body: original)])
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(dir.appendingPathComponent(filename).path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_exec(db, "CREATE TRIGGER fail_cache BEFORE INSERT ON cache BEGIN SELECT RAISE(ABORT, 'test failure'); END", nil, nil, nil), SQLITE_OK)
+        do {
+            try await store.cacheReplace(domain: "prayer_entries", rows: [(id: "new", body: Data("replacement".utf8))])
+            XCTFail("A database failure must propagate")
+        } catch { }
+        let rows = await store.cachedRows(domain: "prayer_entries")
+        XCTAssertEqual(rows, [original])
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT body FROM cache WHERE row_id='old'", -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        let bytes = sqlite3_column_blob(statement, 0)
+        let blob = Data(bytes: try XCTUnwrap(bytes), count: Int(sqlite3_column_bytes(statement, 0)))
+        XCTAssertFalse(blob.range(of: original) != nil, "Cached content must not be stored in plaintext")
+    }
+
+    func testSyncOnlySettlesRecognizedResultsFromSubmittedBatch() {
+        let sent = [PendingMutation(mutationId: "sent", seq: 1, domain: "prayer_entries", op: "upsert", payload: [:], status: "pending")]
+        let results = [SyncPushResponse.Result(mutationId: "sent", status: "pending"),
+                       SyncPushResponse.Result(mutationId: "new", status: "applied")]
+        XCTAssertTrue(SyncEngine.settledMutationIds(sent: sent, results: results).isEmpty)
+        XCTAssertEqual(SyncEngine.settledMutationIds(sent: sent, results: [.init(mutationId: "sent", status: "duplicate")]), ["sent"])
+    }
+
+    func testConcurrentOfflineEnqueuesKeepDistinctSequences() async throws {
+        let store = EncryptedSQLiteStore(filename: "queue-concurrency-\(UUID().uuidString).sqlite")
+        let engine = SyncEngine(store: store)
+        let sequences = try await withThrowingTaskGroup(of: Int.self) { group in
+            for _ in 0..<20 {
+                group.addTask { try await engine.enqueue(domain: "prayer_entries", op: "upsert", payload: [:]).seq }
+            }
+            var result: [Int] = []
+            for try await value in group { result.append(value) }
+            return result.sorted()
+        }
+        XCTAssertEqual(sequences, Array(1...20))
+        let saved = try await store.pendingMutations()
+        XCTAssertEqual(saved.count, 20)
+    }
+
+    func testOfflineQueueDuplicateWriteFailsWithoutReplacingStoredWork() async throws {
+        let store = EncryptedSQLiteStore(filename: "queue-write-\(UUID().uuidString).sqlite")
+        let first = PendingMutation(mutationId: "same", seq: 1, domain: "prayer_entries", op: "upsert", payload: [:], status: "pending")
+        try await store.enqueueMutation(first)
+        let replacement = PendingMutation(mutationId: "same", seq: 2, domain: "prayer_entries", op: "delete", payload: [:], status: "pending")
+        do {
+            try await store.enqueueMutation(replacement)
+            XCTFail("A duplicate id must not replace existing queued work")
+        } catch { }
+        let saved = try await store.pendingMutations()
+        XCTAssertEqual(saved.count, 1)
+        XCTAssertEqual(saved.first?.op, "upsert")
+        XCTAssertEqual(saved.first?.seq, 1)
+    }
+
+    func testUnreadableOfflineQueueIsNotReplayedOrDiscarded() async throws {
+        let filename = "queue-corrupt-\(UUID().uuidString).sqlite"
+        let store = EncryptedSQLiteStore(filename: filename)
+        let dir = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let url = dir.appendingPathComponent(filename)
+        var db: OpaquePointer?
+        XCTAssertEqual(sqlite3_open(url.path, &db), SQLITE_OK)
+        defer { sqlite3_close(db) }
+        XCTAssertEqual(sqlite3_exec(db, "INSERT INTO mutation_queue VALUES ('bad', 1, 'prayer_entries', 'upsert', X'00', 'pending', 0)", nil, nil, nil), SQLITE_OK)
+        do {
+            _ = try await store.pendingMutations()
+            XCTFail("An unreadable queue must not be converted into an empty payload")
+        } catch { }
+        let engine = SyncEngine(store: store)
+        do {
+            _ = try await engine.push()
+            XCTFail("Unreadable work must never be sent to the server")
+        } catch { }
+        do {
+            _ = try await engine.enqueue(domain: "prayer_entries", op: "upsert", payload: [:])
+            XCTFail("New work must not overwrite or bypass an unreadable queue")
+        } catch { }
+        var statement: OpaquePointer?
+        XCTAssertEqual(sqlite3_prepare_v2(db, "SELECT count(*) FROM mutation_queue", -1, &statement, nil), SQLITE_OK)
+        defer { sqlite3_finalize(statement) }
+        XCTAssertEqual(sqlite3_step(statement), SQLITE_ROW)
+        XCTAssertEqual(sqlite3_column_int(statement, 0), 1)
+    }
 
     // MARK: Fixtures — the /me/pathway and /levels/{n}/modules wire shapes
 
@@ -762,6 +873,18 @@ final class ExperienceCycle4Tests: XCTestCase {
     }
 
     // MARK: Walk E21 — the Events week strip and "N this week" mean the same seven days
+
+    @MainActor
+    func testEventsWeekHeadingNamesBothMonthsAcrossBoundaries() throws {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        func date(_ year: Int, _ month: Int, _ day: Int) throws -> Date {
+            try XCTUnwrap(calendar.date(from: DateComponents(year: year, month: month, day: day)))
+        }
+        XCTAssertEqual(EventsWeek.monthLabel(start: try date(2026, 11, 1), calendar: calendar), "NOVEMBER 2026")
+        XCTAssertEqual(EventsWeek.monthLabel(start: try date(2026, 11, 25), calendar: calendar), "NOV – DEC 2026")
+        XCTAssertEqual(EventsWeek.monthLabel(start: try date(2026, 12, 28), calendar: calendar), "DEC 2026 – JAN 2027")
+    }
 
     @MainActor
     func testTheEventsWeekStripStartsTodayAndMatchesTheWeekCount() throws {

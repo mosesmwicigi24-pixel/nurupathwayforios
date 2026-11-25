@@ -267,7 +267,10 @@ private struct BackButton: View {
                 .frame(width: 40, height: 40)
                 .background(pal.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(pal.border, lineWidth: 1))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel("Back")
         .buttonStyle(.pressable)
     }
 }
