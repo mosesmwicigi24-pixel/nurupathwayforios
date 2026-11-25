@@ -11,6 +11,25 @@
 // so a skip never repeats more than a few sentences.
 import Foundation
 
+struct ListenVoiceCandidate: Equatable {
+    let identifier: String
+    let language: String
+    /// 0 = default, 1 = enhanced, 2 = premium.
+    let quality: Int
+}
+
+enum ListenVoiceSelector {
+    static func choose(from candidates: [ListenVoiceCandidate]) -> ListenVoiceCandidate? {
+        candidates.filter { $0.language.lowercased() == "en" || $0.language.lowercased().hasPrefix("en-") }
+            .sorted { lhs, rhs in
+                if lhs.quality != rhs.quality { return lhs.quality > rhs.quality }
+                let l = LiturgyVoiceSelector.preferredLocales.firstIndex(of: lhs.language) ?? Int.max
+                let r = LiturgyVoiceSelector.preferredLocales.firstIndex(of: rhs.language) ?? Int.max
+                return l != r ? l < r : lhs.identifier < rhs.identifier
+            }.first
+    }
+}
+
 /// One block of a reading, as the screen shows it.
 enum ListenPiece: Equatable {
     /// A title or a section's name — read once, with a pause after it.

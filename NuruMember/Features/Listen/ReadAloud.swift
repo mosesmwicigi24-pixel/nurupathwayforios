@@ -228,17 +228,19 @@ final class ReadAloud: NSObject, ObservableObject {
         return ObjectIdentifier(s) == synth
     }
 
-    /// The liturgy voice's choice (LiturgyVoiceSelector: an enhanced English
-    /// voice, Commonwealth accents first), resolved once per run. Nil leaves
-    /// the system's own default voice, which is still English almost always.
-    private static let voice: AVSpeechSynthesisVoice? = {
-        let candidates = AVSpeechSynthesisVoice.speechVoices().map {
-            LiturgyVoiceCandidate(identifier: $0.identifier, language: $0.language,
-                                  isEnhancedOrPremium: $0.quality == .enhanced || $0.quality == .premium)
+    /// Re-evaluate installed voices for each reading, including voices the
+    /// member downloaded since the app was launched. Prefer premium, then
+    /// enhanced, then the installed default-quality English voices.
+    private static var voice: AVSpeechSynthesisVoice? {
+        let candidates = AVSpeechSynthesisVoice.speechVoices().filter {
+            !$0.voiceTraits.contains(.isNoveltyVoice) && !$0.voiceTraits.contains(.isPersonalVoice)
+        }.map {
+            ListenVoiceCandidate(identifier: $0.identifier, language: $0.language,
+                                 quality: $0.quality == .premium ? 2 : ($0.quality == .enhanced ? 1 : 0))
         }
-        guard let chosen = LiturgyVoiceSelector.choose(from: candidates) else { return nil }
+        guard let chosen = ListenVoiceSelector.choose(from: candidates) else { return nil }
         return AVSpeechSynthesisVoice(identifier: chosen.identifier)
-    }()
+    }
 
     // MARK: - Session and Radio
 
