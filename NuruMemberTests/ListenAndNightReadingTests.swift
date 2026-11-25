@@ -31,7 +31,7 @@ final class ListenAndNightReadingTests: XCTestCase {
         let player = ReadAloud.shared
         guard player.offered else { throw XCTSkip("Spoken feedback or live audio is active") }
         var requests: [String] = []
-        player.testAudioLoader = { path in requests.append(path); return Self.silentWave() }
+        player.testAudioLoader = { path in requests.append(path); return Self.silentMp3() }
         defer { player.stop(); player.testAudioLoader = nil }
         let source = PlanNarration(planId: "4c5fbfa1-d7e7-4d8f-8a89-a2970a95c904", day: 1,
                                    part: "word", version: String(repeating: "a", count: 64))
@@ -44,16 +44,9 @@ final class ListenAndNightReadingTests: XCTestCase {
         XCTAssertEqual(player.status, .idle)
     }
 
-    private static func silentWave() -> Data {
-        let samples = 1600
-        var data = Data()
-        func text(_ value: String) { data.append(contentsOf: value.utf8) }
-        func u16(_ value: UInt16) { var v = value.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
-        func u32(_ value: UInt32) { var v = value.littleEndian; withUnsafeBytes(of: &v) { data.append(contentsOf: $0) } }
-        text("RIFF"); u32(UInt32(36 + samples * 2)); text("WAVEfmt "); u32(16)
-        u16(1); u16(1); u32(8000); u32(16000); u16(2); u16(16)
-        text("data"); u32(UInt32(samples * 2)); data.append(Data(repeating: 0, count: samples * 2))
-        return data
+    // Generated silence, encoded as MP3 to exercise the production codec.
+    private static func silentMp3() -> Data {
+        Data(base64Encoded: "SUQzBAAAAAAAIlRTU0UAAAAOAAADTGF2ZjYzLjEuMTAyAAAAAAAAAAAAAAD/8zTEAAAAA0gAAAAATEFNRTQuMFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTEOwAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTEdgAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTEsQAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVUxBTUU0LjBVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVX/8zTExAAAA0gAAAAAVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVU=")!
     }
     func testReadingVoicePrefersPremiumThenFallsBackToEnglish() {
         let voices = [
