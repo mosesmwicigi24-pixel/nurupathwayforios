@@ -73,28 +73,41 @@ actor EncryptedSQLiteStore: LocalStore {
 
     // MARK: - LocalStore: mutation queue
 
-    func pendingMutations() -> [PendingMutation] {
+    enum QueueReadError: Error { case unreadable }
+
+    func pendingMutations() throws -> [PendingMutation] {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "SELECT mutation_id, seq, domain, op, payload, status FROM mutation_queue ORDER BY seq ASC", -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw QueueReadError.unreadable }
+        defer { sqlite3_finalize(statement) }
         var out: [PendingMutation] = []
-        prepare("SELECT mutation_id, seq, domain, op, payload, status FROM mutation_queue ORDER BY seq ASC") { st in
-            while sqlite3_step(st) == SQLITE_ROW {
-                guard let id = text(st, 0), let domain = text(st, 2), let op = text(st, 3),
-                      let status = text(st, 5), let blob = blob(st, 4) else { continue }
-                let payload = (try? JSONDecoder().decode([String: AnyCodable].self, from: unseal(blob) ?? Data())) ?? [:]
-                out.append(PendingMutation(mutationId: id, seq: Int(sqlite3_column_int64(st, 1)),
-                                           domain: domain, op: op, payload: payload, status: status))
-            }
+        while true {
+            let result = sqlite3_step(statement)
+            if result == SQLITE_DONE { return out }
+            guard result == SQLITE_ROW,
+                  let id = text(statement, 0), let domain = text(statement, 2), let op = text(statement, 3),
+                  let status = text(statement, 5), let data = blob(statement, 4),
+                  let plain = unseal(data),
+                  let payload = try? JSONDecoder().decode([String: AnyCodable].self, from: plain)
+            else { throw QueueReadError.unreadable }
+            out.append(PendingMutation(mutationId: id, seq: Int(sqlite3_column_int64(statement, 1)),
+                                       domain: domain, op: op, payload: payload, status: status))
         }
-        return out
     }
 
-    func enqueueMutation(_ m: PendingMutation) {
-        let body = seal((try? JSONEncoder().encode(m.payload)) ?? Data())
-        prepare("INSERT OR REPLACE INTO mutation_queue (mutation_id, seq, domain, op, payload, status, created_at) VALUES (?,?,?,?,?,?,?)") { st in
-            bindText(st, 1, m.mutationId); sqlite3_bind_int64(st, 2, Int64(m.seq))
-            bindText(st, 3, m.domain); bindText(st, 4, m.op); bindBlob(st, 5, body)
-            bindText(st, 6, m.status); sqlite3_bind_double(st, 7, Date().timeIntervalSince1970)
-            sqlite3_step(st)
-        }
+    enum QueueWriteError: Error { case encryptionFailed, storageFailed }
+
+    func enqueueMutation(_ m: PendingMutation) throws {
+        let plain = try JSONEncoder().encode(m.payload)
+        guard let body = try AES.GCM.seal(plain, using: key).combined else { throw QueueWriteError.encryptionFailed }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, "INSERT INTO mutation_queue (mutation_id, seq, domain, op, payload, status, created_at) VALUES (?,?,?,?,?,?,?)", -1, &statement, nil) == SQLITE_OK,
+              let statement else { throw QueueWriteError.storageFailed }
+        defer { sqlite3_finalize(statement) }
+        bindText(statement, 1, m.mutationId); sqlite3_bind_int64(statement, 2, Int64(m.seq))
+        bindText(statement, 3, m.domain); bindText(statement, 4, m.op); bindBlob(statement, 5, body)
+        bindText(statement, 6, m.status); sqlite3_bind_double(statement, 7, Date().timeIntervalSince1970)
+        guard sqlite3_step(statement) == SQLITE_DONE else { throw QueueWriteError.storageFailed }
     }
 
     func removeMutations(ids: [String]) {
@@ -116,45 +129,80 @@ actor EncryptedSQLiteStore: LocalStore {
         return out
     }
 
-    func setCursor(domain: String, value: Int) {
-        prepare("INSERT INTO cursors (domain, value) VALUES (?,?) ON CONFLICT(domain) DO UPDATE SET value=excluded.value") { st in
-            bindText(st, 1, domain); sqlite3_bind_int64(st, 2, Int64(value)); sqlite3_step(st)
+    enum CacheWriteError: Error { case encryptionFailed, databaseFailed }
+
+    private func checkedStatement(_ sql: String, _ body: (OpaquePointer) throws -> Void) throws {
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK, let statement else { throw CacheWriteError.databaseFailed }
+        defer { sqlite3_finalize(statement) }
+        try body(statement)
+    }
+
+    private func checkedExec(_ sql: String) throws {
+        guard sqlite3_exec(db, sql, nil, nil, nil) == SQLITE_OK else { throw CacheWriteError.databaseFailed }
+    }
+
+    func setCursor(domain: String, value: Int) throws {
+        try checkedStatement("INSERT INTO cursors (domain, value) VALUES (?,?) ON CONFLICT(domain) DO UPDATE SET value=excluded.value") { st in
+            bindText(st, 1, domain); sqlite3_bind_int64(st, 2, Int64(value))
+            guard sqlite3_step(st) == SQLITE_DONE else { throw CacheWriteError.databaseFailed }
         }
     }
 
-    // MARK: - LocalStore: pull cache (per-domain rows)
+    private func writeCache(domain: String, rows: [(id: String, body: Data)], replace: Bool) throws {
+        // Encrypt all rows before touching the database: never persist plaintext
+        // or delete the old cache if encryption cannot complete.
+        let encrypted = try rows.map { row -> (String, Data) in
+            guard let sealed = try AES.GCM.seal(row.body, using: key).combined else { throw CacheWriteError.encryptionFailed }
+            return (row.id, sealed)
+        }
+        try checkedExec("BEGIN")
+        do {
+            if replace {
+                try checkedStatement("DELETE FROM cache WHERE domain = ?") { st in
+                    bindText(st, 1, domain)
+                    guard sqlite3_step(st) == SQLITE_DONE else { throw CacheWriteError.databaseFailed }
+                }
+            }
+            try checkedStatement("INSERT INTO cache (domain, row_id, body, updated_at) VALUES (?,?,?,?) ON CONFLICT(domain,row_id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at") { st in
+                for (id, body) in encrypted {
+                    sqlite3_reset(st); sqlite3_clear_bindings(st)
+                    bindText(st, 1, domain); bindText(st, 2, id); bindBlob(st, 3, body)
+                    sqlite3_bind_double(st, 4, Date().timeIntervalSince1970)
+                    guard sqlite3_step(st) == SQLITE_DONE else { throw CacheWriteError.databaseFailed }
+                }
+            }
+            try checkedExec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
+        }
+    }
 
-    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) {
+    func cacheUpsert(domain: String, rows: [(id: String, body: Data)]) throws {
         guard !rows.isEmpty else { return }
-        exec("BEGIN")
-        prepare("INSERT INTO cache (domain, row_id, body, updated_at) VALUES (?,?,?,?) ON CONFLICT(domain,row_id) DO UPDATE SET body=excluded.body, updated_at=excluded.updated_at") { st in
-            for r in rows {
-                sqlite3_reset(st)
-                bindText(st, 1, domain); bindText(st, 2, r.id); bindBlob(st, 3, seal(r.body))
-                sqlite3_bind_double(st, 4, Date().timeIntervalSince1970); sqlite3_step(st)
-            }
-        }
-        exec("COMMIT")
+        try writeCache(domain: domain, rows: rows, replace: false)
     }
 
-    /// Replace the whole domain with `rows` (used to mirror a freshly-fetched list).
-    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) {
-        exec("BEGIN")
-        prepare("DELETE FROM cache WHERE domain = ?") { st in bindText(st, 1, domain); sqlite3_step(st) }
-        prepare("INSERT OR REPLACE INTO cache (domain, row_id, body, updated_at) VALUES (?,?,?,?)") { st in
-            for r in rows {
-                sqlite3_reset(st)
-                bindText(st, 1, domain); bindText(st, 2, r.id); bindBlob(st, 3, seal(r.body))
-                sqlite3_bind_double(st, 4, Date().timeIntervalSince1970); sqlite3_step(st)
-            }
-        }
-        exec("COMMIT")
+    func cacheReplace(domain: String, rows: [(id: String, body: Data)]) throws {
+        try writeCache(domain: domain, rows: rows, replace: true)
     }
 
-    func cacheDelete(domain: String, ids: [String]) {
+    func cacheDelete(domain: String, ids: [String]) throws {
         guard !ids.isEmpty else { return }
-        prepare("DELETE FROM cache WHERE domain = ? AND row_id = ?") { st in
-            for id in ids { sqlite3_reset(st); bindText(st, 1, domain); bindText(st, 2, id); sqlite3_step(st) }
+        try checkedExec("BEGIN")
+        do {
+            try checkedStatement("DELETE FROM cache WHERE domain = ? AND row_id = ?") { st in
+                for id in ids {
+                    sqlite3_reset(st); sqlite3_clear_bindings(st)
+                    bindText(st, 1, domain); bindText(st, 2, id)
+                    guard sqlite3_step(st) == SQLITE_DONE else { throw CacheWriteError.databaseFailed }
+                }
+            }
+            try checkedExec("COMMIT")
+        } catch {
+            sqlite3_exec(db, "ROLLBACK", nil, nil, nil)
+            throw error
         }
     }
 
@@ -171,9 +219,6 @@ actor EncryptedSQLiteStore: LocalStore {
 
     // MARK: - AES-GCM seal / unseal
 
-    nonisolated private func seal(_ data: Data) -> Data {
-        (try? AES.GCM.seal(data, using: key).combined) ?? data
-    }
     nonisolated private func unseal(_ data: Data) -> Data? {
         guard let box = try? AES.GCM.SealedBox(combined: data) else { return nil }
         return try? AES.GCM.open(box, using: key)

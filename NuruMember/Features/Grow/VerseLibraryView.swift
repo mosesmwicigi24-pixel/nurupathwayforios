@@ -61,7 +61,8 @@ final class VerseLibraryViewModel: ObservableObject {
         let rows = list.compactMap { v -> (id: String, body: Data)? in
             (try? JSONEncoder.nuruSnake.encode(v)).map { (v.savedVerseId, $0) }
         }
-        await sync.store.cacheReplace(domain: domain, rows: rows)
+        do { try await sync.store.cacheReplace(domain: domain, rows: rows) }
+        catch { NSLog("Offline cache could not be saved.") }
     }
 
     private func cached() async -> [SavedVerse] {
@@ -99,6 +100,7 @@ struct VerseLibraryView: View {
                     .refreshable { await vm.load() }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
         .navigationBarBackButtonHidden(true)
         .toolbar(.hidden, for: .navigationBar)
@@ -177,7 +179,10 @@ private struct BackButton: View {
                 .frame(width: 40, height: 40)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Nuru.border, lineWidth: 1))
+                .frame(minWidth: 44, minHeight: 44)
+                .contentShape(Rectangle())
         }
+        .accessibilityLabel("Back")
         .buttonStyle(.plain)
     }
 }

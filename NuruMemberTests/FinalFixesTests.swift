@@ -635,7 +635,7 @@ final class FinalFixesTests: XCTestCase {
             .compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" } ?? []
         XCTAssertGreaterThan(files.count, 100, "the scan reads the app")
         for url in files {
-            let rel = String(url.path.dropFirst(root.path.count + 1))
+            let rel = String(url.resolvingSymlinksInPath().path.dropFirst(root.resolvingSymlinksInPath().path.count + 1))
             found += TintScan.findings(file: rel, source: try String(contentsOf: url, encoding: .utf8))
         }
         XCTAssertEqual(found.map(\.description), [], "text actions left to the navy tint")
@@ -853,7 +853,7 @@ final class FinalFixesTests: XCTestCase {
             .compactMap({ $0 as? URL }).filter({ $0.pathExtension == "swift" }) ?? [] {
             let src = try String(contentsOf: url, encoding: .utf8)
             let n = rx.numberOfMatches(in: src, range: NSRange(src.startIndex..., in: src))
-            if n > 0 { found[String(url.path.dropFirst(root.path.count + 1)), default: 0] += n }
+            if n > 0 { found[String(url.resolvingSymlinksInPath().path.dropFirst(root.resolvingSymlinksInPath().path.count + 1)), default: 0] += n }
         }
         XCTAssertEqual(found, belowTheBand)
     }

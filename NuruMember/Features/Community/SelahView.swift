@@ -75,7 +75,8 @@ final class ThoughtsViewModel: ObservableObject {
         let rows = list.compactMap { t -> (id: String, body: Data)? in
             (try? JSONEncoder.nuruSnake.encode(t)).map { (t.thoughtId, $0) }
         }
-        await sync.store.cacheReplace(domain: domain, rows: rows)
+        do { try await sync.store.cacheReplace(domain: domain, rows: rows) }
+        catch { NSLog("Offline cache could not be saved.") }
     }
 
     private func cached() async -> [Thought] {

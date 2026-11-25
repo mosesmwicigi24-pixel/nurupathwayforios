@@ -678,7 +678,7 @@ private struct QuizPassScreen: View {
     }
 }
 
-/// Fail — light screen, 📖 disc, score, "Almost there", review/retry actions.
+/// Fail — light screen, 📖 disc, score, "Keep going", review/retry actions.
 private struct QuizFailScreen: View {
     let score: Int
     let passMark: Int
@@ -701,7 +701,7 @@ private struct QuizFailScreen: View {
                 Text("\(score)%")
                     .font(.inter(28, .bold)).foregroundStyle(QZ.ink)
                     .padding(.top, 24)
-                Text("Almost there")
+                Text("Keep going")
                     .font(.inter(22, .bold)).foregroundStyle(QZ.ink)
                     .padding(.top, 6)
                 Text("You need \(passMark)% to pass. Take a moment to review the lesson — you've got this.")
