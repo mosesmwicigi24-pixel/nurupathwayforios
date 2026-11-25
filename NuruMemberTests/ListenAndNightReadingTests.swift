@@ -10,6 +10,16 @@ import SwiftUI
 @testable import NuruMember
 
 final class ListenAndNightReadingTests: XCTestCase {
+    func testReadingVoicePrefersPremiumThenFallsBackToEnglish() {
+        let voices = [
+            ListenVoiceCandidate(identifier: "gb-enhanced", language: "en-GB", quality: 1),
+            ListenVoiceCandidate(identifier: "us-premium", language: "en-US", quality: 2),
+            ListenVoiceCandidate(identifier: "fr-premium", language: "fr-FR", quality: 2)
+        ]
+        XCTAssertEqual(ListenVoiceSelector.choose(from: voices)?.identifier, "us-premium")
+        XCTAssertEqual(ListenVoiceSelector.choose(from: [voices[0]])?.identifier, "gb-enhanced")
+        XCTAssertNil(ListenVoiceSelector.choose(from: [voices[2]]))
+    }
 
     private func read(_ pieces: [ListenPiece]) -> [String] { ListenScript.paragraphs(pieces) }
 
