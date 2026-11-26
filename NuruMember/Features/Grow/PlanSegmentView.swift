@@ -282,6 +282,11 @@ struct PlanSegmentView: View {
             ForEach(group) { seg in
                 switch seg.kind.lowercased() {
                 case "scripture":
+                    if listen.narration != nil && listen.words.contains("World English Bible.") {
+                        Text("Audio uses the World English Bible. The text shown may use another translation.")
+                            .font(.inter(pal.fs(12), .medium)).foregroundStyle(pal.inkDim)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     // Authored text wins; a bare reference fetches its passage so
                     // the pull-quote never reads "Proverbs 13:4" and nothing else.
                     if let c = seg.content, !c.isEmpty {
